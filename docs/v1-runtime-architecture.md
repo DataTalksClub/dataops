@@ -42,8 +42,8 @@ The runtime decision is:
 
 ## Current State
 
-The deployed V1 app is gaining DynamoDB execution-state tables before the
-work-engine Lambda is connected.
+The deployed V1 app now includes DynamoDB execution-state tables and a private
+work-engine Lambda connected behind the public portal.
 
 The deployed stack is still the protected Python docs/full-app Lambda:
 
@@ -55,9 +55,12 @@ The deployed stack is still the protected Python docs/full-app Lambda:
   It covers task/bundle/template/user state, file metadata, notifications, and
   sessions.
 - Durable execution tables have point-in-time recovery and retain policies.
-
-The imported `work-engine/` already contains a DynamoDB-oriented execution
-model, but it isn't deployed as part of V1 yet.
+- `lambda-functions/template.full.yaml` defines `WorkEngineFunction` as a
+  private Node.js Lambda without a Function URL.
+- `DocsFullAppFunction` invokes `WorkEngineFunction` and passes the shared
+  portal secret name.
+- `WorkEngineFunction` receives stack-owned `DATAOPS_*_TABLE` names and has
+  table-scoped DynamoDB permissions for the work-engine data layer.
 
 ## Public Entry Point
 
@@ -288,9 +291,9 @@ The frontend should evolve toward:
 
 The user shouldn't see repository or Lambda boundaries.
 
-## CI/CD Changes Needed
+## CI/CD Requirements
 
-When work-engine is added to V1 deploys:
+Because work-engine is part of V1 deploys:
 
 - include `work-engine/**` in the deploy workflow path filters
 - run `npm --prefix work-engine test`
@@ -304,13 +307,13 @@ When work-engine is added to V1 deploys:
 
 Implement V1 in this order:
 
-1. Keep the current Operations Home in the public frontend.
-2. Add production-safe DynamoDB table definitions to SAM.
-3. Refactor work-engine table names to environment variables.
-4. Add portable export/import validation for current work-engine entities.
-5. Add `WorkEngineFunction` as a private Lambda.
-6. Add trusted portal auth mode in work-engine.
-7. Add `/work/api/*` broker in the Python full app.
+1. Keep the current Operations Home in the public frontend. Done.
+2. Add production-safe DynamoDB table definitions to SAM. Done.
+3. Refactor work-engine table names to environment variables. Done.
+4. Add `WorkEngineFunction` as a private Lambda. Done.
+5. Add trusted portal auth mode in work-engine. Done.
+6. Add `/work/api/*` broker in the Python full app. Done.
+7. Add portable export/import validation for current work-engine entities.
 8. Add task/workflow frontend screens that call `/work/api/*`.
 9. Add file/artifact S3 storage before exposing production file uploads.
 10. Run restore drills before relying on production execution data.
