@@ -648,6 +648,22 @@ function renderOperationsHome(documents) {
   }
   wrap.append(summary);
 
+  const quickBar = document.createElement("section");
+  quickBar.className = "ops-quick-bar";
+  quickBar.setAttribute("aria-label", "Quick actions");
+  const quickTask = document.createElement("button");
+  quickTask.type = "button";
+  quickTask.className = "ops-quick-btn";
+  quickTask.textContent = "+ Task";
+  quickTask.addEventListener("click", () => openQuickTaskForm());
+  const quickWorkflow = document.createElement("button");
+  quickWorkflow.type = "button";
+  quickWorkflow.className = "ops-quick-btn";
+  quickWorkflow.textContent = "+ Workflow";
+  quickWorkflow.addEventListener("click", () => openQuickWorkflowForm(model.templates));
+  quickBar.append(quickTask, quickWorkflow);
+  wrap.append(quickBar);
+
   const lanes = document.createElement("section");
   lanes.className = "ops-lanes";
   lanes.setAttribute("aria-label", "Daily lanes");
@@ -1393,6 +1409,151 @@ async function saveBundleLink(bundleId, currentLinks, linkName, linkValue) {
   } catch (err) {
     reportError(`Could not save link: ${err.message || "request failed"}`);
   }
+}
+
+// ---------- Quick create: ad-hoc task and workflow ----------
+
+function openQuickTaskForm() {
+  const overlay = createQuickFormOverlay("New task");
+  const form = document.createElement("div");
+  form.className = "quick-form";
+
+  const descInput = createQuickInput("What needs doing?", "text", "");
+  const dateInput = createQuickInput("Due date", "date", todayIsoDate());
+
+  const createBtn = document.createElement("button");
+  createBtn.type = "button";
+  createBtn.className = "task-action-btn is-primary";
+  createBtn.textContent = "Create task";
+  createBtn.addEventListener("click", async () => {
+    const description = descInput.input.value.trim();
+    const date = dateInput.input.value;
+    if (!description) { reportError("Task description is required."); return; }
+    if (!date) { reportError("Due date is required."); return; }
+    createBtn.disabled = true;
+    createBtn.textContent = "Creating...";
+    try {
+      await request(workApiUrl("/api/tasks"), {
+        method: "POST",
+        body: JSON.stringify({ description, date }),
+      });
+      overlay.remove();
+      await refreshOperationsWorkSnapshot({ rerender: true });
+    } catch (err) {
+      reportError(`Could not create task: ${err.message || "request failed"}`);
+      createBtn.disabled = false;
+      createBtn.textContent = "Create task";
+    }
+  });
+
+  form.append(descInput.label, dateInput.label, createBtn);
+  overlay.querySelector(".quick-form-body").append(form);
+}
+
+function openQuickWorkflowForm(templates) {
+  const overlay = createQuickFormOverlay("Start workflow");
+  const form = document.createElement("div");
+  form.className = "quick-form";
+
+  const templateSelect = document.createElement("select");
+  templateSelect.className = "quick-form-select";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select template...";
+  templateSelect.append(placeholder);
+  for (const template of templates) {
+    const opt = document.createElement("option");
+    opt.value = template.slug;
+    opt.textContent = `${template.title}${template.tags.length ? ` (${template.tags.slice(0, 2).join(", ")})` : ""}`;
+    templateSelect.append(opt);
+  }
+
+  const anchorInput = createQuickInput("Anchor date", "date", todayIsoDate());
+  const titleInput = createQuickInput("Workflow title (optional)", "text", "");
+
+  const createBtn = document.createElement("button");
+  createBtn.type = "button";
+  createBtn.className = "task-action-btn is-primary";
+  createBtn.textContent = "Start workflow";
+  createBtn.addEventListener("click", async () => {
+    const slug = templateSelect.value;
+    const anchorDate = anchorInput.input.value;
+    if (!slug) { reportError("Select a template."); return; }
+    if (!anchorDate) { reportError("Anchor date is required."); return; }
+    createBtn.disabled = true;
+    createBtn.textContent = "Starting...";
+    try {
+      const template = templates.find((t) => t.slug === slug);
+      const body = { templateId: slug, anchorDate };
+      const title = titleInput.input.value.trim();
+      if (title) body.title = title;
+      const result = await request(workApiUrl("/api/bundles"), {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const bundle = result?.bundle || result;
+      overlay.remove();
+      if (bundle?.id) openBundlePanel(bundle.id);
+      await refreshOperationsWorkSnapshot({ rerender: true });
+    } catch (err) {
+      reportError(`Could not start workflow: ${err.message || "request failed"}`);
+      createBtn.disabled = false;
+      createBtn.textContent = "Start workflow";
+    }
+  });
+
+  const selectLabel = document.createElement("label");
+  selectLabel.className = "quick-form-label";
+  selectLabel.textContent = "Template";
+  selectLabel.append(templateSelect);
+
+  form.append(selectLabel, titleInput.label, anchorInput.label, createBtn);
+  overlay.querySelector(".quick-form-body").append(form);
+}
+
+function createQuickInput(labelText, type, value) {
+  const label = document.createElement("label");
+  label.className = "quick-form-label";
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = type;
+  input.value = value;
+  label.append(input);
+  return { label, input };
+}
+
+function createQuickFormOverlay(titleText) {
+  const overlay = document.createElement("div");
+  overlay.className = "quick-form-overlay confirm-modal";
+  overlay.hidden = false;
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "confirm-backdrop";
+  backdrop.addEventListener("click", () => overlay.remove());
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel quick-form-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+
+  const header = document.createElement("div");
+  header.className = "diff-header";
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "quiet-button";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => overlay.remove());
+  header.append(title, closeBtn);
+
+  const body = document.createElement("div");
+  body.className = "quick-form-body";
+
+  panel.append(header, body);
+  overlay.append(backdrop, panel);
+  document.body.append(overlay);
+  return overlay;
 }
 
 function settledPayload(result) {
