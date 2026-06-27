@@ -44,9 +44,10 @@ can export the data and migrate to Postgres later.
 
 ## Current State
 
-The deployed DataOps portal doesn't currently use DynamoDB.
+The deployed DataOps stack now owns the V1 execution-state DynamoDB tables and
+the private `WorkEngineFunction` that uses them through the portal broker.
 
-Current prototype state lives in `work-engine/`:
+Runtime state access lives in `work-engine/`:
 
 - `work-engine/src/types.ts` defines the runtime entities.
 - `work-engine/src/db/setup.ts` creates local/prototype DynamoDB tables.
@@ -135,8 +136,9 @@ test/local mode or when `DATAOPS_AUTO_CREATE_TABLES=true`.
 
 The deployed SAM template declares stack-owned DynamoDB tables with names such
 as `${AWS::StackName}-tasks`, `${AWS::StackName}-bundles`, and
-`${AWS::StackName}-files`. Those outputs should become the `DATAOPS_*_TABLE`
-environment values when `WorkEngineFunction` is added to the stack.
+`${AWS::StackName}-files`. The private `WorkEngineFunction` receives those table
+names through the `DATAOPS_*_TABLE` environment variables and has table-scoped
+DynamoDB permissions for the actions used by the work-engine data layer.
 
 ## ID Rules
 

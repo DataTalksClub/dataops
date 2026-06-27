@@ -95,9 +95,23 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "FunctionUrlConfig" not in work_engine
     assert "WORK_ENGINE_AUTH_MODE: portal" in work_engine
     assert "DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable" in work_engine
+    assert "DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable" in work_engine
+    assert "DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable" in work_engine
+    assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in work_engine
+    assert "DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable" in work_engine
+    assert "DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable" in work_engine
     assert "DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable" in work_engine
+    assert "dynamodb:GetItem" in work_engine
+    assert "dynamodb:PutItem" in work_engine
     assert "dynamodb:Query" in work_engine
+    assert "dynamodb:Scan" in work_engine
+    assert "dynamodb:UpdateItem" in work_engine
+    assert "dynamodb:DeleteItem" in work_engine
+    assert "dynamodb:BatchGetItem" not in work_engine
+    assert "dynamodb:BatchWriteItem" not in work_engine
+    assert "dynamodb:DescribeTable" not in work_engine
     assert "${DataOpsTasksTable.Arn}/index/*" in work_engine
+    assert "${DataOpsFilesTable.Arn}/index/*" in work_engine
     assert "secretsmanager:GetSecretValue" in work_engine
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret" in work_engine
 
