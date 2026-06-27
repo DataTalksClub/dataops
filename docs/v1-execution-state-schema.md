@@ -133,6 +133,11 @@ Current implementation reads these environment variables in `work-engine` and
 keeps the local defaults above. The Lambda handler auto-creates tables only in
 test/local mode or when `DATAOPS_AUTO_CREATE_TABLES=true`.
 
+The deployed SAM template declares stack-owned DynamoDB tables with names such
+as `${AWS::StackName}-tasks`, `${AWS::StackName}-bundles`, and
+`${AWS::StackName}-files`. Those outputs should become the `DATAOPS_*_TABLE`
+environment values when `WorkEngineFunction` is added to the stack.
+
 ## ID Rules
 
 Every exported entity needs a stable application-level ID.
