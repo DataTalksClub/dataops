@@ -43,6 +43,9 @@ def test_frontend_builds_work_api_urls_not_bare_api():
     assert 'workApiUrl("/api/recurring")' in source, (
         "dashboard must load recurring configs via /work/api/recurring"
     )
+    assert 'workApiUrl("/api/me")' in source, (
+        "dashboard must load current operator identity via /work/api/me"
+    )
 
 
 def test_frontend_task_and_workflow_mutations_use_work_api():

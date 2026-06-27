@@ -340,11 +340,25 @@ const model = buildOperationsHomeModel(docs, {
         assigneeId: "ops",
       },
       {
+        id: "task-unassigned",
+        description: "Unassigned urgent work",
+        date: "2026-06-27",
+        status: "todo",
+      },
+      {
+        id: "task-other-owner",
+        description: "Other owner task",
+        date: "2026-06-27",
+        status: "todo",
+        assigneeId: "other",
+      },
+      {
         id: "task-overdue",
         description: "Upload podcast recording",
         date: "2026-06-25",
         status: "todo",
         bundleId: "bundle-podcast",
+        requiredLinkName: "Recording link",
       },
       {
         id: "task-waiting",
@@ -369,6 +383,7 @@ const model = buildOperationsHomeModel(docs, {
         anchorDate: "2026-06-26",
         stage: "post-production",
         status: "active",
+        bundleLinks: [{ name: "YouTube", url: "" }],
       },
       {
         id: "bundle-archived",
@@ -378,11 +393,12 @@ const model = buildOperationsHomeModel(docs, {
     ],
     bundleTasks: {
       "bundle-podcast": [
-        { id: "task-overdue", description: "Upload podcast recording", date: "2026-06-25", status: "todo", bundleId: "bundle-podcast" },
+        { id: "task-overdue", description: "Upload podcast recording", date: "2026-06-25", status: "todo", bundleId: "bundle-podcast", requiredLinkName: "Recording link" },
         { id: "task-waiting", description: "Confirm guest bio", date: "2026-06-28", status: "waiting", waitingFor: "guest", followUpAt: "2026-06-27", bundleId: "bundle-podcast" },
         { id: "task-complete", description: "Prepare notes", date: "2026-06-24", status: "done", bundleId: "bundle-podcast" },
       ],
     },
+    currentOperatorId: "ops",
   },
   recurringSnapshot: {
     loaded: true,
@@ -397,7 +413,7 @@ assert.equal(model.stats.totalDocs, 5);
 assert.equal(model.stats.workflowTemplates, 3);
 assert.equal(model.stats.recurringTemplates, 2);
 assert.equal(model.stats.liveLoaded, true);
-assert.equal(model.stats.todayTasks, 1);
+assert.equal(model.stats.todayTasks, 2);
 assert.equal(model.stats.overdueTasks, 1);
 assert.equal(model.stats.waitingTasks, 1);
 assert.equal(model.stats.activeBundles, 1);
@@ -413,17 +429,27 @@ assert.equal(model.templates[1].atRisk, true);
 
 const lanes = Object.fromEntries(model.lanes.map((lane) => [lane.id, lane]));
 assert.deepEqual(model.lanes.map((lane) => lane.id), ["today", "overdue", "waiting", "bundles"]);
-assert.deepEqual(lanes.today.items.map((item) => item.title), ["Publish newsletter"]);
-assert.deepEqual(lanes.today.items.map((item) => item.taskId), ["task-today"]);
+assert.deepEqual(lanes.today.items.map((item) => item.title), ["Publish newsletter", "Unassigned urgent work"]);
+assert.deepEqual(lanes.today.items.map((item) => item.taskId), ["task-today", "task-unassigned"]);
+assert.equal(lanes.today.items[0].nextAction, "Mark done");
+assert.match(lanes.today.items[0].meta, /No proof required/);
+assert.equal(model.stats.currentOperatorId, "ops");
 assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Upload podcast recording"]);
+assert.equal(lanes.overdue.items[0].nextAction, "Add Recording link");
+assert.equal(lanes.overdue.items[0].proof.label, "Missing proof: Recording link");
 assert.equal(lanes.waiting.items[0].summary, "Waiting for guest; follow up Today");
+assert.equal(lanes.waiting.items[0].nextAction, "Follow up");
 assert.equal(lanes.bundles.items[0].title, "Podcast episode: streaming systems");
 assert.equal(lanes.bundles.items[0].bundleId, "bundle-podcast");
 assert.equal(lanes.bundles.items[0].progress.done, 1);
 assert.equal(lanes.bundles.items[0].progress.total, 3);
 assert.equal(lanes.bundles.items[0].progress.overdue, 1);
 assert.equal(lanes.bundles.items[0].progress.waiting, 1);
+assert.equal(lanes.bundles.items[0].progress.missingLinks, 2);
+assert.equal(lanes.bundles.items[0].progress.nextDueTask.id, "task-overdue");
+assert.match(lanes.bundles.items[0].summary, /Next: Upload podcast recording/);
 assert.equal(lanes.bundles.items[0].risk, "high");
+assert.equal(model.futureSections.map((section) => section.title).join(", "), "Inbox, Assistant Jobs, Process Quality");
 assert.equal(model.references.some((ref) => ref.title === "DataOps V1 Goal" && ref.href.includes(".goal-v1.md")), true);
 assert.equal(model.references.some((ref) => ref.path === "content/finance/reference/invoices-receipts-and-statements.md"), true);
 """,
@@ -434,18 +460,26 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "tasksFromWorkPayload",
             "bundlesFromWorkPayload",
             "recurringConfigsFromPayload",
+            "currentOperatorIdFromPayload",
             "normalizeOperationsRecurringSnapshot",
             "dedupeWorkTasks",
             "sortWorkTasks",
             "taskSortDate",
             "isOpenWorkTask",
             "isTaskDueToday",
+            "isCurrentOperatorTodayTask",
             "isTaskOverdue",
             "isWaitingOrFollowUpTask",
             "taskDate",
             "isActiveWorkBundle",
             "sortActiveWorkBundles",
             "summarizeBundleProgress",
+            "nextDueOpenTask",
+            "missingBundleLinks",
+            "hasTaskFileEvidence",
+            "taskProofState",
+            "taskSourceLabel",
+            "taskNextActionLabel",
             "isWorkflowTemplateDoc",
             "summarizeWorkflowTemplate",
             "workflowSlugFromDoc",
@@ -469,9 +503,145 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "compareIsoDate",
             "isBeforeIsoDate",
             "dedupeOperationItems",
+            "buildOperationsFutureSections",
             "buildOperationsReferenceLinks",
             "basename",
             "cleanPath",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_operations_home_model_distinguishes_empty_live_data_from_unavailable_work_api():
+    result = _run_app_js_functions(
+        """
+const docs = [
+  {
+    path: "content/tasks/templates/newsletter.md",
+    title: "Newsletter Task Template",
+    summary: "Git-backed DataTasks template for the Newsletter operational workflow.",
+    doc_type: "task-template",
+    tags: ["task-template"],
+  },
+];
+
+const emptyLive = buildOperationsHomeModel(docs, {
+  today: "2026-06-27",
+  workSnapshot: { loaded: true, tasks: [], bundles: [] },
+});
+assert.equal(emptyLive.stats.liveLoaded, true);
+assert.equal(emptyLive.lanes.find((lane) => lane.id === "today").empty, "No live tasks due today.");
+assert.equal(emptyLive.lanes.every((lane) => lane.items.length === 0), true);
+assert.equal(emptyLive.runtime.connected, true);
+assert.deepEqual(emptyLive.runtime.errors, []);
+
+const unavailable = buildOperationsHomeModel(docs, {
+  today: "2026-06-27",
+  workSnapshot: { loaded: false, errors: ["Unexpected non-JSON API response"] },
+});
+assert.equal(unavailable.stats.liveLoaded, false);
+assert.equal(unavailable.templates.length, 1);
+assert.equal(unavailable.lanes.every((lane) => lane.items.length === 0), true);
+assert.match(unavailable.lanes.find((lane) => lane.id === "overdue").empty, /unavailable/);
+assert.equal(unavailable.runtime.connected, false);
+assert.deepEqual(unavailable.runtime.errors, ["Unexpected non-JSON API response"]);
+
+assert.deepEqual(recurringConfigsFromPayload({ configs: [{ id: "rec-local" }] }).map((config) => config.id), ["rec-local"]);
+assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
+""",
+        [
+            "buildOperationsHomeModel",
+            "normalizeOperationsWorkSnapshot",
+            "normalizeBundleTaskMap",
+            "tasksFromWorkPayload",
+            "bundlesFromWorkPayload",
+            "recurringConfigsFromPayload",
+            "currentOperatorIdFromPayload",
+            "normalizeOperationsRecurringSnapshot",
+            "dedupeWorkTasks",
+            "sortWorkTasks",
+            "taskSortDate",
+            "isOpenWorkTask",
+            "isTaskDueToday",
+            "isCurrentOperatorTodayTask",
+            "isTaskOverdue",
+            "isWaitingOrFollowUpTask",
+            "taskDate",
+            "isActiveWorkBundle",
+            "sortActiveWorkBundles",
+            "summarizeBundleProgress",
+            "nextDueOpenTask",
+            "missingBundleLinks",
+            "hasTaskFileEvidence",
+            "taskProofState",
+            "taskSourceLabel",
+            "taskNextActionLabel",
+            "isWorkflowTemplateDoc",
+            "summarizeWorkflowTemplate",
+            "workflowSlugFromDoc",
+            "workflowPriority",
+            "isRecurringWorkflowSlug",
+            "isAtRiskWorkflowSlug",
+            "isFollowUpDoc",
+            "operationItemFromTemplate",
+            "operationItemFromDoc",
+            "operationItemFromTask",
+            "operationItemFromBundle",
+            "workTaskTitle",
+            "workBundleTitle",
+            "recurringConfigTitle",
+            "formatTaskDateMeta",
+            "labelizeWorkValue",
+            "todayIsoDate",
+            "addDaysIso",
+            "toIsoDate",
+            "parseIsoDateValue",
+            "compareIsoDate",
+            "isBeforeIsoDate",
+            "dedupeOperationItems",
+            "buildOperationsFutureSections",
+            "buildOperationsReferenceLinks",
+            "basename",
+            "cleanPath",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_operations_home_runtime_and_future_sections_render_honest_states():
+    result = _run_app_js_functions(
+        """
+const runtime = renderOperationsRuntimeState({
+  connected: false,
+  errors: ["Unexpected non-JSON API response"],
+});
+assert.equal(runtime.className, "ops-runtime-state");
+assert.equal(runtime.children[0].textContent, "Live work data unavailable");
+assert.match(runtime.children[1].textContent, /could not load \\/work\\/api/);
+assert.equal(runtime.children[2].children[0].textContent, "Unexpected non-JSON API response");
+
+const connected = renderOperationsRuntimeState({ connected: true, errors: [] });
+assert.equal(connected, null);
+
+const future = renderOperationsFutureSections(buildOperationsFutureSections());
+assert.equal(future.className, "ops-section ops-future-section");
+assert.equal(future.children[0].children[0].textContent, "Incoming And Quality Signals");
+const cards = future.children[1].children;
+assert.equal(cards.length, 3);
+assert.equal(cards[0].children[0].textContent, "Inbox");
+assert.equal(cards[0].children[1].textContent, "Not connected yet");
+assert.match(cards[0].children[2].textContent, /#31/);
+assert.equal(cards[1].children[0].textContent, "Assistant Jobs");
+assert.match(cards[1].children[2].textContent, /#30/);
+assert.equal(cards[2].children[0].textContent, "Process Quality");
+assert.match(cards[2].children[2].textContent, /#35/);
+""",
+        [
+            "buildOperationsFutureSections",
+            "renderOperationsRuntimeState",
+            "renderOperationsFutureSections",
         ],
     )
 

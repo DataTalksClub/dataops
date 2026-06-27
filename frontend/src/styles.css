@@ -1145,6 +1145,16 @@ body[data-view="create"] .editor-view {
   font-size: 11px;
 }
 
+.ops-lane-item .ops-next-action {
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 3px 6px;
+  font-weight: 650;
+}
+
 .ops-progress {
   overflow: hidden;
   width: 100%;
@@ -1170,6 +1180,30 @@ body[data-view="create"] .editor-view {
 .ops-section {
   display: grid;
   gap: 10px;
+}
+
+.ops-runtime-state {
+  display: grid;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--line));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  padding: 12px;
+}
+
+.ops-runtime-state strong {
+  font-size: 13px;
+}
+
+.ops-runtime-state span,
+.ops-runtime-state li {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ops-runtime-state ul {
+  margin: 2px 0 0 18px;
+  padding: 0;
 }
 
 .ops-section-header {
@@ -1231,6 +1265,49 @@ body[data-view="create"] .editor-view {
   min-height: 92px;
   padding: 12px;
   text-decoration: none;
+}
+
+.ops-future-section {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.ops-future-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ops-future-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--control);
+  padding: 10px;
+}
+
+.ops-future-card strong,
+.ops-future-card span {
+  overflow-wrap: anywhere;
+}
+
+.ops-future-card strong {
+  font-size: 13px;
+}
+
+.ops-future-card small {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ops-future-card span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .ops-recurring-section {
@@ -2645,6 +2722,7 @@ body.dark .task-status-badge.waiting {
   .ops-lanes,
   .ops-template-grid,
   .ops-recurring-list,
+  .ops-future-grid,
   .ops-reference-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4045,6 +4123,7 @@ body[data-view="create"] #back-button {
   .ops-lanes,
   .ops-template-grid,
   .ops-recurring-list,
+  .ops-future-grid,
   .ops-reference-grid {
     grid-template-columns: 1fr;
   }
