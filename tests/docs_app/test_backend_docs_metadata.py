@@ -11,6 +11,7 @@ if str(LAMBDA_SRC) not in sys.path:
     sys.path.insert(0, str(LAMBDA_SRC))
 
 from lambda_functions import api_handler, full_app_handler, github_store, search_handler, sop_parse  # noqa: E402
+from lambda_functions.docs_index import iter_docs  # noqa: E402
 
 
 def _write_doc(content_root: Path, relative_path: str, markdown: str) -> Path:
@@ -71,6 +72,25 @@ summary: "Invoice reference."
     }
     assert docs["content/finance/reference/invoices.md"]["doc_type"] == "reference"
     assert docs["content/finance/reference/invoices.md"]["domain"] == "finance"
+
+
+def test_exported_task_templates_are_git_backed_process_documents():
+    templates_dir = REPO_ROOT / "content" / "tasks" / "templates"
+    template_paths = sorted(templates_dir.glob("*.md"))
+
+    assert len(template_paths) == 11
+
+    podcast = templates_dir / "podcast.md"
+    text = podcast.read_text(encoding="utf-8")
+    assert "title: \"Podcast Task Template\"" in text
+    assert "doc_type: task-template" in text
+    assert "source: \"work-engine/scripts/seed-templates.ts\"" in text
+    assert "| 4 | `create-podcast-document` | -25 | Create a podcast document with the questions" in text
+
+    indexed = {doc["path"]: doc for doc in iter_docs(REPO_ROOT / "content")}
+    assert indexed["content/tasks/templates/podcast.md"]["domain"] == "tasks"
+    assert indexed["content/tasks/templates/podcast.md"]["doc_type"] == "task-template"
+    assert indexed["content/tasks/templates/podcast.md"]["title"] == "Podcast Task Template"
 
 
 def test_doc_and_folder_path_normalization_accepts_visible_urls(tmp_path, monkeypatch):
