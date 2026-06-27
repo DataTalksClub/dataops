@@ -2,7 +2,8 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 
 import { handler } from '../src/handler';
-import { startLocal, stopLocal } from '../src/db/client';
+import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { createSession } from '../src/db/sessions';
 
 describe('Portal broker authentication', () => {
   const originalSkipAuth = process.env.SKIP_AUTH;
@@ -80,6 +81,68 @@ describe('Portal broker authentication', () => {
     );
 
     assert.strictEqual(response.statusCode, 401);
+  });
+
+  it('rejects portal headers with the wrong broker secret', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const response = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Wrong secret task', date: '2028-10-03' }),
+        headers: {
+          'x-portal-auth': 'true',
+          'x-portal-secret': 'wrong-secret',
+          'x-user-id': 'portal-admin',
+        },
+      },
+      {},
+    );
+
+    assert.strictEqual(response.statusCode, 401);
+  });
+
+  it('hides standalone auth routes in portal mode', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const response = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/auth/login',
+        body: JSON.stringify({ email: 'ops@datatalks.club', password: 'secret' }),
+        headers: {},
+      },
+      {},
+    );
+
+    assert.strictEqual(response.statusCode, 404);
+    assert.deepStrictEqual(JSON.parse(response.body), { error: 'Not found' });
+  });
+
+  it('does not accept bearer sessions for /api/me in portal mode', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const client = await getClient();
+    const session = await createSession(client, 'legacy-user');
+
+    const response = await handler(
+      {
+        httpMethod: 'GET',
+        path: '/api/me',
+        headers: { Authorization: `Bearer ${session.token}` },
+      },
+      {},
+    );
+
+    assert.strictEqual(response.statusCode, 401);
+    assert.deepStrictEqual(JSON.parse(response.body), { error: 'Unauthorized' });
   });
 
   it('accepts portal broker headers without a bearer session', async () => {

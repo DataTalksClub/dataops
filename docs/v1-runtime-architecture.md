@@ -99,9 +99,12 @@ Route behavior:
 - `/work/api/*` requires the existing portal auth first.
 - The Python full app strips `/work` and invokes work-engine with `/api/*`.
 - The Python full app passes trusted portal headers to the private Lambda:
-  `x-portal-auth`, `x-user-id`, and optionally `x-user-email`.
-- Work-engine accepts trusted portal headers only when an explicit production
-  environment flag is enabled.
+  `x-portal-auth`, `x-portal-secret`, `x-user-id`, and later
+  `x-user-email`.
+- The Python full app does not forward browser `Authorization` headers,
+  portal cookies, or unrelated browser cookies to work-engine.
+- Work-engine accepts trusted portal headers only when
+  `WORK_ENGINE_AUTH_MODE=portal` and the shared portal secret matches.
 - Don't use test-only `SKIP_AUTH=true` in production.
 
 ## Auth Strategy
@@ -112,7 +115,14 @@ Short term:
 
 - current basic-auth/session protects all public surfaces
 - work-engine is private and callable only by `DocsFullAppFunction`
-- initial actor can be `portal-admin` until real portal users are implemented.
+- the browser session is the portal `dtc_auth` cookie, not a work-engine bearer
+  token
+- browser work calls use same-origin `/work/api/*`; the frontend does not use a
+  separate work-engine URL, localStorage bearer token, CORS flow, or standalone
+  DataTasks sign-in
+- initial actor can be `portal-admin` until real portal users are implemented
+- in production portal mode, work-engine hides `/api/auth/*` and `/api/me`
+  returns the portal actor from trusted headers.
 
 Later:
 
@@ -174,6 +184,13 @@ Table requirements:
 - environment variables for table names
 - local/test defaults can keep dynalite auto-create behavior.
 
+`DataOpsSessionsTable` is session state for the legacy/standalone work-engine
+auth model and local tests. It is not the shared production portal session
+source in V1. Production browser sessions are owned by the Python portal. The
+sessions table is tagged as `SessionState` and intentionally does not get the
+same point-in-time recovery requirement as durable execution-state tables such
+as tasks, bundles, templates, users, files, and notifications.
+
 ## Backups
 
 Use AWS-native backups for operational recovery:
@@ -221,6 +238,7 @@ Export requirements:
 - stable business IDs and references
 - optional DynamoDB source keys for traceability
 - no secrets or live session tokens in normal exports
+- no password hashes in normal user exports
 - file binaries excluded, represented by metadata and storage URI/checksum.
 
 This is the migration path for a future Postgres move. It should use business

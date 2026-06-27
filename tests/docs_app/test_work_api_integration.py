@@ -74,6 +74,15 @@ def test_frontend_task_and_workflow_mutations_use_work_api():
     )
 
 
+def test_frontend_portal_flow_has_no_standalone_work_engine_login():
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert "/api/auth/login" not in source
+    assert "/api/auth/logout" not in source
+    assert "Authorization" not in source
+    assert "Bearer " not in source
+
+
 def test_frontend_request_helper_rejects_non_json_responses():
     """The request helper must throw on non-JSON so login HTML cannot render
     as an empty dashboard. Commit d981f47 tightened this; this test locks it."""
