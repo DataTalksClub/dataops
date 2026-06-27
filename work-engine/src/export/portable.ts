@@ -63,6 +63,16 @@ const SCHEMA_VERSION = 'dataops.execution.v1';
 const EXPORT_FORMAT_VERSION = 1;
 const OMITTED_ENTITIES = ['sessions', 'artifacts', 'assistant_jobs', 'audit_events'];
 const REDACTIONS = ['users.password_hash', 'sessions'];
+const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
+const VALID_NOTIFICATION_TYPES = new Set([
+  'task-due',
+  'task-overdue',
+  'follow-up-due',
+  'missing-evidence',
+  'recurring-due',
+  'stage-change',
+  'automation-failure',
+]);
 
 const ENTITY_SPECS: EntitySpec[] = [
   {
@@ -416,6 +426,98 @@ function optionalReference(
   }
 }
 
+function optionalEnum(
+  record: JsonRecord,
+  field: string,
+  allowedValues: Set<string>,
+  errors: string[],
+  context: string
+): string | null {
+  const value = record[field];
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    errors.push(`${context} field ${field} must be a string when present`);
+    return null;
+  }
+  if (!allowedValues.has(value)) {
+    errors.push(`${context} field ${field} has unknown value: ${value}`);
+    return null;
+  }
+  return value;
+}
+
+function isIsoDate(value: string): boolean {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+  );
+}
+
+function isParseableDateOrTimestamp(value: string): boolean {
+  return isIsoDate(value) || !Number.isNaN(Date.parse(value));
+}
+
+function validateDateField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string,
+  required = false
+): string | null {
+  let value: string | null;
+  if (required) {
+    value = requireString(record, field, errors, context);
+  } else {
+    const raw = record[field];
+    if (raw === undefined || raw === null || raw === '') return null;
+    if (typeof raw !== 'string') {
+      errors.push(`${context} field ${field} must be a string when present`);
+      return null;
+    }
+    value = raw;
+  }
+  if (!value) return null;
+  if (!isIsoDate(value)) {
+    errors.push(`${context} field ${field} must be a YYYY-MM-DD date`);
+    return null;
+  }
+  return value;
+}
+
+function validateDateOrTimestampField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string,
+  required = false
+): string | null {
+  let value: string | null;
+  if (required) {
+    value = requireString(record, field, errors, context);
+  } else {
+    const raw = record[field];
+    if (raw === undefined || raw === null || raw === '') return null;
+    if (typeof raw !== 'string') {
+      errors.push(`${context} field ${field} must be a string when present`);
+      return null;
+    }
+    value = raw;
+  }
+  if (!value) return null;
+  if (!isParseableDateOrTimestamp(value)) {
+    errors.push(`${context} field ${field} must be a parseable date or timestamp`);
+    return null;
+  }
+  return value;
+}
+
 async function validatePortableExport(exportDir: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const manifestPath = path.join(exportDir, 'manifest.json');
@@ -436,6 +538,9 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   }
   if (manifest.export_format_version !== EXPORT_FORMAT_VERSION) {
     errors.push(`manifest export_format_version must be ${EXPORT_FORMAT_VERSION}`);
+  }
+  if (typeof manifest.generated_at !== 'string' || !isParseableDateOrTimestamp(manifest.generated_at)) {
+    errors.push('manifest generated_at must be a parseable date or timestamp');
   }
 
   const recordsByEntity: Partial<Record<ExportEntityName, JsonRecord[]>> = {};
@@ -487,23 +592,59 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   for (const [index, task] of (recordsByEntity.tasks || []).entries()) {
     const context = `tasks[${index}]`;
     requireString(task, 'description', errors, context);
-    requireString(task, 'date', errors, context);
+    validateDateField(task, 'date', errors, context, true);
+    const status = optionalEnum(task, 'status', VALID_TASK_STATUSES, errors, context);
+    if (status === 'waiting') {
+      requireString(task, 'waiting_for', errors, context);
+      validateDateOrTimestampField(task, 'follow_up_at', errors, context, true);
+    } else {
+      validateDateOrTimestampField(task, 'follow_up_at', errors, context);
+    }
+    validateDateOrTimestampField(task, 'completed_at', errors, context);
+    validateDateOrTimestampField(task, 'created_at', errors, context);
+    validateDateOrTimestampField(task, 'updated_at', errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
   }
 
   for (const [index, bundle] of (recordsByEntity.bundles || []).entries()) {
-    optionalReference(bundle, 'template_id', templateIds, errors, `bundles[${index}]`);
+    const context = `bundles[${index}]`;
+    validateDateField(bundle, 'anchor_date', errors, context);
+    validateDateOrTimestampField(bundle, 'created_at', errors, context);
+    validateDateOrTimestampField(bundle, 'updated_at', errors, context);
+    optionalReference(bundle, 'template_id', templateIds, errors, context);
+  }
+
+  for (const [index, template] of (recordsByEntity.templates || []).entries()) {
+    const context = `templates[${index}]`;
+    validateDateOrTimestampField(template, 'created_at', errors, context);
+    validateDateOrTimestampField(template, 'updated_at', errors, context);
+  }
+
+  for (const [index, recurring] of (recordsByEntity.recurring_configs || []).entries()) {
+    const context = `recurring_configs[${index}]`;
+    validateDateOrTimestampField(recurring, 'created_at', errors, context);
+    validateDateOrTimestampField(recurring, 'updated_at', errors, context);
   }
 
   for (const [index, file] of (recordsByEntity.files || []).entries()) {
-    optionalReference(file, 'task_id', taskIds, errors, `files[${index}]`);
-    optionalReference(file, 'bundle_id', bundleIds, errors, `files[${index}]`);
+    const context = `files[${index}]`;
+    validateDateOrTimestampField(file, 'created_at', errors, context);
+    optionalReference(file, 'task_id', taskIds, errors, context);
+    optionalReference(file, 'bundle_id', bundleIds, errors, context);
   }
 
   for (const [index, notification] of (recordsByEntity.notifications || []).entries()) {
     const context = `notifications[${index}]`;
+    const notificationType = optionalEnum(notification, 'notification_type', VALID_NOTIFICATION_TYPES, errors, context);
+    if (notificationType === 'follow-up-due') {
+      requireString(notification, 'task_id', errors, context);
+      validateDateOrTimestampField(notification, 'due_at', errors, context, true);
+    } else {
+      validateDateOrTimestampField(notification, 'due_at', errors, context);
+    }
+    validateDateOrTimestampField(notification, 'created_at', errors, context);
     optionalReference(notification, 'user_id', userIds, errors, context);
     optionalReference(notification, 'task_id', taskIds, errors, context);
     optionalReference(notification, 'bundle_id', bundleIds, errors, context);
