@@ -1436,6 +1436,57 @@ body[data-view="create"] .editor-view {
   white-space: nowrap;
 }
 
+.ops-quick-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ops-quick-btn {
+  border: 1px solid var(--line-strong);
+  background: var(--control);
+  color: var(--text);
+  min-height: 32px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ops-quick-btn:hover {
+  background: var(--control-hover);
+}
+
+.quick-form-panel {
+  width: min(440px, 92vw);
+}
+
+.quick-form-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.quick-form-label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.quick-form-label input,
+.quick-form-select {
+  border: 1px solid var(--line-strong);
+  background: var(--control);
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.quick-form-select {
+  width: 100%;
+  appearance: auto;
+}
+
 body.dark .task-panel {
   background: var(--surface);
 }
