@@ -226,6 +226,69 @@ def test_full_app_brokers_work_api_to_private_work_engine(monkeypatch):
     }
 
 
+def test_full_app_brokers_nested_work_api_mutation_to_private_work_engine(monkeypatch):
+    captured: dict = {}
+
+    class FakeLambda:
+        def invoke(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "Payload": io.BytesIO(
+                    json.dumps(
+                        {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({"id": "task-1", "status": "waiting"}),
+                        }
+                    ).encode("utf-8")
+                )
+            }
+
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_USER_ID", "ops-manager")
+    monkeypatch.setattr(full_app_handler, "_work_engine_client", FakeLambda())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    body = {
+        "status": "waiting",
+        "waitingFor": "guest bio",
+        "followUpAt": "2028-10-06",
+    }
+    response = full_app_handler.handler(
+        _event(
+            "/work/api/tasks/task-1",
+            "PUT",
+            headers={
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Basic should-not-forward",
+            },
+            body=json.dumps(body),
+        ),
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert _json_body(response) == {"id": "task-1", "status": "waiting"}
+
+    invoke_event = json.loads(captured["Payload"].decode("utf-8"))
+    assert invoke_event == {
+        "httpMethod": "PUT",
+        "path": "/api/tasks/task-1",
+        "headers": {
+            "x-portal-auth": "true",
+            "x-portal-secret": "broker-secret",
+            "x-user-id": "ops-manager",
+            "content-type": "application/json",
+            "accept": "application/json",
+        },
+        "body": json.dumps(body),
+        "isBase64Encoded": False,
+        "queryStringParameters": None,
+    }
+
+
 def test_full_app_work_api_requires_portal_auth_before_broker(monkeypatch):
     monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
     monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")

@@ -52,6 +52,7 @@ let systemFilter = {{ value: "" }};
 let tagFilter = {{ value: "" }};
 const warnedOutsideContent = new Set();
 const pushed = [];
+const actionCalls = [];
 const window = {{ location: {{ pathname: "/" }} }};
 const history = {{
   pushState(state, _title, url) {{
@@ -60,6 +61,48 @@ const history = {{
   }}
 }};
 function resolveImageSrc(src) {{ return src; }}
+function openDocument(path) {{ actionCalls.push({{ type: "doc", path }}); }}
+function openTaskPanel(taskId) {{ actionCalls.push({{ type: "task", taskId }}); }}
+function openBundlePanel(bundleId) {{ actionCalls.push({{ type: "bundle", bundleId }}); }}
+function makeElement(tag) {{
+  const element = {{
+    tagName: tag.toUpperCase(),
+    type: "",
+    className: "",
+    textContent: "",
+    disabled: false,
+    children: [],
+    listeners: {{}},
+    style: {{}},
+    classList: {{
+      values: [],
+      add(...names) {{
+        this.values.push(...names);
+      }},
+    }},
+    append(...items) {{
+      this.children.push(...items);
+    }},
+    addEventListener(type, handler) {{
+      this.listeners[type] = handler;
+    }},
+    setAttribute(name, value) {{
+      this[name] = String(value);
+    }},
+    click() {{
+      if (this.listeners.click) return this.listeners.click({{ type: "click" }});
+    }},
+  }};
+  return element;
+}}
+const document = {{
+  createElement(tag) {{
+    return makeElement(tag);
+  }},
+  createTextNode(text) {{
+    return {{ nodeType: 3, textContent: String(text) }};
+  }},
+}};
 {functions}
 void (async () => {{
 {assertions}
@@ -316,9 +359,11 @@ assert.equal(model.templates[1].atRisk, true);
 const lanes = Object.fromEntries(model.lanes.map((lane) => [lane.id, lane]));
 assert.deepEqual(model.lanes.map((lane) => lane.id), ["today", "overdue", "waiting", "bundles"]);
 assert.deepEqual(lanes.today.items.map((item) => item.title), ["Publish newsletter"]);
+assert.deepEqual(lanes.today.items.map((item) => item.taskId), ["task-today"]);
 assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Upload podcast recording"]);
 assert.equal(lanes.waiting.items[0].summary, "Waiting for guest; follow up Today");
 assert.equal(lanes.bundles.items[0].title, "Podcast episode: streaming systems");
+assert.equal(lanes.bundles.items[0].bundleId, "bundle-podcast");
 assert.equal(lanes.bundles.items[0].progress.done, 1);
 assert.equal(lanes.bundles.items[0].progress.total, 3);
 assert.equal(lanes.bundles.items[0].progress.overdue, 1);
@@ -370,6 +415,39 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "basename",
             "cleanPath",
         ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_operations_lane_items_open_task_and_bundle_panels():
+    result = _run_app_js_functions(
+        """
+const taskButton = renderOperationsLaneItem({
+  title: "Send follow-up",
+  summary: "Waiting for guest",
+  meta: "waiting",
+  taskId: "task-1",
+  risk: "medium",
+});
+taskButton.click();
+assert.deepEqual(actionCalls.at(-1), { type: "task", taskId: "task-1" });
+assert.equal(taskButton.children[0].textContent, "Send follow-up");
+assert.equal(taskButton.children[1].textContent, "Waiting for guest");
+
+const bundleButton = renderOperationsLaneItem({
+  title: "Podcast episode",
+  summary: "Post-production",
+  meta: "2/5 tasks",
+  bundleId: "bundle-1",
+  risk: "high",
+  progress: { label: "2/5 tasks", percent: 40 },
+});
+bundleButton.click();
+assert.deepEqual(actionCalls.at(-1), { type: "bundle", bundleId: "bundle-1" });
+assert.equal(bundleButton.children[2].className, "ops-progress");
+""",
+        ["renderOperationsLaneItem"],
     )
 
     assert result["ok"] is True

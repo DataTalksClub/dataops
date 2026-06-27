@@ -44,6 +44,12 @@ def _run_app_js_functions(assertions: str, function_names: list[str]) -> dict:
     script = f"""
 const assert = require("node:assert/strict");
 let operationsWorkSnapshot = {{ loaded: false, todayTasks: [], overdueTasks: [], waitingTasks: [], bundles: [], bundleTasks: {{}} }};
+let activeTaskPanelId = null;
+let activeTaskPanelTask = null;
+let requestPayload = {{}};
+let promptValue = "";
+let renderTaskPanelCalls = 0;
+const callLog = [];
 
 function tasksFromWorkPayload(payload) {{
   if (Array.isArray(payload)) return payload;
@@ -53,10 +59,79 @@ function tasksFromWorkPayload(payload) {{
   return [];
 }}
 
+function workApiUrl(path, params = {{}}) {{
+  return {{ path, params }};
+}}
+
+async function request(url, options = {{}}) {{
+  callLog.push({{ type: "request", url, options }});
+  return requestPayload;
+}}
+
+async function refreshOperationsWorkSnapshot(options = {{}}) {{
+  callLog.push({{ type: "refreshSnapshot", options }});
+}}
+
+async function refreshTaskPanel(taskId) {{
+  callLog.push({{ type: "refreshTaskPanel", taskId }});
+}}
+
+function reportError(message) {{
+  callLog.push({{ type: "error", message }});
+}}
+
+function showUndoToast(message) {{
+  callLog.push({{ type: "toast", message }});
+}}
+
+function renderTaskPanel() {{
+  renderTaskPanelCalls += 1;
+}}
+
+const window = {{
+  prompt() {{
+    return promptValue;
+  }},
+}};
+
 // Minimal DOM stub for functions that create elements.
+function makeElement(tag) {{
+  const element = {{
+    tagName: tag.toUpperCase(),
+    textContent: "",
+    className: "",
+    children: [],
+    listeners: {{}},
+    style: {{}},
+    disabled: false,
+    title: "",
+    value: "",
+    files: null,
+    classList: {{
+      values: [],
+      add(...names) {{
+        this.values.push(...names);
+      }},
+    }},
+    append(...items) {{
+      this.children.push(...items);
+    }},
+    replaceChildren(...items) {{
+      this.children = [...items];
+    }},
+    addEventListener(type, handler) {{
+      this.listeners[type] = handler;
+    }},
+    setAttribute(name, value) {{
+      this[name] = String(value);
+    }},
+  }};
+  return element;
+}}
+
 const document = {{
   createElement(tag) {{
-    return {{ tagName: tag.toUpperCase(), textContent: "", append() {{}}, addEventListener() {{}}, style: {{}} }};
+    return makeElement(tag);
   }},
   createTextNode(text) {{
     return {{ nodeType: 3, textContent: String(text) }};
@@ -198,5 +273,131 @@ assert.equal(sorted[1].description, "Active task");
 assert.equal(sorted[2].description, "Done task");
 """,
         ["sortBundleChecklistTasks", "compareIsoDate", "taskDate"],
+    )
+    assert result["ok"] is True
+
+
+def test_task_action_helpers_call_work_api_and_refresh_panel():
+    result = _run_app_js_functions(
+        """
+activeTaskPanelTask = { id: "task-1", comment: "existing note" };
+
+await updateTaskStatus("task-1", "done");
+assert.equal(callLog[0].type, "request");
+assert.deepEqual(callLog[0].url, { path: "/api/tasks/task-1", params: {} });
+assert.equal(callLog[0].options.method, "PUT");
+assert.deepEqual(JSON.parse(callLog[0].options.body), { status: "done" });
+assert.equal(callLog[1].type, "toast");
+assert.equal(callLog[2].type, "refreshSnapshot");
+assert.deepEqual(callLog[2].options, { rerender: true });
+assert.deepEqual(callLog[3], { type: "refreshTaskPanel", taskId: "task-1" });
+
+callLog.length = 0;
+await saveTaskLink("task-1", "https://example.com/proof");
+assert.deepEqual(callLog[0].url, { path: "/api/tasks/task-1", params: {} });
+assert.deepEqual(JSON.parse(callLog[0].options.body), { link: "https://example.com/proof" });
+assert.equal(activeTaskPanelTask.link, "https://example.com/proof");
+assert.equal(callLog.at(-1).type, "refreshSnapshot");
+""",
+        ["updateTaskStatus", "saveTaskLink"],
+    )
+    assert result["ok"] is True
+
+
+def test_waiting_and_follow_up_helpers_call_work_api_with_history():
+    result = _run_app_js_functions(
+        """
+activeTaskPanelTask = { id: "task-1", comment: "existing note" };
+promptValue = "guest bio";
+
+await markTaskWaiting("task-1");
+assert.deepEqual(callLog[0].url, { path: "/api/tasks/task-1", params: {} });
+const waitingPayload = JSON.parse(callLog[0].options.body);
+assert.equal(waitingPayload.status, "waiting");
+assert.equal(waitingPayload.waitingFor, "guest bio");
+assert.match(waitingPayload.followUpAt, /^\\d{4}-\\d{2}-\\d{2}$/);
+assert.match(waitingPayload.comment, /Marked waiting for guest bio; follow up/);
+assert.equal(callLog[1].type, "refreshSnapshot");
+assert.equal(callLog[2].type, "refreshTaskPanel");
+
+callLog.length = 0;
+activeTaskPanelTask.comment = "existing note";
+await recordTaskResponseReceived("task-1");
+const responsePayload = JSON.parse(callLog[0].options.body);
+assert.equal(responsePayload.status, "todo");
+assert.match(responsePayload.comment, /Response received/);
+
+callLog.length = 0;
+await recordTaskFollowUpSent("task-1", "2026-07-01");
+const followUpPayload = JSON.parse(callLog[0].options.body);
+assert.equal(followUpPayload.status, "waiting");
+assert.equal(followUpPayload.followUpAt, "2026-07-01");
+assert.match(followUpPayload.comment, /Follow-up sent; next follow-up 2026-07-01/);
+""",
+        [
+            "markTaskWaiting",
+            "recordTaskResponseReceived",
+            "recordTaskFollowUpSent",
+            "appendTaskEventComment",
+            "defaultNextFollowUpDate",
+            "todayIsoDate",
+            "addDaysIso",
+            "toIsoDate",
+            "parseIsoDateValue",
+        ],
+    )
+    assert result["ok"] is True
+
+
+def test_waiting_helpers_reject_missing_required_input_without_request():
+    result = _run_app_js_functions(
+        """
+activeTaskPanelTask = { id: "task-1", comment: "" };
+promptValue = " ";
+
+await markTaskWaiting("task-1");
+assert.equal(callLog.length, 1);
+assert.equal(callLog[0].type, "error");
+assert.match(callLog[0].message, /Waiting tasks need/);
+
+callLog.length = 0;
+await recordTaskFollowUpSent("task-1", "");
+assert.equal(callLog.length, 1);
+assert.equal(callLog[0].type, "error");
+assert.match(callLog[0].message, /Choose the next follow-up date/);
+""",
+        [
+            "markTaskWaiting",
+            "recordTaskFollowUpSent",
+            "appendTaskEventComment",
+            "defaultNextFollowUpDate",
+            "todayIsoDate",
+            "addDaysIso",
+            "toIsoDate",
+            "parseIsoDateValue",
+        ],
+    )
+    assert result["ok"] is True
+
+
+def test_required_file_state_rerenders_task_panel_when_evidence_changes():
+    result = _run_app_js_functions(
+        """
+activeTaskPanelId = "task-1";
+activeTaskPanelTask = { id: "task-1", requiresFile: true, _hasFiles: false };
+requestPayload = { files: [{ id: "file-1", filename: "proof.pdf" }] };
+const container = makeElement("div");
+
+await loadTaskFiles("task-1", container);
+assert.equal(activeTaskPanelTask._hasFiles, true);
+assert.equal(renderTaskPanelCalls, 1);
+assert.equal(container.children.length, 0);
+
+requestPayload = { files: [] };
+await loadTaskFiles("task-1", makeElement("div"));
+assert.equal(activeTaskPanelTask._hasFiles, false);
+assert.equal(renderTaskPanelCalls, 2);
+""",
+        ["loadTaskFiles"],
     )
     assert result["ok"] is True
