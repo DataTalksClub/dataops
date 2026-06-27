@@ -115,8 +115,11 @@ Resources:
                   - iam:CreateRole
                   - iam:DeleteRole
                   - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
                   - iam:GetRole
                   - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
                   - iam:PassRole
                   - iam:PutRolePolicy
                   - iam:TagRole
