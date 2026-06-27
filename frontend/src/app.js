@@ -1460,23 +1460,51 @@ function renderBundlePanel() {
     bundlePanelBody.append(checklistSection);
   }
 
-  // References
-  if (Array.isArray(bundle.references) && bundle.references.length > 0) {
-    const refsSection = document.createElement("div");
-    refsSection.className = "task-detail-meta";
-    for (const ref of bundle.references) {
-      const refUrl = typeof ref === "string" ? ref : ref.url || ref.link || "";
-      const refName = typeof ref === "string" ? ref : ref.name || ref.title || refUrl;
-      if (!refUrl) continue;
-      const link = document.createElement("a");
-      link.href = String(refUrl);
-      link.target = "_blank";
-      link.rel = "noopener";
-      link.textContent = String(refName);
-      refsSection.append(link);
-    }
-    bundlePanelBody.append(refsSection);
+  // References and artifact links (always shown, with add capability)
+  const refsSection = document.createElement("div");
+  refsSection.className = "task-history";
+  const refsLabel = document.createElement("div");
+  refsLabel.className = "task-history-label";
+  refsLabel.textContent = "Links & Artifacts";
+  refsSection.append(refsLabel);
+  const refsList = document.createElement("div");
+  refsList.className = "task-history-list";
+  const existingRefs = Array.isArray(bundle.references) ? bundle.references : [];
+  for (const ref of existingRefs) {
+    const refUrl = typeof ref === "string" ? ref : ref.url || ref.link || "";
+    const refName = typeof ref === "string" ? ref : ref.name || ref.title || refUrl;
+    if (!refUrl) continue;
+    const item = document.createElement("div");
+    item.className = "task-history-event";
+    const link = document.createElement("a");
+    link.href = String(refUrl);
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = String(refName);
+    item.append(link);
+    refsList.append(item);
   }
+  refsSection.append(refsList);
+
+  // Add artifact/reference link form
+  const addRow = document.createElement("div");
+  addRow.className = "task-follow-up-row";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.placeholder = "Label (e.g. Podcast doc)";
+  nameInput.className = "bundle-ref-name";
+  const urlInput = document.createElement("input");
+  urlInput.type = "url";
+  urlInput.placeholder = "https://...";
+  urlInput.className = "bundle-ref-url";
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "task-action-btn";
+  addBtn.textContent = "Add";
+  addBtn.addEventListener("click", () => addBundleReference(bundle.id, existingRefs, nameInput.value.trim(), urlInput.value.trim()));
+  addRow.append(nameInput, urlInput, addBtn);
+  refsSection.append(addRow);
+  bundlePanelBody.append(refsSection);
 }
 
 function sortBundleChecklistTasks(tasks, today) {
@@ -1534,6 +1562,25 @@ function renderBundleChecklistItem(task, bundleId, today) {
   }
   row.append(checkbox, label, dateMeta);
   return row;
+}
+
+async function addBundleReference(bundleId, currentRefs, name, url) {
+  if (!url) { reportError("URL is required."); return; }
+  const ref = { name: name || url, url };
+  const updatedRefs = [...(currentRefs || []), ref];
+  try {
+    const payload = await request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ references: updatedRefs }),
+    });
+    const updatedBundle = payload && (payload.bundle || payload);
+    if (updatedBundle && activeBundlePanelId === bundleId) {
+      activeBundlePanelData = { ...activeBundlePanelData, bundle: updatedBundle };
+      renderBundlePanel();
+    }
+  } catch (err) {
+    reportError(`Could not add link: ${err.message || "request failed"}`);
+  }
 }
 
 async function updateBundleStage(bundleId, stage) {
