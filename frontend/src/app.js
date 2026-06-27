@@ -100,6 +100,15 @@ const newDocTitle = document.querySelector("#new-doc-title");
 const newDocType = document.querySelector("#new-doc-type");
 const newDocSummary = document.querySelector("#new-doc-summary");
 
+const taskPanel = document.querySelector("#task-panel");
+const taskPanelTitle = document.querySelector("#task-panel-title");
+const taskPanelBody = document.querySelector("#task-panel-body");
+const taskPanelClose = document.querySelector("#task-panel-close");
+taskPanelClose.addEventListener("click", closeTaskPanel);
+
+let activeTaskPanelId = null;
+let activeTaskPanelTask = null;
+
 let allDocuments = [];
 let visibleDocuments = [];
 let selectedFolder = "";
@@ -218,6 +227,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && helpModal && !helpModal.hidden) {
     event.preventDefault();
     helpModal.hidden = true;
+  }
+  if (event.key === "Escape" && taskPanel && !taskPanel.hidden) {
+    event.preventDefault();
+    closeTaskPanel();
   }
 });
 
@@ -818,6 +831,347 @@ function workApiUrl(path, params = {}) {
   return url;
 }
 
+// ---------- Task action panel ----------
+
+function findWorkTaskInSnapshot(taskId) {
+  const snap = operationsWorkSnapshot;
+  const pools = [
+    ...tasksFromWorkPayload(snap.todayTasks || []),
+    ...tasksFromWorkPayload(snap.overdueTasks || []),
+    ...tasksFromWorkPayload(snap.waitingTasks || []),
+  ];
+  for (const task of pools) {
+    if (task && task.id === taskId) return task;
+  }
+  for (const tasks of Object.values(snap.bundleTasks || {})) {
+    for (const task of tasksFromWorkPayload(tasks)) {
+      if (task && task.id === taskId) return task;
+    }
+  }
+  return null;
+}
+
+async function openTaskPanel(taskId) {
+  activeTaskPanelId = taskId;
+  activeTaskPanelTask = findWorkTaskInSnapshot(taskId);
+  taskPanelTitle.textContent = "Loading task...";
+  taskPanelBody.replaceChildren();
+  taskPanel.hidden = false;
+  body.classList.add("task-panel-open");
+  renderTaskPanel();
+  try {
+    const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
+    const fetched = payload && typeof payload === "object" && payload.id ? payload : null;
+    if (fetched && activeTaskPanelId === taskId) {
+      activeTaskPanelTask = fetched;
+      renderTaskPanel();
+    }
+  } catch (err) {
+    if (activeTaskPanelId === taskId) {
+      const notice = document.createElement("p");
+      notice.className = "ops-empty";
+      notice.textContent = `Could not load task detail: ${err.message || "request failed"}`;
+      taskPanelBody.replaceChildren(notice);
+    }
+  }
+}
+
+function closeTaskPanel() {
+  activeTaskPanelId = null;
+  activeTaskPanelTask = null;
+  taskPanel.hidden = true;
+  body.classList.remove("task-panel-open");
+}
+
+function renderTaskPanel() {
+  const task = activeTaskPanelTask;
+  taskPanelTitle.textContent = task ? workTaskTitle(task) : "Task";
+  taskPanelBody.replaceChildren();
+  if (!task) return;
+
+  const status = String(task.status || "todo").toLowerCase();
+  const today = todayIsoDate();
+
+  const meta = document.createElement("div");
+  meta.className = "task-detail-meta";
+  const badge = document.createElement("span");
+  badge.className = `task-status-badge ${status}`;
+  badge.textContent = status;
+  meta.append(badge);
+  if (task.date) {
+    const dateRow = document.createElement("div");
+    dateRow.append(document.createTextNode("Due "), formatMetaDate(task.date, today));
+    meta.append(dateRow);
+  }
+  if (task.bundleId) {
+    const bundleRow = document.createElement("div");
+    bundleRow.append(document.createTextNode("Bundle "));
+    const link = document.createElement("strong");
+    link.textContent = String(task.bundleId);
+    bundleRow.append(link);
+    meta.append(bundleRow);
+  }
+  if (task.assigneeId) {
+    const assigneeRow = document.createElement("div");
+    assigneeRow.append(document.createTextNode("Assignee "), formatMetaText(task.assigneeId));
+    meta.append(assigneeRow);
+  }
+  taskPanelBody.append(meta);
+
+  // Required link field
+  if (task.requiredLinkName) {
+    const wrap = document.createElement("div");
+    wrap.className = "task-required-link";
+    const label = document.createElement("label");
+    label.textContent = `${task.requiredLinkName}`;
+    const input = document.createElement("input");
+    input.type = "url";
+    input.value = task.link || "";
+    input.placeholder = "https://...";
+    input.addEventListener("change", () => saveTaskLink(task.id, input.value.trim()));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); input.blur(); }
+    });
+    label.append(input);
+    wrap.append(label);
+    taskPanelBody.append(wrap);
+  }
+
+  // Waiting/follow-up info
+  if (status === "waiting") {
+    const waiting = document.createElement("div");
+    waiting.className = "task-detail-meta";
+    if (task.waitingFor) {
+      const row = document.createElement("div");
+      row.append(document.createTextNode("Waiting for "), formatMetaText(task.waitingFor));
+      waiting.append(row);
+    }
+    if (task.followUpAt) {
+      const row = document.createElement("div");
+      row.append(document.createTextNode("Follow up "), formatMetaDate(task.followUpAt, today));
+      waiting.append(row);
+    }
+    taskPanelBody.append(waiting);
+  }
+
+  // Actions
+  const actions = document.createElement("div");
+  actions.className = "task-action-group";
+  if (status === "done") {
+    const reopen = createTaskActionButton("Reopen", () => updateTaskStatus(task.id, "todo"));
+    reopen.classList.add("is-primary");
+    actions.append(reopen);
+  } else if (status === "waiting") {
+    const response = createTaskActionButton("Response received", () => recordTaskResponseReceived(task.id));
+    response.classList.add("is-primary");
+    actions.append(response);
+
+    const followRow = document.createElement("div");
+    followRow.className = "task-follow-up-row";
+    const nextLabel = document.createElement("label");
+    nextLabel.textContent = "Next";
+    const nextInput = document.createElement("input");
+    nextInput.type = "date";
+    nextInput.value = defaultNextFollowUpDate();
+    nextLabel.append(nextInput);
+    followRow.append(nextLabel);
+    const followUp = createTaskActionButton("Follow-up sent", () => recordTaskFollowUpSent(task.id, nextInput.value));
+    followRow.append(followUp);
+    actions.append(followRow);
+  } else {
+    const canComplete = !task.requiredLinkName || task.link;
+    const complete = createTaskActionButton("Mark done", () => updateTaskStatus(task.id, "done"));
+    complete.classList.add("is-primary");
+    if (!canComplete) {
+      complete.disabled = true;
+      complete.title = `Fill in ${task.requiredLinkName} first`;
+    }
+    actions.append(complete);
+
+    const markWaiting = createTaskActionButton("Mark waiting", () => markTaskWaiting(task.id));
+    actions.append(markWaiting);
+  }
+  taskPanelBody.append(actions);
+
+  // History / comment
+  if (task.comment) {
+    const history = document.createElement("div");
+    history.className = "task-history";
+    const historyLabel = document.createElement("div");
+    historyLabel.className = "task-history-label";
+    historyLabel.textContent = "History";
+    history.append(historyLabel);
+    const list = document.createElement("div");
+    list.className = "task-history-list";
+    for (const line of String(task.comment).split("\n").filter(Boolean)) {
+      const event = document.createElement("div");
+      event.className = "task-history-event";
+      event.append(formatHistoryLine(line));
+      list.append(event);
+    }
+    history.append(list);
+    taskPanelBody.append(history);
+  }
+
+  // Instructions link
+  if (task.instructionsUrl) {
+    const instructions = document.createElement("div");
+    instructions.className = "task-detail-meta";
+    const link = document.createElement("a");
+    link.href = String(task.instructionsUrl);
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Open instructions";
+    instructions.append(link);
+    taskPanelBody.append(instructions);
+  }
+}
+
+function formatMetaDate(value, today) {
+  const strong = document.createElement("strong");
+  strong.textContent = formatTaskDateMeta(value, today) || String(value || "").slice(0, 10);
+  return strong;
+}
+
+function formatMetaText(value) {
+  const strong = document.createElement("strong");
+  strong.textContent = String(value || "");
+  return strong;
+}
+
+function formatHistoryLine(line) {
+  // Lines are "[timestamp] event text"; render the stamp as code, rest as text.
+  const match = String(line).match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (!match) return [document.createTextNode(line)];
+  const stamp = document.createElement("code");
+  stamp.textContent = match[1].slice(0, 19).replace("T", " ");
+  return [stamp, document.createTextNode(` ${match[2]}`)];
+}
+
+function createTaskActionButton(label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "task-action-btn";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function defaultNextFollowUpDate() {
+  return addDaysIso(todayIsoDate(), 3);
+}
+
+async function updateTaskStatus(taskId, status) {
+  try {
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+    showUndoToast(`Task marked ${status}.`, () => updateTaskStatus(taskId, status === "done" ? "todo" : "done"));
+    await refreshOperationsWorkSnapshot({ rerender: true });
+    await refreshTaskPanel(taskId);
+  } catch (err) {
+    reportError(`Could not update task: ${err.message || "request failed"}`);
+  }
+}
+
+async function refreshTaskPanel(taskId) {
+  if (activeTaskPanelId !== taskId) return;
+  try {
+    const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
+    if (payload && payload.id && activeTaskPanelId === taskId) {
+      activeTaskPanelTask = payload;
+      renderTaskPanel();
+    }
+  } catch {
+    // keep the panel as-is; snapshot already refreshed
+  }
+}
+
+async function saveTaskLink(taskId, linkValue) {
+  try {
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ link: linkValue }),
+    });
+    if (activeTaskPanelTask) activeTaskPanelTask.link = linkValue;
+    await refreshOperationsWorkSnapshot({ rerender: true });
+  } catch (err) {
+    reportError(`Could not save link: ${err.message || "request failed"}`);
+  }
+}
+
+async function markTaskWaiting(taskId) {
+  const today = todayIsoDate();
+  const followUp = defaultNextFollowUpDate();
+  const existing = activeTaskPanelTask?.waitingFor || "";
+  const waitingFor = existing || window.prompt("Who/what are you waiting for?", "") || "";
+  if (!waitingFor.trim()) {
+    reportError("Waiting tasks need a 'waiting for' description.");
+    return;
+  }
+  try {
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
+      method: "PUT",
+      body: JSON.stringify({
+        status: "waiting",
+        waitingFor: waitingFor.trim(),
+        followUpAt: followUp,
+        comment: appendTaskEventComment(activeTaskPanelTask?.comment || "", `Marked waiting for ${waitingFor.trim()}; follow up ${followUp}`),
+      }),
+    });
+    await refreshOperationsWorkSnapshot({ rerender: true });
+    await refreshTaskPanel(taskId);
+  } catch (err) {
+    reportError(`Could not mark task waiting: ${err.message || "request failed"}`);
+  }
+}
+
+async function recordTaskResponseReceived(taskId) {
+  const existingNote = activeTaskPanelTask?.comment || "";
+  try {
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
+      method: "PUT",
+      body: JSON.stringify({
+        status: "todo",
+        comment: appendTaskEventComment(existingNote, "Response received"),
+      }),
+    });
+    await refreshOperationsWorkSnapshot({ rerender: true });
+    await refreshTaskPanel(taskId);
+  } catch (err) {
+    reportError(`Could not record response: ${err.message || "request failed"}`);
+  }
+}
+
+async function recordTaskFollowUpSent(taskId, nextDate) {
+  if (!nextDate) {
+    reportError("Choose the next follow-up date.");
+    return;
+  }
+  const existingNote = activeTaskPanelTask?.comment || "";
+  try {
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
+      method: "PUT",
+      body: JSON.stringify({
+        status: "waiting",
+        followUpAt: nextDate,
+        comment: appendTaskEventComment(existingNote, `Follow-up sent; next follow-up ${nextDate}`),
+      }),
+    });
+    await refreshOperationsWorkSnapshot({ rerender: true });
+    await refreshTaskPanel(taskId);
+  } catch (err) {
+    reportError(`Could not record follow-up: ${err.message || "request failed"}`);
+  }
+}
+
+function appendTaskEventComment(existing, eventText) {
+  const stamp = new Date().toISOString();
+  const line = `[${stamp}] ${eventText}`;
+  return existing ? `${existing}\n${line}` : line;
+}
+
 function settledPayload(result) {
   return result && result.status === "fulfilled" ? result.value : {};
 }
@@ -1224,6 +1578,8 @@ function renderOperationsLaneItem(item) {
   if (item.risk) button.classList.add(`ops-risk-${item.risk}`);
   if (item.path) {
     button.addEventListener("click", () => openDocument(item.path));
+  } else if (item.taskId) {
+    button.addEventListener("click", () => openTaskPanel(item.taskId));
   } else {
     button.disabled = true;
   }
@@ -1553,6 +1909,7 @@ function captureScrollPosition() {
 
 async function openDocument(path, options = {}) {
   if (!(await canLeaveCurrentDocument())) return;
+  closeTaskPanel();
   captureScrollPosition();
 
   documentTitle.disabled = true;
@@ -1852,6 +2209,7 @@ async function showOperationsHome() {
 
 async function showCreate() {
   if (!(await canLeaveCurrentDocument())) return;
+  closeTaskPanel();
   if (!newDocPath.value.trim()) {
     const base = selectedFolder ? `content/${selectedFolder}` : "content";
     newDocPath.value = `${base}/new-document.md`;
