@@ -82,7 +82,8 @@ so the browser only ever talks to port 5173.
 ## Build the search index manually
 
 ```bash
-uv run --extra search python -m lambda_functions.build_search_index
+cd lambda-functions
+uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content
 ```
 
 ## Run a single search handler smoke test
@@ -109,20 +110,20 @@ The CLI shims in `scripts/sop_parse.py`, `scripts/sop_lint.py`, and
 
 ```bash
 aws cloudformation deploy \
-  --template-file template.github-actions.yaml \
-  --stack-name dtc-operations-github-actions \
+  --template-file template.github-actions-dataops.yaml \
+  --stack-name dataops-v1-github-actions \
   --capabilities CAPABILITY_NAMED_IAM
 
 aws cloudformation deploy \
   --template-file template.runtime-secrets.yaml \
-  --stack-name dtc-operations-runtime-secrets \
+  --stack-name dataops-v1-runtime-secrets \
   --parameter-overrides \
     GitHubToken=... \
     BasicAuthPassword=... \
   --capabilities CAPABILITY_IAM
 
 sam build --template-file template.api.yaml
-sam deploy --template-file .aws-sam/build/template.yaml --stack-name dtc-operations-api
+sam deploy --template-file .aws-sam/build/template.yaml --stack-name dataops-v1-api
 
 sam build --config-env full-sandbox
 sam deploy --config-env full-sandbox
@@ -146,8 +147,8 @@ Required repository secrets for the API workflow:
 The full app GitHub token and basic-auth password are stored in AWS Secrets
 Manager, managed by `template.runtime-secrets.yaml`:
 
-- `dtc-operations/full-app/github-token`
-- `dtc-operations/full-app/basic-auth-password`
+- `dataops-v1/full-app/github-token`
+- `dataops-v1/full-app/basic-auth-password`
 
 The full app Lambda reads these secrets at runtime. GitHub Actions does not
 store or pass either runtime secret.
@@ -155,12 +156,12 @@ store or pass either runtime secret.
 Optional repository variables:
 
 - `AWS_REGION` (default `eu-central-1`, used by the API workflow)
-- `API_STACK_NAME` (default `dtc-operations-api`)
+- `API_STACK_NAME` (default `dataops-v1-api`)
 - `DOCS_GITHUB_OWNER` (default `DataTalksClub`)
-- `DOCS_GITHUB_REPO` (default `dtc-operations`)
+- `DOCS_GITHUB_REPO` (default `dataops`)
 - `DOCS_GITHUB_BRANCH` (default `main`)
 - `ALLOWED_EMAIL_DOMAIN` (default `datatalks.club`)
 - `FULL_APP_BASIC_AUTH_USERNAME` (default `admin`)
 
 The full protected docs app workflow deploys the `full-sandbox` SAM config,
-which targets the `dtc-operations-full-sandbox` stack in `eu-west-1`.
+which targets the `dataops-v1` stack in `eu-west-1`.
