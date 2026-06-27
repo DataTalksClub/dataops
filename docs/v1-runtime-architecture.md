@@ -42,7 +42,8 @@ The runtime decision is:
 
 ## Current State
 
-The deployed V1 app currently doesn't use DynamoDB.
+The deployed V1 app is gaining DynamoDB execution-state tables before the
+work-engine Lambda is connected.
 
 The deployed stack is still the protected Python docs/full-app Lambda:
 
@@ -50,8 +51,10 @@ The deployed stack is still the protected Python docs/full-app Lambda:
   `lambda-functions/template.full.yaml`.
 - `lambda-functions/template.full.yaml` defines `DocsFullAppFunction` and
   Secrets Manager access.
-- No DataOps DynamoDB tables are currently declared in the deployed SAM
-  template.
+- `lambda-functions/template.full.yaml` declares the DataOps execution tables.
+  It covers task/bundle/template/user state, file metadata, notifications, and
+  sessions.
+- Durable execution tables have point-in-time recovery and retain policies.
 
 The imported `work-engine/` already contains a DynamoDB-oriented execution
 model, but it isn't deployed as part of V1 yet.
