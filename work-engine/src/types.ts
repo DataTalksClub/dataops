@@ -135,9 +135,12 @@ export interface Session {
 export interface Notification {
   id: string;
   message: string;
+  type?: string;
+  taskId?: string;
   bundleId?: string;
   templateId?: string;
   userId?: string;
+  dueAt?: string;
   dismissed: boolean;
   createdAt: string;
 }

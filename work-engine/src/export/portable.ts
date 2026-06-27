@@ -243,6 +243,7 @@ function mapFile(item: Record<string, unknown>): JsonRecord {
 function mapNotification(item: Record<string, unknown>): JsonRecord {
   return stripEmpty({
     notification_id: optionalString(item.id),
+    notification_type: optionalString(item.type),
     message: optionalString(item.message),
     user_id: optionalString(item.userId),
     task_id: optionalString(item.taskId),

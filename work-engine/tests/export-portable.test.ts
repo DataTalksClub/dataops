@@ -75,11 +75,13 @@ describe('portable execution data export', () => {
       storagePath: `uploads/${task.id}/proof.txt`,
     });
     await createNotification(client, {
+      type: 'follow-up-due',
       message: 'Follow up with guest',
       userId: user.id,
       taskId: task.id,
       bundleId: bundle.id,
       templateId: template.id,
+      dueAt: '2026-06-21T09:00:00.000Z',
     });
 
     const result = await writePortableExport(client, exportDir, {
@@ -109,6 +111,10 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
+
+    const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');
+    assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
+    assert.match(notificationsJsonl, /"due_at":"2026-06-21T09:00:00.000Z"/);
 
     const validation = await validatePortableExport(exportDir);
     assert.deepStrictEqual(validation.errors, []);

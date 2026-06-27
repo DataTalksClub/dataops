@@ -7,7 +7,8 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_NOTIFICATIONS } from './setup';
-import type { Notification } from '../types';
+import { listTasksByStatus } from './tasks';
+import type { Notification, Task } from '../types';
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
@@ -42,6 +43,58 @@ async function createNotification(client: DynamoDBDocumentClient, data: Record<s
   );
 
   return cleanItem(item) as Notification;
+}
+
+function isDueWaitingTask(task: Task, nowIso: string): boolean {
+  return (
+    task.status === 'waiting' &&
+    typeof task.followUpAt === 'string' &&
+    task.followUpAt.trim().length > 0 &&
+    task.followUpAt <= nowIso
+  );
+}
+
+function followUpMessage(task: Task): string {
+  const waitingFor = task.waitingFor ? ` — waiting for ${task.waitingFor}` : '';
+  return `Follow up: ${task.description}${waitingFor}`;
+}
+
+/**
+ * Create one follow-up notification for each due waiting task and followUpAt value.
+ * Dismissed reminders are still considered generated, so dismissing a reminder does
+ * not recreate it until the task gets a new followUpAt value.
+ */
+async function createDueFollowUpNotifications(
+  client: DynamoDBDocumentClient,
+  options: { now?: string } = {}
+): Promise<Notification[]> {
+  const now = options.now || new Date().toISOString();
+  const waitingTasks = await listTasksByStatus(client, 'waiting');
+  const existing = await listAllNotifications(client);
+  const existingKeys = new Set(
+    existing
+      .filter((notification) => notification.type === 'follow-up-due' && notification.taskId && notification.dueAt)
+      .map((notification) => `${notification.taskId}#${notification.dueAt}`)
+  );
+
+  const created: Notification[] = [];
+  for (const task of waitingTasks) {
+    if (!isDueWaitingTask(task, now)) continue;
+    const key = `${task.id}#${task.followUpAt}`;
+    if (existingKeys.has(key)) continue;
+
+    const notification = await createNotification(client, {
+      type: 'follow-up-due',
+      message: followUpMessage(task),
+      taskId: task.id,
+      bundleId: task.bundleId,
+      dueAt: task.followUpAt,
+    });
+    existingKeys.add(key);
+    created.push(notification);
+  }
+
+  return created;
 }
 
 /**
@@ -175,6 +228,7 @@ async function dismissAllNotifications(client: DynamoDBDocumentClient): Promise<
 
 export {
   createNotification,
+  createDueFollowUpNotifications,
   getNotification,
   dismissNotification,
   listUndismissedNotifications,

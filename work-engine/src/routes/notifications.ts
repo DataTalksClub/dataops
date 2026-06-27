@@ -1,6 +1,7 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
 import {
+  createDueFollowUpNotifications,
   getNotification,
   dismissNotification,
   listUndismissedNotifications,
@@ -26,6 +27,7 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
 
     // Route: GET /api/notifications (with optional ?all=true)
     if ((suffix === '' || suffix === '/') && method === 'GET') {
+      await createDueFollowUpNotifications(client);
       if (queryParams && queryParams['all'] === 'true') {
         const notifications = await listAllNotifications(client, userId);
         return {

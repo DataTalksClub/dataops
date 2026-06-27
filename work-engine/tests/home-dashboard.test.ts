@@ -58,6 +58,12 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('.badge-stage.done'), 'should have done stage style');
     });
 
+    it('index.html contains waiting follow-up badge CSS', async () => {
+      const event = { httpMethod: 'GET', path: '/' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('.badge-waiting'), 'should have waiting follow-up badge style');
+    });
+
     it('index.html contains assigned-toggle CSS', async () => {
       const event = { httpMethod: 'GET', path: '/' };
       const result = await handler(event, {});
@@ -113,6 +119,14 @@ describe('Home dashboard (issue #26)', () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
       assert.ok(result.body.includes('function loadDashboardTasks'), 'should have loadDashboardTasks');
+    });
+
+    it('app.js loads due waiting tasks into the dashboard task table', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes("api.tasks.list({ status: 'waiting' })"), 'should load waiting tasks');
+      assert.ok(result.body.includes('isDueFollowUpTask'), 'should filter due follow-ups');
+      assert.ok(result.body.includes('badge-waiting'), 'should render waiting badge');
     });
 
     it('app.js contains refreshBellBadge function (replaces loadNotifications)', async () => {
@@ -299,6 +313,32 @@ describe('Home dashboard (issue #26)', () => {
       assert.strictEqual(result.statusCode, 200);
       const body = JSON.parse(result.body);
       assert.ok(Array.isArray(body.notifications), 'should return notifications array');
+    });
+
+    it('GET /api/notifications creates due follow-up reminders for waiting tasks', async () => {
+      const createResult = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Follow up with venue from notifications route',
+          date: '2099-04-01',
+          status: 'waiting',
+          waitingFor: 'Venue team',
+          followUpAt: '2001-01-01T09:00:00.000Z',
+        }),
+      }, {});
+      assert.strictEqual(createResult.statusCode, 201);
+      const task = JSON.parse(createResult.body);
+
+      const result = await handler({ httpMethod: 'GET', path: '/api/notifications' }, {});
+      assert.strictEqual(result.statusCode, 200);
+      const body = JSON.parse(result.body);
+      const reminder = body.notifications.find((n: any) => n.taskId === task.id && n.type === 'follow-up-due');
+
+      assert.ok(reminder, 'should include generated follow-up reminder');
+      assert.strictEqual(reminder.dueAt, '2001-01-01T09:00:00.000Z');
+      assert.ok(reminder.message.includes('Follow up with venue from notifications route'));
+      assert.ok(reminder.message.includes('Venue team'));
     });
 
     it('GET /api/notifications?all=true returns 200 with notifications array', async () => {
