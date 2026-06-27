@@ -163,6 +163,13 @@
             <button id="clear-selection-button" class="quiet-button" type="button" hidden>All docs</button>
           </div>
           <div id="document-list" class="document-list" aria-label="Documents"></div>
+          <section id="task-panel" class="task-panel" aria-label="Task actions" hidden>
+            <header class="task-panel-header">
+              <strong id="task-panel-title">Task</strong>
+              <button id="task-panel-close" class="quiet-button" type="button" aria-label="Close task">Close</button>
+            </header>
+            <div id="task-panel-body" class="task-panel-body"></div>
+          </section>
         </section>
 
         <section id="editor-view" class="view editor-view" data-mode="rendered">
