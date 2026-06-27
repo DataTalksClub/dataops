@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from heru import get_engine
-
 from heru_runner import HeruRunner
 
 
@@ -34,6 +32,11 @@ def require_real_engine(engine_name: str) -> None:
         pytest.skip(f"{INTEGRATION_ENV} is unset; real engine tests are opt-in")
     if engine_name not in enabled:
         pytest.skip(f"{engine_name} is not enabled in {INTEGRATION_ENV}={','.join(sorted(enabled))}")
+
+    try:
+        from heru import get_engine
+    except ImportError:
+        pytest.skip("Heru is not installed; real engine tests require an explicit Heru install")
 
     engine = get_engine(engine_name)
     if not engine.is_available():

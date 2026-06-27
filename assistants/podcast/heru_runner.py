@@ -7,11 +7,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from heru import get_engine
-from heru.base import CLIExecutionResult
-
 DEFAULT_ACTIVITY_TIMEOUT = 300
 DEFAULT_ENGINE = "codex"
+
+
+def _get_engine(engine_name: str):
+    try:
+        from heru import get_engine
+    except ImportError as exc:
+        raise RuntimeError(
+            "Heru is required for live podcast assistant processing. "
+            "Install Heru in the assistant environment before running /process or process_request.py."
+        ) from exc
+    return get_engine(engine_name)
 
 
 def _safe_print(message: str) -> None:
@@ -227,7 +235,7 @@ class HeruRunner:
         _safe_print(f"[HeruRunner] Running: {effective_prompt[:80]}")
         _safe_print(f"[HeruRunner] Log: {log_file}")
 
-        engine = get_engine(self.engine_name)
+        engine = _get_engine(self.engine_name)
         processed_chars = 0
         pending_text = ""
 
@@ -255,7 +263,7 @@ class HeruRunner:
                     except Exception as exc:
                         _safe_print(f"[HeruRunner] Failed to send progress: {exc}")
 
-        def handle_update(result: CLIExecutionResult) -> None:
+        def handle_update(result) -> None:
             nonlocal processed_chars, pending_text
             new_text = result.stdout[processed_chars:]
             processed_chars = len(result.stdout)
