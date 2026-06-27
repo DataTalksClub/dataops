@@ -61,6 +61,8 @@ describe('portable execution data export', () => {
       assigneeId: user.id,
       bundleId: bundle.id,
       source: 'template',
+      completedBy: user.id,
+      completedAt: '2026-06-20T12:00:00.000Z',
     });
     await createRecurringConfig(client, {
       description: 'Weekly community backup',
@@ -110,6 +112,8 @@ describe('portable execution data export', () => {
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
+    assert.match(tasksJsonl, /"completed_by"/);
+    assert.match(tasksJsonl, /"completed_at":"2026-06-20T12:00:00.000Z"/);
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
 
     const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');

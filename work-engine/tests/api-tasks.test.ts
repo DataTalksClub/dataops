@@ -461,6 +461,29 @@ describe('API — CRUD for tasks', () => {
       assert.ok(body.updatedAt > created.updatedAt);
     });
 
+    it('records completedAt and completedBy when marking a task done', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Complete with actor', date: '2026-03-10' }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        headers: { 'x-user-id': 'ops-manager' },
+        body: JSON.stringify({ status: 'done' }),
+      }, {});
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.status, 'done');
+      assert.strictEqual(body.completedBy, 'ops-manager');
+      assert.ok(body.completedAt);
+      assert.ok(Date.parse(body.completedAt));
+    });
+
     it('returns 404 for a nonexistent task', async () => {
       const res = await handler({
         httpMethod: 'PUT',

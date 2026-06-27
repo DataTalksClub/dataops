@@ -64,6 +64,13 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('.badge-waiting'), 'should have waiting follow-up badge style');
     });
 
+    it('index.html contains dashboard task action CSS', async () => {
+      const event = { httpMethod: 'GET', path: '/' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('.task-action-group'), 'should have task action group style');
+      assert.ok(result.body.includes('.follow-up-next-date'), 'should have next follow-up date input style');
+    });
+
     it('index.html contains assigned-toggle CSS', async () => {
       const event = { httpMethod: 'GET', path: '/' };
       const result = await handler(event, {});
@@ -127,6 +134,15 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes("api.tasks.list({ status: 'waiting' })"), 'should load waiting tasks');
       assert.ok(result.body.includes('isDueFollowUpTask'), 'should filter due follow-ups');
       assert.ok(result.body.includes('badge-waiting'), 'should render waiting badge');
+    });
+
+    it('app.js renders follow-up action controls on waiting dashboard tasks', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('renderDashboardTaskActions'), 'should render dashboard task actions');
+      assert.ok(result.body.includes('response-received'), 'should support marking response received');
+      assert.ok(result.body.includes('follow-up-sent'), 'should support recording sent follow-up');
+      assert.ok(result.body.includes('follow-up-next-date'), 'should include next follow-up date input');
     });
 
     it('app.js contains refreshBellBadge function (replaces loadNotifications)', async () => {

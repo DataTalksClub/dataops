@@ -11,6 +11,8 @@ export interface Task {
   comment?: string | null;
   waitingFor?: string;
   followUpAt?: string;
+  completedBy?: string;
+  completedAt?: string;
   instructionsUrl?: string;
   link?: string;
   requiredLinkName?: string;
