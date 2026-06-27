@@ -52,8 +52,8 @@ The deployed stack is still the protected Python docs/full-app Lambda:
 - `lambda-functions/template.full.yaml` defines `DocsFullAppFunction` and
   Secrets Manager access.
 - `lambda-functions/template.full.yaml` declares the DataOps execution tables.
-  It covers task/bundle/template/user state, file metadata, notifications, and
-  sessions.
+  It covers task/bundle/template/user state, file metadata, artifact metadata,
+  notifications, and sessions.
 - Durable execution tables have point-in-time recovery and retain policies.
 - `lambda-functions/template.full.yaml` defines `WorkEngineFunction` as a
   private Node.js Lambda without a Function URL.
@@ -166,9 +166,10 @@ The current work-engine code expects these logical entities:
 - templates
 - users
 - files metadata
+- artifact metadata
 - notifications
 - sessions
-- later: artifacts, assistant jobs, audit events
+- later: assistant jobs, audit events
 
 For production V1, CloudFormation/SAM should own table lifecycle, and
 work-engine must not create production tables on cold start.
@@ -190,6 +191,11 @@ source in V1. Production browser sessions are owned by the Python portal. The
 sessions table is tagged as `SessionState` and intentionally does not get the
 same point-in-time recovery requirement as durable execution-state tables such
 as tasks, bundles, templates, users, files, and notifications.
+
+`DataOpsArtifactsTable` is durable execution state for artifact metadata only.
+It receives point-in-time recovery and retain policies, and `WorkEngineFunction`
+gets its name through `DATAOPS_ARTIFACTS_TABLE`. Artifact binaries and large
+generated outputs remain in S3 or existing private external systems.
 
 ## Backups
 
@@ -276,6 +282,7 @@ V1 should use:
 - DynamoDB for file/artifact metadata
 - S3 or existing private external systems for binaries
 - Git only for canonical process knowledge and small reviewed templates.
+- local filesystem paths only in local/test mode.
 
 This matters for:
 
@@ -333,7 +340,7 @@ Implement V1 in this order:
 6. Add `/work/api/*` broker in the Python full app. Done.
 7. Add portable export/import validation for current work-engine entities.
 8. Add task/workflow frontend screens that call `/work/api/*`.
-9. Add file/artifact S3 storage before exposing production file uploads.
+9. Add file/artifact S3 storage before exposing production binary uploads.
 10. Run restore drills before relying on production execution data.
 
 ## Open Questions

@@ -126,6 +126,7 @@ let workBellNotifications = [];
 
 let activeTaskPanelId = null;
 let activeTaskPanelTask = null;
+let activeTaskPanelArtifacts = [];
 let activeBundlePanelId = null;
 let activeBundlePanelData = null;
 
@@ -954,6 +955,7 @@ async function openTaskPanel(taskId) {
   closeBundlePanel();
   activeTaskPanelId = taskId;
   activeTaskPanelTask = findWorkTaskInSnapshot(taskId);
+  activeTaskPanelArtifacts = [];
   taskPanelTitle.textContent = "Loading task...";
   taskPanelBody.replaceChildren();
   taskPanel.hidden = false;
@@ -962,8 +964,10 @@ async function openTaskPanel(taskId) {
   try {
     const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
     const fetched = payload && typeof payload === "object" && payload.id ? payload : null;
+    const artifacts = fetched ? await loadArtifactsForTask(fetched) : [];
     if (fetched && activeTaskPanelId === taskId) {
       activeTaskPanelTask = fetched;
+      activeTaskPanelArtifacts = artifacts;
       renderTaskPanel();
     }
   } catch (err) {
@@ -979,6 +983,7 @@ async function openTaskPanel(taskId) {
 function closeTaskPanel() {
   activeTaskPanelId = null;
   activeTaskPanelTask = null;
+  activeTaskPanelArtifacts = [];
   taskPanel.hidden = true;
   body.classList.remove("task-panel-open");
 }
@@ -1081,7 +1086,8 @@ function renderTaskPanel() {
   } else {
     const missingLink = task.requiredLinkName && !task.link;
     const missingFile = task.requiresFile && !(activeTaskPanelTask?._hasFiles);
-    const canComplete = !missingLink && !missingFile;
+    const missingArtifact = taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, activeTaskPanelArtifacts);
+    const canComplete = !missingLink && !missingFile && !missingArtifact;
     const complete = createTaskActionButton("Mark done", () => updateTaskStatus(task.id, "done"));
     complete.classList.add("is-primary");
     if (!canComplete) {
@@ -1089,6 +1095,7 @@ function renderTaskPanel() {
       const reasons = [];
       if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
       if (missingFile) reasons.push("Upload required file");
+      if (missingArtifact) reasons.push("Approve an attached artifact");
       complete.title = reasons.join("; ");
     }
     actions.append(complete);
@@ -1098,6 +1105,7 @@ function renderTaskPanel() {
   }
   // File upload for required-file tasks
   renderTaskFileSection(task);
+  renderTaskArtifactSection(task);
 
   taskPanelBody.append(actions);
 
@@ -1292,6 +1300,34 @@ async function loadTaskFiles(taskId, container) {
   }
 }
 
+async function loadArtifactsForTask(task) {
+  const results = await Promise.allSettled([
+    request(workApiUrl("/api/artifacts", { taskId: task.id })),
+    task.bundleId ? request(workApiUrl("/api/artifacts", { bundleId: task.bundleId })) : Promise.resolve({ artifacts: [] }),
+  ]);
+  const artifacts = [];
+  for (const result of results) {
+    const payload = settledPayload(result);
+    if (payload && Array.isArray(payload.artifacts)) artifacts.push(...payload.artifacts);
+  }
+  return dedupeArtifacts(artifacts);
+}
+
+async function loadArtifactsForBundle(bundleId) {
+  const payload = await request(workApiUrl("/api/artifacts", { bundleId }));
+  return dedupeArtifacts(Array.isArray(payload?.artifacts) ? payload.artifacts : []);
+}
+
+function renderTaskArtifactSection(task) {
+  taskPanelBody.append(renderArtifactList({
+    ownerType: "task",
+    ownerId: task.id,
+    artifacts: activeTaskPanelArtifacts,
+    required: taskRequiresApprovedArtifact(task),
+    onRefresh: () => refreshTaskPanel(task.id),
+  }));
+}
+
 async function uploadTaskFile(taskId, file) {
   const formData = new FormData();
   formData.append("taskId", taskId);
@@ -1382,6 +1418,7 @@ async function refreshTaskPanel(taskId) {
     const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
     if (payload && payload.id && activeTaskPanelId === taskId) {
       activeTaskPanelTask = payload;
+      activeTaskPanelArtifacts = await loadArtifactsForTask(payload);
       renderTaskPanel();
     }
   } catch {
@@ -1485,15 +1522,17 @@ async function openBundlePanel(bundleId) {
   body.classList.add("task-panel-open");
   renderBundlePanel();
   try {
-    const [bundleResult, tasksResult] = await Promise.allSettled([
+    const [bundleResult, tasksResult, artifactsResult] = await Promise.allSettled([
       request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`)),
       request(workApiUrl(`/api/tasks`, { bundleId })),
+      loadArtifactsForBundle(bundleId),
     ]);
     const bundlePayload = settledPayload(bundleResult);
     const bundle = bundlePayload && (bundlePayload.bundle || bundlePayload);
     const tasks = tasksFromWorkPayload(settledPayload(tasksResult));
+    const artifacts = Array.isArray(settledPayload(artifactsResult)) ? settledPayload(artifactsResult) : [];
     if (activeBundlePanelId === bundleId) {
-      activeBundlePanelData = { bundle, tasks };
+      activeBundlePanelData = { bundle, tasks, artifacts };
       renderBundlePanel();
     }
   } catch (err) {
@@ -1517,6 +1556,7 @@ function renderBundlePanel() {
   const data = activeBundlePanelData;
   const bundle = data?.bundle;
   const tasks = data?.tasks || [];
+  const artifacts = data?.artifacts || [];
   bundlePanelTitle.textContent = bundle ? workBundleTitle(bundle) : "Workflow";
   bundlePanelBody.replaceChildren();
   if (!bundle) return;
@@ -1655,6 +1695,16 @@ function renderBundlePanel() {
   addBtn.addEventListener("click", () => addBundleReference(bundle.id, existingRefs, nameInput.value.trim(), urlInput.value.trim()));
   addRow.append(nameInput, urlInput, addBtn);
   refsSection.append(addRow);
+  refsSection.append(renderArtifactList({
+    ownerType: "bundle",
+    ownerId: bundle.id,
+    artifacts,
+    required: false,
+    onRefresh: async () => {
+      activeBundlePanelData = { ...activeBundlePanelData, artifacts: await loadArtifactsForBundle(bundle.id) };
+      renderBundlePanel();
+    },
+  }));
   bundlePanelBody.append(refsSection);
 }
 
@@ -1675,18 +1725,21 @@ function renderBundleChecklistItem(task, bundleId, today) {
   const status = String(task.status || "todo").toLowerCase();
   const isDone = status === "done";
   const isWaiting = status === "waiting";
+  const bundleArtifacts = activeBundlePanelData?.artifacts || [];
 
   const missingLink = !isDone && task.requiredLinkName && !task.link;
   const missingFile = !isDone && task.requiresFile && !hasTaskFileEvidence(task);
+  const missingArtifact = !isDone && taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, bundleArtifacts);
 
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = isDone;
-  checkbox.disabled = isWaiting || missingLink || missingFile;
+  checkbox.disabled = isWaiting || missingLink || missingFile || missingArtifact;
   if (checkbox.disabled && !isDone) {
     const reasons = [];
     if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
     if (missingFile) reasons.push("Upload required file");
+    if (missingArtifact) reasons.push("Approve an attached artifact");
     if (isWaiting) reasons.push("Waiting task");
     checkbox.title = reasons.join("; ");
   }
@@ -1703,16 +1756,137 @@ function renderBundleChecklistItem(task, bundleId, today) {
   if (task.date) dateMeta.textContent = formatTaskDateMeta(task.date, today);
   if (isWaiting) dateMeta.textContent = `waiting: ${task.waitingFor || ""}`;
 
-  if (!isDone && (missingLink || missingFile)) {
+  if (!isDone && (missingLink || missingFile || missingArtifact)) {
     const badge = document.createElement("span");
     badge.className = "bundle-checklist-evidence";
     if (missingLink) badge.textContent += `${task.requiredLinkName} missing`;
     if (missingLink && missingFile) badge.textContent += "; ";
     if (missingFile) badge.textContent += "file missing";
+    if ((missingLink || missingFile) && missingArtifact) badge.textContent += "; ";
+    if (missingArtifact) badge.textContent += "artifact review missing";
     dateMeta.append(document.createTextNode(" "), badge);
   }
   row.append(checkbox, label, dateMeta);
   return row;
+}
+
+function dedupeArtifacts(artifacts) {
+  const seen = new Set();
+  const out = [];
+  for (const artifact of artifacts || []) {
+    if (!artifact || typeof artifact !== "object" || !artifact.id) continue;
+    if (seen.has(artifact.id)) continue;
+    seen.add(artifact.id);
+    out.push(artifact);
+  }
+  return out;
+}
+
+function taskRequiresApprovedArtifact(task) {
+  const proof = task?.proofRequirement;
+  return proof && proof.required !== false && proof.type === "artifact";
+}
+
+function hasApprovedArtifactEvidence(task, artifacts) {
+  const direct = (artifacts || []).some((artifact) => artifact && artifact.status === "approved");
+  if (direct) return true;
+  const refs = Array.isArray(task?.artifactRefs) ? task.artifactRefs : [];
+  return refs.some((ref) => ref && ref.status === "approved");
+}
+
+function renderArtifactList(options) {
+  const section = document.createElement("div");
+  section.className = "task-history";
+  const label = document.createElement("div");
+  label.className = "task-history-label";
+  label.textContent = options.required ? "Artifact proof" : "Artifacts";
+  section.append(label);
+
+  const list = document.createElement("div");
+  list.className = "task-history-list";
+  const artifacts = options.artifacts || [];
+  if (artifacts.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "task-history-event";
+    empty.textContent = options.required ? "No approved artifact attached." : "No artifacts registered.";
+    list.append(empty);
+  }
+  for (const artifact of artifacts) {
+    const item = document.createElement("div");
+    item.className = "task-history-event";
+    const link = document.createElement("a");
+    link.href = artifact.storageUri || "#";
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = artifact.title || artifact.storageUri || artifact.id;
+    item.append(link);
+    const status = document.createElement("span");
+    status.className = `task-status-badge ${artifact.status || "draft"}`;
+    status.textContent = artifact.status || "draft";
+    item.append(document.createTextNode(" "), status);
+    if (artifact.status !== "approved" && artifact.status !== "archived") {
+      const approve = createTaskActionButton("Approve", async () => updateArtifactStatus(artifact.id, "approved", options.onRefresh));
+      item.append(document.createTextNode(" "), approve);
+    }
+    list.append(item);
+  }
+  section.append(list);
+
+  const addRow = document.createElement("div");
+  addRow.className = "task-follow-up-row";
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.placeholder = "Artifact title";
+  const urlInput = document.createElement("input");
+  urlInput.type = "url";
+  urlInput.placeholder = "https://...";
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "task-action-btn";
+  addBtn.textContent = "Register";
+  addBtn.addEventListener("click", () => registerExternalArtifact({
+    ownerType: options.ownerType,
+    ownerId: options.ownerId,
+    title: titleInput.value.trim(),
+    url: urlInput.value.trim(),
+    onRefresh: options.onRefresh,
+  }));
+  addRow.append(titleInput, urlInput, addBtn);
+  section.append(addRow);
+  return section;
+}
+
+async function registerExternalArtifact(options) {
+  if (!options.url) { reportError("Artifact URL is required."); return; }
+  const body = {
+    type: "external-link",
+    title: options.title || options.url,
+    storageUri: options.url,
+    storageProvider: "external-url",
+    dataClass: "internal",
+    sourceType: "manual-link",
+    status: "needs-review",
+  };
+  if (options.ownerType === "task") body.taskId = options.ownerId;
+  if (options.ownerType === "bundle") body.bundleId = options.ownerId;
+  try {
+    await request(workApiUrl("/api/artifacts"), { method: "POST", body: JSON.stringify(body) });
+    if (typeof options.onRefresh === "function") await options.onRefresh();
+  } catch (err) {
+    reportError(`Could not register artifact: ${err.message || "request failed"}`);
+  }
+}
+
+async function updateArtifactStatus(artifactId, status, onRefresh) {
+  try {
+    await request(workApiUrl(`/api/artifacts/${encodeURIComponent(artifactId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+    if (typeof onRefresh === "function") await onRefresh();
+  } catch (err) {
+    reportError(`Could not update artifact: ${err.message || "request failed"}`);
+  }
 }
 
 async function addBundleReference(bundleId, currentRefs, name, url) {
@@ -2405,7 +2579,6 @@ function hasTaskFileEvidence(task) {
   if (Number(task.fileCount || 0) > 0) return true;
   if (Array.isArray(task.files) && task.files.length > 0) return true;
   if (Array.isArray(task.fileRefs) && task.fileRefs.length > 0) return true;
-  if (Array.isArray(task.artifactRefs) && task.artifactRefs.length > 0) return true;
   return false;
 }
 
@@ -2413,8 +2586,9 @@ function taskProofState(task) {
   const missing = [];
   if (task?.requiredLinkName && !task.link) missing.push(task.requiredLinkName);
   if (task?.requiresFile && !hasTaskFileEvidence(task)) missing.push("required file");
+  if (taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, [])) missing.push("approved artifact");
   if (missing.length > 0) return { ok: false, label: `Missing proof: ${missing.join(", ")}`, missing };
-  if (task?.requiredLinkName || task?.requiresFile) return { ok: true, label: "Proof ready", missing: [] };
+  if (task?.requiredLinkName || task?.requiresFile || taskRequiresApprovedArtifact(task)) return { ok: true, label: "Proof ready", missing: [] };
   return { ok: true, label: "No proof required", missing: [] };
 }
 

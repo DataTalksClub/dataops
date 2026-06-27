@@ -218,6 +218,35 @@ Resources:
         - Key: DataClass
           Value: ExecutionState
 
+  DataOpsArtifactsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-artifacts
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
   DataOpsNotificationsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -367,6 +396,7 @@ Resources:
               - !GetAtt DataOpsUsersTable.Arn
               - !GetAtt DataOpsFilesTable.Arn
               - !Sub ${DataOpsFilesTable.Arn}/index/*
+              - !GetAtt DataOpsArtifactsTable.Arn
               - !GetAtt DataOpsNotificationsTable.Arn
               - !GetAtt DataOpsSessionsTable.Arn
         - Statement:
@@ -382,6 +412,7 @@ Resources:
           DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable
           DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
           DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable
+          DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable
           DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
           WORK_ENGINE_AUTH_MODE: portal
@@ -406,6 +437,9 @@ Outputs:
   DataOpsFilesTableName:
     Description: DynamoDB table for file metadata
     Value: !Ref DataOpsFilesTable
+  DataOpsArtifactsTableName:
+    Description: DynamoDB table for artifact metadata
+    Value: !Ref DataOpsArtifactsTable
   DataOpsNotificationsTableName:
     Description: DynamoDB table for reminders and notifications
     Value: !Ref DataOpsNotificationsTable

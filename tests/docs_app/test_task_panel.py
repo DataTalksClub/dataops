@@ -401,3 +401,35 @@ assert.equal(renderTaskPanelCalls, 2);
         ["loadTaskFiles"],
     )
     assert result["ok"] is True
+
+
+def test_artifact_proof_is_distinct_from_file_proof():
+    result = _run_app_js_functions(
+        """
+const fileTask = { id: "file-task", requiresFile: true, artifactRefs: [{ artifactId: "artifact-1", status: "approved" }] };
+assert.equal(hasTaskFileEvidence(fileTask), false);
+assert.deepEqual(taskProofState(fileTask).missing, ["required file"]);
+
+const draftArtifactTask = {
+  id: "artifact-task",
+  proofRequirement: { type: "artifact", label: "Reviewed output" },
+  artifactRefs: [{ artifactId: "artifact-2", status: "needs-review" }],
+};
+assert.equal(taskRequiresApprovedArtifact(draftArtifactTask), true);
+assert.equal(hasApprovedArtifactEvidence(draftArtifactTask, []), false);
+assert.deepEqual(taskProofState(draftArtifactTask).missing, ["approved artifact"]);
+
+const approvedArtifactTask = {
+  id: "artifact-task-approved",
+  proofRequirement: { type: "artifact", label: "Reviewed output" },
+};
+assert.equal(hasApprovedArtifactEvidence(approvedArtifactTask, [{ id: "artifact-3", status: "approved" }]), true);
+""",
+        [
+            "hasTaskFileEvidence",
+            "taskProofState",
+            "taskRequiresApprovedArtifact",
+            "hasApprovedArtifactEvidence",
+        ],
+    )
+    assert result["ok"] is True

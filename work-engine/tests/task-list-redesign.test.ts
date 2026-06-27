@@ -106,6 +106,13 @@ describe('Task list view redesign', () => {
       assert.ok(result.body.includes('checkboxDisabled'), 'should have checkboxDisabled logic');
     });
 
+    it('app.js contains checkbox disabled logic for artifact proof review', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('taskRequiresApprovedArtifact'), 'should detect artifact proof requirements');
+      assert.ok(result.body.includes('Approve an attached artifact first'), 'should explain blocked artifact proof');
+    });
+
     it('app.js contains loadUsersOnce for caching users', async () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});

@@ -2,8 +2,9 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
-import { saveFile, readFile, removeFile, getUploadDir } from '../src/storage';
+import { saveFile, readFile, removeFile, getUploadDir, isLocalFilesystemStorageAllowed } from '../src/storage';
 
 const TEST_UPLOAD_DIR = path.join(__dirname, '..', 'test-uploads-' + process.pid);
 
@@ -31,6 +32,10 @@ describe('Storage layer', () => {
     const dir = getUploadDir();
     assert.ok(dir.endsWith('uploads'));
     process.env.UPLOAD_DIR = saved;
+  });
+
+  it('allows local filesystem storage in test mode', () => {
+    assert.strictEqual(isLocalFilesystemStorageAllowed(), true);
   });
 
   it('saveFile creates directories and writes file', () => {
@@ -85,5 +90,33 @@ describe('Storage layer', () => {
     assert.throws(() => {
       readFile('nonexistent/file.txt');
     });
+  });
+
+  it('rejects local filesystem storage in production-like mode', () => {
+    const workDir = path.resolve(__dirname, '..');
+    const script = `
+      import('./src/storage.ts').then((storage) => {
+        try {
+          const saveFile = storage.saveFile || storage.default?.saveFile;
+          saveFile('task-prod', 'proof.txt', Buffer.from('proof'));
+          process.exit(2);
+        } catch (err) {
+          console.log(String(err.message));
+        }
+      });
+    `;
+
+    const result = spawnSync(process.execPath, ['--import', 'tsx', '--eval', script], {
+      cwd: workDir,
+      env: {
+        PATH: process.env.PATH || '',
+        HOME: process.env.HOME || '',
+        NODE_ENV: 'production',
+      },
+      encoding: 'utf8',
+    });
+
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Local filesystem file storage is disabled/);
   });
 });

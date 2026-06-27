@@ -14,6 +14,7 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         templates: mod.TABLE_TEMPLATES,
         users: mod.TABLE_USERS,
         files: mod.TABLE_FILES,
+        artifacts: mod.TABLE_ARTIFACTS,
         notifications: mod.TABLE_NOTIFICATIONS,
         sessions: mod.TABLE_SESSIONS,
         autoCreate: mod.shouldAutoCreateTables(),
@@ -44,6 +45,7 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.templates, 'Templates');
     assert.strictEqual(setup.users, 'Users');
     assert.strictEqual(setup.files, 'Files');
+    assert.strictEqual(setup.artifacts, 'Artifacts');
     assert.strictEqual(setup.notifications, 'Notifications');
     assert.strictEqual(setup.sessions, 'Sessions');
     assert.strictEqual(setup.autoCreate, false);
@@ -56,6 +58,7 @@ describe('DynamoDB table setup environment', () => {
       DATAOPS_TEMPLATES_TABLE: 'prod-templates',
       DATAOPS_USERS_TABLE: 'prod-users',
       DATAOPS_FILES_TABLE: 'prod-files',
+      DATAOPS_ARTIFACTS_TABLE: 'prod-artifacts',
       DATAOPS_NOTIFICATIONS_TABLE: 'prod-notifications',
       DATAOPS_SESSIONS_TABLE: 'prod-sessions',
     });
@@ -65,6 +68,7 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.templates, 'prod-templates');
     assert.strictEqual(setup.users, 'prod-users');
     assert.strictEqual(setup.files, 'prod-files');
+    assert.strictEqual(setup.artifacts, 'prod-artifacts');
     assert.strictEqual(setup.notifications, 'prod-notifications');
     assert.strictEqual(setup.sessions, 'prod-sessions');
     assert.strictEqual(setup.autoCreate, false);

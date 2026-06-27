@@ -30,6 +30,7 @@ def test_dataops_execution_tables_have_retention_pitr_and_tags():
         "DataOpsTemplatesTable",
         "DataOpsUsersTable",
         "DataOpsFilesTable",
+        "DataOpsArtifactsTable",
         "DataOpsNotificationsTable",
     ]
 
@@ -83,6 +84,7 @@ def test_dataops_table_outputs_are_available_for_work_engine_env_wiring():
         "DataOpsTemplatesTableName",
         "DataOpsUsersTableName",
         "DataOpsFilesTableName",
+        "DataOpsArtifactsTableName",
         "DataOpsNotificationsTableName",
         "DataOpsSessionsTableName",
     ]
@@ -113,6 +115,7 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable" in work_engine
     assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in work_engine
     assert "DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable" in work_engine
+    assert "DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable" in work_engine
     assert "DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable" in work_engine
     assert "DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable" in work_engine
     assert "dynamodb:GetItem" in work_engine

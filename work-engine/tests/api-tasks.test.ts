@@ -1081,7 +1081,7 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(fetched.completedBy, undefined);
     });
 
-    it('allows done with required artifact and external-status proof represented as metadata refs', async () => {
+    it('requires approved artifact records for artifact proof and still accepts external-status proof', async () => {
       const artifactTaskRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -1093,7 +1093,7 @@ describe('API — CRUD for tasks', () => {
       }, {});
       const artifactTask = JSON.parse(artifactTaskRes.body);
 
-      const artifactDone = await handler({
+      const refOnlyDone = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${artifactTask.id}`,
         body: JSON.stringify({
@@ -1101,12 +1101,33 @@ describe('API — CRUD for tasks', () => {
           artifactRefs: [{ artifactId: 'artifact-1', type: 'draft', storageUri: 's3://bucket/draft.md' }],
         }),
       }, {});
+      assert.strictEqual(refOnlyDone.statusCode, 400);
+      assert.match(JSON.parse(refOnlyDone.body).error, /approved artifact proof 'Generated draft' is missing/);
+
+      await handler({
+        httpMethod: 'POST',
+        path: '/api/artifacts',
+        body: JSON.stringify({
+          type: 'external-link',
+          title: 'Generated draft',
+          storageUri: 'https://example.com/generated-draft',
+          storageProvider: 'external-url',
+          dataClass: 'internal',
+          sourceType: 'manual-link',
+          status: 'approved',
+          reviewedBy: 'reviewer',
+          taskId: artifactTask.id,
+        }),
+      }, {});
+
+      const artifactDone = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${artifactTask.id}`,
+        body: JSON.stringify({ status: 'done' }),
+      }, {});
       assert.strictEqual(artifactDone.statusCode, 200);
       const artifactDoneBody = JSON.parse(artifactDone.body);
       assert.strictEqual(artifactDoneBody.status, 'done');
-      assert.deepStrictEqual(artifactDoneBody.artifactRefs, [
-        { artifactId: 'artifact-1', type: 'draft', storageUri: 's3://bucket/draft.md' },
-      ]);
 
       const statusTaskRes = await handler({
         httpMethod: 'POST',

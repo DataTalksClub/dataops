@@ -9,12 +9,25 @@ function getUploadDir(): string {
   return process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
 }
 
+function isLocalFilesystemStorageAllowed(): boolean {
+  return (
+    process.env.DATAOPS_FILE_STORAGE_PROVIDER === 'local-dev' ||
+    process.env.IS_LOCAL === 'true' ||
+    process.env.IS_LOCAL === '1' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.NODE_ENV === 'local'
+  );
+}
+
 /**
  * Save a file to the local filesystem.
  * Creates directories as needed.
  * Returns the relative storage path: {taskId}/{filename}
  */
 function saveFile(taskId: string, filename: string, data: Buffer): string {
+  if (!isLocalFilesystemStorageAllowed()) {
+    throw new Error('Local filesystem file storage is disabled outside local/test mode');
+  }
   const uploadDir = getUploadDir();
   const dir = path.join(uploadDir, taskId);
   fs.mkdirSync(dir, { recursive: true });
@@ -31,6 +44,9 @@ function saveFile(taskId: string, filename: string, data: Buffer): string {
  * Returns the file content as a Buffer.
  */
 function readFile(storagePath: string): Buffer {
+  if (!isLocalFilesystemStorageAllowed()) {
+    throw new Error('Local filesystem file storage is disabled outside local/test mode');
+  }
   const uploadDir = getUploadDir();
   const filePath = path.join(uploadDir, storagePath);
   return fs.readFileSync(filePath);
@@ -41,6 +57,9 @@ function readFile(storagePath: string): Buffer {
  * storagePath is relative to the upload directory.
  */
 function removeFile(storagePath: string): void {
+  if (!isLocalFilesystemStorageAllowed()) {
+    throw new Error('Local filesystem file storage is disabled outside local/test mode');
+  }
   const uploadDir = getUploadDir();
   const filePath = path.join(uploadDir, storagePath);
   if (fs.existsSync(filePath)) {
@@ -50,6 +69,7 @@ function removeFile(storagePath: string): void {
 
 export {
   getUploadDir,
+  isLocalFilesystemStorageAllowed,
   saveFile,
   readFile,
   removeFile,

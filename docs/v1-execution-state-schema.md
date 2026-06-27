@@ -114,9 +114,9 @@ Environment variables:
 - `DATAOPS_TEMPLATES_TABLE`
 - `DATAOPS_USERS_TABLE`
 - `DATAOPS_FILES_TABLE`
+- `DATAOPS_ARTIFACTS_TABLE`
 - `DATAOPS_NOTIFICATIONS_TABLE`
 - `DATAOPS_SESSIONS_TABLE`
-- later: `DATAOPS_ARTIFACTS_TABLE`
 - later: `DATAOPS_ASSISTANT_JOBS_TABLE`
 - later: `DATAOPS_AUDIT_EVENTS_TABLE`
 
@@ -340,6 +340,51 @@ Recommended indexes:
 The current prototype uses `storagePath`, but production should use
 `storage_uri` and make the storage backend explicit.
 
+## Artifacts Table
+
+Artifacts store metadata for generated or operational outputs. DynamoDB does
+not store binaries, large generated documents, raw assistant logs, signed URLs,
+or secrets.
+
+Application fields:
+
+- `artifact_id`
+- `type`
+- `title`
+- `description`
+- `status`
+- `storage_provider`
+- `storage_uri`
+- `filename`
+- `content_type`
+- `checksum`
+- `size_bytes`
+- `visibility`
+- `data_class`
+- `task_id`
+- `bundle_id`
+- `assistant_job_id`
+- `file_id`
+- `source_type`
+- `created_by`
+- `reviewed_by`
+- `created_at`
+- `updated_at`
+- `reviewed_at`
+- `tags`
+- `metadata`
+
+Recommended key:
+
+- `PK=ARTIFACT#{artifact_id}`, `SK=ARTIFACT#{artifact_id}`
+
+The V1 implementation filters artifacts by task, bundle, assistant job, file,
+status, and type. Dedicated GSIs can be added when production access patterns
+and volume require them.
+
+`status=approved` is the only status that satisfies an artifact proof gate.
+`assistant_job_id` is optional and opaque until assistant jobs are implemented.
+
 ## Notifications Table
 
 Notifications cover operator reminders, follow-ups, alerts, and UI inbox items.
@@ -377,33 +422,6 @@ Sessions aren't part of normal portable exports, so they may use TTL and don't
 need long-retention backups.
 
 ## Future Tables
-
-## Artifacts Table
-
-Artifacts are generated or uploaded operational outputs that need review, reuse,
-or auditability.
-
-Examples:
-
-- draft podcast documents
-- generated newsletter drafts
-- exported reports
-- assistant-produced summaries
-
-Fields:
-
-- `artifact_id`
-- `task_id`
-- `bundle_id`
-- `assistant_job_id`
-- `type`
-- `title`
-- `storage_uri`
-- `checksum`
-- `status`
-- `created_by`
-- `created_at`
-- `updated_at`
 
 ## Assistant Jobs Table
 

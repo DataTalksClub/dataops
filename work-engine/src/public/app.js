@@ -248,6 +248,21 @@
     return 'Open instructions for ' + (description || 'task');
   }
 
+  function taskRequiresApprovedArtifact(task) {
+    return task && task.proofRequirement && task.proofRequirement.required !== false && task.proofRequirement.type === 'artifact';
+  }
+
+  function taskHasApprovedArtifactRef(task) {
+    return Array.isArray(task && task.artifactRefs) && task.artifactRefs.some(function (ref) {
+      return ref && ref.status === 'approved';
+    });
+  }
+
+  function taskArtifactBlockTitle(task) {
+    if (!taskRequiresApprovedArtifact(task) || taskHasApprovedArtifactRef(task)) return '';
+    return 'Approve an attached artifact first';
+  }
+
   function renderInstructionLink(url, description) {
     return '<a class="instructions-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="Instructions" aria-label="' + escapeHtml(instructionLabel(description)) + '"><span aria-hidden="true">\u{1F4CB}</span></a>';
   }
@@ -566,9 +581,12 @@
     // Right column header with assigned-to-me toggle and user picker
     var rightHeader = document.createElement('div');
     rightHeader.className = 'dashboard-header';
+    var currentUserOption = dashboardState.currentUserId
+      ? '<option value="' + escapeHtml(dashboardState.currentUserId) + '" selected>Loading user...</option>'
+      : '';
     rightHeader.innerHTML =
       '<h3>Today\'s Tasks</h3>' +
-      '<select id="dashboard-user-picker" class="user-picker"></select>' +
+      '<select id="dashboard-user-picker" class="user-picker">' + currentUserOption + '</select>' +
       '<label class="assigned-toggle">' +
         '<input type="checkbox" id="assigned-to-me" ' + (dashboardState.assignedToMe ? 'checked' : '') + ' />' +
         'Assigned to me' +
@@ -588,6 +606,7 @@
     loadUsersOnce().then(function (usersMap) {
       var picker = document.getElementById('dashboard-user-picker');
       if (!picker) return;
+      picker.replaceChildren();
       Object.keys(usersMap).forEach(function (uid) {
         var opt = document.createElement('option');
         opt.value = uid;
@@ -1018,8 +1037,11 @@
 
       // Checkbox disabled if requiredLinkName is set and link is empty
       var checkboxDisabled = '';
+      var artifactBlockTitle = taskArtifactBlockTitle(t);
       if (t.requiredLinkName && !t.link) {
         checkboxDisabled = ' disabled title="Fill in ' + escapeHtml(t.requiredLinkName) + ' link first"';
+      } else if (artifactBlockTitle) {
+        checkboxDisabled = ' disabled title="' + escapeHtml(artifactBlockTitle) + '"';
       }
 
       // Bundle badge
@@ -1587,8 +1609,11 @@
 
         // Checkbox disabled if requiredLinkName is set and link is empty
         var checkboxDisabled = '';
+        var artifactBlockTitle = taskArtifactBlockTitle(t);
         if (t.requiredLinkName && !t.link) {
-          checkboxDisabled = ' disabled';
+          checkboxDisabled = ' disabled title="Fill in ' + escapeHtml(t.requiredLinkName) + ' link first"';
+        } else if (artifactBlockTitle) {
+          checkboxDisabled = ' disabled title="' + escapeHtml(artifactBlockTitle) + '"';
         }
 
         // Bundle badge
@@ -2278,7 +2303,8 @@
       var isDone = t.status === 'done';
       var hasRequiredLink = !!t.requiredLinkName;
       var linkFilled = !!(t.link && t.link.trim());
-      var checkboxDisabled = hasRequiredLink && !linkFilled;
+      var artifactBlockTitle = taskArtifactBlockTitle(t);
+      var checkboxDisabled = (hasRequiredLink && !linkFilled) || !!artifactBlockTitle;
       // A task is a milestone if it has stageOnComplete set
       var isMilestone = !!t.stageOnComplete;
 
@@ -2300,6 +2326,7 @@
       checkbox.className = 'task-status-checkbox';
       checkbox.checked = isDone;
       checkbox.disabled = checkboxDisabled;
+      if (artifactBlockTitle) checkbox.title = artifactBlockTitle;
       checkbox.setAttribute('data-task-checkbox', t.id);
       checkbox.addEventListener('change', function () {
         var newStatus = checkbox.checked ? 'done' : 'todo';

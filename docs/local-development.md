@@ -108,6 +108,13 @@ The work-engine dev server runs with `IS_LOCAL=true`, which enables `SKIP_AUTH`.
 The portal local server does not enforce session auth. These bypasses are only
 for local development and tests.
 
+`IS_LOCAL=true` also enables local filesystem file storage for uploads and
+local-dev artifact paths. Production work-engine runs must not use Lambda local
+disk as durable file or artifact storage. Production file uploads are rejected
+until a durable storage adapter is configured, and artifact records should use
+stable `s3://`, Dropbox, Google Drive, GitHub, or public/external URLs rather
+than temporary signed URLs.
+
 Production uses one browser-facing login path: `/login`, `/logout`, and the
 portal `dtc_auth` cookie. The frontend calls same-origin `/work/api/*` and does
 not use a standalone work-engine sign-in or localStorage bearer token. The
