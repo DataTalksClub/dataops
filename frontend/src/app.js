@@ -660,7 +660,7 @@ function renderOperationsHome(documents) {
   quickWorkflow.type = "button";
   quickWorkflow.className = "ops-quick-btn";
   quickWorkflow.textContent = "+ Workflow";
-  quickWorkflow.addEventListener("click", () => openQuickWorkflowForm(model.templates));
+  quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
   quickBar.append(quickTask, quickWorkflow);
   wrap.append(quickBar);
 
@@ -1450,23 +1450,22 @@ function openQuickTaskForm() {
   overlay.querySelector(".quick-form-body").append(form);
 }
 
-function openQuickWorkflowForm(templates) {
+async function openQuickWorkflowForm() {
   const overlay = createQuickFormOverlay("Start workflow");
   const form = document.createElement("div");
   form.className = "quick-form";
 
+  const selectLabel = document.createElement("label");
+  selectLabel.className = "quick-form-label";
+  selectLabel.textContent = "Template";
   const templateSelect = document.createElement("select");
   templateSelect.className = "quick-form-select";
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Select template...";
-  templateSelect.append(placeholder);
-  for (const template of templates) {
-    const opt = document.createElement("option");
-    opt.value = template.slug;
-    opt.textContent = `${template.title}${template.tags.length ? ` (${template.tags.slice(0, 2).join(", ")})` : ""}`;
-    templateSelect.append(opt);
-  }
+  const loadingOpt = document.createElement("option");
+  loadingOpt.value = "";
+  loadingOpt.textContent = "Loading templates...";
+  templateSelect.append(loadingOpt);
+  templateSelect.disabled = true;
+  selectLabel.append(templateSelect);
 
   const anchorInput = createQuickInput("Anchor date", "date", todayIsoDate());
   const titleInput = createQuickInput("Workflow title (optional)", "text", "");
@@ -1475,16 +1474,48 @@ function openQuickWorkflowForm(templates) {
   createBtn.type = "button";
   createBtn.className = "task-action-btn is-primary";
   createBtn.textContent = "Start workflow";
+  createBtn.disabled = true;
+
+  form.append(selectLabel, titleInput.label, anchorInput.label, createBtn);
+  overlay.querySelector(".quick-form-body").append(form);
+
+  // Fetch live templates from the work-engine API (UUIDs, not doc slugs)
+  let liveTemplates = [];
+  try {
+    const payload = await request(workApiUrl("/api/templates"));
+    liveTemplates = Array.isArray(payload) ? payload : payload.templates || [];
+  } catch {
+    liveTemplates = [];
+  }
+
+  templateSelect.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select template...";
+  templateSelect.append(placeholder);
+  for (const template of liveTemplates) {
+    const opt = document.createElement("option");
+    opt.value = template.id;
+    opt.textContent = template.name || template.title || template.id;
+    templateSelect.append(opt);
+  }
+  templateSelect.disabled = false;
+  if (liveTemplates.length > 0) createBtn.disabled = false;
+  else {
+    const emptyOpt = document.createElement("option");
+    emptyOpt.textContent = "No templates available";
+    templateSelect.append(emptyOpt);
+  }
+
   createBtn.addEventListener("click", async () => {
-    const slug = templateSelect.value;
+    const templateId = templateSelect.value;
     const anchorDate = anchorInput.input.value;
-    if (!slug) { reportError("Select a template."); return; }
+    if (!templateId) { reportError("Select a template."); return; }
     if (!anchorDate) { reportError("Anchor date is required."); return; }
     createBtn.disabled = true;
     createBtn.textContent = "Starting...";
     try {
-      const template = templates.find((t) => t.slug === slug);
-      const body = { templateId: slug, anchorDate };
+      const body = { templateId, anchorDate };
       const title = titleInput.input.value.trim();
       if (title) body.title = title;
       const result = await request(workApiUrl("/api/bundles"), {
@@ -1501,14 +1532,6 @@ function openQuickWorkflowForm(templates) {
       createBtn.textContent = "Start workflow";
     }
   });
-
-  const selectLabel = document.createElement("label");
-  selectLabel.className = "quick-form-label";
-  selectLabel.textContent = "Template";
-  selectLabel.append(templateSelect);
-
-  form.append(selectLabel, titleInput.label, anchorInput.label, createBtn);
-  overlay.querySelector(".quick-form-body").append(form);
 }
 
 function createQuickInput(labelText, type, value) {
