@@ -60,17 +60,33 @@ const history = {{
     window.location.pathname = url;
   }}
 }};
+const requestCalls = [];
+const refreshCalls = [];
+let mockRequestHandler = async (url, options = {{}}) => {{
+  throw new Error(`Unhandled request: ${{url}}`);
+}};
+async function request(url, options = {{}}) {{
+  requestCalls.push({{ url: String(url), options }});
+  return mockRequestHandler(url, options);
+}}
+function workApiUrl(path) {{ return `/work${{path}}`; }}
+async function refreshOperationsWorkSnapshot(options = {{}}) {{ refreshCalls.push(options); }}
+function todayIsoDate() {{ return "2026-06-27"; }}
+function reportError(message) {{ actionCalls.push({{ type: "error", message }}); }}
 function resolveImageSrc(src) {{ return src; }}
 function openDocument(path) {{ actionCalls.push({{ type: "doc", path }}); }}
 function openTaskPanel(taskId) {{ actionCalls.push({{ type: "task", taskId }}); }}
 function openBundlePanel(bundleId) {{ actionCalls.push({{ type: "bundle", bundleId }}); }}
+function openQuickWorkflowForm(options) {{ actionCalls.push({{ type: "startWorkflow", options }}); }}
 function makeElement(tag) {{
   const element = {{
     tagName: tag.toUpperCase(),
     type: "",
     className: "",
     textContent: "",
+    value: "",
     disabled: false,
+    hidden: false,
     children: [],
     listeners: {{}},
     style: {{}},
@@ -81,7 +97,14 @@ function makeElement(tag) {{
       }},
     }},
     append(...items) {{
-      this.children.push(...items);
+      for (const item of items) {{
+        if (item && typeof item === "object") item.parentNode = this;
+        this.children.push(item);
+      }}
+    }},
+    replaceChildren(...items) {{
+      this.children = [];
+      this.append(...items);
     }},
     addEventListener(type, handler) {{
       this.listeners[type] = handler;
@@ -89,13 +112,33 @@ function makeElement(tag) {{
     setAttribute(name, value) {{
       this[name] = String(value);
     }},
+    querySelector(selector) {{
+      if (!selector.startsWith(".")) return null;
+      const className = selector.slice(1);
+      const stack = [...this.children];
+      while (stack.length > 0) {{
+        const child = stack.shift();
+        if (!child || typeof child !== "object") continue;
+        const classes = String(child.className || "").split(/\\s+/).filter(Boolean);
+        if (classes.includes(className)) return child;
+        stack.unshift(...(child.children || []));
+      }}
+      return null;
+    }},
+    remove() {{
+      if (!this.parentNode) return;
+      this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
+      this.parentNode = null;
+    }},
     click() {{
       if (this.listeners.click) return this.listeners.click({{ type: "click" }});
     }},
   }};
   return element;
 }}
+const bodyElement = makeElement("body");
 const document = {{
+  body: bodyElement,
   createElement(tag) {{
     return makeElement(tag);
   }},
@@ -451,6 +494,143 @@ assert.equal(cronExpressionFromRecurringForm("monthly", "08:30", "1", "5"), "30 
             "weekdayName",
             "cronExpressionFromRecurringForm",
         ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_live_workflow_template_matching_uses_exact_unique_template_identity():
+    result = _run_app_js_functions(
+        """
+const liveTemplates = [
+  { id: "tmpl-newsletter", name: "Newsletter", type: "newsletter" },
+  { id: "tmpl-social", name: "Social Media Weekly", type: "social-media" },
+];
+
+assert.equal(findLiveWorkflowTemplate(liveTemplates, { slug: "newsletter", title: "Newsletter" }).id, "tmpl-newsletter");
+assert.equal(findLiveWorkflowTemplate(liveTemplates, { slug: "social-media", title: "Social Media Weekly" }).id, "tmpl-social");
+assert.equal(findLiveWorkflowTemplate(liveTemplates, { templateId: "tmpl-social" }).id, "tmpl-social");
+assert.equal(findLiveWorkflowTemplate(liveTemplates, { title: "Newsletter" }), null);
+assert.equal(normalizeTemplateMatchValue("Newsletter Task Template"), "newsletter");
+""",
+        [
+            "findLiveWorkflowTemplate",
+            "normalizeTemplateMatchValue",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_live_workflow_template_matching_rejects_ambiguous_matches():
+    result = _run_app_js_functions(
+        """
+const duplicateTypeTemplates = [
+  { id: "tmpl-newsletter-a", name: "Newsletter A", type: "newsletter" },
+  { id: "tmpl-newsletter-b", name: "Newsletter B", type: "newsletter" },
+];
+const duplicateIdTemplates = [
+  { id: "tmpl-newsletter", name: "Newsletter A", type: "newsletter" },
+  { id: "tmpl-newsletter", name: "Newsletter B", type: "newsletter-alt" },
+];
+
+assert.equal(findLiveWorkflowTemplate(duplicateTypeTemplates, { slug: "newsletter" }), null);
+assert.equal(findLiveWorkflowTemplate(duplicateIdTemplates, { templateId: "tmpl-newsletter" }), null);
+""",
+        ["findLiveWorkflowTemplate", "normalizeTemplateMatchValue"],
+    )
+
+    assert result["ok"] is True
+
+
+def test_quick_workflow_form_preselects_template_and_posts_bundle():
+    result = _run_app_js_functions(
+        """
+mockRequestHandler = async (url, options = {}) => {
+  if (String(url) === "/work/api/templates") {
+    return {
+      templates: [
+        { id: "tmpl-newsletter", name: "Newsletter", type: "newsletter" },
+        { id: "tmpl-social", name: "Social Media Weekly", type: "social-media" },
+      ],
+    };
+  }
+  if (String(url) === "/work/api/bundles") {
+    return { bundle: { id: "bundle-newsletter" } };
+  }
+  throw new Error(`Unexpected request ${url}`);
+};
+
+await openQuickWorkflowForm({
+  template: {
+    title: "Newsletter",
+    slug: "newsletter",
+    path: "content/tasks/templates/newsletter.md",
+  },
+});
+
+assert.equal(requestCalls[0].url, "/work/api/templates");
+const overlay = document.body.children.at(-1);
+const body = overlay.querySelector(".quick-form-body");
+const workflowForm = body.children[0];
+const templateSelect = workflowForm.children[0].children[0];
+const titleInput = workflowForm.children[1].children[0];
+const anchorInput = workflowForm.children[2].children[0];
+const createButton = workflowForm.children[3];
+
+assert.equal(templateSelect.value, "tmpl-newsletter");
+assert.equal(titleInput.value, "Newsletter");
+assert.equal(anchorInput.value, "2026-06-27");
+
+await createButton.click();
+assert.equal(requestCalls[1].url, "/work/api/bundles");
+assert.deepEqual(JSON.parse(requestCalls[1].options.body), {
+  templateId: "tmpl-newsletter",
+  anchorDate: "2026-06-27",
+  title: "Newsletter",
+});
+assert.deepEqual(actionCalls.at(-1), { type: "bundle", bundleId: "bundle-newsletter" });
+assert.deepEqual(refreshCalls.at(-1), { rerender: true });
+assert.equal(document.body.children.includes(overlay), false);
+""",
+        [
+            "openQuickWorkflowForm",
+            "createQuickFormOverlay",
+            "createQuickInput",
+            "findLiveWorkflowTemplate",
+            "normalizeTemplateMatchValue",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_workflow_template_card_starts_workflow_and_keeps_doc_action():
+    result = _run_app_js_functions(
+        """
+const card = renderWorkflowTemplateCard({
+  title: "Newsletter",
+  summary: "Weekly newsletter workflow.",
+  slug: "newsletter",
+  path: "content/tasks/templates/newsletter.md",
+  recurring: true,
+  atRisk: true,
+  tags: ["newsletter"],
+});
+
+assert.equal(card.tagName, "ARTICLE");
+assert.equal(card.children[0].textContent, "Newsletter");
+const actions = card.children[3];
+assert.equal(actions.className, "ops-template-actions");
+actions.children[0].click();
+assert.equal(actionCalls.at(-1).type, "startWorkflow");
+assert.equal(actionCalls.at(-1).options.template.slug, "newsletter");
+
+assert.equal(actions.children[1].textContent, "View process doc");
+actions.children[1].click();
+assert.deepEqual(actionCalls.at(-1), { type: "doc", path: "content/tasks/templates/newsletter.md" });
+""",
+        ["renderWorkflowTemplateCard"],
     )
 
     assert result["ok"] is True

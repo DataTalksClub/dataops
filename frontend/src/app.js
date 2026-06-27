@@ -1766,7 +1766,8 @@ function openQuickTaskForm() {
   overlay.querySelector(".quick-form-body").append(form);
 }
 
-async function openQuickWorkflowForm() {
+async function openQuickWorkflowForm(options = {}) {
+  const requestedTemplate = options.template || null;
   const overlay = createQuickFormOverlay("Start workflow");
   const form = document.createElement("div");
   form.className = "quick-form";
@@ -1815,6 +1816,11 @@ async function openQuickWorkflowForm() {
     opt.textContent = template.name || template.title || template.id;
     templateSelect.append(opt);
   }
+  const matchedTemplate = findLiveWorkflowTemplate(liveTemplates, requestedTemplate);
+  if (matchedTemplate?.id) {
+    templateSelect.value = matchedTemplate.id;
+    if (!titleInput.input.value && requestedTemplate?.title) titleInput.input.value = requestedTemplate.title;
+  }
   templateSelect.disabled = false;
   if (liveTemplates.length > 0) createBtn.disabled = false;
   else {
@@ -1848,6 +1854,37 @@ async function openQuickWorkflowForm() {
       createBtn.textContent = "Start workflow";
     }
   });
+}
+
+function findLiveWorkflowTemplate(liveTemplates, requestedTemplate) {
+  if (!requestedTemplate || !Array.isArray(liveTemplates)) return null;
+  const wantedId = normalizeTemplateMatchValue(
+    requestedTemplate.templateId
+    || requestedTemplate.sourceTemplateId
+    || requestedTemplate.canonicalTemplateId
+  );
+  if (wantedId) {
+    const idMatches = liveTemplates.filter((template) => normalizeTemplateMatchValue(template.id) === wantedId);
+    return idMatches.length === 1 ? idMatches[0] : null;
+  }
+
+  const wantedSlug = normalizeTemplateMatchValue(requestedTemplate.slug || requestedTemplate.type);
+  if (!wantedSlug) return null;
+  const slugMatches = liveTemplates.filter((template) => {
+    const templateSlug = normalizeTemplateMatchValue(template.slug || template.type);
+    return templateSlug === wantedSlug;
+  });
+  return slugMatches.length === 1 ? slugMatches[0] : null;
+}
+
+function normalizeTemplateMatchValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+task template$/i, "")
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function openQuickRecurringForm() {
@@ -2553,10 +2590,8 @@ function renderRecurringConfigItem(config) {
 }
 
 function renderWorkflowTemplateCard(template) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "ops-template-card";
-  button.addEventListener("click", () => openDocument(template.path));
+  const card = document.createElement("article");
+  card.className = "ops-template-card";
 
   const title = document.createElement("strong");
   title.textContent = template.title;
@@ -2574,8 +2609,23 @@ function renderWorkflowTemplateCard(template) {
     chip.textContent = value;
     chips.append(chip);
   }
-  button.append(title, summary, chips);
-  return button;
+
+  const actions = document.createElement("div");
+  actions.className = "ops-template-actions";
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "task-action-btn is-primary";
+  start.textContent = "Start workflow";
+  start.addEventListener("click", () => openQuickWorkflowForm({ template }));
+  const docs = document.createElement("button");
+  docs.type = "button";
+  docs.className = "task-action-btn";
+  docs.textContent = "View process doc";
+  docs.addEventListener("click", () => openDocument(template.path));
+  actions.append(start, docs);
+
+  card.append(title, summary, chips, actions);
+  return card;
 }
 
 async function generateRecurringTasksForToday(button) {
