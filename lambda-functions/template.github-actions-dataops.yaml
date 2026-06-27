@@ -109,6 +109,22 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*:*
+              - Sid: DynamoDbDataOpsExecutionTables
+                Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:DescribeTable
+                  - dynamodb:ListTagsOfResource
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:UpdateContinuousBackups
+                  - dynamodb:UpdateTable
+                  - dynamodb:UpdateTimeToLive
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-*
+                  - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-*/index/*
               - Sid: IamDataOpsFunctionRole
                 Effect: Allow
                 Action:

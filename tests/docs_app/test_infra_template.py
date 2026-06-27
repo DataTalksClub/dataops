@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO_ROOT / "lambda-functions" / "template.full.yaml"
+DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "lambda-functions" / "template.github-actions-dataops.yaml"
 
 
 def _resource_block(template: str, resource_name: str) -> str:
@@ -74,3 +75,14 @@ def test_dataops_table_outputs_are_available_for_work_engine_env_wiring():
 
     for output in expected_outputs:
         assert f"  {output}:" in template
+
+
+def test_github_deploy_role_can_manage_dataops_execution_tables():
+    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "Sid: DynamoDbDataOpsExecutionTables" in template
+    assert "dynamodb:CreateTable" in template
+    assert "dynamodb:DescribeTable" in template
+    assert "dynamodb:UpdateContinuousBackups" in template
+    assert "dynamodb:UpdateTable" in template
+    assert "table/${FullDocsStackName}-*" in template
