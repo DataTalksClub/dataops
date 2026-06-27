@@ -149,6 +149,58 @@ Orchestrator picks groomed issue
     CI/CD or deployment. For code/test failures, On-Call reports specifics and
     the orchestrator assigns the fix to Software Engineer.
 
+## Issue Format
+
+Raw intake issues can be short and should keep the `needs grooming` label until
+the Product Manager rewrites them. Groomed issues should be self-contained so a
+role agent can determine the next owner, dependencies, acceptance criteria, and
+required verification without chat context.
+
+Use this format for groomed issues:
+
+```markdown
+# <clear action-oriented title>
+
+Status: <pending | in progress | blocked | done>
+Tags: `<type>`, `<area>`, `<priority>`
+Depends on: None | #<issue>[, #<issue>]
+Blocks: None | #<issue>[, #<issue>]
+
+## Scope
+
+What this issue changes, where the work lives, and the intended operator or
+system behavior.
+
+## Acceptance Criteria
+
+- [ ] Observable requirement that must pass before Tester and PM acceptance.
+- [ ] Include `[HUMAN]` on checks that need a real external account, secret,
+      production write, Telegram delivery, sponsor/client message, OAuth flow,
+      or destructive production data check.
+
+## Test Scenarios
+
+### Scenario: <name>
+
+Given: <starting state>
+When: <action>
+Then: <expected result>
+
+## Out of Scope
+
+- Explicitly excluded work, source repos, systems, or follow-up ideas.
+
+## Dependencies
+
+- Optional. Use when there are data, infrastructure, content, deployment,
+  credential, migration, or sequencing details that do not fit in `Depends on`.
+```
+
+Keep DataOps-specific verification visible in the issue. Name affected areas
+such as the Python Lambda docs portal, `frontend/`, `work-engine/` TypeScript,
+DynamoDB, SAM/CloudFormation, GitHub Actions OIDC, content/search index, or
+assistant/podcast boundaries, and list the expected tests or screenshots.
+
 ## Orchestrator Responsibilities
 
 - The orchestrator is a manager. It files intake issues, dispatches role agents,
