@@ -96,4 +96,42 @@ describe('dry-run import', () => {
     assert.match(tasksJsonl, /"waiting_for":"Guest reply"/);
     assert.match(tasksJsonl, /"follow_up_at":"2026-06-27"/);
   });
+
+  it('reports invalid waiting and reminder records before import', async () => {
+    const brokenDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-dryrun-invalid-state-'));
+    try {
+      await fs.cp(exportDir, brokenDir, { recursive: true });
+      await fs.writeFile(
+        path.join(brokenDir, 'tasks.jsonl'),
+        JSON.stringify({
+          task_id: 'task-invalid-waiting',
+          description: 'Waiting task without metadata',
+          date: '2026-99-99',
+          status: 'waiting',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.writeFile(
+        path.join(brokenDir, 'notifications.jsonl'),
+        JSON.stringify({
+          notification_id: 'notification-invalid-type',
+          notification_type: 'not-a-real-reminder',
+          message: 'Unknown type',
+          created_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n',
+        'utf8'
+      );
+
+      const result = await dryRunImport(brokenDir);
+
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.wouldWrite.tasks, 1);
+      assert.strictEqual(result.wouldWrite.notifications, 1);
+      assert.ok(result.errors.some((e) => e.includes('tasks[0] missing required string field waiting_for')));
+      assert.ok(result.errors.some((e) => e.includes('tasks[0] field date must be a YYYY-MM-DD date')));
+      assert.ok(result.errors.some((e) => e.includes('notifications[0] field notification_type has unknown value: not-a-real-reminder')));
+    } finally {
+      await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
 });

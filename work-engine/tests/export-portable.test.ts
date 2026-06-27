@@ -150,4 +150,95 @@ describe('portable execution data export', () => {
       await fs.rm(brokenDir, { recursive: true, force: true });
     }
   });
+
+  it('validates waiting tasks and notification types for restore safety', async () => {
+    const brokenDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-export-validation-'));
+    try {
+      await fs.cp(exportDir, brokenDir, { recursive: true });
+
+      await fs.writeFile(
+        path.join(brokenDir, 'tasks.jsonl'),
+        JSON.stringify({
+          task_id: 'task-waiting-broken',
+          description: 'Waiting without follow-up metadata',
+          date: '2026-06-27',
+          status: 'waiting',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.appendFile(
+        path.join(brokenDir, 'tasks.jsonl'),
+        JSON.stringify({
+          task_id: 'task-invalid-date',
+          description: 'Invalid date fields',
+          date: '2026-99-99',
+          status: 'todo',
+          created_at: 123,
+          updated_at: 'not-a-timestamp',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.writeFile(
+        path.join(brokenDir, 'notifications.jsonl'),
+        JSON.stringify({
+          notification_id: 'notification-broken-type',
+          notification_type: 'unknown-reminder',
+          message: 'Unknown reminder type',
+          created_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n'
+        + JSON.stringify({
+          notification_id: 'notification-followup-broken',
+          notification_type: 'follow-up-due',
+          message: 'Missing due date',
+          task_id: 'task-waiting-broken',
+          created_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.appendFile(
+        path.join(brokenDir, 'notifications.jsonl'),
+        JSON.stringify({
+          notification_id: 'notification-followup-invalid-date',
+          notification_type: 'follow-up-due',
+          message: 'Invalid due date',
+          task_id: 'task-waiting-broken',
+          due_at: 'not-a-date',
+          created_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n',
+        'utf8'
+      );
+
+      const validation = await validatePortableExport(brokenDir);
+
+      assert.strictEqual(validation.valid, false);
+      assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field waiting_for')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field follow_up_at')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field date must be a YYYY-MM-DD date')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field created_at must be a string when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field updated_at must be a parseable date or timestamp')));
+      assert.ok(validation.errors.some((error) => error.includes('notifications[0] field notification_type has unknown value: unknown-reminder')));
+      assert.ok(validation.errors.some((error) => error.includes('notifications[1] missing required string field due_at')));
+      assert.ok(validation.errors.some((error) => error.includes('notifications[2] field due_at must be a parseable date or timestamp')));
+    } finally {
+      await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects non-string manifest timestamps', async () => {
+    const brokenDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-export-manifest-date-'));
+    try {
+      await fs.cp(exportDir, brokenDir, { recursive: true });
+      const manifestPath = path.join(brokenDir, 'manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      manifest.generated_at = 123;
+      await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+
+      const validation = await validatePortableExport(brokenDir);
+
+      assert.strictEqual(validation.valid, false);
+      assert.ok(validation.errors.some((error) => error.includes('manifest generated_at must be a parseable date or timestamp')));
+    } finally {
+      await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
 });
