@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 
-CACHE_ROOT = Path(os.environ.get("DTC_CACHE_ROOT", "/tmp/dtc-operations")).resolve()
+CACHE_ROOT = Path(os.environ.get("DTC_CACHE_ROOT", "/tmp/dataops")).resolve()
 os.environ.setdefault("CONTENT_ROOT", str(CACHE_ROOT / "content"))
-os.environ.setdefault("SEARCH_INDEX_PATH", "/tmp/dtc-search.index")
+os.environ.setdefault("SEARCH_INDEX_PATH", "/tmp/dataops-search.index")
 
 from lambda_functions import api_handler, search_handler  # noqa: E402
 from lambda_functions.docs_index import build_index  # noqa: E402
@@ -120,7 +120,7 @@ def session_token() -> str:
     password = basic_auth_password()
     if not password:
         return ""
-    return hmac.new(password.encode("utf-8"), b"dtc-operations-docs-session", hashlib.sha256).hexdigest()
+    return hmac.new(password.encode("utf-8"), b"dataops-session", hashlib.sha256).hexdigest()
 
 
 def valid_basic_auth(event: dict[str, Any]) -> bool:
@@ -146,7 +146,7 @@ def auth_challenge() -> dict[str, Any]:
     return {
         "statusCode": 401,
         "headers": {
-            "www-authenticate": 'Basic realm="DTC Operations Docs"',
+            "www-authenticate": 'Basic realm="DataOps"',
             "content-type": "text/plain; charset=utf-8",
             "cache-control": "no-store",
         },
@@ -217,7 +217,7 @@ def login_page(error: str) -> dict[str, Any]:
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>DTC Operations Docs Login</title>
+    <title>DataOps Login</title>
     <style>
       :root {{ color-scheme: light dark; }}
       body {{
@@ -273,7 +273,7 @@ def login_page(error: str) -> dict[str, Any]:
   </head>
   <body>
     <form method="post" action="/login">
-      <h1>Operations Docs</h1>
+      <h1>DataOps</h1>
       {error_html}
       <label>Username <input name="username" autocomplete="username" autofocus></label>
       <label>Password <input name="password" type="password" autocomplete="current-password"></label>
@@ -407,7 +407,7 @@ def handle_git_compat(event: dict[str, Any], path: str, method: str) -> dict[str
 
 
 def is_internal_refresh_event(event: dict[str, Any]) -> bool:
-    return event.get("source") == "dtc-operations.github-actions"
+    return event.get("source") in {"dataops.github-actions", "dtc-operations.github-actions"}
 
 
 def refresh_from_github() -> dict[str, Any]:

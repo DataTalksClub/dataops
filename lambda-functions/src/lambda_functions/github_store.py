@@ -20,7 +20,7 @@ class GitHubStore:
         self.root = root
         self.content_root = root / "content"
         self.owner = os.environ.get("GITHUB_OWNER", "DataTalksClub")
-        self.repo = os.environ.get("GITHUB_REPO", "dtc-operations")
+        self.repo = os.environ.get("GITHUB_REPO", "dataops")
         self.branch = os.environ.get("GITHUB_BRANCH", "main")
         self.token = github_token()
         self._tree: dict[str, dict[str, Any]] | None = None
@@ -49,7 +49,7 @@ class GitHubStore:
         headers = {
             "accept": "application/vnd.github+json",
             "authorization": f"Bearer {self.token}",
-            "user-agent": "dtc-operations-docs-lambda",
+            "user-agent": "dataops-lambda",
             "x-github-api-version": "2022-11-28",
         }
         req = urllib.request.Request(url, headers=headers, method="GET")
@@ -174,7 +174,7 @@ class GitHubStore:
         headers = {
             "accept": "application/vnd.github+json",
             "authorization": f"Bearer {self.token}",
-            "user-agent": "dtc-operations-docs-lambda",
+            "user-agent": "dataops-lambda",
             "x-github-api-version": "2022-11-28",
         }
         if body is not None:
