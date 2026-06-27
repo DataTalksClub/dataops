@@ -111,6 +111,7 @@ let currentWarnings = [];
 let lastSavedContent = "";
 let hasDraft = false;
 let searchController = null;
+let operationsWorkSnapshot = emptyOperationsWorkSnapshot();
 const DRAFT_PREFIX = "dtc-doc-draft:";
 const customSelects = [];
 const LIST_LIMIT = 120;
@@ -325,6 +326,7 @@ async function loadDocuments() {
     renderRecentDocs();
     renderRecentlyViewed();
     renderPinned();
+    refreshOperationsWorkSnapshot({ rerender: true });
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -584,12 +586,19 @@ function restoreFiltersExpanded() {
 }
 
 function renderOperationsHome(documents) {
-  const model = buildOperationsHomeModel(documents, { draftPaths: listDraftPaths() });
+  const model = buildOperationsHomeModel(documents, {
+    draftPaths: listDraftPaths(),
+    workSnapshot: operationsWorkSnapshot,
+  });
   documentList.classList.add("is-operations-home");
   libraryTitle.textContent = "Operations Home";
   setPageTitle("Operations Home", "Home");
   clearSelectionButton.hidden = true;
-  setStatus(`${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} workflow templates · ${model.stats.recurringTemplates} recurring.`);
+  if (model.stats.liveLoaded) {
+    setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active bundles.`);
+  } else {
+    setStatus(`${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} workflow templates · ${model.stats.recurringTemplates} recurring.`);
+  }
 
   const wrap = document.createElement("div");
   wrap.className = "operations-home";
@@ -601,7 +610,7 @@ function renderOperationsHome(documents) {
     ["Today", model.lanes.find((lane) => lane.id === "today")?.items.length || 0],
     ["Overdue", model.lanes.find((lane) => lane.id === "overdue")?.items.length || 0],
     ["Waiting", model.lanes.find((lane) => lane.id === "waiting")?.items.length || 0],
-    ["Recurring", model.stats.recurringTemplates],
+    ["Bundles", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
   ]) {
     const box = document.createElement("div");
     box.className = "ops-stat";
@@ -665,6 +674,18 @@ function buildOperationsHomeModel(documents, options) {
   options = options || {};
   const docs = Array.isArray(documents) ? documents : [];
   const draftPaths = Array.isArray(options.draftPaths) ? options.draftPaths : [];
+  const today = options.today || todayIsoDate();
+  const work = normalizeOperationsWorkSnapshot(options.workSnapshot || {
+    loaded: options.liveLoaded,
+    todayTasks: options.todayTasks,
+    overdueTasks: options.overdueTasks,
+    waitingTasks: options.waitingTasks,
+    tasks: options.tasks,
+    bundles: options.bundles,
+    bundleTasks: options.bundleTasks,
+    errors: options.workErrors,
+  }, { today });
+  const hasLiveWork = work.loaded || work.todayTasks.length > 0 || work.overdueTasks.length > 0 || work.waitingTasks.length > 0 || work.activeBundles.length > 0;
   const templates = docs
     .filter(isWorkflowTemplateDoc)
     .map((doc) => summarizeWorkflowTemplate(doc))
@@ -675,40 +696,44 @@ function buildOperationsHomeModel(documents, options) {
     return operationItemFromDoc(doc, "Local draft");
   });
   const recurringItems = templates.filter((template) => template.recurring).map(operationItemFromTemplate);
-  const atRiskItems = templates.filter((template) => template.atRisk).map(operationItemFromTemplate);
   const followUpItems = docs.filter(isFollowUpDoc).slice(0, 6).map((doc) => operationItemFromDoc(doc, "Follow-up"));
-  const todayItems = dedupeOperationItems([...recurringItems, ...templates.slice(0, 3).map(operationItemFromTemplate)]).slice(0, 6);
+  const todayItems = hasLiveWork
+    ? work.todayTasks.map((task) => operationItemFromTask(task, { today }))
+    : dedupeOperationItems([...recurringItems, ...templates.slice(0, 3).map(operationItemFromTemplate)]).slice(0, 6);
+  const overdueItems = hasLiveWork
+    ? work.overdueTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
+    : draftItems;
+  const waitingItems = hasLiveWork
+    ? work.waitingTasks.map((task) => operationItemFromTask(task, { today, waiting: true }))
+    : followUpItems;
+  const bundleItems = hasLiveWork
+    ? work.activeBundles.map((bundle) => operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], { today }))
+    : [];
 
   const lanes = [
     {
       id: "today",
       title: "Today",
-      empty: "No daily workflow docs indexed.",
+      empty: hasLiveWork ? "No live tasks due today." : "No daily workflow docs indexed.",
       items: todayItems,
     },
     {
       id: "overdue",
       title: "Overdue",
-      empty: "No local overdue signals.",
-      items: draftItems,
+      empty: hasLiveWork ? "No live overdue tasks." : "No local overdue signals.",
+      items: overdueItems,
     },
     {
       id: "waiting",
       title: "Waiting / Follow-Ups",
-      empty: "No follow-up docs matched.",
-      items: followUpItems,
+      empty: hasLiveWork ? "No live waiting or follow-up tasks." : "No follow-up docs matched.",
+      items: waitingItems,
     },
     {
-      id: "risk",
-      title: "At-Risk Workflows",
-      empty: "No at-risk workflow templates matched.",
-      items: atRiskItems,
-    },
-    {
-      id: "recurring",
-      title: "Recurring",
-      empty: "No recurring workflow templates indexed.",
-      items: recurringItems,
+      id: "bundles",
+      title: "Active Bundles",
+      empty: hasLiveWork ? "No active bundles." : "No live bundle data loaded.",
+      items: bundleItems,
     },
   ];
 
@@ -720,8 +745,338 @@ function buildOperationsHomeModel(documents, options) {
       totalDocs: docs.length,
       workflowTemplates: templates.length,
       recurringTemplates: recurringItems.length,
+      liveLoaded: hasLiveWork,
+      todayTasks: work.todayTasks.length,
+      overdueTasks: work.overdueTasks.length,
+      waitingTasks: work.waitingTasks.length,
+      activeBundles: work.activeBundles.length,
+      workErrors: work.errors,
     },
   };
+}
+
+function emptyOperationsWorkSnapshot() {
+  return {
+    loaded: false,
+    todayTasks: [],
+    overdueTasks: [],
+    waitingTasks: [],
+    bundles: [],
+    bundleTasks: {},
+    errors: [],
+  };
+}
+
+async function refreshOperationsWorkSnapshot(options = {}) {
+  const today = todayIsoDate();
+  const yesterday = addDaysIso(today, -1);
+  const todayUrl = workApiUrl("/api/tasks", { date: today });
+  const overdueUrl = workApiUrl("/api/tasks", { startDate: "1970-01-01", endDate: yesterday });
+  const waitingUrl = workApiUrl("/api/tasks", { status: "waiting" });
+  const bundlesUrl = workApiUrl("/api/bundles");
+  const [todayResult, overdueResult, waitingResult, bundlesResult] = await Promise.allSettled([
+    request(todayUrl),
+    request(overdueUrl),
+    request(waitingUrl),
+    request(bundlesUrl),
+  ]);
+
+  const snapshot = emptyOperationsWorkSnapshot();
+  snapshot.loaded = [todayResult, overdueResult, waitingResult, bundlesResult].some((result) => result.status === "fulfilled");
+  snapshot.todayTasks = tasksFromWorkPayload(settledPayload(todayResult));
+  snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
+  snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
+  snapshot.bundles = bundlesFromWorkPayload(settledPayload(bundlesResult));
+  snapshot.errors = [todayResult, overdueResult, waitingResult, bundlesResult]
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason?.message || "Work API request failed");
+
+  const activeBundles = snapshot.bundles.filter(isActiveWorkBundle).slice(0, 8);
+  const bundleTaskResults = await Promise.allSettled(activeBundles.map((bundle) => request(workApiUrl("/api/tasks", { bundleId: bundle.id }))));
+  activeBundles.forEach((bundle, index) => {
+    const result = bundleTaskResults[index];
+    if (result.status === "fulfilled") {
+      snapshot.bundleTasks[bundle.id] = tasksFromWorkPayload(result.value);
+    } else {
+      snapshot.errors.push(result.reason?.message || `Could not load tasks for ${bundle.title || bundle.id}`);
+    }
+  });
+
+  operationsWorkSnapshot = normalizeOperationsWorkSnapshot(snapshot, { today });
+  if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+}
+
+function isOperationsHomeVisible() {
+  return body.dataset.view === "library" && !selectedFolder && !searchInput.value.trim();
+}
+
+function workApiUrl(path, params = {}) {
+  const url = apiUrl(`/work${path}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+
+function settledPayload(result) {
+  return result && result.status === "fulfilled" ? result.value : {};
+}
+
+function tasksFromWorkPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.tasks)) return payload.tasks;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+function bundlesFromWorkPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.bundles)) return payload.bundles;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+function normalizeOperationsWorkSnapshot(input, options) {
+  options = options || {};
+  const today = options.today || todayIsoDate();
+  const snapshot = input && typeof input === "object" ? input : {};
+  const allTasks = dedupeWorkTasks([
+    ...tasksFromWorkPayload(snapshot.tasks || []),
+    ...tasksFromWorkPayload(snapshot.todayTasks || []),
+    ...tasksFromWorkPayload(snapshot.overdueTasks || []),
+    ...tasksFromWorkPayload(snapshot.waitingTasks || []),
+  ]);
+  const explicitToday = tasksFromWorkPayload(snapshot.todayTasks || []);
+  const explicitOverdue = tasksFromWorkPayload(snapshot.overdueTasks || []);
+  const explicitWaiting = tasksFromWorkPayload(snapshot.waitingTasks || []);
+  const bundles = bundlesFromWorkPayload(snapshot.bundles || []);
+  const bundleTasks = normalizeBundleTaskMap(snapshot.bundleTasks || {}, allTasks);
+
+  return {
+    loaded: Boolean(snapshot.loaded),
+    todayTasks: sortWorkTasks(dedupeWorkTasks([...explicitToday, ...allTasks.filter((task) => isTaskDueToday(task, today))]), "today", today),
+    overdueTasks: sortWorkTasks(dedupeWorkTasks([...explicitOverdue, ...allTasks.filter((task) => isTaskOverdue(task, today))]), "overdue", today),
+    waitingTasks: sortWorkTasks(dedupeWorkTasks([...explicitWaiting, ...allTasks.filter((task) => isWaitingOrFollowUpTask(task))]), "waiting", today),
+    activeBundles: sortActiveWorkBundles(bundles.filter(isActiveWorkBundle), bundleTasks, today),
+    bundles,
+    bundleTasks,
+    errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
+  };
+}
+
+function normalizeBundleTaskMap(bundleTasks, fallbackTasks) {
+  const out = {};
+  if (bundleTasks && typeof bundleTasks === "object" && !Array.isArray(bundleTasks)) {
+    for (const [bundleId, tasks] of Object.entries(bundleTasks)) {
+      out[bundleId] = tasksFromWorkPayload(tasks);
+    }
+  }
+  for (const task of tasksFromWorkPayload(fallbackTasks || [])) {
+    if (!task || !task.bundleId) continue;
+    if (!out[task.bundleId]) out[task.bundleId] = [];
+    out[task.bundleId].push(task);
+  }
+  for (const [bundleId, tasks] of Object.entries(out)) out[bundleId] = dedupeWorkTasks(tasks);
+  return out;
+}
+
+function dedupeWorkTasks(tasks) {
+  const seen = new Set();
+  const out = [];
+  for (const task of tasksFromWorkPayload(tasks)) {
+    if (!task || typeof task !== "object") continue;
+    const key = task.id || `${task.description || task.title || ""}:${task.date || ""}:${task.bundleId || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(task);
+  }
+  return out;
+}
+
+function sortWorkTasks(tasks, mode, today) {
+  const sorted = dedupeWorkTasks(tasks).filter(isOpenWorkTask);
+  sorted.sort((a, b) => {
+    const dateA = taskSortDate(a, mode);
+    const dateB = taskSortDate(b, mode);
+    const byDate = compareIsoDate(dateA, dateB);
+    if (byDate !== 0) return byDate;
+    if (mode === "overdue") return compareIsoDate(taskDate(a) || today, taskDate(b) || today);
+    return workTaskTitle(a).localeCompare(workTaskTitle(b));
+  });
+  return sorted.slice(0, 12);
+}
+
+function taskSortDate(task, mode) {
+  if (mode === "waiting") return task.followUpAt || task.date || "";
+  return task.date || task.followUpAt || "";
+}
+
+function isOpenWorkTask(task) {
+  if (!task || typeof task !== "object") return false;
+  const status = String(task.status || "todo").toLowerCase();
+  return status !== "done" && status !== "archived";
+}
+
+function isTaskDueToday(task, today) {
+  return isOpenWorkTask(task) && taskDate(task) === today;
+}
+
+function isTaskOverdue(task, today) {
+  const date = taskDate(task);
+  return isOpenWorkTask(task) && !!date && isBeforeIsoDate(date, today);
+}
+
+function isWaitingOrFollowUpTask(task) {
+  if (!isOpenWorkTask(task)) return false;
+  const status = String(task.status || "").toLowerCase();
+  return status === "waiting" || !!task.waitingFor || !!task.followUpAt;
+}
+
+function taskDate(task) {
+  if (!task || !task.date) return "";
+  return String(task.date).slice(0, 10);
+}
+
+function isActiveWorkBundle(bundle) {
+  if (!bundle || typeof bundle !== "object") return false;
+  const status = String(bundle.status || "active").toLowerCase();
+  return status !== "done" && status !== "archived";
+}
+
+function sortActiveWorkBundles(bundles, bundleTasks, today) {
+  const scored = bundles.map((bundle) => ({
+    bundle,
+    progress: summarizeBundleProgress(bundle, bundleTasks[bundle.id] || [], today),
+  }));
+  scored.sort((a, b) => {
+    const riskOrder = { high: 0, medium: 1, low: 2 };
+    const byRisk = (riskOrder[a.progress.risk] ?? 2) - (riskOrder[b.progress.risk] ?? 2);
+    if (byRisk !== 0) return byRisk;
+    const byDate = compareIsoDate(a.bundle.anchorDate || "", b.bundle.anchorDate || "");
+    if (byDate !== 0) return byDate;
+    return workBundleTitle(a.bundle).localeCompare(workBundleTitle(b.bundle));
+  });
+  return scored.map((entry) => entry.bundle).slice(0, 8);
+}
+
+function summarizeBundleProgress(bundle, tasks, today) {
+  const taskList = dedupeWorkTasks(tasks);
+  const total = taskList.length;
+  const done = taskList.filter((task) => String(task.status || "").toLowerCase() === "done").length;
+  const open = taskList.filter(isOpenWorkTask).length;
+  const overdue = taskList.filter((task) => isTaskOverdue(task, today)).length;
+  const waiting = taskList.filter(isWaitingOrFollowUpTask).length;
+  let risk = "low";
+  if (overdue > 0) risk = "high";
+  else if (waiting > 0 || (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))) risk = "medium";
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  const parts = total > 0 ? [`${done}/${total} tasks`] : ["No tasks loaded"];
+  if (overdue > 0) parts.push(`${overdue} overdue`);
+  if (waiting > 0) parts.push(`${waiting} waiting`);
+  return { total, done, open, overdue, waiting, percent, risk, label: parts.join(" - ") };
+}
+
+function operationItemFromTask(task, options) {
+  options = options || {};
+  const today = options.today || todayIsoDate();
+  const meta = [];
+  if (task.date) meta.push(formatTaskDateMeta(task.date, today));
+  if (task.status) meta.push(task.status);
+  if (task.assigneeId) meta.push(task.assigneeId);
+  const summary = task.waitingFor
+    ? `Waiting for ${task.waitingFor}${task.followUpAt ? `; follow up ${formatTaskDateMeta(task.followUpAt, today)}` : ""}`
+    : task.comment || task.source || task.instructionsUrl || task.link || "";
+  return {
+    title: workTaskTitle(task),
+    summary,
+    meta: meta.join(" - "),
+    taskId: task.id,
+    bundleId: task.bundleId,
+    risk: options.overdue ? "high" : options.waiting ? "medium" : "low",
+  };
+}
+
+function operationItemFromBundle(bundle, tasks, options) {
+  options = options || {};
+  const today = options.today || todayIsoDate();
+  const progress = summarizeBundleProgress(bundle, tasks, today);
+  const summaryParts = [];
+  if (bundle.stage) summaryParts.push(labelizeWorkValue(bundle.stage));
+  if (bundle.anchorDate) summaryParts.push(`Anchor ${formatTaskDateMeta(bundle.anchorDate, today)}`);
+  if (bundle.description) summaryParts.push(bundle.description);
+  return {
+    title: workBundleTitle(bundle),
+    summary: summaryParts.join(" - "),
+    meta: progress.label,
+    bundleId: bundle.id,
+    progress,
+    risk: progress.risk,
+  };
+}
+
+function workTaskTitle(task) {
+  return task.description || task.title || task.name || task.id || "Untitled task";
+}
+
+function workBundleTitle(bundle) {
+  return bundle.title || bundle.name || bundle.id || "Untitled bundle";
+}
+
+function formatTaskDateMeta(value, today) {
+  const date = String(value || "").slice(0, 10);
+  if (!date) return "";
+  if (date === today) return "Today";
+  if (date === addDaysIso(today, -1)) return "Yesterday";
+  if (date === addDaysIso(today, 1)) return "Tomorrow";
+  return date;
+}
+
+function labelizeWorkValue(value) {
+  return String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function todayIsoDate() {
+  const date = new Date();
+  return toIsoDate(date);
+}
+
+function addDaysIso(isoDate, days) {
+  const date = parseIsoDateValue(isoDate) || new Date();
+  date.setDate(date.getDate() + days);
+  return toIsoDate(date);
+}
+
+function toIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseIsoDateValue(value) {
+  if (!value) return null;
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function compareIsoDate(a, b) {
+  const left = String(a || "");
+  const right = String(b || "");
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right);
+}
+
+function isBeforeIsoDate(a, b) {
+  if (!a || !b) return false;
+  return String(a).slice(0, 10) < String(b).slice(0, 10);
 }
 
 function isWorkflowTemplateDoc(doc) {
@@ -866,14 +1221,29 @@ function renderOperationsLaneItem(item) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ops-lane-item";
-  if (item.path) button.addEventListener("click", () => openDocument(item.path));
+  if (item.risk) button.classList.add(`ops-risk-${item.risk}`);
+  if (item.path) {
+    button.addEventListener("click", () => openDocument(item.path));
+  } else {
+    button.disabled = true;
+  }
   const title = document.createElement("strong");
   title.textContent = item.title;
   const summary = document.createElement("span");
   summary.textContent = item.summary || item.path || "";
   const meta = document.createElement("small");
   meta.textContent = item.meta || "";
-  button.append(title, summary, meta);
+  button.append(title, summary);
+  if (item.progress) {
+    const progress = document.createElement("div");
+    progress.className = "ops-progress";
+    progress.setAttribute("aria-label", item.progress.label);
+    const bar = document.createElement("i");
+    bar.style.width = `${Math.max(0, Math.min(100, item.progress.percent || 0))}%`;
+    progress.append(bar);
+    button.append(progress);
+  }
+  button.append(meta);
   return button;
 }
 
@@ -1784,12 +2154,19 @@ async function request(url, options = {}) {
 
   const text = await response.text();
   let payload = null;
+  let parsedJson = false;
   if (text) {
     try {
       payload = JSON.parse(text);
+      parsedJson = true;
     } catch {
       // Non-JSON response (HTML error page, plain text, etc.).
     }
+  }
+
+  if (text && !parsedJson) {
+    const fallback = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+    throw new Error(response.ok ? "Unexpected non-JSON API response" : fallback);
   }
 
   if (!response.ok) {

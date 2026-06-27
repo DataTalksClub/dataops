@@ -12,7 +12,21 @@ APP_JS = REPO_ROOT / "frontend" / "src" / "app.js"
 def _extract_function(source: str, name: str) -> str:
     marker = f"function {name}("
     start = source.index(marker)
-    brace = source.index("{", start)
+    function_start = start
+    if source[max(0, start - 6) : start] == "async ":
+        function_start = start - 6
+    paren = source.index("(", start)
+    paren_depth = 0
+    signature_end = paren
+    for index in range(paren, len(source)):
+        if source[index] == "(":
+            paren_depth += 1
+        elif source[index] == ")":
+            paren_depth -= 1
+            if paren_depth == 0:
+                signature_end = index
+                break
+    brace = source.index("{", signature_end)
     depth = 0
     for index in range(brace, len(source)):
         if source[index] == "{":
@@ -20,7 +34,7 @@ def _extract_function(source: str, name: str) -> str:
         elif source[index] == "}":
             depth -= 1
             if depth == 0:
-                return source[start : index + 1]
+                return source[function_start : index + 1]
     raise AssertionError(f"Could not extract function {name}")
 
 
@@ -47,8 +61,13 @@ const history = {{
 }};
 function resolveImageSrc(src) {{ return src; }}
 {functions}
+void (async () => {{
 {assertions}
 console.log(JSON.stringify({{ ok: true, pushed }}));
+}})().catch((error) => {{
+  console.error(error);
+  process.exit(1);
+}});
 """
     result = subprocess.run(
         ["node", "-e", script],
@@ -180,7 +199,7 @@ assert.equal(basename("content/finance/sops/pay-vat.md"), "pay vat");
     assert result["ok"] is True
 
 
-def test_operations_home_model_builds_daily_lanes_from_docs_metadata():
+def test_operations_home_model_builds_daily_lanes_from_live_work_payloads():
     result = _run_app_js_functions(
         """
 const docs = [
@@ -222,27 +241,109 @@ const docs = [
 ];
 
 const model = buildOperationsHomeModel(docs, {
+  today: "2026-06-27",
   draftPaths: ["content/media/podcast/templates/remind-guest.md"],
+  workSnapshot: {
+    loaded: true,
+    tasks: [
+      {
+        id: "task-today",
+        description: "Publish newsletter",
+        date: "2026-06-27",
+        status: "todo",
+        assigneeId: "ops",
+      },
+      {
+        id: "task-overdue",
+        description: "Upload podcast recording",
+        date: "2026-06-25",
+        status: "todo",
+        bundleId: "bundle-podcast",
+      },
+      {
+        id: "task-waiting",
+        description: "Confirm guest bio",
+        date: "2026-06-28",
+        status: "waiting",
+        waitingFor: "guest",
+        followUpAt: "2026-06-27",
+        bundleId: "bundle-podcast",
+      },
+      {
+        id: "task-done",
+        description: "Completed task",
+        date: "2026-06-27",
+        status: "done",
+      },
+    ],
+    bundles: [
+      {
+        id: "bundle-podcast",
+        title: "Podcast episode: streaming systems",
+        anchorDate: "2026-06-26",
+        stage: "post-production",
+        status: "active",
+      },
+      {
+        id: "bundle-archived",
+        title: "Archived bundle",
+        status: "archived",
+      },
+    ],
+    bundleTasks: {
+      "bundle-podcast": [
+        { id: "task-overdue", description: "Upload podcast recording", date: "2026-06-25", status: "todo", bundleId: "bundle-podcast" },
+        { id: "task-waiting", description: "Confirm guest bio", date: "2026-06-28", status: "waiting", waitingFor: "guest", followUpAt: "2026-06-27", bundleId: "bundle-podcast" },
+        { id: "task-complete", description: "Prepare notes", date: "2026-06-24", status: "done", bundleId: "bundle-podcast" },
+      ],
+    },
+  },
 });
 
 assert.equal(model.stats.totalDocs, 5);
 assert.equal(model.stats.workflowTemplates, 3);
 assert.equal(model.stats.recurringTemplates, 2);
+assert.equal(model.stats.liveLoaded, true);
+assert.equal(model.stats.todayTasks, 1);
+assert.equal(model.stats.overdueTasks, 1);
+assert.equal(model.stats.waitingTasks, 1);
+assert.equal(model.stats.activeBundles, 1);
 assert.deepEqual(model.templates.map((template) => template.slug), ["newsletter", "podcast", "social-media"]);
 assert.equal(model.templates[0].title, "Newsletter");
 assert.equal(model.templates[0].recurring, true);
 assert.equal(model.templates[1].atRisk, true);
 
 const lanes = Object.fromEntries(model.lanes.map((lane) => [lane.id, lane]));
-assert.deepEqual(lanes.recurring.items.map((item) => item.title), ["Newsletter", "Social Media Weekly"]);
-assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Podcast reminder email"]);
-assert.equal(lanes.waiting.items[0].title, "Podcast reminder email");
-assert.equal(lanes.risk.items.some((item) => item.title === "Podcast"), true);
+assert.deepEqual(model.lanes.map((lane) => lane.id), ["today", "overdue", "waiting", "bundles"]);
+assert.deepEqual(lanes.today.items.map((item) => item.title), ["Publish newsletter"]);
+assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Upload podcast recording"]);
+assert.equal(lanes.waiting.items[0].summary, "Waiting for guest; follow up Today");
+assert.equal(lanes.bundles.items[0].title, "Podcast episode: streaming systems");
+assert.equal(lanes.bundles.items[0].progress.done, 1);
+assert.equal(lanes.bundles.items[0].progress.total, 3);
+assert.equal(lanes.bundles.items[0].progress.overdue, 1);
+assert.equal(lanes.bundles.items[0].progress.waiting, 1);
+assert.equal(lanes.bundles.items[0].risk, "high");
 assert.equal(model.references.some((ref) => ref.title === "DataOps V1 Goal" && ref.href.includes(".goal-v1.md")), true);
 assert.equal(model.references.some((ref) => ref.path === "content/finance/reference/invoices-receipts-and-statements.md"), true);
 """,
         [
             "buildOperationsHomeModel",
+            "normalizeOperationsWorkSnapshot",
+            "normalizeBundleTaskMap",
+            "tasksFromWorkPayload",
+            "bundlesFromWorkPayload",
+            "dedupeWorkTasks",
+            "sortWorkTasks",
+            "taskSortDate",
+            "isOpenWorkTask",
+            "isTaskDueToday",
+            "isTaskOverdue",
+            "isWaitingOrFollowUpTask",
+            "taskDate",
+            "isActiveWorkBundle",
+            "sortActiveWorkBundles",
+            "summarizeBundleProgress",
             "isWorkflowTemplateDoc",
             "summarizeWorkflowTemplate",
             "workflowSlugFromDoc",
@@ -252,11 +353,53 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "isFollowUpDoc",
             "operationItemFromTemplate",
             "operationItemFromDoc",
+            "operationItemFromTask",
+            "operationItemFromBundle",
+            "workTaskTitle",
+            "workBundleTitle",
+            "formatTaskDateMeta",
+            "labelizeWorkValue",
+            "todayIsoDate",
+            "addDaysIso",
+            "toIsoDate",
+            "parseIsoDateValue",
+            "compareIsoDate",
+            "isBeforeIsoDate",
             "dedupeOperationItems",
             "buildOperationsReferenceLinks",
             "basename",
             "cleanPath",
         ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_request_rejects_non_json_api_responses():
+    result = _run_app_js_functions(
+        """
+global.fetch = async () => ({
+  ok: true,
+  status: 200,
+  statusText: "OK",
+  text: async () => "<!doctype html><title>Login</title>",
+});
+
+await assert.rejects(
+  () => request("https://ops.example.test/work/api/tasks"),
+  /Unexpected non-JSON API response/,
+);
+
+global.fetch = async () => ({
+  ok: true,
+  status: 200,
+  statusText: "OK",
+  text: async () => JSON.stringify({ status: "ok" }),
+});
+
+assert.deepEqual(await request("https://ops.example.test/work/api/health"), { status: "ok" });
+""",
+        ["request"],
     )
 
     assert result["ok"] is True
