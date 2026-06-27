@@ -34,7 +34,7 @@ Choose checks based on touched areas and issue requirements:
 - Docs portal, Lambda, frontend, search: `uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app`; rebuild the search index when content metadata, registry, search, or routing changes; run focused frontend/backend tests; capture screenshots for changed portal pages or flows.
 - Work-engine: `npm --prefix work-engine test`, `npm --prefix work-engine run typecheck`, `npm --prefix work-engine run build` when packaging can be affected, and `npm --prefix work-engine run test:e2e` for changed operator flows.
 - Process/content: rebuild the content/search index and run docs metadata tests when frontmatter, document IDs, archive rules, templates, registry behavior, or content shape changes.
-- Assistant/podcast: run focused assistant tests, commonly `uv run pytest` in the assistant package when available.
+- Assistant/podcast: run focused assistant tests, commonly `uv run --project assistants/podcast pytest` for Podcast Assistant.
 - Infrastructure/deployment: validate affected SAM/CloudFormation templates and related docs-app infrastructure tests.
 
 ## Handoff

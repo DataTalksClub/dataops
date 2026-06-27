@@ -30,7 +30,8 @@ For process-doc and content changes, require or run focused checks as appropriat
 
 - Build the content/search index when content metadata, registry, search, or routing is touched.
 - Run docs metadata tests when frontmatter, IDs, archive rules, templates, registry behavior, or content shape changes.
-- Run or recommend SOP/content lint scripts when they apply.
+- Run or recommend repository-specific validation scripts when they apply.
+- Do not invoke user-facing prose tooling for internal process docs unless the user explicitly asks for it.
 
 ## Handoff
 

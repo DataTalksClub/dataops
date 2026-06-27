@@ -10,6 +10,16 @@ This process is copied from the AI Shipping Labs issue pipeline and adapted for
 DataTalks.Club operations, DataOps V1, the docs portal, the work-engine, Lambda,
 DynamoDB, SAM, and GitHub Actions OIDC deployment.
 
+The adaptation must not weaken the original process. Keep the same gates and
+agent ownership from AI Shipping Labs: orchestrator intake, PM grooming,
+Software Engineer implementation without commit, Tester verification with real
+tests and screenshots where relevant, PM acceptance from the user perspective,
+local merge to `main`, push, and On-Call CI/CD monitoring. Only substitute
+project-specific technology, repo names, labels, test commands, and deployment
+details. If an AI Shipping Labs rule is stricter than this document and the
+DataOps wording is ambiguous, use the stricter rule unless a DataOps-specific
+constraint is documented here.
+
 Role agents handle the full lifecycle from raw request to shipped code. The
 orchestrator coordinates the pipeline, but role agents own grooming,
 implementation, testing, acceptance, and CI/CD monitoring.
@@ -21,7 +31,7 @@ implementation, testing, acceptance, and CI/CD monitoring.
 - Merge plan: `_docs/MERGE_PLAN.md`
 - Portal analysis: `PORTAL_ANALYSIS.md`
 - Shared project plan: `PROJECT_PLAN.md`
-- V1 goal: `goal-v1.md`
+- V1 goal: `.goal-v1.md`
 
 ## Issue Lifecycle
 
@@ -42,9 +52,9 @@ Orchestrator files issue  ->  PM grooms       ->  Engineer builds  ->  Tester ve
 3. Software Engineer implements the groomed issue. The engineer writes code and
    tests locally. The engineer does not commit until tester and PM acceptance
    pass.
-4. Tester reviews the code, runs the required tests, captures screenshots for UI
-   changes, verifies every acceptance criterion, and reports pass/fail with
-   specifics.
+4. Tester reviews the code, runs the issue's full verification workflow,
+   captures screenshots for UI changes, verifies every acceptance criterion, and
+   reports pass/fail with exact commands and evidence.
 5. Product Manager performs final acceptance from the user's perspective. The PM
    checks user flow, copy, empty states, navigation, consistency, and whether
    the implemented behavior matches the groomed issue.
@@ -54,16 +64,16 @@ Orchestrator files issue  ->  PM grooms       ->  Engineer builds  ->  Tester ve
 
 ## Agents
 
-| Agent | Role |
-|---|---|
-| Product Manager | Grooms issues into specs at the start and performs user acceptance at the end |
-| Designer | Audits UI surfaces and design-system consistency; produces screenshot-backed findings only |
-| Architect | Reviews merge architecture, data boundaries, migration strategy, and infrastructure shape |
-| Process Curator | Reviews SOP/content changes, document IDs, workflow-doc links, and operational knowledge quality |
-| Assistant Engineer | Owns assistant modules such as Podcast Assistant and future assistant workflows |
-| Software Engineer | Implements code and tests; does not commit until approved |
-| Tester | Runs required tests, verifies acceptance criteria technically, and checks screenshots |
-| On-Call Engineer | Monitors CI/CD after push and fixes or routes failures |
+| Agent | File | Role |
+|---|---|---|
+| Product Manager | `.claude/agents/product-manager.md` | Grooms issues into specs at the start and performs user acceptance at the end |
+| Designer | `.claude/agents/designer.md` | Audits UI surfaces and design-system consistency; produces screenshot-backed findings only |
+| Architect | `.claude/agents/architect.md` | Reviews merge architecture, data boundaries, migration strategy, and infrastructure shape |
+| Process Curator | `.claude/agents/process-curator.md` | Reviews SOP/content changes, document IDs, workflow-doc links, and operational knowledge quality |
+| Assistant Engineer | `.claude/agents/assistant-engineer.md` | Owns assistant modules such as Podcast Assistant and future assistant workflows |
+| Software Engineer | `.claude/agents/software-engineer.md` | Implements code and tests; does not commit until approved |
+| Tester | `.claude/agents/tester.md` | Runs the issue's full verification workflow, verifies acceptance criteria technically, and checks screenshots |
+| On-Call Engineer | `.claude/agents/oncall-engineer.md` | Monitors CI/CD after push and fixes or routes failures |
 
 Specialist agents do not replace lifecycle gates. For example, a Designer report
 can inform PM grooming or PM acceptance, but the PM still owns the acceptance
@@ -135,8 +145,9 @@ Orchestrator picks groomed issue
    Engineer.
 4. Software Engineer reads the issue, writes code and tests locally, and reports
    the changed files and verification. The engineer does not commit.
-5. Tester reviews the code, runs the required tests, captures screenshots for UI
-   changes, verifies every acceptance criterion, and reports pass/fail.
+5. Tester reviews the code, runs the issue's full verification workflow,
+   captures screenshots for UI changes, verifies every acceptance criterion, and
+   reports pass/fail with exact commands and evidence.
 6. If tester fails, the orchestrator relays specific feedback to the Software
    Engineer. The engineer fixes it, then Tester re-reviews. Repeat until pass.
 7. If tester passes, Product Manager performs acceptance from the user's
@@ -207,6 +218,10 @@ assistant/podcast boundaries, and list the expected tests or screenshots.
   relays handoffs, merges approved work, pushes `main`, and keeps the pipeline
   full. It does not personally groom, write feature code, run test suites, do
   user-facing acceptance, or watch CI/CD when a role agent can own that work.
+- Stay in the orchestrator role. Do not personally perform active issue role
+  work when a Product Manager, Software Engineer, Tester, On-Call Engineer, or
+  specialist agent can own it. The orchestrator coordinates, unblocks, reviews
+  handoffs, and launches the next role agent.
 - File issues from user intake. Any user-provided observation, bug report,
   screenshot, link, recording, or feature idea that is not in the issue tracker
   yet should be filed by the orchestrator via `gh issue create` with the
@@ -225,7 +240,10 @@ assistant/podcast boundaries, and list the expected tests or screenshots.
   grooming, triaging, or advancing independent issues while agents work.
 - Keep role agents running whenever eligible backlog exists. If there is a
   groomed, unblocked issue and agent capacity is available, launch the next
-  appropriate role agent instead of leaving the pipeline idle.
+  appropriate role agent instead of leaving the pipeline idle. Only pause
+  launches when `main` is not safe for new worktrees, dependencies are blocked,
+  agent capacity is exhausted, or all remaining work is waiting on human
+  verification.
 - Groom `needs grooming` issues first by launching Product Manager in grooming
   mode.
 - Pick the next groomed issues two at a time when they are independent.
@@ -259,10 +277,10 @@ assistant/podcast boundaries, and list the expected tests or screenshots.
 
 ## Merging - Local Only, No PRs
 
-We do not use GitHub Pull Requests unless the user explicitly asks for one. Do
-not run `gh pr create` or `gh pr merge`. The review pipeline is the agent flow:
-PM grooming, Software Engineer implementation, Tester verification, PM
-acceptance, local merge, push, and On-Call CI/CD check.
+We do not use GitHub Pull Requests. Do not run `gh pr create` or
+`gh pr merge`. The review pipeline is the agent flow: PM grooming, Software
+Engineer implementation, Tester verification, PM acceptance, local merge, push,
+and On-Call CI/CD check.
 
 The merge happens on the orchestrator's local `main` branch, then `main` is
 pushed to origin and CI/CD deploys from there.
@@ -306,15 +324,18 @@ human verification.
 
 ## Mandatory Steps
 
-Every implementation issue goes through all stages:
+Every issue that changes code, infrastructure, content, process docs, assistant
+behavior, or operator-facing behavior goes through all stages:
 
 ```text
 PM groom -> SWE implement -> Tester review -> PM acceptance -> Commit -> Local merge -> Push -> On-Call CI check
 ```
 
-- Tester must actually run tests. Reviewing code is not enough.
-- Tester reports exact commands, pass/fail result, and test counts when the tool
-  provides counts.
+- Tester must run the full verification workflow defined in
+  `.claude/agents/tester.md`, including screenshots for changed UI flows.
+  Reviewing code is not enough.
+- Tester reports exact commands, exit codes, pass/fail result, and test counts
+  by type when the tool provides counts.
 - Tester captures screenshots for every changed UI page or flow and reads each
   screenshot to check for a 404, error page, broken layout, text overlap, or
   missing state.
@@ -324,8 +345,8 @@ PM groom -> SWE implement -> Tester review -> PM acceptance -> Commit -> Local m
 - Product Manager must reject acceptance if the implemented behavior does not
   match the groomed acceptance criteria, if expected operator workflows are
   missing, or if UI changes lack screenshot-backed verification.
-- Software Engineer and Tester should update acceptance criteria checkboxes in
-  the issue body when the issue body uses `- [ ]` tasks.
+- Software Engineer and Tester must update acceptance criteria checkboxes in the
+  issue body when the issue body uses `- [ ]` tasks.
 - Never commit directly without tester review, even for simple changes.
 - Never use `gh pr create` or `gh pr merge`.
 - Agents post issue comments via `gh` for their own verdicts. The orchestrator
@@ -372,10 +393,13 @@ For process-doc and content changes:
   templates, registry behavior, or content shape changes.
 - Run content validation workflow after push when content changes reach `main`.
 - Process Curator reviews document structure and operational usefulness.
+- Do not invoke user-facing prose tooling for internal process docs unless the
+  user explicitly asks for it.
 
 For Podcast Assistant or future assistant changes:
 
-- `uv run pytest` in the assistant package when available.
+- `uv run --project assistants/podcast pytest` for Podcast Assistant unit tests,
+  or the equivalent package-local command named by the groomed issue.
 - Integration tests only when credentials and local agent tools are available.
 - Assistant Engineer reviews prompts, tool boundaries, and handoff behavior.
 
