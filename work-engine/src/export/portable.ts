@@ -163,6 +163,8 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     status: optionalString(item.status),
     source: optionalString(item.source),
     comment: optionalString(item.comment),
+    waiting_for: optionalString(item.waitingFor),
+    follow_up_at: optionalString(item.followUpAt),
     instructions_url: optionalString(item.instructionsUrl),
     link: optionalString(item.link),
     required_link_name: optionalString(item.requiredLinkName),
@@ -529,13 +531,61 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   };
 }
 
+interface DryRunImportResult {
+  valid: boolean;
+  errors: string[];
+  totalRecords: number;
+  wouldWrite: Record<string, number>;
+  skipped: Record<string, number>;
+}
+
+/**
+ * Validate an export and report what a restore/import would write, without
+ * connecting to or mutating any database. This is the safety check before
+ * using an export for migration or restore.
+ */
+async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
+  const validation = await validatePortableExport(exportDir);
+  const wouldWrite: Record<string, number> = {};
+  const skipped: Record<string, number> = {};
+  let totalRecords = 0;
+
+  const manifest = JSON.parse(await fs.readFile(path.join(exportDir, 'manifest.json'), 'utf8')) as Manifest;
+
+  for (const spec of ENTITY_SPECS) {
+    const filename = manifest.entity_files?.[spec.name];
+    if (!filename) {
+      skipped[spec.name] = 0;
+      continue;
+    }
+    const filePath = path.join(exportDir, filename);
+    let records: JsonRecord[] = [];
+    try {
+      records = await readJsonLines(filePath);
+    } catch {
+      records = [];
+    }
+    wouldWrite[spec.name] = records.length;
+    totalRecords += records.length;
+  }
+
+  return {
+    valid: validation.valid,
+    errors: validation.errors,
+    totalRecords,
+    wouldWrite,
+    skipped,
+  };
+}
+
 export {
   ENTITY_SPECS,
   EXPORT_FORMAT_VERSION,
   OMITTED_ENTITIES,
   REDACTIONS,
   SCHEMA_VERSION,
+  dryRunImport,
   validatePortableExport,
   writePortableExport,
 };
-export type { Manifest, PortableExportResult, ValidationResult };
+export type { DryRunImportResult, Manifest, PortableExportResult, ValidationResult };

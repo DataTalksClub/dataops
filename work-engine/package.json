@@ -18,6 +18,7 @@
     "export:data": "tsx scripts/export-execution-data.ts",
     "export:templates": "tsx scripts/export-templates-to-content.ts",
     "validate:export": "tsx scripts/validate-execution-export.ts",
+    "dry-run:import": "tsx scripts/dry-run-import.ts",
     "cron": "IS_LOCAL=true tsx scripts/cron-runner.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.scripts.json",
     "clean": "rm -rf dist"
