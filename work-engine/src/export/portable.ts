@@ -173,6 +173,8 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     recurring_config_id: optionalString(item.recurringConfigId),
     stage_on_complete: optionalString(item.stageOnComplete),
     tags: stringArray(item.tags),
+    completed_by: optionalString(item.completedBy),
+    completed_at: optionalString(item.completedAt),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
@@ -485,6 +487,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     requireString(task, 'description', errors, context);
     requireString(task, 'date', errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
+    optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
   }
 

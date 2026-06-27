@@ -1009,7 +1009,7 @@
 
   function renderDashboardTaskTable(tasks, bundleMap, usersMap, container) {
     var html = '<table class="task-table-compact"><thead><tr>' +
-      '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th>' +
+      '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th><th>Actions</th>' +
       '</tr></thead><tbody>';
     tasks.forEach(function (t) {
       var isDone = t.status === 'done';
@@ -1056,6 +1056,7 @@
           '<input type="text" class="required-link-input" data-task-id="' + t.id + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
           '</span>';
       }
+      var actionsHtml = renderDashboardTaskActions(t);
 
       html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
         '<td class="task-status"><input type="checkbox" class="task-status-checkbox" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></td>' +
@@ -1065,6 +1066,7 @@
         '<td data-label="Info">' + instructionsHtml + '</td>' +
         '<td data-label="Assignee">' + assigneeHtml + '</td>' +
         '<td data-label="Required Link">' + requiredLinkHtml + '</td>' +
+        '<td data-label="Actions">' + actionsHtml + '</td>' +
         '</tr>';
     });
     html += '</tbody></table>';
@@ -1122,6 +1124,73 @@
         e.stopPropagation();
       });
     });
+
+    container.querySelectorAll('[data-follow-up-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-follow-up-action');
+        var taskId = btn.getAttribute('data-task-id');
+        if (action === 'response-received') {
+          recordResponseReceived(taskId, btn);
+        } else if (action === 'follow-up-sent') {
+          recordFollowUpSent(taskId, btn, container);
+        }
+      });
+    });
+  }
+
+  function renderDashboardTaskActions(task) {
+    if (!task || task.status !== 'waiting') return '<span class="task-action-empty">-</span>';
+    var taskComment = escapeHtml(task.comment || '');
+    return '<div class="task-action-group">' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="response-received" data-task-id="' + task.id + '" data-existing-note="' + taskComment + '">Response received</button>' +
+      '<label class="follow-up-next-label">Next <input type="date" class="follow-up-next-date" data-task-id="' + task.id + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" /></label>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="follow-up-sent" data-task-id="' + task.id + '" data-existing-note="' + taskComment + '">Follow-up sent</button>' +
+      '</div>';
+  }
+
+  function recordResponseReceived(taskId, btn) {
+    if (!taskId) return;
+    setButtonBusy(btn, true, 'Response received', 'Saving...');
+    api.tasks.update(taskId, {
+      status: 'todo',
+      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Response received')
+    }).then(function () {
+      showSuccess('Task moved back to todo.');
+      refreshBellBadge();
+      loadDashboardTasks();
+    }).catch(function (err) {
+      showError('Failed to update task: ' + err.message);
+      setButtonBusy(btn, false, 'Response received');
+    });
+  }
+
+  function recordFollowUpSent(taskId, btn, container) {
+    if (!taskId) return;
+    var input = container.querySelector('.follow-up-next-date[data-task-id="' + taskId + '"]');
+    var nextDate = input ? input.value : '';
+    if (!nextDate) {
+      showError('Choose the next follow-up date.');
+      return;
+    }
+    setButtonBusy(btn, true, 'Follow-up sent', 'Saving...');
+    api.tasks.update(taskId, {
+      status: 'waiting',
+      followUpAt: nextDate,
+      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Follow-up sent; next follow-up ' + nextDate)
+    }).then(function () {
+      showSuccess('Follow-up recorded.');
+      refreshBellBadge();
+      loadDashboardTasks();
+    }).catch(function (err) {
+      showError('Failed to record follow-up: ' + err.message);
+      setButtonBusy(btn, false, 'Follow-up sent');
+    });
+  }
+
+  function appendTaskEventComment(existing, eventText) {
+    var stamp = new Date().toISOString();
+    var line = '[' + stamp + '] ' + eventText;
+    return existing ? existing + '\n' + line : line;
   }
 
   function dedupeTasksById(tasks) {
@@ -1146,6 +1215,14 @@
     var today = todayString();
     if (date === today) return 'today';
     return date;
+  }
+
+  function defaultNextFollowUpDate() {
+    var d = new Date();
+    d.setDate(d.getDate() + 2);
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
   }
 
   // ── Tasks View ──────────────────────────────────────────────────

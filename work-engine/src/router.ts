@@ -378,6 +378,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             return jsonResponse(400, { error: 'Cannot mark task as done: required file has not been uploaded' });
           }
         }
+
+        updates.completedAt = new Date().toISOString();
+        const actorId = headerValue(event.headers, 'x-user-id');
+        if (actorId) updates.completedBy = actorId;
       }
 
       const updated = await updateTask(client, id, updates);
