@@ -1025,18 +1025,26 @@ function renderTaskPanel() {
     followRow.append(followUp);
     actions.append(followRow);
   } else {
-    const canComplete = !task.requiredLinkName || task.link;
+    const missingLink = task.requiredLinkName && !task.link;
+    const missingFile = task.requiresFile && !(activeTaskPanelTask?._hasFiles);
+    const canComplete = !missingLink && !missingFile;
     const complete = createTaskActionButton("Mark done", () => updateTaskStatus(task.id, "done"));
     complete.classList.add("is-primary");
     if (!canComplete) {
       complete.disabled = true;
-      complete.title = `Fill in ${task.requiredLinkName} first`;
+      const reasons = [];
+      if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
+      if (missingFile) reasons.push("Upload required file");
+      complete.title = reasons.join("; ");
     }
     actions.append(complete);
 
     const markWaiting = createTaskActionButton("Mark waiting", () => markTaskWaiting(task.id));
     actions.append(markWaiting);
   }
+  // File upload for required-file tasks
+  renderTaskFileSection(task);
+
   taskPanelBody.append(actions);
 
   // History / comment
@@ -1070,6 +1078,102 @@ function renderTaskPanel() {
     link.textContent = "Open instructions";
     instructions.append(link);
     taskPanelBody.append(instructions);
+  }
+}
+
+function renderTaskFileSection(task) {
+  if (!task.requiresFile && !task.id) return;
+  const section = document.createElement("div");
+  section.className = "task-required-link";
+
+  const label = document.createElement("label");
+  label.textContent = task.requiresFile ? "Required file" : "Attach file";
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) uploadTaskFile(task.id, fileInput.files[0]);
+  });
+  label.append(fileInput);
+  section.append(label);
+
+  // Show existing files
+  const fileList = document.createElement("div");
+  fileList.className = "task-file-list";
+  section.append(fileList);
+
+  taskPanelBody.append(section);
+  loadTaskFiles(task.id, fileList);
+}
+
+async function loadTaskFiles(taskId, container) {
+  try {
+    const payload = await request(workApiUrl("/api/files", { taskId }));
+    const files = Array.isArray(payload) ? payload : payload.files || [];
+    container.replaceChildren();
+    if (files.length === 0) {
+      const empty = document.createElement("small");
+      empty.className = "task-file-empty";
+      empty.textContent = "No files attached.";
+      container.append(empty);
+      return;
+    }
+    if (activeTaskPanelTask) activeTaskPanelTask._hasFiles = true;
+    for (const file of files) {
+      const item = document.createElement("div");
+      item.className = "task-file-item";
+      const name = document.createElement("span");
+      name.textContent = file.filename || file.id;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "quiet-button task-file-remove";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () => removeTaskFile(file.id, taskId, container));
+      item.append(name, remove);
+      container.append(item);
+    }
+  } catch {
+    container.replaceChildren();
+    const empty = document.createElement("small");
+    empty.className = "task-file-empty";
+    empty.textContent = "Could not load files.";
+    container.append(empty);
+  }
+}
+
+async function uploadTaskFile(taskId, file) {
+  const formData = new FormData();
+  formData.append("taskId", taskId);
+  formData.append("category", "document");
+  formData.append("file", file);
+  try {
+    const response = await fetch(workApiUrl("/api/files"), { method: "POST", body: formData });
+    if (!response.ok) {
+      const text = await response.text();
+      let msg = `HTTP ${response.status}`;
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      reportError(`Upload failed: ${msg}`);
+      return;
+    }
+    await response.json();
+    if (activeTaskPanelTask) activeTaskPanelTask._hasFiles = true;
+    renderTaskPanel();
+  } catch (err) {
+    reportError(`Upload failed: ${err.message || "request failed"}`);
+  }
+}
+
+async function removeTaskFile(fileId, taskId, container) {
+  try {
+    const url = workApiUrl(`/api/files/${encodeURIComponent(fileId)}`);
+    const response = await fetch(url, { method: "DELETE" });
+    if (!response.ok && response.status !== 204) {
+      reportError(`Could not remove file: HTTP ${response.status}`);
+      return;
+    }
+    loadTaskFiles(taskId, container);
+  } catch (err) {
+    reportError(`Could not remove file: ${err.message || "request failed"}`);
   }
 }
 
@@ -1272,12 +1376,21 @@ function renderBundlePanel() {
   // Stage + progress summary
   const meta = document.createElement("div");
   meta.className = "task-detail-meta";
-  if (bundle.stage) {
-    const stageBadge = document.createElement("span");
-    stageBadge.className = `task-status-badge ${bundle.stage === "done" ? "done" : "todo"}`;
-    stageBadge.textContent = labelizeWorkValue(bundle.stage);
-    meta.append(stageBadge);
+  const stageSelect = document.createElement("select");
+  stageSelect.className = "bundle-stage-select";
+  const STAGES = ["preparation", "announced", "after-event", "done"];
+  for (const stage of STAGES) {
+    const opt = document.createElement("option");
+    opt.value = stage;
+    opt.textContent = labelizeWorkValue(stage);
+    if (bundle.stage === stage) opt.selected = true;
+    stageSelect.append(opt);
   }
+  stageSelect.addEventListener("change", () => updateBundleStage(bundle.id, stageSelect.value));
+  const stageLabel = document.createElement("span");
+  stageLabel.textContent = "Stage ";
+  stageLabel.append(stageSelect);
+  meta.append(stageLabel);
   if (bundle.anchorDate) {
     const row = document.createElement("div");
     row.append(document.createTextNode("Anchor "), formatMetaDate(bundle.anchorDate, today));
@@ -1384,12 +1497,19 @@ function renderBundleChecklistItem(task, bundleId, today) {
   const isDone = status === "done";
   const isWaiting = status === "waiting";
 
+  const missingLink = !isDone && task.requiredLinkName && !task.link;
+  const missingFile = !isDone && task.requiresFile;
+
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = isDone;
-  checkbox.disabled = isWaiting || (!!task.requiredLinkName && !task.link);
+  checkbox.disabled = isWaiting || missingLink || missingFile;
   if (checkbox.disabled && !isDone) {
-    checkbox.title = task.requiredLinkName ? `Fill in ${task.requiredLinkName} first` : "Waiting task";
+    const reasons = [];
+    if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
+    if (missingFile) reasons.push("Upload required file");
+    if (isWaiting) reasons.push("Waiting task");
+    checkbox.title = reasons.join("; ");
   }
   checkbox.addEventListener("change", () => {
     updateTaskStatus(task.id, isDone ? "todo" : "done");
@@ -1404,8 +1524,33 @@ function renderBundleChecklistItem(task, bundleId, today) {
   if (task.date) dateMeta.textContent = formatTaskDateMeta(task.date, today);
   if (isWaiting) dateMeta.textContent = `waiting: ${task.waitingFor || ""}`;
 
+  if (!isDone && (missingLink || missingFile)) {
+    const badge = document.createElement("span");
+    badge.className = "bundle-checklist-evidence";
+    if (missingLink) badge.textContent += `${task.requiredLinkName} missing`;
+    if (missingLink && missingFile) badge.textContent += "; ";
+    if (missingFile) badge.textContent += "file missing";
+    dateMeta.append(document.createTextNode(" "), badge);
+  }
   row.append(checkbox, label, dateMeta);
   return row;
+}
+
+async function updateBundleStage(bundleId, stage) {
+  try {
+    const payload = await request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ stage }),
+    });
+    const updatedBundle = payload && (payload.bundle || payload);
+    if (updatedBundle && activeBundlePanelId === bundleId) {
+      activeBundlePanelData = { ...activeBundlePanelData, bundle: updatedBundle };
+      renderBundlePanel();
+    }
+    await refreshOperationsWorkSnapshot({ rerender: true });
+  } catch (err) {
+    reportError(`Could not update stage: ${err.message || "request failed"}`);
+  }
 }
 
 async function saveBundleLink(bundleId, currentLinks, linkName, linkValue) {
