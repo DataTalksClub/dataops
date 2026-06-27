@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
+
+  lambda:
+    build:
+      context: .
+      dockerfile: Dockerfile.lambda
+    ports:
+      - "9000:8080"
+    environment:
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+      - AWS_REGION=us-east-1
+    depends_on:
+      - dynamodb-local

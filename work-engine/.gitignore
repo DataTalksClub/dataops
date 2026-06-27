@@ -1,0 +1,10 @@
+node_modules/
+.local/
+.data/
+*.db
+.env
+coverage/
+dist/
+deployment.zip
+data/
+uploads/

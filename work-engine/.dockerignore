@@ -1,0 +1,8 @@
+node_modules
+tests
+.git
+.gitignore
+coverage
+.local
+*.db
+deployment.zip

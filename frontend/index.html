@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="api-base" content="">
+    <title>DTC Operations Docs</title>
+    <link rel="stylesheet" href="/src/styles.css">
+  </head>
+  <body data-view="library">
+    <div class="mobile-topbar">
+      <button id="mobile-menu-button" class="icon-button" type="button" aria-label="Open workspace">☰</button>
+      <span id="mobile-title">Operations Docs</span>
+      <button id="mobile-new-button" class="quiet-button" type="button">New</button>
+    </div>
+
+    <main class="app-shell">
+      <div id="sidebar-resize" class="sidebar-resize" aria-hidden="true"></div>
+      <aside id="sidebar" class="sidebar" aria-label="Workspace navigation">
+        <header class="workspace-header">
+          <button id="sidebar-close-button" class="icon-button mobile-only" type="button" aria-label="Close workspace">×</button>
+          <div class="workspace-mark" aria-hidden="true">D</div>
+          <div class="workspace-title">
+            <h1>Operations Docs</h1>
+            <p>Internal knowledge base</p>
+          </div>
+          <button id="sidebar-collapse-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Hide sidebar" title="Hide sidebar">«</button>
+        </header>
+
+        <button id="new-document-button" class="new-page-button" type="button">+ New page</button>
+
+        <form id="search-form" class="search-form">
+          <input id="search-input" type="search" autocomplete="off" placeholder="Search docs">
+        </form>
+
+        <details id="filters-section" class="sidebar-details filters-section">
+          <summary>
+            <span>Filters</span>
+            <span id="filter-count" class="filter-count" hidden></span>
+          </summary>
+          <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" hidden>Filters</button>
+          <div id="filter-row" class="filter-row" aria-label="Document filters" hidden>
+            <label>
+              Domain
+              <select id="domain-filter">
+                <option value="">All</option>
+              </select>
+            </label>
+
+            <label>
+              Type
+              <select id="type-filter">
+                <option value="">All</option>
+              </select>
+            </label>
+
+            <label>
+              System
+              <select id="system-filter">
+                <option value="">All</option>
+              </select>
+            </label>
+
+            <label>
+              Tag
+              <select id="tag-filter">
+                <option value="">All</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <section class="tree-section" aria-label="Document tree">
+          <div class="section-label tree-label-row">
+            <span>Pages</span>
+          </div>
+          <div id="tree-skeleton" class="tree-skeleton">
+            <div class="tree-skeleton-row"></div>
+            <div class="tree-skeleton-row"></div>
+            <div class="tree-skeleton-row"></div>
+            <div class="tree-skeleton-row"></div>
+            <div class="tree-skeleton-row"></div>
+          </div>
+          <div id="doc-tree" class="doc-tree"></div>
+        </section>
+
+        <section id="changes-section" class="changes-section" aria-label="Pending changes" hidden>
+          <button id="changes-toggle" class="changes-toggle" type="button" aria-expanded="true">
+            <span class="changes-toggle-label">Pending changes</span>
+            <span id="changes-count" class="changes-count">0</span>
+          </button>
+          <div id="changes-list" class="changes-list"></div>
+          <div class="changes-actions">
+            <button id="changes-discard-all" class="quiet-button" type="button">Discard all</button>
+            <button id="changes-save-all" class="primary-button" type="button">Save all</button>
+          </div>
+        </section>
+
+        <details class="sidebar-details">
+          <summary>Recent</summary>
+          <section id="pinned-section" class="recent-section pinned-section" aria-label="Pinned" hidden>
+            <div class="section-label">Pinned</div>
+            <div id="pinned-list" class="recent-list"></div>
+          </section>
+
+          <section id="recently-viewed-section" class="recent-section" aria-label="Recently viewed" hidden>
+            <div class="section-label">Recently viewed</div>
+            <div id="recently-viewed-list" class="recent-list"></div>
+          </section>
+
+          <section class="recent-section" aria-label="Recently edited">
+            <div class="section-label">Recently edited</div>
+            <div id="recent-list" class="recent-list"></div>
+          </section>
+        </details>
+
+        <details class="sidebar-details">
+          <summary>Tools</summary>
+          <button id="theme-toggle-button" class="tool-row-button" type="button">Dark mode</button>
+          <div class="tool-version-row">
+            <span>Version</span>
+            <code id="app-version">local</code>
+          </div>
+          <section id="git-section" class="git-section" aria-label="Git">
+            <div class="git-status-line">
+              <span class="git-status-dot" aria-hidden="true"></span>
+              <span id="git-status-text">Checking git…</span>
+            </div>
+            <div class="git-actions-row">
+              <button id="git-pull-button" class="quiet-button" type="button" title="Pull latest from origin">⟲ Pull</button>
+              <button id="git-commit-button" class="primary-button" type="button">Review</button>
+            </div>
+            <div id="git-result" class="git-result" hidden></div>
+          </section>
+        </details>
+      </aside>
+
+      <section class="page-shell">
+        <header class="page-toolbar">
+          <div class="page-context">
+            <button id="sidebar-expand-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Show sidebar" title="Show sidebar" hidden>»</button>
+            <button id="back-button" class="quiet-button" type="button">← All docs</button>
+            <span id="breadcrumb">All documents</span>
+            <strong id="toolbar-title">Documents</strong>
+          </div>
+          <div class="toolbar-actions">
+            <span id="save-state" class="save-state"></span>
+            <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
+            <button id="doc-pin-button" class="quiet-button" type="button" hidden title="Pin to sidebar">☆</button>
+            <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions">⋯</button>
+            <button id="discard-button" class="quiet-button" type="button" disabled>Discard</button>
+            <button id="save-button" class="primary-button" type="button" disabled>Save</button>
+          </div>
+        </header>
+
+        <section id="library-view" class="view library-view">
+          <div class="library-heading">
+            <div>
+              <p id="status-text" class="status-text">Loading documents...</p>
+              <h2 id="library-title">Documents</h2>
+            </div>
+            <button id="clear-selection-button" class="quiet-button" type="button" hidden>All docs</button>
+          </div>
+          <div id="document-list" class="document-list" aria-label="Documents"></div>
+        </section>
+
+        <section id="editor-view" class="view editor-view" data-mode="rendered">
+          <input id="document-title" class="document-title" type="text" disabled aria-label="Document title">
+          <div id="document-path" class="document-path">No document selected</div>
+          <textarea id="editor" class="markdown-editor" spellcheck="true" disabled placeholder="Open a document from the sidebar or create a new page."></textarea>
+          <div id="rendered-view" class="rendered-view" aria-live="polite"></div>
+        </section>
+
+        <section id="create-view" class="view create-view">
+          <form id="new-doc-form" class="create-form">
+            <p class="status-text">Create a Markdown document in this repository.</p>
+            <h2>New page</h2>
+            <label>
+              Path
+              <input id="new-doc-path" type="text" placeholder="content/example/sops/new-doc.md" spellcheck="false">
+            </label>
+            <label>
+              Title
+              <input id="new-doc-title" type="text" placeholder="New document">
+            </label>
+            <label class="create-type-label">
+              Type
+              <select id="new-doc-type">
+                <option value="sop">SOP</option>
+                <option value="template">Template</option>
+                <option value="reference">Reference</option>
+                <option value="playbook">Playbook</option>
+                <option value="prompt">Prompt</option>
+              </select>
+            </label>
+            <label>
+              Summary
+              <textarea id="new-doc-summary" rows="4" placeholder="Short search result description"></textarea>
+            </label>
+            <fieldset id="new-doc-scaffold" class="scaffold-fieldset">
+              <legend>Scaffold</legend>
+              <label class="scaffold-option">
+                <input type="radio" name="scaffold" value="full" checked>
+                <span>
+                  <strong>Full</strong>
+                  <small>All 6 sections with starter bullets &amp; first step</small>
+                </span>
+              </label>
+              <label class="scaffold-option">
+                <input type="radio" name="scaffold" value="minimal">
+                <span>
+                  <strong>Minimal</strong>
+                  <small>Just the 6 section markers, no placeholders</small>
+                </span>
+              </label>
+            </fieldset>
+            <div class="create-actions">
+              <button class="quiet-button" type="button" data-action="cancel-create">Cancel</button>
+              <button class="primary-button" type="submit">Create and edit</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <div id="help-modal" class="confirm-modal" hidden>
+      <div class="confirm-backdrop" id="help-backdrop"></div>
+      <div class="confirm-panel help-panel" role="dialog" aria-modal="true">
+        <header class="diff-header">
+          <strong>Keyboard shortcuts</strong>
+          <button id="help-close" class="quiet-button" type="button">Close</button>
+        </header>
+        <div class="help-body">
+          <dl>
+            <dt><kbd>/</kbd></dt><dd>Focus sidebar search</dd>
+            <dt><kbd>Cmd / Ctrl + K</kbd></dt><dd>Focus search from anywhere</dd>
+            <dt><kbd>Cmd / Ctrl + P</kbd></dt><dd>Quick-open any doc</dd>
+            <dt><kbd>Cmd / Ctrl + S</kbd></dt><dd>Save current doc</dd>
+            <dt><kbd>Cmd / Ctrl + Shift + S</kbd></dt><dd>Save all drafts</dd>
+            <dt><kbd>Cmd / Ctrl + Enter</kbd></dt><dd>Commit inline edit</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Cancel inline edit · close modals</dd>
+            <dt><kbd>?</kbd></dt><dd>Show this help</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirm-modal" class="confirm-modal" hidden>
+      <div class="confirm-backdrop" id="confirm-backdrop"></div>
+      <div class="confirm-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-message">
+        <p id="confirm-message" class="confirm-message"></p>
+        <div class="confirm-actions">
+          <button id="confirm-cancel" class="quiet-button" type="button">Cancel</button>
+          <button id="confirm-ok" class="primary-button" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="error-toast" class="undo-toast error-toast" hidden>
+      <span id="error-toast-text"></span>
+      <button id="error-toast-close" class="quiet-button" type="button">Dismiss</button>
+    </div>
+
+    <div id="undo-toast" class="undo-toast" hidden>
+      <span id="undo-toast-text"></span>
+      <button id="undo-toast-button" class="quiet-button" type="button">Undo</button>
+    </div>
+
+    <div id="lint-modal" class="diff-modal" hidden>
+      <div class="diff-backdrop" id="lint-backdrop"></div>
+      <div class="diff-panel">
+        <header class="diff-header">
+          <strong id="lint-modal-title">Corpus lint</strong>
+          <button id="lint-modal-close" class="quiet-button" type="button">Close</button>
+        </header>
+        <div id="lint-modal-body" class="lint-modal-body"></div>
+      </div>
+    </div>
+
+    <div id="git-commit-modal" class="diff-modal" hidden>
+      <div class="diff-backdrop" id="git-commit-backdrop"></div>
+      <div class="diff-panel git-commit-panel" role="dialog" aria-modal="true" aria-labelledby="git-commit-title">
+        <header class="diff-header">
+          <strong id="git-commit-title">Review and publish</strong>
+          <button id="git-commit-cancel" class="quiet-button" type="button">Close</button>
+        </header>
+        <form id="git-commit-form" class="git-commit-form">
+          <section id="lint-section" class="lint-section" aria-label="Lint">
+            <button id="lint-open" class="quiet-button" type="button">Lint corpus</button>
+            <span id="lint-summary" class="lint-summary"></span>
+          </section>
+          <div class="git-commit-files" id="git-commit-files"></div>
+          <label class="git-commit-label">
+            Commit message
+            <textarea id="git-commit-message" rows="3" placeholder="Update docs"></textarea>
+          </label>
+          <div class="git-commit-actions">
+            <button class="quiet-button" type="button" data-action="cancel-commit">Cancel</button>
+            <button id="git-commit-submit" class="primary-button" type="submit">Commit &amp; push</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="diff-modal" class="diff-modal" hidden>
+      <div class="diff-backdrop" id="diff-backdrop"></div>
+      <div class="diff-panel">
+        <header class="diff-header">
+          <strong id="diff-title"></strong>
+          <button id="diff-close" class="quiet-button" type="button">Close</button>
+        </header>
+        <pre id="diff-body" class="diff-body"></pre>
+      </div>
+    </div>
+
+    <div id="lightbox" class="lightbox" hidden>
+      <div class="lightbox-backdrop"></div>
+      <figure class="lightbox-frame">
+        <img id="lightbox-img" alt="">
+        <figcaption id="lightbox-caption"></figcaption>
+      </figure>
+    </div>
+
+    <div id="quick-nav" class="quick-nav" hidden>
+      <div class="quick-nav-backdrop" id="quick-nav-backdrop"></div>
+      <div class="quick-nav-panel" role="dialog" aria-label="Quick navigation">
+        <input id="quick-nav-input" type="text" placeholder="Search docs by title or path…" autocomplete="off">
+        <div id="quick-nav-results" class="quick-nav-results"></div>
+      </div>
+    </div>
+
+    <template id="document-row-template">
+      <article class="document-row" tabindex="0">
+        <div class="doc-main">
+          <h3></h3>
+          <p></p>
+          <span class="doc-path"></span>
+        </div>
+        <div class="doc-tags">
+          <span class="tag doc-domain"></span>
+          <span class="tag doc-type"></span>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

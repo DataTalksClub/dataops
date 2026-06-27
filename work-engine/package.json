@@ -1,0 +1,35 @@
+{
+  "name": "datatasks",
+  "version": "0.1.0",
+  "description": "DataTasks — lightweight task management backed by DynamoDB",
+  "main": "dist/handler.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "IS_LOCAL=true tsx watch scripts/dev-server.ts",
+    "test": "NODE_ENV=test SKIP_AUTH=true node --import tsx --test tests/*.test.ts",
+    "test:e2e": "npx playwright test",
+    "test:integration": "bash scripts/integration-test.sh",
+    "build": "tsc && cp -r src/public dist/public && cp -r src/pages dist/pages",
+    "start": "IS_LOCAL=true tsx scripts/dev-server.ts",
+    "seed": "IS_LOCAL=true tsx scripts/seed-templates.ts",
+    "seed:users": "IS_LOCAL=true tsx scripts/seed-users.ts",
+    "cron": "IS_LOCAL=true tsx scripts/cron-runner.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.scripts.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^18.19.130",
+    "dynalite": "^3.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [],
+  "license": "ISC"
+}
