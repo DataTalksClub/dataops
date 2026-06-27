@@ -639,7 +639,7 @@ function renderOperationsHome(documents) {
   setPageTitle("Operations Home", "Home");
   clearSelectionButton.hidden = true;
   if (model.stats.liveLoaded) {
-    setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active bundles.`);
+    setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active workflows.`);
   } else {
     setStatus(`${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} workflow templates · ${model.stats.recurringTemplates} recurring.`);
   }
@@ -654,7 +654,7 @@ function renderOperationsHome(documents) {
     ["Today", model.lanes.find((lane) => lane.id === "today")?.items.length || 0],
     ["Overdue", model.lanes.find((lane) => lane.id === "overdue")?.items.length || 0],
     ["Waiting", model.lanes.find((lane) => lane.id === "waiting")?.items.length || 0],
-    ["Bundles", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
+    ["Workflows", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
   ]) {
     const box = document.createElement("div");
     box.className = "ops-stat";
@@ -666,6 +666,9 @@ function renderOperationsHome(documents) {
     summary.append(box);
   }
   wrap.append(summary);
+
+  const runtimeState = renderOperationsRuntimeState(model.runtime);
+  if (runtimeState) wrap.append(runtimeState);
 
   const quickBar = document.createElement("section");
   quickBar.className = "ops-quick-bar";
@@ -695,6 +698,8 @@ function renderOperationsHome(documents) {
   lanes.setAttribute("aria-label", "Daily lanes");
   for (const lane of model.lanes) lanes.append(renderOperationsLane(lane));
   wrap.append(lanes);
+
+  wrap.append(renderOperationsFutureSections(model.futureSections));
 
   const templates = document.createElement("section");
   templates.className = "ops-section";
@@ -740,7 +745,6 @@ function renderOperationsHome(documents) {
 function buildOperationsHomeModel(documents, options) {
   options = options || {};
   const docs = Array.isArray(documents) ? documents : [];
-  const draftPaths = Array.isArray(options.draftPaths) ? options.draftPaths : [];
   const today = options.today || todayIsoDate();
   const work = normalizeOperationsWorkSnapshot(options.workSnapshot || {
     loaded: options.liveLoaded,
@@ -753,27 +757,25 @@ function buildOperationsHomeModel(documents, options) {
     errors: options.workErrors,
   }, { today });
   const recurring = normalizeOperationsRecurringSnapshot(options.recurringSnapshot || {});
-  const hasLiveWork = work.loaded || work.todayTasks.length > 0 || work.overdueTasks.length > 0 || work.waitingTasks.length > 0 || work.activeBundles.length > 0;
+  const hasLiveWork = work.loaded;
   const templates = docs
     .filter(isWorkflowTemplateDoc)
     .map((doc) => summarizeWorkflowTemplate(doc))
     .sort((a, b) => workflowPriority(a.slug) - workflowPriority(b.slug) || a.title.localeCompare(b.title));
 
-  const draftItems = draftPaths.map((path) => {
-    const doc = docs.find((candidate) => candidate.path === path) || { path, title: basename(path), summary: "" };
-    return operationItemFromDoc(doc, "Local draft");
-  });
   const recurringItems = templates.filter((template) => template.recurring).map(operationItemFromTemplate);
-  const followUpItems = docs.filter(isFollowUpDoc).slice(0, 6).map((doc) => operationItemFromDoc(doc, "Follow-up"));
+  const todayWorkTasks = work.currentOperatorId
+    ? work.todayTasks.filter((task) => isCurrentOperatorTodayTask(task, work.currentOperatorId))
+    : work.todayTasks;
   const todayItems = hasLiveWork
-    ? work.todayTasks.map((task) => operationItemFromTask(task, { today }))
-    : dedupeOperationItems([...recurringItems, ...templates.slice(0, 3).map(operationItemFromTemplate)]).slice(0, 6);
+    ? todayWorkTasks.map((task) => operationItemFromTask(task, { today }))
+    : [];
   const overdueItems = hasLiveWork
     ? work.overdueTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
-    : draftItems;
+    : [];
   const waitingItems = hasLiveWork
     ? work.waitingTasks.map((task) => operationItemFromTask(task, { today, waiting: true }))
-    : followUpItems;
+    : [];
   const bundleItems = hasLiveWork
     ? work.activeBundles.map((bundle) => operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], { today }))
     : [];
@@ -782,27 +784,34 @@ function buildOperationsHomeModel(documents, options) {
     {
       id: "today",
       title: "Today",
-      empty: hasLiveWork ? "No live tasks due today." : "No daily workflow docs indexed.",
+      empty: hasLiveWork
+        ? (work.currentOperatorId ? "No live tasks assigned to you or unassigned due today." : "No live tasks due today.")
+        : "Live work data unavailable; tasks will appear here when /work/api/tasks is connected.",
       items: todayItems,
     },
     {
       id: "overdue",
       title: "Overdue",
-      empty: hasLiveWork ? "No live overdue tasks." : "No local overdue signals.",
+      empty: hasLiveWork ? "No live overdue tasks." : "Live work data unavailable; overdue work cannot be confirmed.",
       items: overdueItems,
     },
     {
       id: "waiting",
       title: "Waiting / Follow-Ups",
-      empty: hasLiveWork ? "No live waiting or follow-up tasks." : "No follow-up docs matched.",
+      empty: hasLiveWork ? "No live waiting or follow-up tasks." : "Live work data unavailable; follow-ups cannot be confirmed.",
       items: waitingItems,
     },
     {
       id: "bundles",
-      title: "Active Bundles",
-      empty: hasLiveWork ? "No active bundles." : "No live bundle data loaded.",
+      title: "Active Workflows",
+      empty: hasLiveWork ? "No active workflows." : "No live workflow data loaded.",
       items: bundleItems,
     },
+  ];
+
+  const runtimeErrors = [
+    ...work.errors,
+    ...recurring.errors.map((error) => `Recurring: ${error}`),
   ];
 
   return {
@@ -810,18 +819,24 @@ function buildOperationsHomeModel(documents, options) {
     templates,
     references: buildOperationsReferenceLinks(docs),
     recurring,
+    runtime: {
+      connected: hasLiveWork,
+      errors: runtimeErrors,
+    },
+    futureSections: buildOperationsFutureSections(),
     stats: {
       totalDocs: docs.length,
       workflowTemplates: templates.length,
       recurringTemplates: recurringItems.length,
       liveLoaded: hasLiveWork,
-      todayTasks: work.todayTasks.length,
+      todayTasks: todayWorkTasks.length,
       overdueTasks: work.overdueTasks.length,
       waitingTasks: work.waitingTasks.length,
       activeBundles: work.activeBundles.length,
       recurringConfigs: recurring.configs.length,
       enabledRecurringConfigs: recurring.enabled.length,
       workErrors: work.errors,
+      currentOperatorId: work.currentOperatorId,
     },
   };
 }
@@ -829,6 +844,7 @@ function buildOperationsHomeModel(documents, options) {
 function emptyOperationsWorkSnapshot() {
   return {
     loaded: false,
+    currentOperatorId: "",
     todayTasks: [],
     overdueTasks: [],
     waitingTasks: [],
@@ -866,11 +882,13 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   const overdueUrl = workApiUrl("/api/tasks", { startDate: "1970-01-01", endDate: yesterday });
   const waitingUrl = workApiUrl("/api/tasks", { status: "waiting" });
   const bundlesUrl = workApiUrl("/api/bundles");
-  const [todayResult, overdueResult, waitingResult, bundlesResult] = await Promise.allSettled([
+  const meUrl = workApiUrl("/api/me");
+  const [todayResult, overdueResult, waitingResult, bundlesResult, meResult] = await Promise.allSettled([
     request(todayUrl),
     request(overdueUrl),
     request(waitingUrl),
     request(bundlesUrl),
+    request(meUrl),
   ]);
 
   const snapshot = emptyOperationsWorkSnapshot();
@@ -879,6 +897,7 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
   snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
   snapshot.bundles = bundlesFromWorkPayload(settledPayload(bundlesResult));
+  snapshot.currentOperatorId = currentOperatorIdFromPayload(settledPayload(meResult));
   snapshot.errors = [todayResult, overdueResult, waitingResult, bundlesResult]
     .filter((result) => result.status === "rejected")
     .map((result) => result.reason?.message || "Work API request failed");
@@ -1658,7 +1677,7 @@ function renderBundleChecklistItem(task, bundleId, today) {
   const isWaiting = status === "waiting";
 
   const missingLink = !isDone && task.requiredLinkName && !task.link;
-  const missingFile = !isDone && task.requiresFile;
+  const missingFile = !isDone && task.requiresFile && !hasTaskFileEvidence(task);
 
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
@@ -2174,8 +2193,17 @@ function recurringConfigsFromPayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
   if (Array.isArray(payload.recurringConfigs)) return payload.recurringConfigs;
+  if (Array.isArray(payload.configs)) return payload.configs;
   if (Array.isArray(payload.items)) return payload.items;
   return [];
+}
+
+function currentOperatorIdFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (payload.user && typeof payload.user === "object" && payload.user.id) return String(payload.user.id);
+  if (payload.actor && typeof payload.actor === "object" && payload.actor.id) return String(payload.actor.id);
+  if (payload.id) return String(payload.id);
+  return "";
 }
 
 function normalizeOperationsRecurringSnapshot(input) {
@@ -2218,6 +2246,7 @@ function normalizeOperationsWorkSnapshot(input, options) {
 
   return {
     loaded: Boolean(snapshot.loaded),
+    currentOperatorId: String(snapshot.currentOperatorId || ""),
     todayTasks: sortWorkTasks(dedupeWorkTasks([...explicitToday, ...allTasks.filter((task) => isTaskDueToday(task, today))]), "today", today),
     overdueTasks: sortWorkTasks(dedupeWorkTasks([...explicitOverdue, ...allTasks.filter((task) => isTaskOverdue(task, today))]), "overdue", today),
     waitingTasks: sortWorkTasks(dedupeWorkTasks([...explicitWaiting, ...allTasks.filter((task) => isWaitingOrFollowUpTask(task))]), "waiting", today),
@@ -2285,6 +2314,12 @@ function isTaskDueToday(task, today) {
   return isOpenWorkTask(task) && taskDate(task) === today;
 }
 
+function isCurrentOperatorTodayTask(task, currentOperatorId) {
+  if (!isOpenWorkTask(task)) return false;
+  const assigneeId = String(task.assigneeId || "");
+  return !assigneeId || assigneeId === String(currentOperatorId || "");
+}
+
 function isTaskOverdue(task, today) {
   const date = taskDate(task);
   return isOpenWorkTask(task) && !!date && isBeforeIsoDate(date, today);
@@ -2330,33 +2365,106 @@ function summarizeBundleProgress(bundle, tasks, today) {
   const open = taskList.filter(isOpenWorkTask).length;
   const overdue = taskList.filter((task) => isTaskOverdue(task, today)).length;
   const waiting = taskList.filter(isWaitingOrFollowUpTask).length;
+  const missingLinks = taskList.filter((task) => isOpenWorkTask(task) && task.requiredLinkName && !task.link).length
+    + missingBundleLinks(bundle).length;
+  const missingFiles = taskList.filter((task) => isOpenWorkTask(task) && task.requiresFile && !hasTaskFileEvidence(task)).length;
+  const nextDueTask = nextDueOpenTask(taskList, today);
   let risk = "low";
   if (overdue > 0) risk = "high";
-  else if (waiting > 0 || (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))) risk = "medium";
+  else if (waiting > 0 || missingLinks > 0 || missingFiles > 0 || (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))) risk = "medium";
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
   const parts = total > 0 ? [`${done}/${total} tasks`] : ["No tasks loaded"];
   if (overdue > 0) parts.push(`${overdue} overdue`);
   if (waiting > 0) parts.push(`${waiting} waiting`);
-  return { total, done, open, overdue, waiting, percent, risk, label: parts.join(" - ") };
+  if (missingLinks > 0) parts.push(`${missingLinks} missing link${missingLinks === 1 ? "" : "s"}`);
+  if (missingFiles > 0) parts.push(`${missingFiles} missing file${missingFiles === 1 ? "" : "s"}`);
+  return { total, done, open, overdue, waiting, missingLinks, missingFiles, nextDueTask, percent, risk, label: parts.join(" - ") };
+}
+
+function nextDueOpenTask(tasks, today) {
+  const openTasks = dedupeWorkTasks(tasks).filter(isOpenWorkTask);
+  openTasks.sort((a, b) => {
+    const byDate = compareIsoDate(taskDate(a) || a.followUpAt || today, taskDate(b) || b.followUpAt || today);
+    if (byDate !== 0) return byDate;
+    return workTaskTitle(a).localeCompare(workTaskTitle(b));
+  });
+  return openTasks[0] || null;
+}
+
+function missingBundleLinks(bundle) {
+  if (!Array.isArray(bundle?.bundleLinks)) return [];
+  return bundle.bundleLinks.filter((link) => {
+    if (!link || typeof link !== "object") return false;
+    return !String(link.url || "").trim();
+  });
+}
+
+function hasTaskFileEvidence(task) {
+  if (!task || typeof task !== "object") return false;
+  if (task._hasFiles) return true;
+  if (Number(task.fileCount || 0) > 0) return true;
+  if (Array.isArray(task.files) && task.files.length > 0) return true;
+  if (Array.isArray(task.fileRefs) && task.fileRefs.length > 0) return true;
+  if (Array.isArray(task.artifactRefs) && task.artifactRefs.length > 0) return true;
+  return false;
+}
+
+function taskProofState(task) {
+  const missing = [];
+  if (task?.requiredLinkName && !task.link) missing.push(task.requiredLinkName);
+  if (task?.requiresFile && !hasTaskFileEvidence(task)) missing.push("required file");
+  if (missing.length > 0) return { ok: false, label: `Missing proof: ${missing.join(", ")}`, missing };
+  if (task?.requiredLinkName || task?.requiresFile) return { ok: true, label: "Proof ready", missing: [] };
+  return { ok: true, label: "No proof required", missing: [] };
+}
+
+function taskSourceLabel(task) {
+  if (task?.source) return labelizeWorkValue(task.source);
+  if (task?.recurringConfigId) return "Recurring";
+  if (task?.templateId || task?.bundleId) return "Workflow";
+  return "Ad hoc";
+}
+
+function taskNextActionLabel(task, today) {
+  const status = String(task?.status || "todo").toLowerCase();
+  if (status === "waiting") {
+    if (task?.followUpAt && !isBeforeIsoDate(today, String(task.followUpAt).slice(0, 10))) return "Follow up";
+    return "Mark response received";
+  }
+  const proof = taskProofState(task);
+  if (!proof.ok) {
+    const first = proof.missing[0] || "proof";
+    return first === "required file" ? "Attach file" : `Add ${first}`;
+  }
+  return "Mark done";
 }
 
 function operationItemFromTask(task, options) {
   options = options || {};
   const today = options.today || todayIsoDate();
+  const proof = taskProofState(task);
   const meta = [];
-  if (task.date) meta.push(formatTaskDateMeta(task.date, today));
+  if (task.date) meta.push(`Due ${formatTaskDateMeta(task.date, today)}`);
   if (task.status) meta.push(task.status);
-  if (task.assigneeId) meta.push(task.assigneeId);
+  meta.push(task.bundleId ? "Workflow" : "Ad hoc");
+  meta.push(taskSourceLabel(task));
+  if (task.assigneeId) meta.push(`Owner ${task.assigneeId}`);
+  meta.push(proof.label);
+  meta.push(`Next: ${taskNextActionLabel(task, today)}`);
   const summary = task.waitingFor
     ? `Waiting for ${task.waitingFor}${task.followUpAt ? `; follow up ${formatTaskDateMeta(task.followUpAt, today)}` : ""}`
-    : task.comment || task.source || task.instructionsUrl || task.link || "";
+    : !proof.ok
+      ? proof.label
+      : task.comment || task.instructionsUrl || task.link || "Ready for the next operating action.";
   return {
     title: workTaskTitle(task),
     summary,
     meta: meta.join(" - "),
     taskId: task.id,
     bundleId: task.bundleId,
-    risk: options.overdue ? "high" : options.waiting ? "medium" : "low",
+    nextAction: taskNextActionLabel(task, today),
+    proof,
+    risk: options.overdue ? "high" : options.waiting || !proof.ok ? "medium" : "low",
   };
 }
 
@@ -2367,6 +2475,7 @@ function operationItemFromBundle(bundle, tasks, options) {
   const summaryParts = [];
   if (bundle.stage) summaryParts.push(labelizeWorkValue(bundle.stage));
   if (bundle.anchorDate) summaryParts.push(`Anchor ${formatTaskDateMeta(bundle.anchorDate, today)}`);
+  if (progress.nextDueTask) summaryParts.push(`Next: ${workTaskTitle(progress.nextDueTask)}${taskDate(progress.nextDueTask) ? ` (${formatTaskDateMeta(taskDate(progress.nextDueTask), today)})` : ""}`);
   if (bundle.description) summaryParts.push(bundle.description);
   return {
     title: workBundleTitle(bundle),
@@ -2531,6 +2640,29 @@ function dedupeOperationItems(items) {
   return out;
 }
 
+function buildOperationsFutureSections() {
+  return [
+    {
+      id: "inbox",
+      title: "Inbox",
+      status: "Not connected yet",
+      body: "Telegram, email, manual notes, files, and assistant-ready inputs will land here when the durable inbox model ships in #31.",
+    },
+    {
+      id: "assistant-jobs",
+      title: "Assistant Jobs",
+      status: "Not connected yet",
+      body: "Assistant run status, approvals, retries, logs, and outputs will appear here after the assistant job lifecycle ships in #30.",
+    },
+    {
+      id: "process-quality",
+      title: "Process Quality",
+      status: "Not connected yet",
+      body: "Broken links, TODO values, missing validation, and doc-health warnings will appear here after process quality telemetry ships in #35.",
+    },
+  ];
+}
+
 function buildOperationsReferenceLinks(docs) {
   const indexed = [
     docs.find((doc) => doc.path === "content/tasks/templates/newsletter.md"),
@@ -2552,6 +2684,69 @@ function buildOperationsReferenceLinks(docs) {
   ].map(([title, href]) => ({ title, href, summary: "Planning reference" }));
 
   return [...indexed, ...repoRefs];
+}
+
+function renderOperationsRuntimeState(runtime) {
+  const errors = Array.isArray(runtime?.errors) ? runtime.errors.filter(Boolean) : [];
+  if (runtime?.connected && errors.length === 0) return null;
+
+  const section = document.createElement("section");
+  section.className = "ops-runtime-state";
+  section.setAttribute("aria-label", "Runtime data state");
+
+  const title = document.createElement("strong");
+  title.textContent = runtime?.connected
+    ? "Live work data is partially unavailable"
+    : "Live work data unavailable";
+  const body = document.createElement("span");
+  body.textContent = runtime?.connected
+    ? "Some /work/api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
+    : "Operations Home could not load /work/api task and workflow data. Workflow templates and process docs remain below as contextual help.";
+  section.append(title, body);
+
+  if (errors.length > 0) {
+    const list = document.createElement("ul");
+    for (const error of errors.slice(0, 3)) {
+      const item = document.createElement("li");
+      item.textContent = String(error);
+      list.append(item);
+    }
+    section.append(list);
+  }
+
+  return section;
+}
+
+function renderOperationsFutureSections(sections) {
+  const wrap = document.createElement("section");
+  wrap.className = "ops-section ops-future-section";
+  wrap.setAttribute("aria-label", "Future operations inputs");
+
+  const header = document.createElement("div");
+  header.className = "ops-section-header";
+  const title = document.createElement("h3");
+  title.textContent = "Incoming And Quality Signals";
+  const meta = document.createElement("span");
+  meta.textContent = "No fake data";
+  header.append(title, meta);
+  wrap.append(header);
+
+  const grid = document.createElement("div");
+  grid.className = "ops-future-grid";
+  for (const section of sections || []) {
+    const card = document.createElement("article");
+    card.className = "ops-future-card";
+    const cardTitle = document.createElement("strong");
+    cardTitle.textContent = section.title;
+    const status = document.createElement("small");
+    status.textContent = section.status;
+    const body = document.createElement("span");
+    body.textContent = section.body;
+    card.append(cardTitle, status, body);
+    grid.append(card);
+  }
+  wrap.append(grid);
+  return wrap;
 }
 
 function renderOperationsLane(lane) {
@@ -2600,6 +2795,12 @@ function renderOperationsLaneItem(item) {
   const meta = document.createElement("small");
   meta.textContent = item.meta || "";
   button.append(title, summary);
+  if (item.nextAction) {
+    const action = document.createElement("small");
+    action.className = "ops-next-action";
+    action.textContent = item.nextAction;
+    button.append(action);
+  }
   if (item.progress) {
     const progress = document.createElement("div");
     progress.className = "ops-progress";
