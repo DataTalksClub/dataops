@@ -5,6 +5,7 @@ from typing import Any
 import frontmatter
 from minsearch import Index
 
+from lambda_functions.doc_registry import build_registry
 from lambda_functions import sop_parse
 
 
@@ -40,6 +41,7 @@ def create_empty_index() -> Index:
 
 
 def build_index(docs_dir: Path, index_path: Path) -> int:
+    build_registry(docs_dir)
     docs = list(iter_docs(docs_dir))
     index_path.parent.mkdir(parents=True, exist_ok=True)
     if index_path.exists():

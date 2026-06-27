@@ -10,7 +10,7 @@ LAMBDA_SRC = REPO_ROOT / "lambda-functions" / "src"
 if str(LAMBDA_SRC) not in sys.path:
     sys.path.insert(0, str(LAMBDA_SRC))
 
-from lambda_functions import api_handler, full_app_handler, github_store, search_handler, sop_parse  # noqa: E402
+from lambda_functions import api_handler, doc_registry, full_app_handler, github_store, search_handler, sop_parse  # noqa: E402
 from lambda_functions.docs_index import iter_docs  # noqa: E402
 
 
@@ -58,20 +58,249 @@ summary: "Invoice reference."
     assert response["statusCode"] == 200
     payload = json.loads(response["body"])
     docs = {doc["path"]: doc for doc in payload["documents"]}
-    assert docs["content/systems/airtable/sops/update-record.md"] == {
-        "path": "content/systems/airtable/sops/update-record.md",
-        "id": "airtable-update-record",
-        "aliases": ["airtable-update"],
-        "title": "Update an Airtable Record",
-        "summary": "Change a record safely.",
-        "doc_type": "sop",
-        "domain": "systems",
-        "tags": ["airtable", "operations"],
-        "systems": ["airtable"],
-        "updated": docs["content/systems/airtable/sops/update-record.md"]["updated"],
-    }
+    update_doc = docs["content/systems/airtable/sops/update-record.md"]
+    assert update_doc["path"] == "content/systems/airtable/sops/update-record.md"
+    assert update_doc["id"] == "airtable-update-record"
+    assert update_doc["aliases"] == ["airtable-update"]
+    assert update_doc["title"] == "Update an Airtable Record"
+    assert update_doc["summary"] == "Change a record safely."
+    assert update_doc["doc_type"] == "sop"
+    assert update_doc["domain"] == "systems"
+    assert update_doc["tags"] == ["airtable", "operations"]
+    assert update_doc["systems"] == ["airtable"]
+    assert update_doc["related_docs"] == []
+    assert update_doc["updated"] == update_doc["updated_at"]
+    assert update_doc["id_source"] == "frontmatter"
+    assert update_doc["stable_id"] is True
     assert docs["content/finance/reference/invoices.md"]["doc_type"] == "reference"
     assert docs["content/finance/reference/invoices.md"]["domain"] == "finance"
+    assert docs["content/finance/reference/invoices.md"]["id"] == "reference.finance.invoices"
+    assert docs["content/finance/reference/invoices.md"]["id_source"] == "generated"
+    assert docs["content/finance/reference/invoices.md"]["stable_id"] is False
+
+
+def test_document_registry_resolves_ids_aliases_paths_and_wiki_refs(tmp_path):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "systems/airtable/sops/update-record.md",
+        """---
+id: systems.airtable.update-record
+aliases:
+  - airtable-update
+  - content/old/airtable-update.md
+title: "Update an Airtable Record"
+summary: "Change a record safely."
+doc_type: sop
+tags: [airtable, operations]
+systems:
+  - airtable
+related_docs:
+  - ../reference/airtable-fields.md
+---
+
+# Update an Airtable Record
+""",
+    )
+    _write_doc(
+        content_root,
+        "systems/airtable/reference/airtable-fields.md",
+        """---
+id: systems.airtable.fields
+title: "Airtable Fields"
+doc_type: reference
+---
+
+# Airtable Fields
+""",
+    )
+
+    registry = doc_registry.build_registry(content_root)
+
+    assert doc_registry.resolve_reference(registry, "systems.airtable.update-record").path == (
+        "content/systems/airtable/sops/update-record.md"
+    )
+    assert doc_registry.resolve_reference(registry, "airtable-update").id == "systems.airtable.update-record"
+    assert doc_registry.resolve_reference(registry, "content/old/airtable-update.md").id == (
+        "systems.airtable.update-record"
+    )
+    assert doc_registry.resolve_reference(registry, "/systems/airtable/sops/update-record.md").id == (
+        "systems.airtable.update-record"
+    )
+    assert doc_registry.resolve_reference(registry, "[[systems.airtable.update-record|Update]]").id == (
+        "systems.airtable.update-record"
+    )
+
+
+def test_document_registry_rejects_duplicate_ids_and_aliases(tmp_path):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "finance/reference/invoices.md",
+        """---
+id: finance.invoices
+aliases: [invoice-guide]
+title: "Invoices"
+doc_type: reference
+---
+""",
+    )
+    _write_doc(
+        content_root,
+        "finance/reference/receipts.md",
+        """---
+id: finance.invoices
+aliases: [invoice-guide]
+title: "Receipts"
+doc_type: reference
+---
+""",
+    )
+
+    try:
+        doc_registry.build_registry(content_root)
+    except doc_registry.DocumentRegistryError as exc:
+        assert any("duplicate id 'finance.invoices'" in violation for violation in exc.violations)
+        assert any("duplicate alias 'invoice-guide'" in violation for violation in exc.violations)
+    else:
+        raise AssertionError("expected duplicate identity validation to fail")
+
+
+def test_document_registry_rejects_alias_that_conflicts_with_another_id(tmp_path):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "finance/reference/invoices.md",
+        """---
+id: finance.invoices
+aliases: [finance.receipts]
+title: "Invoices"
+doc_type: reference
+---
+""",
+    )
+    _write_doc(
+        content_root,
+        "finance/reference/receipts.md",
+        """---
+id: finance.receipts
+title: "Receipts"
+doc_type: reference
+---
+""",
+    )
+
+    try:
+        doc_registry.build_registry(content_root)
+    except doc_registry.DocumentRegistryError as exc:
+        assert any(
+            "alias 'finance.receipts' from content/finance/reference/invoices.md conflicts with id" in violation
+            for violation in exc.violations
+        )
+    else:
+        raise AssertionError("expected alias conflict validation to fail")
+
+
+def test_document_registry_rejects_alias_that_conflicts_with_another_path(tmp_path):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "finance/reference/invoices.md",
+        """---
+id: finance.invoices
+aliases:
+  - content/finance/reference/receipts.md
+title: "Invoices"
+doc_type: reference
+---
+""",
+    )
+    _write_doc(
+        content_root,
+        "finance/reference/receipts.md",
+        """---
+id: finance.receipts
+title: "Receipts"
+doc_type: reference
+---
+""",
+    )
+
+    try:
+        doc_registry.build_registry(content_root)
+    except doc_registry.DocumentRegistryError as exc:
+        assert any(
+            "alias 'content/finance/reference/receipts.md' from content/finance/reference/invoices.md conflicts with path" in violation
+            for violation in exc.violations
+        )
+    else:
+        raise AssertionError("expected alias path conflict validation to fail")
+
+
+def test_document_registry_rejects_invalid_ids_and_broken_related_docs(tmp_path):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "finance/reference/invoices.md",
+        """---
+id: "Finance Invoices"
+title: "Invoices"
+doc_type: reference
+related_docs:
+  - missing-reference
+---
+""",
+    )
+
+    try:
+        doc_registry.build_registry(content_root)
+    except doc_registry.DocumentRegistryError as exc:
+        assert any("invalid id 'Finance Invoices'" in violation for violation in exc.violations)
+        assert any("related_docs reference not found: 'missing-reference'" in violation for violation in exc.violations)
+    else:
+        raise AssertionError("expected registry validation to fail")
+
+
+def test_document_registry_api_lists_and_resolves_canonical_documents(tmp_path, monkeypatch):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "media/podcast/sops/create-document.md",
+        """---
+id: media.podcast.create-document
+aliases:
+  - podcast-create-document
+title: "Create Podcast Document"
+doc_type: sop
+systems: [google-drive]
+related_docs: []
+---
+
+# Create Podcast Document
+""",
+    )
+    monkeypatch.setattr(api_handler, "CONTENT_ROOT", content_root)
+
+    registry_response = api_handler.handler(
+        {"rawPath": "/docs/registry", "requestContext": {"http": {"method": "GET"}}},
+        None,
+    )
+    resolve_response = api_handler.handler(
+        {
+            "rawPath": "/docs/resolve",
+            "requestContext": {"http": {"method": "GET"}},
+            "queryStringParameters": {"ref": "[[podcast-create-document]]"},
+        },
+        None,
+    )
+
+    assert registry_response["statusCode"] == 200
+    registry_payload = json.loads(registry_response["body"])
+    assert registry_payload["documents"][0]["id"] == "media.podcast.create-document"
+
+    assert resolve_response["statusCode"] == 200
+    resolve_payload = json.loads(resolve_response["body"])
+    assert resolve_payload["document"]["path"] == "content/media/podcast/sops/create-document.md"
 
 
 def test_exported_task_templates_are_git_backed_process_documents():

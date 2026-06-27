@@ -110,16 +110,24 @@ documented in `docs/STRUCTURE.md`.
 
 Every document may have a stable frontmatter `id`. The `id` is the document's
 cross-link identity and should not change when the file is renamed or moved.
-Use a short, readable slug when it is unique:
+Use lowercase letters, numbers, dots, dashes, and underscores only. Prefer a
+namespace that starts with the document type and domain:
 
 ```yaml
 ---
-id: community-slack-export-dump
+id: sop.community.slack.export-dump
 title: "Export Create a dump of Slack Data"
 aliases:
-  - slack-export-dump
+  - community-slack-export-dump
 ---
 ```
+
+Other document types use the same convention:
+
+- `template.media.podcast.remind-guest-one-day-before`
+- `reference.finance.invoices-receipts-and-statements`
+- `playbook.courses.launch-cohort`
+- `task-template.tasks.podcast`
 
 Use wiki-style links for internal cross-links:
 

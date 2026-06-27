@@ -17,7 +17,12 @@ lambda — they exist only in `scripts/serve_frontend.py`.
 ## Endpoints (api_handler)
 
 - `GET /docs`: List all docs under `CONTENT_ROOT`. Returns title, summary,
-  doc_type, domain, tags, systems, and updated timestamp.
+  stable ID, aliases, title, summary, doc_type, domain, tags, systems,
+  related docs, and updated timestamp.
+- `GET /docs/registry`: List canonical document registry records for all
+  Markdown docs under `CONTENT_ROOT`.
+- `GET /docs/resolve?ref=<ref>`: Resolve a canonical ID, alias, repo-relative
+  path, visible `/path.md`, `doc:id`, or `[[wiki-ref]]` to one registry record.
 - `GET /docs?path=<p>`: Read a single doc. Returns `content`, `updated`, and
   `parsed` for structured SOP trees where applicable.
 - `PUT /docs?path=<p>`: Save a doc body. Body: `{"content": "..."}`. Returns
