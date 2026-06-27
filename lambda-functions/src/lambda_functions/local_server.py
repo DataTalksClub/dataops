@@ -24,7 +24,7 @@ class LocalLambdaHandler(BaseHTTPRequestHandler):
                     "statusCode": 200,
                     "headers": {"content-type": "application/json"},
                     "body": (
-                        '{"service": "dtc-operations-local-lambda", '
+                        '{"service": "dataops-local-lambda", '
                         '"frontend": "http://127.0.0.1:5173", '
                         '"search": "http://127.0.0.1:8787/search?q=invoice&limit=3"}'
                     ),

@@ -153,7 +153,7 @@ def test_full_app_internal_refresh_bypasses_http_auth_and_rebuilds_search(tmp_pa
         _event(
             "/admin/refresh",
             "POST",
-            source="dtc-operations.github-actions",
+            source="dataops.github-actions",
         ),
         None,
     )

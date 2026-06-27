@@ -16,7 +16,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 LAMBDA_DIR = ROOT / "lambda-functions"
-DEFAULT_STACK = "dtc-operations-full-sandbox"
+DEFAULT_STACK = "dataops-v1"
 DEFAULT_REGION = "eu-west-1"
 DEFAULT_BRANCH = "main"
 
@@ -142,7 +142,7 @@ def main() -> None:
         build_artifact(artifact_dir)
         zip_dir(artifact_dir, zip_path)
         digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()[:16]
-        key = f"dtc-operations/full-app/{digest}.zip"
+        key = f"dataops/full-app/{digest}.zip"
         print(f"Built {zip_path} ({zip_path.stat().st_size} bytes)")
         run(["aws", "s3", "cp", str(zip_path), f"s3://{bucket}/{key}", "--region", args.region])
         aws_json(

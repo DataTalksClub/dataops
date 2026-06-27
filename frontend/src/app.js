@@ -583,7 +583,7 @@ function restoreFiltersExpanded() {
 }
 
 function renderLanding(total) {
-  libraryTitle.textContent = "Operations Docs";
+  libraryTitle.textContent = "DataOps";
   clearSelectionButton.hidden = true;
 
   const wrap = document.createElement("div");
