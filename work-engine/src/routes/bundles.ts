@@ -13,6 +13,29 @@ import type { LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
+function isRecordArrayWithStringId(value: unknown, idField: string): boolean {
+  return Array.isArray(value) && value.every((item) => (
+    item !== null
+    && typeof item === 'object'
+    && !Array.isArray(item)
+    && typeof (item as Record<string, unknown>)[idField] === 'string'
+    && ((item as Record<string, unknown>)[idField] as string).trim().length > 0
+  ));
+}
+
+function validateBundleRefs(body: Record<string, unknown>): string | null {
+  if (body.artifactRefs !== undefined && !isRecordArrayWithStringId(body.artifactRefs, 'artifactId')) {
+    return 'artifactRefs must be an array of objects with artifactId';
+  }
+  if (body.assistantJobRefs !== undefined && !isRecordArrayWithStringId(body.assistantJobRefs, 'assistantJobId')) {
+    return 'assistantJobRefs must be an array of objects with assistantJobId';
+  }
+  if (body.auditEventRefs !== undefined && !isRecordArrayWithStringId(body.auditEventRefs, 'auditEventId')) {
+    return 'auditEventRefs must be an array of objects with auditEventId';
+  }
+  return null;
+}
+
 /**
  * Handle all /api/bundles routes.
  */
@@ -154,6 +177,14 @@ async function handleCollection(method: string, rawBody: string | null, client: 
         body: JSON.stringify({ error: `Invalid status value. Must be one of: ${VALID_STATUSES.join(', ')}` }),
       };
     }
+    const refsError = validateBundleRefs(body);
+    if (refsError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: refsError }),
+      };
+    }
 
     // Build bundle data
     const bundleData: Record<string, unknown> = {
@@ -214,6 +245,11 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       }
       if (body.tags !== undefined) {
         bundleData.tags = body.tags;
+      }
+    }
+    for (const field of ['artifactRefs', 'assistantJobRefs', 'auditEventRefs']) {
+      if (body[field] !== undefined) {
+        bundleData[field] = body[field];
       }
     }
 
@@ -319,9 +355,20 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         body: JSON.stringify({ error: `Invalid status value. Must be one of: ${VALID_STATUSES.join(', ')}` }),
       };
     }
+    const refsError = validateBundleRefs(body);
+    if (refsError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: refsError }),
+      };
+    }
 
     // Only allow updating known fields
-    const allowedFields = ['title', 'description', 'anchorDate', 'references', 'bundleLinks', 'emoji', 'tags', 'stage', 'status'];
+    const allowedFields = [
+      'title', 'description', 'anchorDate', 'references', 'bundleLinks', 'emoji', 'tags', 'stage', 'status',
+      'artifactRefs', 'assistantJobRefs', 'auditEventRefs',
+    ];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

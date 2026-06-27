@@ -128,6 +128,8 @@ const ALLOWED_UPDATE_FIELDS = [
   'source',
   'waitingFor',
   'followUpAt',
+  'proofRequirement',
+  'externalStatus',
   'instructionsUrl',
   'instructionDocId',
   'instructionStepId',
@@ -139,8 +141,13 @@ const ALLOWED_UPDATE_FIELDS = [
   'requiresFile',
   'assigneeId',
   'tags',
+  'templateId',
+  'artifactRefs',
+  'assistantJobRefs',
+  'auditEventRefs',
 ];
 const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
+const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
 const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor and followUpAt';
 
 function isTaskStatus(value: unknown): value is TaskStatus {
@@ -166,6 +173,34 @@ function isValidationPayload(value: unknown): boolean {
   );
 }
 
+function isRecordArrayWithStringId(value: unknown, idField: string): boolean {
+  return Array.isArray(value) && value.every((item) => (
+    item !== null
+    && typeof item === 'object'
+    && !Array.isArray(item)
+    && isNonEmptyString((item as Record<string, unknown>)[idField])
+  ));
+}
+
+function validateProofRequirement(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return 'proofRequirement must be an object';
+  }
+
+  const proofRequirement = value as Record<string, unknown>;
+  if (!VALID_PROOF_REQUIREMENT_TYPES.has(String(proofRequirement.type))) {
+    return `proofRequirement.type must be one of: ${Array.from(VALID_PROOF_REQUIREMENT_TYPES).join(', ')}`;
+  }
+  if (proofRequirement.label !== undefined && typeof proofRequirement.label !== 'string') {
+    return 'proofRequirement.label must be a string';
+  }
+  if (proofRequirement.required !== undefined && typeof proofRequirement.required !== 'boolean') {
+    return 'proofRequirement.required must be a boolean';
+  }
+  return null;
+}
+
 function validateTaskDocContext(fields: Record<string, unknown>): string | null {
   for (const field of ['instructionDocId', 'instructionStepId', 'phase']) {
     if (fields[field] !== undefined && typeof fields[field] !== 'string') {
@@ -178,6 +213,97 @@ function validateTaskDocContext(fields: Record<string, unknown>): string | null 
   if (fields.validation !== undefined && !isValidationPayload(fields.validation)) {
     return 'validation must be a string or object';
   }
+  return null;
+}
+
+function validateTaskRefs(fields: Record<string, unknown>): string | null {
+  if (fields.artifactRefs !== undefined && !isRecordArrayWithStringId(fields.artifactRefs, 'artifactId')) {
+    return 'artifactRefs must be an array of objects with artifactId';
+  }
+  if (fields.assistantJobRefs !== undefined && !isRecordArrayWithStringId(fields.assistantJobRefs, 'assistantJobId')) {
+    return 'assistantJobRefs must be an array of objects with assistantJobId';
+  }
+  if (fields.auditEventRefs !== undefined && !isRecordArrayWithStringId(fields.auditEventRefs, 'auditEventId')) {
+    return 'auditEventRefs must be an array of objects with auditEventId';
+  }
+  return null;
+}
+
+function proofMissingError(type: string, label?: string): string {
+  const suffix = label ? ` '${label}'` : '';
+  return `Cannot mark task as done: required ${type} proof${suffix} is missing`;
+}
+
+async function validateDoneProof(
+  client: DynamoDBDocumentClient,
+  id: string,
+  existing: Task,
+  updates: Record<string, unknown>
+): Promise<string | null> {
+  const proofRequirement = (updates.proofRequirement !== undefined
+    ? updates.proofRequirement
+    : existing.proofRequirement) as Record<string, unknown> | undefined;
+
+  if (!proofRequirement || proofRequirement.required === false) {
+    return null;
+  }
+
+  const proofType = String(proofRequirement.type || '');
+  const proofLabel = typeof proofRequirement.label === 'string' ? proofRequirement.label : undefined;
+  if (proofType === 'url') {
+    const link = (updates.link !== undefined ? updates.link : existing.link) as string | undefined;
+    return isNonEmptyString(link) ? null : proofMissingError('url', proofLabel);
+  }
+  if (proofType === 'comment') {
+    const comment = (updates.comment !== undefined ? updates.comment : existing.comment) as string | null | undefined;
+    return isNonEmptyString(comment) ? null : proofMissingError('comment', proofLabel);
+  }
+  if (proofType === 'external-status') {
+    const externalStatus = (updates.externalStatus !== undefined ? updates.externalStatus : existing.externalStatus) as string | undefined;
+    return isNonEmptyString(externalStatus) ? null : proofMissingError('external-status', proofLabel);
+  }
+  if (proofType === 'artifact') {
+    const artifactRefs = (updates.artifactRefs !== undefined ? updates.artifactRefs : existing.artifactRefs) as unknown;
+    return Array.isArray(artifactRefs) && artifactRefs.length > 0 ? null : proofMissingError('artifact', proofLabel);
+  }
+  if (proofType === 'file') {
+    const files = await listFilesByTask(client, id);
+    return files.length > 0 ? null : proofMissingError('file', proofLabel);
+  }
+
+  return null;
+}
+
+function validateDoneProofOnCreate(taskData: Record<string, unknown>): string | null {
+  const requiredLinkName = taskData.requiredLinkName as string | undefined;
+  if (requiredLinkName && !isNonEmptyString(taskData.link)) {
+    return `Cannot mark task as done: required link '${requiredLinkName}' is not filled`;
+  }
+  if (taskData.requiresFile === true) {
+    return 'Cannot mark task as done: required file has not been uploaded';
+  }
+
+  const proofRequirement = taskData.proofRequirement as Record<string, unknown> | undefined;
+  if (!proofRequirement || proofRequirement.required === false) return null;
+
+  const proofType = String(proofRequirement.type || '');
+  const proofLabel = typeof proofRequirement.label === 'string' ? proofRequirement.label : undefined;
+  if (proofType === 'url') {
+    return isNonEmptyString(taskData.link) ? null : proofMissingError('url', proofLabel);
+  }
+  if (proofType === 'comment') {
+    return isNonEmptyString(taskData.comment) ? null : proofMissingError('comment', proofLabel);
+  }
+  if (proofType === 'external-status') {
+    return isNonEmptyString(taskData.externalStatus) ? null : proofMissingError('external-status', proofLabel);
+  }
+  if (proofType === 'artifact') {
+    return Array.isArray(taskData.artifactRefs) && taskData.artifactRefs.length > 0 ? null : proofMissingError('artifact', proofLabel);
+  }
+  if (proofType === 'file') {
+    return proofMissingError('file', proofLabel);
+  }
+
   return null;
 }
 
@@ -293,6 +419,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.bundleId !== undefined) taskData.bundleId = body.bundleId;
       if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
       if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
+      if (body.proofRequirement !== undefined) taskData.proofRequirement = body.proofRequirement;
+      if (body.externalStatus !== undefined) taskData.externalStatus = body.externalStatus;
       if (body.instructionsUrl !== undefined) taskData.instructionsUrl = body.instructionsUrl;
       if (body.instructionDocId !== undefined) taskData.instructionDocId = body.instructionDocId;
       if (body.instructionStepId !== undefined) taskData.instructionStepId = body.instructionStepId;
@@ -304,6 +432,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.requiresFile !== undefined) taskData.requiresFile = body.requiresFile;
       if (body.assigneeId !== undefined) taskData.assigneeId = body.assigneeId;
       if (body.tags !== undefined) taskData.tags = body.tags;
+      if (body.templateId !== undefined) taskData.templateId = body.templateId;
+      if (body.artifactRefs !== undefined) taskData.artifactRefs = body.artifactRefs;
+      if (body.assistantJobRefs !== undefined) taskData.assistantJobRefs = body.assistantJobRefs;
+      if (body.auditEventRefs !== undefined) taskData.auditEventRefs = body.auditEventRefs;
       taskData.source = (body.source as string) || 'manual';
       if (body.status !== undefined) {
         if (!isTaskStatus(body.status)) {
@@ -317,6 +449,20 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const docContextError = validateTaskDocContext(taskData);
       if (docContextError) {
         return jsonResponse(400, { error: docContextError });
+      }
+      const proofRequirementError = validateProofRequirement(taskData.proofRequirement);
+      if (proofRequirementError) {
+        return jsonResponse(400, { error: proofRequirementError });
+      }
+      const refsError = validateTaskRefs(taskData);
+      if (refsError) {
+        return jsonResponse(400, { error: refsError });
+      }
+      if (taskData.status === 'done') {
+        const proofError = validateDoneProofOnCreate(taskData);
+        if (proofError) {
+          return jsonResponse(400, { error: proofError });
+        }
       }
 
       const task = await createTask(client, taskData);
@@ -409,6 +555,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (docContextError) {
         return jsonResponse(400, { error: docContextError });
       }
+      const proofRequirementError = validateProofRequirement(updates.proofRequirement);
+      if (proofRequirementError) {
+        return jsonResponse(400, { error: proofRequirementError });
+      }
+      const refsError = validateTaskRefs(updates);
+      if (refsError) {
+        return jsonResponse(400, { error: refsError });
+      }
 
       // Verify task exists
       const existing = await getTask(client, id);
@@ -440,6 +594,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           if (files.length === 0) {
             return jsonResponse(400, { error: 'Cannot mark task as done: required file has not been uploaded' });
           }
+        }
+
+        const proofError = await validateDoneProof(client, id, existing, updates);
+        if (proofError) {
+          return jsonResponse(400, { error: proofError });
         }
 
         updates.completedAt = new Date().toISOString();

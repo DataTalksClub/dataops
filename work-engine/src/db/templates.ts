@@ -143,6 +143,7 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
     const taskData: Record<string, unknown> = {
       description: def.description,
       bundleId,
+      templateId,
       date: taskDate,
       source: 'template',
       templateTaskRef: def.refId,
@@ -168,6 +169,18 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
     if (def.validation) {
       taskData.validation = def.validation;
     }
+    if (def.proofRequirement) {
+      taskData.proofRequirement = def.proofRequirement;
+    }
+    if (def.artifactRefs && def.artifactRefs.length > 0) {
+      taskData.artifactRefs = def.artifactRefs;
+    }
+    if (def.assistantJobRefs && def.assistantJobRefs.length > 0) {
+      taskData.assistantJobRefs = def.assistantJobRefs;
+    }
+    if (def.auditEventRefs && def.auditEventRefs.length > 0) {
+      taskData.auditEventRefs = def.auditEventRefs;
+    }
 
     // Set assigneeId: task definition overrides, fall back to template default
     if (def.assigneeId) {
@@ -179,6 +192,9 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
     // Set requiredLinkName from task definition
     if (def.requiredLinkName) {
       taskData.requiredLinkName = def.requiredLinkName;
+    }
+    if (def.requiresFile !== undefined) {
+      taskData.requiresFile = def.requiresFile;
     }
 
     // Set stageOnComplete from task definition (internal field for stage transitions)

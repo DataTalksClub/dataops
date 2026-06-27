@@ -779,6 +779,77 @@ describe('API — Bundles', () => {
       }
     });
 
+    it('creates a representative workflow bundle with task proof and relationship refs', async () => {
+      const template = await createTemplate(client, {
+        name: 'Representative Workflow Template',
+        type: 'workflow',
+        tags: ['ops', 'model'],
+        defaultAssigneeId: 'user-ops',
+        phases: [
+          { id: 'intake', name: 'Intake', stage: 'preparation' },
+          { id: 'delivery', name: 'Delivery', stage: 'announced' },
+        ],
+        sourceDocIds: ['workflow.definition.example'],
+        references: [{ name: 'Workflow guide', url: 'https://example.com/workflow-guide' }],
+        bundleLinkDefinitions: [{ name: 'External tracker' }],
+        taskDefinitions: [
+          {
+            refId: 'prepare',
+            description: 'Prepare workflow packet',
+            offsetDays: -3,
+            instructionDocId: 'sop.workflow.prepare-packet',
+            instructionStepId: '1',
+            phase: 'intake',
+            systems: ['github', 'google-drive'],
+            validation: { expectedEvidence: 'Tracker URL' },
+            requiredLinkName: 'Tracker URL',
+            proofRequirement: { type: 'url', label: 'Tracker URL' },
+            artifactRefs: [{ artifactId: 'artifact-planned', type: 'document' }],
+            assistantJobRefs: [{ assistantJobId: 'assistant-planned', assistantType: 'summary' }],
+            auditEventRefs: [{ auditEventId: 'audit-planned', action: 'planned' }],
+          },
+        ],
+      });
+
+      const res = await invoke('POST', '/api/bundles', {
+        title: 'Representative Workflow Bundle',
+        anchorDate: '2026-07-20',
+        templateId: template.id,
+        artifactRefs: [{ artifactId: 'bundle-artifact-planned', type: 'package' }],
+        assistantJobRefs: [{ assistantJobId: 'bundle-assistant-planned', assistantType: 'orchestration' }],
+        auditEventRefs: [{ auditEventId: 'bundle-audit-planned', action: 'created' }],
+      });
+
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+
+      assert.ok(body.bundle.id);
+      assert.strictEqual(body.bundle.templateId, template.id);
+      assert.strictEqual(body.bundle.anchorDate, '2026-07-20');
+      assert.strictEqual(body.bundle.stage, 'preparation');
+      assert.strictEqual(body.bundle.status, 'active');
+      assert.deepStrictEqual(body.bundle.references, [{ name: 'Workflow guide', url: 'https://example.com/workflow-guide' }]);
+      assert.deepStrictEqual(body.bundle.bundleLinks, [{ name: 'External tracker', url: '' }]);
+      assert.deepStrictEqual(body.bundle.tags, ['ops', 'model']);
+      assert.deepStrictEqual(body.bundle.artifactRefs, [{ artifactId: 'bundle-artifact-planned', type: 'package' }]);
+      assert.deepStrictEqual(body.bundle.assistantJobRefs, [{ assistantJobId: 'bundle-assistant-planned', assistantType: 'orchestration' }]);
+      assert.deepStrictEqual(body.bundle.auditEventRefs, [{ auditEventId: 'bundle-audit-planned', action: 'created' }]);
+
+      assert.strictEqual(body.tasks.length, 1);
+      assert.strictEqual(body.tasks[0].bundleId, body.bundle.id);
+      assert.strictEqual(body.tasks[0].templateId, template.id);
+      assert.strictEqual(body.tasks[0].templateTaskRef, 'prepare');
+      assert.strictEqual(body.tasks[0].date, '2026-07-17');
+      assert.strictEqual(body.tasks[0].instructionDocId, 'sop.workflow.prepare-packet');
+      assert.strictEqual(body.tasks[0].phase, 'intake');
+      assert.deepStrictEqual(body.tasks[0].systems, ['github', 'google-drive']);
+      assert.deepStrictEqual(body.tasks[0].proofRequirement, { type: 'url', label: 'Tracker URL' });
+      assert.strictEqual(body.tasks[0].requiredLinkName, 'Tracker URL');
+      assert.deepStrictEqual(body.tasks[0].artifactRefs, [{ artifactId: 'artifact-planned', type: 'document' }]);
+      assert.deepStrictEqual(body.tasks[0].assistantJobRefs, [{ assistantJobId: 'assistant-planned', assistantType: 'summary' }]);
+      assert.deepStrictEqual(body.tasks[0].auditEventRefs, [{ auditEventId: 'audit-planned', action: 'planned' }]);
+    });
+
     it('milestone task completion triggers stage transition', async () => {
       const template = await createTemplate(client, {
         name: 'Stage Transition Template',

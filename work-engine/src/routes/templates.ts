@@ -12,6 +12,7 @@ import type { LambdaResponse } from '../types';
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 const VALID_STAGES = ['preparation', 'announced', 'after-event', 'done'];
+const VALID_PROOF_REQUIREMENT_TYPES = ['url', 'file', 'artifact', 'comment', 'external-status'];
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -26,6 +27,34 @@ function isValidationPayload(value: unknown): boolean {
       && !Array.isArray(value)
     )
   );
+}
+
+function isRecordArrayWithStringId(value: unknown, idField: string): boolean {
+  return Array.isArray(value) && value.every((item) => (
+    item !== null
+    && typeof item === 'object'
+    && !Array.isArray(item)
+    && typeof (item as Record<string, unknown>)[idField] === 'string'
+    && ((item as Record<string, unknown>)[idField] as string).trim().length > 0
+  ));
+}
+
+function validateProofRequirement(value: unknown, context: string): string | null {
+  if (value === undefined) return null;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return `${context} must be an object`;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== 'string' || !VALID_PROOF_REQUIREMENT_TYPES.includes(record.type)) {
+    return `${context}.type must be one of: ${VALID_PROOF_REQUIREMENT_TYPES.join(', ')}`;
+  }
+  if (record.label !== undefined && typeof record.label !== 'string') {
+    return `${context}.label must be a string`;
+  }
+  if (record.required !== undefined && typeof record.required !== 'boolean') {
+    return `${context}.required must be a boolean`;
+  }
+  return null;
 }
 
 /**
@@ -83,6 +112,19 @@ function validateTaskDefinitions(taskDefinitions: unknown): string | null {
     if (td.requiresFile !== undefined && typeof td.requiresFile !== 'boolean') {
       return `taskDefinitions[${i}].requiresFile must be a boolean`;
     }
+    const proofRequirementError = validateProofRequirement(td.proofRequirement, `taskDefinitions[${i}].proofRequirement`);
+    if (proofRequirementError) {
+      return proofRequirementError;
+    }
+    if (td.artifactRefs !== undefined && !isRecordArrayWithStringId(td.artifactRefs, 'artifactId')) {
+      return `taskDefinitions[${i}].artifactRefs must be an array of objects with artifactId`;
+    }
+    if (td.assistantJobRefs !== undefined && !isRecordArrayWithStringId(td.assistantJobRefs, 'assistantJobId')) {
+      return `taskDefinitions[${i}].assistantJobRefs must be an array of objects with assistantJobId`;
+    }
+    if (td.auditEventRefs !== undefined && !isRecordArrayWithStringId(td.auditEventRefs, 'auditEventId')) {
+      return `taskDefinitions[${i}].auditEventRefs must be an array of objects with auditEventId`;
+    }
   }
 
   return null;
@@ -91,6 +133,26 @@ function validateTaskDefinitions(taskDefinitions: unknown): string | null {
 function validateTemplateDocContext(body: Record<string, unknown>): string | null {
   if (body.sourceDocIds !== undefined && !isStringArray(body.sourceDocIds)) {
     return 'sourceDocIds must be an array of strings';
+  }
+  if (body.phases !== undefined) {
+    if (!Array.isArray(body.phases)) {
+      return 'phases must be an array';
+    }
+    for (let i = 0; i < body.phases.length; i++) {
+      const phase = body.phases[i] as Record<string, unknown>;
+      if (phase === null || typeof phase !== 'object' || Array.isArray(phase)) {
+        return `phases[${i}] must be an object`;
+      }
+      if (typeof phase.id !== 'string' || phase.id.trim().length === 0) {
+        return `phases[${i}].id must be a non-empty string`;
+      }
+      if (typeof phase.name !== 'string' || phase.name.trim().length === 0) {
+        return `phases[${i}].name must be a non-empty string`;
+      }
+      if (phase.stage !== undefined && typeof phase.stage !== 'string') {
+        return `phases[${i}].stage must be a string`;
+      }
+    }
   }
   return null;
 }
@@ -214,7 +276,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 
     // Pick optional template-level fields
     const optionalFields = [
-      'emoji', 'tags', 'defaultAssigneeId', 'sourceDocIds', 'references',
+      'emoji', 'tags', 'defaultAssigneeId', 'phases', 'sourceDocIds', 'references',
       'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
     ];
     for (const field of optionalFields) {
@@ -293,7 +355,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
     // Only allow updating known fields
     const allowedFields = [
       'name', 'type', 'taskDefinitions',
-      'emoji', 'tags', 'defaultAssigneeId', 'sourceDocIds', 'references',
+      'emoji', 'tags', 'defaultAssigneeId', 'phases', 'sourceDocIds', 'references',
       'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
     ];
     const updates: Record<string, unknown> = {};

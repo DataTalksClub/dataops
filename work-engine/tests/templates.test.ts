@@ -448,6 +448,81 @@ describe('Templates data layer', () => {
     }
   });
 
+  it('instantiates representative workflow model fields with stable relationships', async () => {
+    const template = await createTemplate(client, {
+      name: 'Representative workflow',
+      type: 'workflow',
+      tags: ['ops', 'v1'],
+      defaultAssigneeId: 'user-ops',
+      phases: [
+        { id: 'prep', name: 'Preparation', stage: 'preparation' },
+        { id: 'review', name: 'Review', stage: 'announced' },
+      ],
+      sourceDocIds: ['workflow.definition.example'],
+      references: [{ name: 'Workflow brief', url: 'https://example.com/brief' }],
+      bundleLinkDefinitions: [{ name: 'External status' }],
+      taskDefinitions: [
+        {
+          refId: 'collect-inputs',
+          description: 'Collect workflow inputs',
+          offsetDays: -2,
+          assigneeId: 'user-specialist',
+          instructionDocId: 'sop.workflow.collect-inputs',
+          instructionStepId: '2',
+          phase: 'prep',
+          systems: ['github', 'google-drive'],
+          validation: { requiredEvidence: 'Source document link' },
+          requiredLinkName: 'Source document',
+          proofRequirement: { type: 'url', label: 'Source document' },
+          artifactRefs: [{ artifactId: 'artifact-placeholder', type: 'document' }],
+          assistantJobRefs: [{ assistantJobId: 'assistant-job-placeholder', assistantType: 'drafting' }],
+          auditEventRefs: [{ auditEventId: 'audit-placeholder', action: 'created' }],
+        },
+        {
+          refId: 'publish-summary',
+          description: 'Publish summary',
+          offsetDays: 0,
+          stageOnComplete: 'done',
+          proofRequirement: { type: 'comment', label: 'Published note' },
+        },
+      ],
+    });
+
+    const tasks = await instantiateTemplate(client, template.id, 'bundle-workflow-model-1', '2026-07-10');
+    assert.strictEqual(tasks.length, 2);
+
+    const collectInputs = tasks.find((task) => task.templateTaskRef === 'collect-inputs');
+    assert.ok(collectInputs);
+    assert.strictEqual(collectInputs.date, '2026-07-08');
+    assert.strictEqual(collectInputs.bundleId, 'bundle-workflow-model-1');
+    assert.strictEqual(collectInputs.templateId, template.id);
+    assert.strictEqual(collectInputs.assigneeId, 'user-specialist');
+    assert.strictEqual(collectInputs.status, 'todo');
+    assert.strictEqual(collectInputs.instructionDocId, 'sop.workflow.collect-inputs');
+    assert.strictEqual(collectInputs.instructionStepId, '2');
+    assert.strictEqual(collectInputs.phase, 'prep');
+    assert.deepStrictEqual(collectInputs.systems, ['github', 'google-drive']);
+    assert.deepStrictEqual(collectInputs.validation, { requiredEvidence: 'Source document link' });
+    assert.strictEqual(collectInputs.requiredLinkName, 'Source document');
+    assert.deepStrictEqual(collectInputs.proofRequirement, { type: 'url', label: 'Source document' });
+    assert.deepStrictEqual(collectInputs.artifactRefs, [{ artifactId: 'artifact-placeholder', type: 'document' }]);
+    assert.deepStrictEqual(collectInputs.assistantJobRefs, [{ assistantJobId: 'assistant-job-placeholder', assistantType: 'drafting' }]);
+    assert.deepStrictEqual(collectInputs.auditEventRefs, [{ auditEventId: 'audit-placeholder', action: 'created' }]);
+    assert.deepStrictEqual(collectInputs.tags, ['ops', 'v1']);
+
+    const fetched = await getTask(client, collectInputs.id);
+    assert.ok(fetched);
+    assert.strictEqual(fetched.templateId, template.id);
+    assert.deepStrictEqual(fetched.proofRequirement, { type: 'url', label: 'Source document' });
+
+    const publishSummary = tasks.find((task) => task.templateTaskRef === 'publish-summary');
+    assert.ok(publishSummary);
+    assert.strictEqual(publishSummary.date, '2026-07-10');
+    assert.strictEqual(publishSummary.assigneeId, 'user-ops');
+    assert.strictEqual(publishSummary.stageOnComplete, 'done');
+    assert.deepStrictEqual(publishSummary.proofRequirement, { type: 'comment', label: 'Published note' });
+  });
+
   it('instantiateTemplate calculates dates correctly for various offsets', async () => {
     const template = await createTemplate(client, {
       name: 'Date calc test',
