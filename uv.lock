@@ -3,11 +3,11 @@ revision = 3
 requires-python = ">=3.11"
 
 [options]
-exclude-newer = "2026-05-12T13:53:00.902184745Z"
+exclude-newer = "2026-06-20T16:25:47.438263836Z"
 exclude-newer-span = "P7D"
 
 [[package]]
-name = "dtc-operations"
+name = "dataops"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
