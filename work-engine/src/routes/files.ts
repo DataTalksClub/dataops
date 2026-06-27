@@ -1,4 +1,5 @@
 import path from 'path';
+import crypto from 'crypto';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
 import { getTask } from '../db/tasks';
@@ -9,7 +10,7 @@ import {
   listFilesByTask,
   listFiles,
 } from '../db/files';
-import { saveFile, readFile, removeFile } from '../storage';
+import { saveFile, readFile, removeFile, isLocalFilesystemStorageAllowed } from '../storage';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -236,15 +237,28 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
     }
   }
 
+  if (!isLocalFilesystemStorageAllowed()) {
+    return jsonResponse(409, {
+      error: 'Production file upload requires configured durable storage; local filesystem storage is disabled',
+    });
+  }
+
   // Save file to filesystem
   const storagePath = saveFile(taskId, parsed.file.filename, parsed.file.content);
+  const storageUri = `local-dev://${storagePath.replace(/\\/g, '/')}`;
 
   // Create metadata record
   const fileData: Record<string, unknown> = {
     taskId,
+    bundleId: task.bundleId,
     filename: parsed.file.filename,
     category,
     storagePath,
+    storageProvider: 'local-dev',
+    storageUri,
+    contentType: parsed.file.contentType,
+    checksum: `sha256:${crypto.createHash('sha256').update(parsed.file.content).digest('hex')}`,
+    sizeBytes: parsed.file.content.length,
   };
 
   if (tags) {
@@ -300,6 +314,9 @@ async function handleDownload(id: string, client: DynamoDBDocumentClient): Promi
   }
 
   try {
+    if (!isLocalFilesystemStorageAllowed()) {
+      return jsonResponse(409, { error: 'Local filesystem downloads are disabled outside local/test mode' });
+    }
     const content = readFile(file.storagePath);
     const mimeType = getMimeType(file.filename);
 
@@ -325,8 +342,10 @@ async function handleDelete(id: string, client: DynamoDBDocumentClient): Promise
     return jsonResponse(404, { error: 'File not found' });
   }
 
-  // Remove file from filesystem
-  removeFile(file.storagePath);
+  // Remove local file content when this legacy/local-dev record points to disk.
+  if (file.storagePath && isLocalFilesystemStorageAllowed()) {
+    removeFile(file.storagePath);
+  }
 
   // Remove metadata from database
   await deleteFile(client, id);

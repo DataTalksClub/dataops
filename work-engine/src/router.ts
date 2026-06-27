@@ -9,6 +9,7 @@ import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
 import { handleUserRoutes } from './routes/users';
 import { handleFileRoutes } from './routes/files';
+import { handleArtifactRoutes } from './routes/artifacts';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
 import { handleNotificationRoutes } from './routes/notifications';
@@ -25,9 +26,10 @@ import {
   listTasksByBundle,
   listTasksByStatus,
 } from './db/tasks';
-import { updateBundle } from './db/bundles';
+import { getBundle, updateBundle } from './db/bundles';
+import { getArtifact, listArtifacts } from './db/artifacts';
 import { listFilesByTask } from './db/files';
-import type { LambdaEvent, LambdaResponse, Task, TaskStatus } from './types';
+import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskStatus } from './types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
@@ -234,6 +236,42 @@ function proofMissingError(type: string, label?: string): string {
   return `Cannot mark task as done: required ${type} proof${suffix} is missing`;
 }
 
+function artifactRefIds(refs: unknown): string[] {
+  if (!Array.isArray(refs)) return [];
+  return refs
+    .map((ref) => (ref && typeof ref === 'object' ? (ref as ArtifactRef).artifactId : undefined))
+    .filter((id): id is string => isNonEmptyString(id));
+}
+
+async function hasApprovedArtifactProof(
+  client: DynamoDBDocumentClient,
+  taskId: string | null,
+  taskData: Record<string, unknown>
+): Promise<boolean> {
+  if (taskId) {
+    const taskArtifacts = await listArtifacts(client, { taskId, status: 'approved' });
+    if (taskArtifacts.length > 0) return true;
+  }
+
+  const bundleId = isNonEmptyString(taskData.bundleId) ? taskData.bundleId : null;
+  const refIds = new Set(artifactRefIds(taskData.artifactRefs));
+
+  if (bundleId) {
+    const bundleArtifacts = await listArtifacts(client, { bundleId, status: 'approved' });
+    if (bundleArtifacts.length > 0) return true;
+
+    const bundle = await getBundle(client, bundleId);
+    for (const id of artifactRefIds(bundle?.artifactRefs)) refIds.add(id);
+  }
+
+  for (const artifactId of refIds) {
+    const artifact = await getArtifact(client, artifactId);
+    if (artifact?.status === 'approved') return true;
+  }
+
+  return false;
+}
+
 async function validateDoneProof(
   client: DynamoDBDocumentClient,
   id: string,
@@ -263,8 +301,8 @@ async function validateDoneProof(
     return isNonEmptyString(externalStatus) ? null : proofMissingError('external-status', proofLabel);
   }
   if (proofType === 'artifact') {
-    const artifactRefs = (updates.artifactRefs !== undefined ? updates.artifactRefs : existing.artifactRefs) as unknown;
-    return Array.isArray(artifactRefs) && artifactRefs.length > 0 ? null : proofMissingError('artifact', proofLabel);
+    const taskData = { ...existing, ...updates };
+    return await hasApprovedArtifactProof(client, id, taskData) ? null : proofMissingError('approved artifact', proofLabel);
   }
   if (proofType === 'file') {
     const files = await listFilesByTask(client, id);
@@ -274,7 +312,7 @@ async function validateDoneProof(
   return null;
 }
 
-function validateDoneProofOnCreate(taskData: Record<string, unknown>): string | null {
+async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, taskData: Record<string, unknown>): Promise<string | null> {
   const requiredLinkName = taskData.requiredLinkName as string | undefined;
   if (requiredLinkName && !isNonEmptyString(taskData.link)) {
     return `Cannot mark task as done: required link '${requiredLinkName}' is not filled`;
@@ -298,7 +336,7 @@ function validateDoneProofOnCreate(taskData: Record<string, unknown>): string | 
     return isNonEmptyString(taskData.externalStatus) ? null : proofMissingError('external-status', proofLabel);
   }
   if (proofType === 'artifact') {
-    return Array.isArray(taskData.artifactRefs) && taskData.artifactRefs.length > 0 ? null : proofMissingError('artifact', proofLabel);
+    return await hasApprovedArtifactProof(client, null, taskData) ? null : proofMissingError('approved artifact', proofLabel);
   }
   if (proofType === 'file') {
     return proofMissingError('file', proofLabel);
@@ -466,7 +504,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         return jsonResponse(400, { error: refsError });
       }
       if (taskData.status === 'done') {
-        const proofError = validateDoneProofOnCreate(taskData);
+        const proofError = await validateDoneProofOnCreate(client, taskData);
         if (proofError) {
           return jsonResponse(400, { error: proofError });
         }
@@ -642,6 +680,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── File routes ───────────────────────────────────────────────
+
+    if (reqPath.startsWith('/api/artifacts')) {
+      const result = await handleArtifactRoutes(event);
+      if (result) return result;
+    }
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);

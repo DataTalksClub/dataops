@@ -32,6 +32,50 @@ export interface ArtifactRef {
   status?: string;
 }
 
+export type ArtifactType =
+  | 'podcast-doc'
+  | 'transcript'
+  | 'recording'
+  | 'report'
+  | 'invoice'
+  | 'event-page'
+  | 'assistant-output'
+  | 'external-link'
+  | 'other';
+
+export type ArtifactStatus = 'draft' | 'needs-review' | 'approved' | 'rejected' | 'archived' | 'superseded';
+export type ArtifactStorageProvider = 's3' | 'dropbox' | 'google-drive' | 'github' | 'external-url' | 'local-dev' | 'unknown';
+export type ArtifactDataClass = 'public' | 'internal' | 'private' | 'sensitive';
+export type ArtifactSourceType = 'manual-link' | 'manual-upload' | 'assistant-output' | 'import' | 'migration' | 'system';
+
+export interface ArtifactRecord {
+  id: string;
+  type: ArtifactType | string;
+  title: string;
+  description?: string;
+  status: ArtifactStatus;
+  storageProvider: ArtifactStorageProvider;
+  storageUri: string;
+  filename?: string;
+  contentType?: string;
+  checksum?: string;
+  sizeBytes?: number;
+  visibility?: ArtifactDataClass;
+  dataClass: ArtifactDataClass;
+  taskId?: string;
+  bundleId?: string;
+  assistantJobId?: string;
+  fileId?: string;
+  sourceType: ArtifactSourceType;
+  createdBy?: string;
+  reviewedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface AssistantJobRef {
   assistantJobId: string;
   assistantType?: string;
@@ -85,10 +129,16 @@ export interface Task {
 export interface FileRecord {
   id: string;
   taskId: string;
+  bundleId?: string;
   filename: string;
   category: 'image' | 'invoice' | 'document';
   tags?: string[];
   storagePath: string;
+  storageProvider?: 'local-dev' | 's3' | 'dropbox' | 'google-drive' | 'external-url' | 'unknown';
+  storageUri?: string;
+  contentType?: string;
+  checksum?: string;
+  sizeBytes?: number;
   createdAt: string;
 }
 

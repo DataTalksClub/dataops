@@ -159,9 +159,9 @@ Fields:
 - `created_at`
 - `updated_at`
 
-Tasks point back to the bundle with `bundle_id`. Bundle-level artifact,
-assistant, and audit references are metadata only until #29 and #30 define the
-detailed lifecycle.
+Tasks point back to the bundle with `bundle_id`. Bundle-level `artifact_refs`
+are lightweight context pointers; the artifacts table is the durable source for
+artifact metadata and review state.
 
 ## Task Instance
 
@@ -223,7 +223,9 @@ Completion semantics:
 - `requires_file` requires an uploaded file metadata record.
 - `proof_requirement.type=url` requires `link`.
 - `proof_requirement.type=file` requires exported file metadata.
-- `proof_requirement.type=artifact` requires at least one `artifact_ref`.
+- `proof_requirement.type=artifact` requires an approved artifact record
+  attached to the task, attached to the task's bundle, or referenced by
+  `artifact_refs` from the task or bundle.
 - `proof_requirement.type=comment` requires `comment`.
 - `proof_requirement.type=external-status` requires `external_status`.
 
@@ -270,7 +272,55 @@ Fields:
 - `storage_uri`
 - `status`
 
-Detailed artifact storage, review, and lifecycle rules belong to #29.
+Artifact references are not proof by themselves. An artifact ref satisfies
+artifact proof only when the referenced artifact record exists and has
+`status=approved`. `draft`, `needs-review`, `rejected`, `archived`, and
+`superseded` records remain visible context but do not complete proof gates.
+
+## Artifact Records
+
+Artifact records are metadata-only runtime records for generated outputs,
+external deliverables, assistant drafts, reviewed documents, and public/private
+links. DynamoDB stores the metadata and stable storage URI, not the binary,
+large generated document, signed URL, raw assistant log, secret, OAuth token, or
+cookie.
+
+Fields:
+
+- `artifact_id`
+- `type`: `podcast-doc`, `transcript`, `recording`, `report`, `invoice`,
+  `event-page`, `assistant-output`, `external-link`, or `other`
+- `title`
+- `description`
+- `status`: `draft`, `needs-review`, `approved`, `rejected`, `archived`, or
+  `superseded`
+- `storage_provider`: `s3`, `dropbox`, `google-drive`, `github`,
+  `external-url`, `local-dev`, or `unknown`
+- `storage_uri`
+- `filename`
+- `content_type`
+- `checksum`
+- `size_bytes`
+- `visibility` or `data_class`: `public`, `internal`, `private`, or
+  `sensitive`
+- `task_id`
+- `bundle_id`
+- `assistant_job_id`
+- `file_id`
+- `source_type`: `manual-link`, `manual-upload`, `assistant-output`, `import`,
+  `migration`, or `system`
+- `created_by`
+- `reviewed_by`
+- `created_at`
+- `updated_at`
+- `reviewed_at`
+- `tags`
+- small redacted `metadata`
+
+`assistant_job_id` is an opaque optional relationship until #30 exports
+assistant jobs. Podcast Assistant local folders such as `documents/`, `inbox/`,
+and `heru_runs/` are local runtime/dev storage; attached assistant outputs must
+be represented by artifact metadata instead of committed as durable artifacts.
 
 ## Assistant Job References
 

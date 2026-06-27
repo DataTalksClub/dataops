@@ -196,6 +196,8 @@ File and artifact records should include:
 
 - `file_id` or `artifact_id`
 - related task, bundle, or assistant job IDs
+- status/review metadata for artifacts
+- storage provider
 - `storage_uri`
 - `filename`
 - `checksum`
@@ -204,6 +206,12 @@ File and artifact records should include:
 
 Binary backup is handled by S3 versioning, S3 replication, external system
 exports, or a separate artifact export archive.
+
+`artifacts.jsonl` is implemented in V1 and must be present in normal exports.
+It contains metadata only. It must not contain binary payloads, large assistant
+outputs, raw assistant logs, signed temporary URLs, OAuth tokens, cookies, API
+keys, or private credentials. `assistant_job_id` may be present as an opaque
+optional value until #30 exports assistant jobs.
 
 ## Restore Validation
 
@@ -226,8 +234,10 @@ Relationship checks:
 - every task `assignee_id` references an exported user or is empty
 - every task `template_id` references an exported template or is empty
 - every file `task_id` references an exported task
-- every artifact `task_id`, `bundle_id`, and `assistant_job_id` references an
-  entity from the same export or is empty
+- every artifact `task_id`, `bundle_id`, and `file_id` references an entity
+  from the same export or is empty
+- artifact `assistant_job_id` is optional and opaque until assistant jobs are
+  exported
 - every notification relation references an exported entity or is empty
 
 ## Dry-Run Import

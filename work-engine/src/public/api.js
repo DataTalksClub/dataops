@@ -155,6 +155,47 @@
       },
     },
 
+    artifacts: {
+      list: function (params) {
+        var qs = new URLSearchParams(params || {}).toString();
+        return fetch('/api/artifacts' + (qs ? '?' + qs : ''), {
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      get: function (id) {
+        return fetch('/api/artifacts/' + id, {
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      create: function (data) {
+        return fetch('/api/artifacts', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      update: function (id, data) {
+        return fetch('/api/artifacts/' + id, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      attach: function (id, data) {
+        return fetch('/api/artifacts/' + id + '/attach', {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      archive: function (id) {
+        return fetch('/api/artifacts/' + id + '/archive', {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+    },
+
     templates: {
       list: function () {
         return fetch('/api/templates', {

@@ -8,6 +8,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createBundle } from '../src/db/bundles';
+import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
 import { createNotification } from '../src/db/notifications';
 import { createRecurringConfig } from '../src/db/recurring';
@@ -107,6 +108,24 @@ describe('portable execution data export', () => {
       category: 'document',
       storagePath: `uploads/${task.id}/proof.txt`,
     });
+    await createArtifact(client, {
+      type: 'external-link',
+      title: 'Reviewed source artifact',
+      description: 'Public proof URL registered as artifact metadata',
+      status: 'approved',
+      storageProvider: 'external-url',
+      storageUri: 'https://example.com/source-document',
+      dataClass: 'public',
+      visibility: 'public',
+      taskId: task.id,
+      bundleId: bundle.id,
+      sourceType: 'manual-link',
+      createdBy: user.id,
+      reviewedBy: user.id,
+      reviewedAt: '2026-06-20T12:00:00.000Z',
+      tags: ['proof'],
+      metadata: { source: 'operator' },
+    });
     await createNotification(client, {
       type: 'follow-up-due',
       message: 'Follow up with guest',
@@ -132,9 +151,11 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.templates, 1);
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
+    assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.notifications, 1);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
     assert.ok(result.manifest.omitted_entities.includes('sessions'));
+    assert.ok(!result.manifest.omitted_entities.includes('artifacts'));
 
     const usersJsonl = await fs.readFile(path.join(exportDir, 'users.jsonl'), 'utf8');
     assert.match(usersJsonl, /"user_id"/);
@@ -175,6 +196,18 @@ describe('portable execution data export', () => {
     assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
     assert.match(notificationsJsonl, /"due_at":"2026-06-21T09:00:00.000Z"/);
 
+    const filesJsonl = await fs.readFile(path.join(exportDir, 'files.jsonl'), 'utf8');
+    assert.match(filesJsonl, /"storage_uri":"uploads\/.*\/proof.txt"/);
+
+    const artifactsJsonl = await fs.readFile(path.join(exportDir, 'artifacts.jsonl'), 'utf8');
+    assert.match(artifactsJsonl, /"artifact_id"/);
+    assert.match(artifactsJsonl, /"storage_uri":"https:\/\/example.com\/source-document"/);
+    assert.match(artifactsJsonl, /"status":"approved"/);
+    assert.match(artifactsJsonl, /"task_id"/);
+    assert.match(artifactsJsonl, /"bundle_id"/);
+    assert.match(artifactsJsonl, /"metadata":\{"source":"operator"\}/);
+    assert.doesNotMatch(artifactsJsonl, /binary|password|token/i);
+
     const validation = await validatePortableExport(exportDir);
     assert.deepStrictEqual(validation.errors, []);
     assert.strictEqual(validation.valid, true);
@@ -193,6 +226,24 @@ describe('portable execution data export', () => {
           filename: 'proof.txt',
           storage_uri: 'uploads/missing-task/proof.txt',
           created_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.writeFile(
+        path.join(brokenDir, 'artifacts.jsonl'),
+        JSON.stringify({
+          artifact_id: 'artifact-broken',
+          type: 'external-link',
+          title: 'Broken artifact',
+          status: 'approved',
+          storage_provider: 'external-url',
+          storage_uri: 'https://example.com/proof',
+          task_id: 'missing-task',
+          reviewed_at: '2026-06-27T00:00:00.000Z',
+          created_at: '2026-06-27T00:00:00.000Z',
+          updated_at: '2026-06-27T00:00:00.000Z',
+          source_type: 'manual-link',
+          data_class: 'public',
         }) + '\n',
         'utf8'
       );
@@ -292,6 +343,25 @@ describe('portable execution data export', () => {
         }) + '\n',
         'utf8'
       );
+      await fs.writeFile(
+        path.join(brokenDir, 'artifacts.jsonl'),
+        JSON.stringify({
+          artifact_id: 'artifact-invalid',
+          type: 'bad-type',
+          title: '',
+          status: 'bad-status',
+          storage_provider: 's3',
+          storage_uri: 'https://example.com/private?token=abc',
+          task_id: 'task-waiting-broken',
+          file_id: 'missing-file',
+          data_class: 'secret',
+          source_type: 'bad-source',
+          metadata: { accessToken: 'not-exportable' },
+          created_at: 'not-a-date',
+          updated_at: 123,
+        }) + '\n',
+        'utf8'
+      );
 
       const validation = await validatePortableExport(brokenDir);
 
@@ -316,6 +386,13 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('notifications[0] field notification_type has unknown value: unknown-reminder')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[1] missing required string field due_at')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[2] field due_at must be a parseable date or timestamp')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0] field type has unknown value: bad-type')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0] field status has unknown value: bad-status')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0] field data_class has unknown value: secret')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0] field source_type has unknown value: bad-source')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0].storage_uri must not contain signed URLs or tokens')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0].metadata.accessToken must not contain secrets')));
+      assert.ok(validation.errors.some((error) => error.includes('artifacts[0] checksum is required for DataOps-owned s3 artifacts')));
     } finally {
       await fs.rm(brokenDir, { recursive: true, force: true });
     }

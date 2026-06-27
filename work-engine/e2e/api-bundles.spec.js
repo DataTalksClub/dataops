@@ -1,5 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
+test.describe.configure({ mode: 'serial' });
+
 // Helper: UUID v4 pattern
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -532,25 +534,21 @@ test.describe('Bundle with template', () => {
   });
 
   test('no bundle is created when templateId does not exist', async ({ request }) => {
-    // Get current bundle count
-    const before = await request.get('/api/bundles');
-    const beforeBody = await before.json();
-    const countBefore = beforeBody.bundles.length;
-
     // Attempt to create with bad template
+    const rejectedTitle = 'Should not exist from bad template';
     await request.post('/api/bundles', {
       data: {
-        title: 'Should not exist',
+        title: rejectedTitle,
         anchorDate: '2026-01-01',
         templateId: 'nonexistent-template-id',
       },
     });
 
-    // Verify bundle count has not increased
+    // Verify the rejected payload was not persisted. Other E2E specs share the
+    // same test server and may create/delete unrelated bundles in parallel.
     const after = await request.get('/api/bundles');
     const afterBody = await after.json();
-    const countAfter = afterBody.bundles.length;
-    expect(countAfter).toBe(countBefore);
+    expect(afterBody.bundles.some((bundle) => bundle.title === rejectedTitle)).toBe(false);
   });
 });
 
@@ -638,14 +636,18 @@ test.describe('Frontend bundles page', () => {
     await expect(bundleLink).toBeVisible();
   });
 
-  test('empty state explains how to create the first bundle', async ({ page, request }) => {
-    // Delete all existing bundles first (archive then delete)
-    const listRes = await request.get('/api/bundles');
-    const { bundles } = await listRes.json();
-    for (const b of bundles) {
-      await request.put(`/api/bundles/${b.id}/archive`);
-      await request.delete(`/api/bundles/${b.id}`);
-    }
+  test('empty state explains how to create the first bundle', async ({ page }) => {
+    await page.route('**/api/bundles', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ bundles: [] }),
+        });
+        return;
+      }
+      await route.continue();
+    });
 
     await page.goto('/#/bundles');
     await page.waitForSelector('.empty-state');

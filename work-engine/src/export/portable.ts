@@ -6,6 +6,7 @@ import { ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
 
 import {
   TABLE_BUNDLES,
+  TABLE_ARTIFACTS,
   TABLE_FILES,
   TABLE_NOTIFICATIONS,
   TABLE_TASKS,
@@ -57,11 +58,12 @@ type ExportEntityName =
   | 'templates'
   | 'recurring_configs'
   | 'files'
+  | 'artifacts'
   | 'notifications';
 
 const SCHEMA_VERSION = 'dataops.execution.v1';
 const EXPORT_FORMAT_VERSION = 1;
-const OMITTED_ENTITIES = ['sessions', 'artifacts', 'assistant_jobs', 'audit_events'];
+const OMITTED_ENTITIES = ['sessions', 'assistant_jobs', 'audit_events'];
 const REDACTIONS = ['users.password_hash', 'sessions'];
 const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
 const VALID_NOTIFICATION_TYPES = new Set([
@@ -74,6 +76,13 @@ const VALID_NOTIFICATION_TYPES = new Set([
   'automation-failure',
 ]);
 const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
+const VALID_ARTIFACT_TYPES = new Set(['podcast-doc', 'transcript', 'recording', 'report', 'invoice', 'event-page', 'assistant-output', 'external-link', 'other']);
+const VALID_ARTIFACT_STATUSES = new Set(['draft', 'needs-review', 'approved', 'rejected', 'archived', 'superseded']);
+const VALID_ARTIFACT_STORAGE_PROVIDERS = new Set(['s3', 'dropbox', 'google-drive', 'github', 'external-url', 'local-dev', 'unknown']);
+const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 'sensitive']);
+const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
+const SECRET_EXPORT_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
+const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=)/i;
 
 const ENTITY_SPECS: EntitySpec[] = [
   {
@@ -117,6 +126,13 @@ const ENTITY_SPECS: EntitySpec[] = [
     tableName: TABLE_FILES,
     prefix: 'FILE#',
     map: mapFile,
+  },
+  {
+    name: 'artifacts',
+    filename: 'artifacts.jsonl',
+    tableName: TABLE_ARTIFACTS,
+    prefix: 'ARTIFACT#',
+    map: mapArtifact,
   },
   {
     name: 'notifications',
@@ -273,9 +289,41 @@ function mapFile(item: Record<string, unknown>): JsonRecord {
     category: optionalString(item.category),
     tags: stringArray(item.tags),
     storage_uri: optionalString(item.storageUri) || optionalString(item.storagePath),
+    storage_provider: optionalString(item.storageProvider),
+    content_type: optionalString(item.contentType),
     checksum: optionalString(item.checksum),
     size_bytes: optionalNumber(item.sizeBytes),
     created_at: optionalString(item.createdAt),
+  });
+}
+
+function mapArtifact(item: Record<string, unknown>): JsonRecord {
+  return stripEmpty({
+    artifact_id: optionalString(item.id),
+    type: optionalString(item.type),
+    title: optionalString(item.title),
+    description: optionalString(item.description),
+    status: optionalString(item.status),
+    storage_provider: optionalString(item.storageProvider),
+    storage_uri: optionalString(item.storageUri),
+    filename: optionalString(item.filename),
+    content_type: optionalString(item.contentType),
+    checksum: optionalString(item.checksum),
+    size_bytes: optionalNumber(item.sizeBytes),
+    visibility: optionalString(item.visibility),
+    data_class: optionalString(item.dataClass),
+    task_id: optionalString(item.taskId),
+    bundle_id: optionalString(item.bundleId),
+    assistant_job_id: optionalString(item.assistantJobId),
+    file_id: optionalString(item.fileId),
+    source_type: optionalString(item.sourceType),
+    created_by: optionalString(item.createdBy),
+    reviewed_by: optionalString(item.reviewedBy),
+    created_at: optionalString(item.createdAt),
+    updated_at: optionalString(item.updatedAt),
+    reviewed_at: optionalString(item.reviewedAt),
+    tags: stringArray(item.tags),
+    metadata: optionalJsonStringOrObject(item.metadata),
   });
 }
 
@@ -499,6 +547,19 @@ function optionalStringArrayField(
   }
 }
 
+function optionalNumberField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string
+): void {
+  const value = record[field];
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    errors.push(`${context} field ${field} must be a finite number when present`);
+  }
+}
+
 function optionalStringOrObjectField(
   record: JsonRecord,
   field: string,
@@ -564,6 +625,28 @@ function optionalProofRequirementField(
   return proofRequirement;
 }
 
+function validateNoSecretPayload(record: JsonRecord, errors: string[], context: string): void {
+  const stack: Array<{ prefix: string; value: JsonValue }> = [{ prefix: context, value: record }];
+  while (stack.length > 0) {
+    const current = stack.pop() as { prefix: string; value: JsonValue };
+    if (current.value === null || typeof current.value !== 'object') continue;
+    if (Array.isArray(current.value)) {
+      current.value.forEach((item, index) => stack.push({ prefix: `${current.prefix}[${index}]`, value: item }));
+      continue;
+    }
+    for (const [key, value] of Object.entries(current.value)) {
+      const fieldPath = `${current.prefix}.${key}`;
+      if (SECRET_EXPORT_PATTERN.test(key)) {
+        errors.push(`${fieldPath} must not contain secrets or signed URLs`);
+      }
+      if (typeof value === 'string' && SIGNED_URL_EXPORT_PATTERN.test(value)) {
+        errors.push(`${fieldPath} must not contain signed URLs or tokens`);
+      }
+      stack.push({ prefix: fieldPath, value });
+    }
+  }
+}
+
 function validateTaskDefinitionDocContext(
   template: JsonRecord,
   errors: string[],
@@ -622,6 +705,9 @@ function validateCompletedTaskProof(
   task: JsonRecord,
   proofRequirement: JsonRecord | null,
   taskFileIds: Set<string>,
+  approvedArtifactTaskIds: Set<string>,
+  approvedArtifactBundleIds: Set<string>,
+  approvedArtifactIds: Set<string>,
   errors: string[],
   context: string
 ): void {
@@ -651,8 +737,19 @@ function validateCompletedTaskProof(
   if (type === 'external-status' && (typeof task.external_status !== 'string' || task.external_status.length === 0)) {
     errors.push(`${context} cannot be done without required external-status proof`);
   }
-  if (type === 'artifact' && (!Array.isArray(task.artifact_refs) || task.artifact_refs.length === 0)) {
-    errors.push(`${context} cannot be done without required artifact proof`);
+  if (type === 'artifact') {
+    const taskArtifactRefIds = Array.isArray(task.artifact_refs)
+      ? task.artifact_refs
+        .map((ref) => (ref && typeof ref === 'object' && !Array.isArray(ref) ? (ref as JsonRecord).artifactId : null))
+        .filter((artifactId): artifactId is string => typeof artifactId === 'string' && artifactId.length > 0)
+      : [];
+    const taskIdHasApproved = taskId ? approvedArtifactTaskIds.has(taskId) : false;
+    const bundleId = typeof task.bundle_id === 'string' ? task.bundle_id : null;
+    const bundleIdHasApproved = bundleId ? approvedArtifactBundleIds.has(bundleId) : false;
+    const refHasApproved = taskArtifactRefIds.some((artifactId) => approvedArtifactIds.has(artifactId));
+    if (!taskIdHasApproved && !bundleIdHasApproved && !refHasApproved) {
+      errors.push(`${context} cannot be done without required approved artifact proof`);
+    }
   }
   if (type === 'file' && taskId && !taskFileIds.has(taskId)) {
     errors.push(`${context} cannot be done without required file proof`);
@@ -799,12 +896,31 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   const bundleIds = collectIds(recordsByEntity.bundles || [], 'bundle_id', 'bundles', errors);
   const templateIds = collectIds(recordsByEntity.templates || [], 'template_id', 'templates', errors);
   collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
-  collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
+  const fileIds = collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
+  const artifactIds = collectIds(recordsByEntity.artifacts || [], 'artifact_id', 'artifacts', errors);
   collectIds(recordsByEntity.notifications || [], 'notification_id', 'notifications', errors);
   const taskFileIds = new Set(
     (recordsByEntity.files || [])
       .map((file) => file.task_id)
       .filter((taskId): taskId is string => typeof taskId === 'string' && taskId.length > 0)
+  );
+  const approvedArtifactTaskIds = new Set(
+    (recordsByEntity.artifacts || [])
+      .filter((artifact) => artifact.status === 'approved')
+      .map((artifact) => artifact.task_id)
+      .filter((taskId): taskId is string => typeof taskId === 'string' && taskId.length > 0)
+  );
+  const approvedArtifactBundleIds = new Set(
+    (recordsByEntity.artifacts || [])
+      .filter((artifact) => artifact.status === 'approved')
+      .map((artifact) => artifact.bundle_id)
+      .filter((bundleId): bundleId is string => typeof bundleId === 'string' && bundleId.length > 0)
+  );
+  const approvedArtifactIds = new Set(
+    (recordsByEntity.artifacts || [])
+      .filter((artifact) => artifact.status === 'approved')
+      .map((artifact) => artifact.artifact_id)
+      .filter((artifactId): artifactId is string => typeof artifactId === 'string' && artifactId.length > 0)
   );
 
   for (const [index, task] of (recordsByEntity.tasks || []).entries()) {
@@ -836,7 +952,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);
-    validateCompletedTaskProof(task, proofRequirement, taskFileIds, errors, context);
+    validateCompletedTaskProof(task, proofRequirement, taskFileIds, approvedArtifactTaskIds, approvedArtifactBundleIds, approvedArtifactIds, errors, context);
   }
 
   for (const [index, bundle] of (recordsByEntity.bundles || []).entries()) {
@@ -870,6 +986,44 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(file, 'created_at', errors, context);
     optionalReference(file, 'task_id', taskIds, errors, context);
     optionalReference(file, 'bundle_id', bundleIds, errors, context);
+  }
+
+  for (const [index, artifact] of (recordsByEntity.artifacts || []).entries()) {
+    const context = `artifacts[${index}]`;
+    requireString(artifact, 'type', errors, context);
+    requireString(artifact, 'title', errors, context);
+    requireString(artifact, 'storage_uri', errors, context);
+    optionalEnum(artifact, 'type', VALID_ARTIFACT_TYPES, errors, context);
+    const status = optionalEnum(artifact, 'status', VALID_ARTIFACT_STATUSES, errors, context);
+    const provider = optionalEnum(artifact, 'storage_provider', VALID_ARTIFACT_STORAGE_PROVIDERS, errors, context);
+    optionalEnum(artifact, 'visibility', VALID_ARTIFACT_DATA_CLASSES, errors, context);
+    optionalEnum(artifact, 'data_class', VALID_ARTIFACT_DATA_CLASSES, errors, context);
+    optionalEnum(artifact, 'source_type', VALID_ARTIFACT_SOURCE_TYPES, errors, context);
+    optionalStringField(artifact, 'description', errors, context);
+    optionalStringField(artifact, 'filename', errors, context);
+    optionalStringField(artifact, 'content_type', errors, context);
+    optionalStringField(artifact, 'checksum', errors, context);
+    optionalNumberField(artifact, 'size_bytes', errors, context);
+    optionalStringArrayField(artifact, 'tags', errors, context);
+    validateDateOrTimestampField(artifact, 'created_at', errors, context, true);
+    validateDateOrTimestampField(artifact, 'updated_at', errors, context, true);
+    validateDateOrTimestampField(artifact, 'reviewed_at', errors, context);
+    optionalReference(artifact, 'task_id', taskIds, errors, context);
+    optionalReference(artifact, 'bundle_id', bundleIds, errors, context);
+    optionalReference(artifact, 'file_id', fileIds, errors, context);
+    optionalReference(artifact, 'created_by', userIds, errors, context);
+    optionalReference(artifact, 'reviewed_by', userIds, errors, context);
+    validateNoSecretPayload(artifact, errors, context);
+    if ((provider === 's3' || provider === 'local-dev') && typeof artifact.checksum !== 'string') {
+      errors.push(`${context} checksum is required for DataOps-owned ${provider} artifacts`);
+    }
+    if ((status === 'approved' || status === 'rejected') && typeof artifact.reviewed_at !== 'string') {
+      errors.push(`${context} reviewed_at is required for reviewed artifacts`);
+    }
+    if (artifactIds.size > 0) {
+      // assistant_job_id is intentionally opaque until assistant_jobs is exported by #30.
+      optionalStringField(artifact, 'assistant_job_id', errors, context);
+    }
   }
 
   for (const [index, notification] of (recordsByEntity.notifications || []).entries()) {
