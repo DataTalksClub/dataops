@@ -1487,6 +1487,103 @@ body[data-view="create"] .editor-view {
   appearance: auto;
 }
 
+/* ---------- Notification bell ---------- */
+
+.work-bell-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+
+.work-bell-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.work-bell-count {
+  display: none;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+.work-bell-count.is-visible {
+  display: inline-block;
+}
+
+.work-bell-panel {
+  position: fixed;
+  top: 52px;
+  right: 16px;
+  z-index: 350;
+  width: min(380px, 92vw);
+  max-height: 70vh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgb(15 15 15 / 14%);
+  border-radius: 8px;
+}
+
+.work-bell-panel[hidden] {
+  display: none;
+}
+
+.work-bell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 14px;
+  font-size: 13px;
+  background: var(--sidebar);
+  border-radius: 8px 8px 0 0;
+}
+
+.work-bell-body {
+  overflow: auto;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.work-bell-item {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line);
+  background: var(--control);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.work-bell-item-message {
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.work-bell-item-meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.work-bell-empty {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
 body.dark .task-panel {
   background: var(--surface);
 }

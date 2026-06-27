@@ -112,6 +112,18 @@ const bundlePanelBody = document.querySelector("#bundle-panel-body");
 const bundlePanelClose = document.querySelector("#bundle-panel-close");
 bundlePanelClose.addEventListener("click", closeBundlePanel);
 
+const workBellButton = document.querySelector("#work-bell-button");
+const workBellCount = document.querySelector("#work-bell-count");
+const workBellPanel = document.querySelector("#work-bell-panel");
+const workBellBody = document.querySelector("#work-bell-body");
+const workBellClose = document.querySelector("#work-bell-close");
+workBellButton.addEventListener("click", () => {
+  if (workBellPanel.hidden) openWorkBellPanel();
+  else closeWorkBellPanel();
+});
+workBellClose.addEventListener("click", closeWorkBellPanel);
+let workBellNotifications = [];
+
 let activeTaskPanelId = null;
 let activeTaskPanelTask = null;
 let activeBundlePanelId = null;
@@ -243,6 +255,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && bundlePanel && !bundlePanel.hidden) {
     event.preventDefault();
     closeBundlePanel();
+  }
+  if (event.key === "Escape" && workBellPanel && !workBellPanel.hidden) {
+    event.preventDefault();
+    closeWorkBellPanel();
   }
 });
 
@@ -845,6 +861,7 @@ async function refreshOperationsWorkSnapshot(options = {}) {
 
   operationsWorkSnapshot = normalizeOperationsWorkSnapshot(snapshot, { today });
   if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+  refreshWorkBell();
 }
 
 function isOperationsHomeVisible() {
@@ -1408,6 +1425,65 @@ async function saveBundleLink(bundleId, currentLinks, linkName, linkValue) {
     await refreshOperationsWorkSnapshot({ rerender: true });
   } catch (err) {
     reportError(`Could not save link: ${err.message || "request failed"}`);
+  }
+}
+
+// ---------- Notification bell ----------
+
+async function refreshWorkBell() {
+  try {
+    const payload = await request(workApiUrl("/api/notifications"));
+    workBellNotifications = Array.isArray(payload) ? payload : payload.notifications || [];
+  } catch {
+    workBellNotifications = [];
+  }
+  const count = workBellNotifications.length;
+  workBellCount.textContent = String(count);
+  workBellCount.classList.toggle("is-visible", count > 0);
+  if (!workBellPanel.hidden) renderWorkBellPanel();
+}
+
+function openWorkBellPanel() {
+  renderWorkBellPanel();
+  workBellPanel.hidden = false;
+}
+
+function closeWorkBellPanel() {
+  workBellPanel.hidden = true;
+}
+
+function renderWorkBellPanel() {
+  workBellBody.replaceChildren();
+  if (workBellNotifications.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "work-bell-empty";
+    empty.textContent = "No active notifications.";
+    workBellBody.append(empty);
+    return;
+  }
+  for (const notification of workBellNotifications) {
+    const item = document.createElement("div");
+    item.className = "work-bell-item";
+    const message = document.createElement("div");
+    message.className = "work-bell-item-message";
+    message.textContent = notification.message || notification.type || "Notification";
+    item.append(message);
+    const meta = document.createElement("div");
+    meta.className = "work-bell-item-meta";
+    const metaParts = [];
+    if (notification.type) metaParts.push(notification.type);
+    if (notification.dueAt) metaParts.push(`due ${formatTaskDateMeta(notification.dueAt, todayIsoDate())}`);
+    if (notification.taskId) metaParts.push("task");
+    meta.textContent = metaParts.join(" - ");
+    item.append(meta);
+    if (notification.taskId) {
+      item.style.cursor = "pointer";
+      item.addEventListener("click", () => {
+        closeWorkBellPanel();
+        openTaskPanel(notification.taskId);
+      });
+    }
+    workBellBody.append(item);
   }
 }
 
