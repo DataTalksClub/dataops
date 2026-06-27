@@ -145,7 +145,7 @@ Tasks (20):
 - Anchor date: Live stream date
 - Trigger: manual. Created when a podcast guest agrees and a stream date is confirmed
 
-Live podcast recording streamed on YouTube, then edited and published to Spotify and Apple Podcasts. Most complex template with 40 tasks.
+Live podcast recording streamed on YouTube, then edited and published to Spotify and Apple Podcasts. Most complex Trello-derived reference with 40 tasks. The canonical executable DataOps workflow is `content/tasks/templates/podcast.md` and `work-engine/scripts/seed-templates.ts`; it intentionally keeps 42 task refs by making the Dropbox recording upload and Podcast audio move explicit runtime tasks.
 
 Bundle links:
 - Guest email
