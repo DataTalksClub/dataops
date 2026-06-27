@@ -2658,6 +2658,137 @@
         width: 100%;
       }
     }
+
+    .assistant-context-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .assistant-chip,
+    .assistant-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 4px;
+      border: 1px solid #d8dee4;
+      background: #fff;
+      color: #34495e;
+      font-size: 12px;
+      line-height: 1.2;
+      padding: 3px 7px;
+      white-space: nowrap;
+    }
+
+    .assistant-status.waiting_approval,
+    .assistant-status.failed {
+      border-color: #f5c6cb;
+      background: #fdecea;
+      color: #9f1d1d;
+    }
+
+    .assistant-status.running,
+    .assistant-status.queued,
+    .assistant-status.retrying {
+      border-color: #cfe2ff;
+      background: #edf5ff;
+      color: #23527c;
+    }
+
+    .assistant-status.approved,
+    .assistant-status.succeeded {
+      border-color: #cdeccd;
+      background: #edf8ed;
+      color: #226c36;
+    }
+
+    .assistant-mini-btn,
+    .assistant-action-btn {
+      border: 1px solid #c8d0d8;
+      background: #fff;
+      color: #34495e;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .assistant-mini-btn:hover,
+    .assistant-action-btn:hover {
+      background: #f3f6f8;
+    }
+
+    .assistant-panel {
+      background: #fff;
+      border: 1px solid #e1e4e8;
+      border-radius: 4px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+
+    .assistant-panel h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .assistant-job-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      border-top: 1px solid #edf0f2;
+      padding: 10px 0;
+    }
+
+    .assistant-job-row:first-of-type {
+      border-top: none;
+    }
+
+    .assistant-job-title {
+      font-weight: 600;
+      color: #2c3e50;
+      overflow-wrap: anywhere;
+    }
+
+    .assistant-job-meta,
+    .assistant-job-next,
+    .assistant-timeline {
+      color: #667085;
+      font-size: 12px;
+    }
+
+    .assistant-job-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .assistant-create-grid {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(180px, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+
+    .assistant-create-grid select,
+    .assistant-create-grid input {
+      width: 100%;
+      min-width: 0;
+    }
+
+    @media (max-width: 760px) {
+      .assistant-job-row,
+      .assistant-create-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .assistant-job-actions {
+        justify-content: flex-start;
+      }
+    }
   </style>
 </head>
 <body>
@@ -2669,6 +2800,7 @@
       <a href="#/" class="nav-link" style="display:none;">Home</a>
       <a href="#/tasks" class="nav-link" style="display:none;">Tasks</a>
       <a href="#/bundles" class="nav-link" style="display:none;">Bundles</a>
+      <a href="#/assistants" class="nav-link" style="display:none;">Assistants</a>
       <a href="#/templates" class="nav-link" style="display:none;">Templates</a>
       <a href="#/recurring" class="nav-link" style="display:none;">Recurring</a>
       <div class="notif-bell-wrapper nav-link" id="notif-bell-wrapper" style="display:none;margin-left:auto;">

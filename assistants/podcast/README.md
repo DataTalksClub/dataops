@@ -83,6 +83,15 @@ Real-engine integration tests remain opt-in. From `assistants/podcast/`:
 PODCAST_ASSISTANT_INTEGRATION_ENGINES=codex uv run pytest tests_integration -q
 ```
 
+## DataOps Assistant Job Dry Run
+
+`dry_run.py` exposes `podcast_job_dry_run_metadata(job_payload)` for the V1
+work-engine assistant job lifecycle. It turns a podcast assistant job payload
+into deterministic output metadata for tests and local dry runs without reading
+`inbox/`, writing `documents/`, running Heru, or requiring external
+credentials. Production workflow storage still lives in work-engine assistant
+job records plus artifact metadata, not in the local assistant folders.
+
 The exact podcast document format is intentionally left in `process/podcast.md` as a placeholder
 until you provide the final format.
 

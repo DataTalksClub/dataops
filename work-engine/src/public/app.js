@@ -263,6 +263,122 @@
     return 'Approve an attached artifact first';
   }
 
+  function assistantStatusLabel(status) {
+    return String(status || 'draft').replace(/_/g, ' ');
+  }
+
+  function renderAssistantStatus(status) {
+    var safeStatus = status || 'draft';
+    return '<span class="assistant-status ' + escapeHtml(safeStatus) + '">' + escapeHtml(assistantStatusLabel(safeStatus)) + '</span>';
+  }
+
+  function assistantNextAction(job) {
+    if (!job) return '';
+    if (job.status === 'waiting_approval') return 'Review output';
+    if (job.status === 'failed') return 'Retry or file follow-up';
+    if (job.status === 'rejected') return 'Retry with rejection context';
+    if (job.status === 'queued') return 'Run dry or wait for runner';
+    if (job.status === 'running') return 'Watch timeline';
+    if (job.status === 'draft') return 'Submit or run dry';
+    if (job.status === 'retrying') return 'Submit retry';
+    if (job.status === 'approved') return 'Output approved';
+    if (job.status === 'succeeded') return 'Output attached';
+    if (job.status === 'canceled') return 'Canceled';
+    return 'Check status';
+  }
+
+  function renderAssistantRefs(refs) {
+    if (!Array.isArray(refs) || refs.length === 0) return '';
+    return refs.map(function (ref) {
+      return '<a class="assistant-chip" href="#/assistants" data-assistant-job-link="' + escapeHtml(ref.assistantJobId) + '">' +
+        escapeHtml(ref.assistantType || 'assistant') + ' ' + escapeHtml(assistantStatusLabel(ref.status || 'draft')) +
+        '</a>';
+    }).join('');
+  }
+
+  function assistantJobActionsHtml(job) {
+    var id = escapeHtml(job.id);
+    var html = '';
+    if (job.status === 'draft' || job.status === 'queued' || job.status === 'retrying' || job.status === 'running') {
+      html += '<button class="assistant-action-btn" data-assistant-action="run-dry" data-assistant-job="' + id + '">Run dry</button>';
+    }
+    if (job.status === 'waiting_approval') {
+      html += '<button class="assistant-action-btn" data-assistant-action="approve" data-assistant-job="' + id + '">Approve</button>';
+      html += '<button class="assistant-action-btn" data-assistant-action="reject" data-assistant-job="' + id + '">Reject</button>';
+    }
+    if (job.status === 'failed' || job.status === 'rejected') {
+      html += '<button class="assistant-action-btn" data-assistant-action="retry" data-assistant-job="' + id + '">Retry</button>';
+    }
+    if (['draft', 'queued', 'running', 'retrying', 'waiting_approval'].indexOf(job.status) !== -1) {
+      html += '<button class="assistant-action-btn" data-assistant-action="cancel" data-assistant-job="' + id + '">Cancel</button>';
+    }
+    return html;
+  }
+
+  function bindAssistantLinks(scope) {
+    scope.querySelectorAll('[data-assistant-job-link]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.preventDefault();
+        location.hash = '#/assistants';
+      });
+    });
+  }
+
+  function handleAssistantAction(jobId, action, onDone) {
+    var promise;
+    if (action === 'run-dry') promise = api.assistantJobs.runDry(jobId);
+    if (action === 'approve') promise = api.assistantJobs.approve(jobId);
+    if (action === 'reject') {
+      var reason = prompt('Rejection reason');
+      if (!reason || !reason.trim()) return;
+      promise = api.assistantJobs.reject(jobId, reason.trim());
+    }
+    if (action === 'retry') promise = api.assistantJobs.retry(jobId).then(function (result) {
+      if (result && result.job && result.job.status === 'retrying') return api.assistantJobs.submit(jobId);
+      return result;
+    });
+    if (action === 'cancel') promise = api.assistantJobs.cancel(jobId);
+    if (!promise) return;
+
+    promise.then(function () {
+      showSuccess('Assistant job updated.');
+      if (onDone) onDone();
+    }).catch(function (err) {
+      showError('Assistant action failed: ' + err.message);
+    });
+  }
+
+  function bindAssistantActionButtons(scope, onDone) {
+    scope.querySelectorAll('[data-assistant-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        handleAssistantAction(btn.getAttribute('data-assistant-job'), btn.getAttribute('data-assistant-action'), onDone);
+      });
+    });
+  }
+
+  function requestPodcastAssistantForContext(context, onDone) {
+    var title = 'Podcast assistant: ' + (context.title || context.description || 'workflow support');
+    var inputRefs = [];
+    if (context.taskId) inputRefs.push({ type: 'task', id: context.taskId });
+    if (context.bundleId) inputRefs.push({ type: 'bundle', id: context.bundleId });
+    api.assistantJobs.create({
+      assistantType: 'podcast',
+      title: title,
+      taskId: context.taskId,
+      bundleId: context.bundleId,
+      inputRefs: inputRefs,
+      approvalRequired: true,
+      maxAttempts: 2,
+    }).then(function (data) {
+      return api.assistantJobs.submit(data.job.id);
+    }).then(function () {
+      showSuccess('Podcast assistant job queued.');
+      if (onDone) onDone();
+    }).catch(function (err) {
+      showError('Failed to request assistant help: ' + err.message);
+    });
+  }
+
   function renderInstructionLink(url, description) {
     return '<a class="instructions-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="Instructions" aria-label="' + escapeHtml(instructionLabel(description)) + '"><span aria-hidden="true">\u{1F4CB}</span></a>';
   }
@@ -314,6 +430,7 @@
     '#/': renderDashboard,
     '#/tasks': renderTasks,
     '#/bundles': renderBundles,
+    '#/assistants': renderAssistants,
     '#/templates': renderTemplates,
     '#/recurring': renderRecurring,
     '#/notifications': renderNotifications,
@@ -1063,6 +1180,10 @@
         if (t.followUpAt) waitingText += ' · follow up ' + formatDateLabel(t.followUpAt);
         instructionsHtml += '<span class="badge-waiting">' + escapeHtml(waitingText) + '</span>';
       }
+      instructionsHtml += '<div class="assistant-context-row">' +
+        renderAssistantRefs(t.assistantJobRefs) +
+        '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(t.id) + '" data-request-assistant-bundle="' + escapeHtml(t.bundleId || '') + '">Podcast help</button>' +
+        '</div>';
 
       // Assignee name
       var assigneeHtml = '';
@@ -1101,6 +1222,21 @@
         e.stopPropagation();
         currentBundleId = el.getAttribute('data-nav-bundle');
         location.hash = '#/bundles';
+      });
+    });
+    bindAssistantLinks(container);
+
+    container.querySelectorAll('[data-request-assistant-task]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-request-assistant-task');
+        var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
+        var row = btn.closest('[data-task-row]');
+        var title = row ? row.querySelector('.task-description').textContent : 'Podcast assistant';
+        requestPodcastAssistantForContext({
+          taskId: taskId,
+          bundleId: bundleId,
+          title: title,
+        }, loadDashboardTasks);
       });
     });
 
@@ -1629,6 +1765,10 @@
         if (t.instructionsUrl) {
           instructionsHtml = renderInstructionLink(t.instructionsUrl, t.description);
         }
+        var assistantHtml = '<div class="assistant-context-row">' +
+          renderAssistantRefs(t.assistantJobRefs) +
+          '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(t.id) + '" data-request-assistant-bundle="' + escapeHtml(t.bundleId || '') + '">Podcast help</button>' +
+          '</div>';
 
         // Assignee name
         var assigneeHtml = '';
@@ -1650,7 +1790,7 @@
           '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
           '<td class="task-description editable" data-label="Description" data-field="description" data-task-id="' + t.id + '">' + renderMarkdownLinks(t.description) + '</td>' +
           '<td data-label="Bundle">' + bundleBadge + '</td>' +
-          '<td data-label="Info">' + instructionsHtml + '</td>' +
+          '<td data-label="Info">' + instructionsHtml + assistantHtml + '</td>' +
           '<td data-label="Assignee">' + assigneeHtml + '</td>' +
           '<td data-label="Required Link">' + requiredLinkHtml + '</td>' +
           '</tr>';
@@ -1665,6 +1805,23 @@
           e.stopPropagation();
           currentBundleId = el.getAttribute('data-nav-bundle');
           location.hash = '#/bundles';
+        });
+      });
+      bindAssistantLinks(container);
+
+      container.querySelectorAll('[data-request-assistant-task]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var taskId = btn.getAttribute('data-request-assistant-task');
+          var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
+          var row = btn.closest('[data-task-row]');
+          var title = row ? row.querySelector('.task-description').textContent : 'Podcast assistant';
+          requestPodcastAssistantForContext({
+            taskId: taskId,
+            bundleId: bundleId,
+            title: title,
+          }, function () {
+            loadTasks(params);
+          });
         });
       });
 
@@ -2076,11 +2233,13 @@
     Promise.all([
       api.bundles.get(bundleId),
       api.bundles.tasks(bundleId),
-      loadUsersOnce()
+      loadUsersOnce(),
+      api.assistantJobs.list({ bundleId: bundleId })
     ]).then(function (results) {
       var bundle = results[0].bundle;
       var tasks = results[1].tasks || [];
       var usersMap = results[2];
+      var assistantJobs = results[3].jobs || [];
 
       // Sort tasks by date ascending
       tasks.sort(function (a, b) {
@@ -2239,6 +2398,14 @@
         '<button class="btn-primary" id="add-bl-btn" style="padding:5px 12px;font-size:12px;">Add</button>';
       bundleLinksSection.appendChild(addLinkForm);
       container.appendChild(bundleLinksSection);
+
+      var assistantContainer = document.createElement('div');
+      assistantContainer.id = 'bundle-assistant-jobs';
+      container.appendChild(assistantContainer);
+      renderAssistantJobsList(assistantContainer, assistantJobs, {
+        title: 'Assistant support for this workflow',
+        onDone: function () { loadBundleDetail(bundleId); },
+      });
 
       // Add link handler
       setTimeout(function () {
@@ -2443,6 +2610,26 @@
         body.appendChild(wrapper);
       }
 
+      var assistantRow = document.createElement('div');
+      assistantRow.className = 'assistant-context-row';
+      assistantRow.innerHTML = renderAssistantRefs(t.assistantJobRefs);
+      var requestAssistantBtn = document.createElement('button');
+      requestAssistantBtn.className = 'assistant-mini-btn';
+      requestAssistantBtn.type = 'button';
+      requestAssistantBtn.textContent = 'Podcast help';
+      requestAssistantBtn.addEventListener('click', function () {
+        requestPodcastAssistantForContext({
+          taskId: t.id,
+          bundleId: bundleId,
+          title: t.description || bundle.title || 'Podcast assistant',
+        }, function () {
+          loadBundleDetail(bundleId);
+        });
+      });
+      assistantRow.appendChild(requestAssistantBtn);
+      body.appendChild(assistantRow);
+      bindAssistantLinks(body);
+
       row.appendChild(body);
       return row;
     }
@@ -2463,6 +2650,121 @@
         container.appendChild(buildTaskRow(t));
       });
     }
+  }
+
+  function renderAssistantJobsList(container, jobs, options) {
+    var title = options && options.title ? options.title : 'Assistant jobs';
+    var onDone = options && options.onDone;
+    var html = '<div class="assistant-panel" data-testid="assistants-panel"><h3>' + escapeHtml(title) + '</h3>';
+    if (!jobs || jobs.length === 0) {
+      html += '<div class="empty-state">No assistant jobs for this context.</div></div>';
+      container.innerHTML = html;
+      return;
+    }
+    jobs.forEach(function (job) {
+      var updated = job.updatedAt ? 'Updated ' + job.updatedAt : '';
+      var attempts = 'Attempt ' + (job.attemptCount || 0) + '/' + (job.maxAttempts || 1);
+      html += '<div class="assistant-job-row" data-assistant-job-row="' + escapeHtml(job.id) + '">' +
+        '<div>' +
+          '<div class="assistant-job-title">' + escapeHtml(job.title || job.assistantType || 'Assistant job') + '</div>' +
+          '<div class="assistant-job-meta">' + escapeHtml(job.assistantType || 'assistant') + ' &middot; ' + escapeHtml(attempts) + (updated ? ' &middot; ' + escapeHtml(updated) : '') + '</div>' +
+          (job.lastError ? '<div class="assistant-job-next">Error: ' + escapeHtml(job.lastError.summary || job.lastError.code || 'Assistant failed') + '</div>' : '') +
+        '</div>' +
+        '<div>' + renderAssistantStatus(job.status) + '<div class="assistant-job-next">' + escapeHtml(assistantNextAction(job)) + '</div></div>' +
+        '<div class="assistant-job-actions">' + assistantJobActionsHtml(job) + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    bindAssistantActionButtons(container, onDone);
+  }
+
+  function renderAssistants() {
+    clearApp();
+    app.classList.remove('dashboard-wide');
+
+    var header = document.createElement('div');
+    header.className = 'page-header';
+    header.innerHTML =
+      '<div><h2>Assistants</h2><div class="page-subtitle">Workflow support jobs that are running, failed, or need review</div></div>';
+    app.appendChild(header);
+
+    var createPanel = document.createElement('div');
+    createPanel.className = 'assistant-panel';
+    createPanel.innerHTML =
+      '<h3>Request podcast help</h3>' +
+      '<div class="assistant-create-grid">' +
+        '<div class="form-group"><label for="assistant-bundle-select">Workflow</label><select id="assistant-bundle-select"><option value="">Select workflow</option></select></div>' +
+        '<div class="form-group"><label for="assistant-task-select">Task</label><select id="assistant-task-select"><option value="">Workflow-level job</option></select></div>' +
+        '<div class="form-group"><label for="assistant-title-input">Title</label><input type="text" id="assistant-title-input" placeholder="Podcast prep assistant" /></div>' +
+        '<button class="btn-primary" id="assistant-create-btn">Queue job</button>' +
+      '</div>';
+    app.appendChild(createPanel);
+
+    var queueContainer = document.createElement('div');
+    queueContainer.id = 'assistants-queue';
+    queueContainer.innerHTML = '<p>Loading...</p>';
+    app.appendChild(queueContainer);
+
+    function reloadQueue() {
+      api.assistantJobs.list().then(function (data) {
+        var jobs = data.jobs || [];
+        var riskJobs = jobs.filter(function (job) {
+          return ['waiting_approval', 'failed', 'running', 'queued', 'retrying'].indexOf(job.status) !== -1;
+        });
+        var orderedJobs = riskJobs.concat(jobs.filter(function (job) {
+          return riskJobs.indexOf(job) === -1;
+        })).slice(0, 40);
+        renderAssistantJobsList(queueContainer, orderedJobs, { title: 'Assistant queue', onDone: reloadQueue });
+      }).catch(function (err) {
+        queueContainer.innerHTML = '';
+        showError('Failed to load assistant jobs: ' + err.message);
+      });
+    }
+
+    function loadTaskOptions(bundleId) {
+      var taskSelect = document.getElementById('assistant-task-select');
+      taskSelect.innerHTML = '<option value="">Workflow-level job</option>';
+      if (!bundleId) return;
+      api.bundles.tasks(bundleId).then(function (data) {
+        (data.tasks || []).forEach(function (task) {
+          var opt = document.createElement('option');
+          opt.value = task.id;
+          opt.textContent = task.description || task.id;
+          taskSelect.appendChild(opt);
+        });
+      }).catch(function () {});
+    }
+
+    api.bundles.list().then(function (data) {
+      var bundleSelect = document.getElementById('assistant-bundle-select');
+      (data.bundles || []).forEach(function (bundle) {
+        var opt = document.createElement('option');
+        opt.value = bundle.id;
+        opt.textContent = bundle.title || bundle.id;
+        bundleSelect.appendChild(opt);
+      });
+      bundleSelect.addEventListener('change', function () {
+        loadTaskOptions(bundleSelect.value);
+      });
+    }).catch(function () {});
+
+    document.getElementById('assistant-create-btn').addEventListener('click', function () {
+      var bundleId = document.getElementById('assistant-bundle-select').value;
+      var taskId = document.getElementById('assistant-task-select').value;
+      var title = document.getElementById('assistant-title-input').value.trim();
+      if (!bundleId && !taskId) {
+        showError('Select a workflow or task before requesting assistant help.');
+        return;
+      }
+      requestPodcastAssistantForContext({
+        bundleId: bundleId || undefined,
+        taskId: taskId || undefined,
+        title: title || 'Podcast prep assistant',
+      }, reloadQueue);
+    });
+
+    reloadQueue();
   }
 
   // ── Templates View ──────────────────────────────────────────────

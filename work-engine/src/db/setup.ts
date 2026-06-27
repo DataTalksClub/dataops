@@ -24,6 +24,8 @@ const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates');
 const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users');
 const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files');
 const TABLE_ARTIFACTS = tableName('DATAOPS_ARTIFACTS_TABLE', 'Artifacts');
+const TABLE_ASSISTANT_JOBS = tableName('DATAOPS_ASSISTANT_JOBS_TABLE', 'AssistantJobs');
+const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents');
 const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications');
 const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions');
 
@@ -158,6 +160,30 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
     {
+      TableName: TABLE_ASSISTANT_JOBS,
+      KeySchema: [
+        { AttributeName: 'PK', KeyType: 'HASH' as const },
+        { AttributeName: 'SK', KeyType: 'RANGE' as const },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: 'PK', AttributeType: 'S' as const },
+        { AttributeName: 'SK', AttributeType: 'S' as const },
+      ],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
+    {
+      TableName: TABLE_AUDIT_EVENTS,
+      KeySchema: [
+        { AttributeName: 'PK', KeyType: 'HASH' as const },
+        { AttributeName: 'SK', KeyType: 'RANGE' as const },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: 'PK', AttributeType: 'S' as const },
+        { AttributeName: 'SK', AttributeType: 'S' as const },
+      ],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
+    {
       TableName: TABLE_SESSIONS,
       KeySchema: [
         { AttributeName: 'PK', KeyType: 'HASH' as const },
@@ -187,7 +213,18 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
  * Delete all application tables. Used for test cleanup.
  */
 async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
-  const tableNames = [TABLE_TASKS, TABLE_BUNDLES, TABLE_TEMPLATES, TABLE_USERS, TABLE_FILES, TABLE_ARTIFACTS, TABLE_NOTIFICATIONS, TABLE_SESSIONS];
+  const tableNames = [
+    TABLE_TASKS,
+    TABLE_BUNDLES,
+    TABLE_TEMPLATES,
+    TABLE_USERS,
+    TABLE_FILES,
+    TABLE_ARTIFACTS,
+    TABLE_ASSISTANT_JOBS,
+    TABLE_AUDIT_EVENTS,
+    TABLE_NOTIFICATIONS,
+    TABLE_SESSIONS,
+  ];
 
   for (const tableName of tableNames) {
     try {
@@ -211,6 +248,8 @@ export {
   TABLE_USERS,
   TABLE_FILES,
   TABLE_ARTIFACTS,
+  TABLE_ASSISTANT_JOBS,
+  TABLE_AUDIT_EVENTS,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
 };

@@ -82,6 +82,93 @@ export interface AssistantJobRef {
   status?: string;
 }
 
+export type AssistantJobStatus =
+  | 'draft'
+  | 'queued'
+  | 'running'
+  | 'waiting_approval'
+  | 'approved'
+  | 'rejected'
+  | 'retrying'
+  | 'succeeded'
+  | 'failed'
+  | 'canceled';
+
+export type AssistantJobEventAction =
+  | 'created'
+  | 'queued'
+  | 'started'
+  | 'log-appended'
+  | 'artifact-attached'
+  | 'approval-requested'
+  | 'approved'
+  | 'rejected'
+  | 'retry-requested'
+  | 'failed'
+  | 'canceled'
+  | 'succeeded';
+
+export interface AssistantJobInputRef {
+  type: 'source-message' | 'file' | 'url' | 'doc' | 'task' | 'bundle' | 'artifact' | 'other' | string;
+  id?: string;
+  uri?: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AssistantJobLogRef {
+  artifactId?: string;
+  storageUri?: string;
+  title?: string;
+  type?: string;
+}
+
+export interface AssistantJobApproval {
+  status: 'pending' | 'approved' | 'rejected';
+  decidedBy?: string;
+  decidedAt?: string;
+  reason?: string;
+}
+
+export interface AssistantJobError {
+  code: string;
+  summary: string;
+}
+
+export interface AssistantJobRecord {
+  id: string;
+  assistantType: string;
+  title: string;
+  status: AssistantJobStatus;
+  taskId?: string;
+  bundleId?: string;
+  requestedBy?: string;
+  inputRefs: AssistantJobInputRef[];
+  outputArtifactIds: string[];
+  logRefs: AssistantJobLogRef[];
+  approvalRequired: boolean;
+  approval?: AssistantJobApproval;
+  attemptCount: number;
+  maxAttempts: number;
+  retryOfJobId?: string;
+  lastError?: AssistantJobError;
+  createdAt: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt: string;
+}
+
+export interface AssistantJobEvent {
+  id: string;
+  assistantJobId: string;
+  actorId?: string;
+  action: AssistantJobEventAction;
+  summary: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface AuditEventRef {
   auditEventId: string;
   action?: string;

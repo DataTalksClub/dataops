@@ -169,7 +169,8 @@ The current work-engine code expects these logical entities:
 - artifact metadata
 - notifications
 - sessions
-- later: assistant jobs, audit events
+- assistant jobs
+- audit events
 
 For production V1, CloudFormation/SAM should own table lifecycle, and
 work-engine must not create production tables on cold start.

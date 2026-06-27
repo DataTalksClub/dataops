@@ -10,6 +10,7 @@ import { handleRecurringRoutes } from './routes/recurring';
 import { handleUserRoutes } from './routes/users';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
+import { handleAssistantJobRoutes } from './routes/assistantJobs';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
 import { handleNotificationRoutes } from './routes/notifications';
@@ -679,7 +680,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       };
     }
 
-    // ── File routes ───────────────────────────────────────────────
+    // ── Assistant, artifact, and file routes ──────────────────────
+
+    if (reqPath.startsWith('/api/assistant-jobs')) {
+      const result = await handleAssistantJobRoutes(event, client);
+      if (result) return result;
+    }
 
     if (reqPath.startsWith('/api/artifacts')) {
       const result = await handleArtifactRoutes(event);
