@@ -24,6 +24,38 @@ Role agents handle the full lifecycle from raw request to shipped code. The
 orchestrator coordinates the pipeline, but role agents own grooming,
 implementation, testing, acceptance, and CI/CD monitoring.
 
+## AI Shipping Labs Parity Contract
+
+This document is an adaptation of `../ai-shipping-labs/_docs/PROCESS.md`, not a
+new or weaker process. Preserve AI Shipping Labs controls at equal strength.
+Adapt only repo names, labels, DataOps technologies, test commands, deployment
+details, source boundaries, and DataOps specialist agent references. If this
+document is ambiguous and the AI Shipping Labs process is stricter, use the
+stricter AI Shipping Labs rule unless a DataOps-specific constraint is
+explicitly documented here.
+
+| AI Shipping Labs control | DataOps equivalent |
+|---|---|
+| GitHub Issues are the source of truth; no project boards | GitHub Issues in `DataTalksClub/dataops`; no project boards |
+| Orchestrator files raw user intake with `needs grooming` | Same; intake may also include repo findings, operational gaps, and source-system merge findings |
+| Orchestrator does not groom inline | Same; Product Manager owns grooming unless the user explicitly asks the orchestrator to edit issue text |
+| Product Manager researches the codebase and writes scope, acceptance criteria, dependencies, and test scenarios | Same; PM also names DataOps-specific verification for Lambda, work-engine, DynamoDB, SAM, content/search, assistant, and podcast boundaries |
+| Software Engineer implements locally and does not commit before review | Same; no commit until Tester pass and PM acceptance |
+| Tester runs real tests, verifies every acceptance criterion, and captures screenshots for UI changes | Same; use the DataOps commands in "Testing Expectations" as the equivalent full workflow |
+| Product Manager performs final user-perspective acceptance | Same; PM must reject incomplete operator flow, missing evidence, or drift from the groomed issue |
+| Every issue goes through all lifecycle gates | Same; process-doc-only, content-only, and assistant-only issues are not exempt |
+| Local merge to `main`; no PRs | Same; no `gh pr create` or `gh pr merge` |
+| Push `main`, then On-Call monitors CI/CD | Same; orchestrator launches On-Call and does not watch GitHub Actions manually as its main task |
+| Keep the pipeline full and pick two independent issues when possible | Same; keep one implementation/review track plus one grooming or next-issue track when backlog and capacity allow |
+| Human checks do not block shipping completed agent-verifiable work | Same; use `Refs #N`, add `human`, leave the issue open, and continue |
+| Project-local `.tmp/` for temporary files | Same; include screenshots, logs, scratch exports, and restore-drill outputs |
+| Short-lived audits/plans do not live forever at docs root | Same; use `_docs/audits/` or delete/promote handoff notes |
+
+If the original AI Shipping Labs rule says "all tests", DataOps must define the
+equivalent full workflow for the touched surface. A groomed issue may narrow the
+workflow only with an explicit reason and only when the narrowed workflow still
+proves the acceptance criteria.
+
 ## Links
 
 - Repo: https://github.com/DataTalksClub/dataops
@@ -250,7 +282,9 @@ assistant/podcast boundaries, and list the expected tests or screenshots.
 - Before launching any Software Engineer agent in an isolated worktree, make
   sure `main` has no uncommitted changes. Worktrees are created from `HEAD`, so
   uncommitted changes in the main checkout are invisible to the agent. Run
-  `git status` and resolve the state before invoking the agent.
+  `git status` and resolve the state before invoking the agent. Do not hide
+  dirty work with an unapproved stash. Finish the current pipeline stage,
+  commit approved work, or ask the human how to handle the dirty state.
 - Launch Software Engineer with the issue number and clear ownership. When
   running multiple Software Engineers in parallel, give each one an isolated
   worktree so concurrent agents do not overwrite each other's files.
@@ -353,11 +387,20 @@ PM groom -> SWE implement -> Tester review -> PM acceptance -> Commit -> Local m
   should launch the relevant agent, not write the agent's verdict itself.
 - After push, always launch On-Call Engineer to monitor CI/CD. The orchestrator
   should not manually watch CI as its main task.
+- Run independent Tester agents in parallel when their worktrees and external
+  resources do not collide. Do not serialize reviews just because both need
+  Playwright or build checks. The remaining constraint is per-worktree resource
+  safety: do not start two browser/E2E sessions inside the same worktree when
+  they share a server, database, port, or `.tmp/` artifact path.
 
 ## Testing Expectations
 
 Testing depends on the touched area. A groomed issue should say which commands
-are required and why any command is intentionally skipped.
+are required and why any command is intentionally skipped. The DataOps
+verification set is the project-specific equivalent of AI Shipping Labs'
+"all tests" rule: run the full relevant workflow for the touched surface, not
+only a focused smoke check, unless the issue explicitly documents why a narrower
+check is enough.
 
 For docs portal, Lambda, frontend, and search changes:
 
@@ -388,13 +431,16 @@ For work-engine changes:
 
 For process-doc and content changes:
 
+- Inspect process-doc changes against the source process when an issue names a
+  source process, such as `../ai-shipping-labs/_docs/PROCESS.md`, and confirm
+  lifecycle controls are preserved at equal strength.
 - Build the search index.
 - Run docs metadata tests when frontmatter, document IDs, archive rules,
   templates, registry behavior, or content shape changes.
 - Run content validation workflow after push when content changes reach `main`.
 - Process Curator reviews document structure and operational usefulness.
-- Do not invoke user-facing prose tooling for internal process docs unless the
-  user explicitly asks for it.
+- Do not invoke user-facing prose/stylint tooling for internal process docs
+  unless the user explicitly asks for prose linting.
 
 For Podcast Assistant or future assistant changes:
 
@@ -411,6 +457,15 @@ For infrastructure and deployment changes:
 - Human verification is required when a real external account, secret, OAuth
   flow, GitHub write, Telegram delivery, or sponsor/client-facing message must
   be checked safely.
+
+## Source Boundaries
+
+DataOps agents may read and compare source systems when an issue requires it,
+including `../ai-shipping-labs/_docs/PROCESS.md`, `../dtc-operations`,
+`../datatasks`, and `../podcast-assistant`. Do not modify source repositories
+outside `dataops` unless the issue explicitly says that source repo is in scope
+for edits. Keep generated comparison notes, patches, logs, and scratch exports
+inside this repo's `.tmp/` directory.
 
 ## Engineering Conventions
 
