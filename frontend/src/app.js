@@ -106,8 +106,16 @@ const taskPanelBody = document.querySelector("#task-panel-body");
 const taskPanelClose = document.querySelector("#task-panel-close");
 taskPanelClose.addEventListener("click", closeTaskPanel);
 
+const bundlePanel = document.querySelector("#bundle-panel");
+const bundlePanelTitle = document.querySelector("#bundle-panel-title");
+const bundlePanelBody = document.querySelector("#bundle-panel-body");
+const bundlePanelClose = document.querySelector("#bundle-panel-close");
+bundlePanelClose.addEventListener("click", closeBundlePanel);
+
 let activeTaskPanelId = null;
 let activeTaskPanelTask = null;
+let activeBundlePanelId = null;
+let activeBundlePanelData = null;
 
 let allDocuments = [];
 let visibleDocuments = [];
@@ -231,6 +239,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && taskPanel && !taskPanel.hidden) {
     event.preventDefault();
     closeTaskPanel();
+  }
+  if (event.key === "Escape" && bundlePanel && !bundlePanel.hidden) {
+    event.preventDefault();
+    closeBundlePanel();
   }
 });
 
@@ -852,6 +864,7 @@ function findWorkTaskInSnapshot(taskId) {
 }
 
 async function openTaskPanel(taskId) {
+  closeBundlePanel();
   activeTaskPanelId = taskId;
   activeTaskPanelTask = findWorkTaskInSnapshot(taskId);
   taskPanelTitle.textContent = "Loading task...";
@@ -1170,6 +1183,216 @@ function appendTaskEventComment(existing, eventText) {
   const stamp = new Date().toISOString();
   const line = `[${stamp}] ${eventText}`;
   return existing ? `${existing}\n${line}` : line;
+}
+
+// ---------- Bundle (workflow) detail panel ----------
+
+async function openBundlePanel(bundleId) {
+  closeTaskPanel();
+  activeBundlePanelId = bundleId;
+  activeBundlePanelData = null;
+  bundlePanelTitle.textContent = "Loading workflow...";
+  bundlePanelBody.replaceChildren();
+  bundlePanel.hidden = false;
+  body.classList.add("task-panel-open");
+  renderBundlePanel();
+  try {
+    const [bundleResult, tasksResult] = await Promise.allSettled([
+      request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`)),
+      request(workApiUrl(`/api/tasks`, { bundleId })),
+    ]);
+    const bundlePayload = settledPayload(bundleResult);
+    const bundle = bundlePayload && (bundlePayload.bundle || bundlePayload);
+    const tasks = tasksFromWorkPayload(settledPayload(tasksResult));
+    if (activeBundlePanelId === bundleId) {
+      activeBundlePanelData = { bundle, tasks };
+      renderBundlePanel();
+    }
+  } catch (err) {
+    if (activeBundlePanelId === bundleId) {
+      const notice = document.createElement("p");
+      notice.className = "ops-empty";
+      notice.textContent = `Could not load workflow: ${err.message || "request failed"}`;
+      bundlePanelBody.replaceChildren(notice);
+    }
+  }
+}
+
+function closeBundlePanel() {
+  activeBundlePanelId = null;
+  activeBundlePanelData = null;
+  bundlePanel.hidden = true;
+  body.classList.remove("task-panel-open");
+}
+
+function renderBundlePanel() {
+  const data = activeBundlePanelData;
+  const bundle = data?.bundle;
+  const tasks = data?.tasks || [];
+  bundlePanelTitle.textContent = bundle ? workBundleTitle(bundle) : "Workflow";
+  bundlePanelBody.replaceChildren();
+  if (!bundle) return;
+
+  const today = todayIsoDate();
+  const progress = summarizeBundleProgress(bundle, tasks, today);
+
+  // Stage + progress summary
+  const meta = document.createElement("div");
+  meta.className = "task-detail-meta";
+  if (bundle.stage) {
+    const stageBadge = document.createElement("span");
+    stageBadge.className = `task-status-badge ${bundle.stage === "done" ? "done" : "todo"}`;
+    stageBadge.textContent = labelizeWorkValue(bundle.stage);
+    meta.append(stageBadge);
+  }
+  if (bundle.anchorDate) {
+    const row = document.createElement("div");
+    row.append(document.createTextNode("Anchor "), formatMetaDate(bundle.anchorDate, today));
+    meta.append(row);
+  }
+  const progressRow = document.createElement("div");
+  progressRow.textContent = progress.label;
+  meta.append(progressRow);
+  if (bundle.description) {
+    const descRow = document.createElement("div");
+    descRow.textContent = bundle.description;
+    meta.append(descRow);
+  }
+  bundlePanelBody.append(meta);
+
+  // Progress bar
+  if (progress.total > 0) {
+    const bar = document.createElement("div");
+    bar.className = "ops-progress";
+    bar.setAttribute("aria-label", progress.label);
+    const fill = document.createElement("i");
+    fill.style.width = `${progress.percent}%`;
+    bar.append(fill);
+    bundlePanelBody.append(bar);
+  }
+
+  // Bundle links
+  if (Array.isArray(bundle.bundleLinks) && bundle.bundleLinks.length > 0) {
+    const linksSection = document.createElement("div");
+    linksSection.className = "task-history";
+    const linksLabel = document.createElement("div");
+    linksLabel.className = "task-history-label";
+    linksLabel.textContent = "Links";
+    linksSection.append(linksLabel);
+    for (const link of bundle.bundleLinks) {
+      const linkName = link.name || link.label || "Link";
+      const linkUrl = link.url || "";
+      const wrap = document.createElement("div");
+      wrap.className = "task-required-link";
+      const label = document.createElement("label");
+      label.textContent = linkName;
+      const input = document.createElement("input");
+      input.type = "url";
+      input.value = linkUrl;
+      input.placeholder = "https://...";
+      input.addEventListener("change", () => saveBundleLink(bundle.id, bundle.bundleLinks, linkName, input.value.trim()));
+      label.append(input);
+      wrap.append(label);
+      linksSection.append(wrap);
+    }
+    bundlePanelBody.append(linksSection);
+  }
+
+  // Task checklist
+  if (tasks.length > 0) {
+    const checklistSection = document.createElement("div");
+    checklistSection.className = "task-history";
+    const checklistLabel = document.createElement("div");
+    checklistLabel.className = "task-history-label";
+    checklistLabel.textContent = "Tasks";
+    checklistSection.append(checklistLabel);
+    const list = document.createElement("div");
+    list.className = "task-history-list";
+    const sorted = sortBundleChecklistTasks(tasks, today);
+    for (const task of sorted) list.append(renderBundleChecklistItem(task, bundle.id, today));
+    checklistSection.append(list);
+    bundlePanelBody.append(checklistSection);
+  }
+
+  // References
+  if (Array.isArray(bundle.references) && bundle.references.length > 0) {
+    const refsSection = document.createElement("div");
+    refsSection.className = "task-detail-meta";
+    for (const ref of bundle.references) {
+      const refUrl = typeof ref === "string" ? ref : ref.url || ref.link || "";
+      const refName = typeof ref === "string" ? ref : ref.name || ref.title || refUrl;
+      if (!refUrl) continue;
+      const link = document.createElement("a");
+      link.href = String(refUrl);
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = String(refName);
+      refsSection.append(link);
+    }
+    bundlePanelBody.append(refsSection);
+  }
+}
+
+function sortBundleChecklistTasks(tasks, today) {
+  const sorted = [...tasks];
+  sorted.sort((a, b) => {
+    const aDone = String(a.status || "").toLowerCase() === "done";
+    const bDone = String(b.status || "").toLowerCase() === "done";
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return compareIsoDate(taskDate(a) || today, taskDate(b) || today);
+  });
+  return sorted;
+}
+
+function renderBundleChecklistItem(task, bundleId, today) {
+  const row = document.createElement("div");
+  row.className = "bundle-checklist-item";
+  const status = String(task.status || "todo").toLowerCase();
+  const isDone = status === "done";
+  const isWaiting = status === "waiting";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = isDone;
+  checkbox.disabled = isWaiting || (!!task.requiredLinkName && !task.link);
+  if (checkbox.disabled && !isDone) {
+    checkbox.title = task.requiredLinkName ? `Fill in ${task.requiredLinkName} first` : "Waiting task";
+  }
+  checkbox.addEventListener("change", () => {
+    updateTaskStatus(task.id, isDone ? "todo" : "done");
+  });
+
+  const label = document.createElement("span");
+  label.className = `bundle-checklist-label ${isDone ? "is-done" : ""}`;
+  label.textContent = workTaskTitle(task);
+
+  const dateMeta = document.createElement("small");
+  dateMeta.className = "bundle-checklist-date";
+  if (task.date) dateMeta.textContent = formatTaskDateMeta(task.date, today);
+  if (isWaiting) dateMeta.textContent = `waiting: ${task.waitingFor || ""}`;
+
+  row.append(checkbox, label, dateMeta);
+  return row;
+}
+
+async function saveBundleLink(bundleId, currentLinks, linkName, linkValue) {
+  const updatedLinks = (currentLinks || []).map((link) =>
+    (link.name || link.label) === linkName ? { ...link, url: linkValue } : link
+  );
+  try {
+    const payload = await request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ bundleLinks: updatedLinks }),
+    });
+    const updatedBundle = payload && (payload.bundle || payload);
+    if (updatedBundle && activeBundlePanelId === bundleId) {
+      activeBundlePanelData = { ...activeBundlePanelData, bundle: updatedBundle };
+      renderBundlePanel();
+    }
+    await refreshOperationsWorkSnapshot({ rerender: true });
+  } catch (err) {
+    reportError(`Could not save link: ${err.message || "request failed"}`);
+  }
 }
 
 function settledPayload(result) {
@@ -1580,6 +1803,8 @@ function renderOperationsLaneItem(item) {
     button.addEventListener("click", () => openDocument(item.path));
   } else if (item.taskId) {
     button.addEventListener("click", () => openTaskPanel(item.taskId));
+  } else if (item.bundleId) {
+    button.addEventListener("click", () => openBundlePanel(item.bundleId));
   } else {
     button.disabled = true;
   }
@@ -1910,6 +2135,7 @@ function captureScrollPosition() {
 async function openDocument(path, options = {}) {
   if (!(await canLeaveCurrentDocument())) return;
   closeTaskPanel();
+  closeBundlePanel();
   captureScrollPosition();
 
   documentTitle.disabled = true;
@@ -2210,6 +2436,7 @@ async function showOperationsHome() {
 async function showCreate() {
   if (!(await canLeaveCurrentDocument())) return;
   closeTaskPanel();
+  closeBundlePanel();
   if (!newDocPath.value.trim()) {
     const base = selectedFolder ? `content/${selectedFolder}` : "content";
     newDocPath.value = `${base}/new-document.md`;
