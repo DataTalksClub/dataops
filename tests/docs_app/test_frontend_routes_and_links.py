@@ -341,6 +341,13 @@ const model = buildOperationsHomeModel(docs, {
       ],
     },
   },
+  recurringSnapshot: {
+    loaded: true,
+    recurringConfigs: [
+      { id: "rec-newsletter", description: "Weekly newsletter", cronExpression: "0 9 * * 3", enabled: true },
+      { id: "rec-tax", description: "Monthly tax report", cronExpression: "0 10 5 * *", enabled: false },
+    ],
+  },
 });
 
 assert.equal(model.stats.totalDocs, 5);
@@ -351,6 +358,11 @@ assert.equal(model.stats.todayTasks, 1);
 assert.equal(model.stats.overdueTasks, 1);
 assert.equal(model.stats.waitingTasks, 1);
 assert.equal(model.stats.activeBundles, 1);
+assert.equal(model.stats.recurringConfigs, 2);
+assert.equal(model.stats.enabledRecurringConfigs, 1);
+assert.deepEqual(model.recurring.configs.map((config) => config.id), ["rec-newsletter", "rec-tax"]);
+assert.deepEqual(model.recurring.enabled.map((config) => config.id), ["rec-newsletter"]);
+assert.deepEqual(model.recurring.disabled.map((config) => config.id), ["rec-tax"]);
 assert.deepEqual(model.templates.map((template) => template.slug), ["newsletter", "podcast", "social-media"]);
 assert.equal(model.templates[0].title, "Newsletter");
 assert.equal(model.templates[0].recurring, true);
@@ -378,6 +390,8 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "normalizeBundleTaskMap",
             "tasksFromWorkPayload",
             "bundlesFromWorkPayload",
+            "recurringConfigsFromPayload",
+            "normalizeOperationsRecurringSnapshot",
             "dedupeWorkTasks",
             "sortWorkTasks",
             "taskSortDate",
@@ -402,6 +416,7 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "operationItemFromBundle",
             "workTaskTitle",
             "workBundleTitle",
+            "recurringConfigTitle",
             "formatTaskDateMeta",
             "labelizeWorkValue",
             "todayIsoDate",
@@ -414,6 +429,27 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "buildOperationsReferenceLinks",
             "basename",
             "cleanPath",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_recurring_schedule_helpers_format_and_build_cron_expressions():
+    result = _run_app_js_functions(
+        """
+assert.equal(formatRecurringSchedule("15 9 * * *"), "Daily at 09:15");
+assert.equal(formatRecurringSchedule("0 10 * * 3"), "Weekly on Wednesday at 10:00");
+assert.equal(formatRecurringSchedule("30 8 5 * *"), "Monthly on day 5 at 08:30");
+
+assert.equal(cronExpressionFromRecurringForm("daily", "09:15", "1", "1"), "15 9 * * *");
+assert.equal(cronExpressionFromRecurringForm("weekly", "10:00", "3", "1"), "0 10 * * 3");
+assert.equal(cronExpressionFromRecurringForm("monthly", "08:30", "1", "5"), "30 8 5 * *");
+""",
+        [
+            "formatRecurringSchedule",
+            "weekdayName",
+            "cronExpressionFromRecurringForm",
         ],
     )
 

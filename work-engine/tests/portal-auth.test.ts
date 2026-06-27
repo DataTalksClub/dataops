@@ -203,5 +203,35 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(updatedBundle.stage, 'announced');
     assert.deepStrictEqual(updatedBundle.bundleLinks, [{ name: 'Podcast doc', url: 'https://example.com/doc' }]);
     assert.deepStrictEqual(updatedBundle.references, [{ name: 'Guest notes', url: 'https://example.com/notes' }]);
+
+    const createRecurringResponse = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/recurring',
+        body: JSON.stringify({
+          description: `Portal recurring ${suffix}`,
+          cronExpression: '0 9 * * *',
+          enabled: true,
+        }),
+        headers,
+      },
+      {},
+    );
+    assert.strictEqual(createRecurringResponse.statusCode, 201);
+    const recurringConfig = JSON.parse(createRecurringResponse.body).recurringConfig;
+    assert.strictEqual(recurringConfig.description, `Portal recurring ${suffix}`);
+
+    const generateRecurringResponse = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/recurring/generate',
+        body: JSON.stringify({ startDate: '2028-10-07', endDate: '2028-10-07' }),
+        headers,
+      },
+      {},
+    );
+    assert.strictEqual(generateRecurringResponse.statusCode, 200);
+    const generated = JSON.parse(generateRecurringResponse.body);
+    assert.ok(generated.generated.some((task: { recurringConfigId?: string }) => task.recurringConfigId === recurringConfig.id));
   });
 });
