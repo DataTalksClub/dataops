@@ -146,6 +146,14 @@ function jsonArray(value: unknown): JsonValue[] {
   return Array.isArray(value) ? JSON.parse(JSON.stringify(value)) as JsonValue[] : [];
 }
 
+function optionalJsonStringOrObject(value: unknown): JsonValue | null {
+  if (typeof value === 'string') return value;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return JSON.parse(JSON.stringify(value)) as JsonValue;
+  }
+  return null;
+}
+
 function stripEmpty(record: JsonRecord): JsonRecord {
   const result: JsonRecord = {};
   for (const [key, value] of Object.entries(record)) {
@@ -176,6 +184,11 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     waiting_for: optionalString(item.waitingFor),
     follow_up_at: optionalString(item.followUpAt),
     instructions_url: optionalString(item.instructionsUrl),
+    instruction_doc_id: optionalString(item.instructionDocId),
+    instruction_step_id: optionalString(item.instructionStepId),
+    phase: optionalString(item.phase),
+    systems: stringArray(item.systems),
+    validation: optionalJsonStringOrObject(item.validation),
     link: optionalString(item.link),
     required_link_name: optionalString(item.requiredLinkName),
     requires_file: optionalBoolean(item.requiresFile),
@@ -216,6 +229,7 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     type: optionalString(item.type),
     tags: stringArray(item.tags),
     default_assignee_id: optionalString(item.defaultAssigneeId),
+    source_doc_ids: stringArray(item.sourceDocIds),
     references: jsonArray(item.references),
     bundle_link_definitions: jsonArray(item.bundleLinkDefinitions),
     task_definitions: jsonArray(item.taskDefinitions),
@@ -446,6 +460,73 @@ function optionalEnum(
   return value;
 }
 
+function optionalStringField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string
+): string | null {
+  const value = record[field];
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    errors.push(`${context} field ${field} must be a string when present`);
+    return null;
+  }
+  return value;
+}
+
+function optionalStringArrayField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string
+): void {
+  const value = record[field];
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    errors.push(`${context} field ${field} must be an array of strings when present`);
+  }
+}
+
+function optionalStringOrObjectField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string
+): void {
+  const value = record[field];
+  if (value === undefined || value === null || value === '') return;
+  if (typeof value === 'string') return;
+  if (typeof value === 'object' && !Array.isArray(value)) return;
+  errors.push(`${context} field ${field} must be a string or object when present`);
+}
+
+function validateTaskDefinitionDocContext(
+  template: JsonRecord,
+  errors: string[],
+  context: string
+): void {
+  const definitions = template.task_definitions;
+  if (definitions === undefined || definitions === null) return;
+  if (!Array.isArray(definitions)) {
+    errors.push(`${context} field task_definitions must be an array when present`);
+    return;
+  }
+  for (const [index, definition] of definitions.entries()) {
+    const definitionContext = `${context}.task_definitions[${index}]`;
+    if (definition === null || typeof definition !== 'object' || Array.isArray(definition)) {
+      errors.push(`${definitionContext} must be an object`);
+      continue;
+    }
+    const record = definition as JsonRecord;
+    for (const field of ['instructionDocId', 'instructionStepId', 'phase']) {
+      optionalStringField(record, field, errors, definitionContext);
+    }
+    optionalStringArrayField(record, 'systems', errors, definitionContext);
+    optionalStringOrObjectField(record, 'validation', errors, definitionContext);
+  }
+}
+
 function isIsoDate(value: string): boolean {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
@@ -603,6 +684,12 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(task, 'completed_at', errors, context);
     validateDateOrTimestampField(task, 'created_at', errors, context);
     validateDateOrTimestampField(task, 'updated_at', errors, context);
+    optionalStringField(task, 'instructions_url', errors, context);
+    optionalStringField(task, 'instruction_doc_id', errors, context);
+    optionalStringField(task, 'instruction_step_id', errors, context);
+    optionalStringField(task, 'phase', errors, context);
+    optionalStringArrayField(task, 'systems', errors, context);
+    optionalStringOrObjectField(task, 'validation', errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
@@ -620,6 +707,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     const context = `templates[${index}]`;
     validateDateOrTimestampField(template, 'created_at', errors, context);
     validateDateOrTimestampField(template, 'updated_at', errors, context);
+    optionalStringArrayField(template, 'source_doc_ids', errors, context);
+    validateTaskDefinitionDocContext(template, errors, context);
   }
 
   for (const [index, recurring] of (recordsByEntity.recurring_configs || []).entries()) {

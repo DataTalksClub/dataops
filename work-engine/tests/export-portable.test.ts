@@ -41,11 +41,17 @@ describe('portable execution data export', () => {
     const template = await createTemplate(client, {
       name: 'Podcast',
       type: 'podcast',
+      sourceDocIds: ['task-template.tasks.podcast'],
       taskDefinitions: [
         {
           refId: 'send-follow-up',
           description: 'Send guest follow-up',
           offsetDays: -7,
+          instructionDocId: 'sop.media.podcast.create-podcast-document',
+          instructionStepId: '4',
+          phase: 'preparation',
+          systems: ['google-drive'],
+          validation: { requiredEvidence: 'Podcast document link' },
         },
       ],
     });
@@ -61,6 +67,11 @@ describe('portable execution data export', () => {
       assigneeId: user.id,
       bundleId: bundle.id,
       source: 'template',
+      instructionDocId: 'sop.media.podcast.create-podcast-document',
+      instructionStepId: '4',
+      phase: 'preparation',
+      systems: ['google-drive'],
+      validation: { requiredEvidence: 'Podcast document link' },
       completedBy: user.id,
       completedAt: '2026-06-20T12:00:00.000Z',
     });
@@ -112,9 +123,18 @@ describe('portable execution data export', () => {
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
+    assert.match(tasksJsonl, /"instruction_doc_id":"sop.media.podcast.create-podcast-document"/);
+    assert.match(tasksJsonl, /"instruction_step_id":"4"/);
+    assert.match(tasksJsonl, /"phase":"preparation"/);
+    assert.match(tasksJsonl, /"systems":\["google-drive"\]/);
+    assert.match(tasksJsonl, /"validation":\{"requiredEvidence":"Podcast document link"\}/);
     assert.match(tasksJsonl, /"completed_by"/);
     assert.match(tasksJsonl, /"completed_at":"2026-06-20T12:00:00.000Z"/);
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
+
+    const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
+    assert.match(templatesJsonl, /"source_doc_ids":\["task-template.tasks.podcast"\]/);
+    assert.match(templatesJsonl, /"instructionDocId":"sop.media.podcast.create-podcast-document"/);
 
     const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');
     assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
@@ -173,8 +193,33 @@ describe('portable execution data export', () => {
           description: 'Invalid date fields',
           date: '2026-99-99',
           status: 'todo',
+          instruction_doc_id: 123,
+          systems: ['github', 42],
+          validation: ['not-valid'],
           created_at: 123,
           updated_at: 'not-a-timestamp',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.writeFile(
+        path.join(brokenDir, 'templates.jsonl'),
+        JSON.stringify({
+          template_id: 'template-broken-doc-context',
+          name: 'Broken doc context',
+          type: 'podcast',
+          source_doc_ids: ['task-template.tasks.podcast', 42],
+          task_definitions: [
+            {
+              refId: 'broken',
+              description: 'Broken',
+              offsetDays: 0,
+              instructionDocId: 42,
+              systems: ['github', 42],
+              validation: ['not-valid'],
+            },
+          ],
+          created_at: '2026-06-27T00:00:00.000Z',
+          updated_at: '2026-06-27T00:00:00.000Z',
         }) + '\n',
         'utf8'
       );
@@ -214,8 +259,15 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field waiting_for')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field follow_up_at')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field date must be a YYYY-MM-DD date')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field instruction_doc_id must be a string when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field systems must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field validation must be a string or object when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field created_at must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field updated_at must be a parseable date or timestamp')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0] field source_doc_ids must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field instructionDocId must be a string when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field systems must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field validation must be a string or object when present')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[0] field notification_type has unknown value: unknown-reminder')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[1] missing required string field due_at')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[2] field due_at must be a parseable date or timestamp')));

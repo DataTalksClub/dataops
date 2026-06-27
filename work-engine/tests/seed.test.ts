@@ -113,6 +113,13 @@ describe('Seed script', () => {
     const podcast = templates.find((t) => t.type === 'podcast');
     assert.ok(podcast, 'Podcast template should exist');
     assert.strictEqual(podcast.taskDefinitions!.length, 42);
+    assert.deepStrictEqual(podcast.sourceDocIds, ['task-template.tasks.podcast']);
+
+    const createPodcastDocument = podcast.taskDefinitions!.find((td) => td.refId === 'create-podcast-document');
+    assert.ok(createPodcastDocument);
+    assert.strictEqual(createPodcastDocument.instructionDocId, 'sop.media.podcast.create-podcast-document');
+    assert.strictEqual(createPodcastDocument.instructionStepId, '1');
+    assert.strictEqual(createPodcastDocument.phase, 'preparation');
 
     // Check "Actual stream" milestone
     const actualStream = podcast.taskDefinitions!.find((td) => td.refId === 'actual-stream');

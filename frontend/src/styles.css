@@ -1327,6 +1327,28 @@ body[data-view="create"] .editor-view {
   font-weight: 600;
 }
 
+.task-instruction-doc {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 14px 0;
+  padding: 12px 0 0;
+}
+
+.task-instruction-doc-link {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.task-instruction-doc-link:hover {
+  text-decoration: underline;
+}
+
 .task-status-badge {
   display: inline-block;
   border-radius: 4px;

@@ -341,6 +341,42 @@ describe('API — Templates', () => {
       assert.strictEqual(body.template.taskDefinitions.length, 3);
     });
 
+    it('updates sourceDocIds and task doc-context fields', async () => {
+      const created = await createTemplate(client, {
+        name: 'Template',
+        type: 'podcast',
+        taskDefinitions: [
+          { refId: 'a', description: 'Task A', offsetDays: 0 },
+        ],
+      });
+
+      const res = await invoke('PUT', `/api/templates/${created.id}`, {
+        sourceDocIds: ['task-template.tasks.podcast'],
+        taskDefinitions: [
+          {
+            refId: 'create-doc',
+            description: 'Create podcast document',
+            offsetDays: -25,
+            instructionDocId: 'sop.media.podcast.create-podcast-document',
+            instructionStepId: '1',
+            phase: 'preparation',
+            systems: ['google-drive'],
+            validation: 'Podcast document link required',
+          },
+        ],
+      });
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.deepStrictEqual(body.template.sourceDocIds, ['task-template.tasks.podcast']);
+      const taskDefinition = body.template.taskDefinitions[0];
+      assert.strictEqual(taskDefinition.instructionDocId, 'sop.media.podcast.create-podcast-document');
+      assert.strictEqual(taskDefinition.instructionStepId, '1');
+      assert.strictEqual(taskDefinition.phase, 'preparation');
+      assert.deepStrictEqual(taskDefinition.systems, ['google-drive']);
+      assert.strictEqual(taskDefinition.validation, 'Podcast document link required');
+    });
+
     it('returns 400 when updating taskDefinitions with invalid data', async () => {
       const created = await createTemplate(client, {
         name: 'Template',
@@ -526,6 +562,7 @@ describe('API — Templates', () => {
       assert.strictEqual(t.emoji, undefined);
       assert.strictEqual(t.tags, undefined);
       assert.strictEqual(t.defaultAssigneeId, undefined);
+      assert.strictEqual(t.sourceDocIds, undefined);
       assert.strictEqual(t.references, undefined);
       assert.strictEqual(t.bundleLinkDefinitions, undefined);
       assert.strictEqual(t.triggerType, undefined);
@@ -537,6 +574,7 @@ describe('API — Templates', () => {
       const res = await invoke('POST', '/api/templates', {
         name: 'Webinar',
         type: 'webinar',
+        sourceDocIds: ['task-template.tasks.webinar'],
         taskDefinitions: [
           {
             refId: 'announce',
@@ -545,6 +583,11 @@ describe('API — Templates', () => {
             isMilestone: false,
             assigneeId: 'user-valeriia',
             instructionsUrl: 'https://docs.google.com/announce',
+            instructionDocId: 'sop.media.podcast.create-podcast-document',
+            instructionStepId: '4',
+            phase: 'preparation',
+            systems: ['github', 'luma'],
+            validation: { requiredEvidence: 'Luma link' },
             requiredLinkName: 'Luma',
           },
           {
@@ -560,12 +603,18 @@ describe('API — Templates', () => {
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
+      assert.deepStrictEqual(body.template.sourceDocIds, ['task-template.tasks.webinar']);
       const tds = body.template.taskDefinitions;
       assert.strictEqual(tds.length, 2);
 
       assert.strictEqual(tds[0].isMilestone, false);
       assert.strictEqual(tds[0].assigneeId, 'user-valeriia');
       assert.strictEqual(tds[0].instructionsUrl, 'https://docs.google.com/announce');
+      assert.strictEqual(tds[0].instructionDocId, 'sop.media.podcast.create-podcast-document');
+      assert.strictEqual(tds[0].instructionStepId, '4');
+      assert.strictEqual(tds[0].phase, 'preparation');
+      assert.deepStrictEqual(tds[0].systems, ['github', 'luma']);
+      assert.deepStrictEqual(tds[0].validation, { requiredEvidence: 'Luma link' });
       assert.strictEqual(tds[0].requiredLinkName, 'Luma');
 
       assert.strictEqual(tds[1].isMilestone, true);
@@ -585,6 +634,39 @@ describe('API — Templates', () => {
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
       assert.ok(body.error.includes('stageOnComplete'));
+    });
+
+    it('rejects malformed doc-context fields', async () => {
+      const badInstructionDoc = await invoke('POST', '/api/templates', {
+        name: 'Bad Doc Field',
+        type: 'test',
+        taskDefinitions: [
+          { refId: 'a', description: 'Task A', offsetDays: 0, instructionDocId: 42 },
+        ],
+      });
+      assert.strictEqual(badInstructionDoc.statusCode, 400);
+      assert.match(JSON.parse(badInstructionDoc.body).error, /instructionDocId/);
+
+      const badSystems = await invoke('POST', '/api/templates', {
+        name: 'Bad Systems',
+        type: 'test',
+        taskDefinitions: [
+          { refId: 'a', description: 'Task A', offsetDays: 0, systems: ['github', 42] },
+        ],
+      });
+      assert.strictEqual(badSystems.statusCode, 400);
+      assert.match(JSON.parse(badSystems.body).error, /systems/);
+
+      const badSourceDocs = await invoke('POST', '/api/templates', {
+        name: 'Bad Source Docs',
+        type: 'test',
+        sourceDocIds: ['ok', 42],
+        taskDefinitions: [
+          { refId: 'a', description: 'Task A', offsetDays: 0 },
+        ],
+      });
+      assert.strictEqual(badSourceDocs.statusCode, 400);
+      assert.match(JSON.parse(badSourceDocs.body).error, /sourceDocIds/);
     });
 
     it('rejects non-boolean isMilestone value', async () => {

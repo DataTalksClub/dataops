@@ -636,6 +636,52 @@ assert.deepEqual(actionCalls.at(-1), { type: "doc", path: "content/tasks/templat
     assert result["ok"] is True
 
 
+def test_task_instruction_doc_panel_resolves_doc_ids_and_handles_missing_docs():
+    result = _run_app_js_functions(
+        """
+documentIdMap = new Map([
+  ["sop.media.podcast.create-podcast-document", {
+    id: "sop.media.podcast.create-podcast-document",
+    title: "Create a podcast document",
+    doc_type: "sop",
+    path: "content/media/podcast/sops/create-a-podcast-document.md",
+    summary: "Prepare the podcast planning document.",
+  }],
+]);
+
+const panel = renderTaskInstructionDoc({
+  instructionDocId: "sop.media.podcast.create-podcast-document",
+  instructionStepId: "4",
+  phase: "preparation",
+  systems: ["google-drive", "github"],
+  validation: { requiredEvidence: "Podcast document link" },
+});
+
+assert.equal(panel.className, "task-instruction-doc");
+assert.equal(panel.children[0].textContent, "Process doc");
+assert.equal(panel.children[1].textContent, "Create a podcast document");
+panel.children[1].click();
+assert.deepEqual(actionCalls.at(-1), {
+  type: "doc",
+  path: "content/media/podcast/sops/create-a-podcast-document.md",
+});
+assert.equal(panel.querySelector(".ops-card-chips").children.length, 2);
+assert.equal(panel.children[4].children[1].textContent, "Required evidence: Podcast document link");
+
+const missing = renderTaskInstructionDoc({ instructionDocId: "missing.doc" });
+assert.equal(missing.children[1].textContent, "Document unavailable: missing.doc");
+""",
+        [
+            "resolveDocReference",
+            "formatMetaText",
+            "formatValidationInstruction",
+            "renderTaskInstructionDoc",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
 def test_operations_lane_items_open_task_and_bundle_panels():
     result = _run_app_js_functions(
         """

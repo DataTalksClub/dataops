@@ -153,6 +153,21 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
     if (def.instructionsUrl) {
       taskData.instructionsUrl = def.instructionsUrl;
     }
+    if (def.instructionDocId) {
+      taskData.instructionDocId = def.instructionDocId;
+    }
+    if (def.instructionStepId) {
+      taskData.instructionStepId = def.instructionStepId;
+    }
+    if (def.phase) {
+      taskData.phase = def.phase;
+    }
+    if (def.systems && def.systems.length > 0) {
+      taskData.systems = def.systems;
+    }
+    if (def.validation) {
+      taskData.validation = def.validation;
+    }
 
     // Set assigneeId: task definition overrides, fall back to template default
     if (def.assigneeId) {

@@ -158,6 +158,7 @@ describe('Templates data layer', () => {
       emoji: '\u{1F4F0}',
       tags: ['newsletter', 'weekly'],
       defaultAssigneeId: 'user-grace',
+      sourceDocIds: ['task-template.tasks.newsletter'],
       references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
       bundleLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
       triggerType: 'automatic',
@@ -172,6 +173,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(template.emoji, '\u{1F4F0}');
     assert.deepStrictEqual(template.tags, ['newsletter', 'weekly']);
     assert.strictEqual(template.defaultAssigneeId, 'user-grace');
+    assert.deepStrictEqual(template.sourceDocIds, ['task-template.tasks.newsletter']);
     assert.deepStrictEqual(template.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
     assert.deepStrictEqual(template.bundleLinkDefinitions, [{ name: 'Luma' }, { name: 'YouTube' }]);
     assert.strictEqual(template.triggerType, 'automatic');
@@ -184,6 +186,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(fetched.emoji, '\u{1F4F0}');
     assert.deepStrictEqual(fetched.tags, ['newsletter', 'weekly']);
     assert.strictEqual(fetched.defaultAssigneeId, 'user-grace');
+    assert.deepStrictEqual(fetched.sourceDocIds, ['task-template.tasks.newsletter']);
     assert.strictEqual(fetched.triggerType, 'automatic');
     assert.strictEqual(fetched.triggerSchedule, '0 9 * * 1');
     assert.strictEqual(fetched.triggerLeadDays, 14);
@@ -201,6 +204,11 @@ describe('Templates data layer', () => {
           isMilestone: false,
           assigneeId: 'user-valeriia',
           instructionsUrl: 'https://docs.google.com/announce',
+          instructionDocId: 'sop.media.podcast.create-podcast-document',
+          instructionStepId: '4',
+          phase: 'preparation',
+          systems: ['google-drive', 'github'],
+          validation: { requiredEvidence: 'Podcast document link' },
           requiredLinkName: 'Luma',
           requiresFile: false,
         },
@@ -221,6 +229,11 @@ describe('Templates data layer', () => {
     assert.strictEqual(td0.isMilestone, false);
     assert.strictEqual(td0.assigneeId, 'user-valeriia');
     assert.strictEqual(td0.instructionsUrl, 'https://docs.google.com/announce');
+    assert.strictEqual(td0.instructionDocId, 'sop.media.podcast.create-podcast-document');
+    assert.strictEqual(td0.instructionStepId, '4');
+    assert.strictEqual(td0.phase, 'preparation');
+    assert.deepStrictEqual(td0.systems, ['google-drive', 'github']);
+    assert.deepStrictEqual(td0.validation, { requiredEvidence: 'Podcast document link' });
     assert.strictEqual(td0.requiredLinkName, 'Luma');
     assert.strictEqual(td0.requiresFile, false);
 
@@ -243,6 +256,7 @@ describe('Templates data layer', () => {
     const updated = await updateTemplate(client, created.id, {
       emoji: '\u{1F399}\u{FE0F}',
       tags: ['podcast', 'content'],
+      sourceDocIds: ['task-template.tasks.podcast'],
       references: [{ name: 'Recording guide', url: 'https://docs.google.com/rec' }],
       triggerType: 'automatic',
       triggerSchedule: '0 9 * * 1',
@@ -252,6 +266,7 @@ describe('Templates data layer', () => {
     assert.ok(updated);
     assert.strictEqual(updated.emoji, '\u{1F399}\u{FE0F}');
     assert.deepStrictEqual(updated.tags, ['podcast', 'content']);
+    assert.deepStrictEqual(updated.sourceDocIds, ['task-template.tasks.podcast']);
     assert.deepStrictEqual(updated.references, [{ name: 'Recording guide', url: 'https://docs.google.com/rec' }]);
     assert.strictEqual(updated.triggerType, 'automatic');
     assert.strictEqual(updated.triggerSchedule, '0 9 * * 1');
@@ -278,6 +293,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(fetched.emoji, undefined);
     assert.strictEqual(fetched.tags, undefined);
     assert.strictEqual(fetched.defaultAssigneeId, undefined);
+    assert.strictEqual(fetched.sourceDocIds, undefined);
     assert.strictEqual(fetched.references, undefined);
     assert.strictEqual(fetched.bundleLinkDefinitions, undefined);
     assert.strictEqual(fetched.triggerType, undefined);
@@ -312,6 +328,41 @@ describe('Templates data layer', () => {
     assert.ok(fetched);
     assert.strictEqual(fetched.instructionsUrl, 'https://docs.google.com/instructions');
     assert.strictEqual(fetched.comment, undefined);
+  });
+
+  it('instantiateTemplate copies doc-context fields onto tasks', async () => {
+    const template = await createTemplate(client, {
+      name: 'Doc context test',
+      type: 'podcast',
+      taskDefinitions: [
+        {
+          refId: 'create-doc',
+          description: 'Create podcast document',
+          offsetDays: -25,
+          instructionsUrl: 'https://docs.google.com/instructions',
+          instructionDocId: 'sop.media.podcast.create-podcast-document',
+          instructionStepId: '4',
+          phase: 'preparation',
+          systems: ['google-drive', 'github'],
+          validation: { requiredEvidence: 'Podcast document link' },
+        },
+      ],
+    });
+
+    const tasks = await instantiateTemplate(client, template.id, 'bundle-doc-context-1', '2026-06-15');
+
+    assert.strictEqual(tasks.length, 1);
+    assert.strictEqual(tasks[0].instructionsUrl, 'https://docs.google.com/instructions');
+    assert.strictEqual(tasks[0].instructionDocId, 'sop.media.podcast.create-podcast-document');
+    assert.strictEqual(tasks[0].instructionStepId, '4');
+    assert.strictEqual(tasks[0].phase, 'preparation');
+    assert.deepStrictEqual(tasks[0].systems, ['google-drive', 'github']);
+    assert.deepStrictEqual(tasks[0].validation, { requiredEvidence: 'Podcast document link' });
+
+    const fetched = await getTask(client, tasks[0].id);
+    assert.ok(fetched);
+    assert.strictEqual(fetched.instructionDocId, 'sop.media.podcast.create-podcast-document');
+    assert.deepStrictEqual(fetched.systems, ['google-drive', 'github']);
   });
 
   it('instantiateTemplate sets assigneeId from task def, falls back to defaultAssigneeId', async () => {
