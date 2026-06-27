@@ -129,6 +129,10 @@ Local defaults may map to the existing prototype names:
 - `Notifications`
 - `Sessions`
 
+Current implementation reads these environment variables in `work-engine` and
+keeps the local defaults above. The Lambda handler auto-creates tables only in
+test/local mode or when `DATAOPS_AUTO_CREATE_TABLES=true`.
+
 ## ID Rules
 
 Every exported entity needs a stable application-level ID.

@@ -4,13 +4,27 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-const TABLE_TASKS = 'Tasks';
-const TABLE_BUNDLES = 'Projects';
-const TABLE_TEMPLATES = 'Templates';
-const TABLE_USERS = 'Users';
-const TABLE_FILES = 'Files';
-const TABLE_NOTIFICATIONS = 'Notifications';
-const TABLE_SESSIONS = 'Sessions';
+function tableName(envName: string, fallback: string): string {
+  return process.env[envName] || fallback;
+}
+
+function shouldAutoCreateTables(): boolean {
+  return (
+    process.env.DATAOPS_AUTO_CREATE_TABLES === 'true' ||
+    process.env.IS_LOCAL === 'true' ||
+    process.env.IS_LOCAL === '1' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.NODE_ENV === 'local'
+  );
+}
+
+const TABLE_TASKS = tableName('DATAOPS_TASKS_TABLE', 'Tasks');
+const TABLE_BUNDLES = tableName('DATAOPS_BUNDLES_TABLE', 'Projects');
+const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates');
+const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users');
+const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files');
+const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications');
+const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions');
 
 /**
  * Create all application tables (Tasks, Bundles, Templates) with GSIs.
@@ -177,6 +191,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
 export {
   createTables,
   deleteTables,
+  shouldAutoCreateTables,
   TABLE_TASKS,
   TABLE_BUNDLES,
   TABLE_TEMPLATES,
