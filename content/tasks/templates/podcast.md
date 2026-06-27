@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.podcast
+aliases: []
 title: "Podcast Task Template"
 summary: "Git-backed DataTasks template for the Podcast operational workflow."
 doc_type: task-template
@@ -11,6 +13,8 @@ tags:
   - "Podcast"
   - "task-template"
   - "podcast"
+related_docs:
+  - sop.media.podcast.create-podcast-document
 ---
 
 # Podcast Task Template

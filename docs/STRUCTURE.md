@@ -53,15 +53,21 @@ Use one of these `doc_type` values in frontmatter:
 - `sop` - step-by-step instructions for doing operational work.
 - `checklist` - ordered checklist that links to SOPs or summarizes a multi-step workflow.
 - `template` - reusable text, email, contract, announcement, or prompt template.
+- `task-template` - Git-backed DataTasks workflow template.
 - `reference` - overview, index, FAQ, guide, spreadsheet export, or troubleshooting reference.
 - `playbook` - campaign or strategy plan, usually with multiple activities and references.
+- `prompt` - maintained AI prompt.
+- `archive` - imported or deprecated material kept for traceability.
+- `doc` - generic document when no narrower type applies.
 
 ### Required Frontmatter
 
-Every Markdown file under `docs/` should start with:
+Every operational Markdown file under `content/` should start with:
 
 ```yaml
 ---
+id: sop.media.podcast.create-podcast-document
+aliases: []
 title: "Human-readable title"
 doc_type: sop
 source: "Processes/original-file.docx"
@@ -73,12 +79,27 @@ related_docs: []
 
 Field meanings:
 
+- `id`: stable document identity. Use lowercase letters, numbers, dots,
+  dashes, or underscores only. Prefer `doc_type.domain.area.slug`, for
+  example `sop.media.podcast.create-podcast-document`. Do not change an ID
+  after another task, workflow, or document links to it.
+- `aliases`: old IDs or old paths that should still resolve to this document
+  after a rename or migration.
 - `title`: displayed title.
 - `doc_type`: one of `sop`, `checklist`, `template`, `reference`, or `playbook`.
 - `source`: optional original import source, usually the original `.docx` path from the Processes export.
 - `tags`: topical tags.
 - `systems`: tools/services touched by the doc, such as `airtable`, `mailchimp`, `luma`, `github`, `slack`.
-- `related_docs`: repo-relative paths to related Markdown docs.
+- `related_docs`: stable document IDs, wiki references such as `[[doc-id]]`,
+  or repo-relative Markdown paths for related docs. New links should use IDs.
+
+Stable ID examples:
+
+- `sop.media.podcast.create-podcast-document`
+- `template.media.podcast.remind-guest-one-day-before`
+- `task-template.tasks.podcast`
+- `reference.finance.invoices-receipts-and-statements`
+- `playbook.courses.launch-cohort`
 
 ### SOP Body
 

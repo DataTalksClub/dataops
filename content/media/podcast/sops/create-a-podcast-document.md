@@ -1,4 +1,7 @@
 ---
+id: sop.media.podcast.create-podcast-document
+aliases:
+  - sop.media.podcast.create-a-podcast-document
 title: "Create a podcast document"
 summary: "Steps to create a podcast planning document with event information, guest questions, and announcement details."
 doc_type: sop

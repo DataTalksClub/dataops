@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from lambda_functions import sop_lint, sop_parse
+from lambda_functions import doc_registry, sop_lint, sop_parse
 from lambda_functions.http import response
 
 
@@ -26,6 +26,12 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     path = event.get("rawPath") or event.get("path") or "/"
 
     try:
+        if path == "/docs/registry" and method == "GET":
+            return get_doc_registry()
+
+        if path == "/docs/resolve" and method == "GET":
+            return resolve_doc(query_param(event, "ref"))
+
         if path == "/docs" and method == "GET":
             doc_path = query_param(event, "path")
             if doc_path:
@@ -71,25 +77,29 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
 def list_docs() -> dict[str, Any]:
     docs = []
-    for file_path in sorted(CONTENT_ROOT.rglob("*.md")):
-        relative_path = file_path.relative_to(CONTENT_ROOT.parent).as_posix()
-        text = file_path.read_text(encoding="utf-8", errors="replace")
-        docs.append(
-            {
-                "path": relative_path,
-                "id": extract_frontmatter_value(text, "id"),
-                "aliases": extract_frontmatter_list(text, "aliases"),
-                "title": extract_frontmatter_value(text, "title") or file_path.stem.replace("-", " ").title(),
-                "summary": extract_frontmatter_value(text, "summary"),
-                "doc_type": extract_frontmatter_value(text, "doc_type") or infer_doc_type(relative_path),
-                "domain": infer_domain(relative_path),
-                "tags": extract_frontmatter_list(text, "tags"),
-                "systems": extract_frontmatter_list(text, "systems"),
-                "updated": int(file_path.stat().st_mtime),
-            }
-        )
+    registry = doc_registry.build_registry(CONTENT_ROOT)
+    for record in registry.documents:
+        item = record.to_dict()
+        item["updated"] = item["updated_at"]
+        docs.append(item)
 
     return response(200, {"documents": docs})
+
+
+def get_doc_registry() -> dict[str, Any]:
+    registry = doc_registry.build_registry(CONTENT_ROOT)
+    return response(200, registry.to_dict())
+
+
+def resolve_doc(ref: str | None) -> dict[str, Any]:
+    if not ref:
+        raise ValueError("Missing required query parameter: ref")
+    registry = doc_registry.build_registry(CONTENT_ROOT)
+    try:
+        record = doc_registry.resolve_reference(registry, ref)
+    except LookupError as exc:
+        return response(404, {"error": str(exc)})
+    return response(200, {"document": record.to_dict()})
 
 
 def extract_frontmatter_list(markdown: str, key: str) -> list[str]:
