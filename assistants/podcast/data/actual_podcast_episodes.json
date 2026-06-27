@@ -1,0 +1,2888 @@
+[
+  {
+    "episode_id": "s-8-s12e08",
+    "source_file": "_podcast/_s12e08.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/_s12e08.md",
+    "title": "_S12E08",
+    "short": null,
+    "season": null,
+    "episode": 8,
+    "guest_ids": [
+      "jekaterinakokatjuhha"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-theme-park-crowd-modeling-to-tesla-full-stack-data-engineering-theme-park-crowd-modeling-to-tesla-full-stack-data-engineering",
+    "source_file": "_podcast/_theme-park-crowd-modeling-to-tesla-full-stack-data-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/_theme-park-crowd-modeling-to-tesla-full-stack-data-engineering.md",
+    "title": "_Theme Park Crowd Modeling To Tesla Full Stack Data Engineering",
+    "short": null,
+    "season": null,
+    "episode": null,
+    "guest_ids": [],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-6-ab-testing-and-product-experimentation",
+    "source_file": "_podcast/ab-testing-and-product-experimentation.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ab-testing-and-product-experimentation.md",
+    "title": "Product Analytics & A/B Testing: Causality, Metrics, Power Analysis, A/A Tests",
+    "short": "A/B Testing",
+    "season": 7,
+    "episode": 6,
+    "guest_ids": [
+      "jakobgraff"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "18-3-ai-for-ecology-biodiversity-and-conservation",
+    "source_file": "_podcast/ai-for-ecology-biodiversity-and-conservation.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ai-for-ecology-biodiversity-and-conservation.md",
+    "title": "AI for Ecology, Biodiversity, and Conservation: Computer Vision, Remote Sensing and Citizen Science",
+    "short": "AI for Ecology, Biodiversity, and Conservation",
+    "season": 18,
+    "episode": 3,
+    "guest_ids": [
+      "tanyabergerwolf"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-4-ai-in-healthcare-and-digital-therapeutics",
+    "source_file": "_podcast/ai-in-healthcare-and-digital-therapeutics.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ai-in-healthcare-and-digital-therapeutics.md",
+    "title": "AI in Healthcare & Digital Therapeutics: Building Data Teams, Personalization, A/B Testing & Ethics",
+    "short": "Machine Learning and Personalization in Healthcare",
+    "season": 8,
+    "episode": 4,
+    "guest_ids": [
+      "stefangudmundsson"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-1-ai-infrastructure-hybrid-cloud-on-prem-distributed-training",
+    "source_file": "_podcast/ai-infrastructure-hybrid-cloud-on-prem-distributed-training.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ai-infrastructure-hybrid-cloud-on-prem-distributed-training.md",
+    "title": "Post-ChatGPT AI Infrastructure: Open Source Orchestration, On-Prem Economics & Distributed Training at Scale",
+    "short": "Trends in AI Infrastructure",
+    "season": 20,
+    "episode": 1,
+    "guest_ids": [
+      "andreycheptsov"
+    ],
+    "question_count": 31,
+    "categories": [
+      "background",
+      "current_focus",
+      "future_outlook",
+      "general",
+      "resources",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "8-3-ai-ml-product-design-and-experimentation",
+    "source_file": "_podcast/ai-ml-product-design-and-experimentation.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ai-ml-product-design-and-experimentation.md",
+    "title": "AI Product Design: Algorithm-Ready UX, Rapid Experiments & Data-Driven Roadmaps",
+    "short": "Innovation and Design for Machine Learning",
+    "season": 8,
+    "episode": 3,
+    "guest_ids": [
+      "liesbethdingemans"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-3-algorithmic-trading-with-python-and-machine-learning",
+    "source_file": "_podcast/algorithmic-trading-with-python-and-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/algorithmic-trading-with-python-and-machine-learning.md",
+    "title": "Algorithmic Trading with Python: Backtesting, Risk Management and Deployment",
+    "short": "Stock Market Analysis with Python and Machine Learning",
+    "season": 17,
+    "episode": 3,
+    "guest_ids": [
+      "ivanbrigida"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-1-algorithms-data-structures-for-engineers",
+    "source_file": "_podcast/algorithms-data-structures-for-engineers.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/algorithms-data-structures-for-engineers.md",
+    "title": "Practical Algorithms for Engineers: Bloom Filters, Approximate Nearest-Neighbor & Performance",
+    "short": "Mastering Algorithms and Data Structures",
+    "season": 5,
+    "episode": 1,
+    "guest_ids": [
+      "marcellolarocca"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-11-analytics-engineer-skills-tools",
+    "source_file": "_podcast/analytics-engineer-skills-tools.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/analytics-engineer-skills-tools.md",
+    "title": "Master Analytics Engineering: Skills, Toolstack, Career Roadmap",
+    "short": "Analytics Engineer: New Role in a Data Team",
+    "season": 3,
+    "episode": 11,
+    "guest_ids": [
+      "victoriaperezmola"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-2-analytics-to-data-science-with-kaggle-portfolio",
+    "source_file": "_podcast/analytics-to-data-science-with-kaggle-portfolio.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/analytics-to-data-science-with-kaggle-portfolio.md",
+    "title": "Career Transition from Analytics to Data Science: Build a Kaggle Notebook Portfolio, Learn Python & Get Hired",
+    "short": "Shifting Career from Analytics to Data Science",
+    "season": 3,
+    "episode": 2,
+    "guest_ids": [
+      "andradaolteanu"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-7-applied-llm-research-and-career-growth-in-practice",
+    "source_file": "_podcast/applied-llm-research-and-career-growth-in-practice.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/applied-llm-research-and-career-growth-in-practice.md",
+    "title": "Applied LLM Research & Career Growth: Long-Context Evaluation, Prototyping & Industry Publishing",
+    "short": "Build a Strong Career in Data",
+    "season": 20,
+    "episode": 7,
+    "guest_ids": [
+      "lavanyagupta"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-4-bayesian-modeling-workflows-and-tools",
+    "source_file": "_podcast/bayesian-modeling-workflows-and-tools.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/bayesian-modeling-workflows-and-tools.md",
+    "title": "Bayesian Modeling: PyMC, Stan and Probabilistic Programming Workflows",
+    "short": "Bayesian Modeling and Probabilistic Programming",
+    "season": 17,
+    "episode": 4,
+    "guest_ids": [
+      "robzinkov"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-9-becoming-data-freelancer",
+    "source_file": "_podcast/becoming-data-freelancer.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/becoming-data-freelancer.md",
+    "title": "Becoming a Data Freelancer: Pricing, Client Acquisition and Contract Strategy",
+    "short": "Become a Data Freelancer",
+    "season": 16,
+    "episode": 9,
+    "guest_ids": [
+      "dimitrivisnadi"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-5-big-data-analytics-and-postdoc-research",
+    "source_file": "_podcast/big-data-analytics-and-postdoc-research.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/big-data-analytics-and-postdoc-research.md",
+    "title": "Master Spatial Big Data Analytics: Nebula Stream Systems, Postdoc Mentoring & PhD Tips",
+    "short": "Advancing Big Data Analytics: Post-Doctoral Research",
+    "season": 6,
+    "episode": 5,
+    "guest_ids": [
+      "elenitziritazacharatou"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-3-big-data-engineer-vs-data-scientist",
+    "source_file": "_podcast/big-data-engineer-vs-data-scientist.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/big-data-engineer-vs-data-scientist.md",
+    "title": "Big Data Engineer vs Data Scientist: Skills, Tools, and Career Paths",
+    "short": "Big Data Engineer vs Data Scientist",
+    "season": 4,
+    "episode": 3,
+    "guest_ids": [
+      "roksolanadiachuk"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-3-biohacking-productivity-for-data-scientists-and-ml-engineers",
+    "source_file": "_podcast/biohacking-productivity-for-data-scientists-and-ml-engineers.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/biohacking-productivity-for-data-scientists-and-ml-engineers.md",
+    "title": "Actionable Biohacks to Boost Productivity: Sleep, Circadian Light, Dopamine & Habits",
+    "short": "Biohacking for Data Scientists and ML Engineers",
+    "season": 13,
+    "episode": 3,
+    "guest_ids": [
+      "ruslanshchuchkin"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "22-3-bioinformatics-worflows-tools-and-data-science",
+    "source_file": "_podcast/bioinformatics-worflows-tools-and-data-science.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/bioinformatics-worflows-tools-and-data-science.md",
+    "title": "Bioinformatics Workflows in Practice: Sequencing, Metagenomics, and Open-Source Tools",
+    "short": "Applying Data Science Concepts, Tools, and Workflows to Accelerate Biological Research",
+    "season": 22,
+    "episode": 3,
+    "guest_ids": [
+      "sebastianayalaruano"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "22-1-building-agentic-ai-engineering-tooling-retrieval-evaluation",
+    "source_file": "_podcast/building-agentic-ai-engineering-tooling-retrieval-evaluation.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-agentic-ai-engineering-tooling-retrieval-evaluation.md",
+    "title": "Building Agentic AI Systems: Pragmatic Agent Engineering, Tooling, Retrieval & Evaluation",
+    "short": "Building reliable AI products in the era of Gen AI and Agents",
+    "season": 22,
+    "episode": 1,
+    "guest_ids": [
+      "ranjithakulkarni"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-8-building-ai-digital-health-startups",
+    "source_file": "_podcast/building-ai-digital-health-startups.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-ai-digital-health-startups.md",
+    "title": "Building Digital Health Startups: MVP Strategy, AI Diagnosis and Telemedicine",
+    "short": "AI for Digital Health",
+    "season": 16,
+    "episode": 8,
+    "guest_ids": [
+      "mariabruckert"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-3-building-and-scaling-ai-data-products-with-mlops",
+    "source_file": "_podcast/building-and-scaling-ai-data-products-with-mlops.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-and-scaling-ai-data-products-with-mlops.md",
+    "title": "Build & Scale Data Products for AI: Roadmaps, MLOps, Customer Research & Metrics",
+    "short": "Product Management Essentials for Data Professionals",
+    "season": 7,
+    "episode": 3,
+    "guest_ids": [
+      "gregcoquillo"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-9-building-and-scaling-data-engineering-systems-for-fraud-detection",
+    "source_file": "_podcast/building-and-scaling-data-engineering-systems-for-fraud-detection.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-and-scaling-data-engineering-systems-for-fraud-detection.md",
+    "title": "Build and Scale Data Engineering Systems for Fraud Detection: Feature Pipelines, Real-Time Inference, Graph Databases & Production Debugging",
+    "short": "Data Engineering for Fraud Prevention",
+    "season": 15,
+    "episode": 9,
+    "guest_ids": [
+      "angelaramirez"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-5-building-and-scaling-data-science-practice-industrial-ai-mlops",
+    "source_file": "_podcast/building-and-scaling-data-science-practice-industrial-ai-mlops.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-and-scaling-data-science-practice-industrial-ai-mlops.md",
+    "title": "Building and Scaling Data Science Practice in Industrial Enterprises: AI Adoption, MLOps Maturity & Career Growth",
+    "short": "Building and Scaling Data Science Practice in Industrial Enterprises",
+    "season": 11,
+    "episode": 5,
+    "guest_ids": [
+      "andreyshtylenko"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-6-building-and-scaling-data-team",
+    "source_file": "_podcast/building-and-scaling-data-team.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-and-scaling-data-team.md",
+    "title": "How to Build & Scale a Data Team: Hiring, Production ML, Forecasting & Driving Adoption",
+    "short": "Building and Leading Data Teams",
+    "season": 5,
+    "episode": 6,
+    "guest_ids": [
+      "tammyliang"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-3-building-data-products-lead-data-scientist",
+    "source_file": "_podcast/building-data-products-lead-data-scientist.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-data-products-lead-data-scientist.md",
+    "title": "Building Data Products at Scale: Intake, A/B Testing, and MLOps in a Marketing Organization",
+    "short": "Collaborative Data Science in Business",
+    "season": 16,
+    "episode": 3,
+    "guest_ids": [
+      "ioannismesionis"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-6-building-data-products-product-owner-vs-product-manager",
+    "source_file": "_podcast/building-data-products-product-owner-vs-product-manager.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-data-products-product-owner-vs-product-manager.md",
+    "title": "Building Data Products at Scale: Recommenders, Domain Ownership, and Hiring for Production ML",
+    "short": "Product Owners in Data Science",
+    "season": 11,
+    "episode": 6,
+    "guest_ids": [
+      "annahannemann"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-8-building-data-science-programs-and-democratizing-high-performance-computing",
+    "source_file": "_podcast/building-data-science-programs-and-democratizing-high-performance-computing.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-data-science-programs-and-democratizing-high-performance-computing.md",
+    "title": "Build Data Science Programs, Democratize HPC & Scale Graph Analytics with Arkouda",
+    "short": "Leading Data Research",
+    "season": 10,
+    "episode": 8,
+    "guest_ids": [
+      "davidbader"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "1-3-building-data-team",
+    "source_file": "_podcast/building-data-team.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-data-team.md",
+    "title": "How to Build and Scale ML Teams: Hiring, MLOps & Product-Driven AI for Startups",
+    "short": "Building a Data Science Team",
+    "season": 1,
+    "episode": 3,
+    "guest_ids": [
+      "dattran"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "18-7-building-domestic-risk-assessment-tool",
+    "source_file": "_podcast/building-domestic-risk-assessment-tool.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-domestic-risk-assessment-tool.md",
+    "title": "Building a Domestic Risk Assessment Tool: Data Cleaning, Risk Scoring Models and Privacy Compliance",
+    "short": "Building a Domestic Risk Assessment Tool",
+    "season": 18,
+    "episode": 7,
+    "guest_ids": [
+      "sabinafirtala"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-9-building-explainable-and-actionable-ai-ml-systems",
+    "source_file": "_podcast/building-explainable-and-actionable-ai-ml-systems.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-explainable-and-actionable-ai-ml-systems.md",
+    "title": "Build Explainable and Actionable AI/ML Systems: Industrial PhD, Trust Theory & Production Deployment",
+    "short": "Build Explainable and Actionable AI/ML Systems",
+    "season": 14,
+    "episode": 9,
+    "guest_ids": [
+      "polinamosolova"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-2-building-healthcare-machine-learning-systems",
+    "source_file": "_podcast/building-healthcare-machine-learning-systems.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-healthcare-machine-learning-systems.md",
+    "title": "Building Healthcare ML Systems: From Sepsis Prediction to Low-Resource Clinical Deployment",
+    "short": "Bridging Data Science and Healthcare",
+    "season": 16,
+    "episode": 2,
+    "guest_ids": [
+      "elenistamatelou"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-1-building-ml-communities-diversity-and-career-growth",
+    "source_file": "_podcast/building-ml-communities-diversity-and-career-growth.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-ml-communities-diversity-and-career-growth.md",
+    "title": "How to Build & Scale a Data Science Community: Diversity, ML Deployment & Career Growth",
+    "short": "Accelerating the Adoption of AI through Diversity",
+    "season": 13,
+    "episode": 1,
+    "guest_ids": [
+      "daniameira"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-4-building-mlops-startup",
+    "source_file": "_podcast/building-mlops-startup.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-mlops-startup.md",
+    "title": "How to Build a Successful ML Startup: MLOps, Model Monitoring, Open Source & Founder Fit",
+    "short": "I Want to Build a Machine Learning Startup!",
+    "season": 4,
+    "episode": 4,
+    "guest_ids": [
+      "elenasamuylova"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-4-building-open-source-data-product-for-identity-resolution",
+    "source_file": "_podcast/building-open-source-data-product-for-identity-resolution.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-open-source-data-product-for-identity-resolution.md",
+    "title": "Building an Open-Source ML-Powered Identity Resolution Tool in the Modern Data Stack",
+    "short": "Building an Open-Source ML-Powered Identity Resolution Tool",
+    "season": 11,
+    "episode": 4,
+    "guest_ids": [
+      "sonalgoyal"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-9-building-open-source-nlp-tool",
+    "source_file": "_podcast/building-open-source-nlp-tool.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-open-source-nlp-tool.md",
+    "title": "Build Open-Source NLP Tools: Weak Supervision, LLM Heuristics & Enterprise ML Product Strategy",
+    "short": "Build Open-Source NLP Tools",
+    "season": 13,
+    "episode": 9,
+    "guest_ids": [
+      "johanneshotter"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-8-building-production-ml-platform-and-mlops-team",
+    "source_file": "_podcast/building-production-ml-platform-and-mlops-team.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-production-ml-platform-and-mlops-team.md",
+    "title": "Building Production ML Platforms: Infrastructure, Workflows, Teams & Governance That Scale",
+    "short": "From Scratch to Success: Building an MLOps Team and ML Platform",
+    "season": 14,
+    "episode": 8,
+    "guest_ids": [
+      "simonstiebellehner"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-9-building-production-search-systems",
+    "source_file": "_podcast/building-production-search-systems.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-production-search-systems.md",
+    "title": "Building Search Systems: Dense Embeddings, MLOps and Evaluation Metrics",
+    "short": "Building Production Search Systems",
+    "season": 17,
+    "episode": 9,
+    "guest_ids": [
+      "danielsvonava"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-1-building-scalable-and-reliable-machine-learning-systems",
+    "source_file": "_podcast/building-scalable-and-reliable-machine-learning-systems.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/building-scalable-and-reliable-machine-learning-systems.md",
+    "title": "Build Scalable, Reliable ML Systems (MLOps): Design Docs, Data Strategy & Edge Constraints",
+    "short": "Building Scalable and Reliable Machine Learning Systems",
+    "season": 14,
+    "episode": 1,
+    "guest_ids": [
+      "arsenykravchenko"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-6-causal-inference-for-machine-learning",
+    "source_file": "_podcast/causal-inference-for-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/causal-inference-for-machine-learning.md",
+    "title": "Causal Inference for Real-World ML: Uplift Modeling, Counterfactuals, Treatment Effects & LLM Integration",
+    "short": "Democratizing Causality",
+    "season": 15,
+    "episode": 6,
+    "guest_ids": [
+      "aleksandermolak"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-9-chief-data-officer-data-strategy-and-org-design",
+    "source_file": "_podcast/chief-data-officer-data-strategy-and-org-design.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/chief-data-officer-data-strategy-and-org-design.md",
+    "title": "Mastering the Chief Data Officer Role: Build Data Strategy, Org Design & AI",
+    "short": "Chief Data Officer",
+    "season": 4,
+    "episode": 9,
+    "guest_ids": [
+      "marcodesa"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-10-cloud-data-governance",
+    "source_file": "_podcast/cloud-data-governance.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/cloud-data-governance.md",
+    "title": "How to Build Data Governance in the Cloud: Classification, Catalogs, Policies & ROI",
+    "short": "Data Governance",
+    "season": 3,
+    "episode": 10,
+    "guest_ids": [
+      "jessiashdown",
+      "urigilad"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "18-5-community-building-and-teaching-in-ai-tech",
+    "source_file": "_podcast/community-building-and-teaching-in-ai-tech.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/community-building-and-teaching-in-ai-tech.md",
+    "title": "Community Building and Teaching in AI & Tech: Project-to-Course Model for AI Education",
+    "short": "Community Building and Teaching in AI & Tech",
+    "season": 18,
+    "episode": 5,
+    "guest_ids": [
+      "erumafzal"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "1-2-crisp-dm",
+    "source_file": "_podcast/crisp-dm.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/crisp-dm.md",
+    "title": "CRISP-DM Methodology for Data Science Projects: Business Understanding, Data Preparation, Modeling, Evaluation & Deployment",
+    "short": "Processes in a Data Science Project",
+    "season": 1,
+    "episode": 2,
+    "guest_ids": [
+      "alexeygrigorev"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-3-data-centric-ai",
+    "source_file": "_podcast/data-centric-ai.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-centric-ai.md",
+    "title": "Data-Centric AI: Improve Label Quality & Edit Datasets to Boost Model Performance",
+    "short": "Data-Centric AI",
+    "season": 12,
+    "episode": 3,
+    "guest_ids": [
+      "marysiawinkels"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-4-data-consulting-business-pricing-and-client-acquisition",
+    "source_file": "_podcast/data-consulting-business-pricing-and-client-acquisition.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-consulting-business-pricing-and-client-acquisition.md",
+    "title": "Build a Data Consulting Business: Customer Validation, User Interviews & Pricing Strategy",
+    "short": "Starting a Consultancy in the Data Space",
+    "season": 13,
+    "episode": 4,
+    "guest_ids": [
+      "aleksanderkruszelnicki"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-8-data-engineering-career-path-and-skills",
+    "source_file": "_podcast/data-engineering-career-path-and-skills.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-engineering-career-path-and-skills.md",
+    "title": "Build a Data Engineering Career: Bootcamp Curriculum, SQL Mastery & Interview Prep",
+    "short": "Teaching Data Engineers",
+    "season": 8,
+    "episode": 8,
+    "guest_ids": [
+      "jeffkatz"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-7-data-engineering-leadership-and-modern-data-platforms",
+    "source_file": "_podcast/data-engineering-leadership-and-modern-data-platforms.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-engineering-leadership-and-modern-data-platforms.md",
+    "title": "Data Engineering Leadership: Scale ETL to ELT, Build Robust Data Platforms & Teams",
+    "short": "Becoming a Data Engineering Manager",
+    "season": 7,
+    "episode": 7,
+    "guest_ids": [
+      "16rahuljain"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-2-data-engineering-tools-modern-data-stack",
+    "source_file": "_podcast/data-engineering-tools-modern-data-stack.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-engineering-tools-modern-data-stack.md",
+    "title": "ETL vs ELT & Data Lake vs Warehouse: Airbyte, dbt, CDC for Modern Data Engineering",
+    "short": "Making Sense of Data Engineering Acronyms and Buzzwords",
+    "season": 5,
+    "episode": 2,
+    "guest_ids": [
+      "nataliekwong"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-9-data-freelancing-career-strategy-market-demand-and-client-acquisition",
+    "source_file": "_podcast/data-freelancing-career-strategy-market-demand-and-client-acquisition.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-freelancing-career-strategy-market-demand-and-client-acquisition.md",
+    "title": "Building a Sustainable Data Freelancing Career: Market Validation, Client Acquisition & Strategic Positioning",
+    "short": "Taking your Freelance Career to the Next Level",
+    "season": 20,
+    "episode": 9,
+    "guest_ids": [
+      "dimitrivisnadi"
+    ],
+    "question_count": 22,
+    "categories": [
+      "business_impact",
+      "current_focus",
+      "future_outlook",
+      "general",
+      "organizational_reality",
+      "practical_advice",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "14-4-data-governance-data-access-management",
+    "source_file": "_podcast/data-governance-data-access-management.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-governance-data-access-management.md",
+    "title": "Data Governance & Data Access Management: Access Controls, Data Catalogs & Access-as-Code",
+    "short": "Data Governance & Data Access Management",
+    "season": 14,
+    "episode": 4,
+    "guest_ids": [
+      "bartvandekerckhove"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-2-data-interview-behavioral-and-portfolio-prep-guide",
+    "source_file": "_podcast/data-interview-behavioral-and-portfolio-prep-guide.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-interview-behavioral-and-portfolio-prep-guide.md",
+    "title": "Ace Data Interviews: Behavioral STARs, Case Strategy, Portfolios & Cold Emails",
+    "short": "Ace Non-Technical Data Science Interviews",
+    "season": 6,
+    "episode": 2,
+    "guest_ids": [
+      "nicksingh"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-8-data-journalism-python-visualization-storytelling",
+    "source_file": "_podcast/data-journalism-python-visualization-storytelling.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-journalism-python-visualization-storytelling.md",
+    "title": "Practical Data Journalism: Sourcing, Storytelling, Visualization & Tools (Python, Tableau)",
+    "short": "Technical Writing and Data Journalism",
+    "season": 11,
+    "episode": 8,
+    "guest_ids": [
+      "angelicaloduca"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "18-1-data-leadership-coaching",
+    "source_file": "_podcast/data-leadership-coaching.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-leadership-coaching.md",
+    "title": "Data Leadership Coaching: Transition to Manager, Stakeholder Skills and Team Impact",
+    "short": "Inclusive Data Leadership Coaching",
+    "season": 18,
+    "episode": 1,
+    "guest_ids": [
+      "terezaiofciu"
+    ],
+    "question_count": 39,
+    "categories": [
+      "background",
+      "general",
+      "organizational_reality",
+      "practical_advice",
+      "story_moments",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "3-8-data-led-growth-event-tracking-and-reverse-etl",
+    "source_file": "_podcast/data-led-growth-event-tracking-and-reverse-etl.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-led-growth-event-tracking-and-reverse-etl.md",
+    "title": "How to Build a Data-Led Growth Stack: Event Tracking, Tracking Plans & Reverse ETL",
+    "short": "Becoming a Data-led Professional",
+    "season": 3,
+    "episode": 8,
+    "guest_ids": [
+      "arpitchoudhury"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-6-data-mesh-architecture-decentralized-data-products",
+    "source_file": "_podcast/data-mesh-architecture-decentralized-data-products.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-mesh-architecture-decentralized-data-products.md",
+    "title": "Data Mesh Implementation: Build Decentralized Data Products, Contracts & Federated Governance",
+    "short": "Data Mesh 101",
+    "season": 10,
+    "episode": 6,
+    "guest_ids": [
+      "zhamakdehghani"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-2-data-privacy-engineering-gdpr-machine-learning",
+    "source_file": "_podcast/data-privacy-engineering-gdpr-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-privacy-engineering-gdpr-machine-learning.md",
+    "title": "Data Privacy Playbook: Differential Privacy, Federated Learning, PETs & Consent UX",
+    "short": "Practical Data Privacy",
+    "season": 14,
+    "episode": 2,
+    "guest_ids": [
+      "katharinejarmul"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-2-data-professionals-business-skills-in-saas",
+    "source_file": "_podcast/data-professionals-business-skills-in-saas.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-professionals-business-skills-in-saas.md",
+    "title": "Practical Skills for Data Professionals in SaaS: Bridging the Gap between Data and Business",
+    "short": "Practical Skills for Data Professionals in SaaS",
+    "season": 12,
+    "episode": 2,
+    "guest_ids": [
+      "lorismarini"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-3-data-quality-data-observability-data-reliability",
+    "source_file": "_podcast/data-quality-data-observability-data-reliability.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-quality-data-observability-data-reliability.md",
+    "title": "Data Observability Explained: 5 Pillars to Prevent Downtime, Drift & False Positives",
+    "short": "Data Observability: The Next Frontier of Data Engineering",
+    "season": 3,
+    "episode": 3,
+    "guest_ids": [
+      "barrmoses"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-2-data-science-and-analytics-for-nonprofits-tech-for-good",
+    "source_file": "_podcast/data-science-and-analytics-for-nonprofits-tech-for-good.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-and-analytics-for-nonprofits-tech-for-good.md",
+    "title": "Analytics for Nonprofits: Build Data Maturity, Teams, Tools & Optimization Strategies",
+    "short": "Analytics for a Better World",
+    "season": 13,
+    "episode": 2,
+    "guest_ids": [
+      "parvathykrishnan"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-7-data-science-career-abc-framework",
+    "source_file": "_podcast/data-science-career-abc-framework.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-career-abc-framework.md",
+    "title": "Data Science Career Guide: ABC Framework (Analyst, Builder, Consultant) & Transition Tips",
+    "short": "The ABC’s of Data Science",
+    "season": 2,
+    "episode": 7,
+    "guest_ids": [
+      "dannyma"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-9-data-science-failures-and-mlops-lessons",
+    "source_file": "_podcast/data-science-failures-and-mlops-lessons.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-failures-and-mlops-lessons.md",
+    "title": "Turn Data Science Project Failures into Career Wins: Production Lessons, MLOps Fixes & Framing Failures on LinkedIn",
+    "short": "What Data Scientists Don’t Mention in Their LinkedIn Profiles",
+    "season": 3,
+    "episode": 9,
+    "guest_ids": [
+      "yurykashnitsky"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-1-data-science-for-public-policy-ethical-ai-social-impact",
+    "source_file": "_podcast/data-science-for-public-policy-ethical-ai-social-impact.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-for-public-policy-ethical-ai-social-impact.md",
+    "title": "Data Science for Public Policy — Ethical AI, Climate Justice & Impact Projects",
+    "short": "Data Science for Social Impact",
+    "season": 10,
+    "episode": 1,
+    "guest_ids": [
+      "christinecepelak"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-4-data-science-interview-and-cv-guide",
+    "source_file": "_podcast/data-science-interview-and-cv-guide.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-interview-and-cv-guide.md",
+    "title": "Data Science Interview Guide: CV Optimization, Take-Home Projects, Mock Interviews & Negotiation",
+    "short": "Data Science Interview Guide: CV Optimization, Take-Home Projects, Mock Interviews & Negotiation",
+    "season": 3,
+    "episode": 4,
+    "guest_ids": [
+      "olegnovikov"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-2-data-science-job-red-flags-and-mismatched-roles",
+    "source_file": "_podcast/data-science-job-red-flags-and-mismatched-roles.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-job-red-flags-and-mismatched-roles.md",
+    "title": "Data Science Jobs: How to Spot Misleading Job Titles, Hiring Red Flags & Build Better Data Teams",
+    "short": "How to Spot Misleading Job Titles, Hiring Red Flags & Build Better Data Teams",
+    "season": 10,
+    "episode": 2,
+    "guest_ids": [
+      "terezaiofciu"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-9-data-science-leadership-hiring-mlops",
+    "source_file": "_podcast/data-science-leadership-hiring-mlops.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-leadership-hiring-mlops.md",
+    "title": "Data Science Leadership: Product-First ML, Recommenders & RTB, MLOps, Hiring & Mentoring",
+    "short": "Becoming a Data Science Manager",
+    "season": 6,
+    "episode": 9,
+    "guest_ids": [
+      "marianosemelman"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-6-data-science-management-and-agile-machine-learning",
+    "source_file": "_podcast/data-science-management-and-agile-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-management-and-agile-machine-learning.md",
+    "title": "Master Data Science Management: Agile ML, Debrief Culture, Metrics & Scale to Production",
+    "short": "The Secret Sauce of Data Science Management",
+    "season": 13,
+    "episode": 6,
+    "guest_ids": [
+      "shirmeirlador"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-3-data-science-manager-vs-expert-hiring-guide",
+    "source_file": "_podcast/data-science-manager-vs-expert-hiring-guide.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-manager-vs-expert-hiring-guide.md",
+    "title": "Data Science Manager vs Expert: Hiring Strategy, Skills, Team Building & When to Use ML",
+    "short": "Data Science Manager vs Data Science Expert",
+    "season": 6,
+    "episode": 3,
+    "guest_ids": [
+      "barbarasobkowiak"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-7-data-science-team-structure-and-org-design",
+    "source_file": "_podcast/data-science-team-structure-and-org-design.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-science-team-structure-and-org-design.md",
+    "title": "Designing High-Impact Data Science Teams: Centralized vs Embedded Models, Experimentation & Staffing",
+    "short": "Designing a Data Science Team",
+    "season": 9,
+    "episode": 7,
+    "guest_ids": [
+      "lisacohen"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-5-data-scientist-and-indie-hacker-bootstrapping-side-projects",
+    "source_file": "_podcast/data-scientist-and-indie-hacker-bootstrapping-side-projects.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-scientist-and-indie-hacker-bootstrapping-side-projects.md",
+    "title": "Indie Hacking and Bootstrapping Side Projects for Data Scientists: Build, Launch & Monetize Indie Hacker Products",
+    "short": "Indie Hacking and Bootstrapping Side Projects for Data Scientists",
+    "season": 12,
+    "episode": 5,
+    "guest_ids": [
+      "paulineclavelloux"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-3-data-strategy-and-dataops-for-ai-powered-products",
+    "source_file": "_podcast/data-strategy-and-dataops-for-ai-powered-products.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-strategy-and-dataops-for-ai-powered-products.md",
+    "title": "Actionable Data Strategy & DataOps for AI-Powered Products: Pitch, Measure, Use GPT",
+    "short": "Data Strategy: Key Principles and Best Practices",
+    "season": 14,
+    "episode": 3,
+    "guest_ids": [
+      "boyanangelov"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "1-1-data-team-roles",
+    "source_file": "_podcast/data-team-roles.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-team-roles.md",
+    "title": "Data Team Roles Explained: Skills, Responsibilities, and How Teams Ship ML Products",
+    "short": "Roles in a Data Team",
+    "season": 1,
+    "episode": 1,
+    "guest_ids": [
+      "alexeygrigorev"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-4-data-translator-role-and-data-strategy",
+    "source_file": "_podcast/data-translator-role-and-data-strategy.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/data-translator-role-and-data-strategy.md",
+    "title": "Data Strategist Guide: Effective Communication to Bridge Data Teams & Management for Data-Driven Growth",
+    "short": "Data Strategist Guide to Driving Growth: Prototypes, MVPs & Building Data Trust",
+    "season": 3,
+    "episode": 4,
+    "guest_ids": [
+      "liorbarak"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-3-dataops-and-gitops-best-practices-for-data-teams",
+    "source_file": "_podcast/dataops-and-gitops-best-practices-for-data-teams.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/dataops-and-gitops-best-practices-for-data-teams.md",
+    "title": "DataOps & GitOps for Data Teams: Onboarding, IaC, Reproducibility & Production Best Practices",
+    "short": "From Data Science to DataOps",
+    "season": 11,
+    "episode": 3,
+    "guest_ids": [
+      "tomaszhinc"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-5-dataops-automation-and-reliable-data-pipelines",
+    "source_file": "_podcast/dataops-automation-and-reliable-data-pipelines.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/dataops-automation-and-reliable-data-pipelines.md",
+    "title": "Mastering DataOps: Automation, Observability & CI/CD for Reliable Data Pipelines",
+    "short": "Storytime for DataOps",
+    "season": 8,
+    "episode": 5,
+    "guest_ids": [
+      "christopherbergh"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "18-9-dataops-for-data-engineering",
+    "source_file": "_podcast/dataops-for-data-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/dataops-for-data-engineering.md",
+    "title": "DataOps for Data Engineering: Automation, Observability, CI/CD & Reliable ML Deployments",
+    "short": "DataOps, Observability, and The Cure for Data Team Blues",
+    "season": 18,
+    "episode": 9,
+    "guest_ids": [
+      "christopherbergh"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-11-dataops-principles-and-scalable-data-platforms",
+    "source_file": "_podcast/dataops-principles-and-scalable-data-platforms.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/dataops-principles-and-scalable-data-platforms.md",
+    "title": "DataOps 101 for Scaling Data Platforms: Immutable Pipelines, Self-Service Lakehouse & Reproducibility",
+    "short": "DataOps 101",
+    "season": 2,
+    "episode": 11,
+    "guest_ids": [
+      "larsalbertsson"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-1-datatalksclub-building-scaling-data-community",
+    "source_file": "_podcast/datatalksclub-building-scaling-data-community.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/datatalksclub-building-scaling-data-community.md",
+    "title": "DataTalks.Club Behind the Scenes: Alexey Grigorev on Scaling and Growing the Community",
+    "short": "DataTalks.Club Behind the Scenes",
+    "season": 7,
+    "episode": 1,
+    "guest_ids": [
+      "eugeneyan",
+      "alexeygrigorev"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-1-datatalksclub-building-sustainable-data-community-3-years-anniversary",
+    "source_file": "_podcast/datatalksclub-building-sustainable-data-community-3-years-anniversary.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/datatalksclub-building-sustainable-data-community-3-years-anniversary.md",
+    "title": "Building a Sustainable Data Community: 3 Years of DataTalks.Club Growth and Evolution",
+    "short": "DataTalks.Club Anniversary Interview",
+    "season": 16,
+    "episode": 1,
+    "guest_ids": [
+      "alexeygrigorev",
+      "johannabayer"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-3-datatalksclub-scaling-and-free-courses",
+    "source_file": "_podcast/datatalksclub-scaling-and-free-courses.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/datatalksclub-scaling-and-free-courses.md",
+    "title": "Inside Scaling DataTalks.Club: How We Built Free Data Engineering, MLOps & LLM Courses",
+    "short": "DataTalks.Club Anniversary Podcast",
+    "season": 19,
+    "episode": 3,
+    "guest_ids": [
+      "alexeygrigorev"
+    ],
+    "question_count": 10,
+    "categories": [
+      "general",
+      "practical_advice",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "15-3-deploying-llms-in-production-fine-tuning-retrieval-open-source-api",
+    "source_file": "_podcast/deploying-llms-in-production-fine-tuning-retrieval-open-source-api.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/deploying-llms-in-production-fine-tuning-retrieval-open-source-api.md",
+    "title": "Deploying LLMs in Production: Fine-Tuning, Retrieval & Open-Source vs API Tradeoffs",
+    "short": "LLMs for Everyone",
+    "season": 15,
+    "episode": 3,
+    "guest_ids": [
+      "meryemarik"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-7-developer-personal-brand-learn-in-public",
+    "source_file": "_podcast/developer-personal-brand-learn-in-public.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/developer-personal-brand-learn-in-public.md",
+    "title": "Learn in Public: Personal Branding & Career Marketing for Developers",
+    "short": "Learn in Public: Personal Branding & Career Marketing for Developers",
+    "season": 3,
+    "episode": 7,
+    "guest_ids": [
+      "swyx"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-2-devrel-data-science-open-source-tools",
+    "source_file": "_podcast/devrel-data-science-open-source-tools.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/devrel-data-science-open-source-tools.md",
+    "title": "DevRel for Data Science: Build Community, Create Content, and Grow Your Career",
+    "short": "Developer Advocacy for Data Science",
+    "season": 2,
+    "episode": 2,
+    "guest_ids": [
+      "elleobrien"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-6-devrel-open-source-machine-learning",
+    "source_file": "_podcast/devrel-open-source-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/devrel-open-source-machine-learning.md",
+    "title": "DevRel Role for Machine Learning: ML Ecosystems, Open-Source Governance & Developer Experience with Metaflow",
+    "short": "DevRel Role for Machine Learning",
+    "season": 14,
+    "episode": 6,
+    "guest_ids": [
+      "hugobowneanderson"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-9-fairness-in-ai-ml-engineering",
+    "source_file": "_podcast/fairness-in-ai-ml-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/fairness-in-ai-ml-engineering.md",
+    "title": "Fairness in AI/ML Engineering: Interpretability, Metrics and Sociotechnical Design",
+    "short": "Linguistics and Fairness",
+    "season": 19,
+    "episode": 9,
+    "guest_ids": [
+      "tamaraatanasoska"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-9-feature-engineering-model-monitoring-and-data-governance",
+    "source_file": "_podcast/feature-engineering-model-monitoring-and-data-governance.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/feature-engineering-model-monitoring-and-data-governance.md",
+    "title": "Practical Data Science & ML: Feature Engineering, Model Monitoring, Data Governance & Storytelling",
+    "short": "Building Business Acumen for Data Professionals",
+    "season": 5,
+    "episode": 9,
+    "guest_ids": [
+      "thomives"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-6-finops-for-data-engineers",
+    "source_file": "_podcast/finops-for-data-engineers.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/finops-for-data-engineers.md",
+    "title": "FinOps for Data Engineers: Optimize Cloud Costs, BigQuery & Modern Data Stack",
+    "short": "From Supply Chain Management to Digital Warehousing and FinOps",
+    "season": 20,
+    "episode": 6,
+    "guest_ids": [
+      "eddyzulkifly"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-4-freelance-data-engineering-pricing-and-clients",
+    "source_file": "_podcast/freelance-data-engineering-pricing-and-clients.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/freelance-data-engineering-pricing-and-clients.md",
+    "title": "Freelance Data Engineering Playbook: Pricing, Client Acquisition & Tools",
+    "short": "Freelancing and Consulting with Data Engineering",
+    "season": 9,
+    "episode": 4,
+    "guest_ids": [
+      "adrianbrudaru"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-8-freelancing-in-machine-learning",
+    "source_file": "_podcast/freelancing-in-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/freelancing-in-machine-learning.md",
+    "title": "Freelancing in Machine Learning: Pricing, Client Acquisition & Proposals",
+    "short": "Freelancing in Machine Learning",
+    "season": 4,
+    "episode": 8,
+    "guest_ids": [
+      "mikiobraun"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-9-from-academia-to-staff-ai-engineer-interviews-and-career-growth",
+    "source_file": "_podcast/from-academia-to-staff-ai-engineer-interviews-and-career-growth.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-academia-to-staff-ai-engineer-interviews-and-career-growth.md",
+    "title": "Transitioning from Academia to Industry as a Staff AI Engineer: Interview Prep, MLOps & Onboarding",
+    "short": "Transitioning from Academia to Industry as a Staff AI Engineer",
+    "season": 12,
+    "episode": 9,
+    "guest_ids": [
+      "tatianagabruseva"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "21-1-from-academic-research-to-data-engineering-freelancing",
+    "source_file": "_podcast/from-academic-research-to-data-engineering-freelancing.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-academic-research-to-data-engineering-freelancing.md",
+    "title": "From Academic Research to Lean Data Consulting: MVP Strategy, Problem-First Thinking & Freelance Practice Building",
+    "short": "From Simulation Algorithms to Production-Grade Data Systems",
+    "season": 21,
+    "episode": 1,
+    "guest_ids": [
+      "orellgarten"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-7-from-biology-to-machine-learning-data-science-portfolio-open-source-computer-vision-transformers",
+    "source_file": "_podcast/from-biology-to-machine-learning-data-science-portfolio-open-source-computer-vision-transformers.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-biology-to-machine-learning-data-science-portfolio-open-source-computer-vision-transformers.md",
+    "title": "From Biology to ML: Build a Data Science Portfolio with Open-Source, Computer Vision & Transformers",
+    "short": "Career advice, learning, and featuring women in ML and AI",
+    "season": 19,
+    "episode": 7,
+    "guest_ids": [
+      "isabellabicalho"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "22-2-from-computer-vision-research-to-autonomous-driving-ai",
+    "source_file": "_podcast/from-computer-vision-research-to-autonomous-driving-ai.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-computer-vision-research-to-autonomous-driving-ai.md",
+    "title": "Applying Computer Vision Research to Building Production-Ready AI Systems for Real-World Deployment",
+    "short": "Lessons from Applied AI: Tesla, Waymo, and Beyond",
+    "season": 22,
+    "episode": 2,
+    "guest_ids": [
+      "aishwaryajadhav"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-1-from-data-freelancer-to-startup-open-source-products",
+    "source_file": "_podcast/from-data-freelancer-to-startup-open-source-products.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-data-freelancer-to-startup-open-source-products.md",
+    "title": "From Data Freelancer to Startup: Open-Source Products and Bottom-Up Adoption",
+    "short": "The Entrepreneurship Journey: From Freelancing to Starting a Company",
+    "season": 17,
+    "episode": 1,
+    "guest_ids": [
+      "adrianbrudaru"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-8-from-devops-to-data-engineering-automation-open-source-volunteering",
+    "source_file": "_podcast/from-devops-to-data-engineering-automation-open-source-volunteering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-devops-to-data-engineering-automation-open-source-volunteering.md",
+    "title": "From DevOps to Data Engineering: Automation, Open Source & Volunteering for Career Transitions",
+    "short": "Career choices, transitions and promotions in and out of tech",
+    "season": 19,
+    "episode": 8,
+    "guest_ids": [
+      "agitajaunzeme"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "21-7-from-game-ai-to-modern-ai-agents",
+    "source_file": "_podcast/from-game-ai-to-modern-ai-agents.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-game-ai-to-modern-ai-agents.md",
+    "title": "From Game AI to LLM Agents: 20-Year Evolution of Multi-Agent Systems, Evolutionary Algorithms & Modern AI Tooling",
+    "short": "Lessons from Two Decades of AI",
+    "season": 21,
+    "episode": 7,
+    "guest_ids": [
+      "micheallanham"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-8-from-iot-data-engineering-to-leading-data-architect",
+    "source_file": "_podcast/from-iot-data-engineering-to-leading-data-architect.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-iot-data-engineering-to-leading-data-architect.md",
+    "title": "From Hands-On IoT Data Engineering to Leading Data Architecture: Pipelines, Cloud Adaptation & Analytics Modeling",
+    "short": "From Data Manager to Data Architect",
+    "season": 15,
+    "episode": 8,
+    "guest_ids": [
+      "loicmagnien"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-5-from-large-hadron-collider-to-data-science-research-software-engineering",
+    "source_file": "_podcast/from-large-hadron-collider-to-data-science-research-software-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-large-hadron-collider-to-data-science-research-software-engineering.md",
+    "title": "From Collider Physics to Data Science: Research Software Engineering, Interview Prep & Mentorship",
+    "short": "Large Hadron Collider and Mentorship",
+    "season": 19,
+    "episode": 5,
+    "guest_ids": [
+      "anastasiakaravdina"
+    ],
+    "question_count": 28,
+    "categories": [
+      "background",
+      "current_focus",
+      "general",
+      "practical_advice",
+      "reflection",
+      "technical_deep_dive",
+      "topic_selection"
+    ]
+  },
+  {
+    "episode_id": "11-7-from-marketing-to-analytics-engineering-sql-dbt-career-switch",
+    "source_file": "_podcast/from-marketing-to-analytics-engineering-sql-dbt-career-switch.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-marketing-to-analytics-engineering-sql-dbt-career-switch.md",
+    "title": "Marketing to Analytics Engineering: DBT, SQL, Data Modeling & Career Playbook",
+    "short": "From Digital Marketing to Analytics Engineering",
+    "season": 11,
+    "episode": 7,
+    "guest_ids": [
+      "nikolamaksimovic"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-9-from-math-graduate-to-data-analytics",
+    "source_file": "_podcast/from-math-graduate-to-data-analytics.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-math-graduate-to-data-analytics.md",
+    "title": "How to Break into Data Analytics: Networking, Portfolio, SQL & Interview Prep",
+    "short": "From Math Teacher to Analytics Engineer",
+    "season": 7,
+    "episode": 9,
+    "guest_ids": [
+      "juanpablo"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-6-from-physics-to-computer-vision-career-transition",
+    "source_file": "_podcast/from-physics-to-computer-vision-career-transition.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-physics-to-computer-vision-career-transition.md",
+    "title": "Switch to Computer Vision & Deep Learning: Roadmap, Kaggle Projects, Mentors & Interview Prep",
+    "short": "From Physics to Machine Learning",
+    "season": 3,
+    "episode": 6,
+    "guest_ids": [
+      "tatianagabruseva"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "21-5-from-radio-astronomy-to-machine-learning-and-data-engineering",
+    "source_file": "_podcast/from-radio-astronomy-to-machine-learning-and-data-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-radio-astronomy-to-machine-learning-and-data-engineering.md",
+    "title": "From Radio Astronomy to Applied ML: MEERKAT Data Pipelines, Multi-Wavelength Cross-Matching & Production-Grade ML Systems",
+    "short": "From Astronomy to Applied ML",
+    "season": 21,
+    "episode": 5,
+    "guest_ids": [
+      "danielegbo"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "21-8-from-semiconductor-data-to-applied-machine-learning",
+    "source_file": "_podcast/from-semiconductor-data-to-applied-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-semiconductor-data-to-applied-machine-learning.md",
+    "title": "From Classical Guitar to Production ML: Nonlinear Career Path Through Semiconductors, Yield Analytics & Community-Driven Learning",
+    "short": "From Semiconductors to Machine Learning: A Career in Data and Teaching",
+    "season": 21,
+    "episode": 8,
+    "guest_ids": [
+      "dashelruizperez"
+    ],
+    "question_count": 14,
+    "categories": [
+      "background",
+      "general",
+      "practical_advice",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "4-1-from-software-engineer-to-machine-learning",
+    "source_file": "_podcast/from-software-engineer-to-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-software-engineer-to-machine-learning.md",
+    "title": "From Software Engineering to Machine Learning: 7 Lessons, Tools, MLOps & Project Roadmap",
+    "short": "From Software Engineering to Machine Learning",
+    "season": 4,
+    "episode": 1,
+    "guest_ids": [
+      "svpino"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-8-from-software-engineering-data-science-to-data-engineering-leadership",
+    "source_file": "_podcast/from-software-engineering-data-science-to-data-engineering-leadership.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-software-engineering-data-science-to-data-engineering-leadership.md",
+    "title": "How to Become a Data Engineer: Skills, MLOps, Pipelines, SQL, CI/CD & Cloud",
+    "short": "From Data Science to Data Engineering",
+    "season": 7,
+    "episode": 8,
+    "guest_ids": [
+      "ellenkonig"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-1-from-software-engineering-to-leading-data-science-teams",
+    "source_file": "_podcast/from-software-engineering-to-leading-data-science-teams.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-software-engineering-to-leading-data-science-teams.md",
+    "title": "Transitioning from Software Engineer to Data Science Manager: Search, ML & Leadership",
+    "short": "From Software Engineer to Data Science Manager",
+    "season": 12,
+    "episode": 1,
+    "guest_ids": [
+      "sadatanwar"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-6-from-software-engineering-to-vp-of-machine-learning-applied-ml-leadership",
+    "source_file": "_podcast/from-software-engineering-to-vp-of-machine-learning-applied-ml-leadership.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-software-engineering-to-vp-of-machine-learning-applied-ml-leadership.md",
+    "title": "From Software Engineer to VP of Machine Learning: Stakeholder Buy-In, Rapid POCs and Full-Stack Skills",
+    "short": "The Unwritten Rules for Success in Machine Learning",
+    "season": 16,
+    "episode": 6,
+    "guest_ids": [
+      "jackblandin"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-5-from-startup-engineering-to-freelance-data-science",
+    "source_file": "_podcast/from-startup-engineering-to-freelance-data-science.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/from-startup-engineering-to-freelance-data-science.md",
+    "title": "Freelance Data Scientist Playbook: MLOps, Model Monitoring, Upwork & Startup Skills",
+    "short": "Lessons Learned from Freelancing and Working in a Start-up",
+    "season": 14,
+    "episode": 5,
+    "guest_ids": [
+      "antonisstellas"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-6-generative-ai-chatbots-in-production-security",
+    "source_file": "_podcast/generative-ai-chatbots-in-production-security.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/generative-ai-chatbots-in-production-security.md",
+    "title": "Hardening Generative AI Chatbots: Prevent Prompt Injection, Data Exfiltration & Hallucinations",
+    "short": "AI in Industry: Trust, Return on Investment and Future",
+    "season": 19,
+    "episode": 6,
+    "guest_ids": [
+      "mariasukhareva"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-9-get-data-analytics-and-data-engineering-job",
+    "source_file": "_podcast/get-data-analytics-and-data-engineering-job.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/get-data-analytics-and-data-engineering-job.md",
+    "title": "How I Landed a Data Engineering Job: Bootcamp, Docker, Airflow, AWS & Interview Tips",
+    "short": "From Academia to Data Analytics and Engineering",
+    "season": 8,
+    "episode": 9,
+    "guest_ids": [
+      "gloriaquiceno"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-3-get-data-engineering-job-prep-and-interview",
+    "source_file": "_podcast/get-data-engineering-job-prep-and-interview.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/get-data-engineering-job-prep-and-interview.md",
+    "title": "Data Engineering Job Prep & Interview Guide: Python, SQL, Portfolio & Job Search Tips",
+    "short": "Getting a Data Engineering Job (Summary and Q&A)",
+    "season": 9,
+    "episode": 3,
+    "guest_ids": [
+      "jeffkatz"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "1-4-get-data-scientist-job",
+    "source_file": "_podcast/get-data-scientist-job.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/get-data-scientist-job.md",
+    "title": "Land Data Scientist Roles: Resumes, Portfolios, Interviews & Recruiter Workflow",
+    "short": "Standing out as a Data Scientist",
+    "season": 1,
+    "episode": 4,
+    "guest_ids": [
+      "lukewhipps"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-4-get-junior-data-job-and-transferable-skills",
+    "source_file": "_podcast/get-junior-data-job-and-transferable-skills.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/get-junior-data-job-and-transferable-skills.md",
+    "title": "Land Junior Data Jobs: CVs, Interviews, Transferable Skills & Overcome Imposter Syndrome",
+    "short": "Career Coaching",
+    "season": 7,
+    "episode": 4,
+    "guest_ids": [
+      "lindsaymcquade"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-2-hiring-and-managing-data-science-teams-in-b2b-saas",
+    "source_file": "_podcast/hiring-and-managing-data-science-teams-in-b2b-saas.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/hiring-and-managing-data-science-teams-in-b2b-saas.md",
+    "title": "How to Hire, Manage, and Grow a Data Science Team in B2B SaaS",
+    "short": "How to Hire, Manage, and Grow a Data Science Team in B2B SaaS",
+    "season": 11,
+    "episode": 2,
+    "guest_ids": [
+      "katiebauer"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-2-hiring-data-scientists-and-analysts",
+    "source_file": "_podcast/hiring-data-scientists-and-analysts.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/hiring-data-scientists-and-analysts.md",
+    "title": "Hiring Data Scientists & Analysts: Talent Pipelines, Job Specs, CV Screening & Salary Tips",
+    "short": "Recruiting Data Professionals",
+    "season": 7,
+    "episode": 2,
+    "guest_ids": [
+      "alicjanotowska"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-6-hiring-for-data-engineering-jobs-in-europe",
+    "source_file": "_podcast/hiring-for-data-engineering-jobs-in-europe.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/hiring-for-data-engineering-jobs-in-europe.md",
+    "title": "Hiring Data Engineers in Europe: Nicolas Rassam on Interviews, Skills & Career Switches",
+    "short": "Recruiting Data Engineers",
+    "season": 8,
+    "episode": 6,
+    "guest_ids": [
+      "nicolasrassam"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-9-hiring-for-data-science-jobs-interview-questions-skills-md",
+    "source_file": "_podcast/hiring-for-data-science-jobs-interview-questions-skills.md.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/hiring-for-data-science-jobs-interview-questions-skills.md.md",
+    "title": "How to Hire Data Scientists: Interview Questions, MLOps, AutoML Limits & Inclusive Hiring",
+    "short": "Hiring Data Science Talent",
+    "season": 9,
+    "episode": 9,
+    "guest_ids": [
+      "olgaivina"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-5-how-to-break-into-data-science",
+    "source_file": "_podcast/how-to-break-into-data-science.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/how-to-break-into-data-science.md",
+    "title": "Data Science Career Playbook: Job Hunt, Portfolios, DALL·E 2 & Overcoming FOMO",
+    "short": "Data Scientists at Work",
+    "season": 9,
+    "episode": 5,
+    "guest_ids": [
+      "misraturp"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-7-how-to-grow-your-ml-engineering-career",
+    "source_file": "_podcast/how-to-grow-your-ml-engineering-career.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/how-to-grow-your-ml-engineering-career.md",
+    "title": "How to Grow Your ML Engineering Career: Platform Work, LLM Workflows & Debugging Skills",
+    "short": "How to Grow Your ML Engineering Career",
+    "season": 12,
+    "episode": 7,
+    "guest_ids": [
+      "krzysztofszafanek"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-2-how-to-stand-out-in-data-science",
+    "source_file": "_podcast/how-to-stand-out-in-data-science.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/how-to-stand-out-in-data-science.md",
+    "title": "Data Science Career Playbook: Build Unique IoT Portfolios, Explainable AI, OSINT & LinkedIn Growth",
+    "short": "Hacking Your Data Career",
+    "season": 8,
+    "episode": 2,
+    "guest_ids": [
+      "marijnmarkus"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-7-how-to-switch-to-ml-tech-without-experience",
+    "source_file": "_podcast/how-to-switch-to-ml-tech-without-experience.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/how-to-switch-to-ml-tech-without-experience.md",
+    "title": "How to Switch to Tech: Community Meetups, Open Source Fellowships & Landing an Ecosia Internship",
+    "short": "From Roasting Coffee to Backend Development",
+    "season": 8,
+    "episode": 7,
+    "guest_ids": [
+      "jessicagreene"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-1-how-to-transition-into-ml-and-data-engineering-from-qa",
+    "source_file": "_podcast/how-to-transition-into-ml-and-data-engineering-from-qa.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/how-to-transition-into-ml-and-data-engineering-from-qa.md",
+    "title": "Transition from QA to Machine Learning & Data Engineering: Projects, Cloud & Interview Prep",
+    "short": "From Testing Phones to Managing NLP Projects",
+    "season": 11,
+    "episode": 1,
+    "guest_ids": [
+      "alvaronavaspeire"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-6-hugging-face-contributions-and-nlp-portfolio",
+    "source_file": "_podcast/hugging-face-contributions-and-nlp-portfolio.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/hugging-face-contributions-and-nlp-portfolio.md",
+    "title": "Contribute to Hugging Face & Build an NLP Portfolio: Open Source, Datasets, Spaces",
+    "short": "Developer Advocacy Engineer for Open-Source",
+    "season": 9,
+    "episode": 6,
+    "guest_ids": [
+      "mervenoyan"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-2-human-centered-ai-automatic-speech-recognition",
+    "source_file": "_podcast/human-centered-ai-automatic-speech-recognition.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/human-centered-ai-automatic-speech-recognition.md",
+    "title": "Human-Centered Speech Recognition: ASR for Disordered Speech and Accents",
+    "short": "Human-Centered AI for Disordered Speech Recognition",
+    "season": 19,
+    "episode": 2,
+    "guest_ids": [
+      "katarzynaforemniak"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-6-human-centered-mlops-and-model-monitoring",
+    "source_file": "_podcast/human-centered-mlops-and-model-monitoring.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/human-centered-mlops-and-model-monitoring.md",
+    "title": "Master Human-Centered MLOps: Stakeholder Buy-In, Monitoring, Debugging & Incident Response",
+    "short": "Humans in the Loop",
+    "season": 4,
+    "episode": 6,
+    "guest_ids": [
+      "linaweichbrodt"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-8-industrial-data-small-data-production-machine-learning",
+    "source_file": "_podcast/industrial-data-small-data-production-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/industrial-data-small-data-production-machine-learning.md",
+    "title": "Master Industrial Data: Synthetic Tabular Data, Small-Data Modeling, Sensors & MLOps",
+    "short": "Navigating Industrial Data Challenges",
+    "season": 13,
+    "episode": 8,
+    "guest_ids": [
+      "rosonaeldred"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-7-interpretable-machine-learning",
+    "source_file": "_podcast/interpretable-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/interpretable-machine-learning.md",
+    "title": "Interpretable Machine Learning: SHAP, Conformal Prediction and Model Trust",
+    "short": null,
+    "season": 16,
+    "episode": 7,
+    "guest_ids": [
+      "christophmolnar"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-2-investing-in-open-source-developer-tools",
+    "source_file": "_podcast/investing-in-open-source-developer-tools.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/investing-in-open-source-developer-tools.md",
+    "title": "Early-Stage Investing in Open Source Developer Tools: Deal Sourcing, Due Diligence & Commercialization Models",
+    "short": "Investing in Open-Source Data Tools",
+    "season": 15,
+    "episode": 2,
+    "guest_ids": [
+      "belawiertz"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-6-job-search-strategy-in-tech-projects-skills-cv-networking",
+    "source_file": "_podcast/job-search-strategy-in-tech-projects-skills-cv-networking.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/job-search-strategy-in-tech-projects-skills-cv-networking.md",
+    "title": "Tech Job Search Strategy: Portfolio Projects, Resume Tips and Networking",
+    "short": "Accelerating The Job Hunt for The Perfect Job in Tech",
+    "season": 17,
+    "episode": 6,
+    "guest_ids": [
+      "sarahmestiri"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-2-kaggle-grandmaster-to-production-ml-and-education",
+    "source_file": "_podcast/kaggle-grandmaster-to-production-ml-and-education.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/kaggle-grandmaster-to-production-ml-and-education.md",
+    "title": "From Kaggle Grandmaster to Production ML: Competition Rigor, System Design & Large-Scale Education",
+    "short": "Competitive Machine Learning and Teaching",
+    "season": 20,
+    "episode": 2,
+    "guest_ids": [
+      "alexanderguschin"
+    ],
+    "question_count": 35,
+    "categories": [
+      "background",
+      "current_focus",
+      "general",
+      "organizational_reality",
+      "practical_advice",
+      "technical_deep_dive",
+      "topic_selection"
+    ]
+  },
+  {
+    "episode_id": "18-2-knowledge-graphs-and-llms-for-automotive-rnd",
+    "source_file": "_podcast/knowledge-graphs-and-llms-for-automotive-rnd.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/knowledge-graphs-and-llms-for-automotive-rnd.md",
+    "title": "Using Knowledge Graphs & LLMs for Automotive R&D: RAG, Graph ML & Crash Simulation",
+    "short": "Knowledge Graphs and LLMs Across Academia and Industry",
+    "season": 18,
+    "episode": 2,
+    "guest_ids": [
+      "anahitapakiman"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-8-last-mile-data-delivery-and-data-product-adoption-modern-data-stack",
+    "source_file": "_podcast/last-mile-data-delivery-and-data-product-adoption-modern-data-stack.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/last-mile-data-delivery-and-data-product-adoption-modern-data-stack.md",
+    "title": "Last-Mile Data Delivery for the Modern Data Stack: Build Data Products to Boost Adoption",
+    "short": "Conquering the Last Mile in Data",
+    "season": 5,
+    "episode": 8,
+    "guest_ids": [
+      "caitlinmoorman"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-7-launch-and-build-retail-startup",
+    "source_file": "_podcast/launch-and-build-retail-startup.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/launch-and-build-retail-startup.md",
+    "title": "Build a Grocery Retail OS to Cut Supermarket Food Waste & Scale Your Startup",
+    "short": "Launching a Startup: From Idea to First Hire",
+    "season": 4,
+    "episode": 7,
+    "guest_ids": [
+      "carminepaolino"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-4-lean-mlops-for-startups",
+    "source_file": "_podcast/lean-mlops-for-startups.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/lean-mlops-for-startups.md",
+    "title": "Lean MLOps for Startups: SaaS-First MVP Stack, Avoid Vendor Lock-In & Manage Tech Debt",
+    "short": "MLOps in Corporations and Startups",
+    "season": 20,
+    "episode": 4,
+    "guest_ids": [
+      "nemanjaradojkovic"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-7-learning-machine-learning-self-taught-bioinformatics",
+    "source_file": "_podcast/learning-machine-learning-self-taught-bioinformatics.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/learning-machine-learning-self-taught-bioinformatics.md",
+    "title": "How to Teach Yourself Bioinformatics & ML: Project-First Learning, Resources, and MLOps",
+    "short": "Mastering Self-Learning in Machine Learning",
+    "season": 13,
+    "episode": 7,
+    "guest_ids": [
+      "aaishamuhammad"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-6-machine-learning-data-science-interview-prep",
+    "source_file": "_podcast/machine-learning-data-science-interview-prep.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/machine-learning-data-science-interview-prep.md",
+    "title": "Master Machine Learning & Data Science Interviews: Recruiter-Proven Stages, Prep & Resources",
+    "short": "Master Machine Learning & Data Science Interviews",
+    "season": 12,
+    "episode": 6,
+    "guest_ids": [
+      "lukewhipps"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-6-machine-learning-decision-optimization",
+    "source_file": "_podcast/machine-learning-decision-optimization.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/machine-learning-decision-optimization.md",
+    "title": "Optimize Decisions with ML: Prescriptive & Robust Optimization for Supply Chain and Pricing",
+    "short": "Decision Optimization",
+    "season": 2,
+    "episode": 6,
+    "guest_ids": [
+      "danbecker"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-5-machine-learning-engineering-production-best-practices",
+    "source_file": "_podcast/machine-learning-engineering-production-best-practices.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/machine-learning-engineering-production-best-practices.md",
+    "title": "Practical Machine Learning Engineering for Production: Ship Maintainable Models, Avoid Complexity",
+    "short": "Running from Complexity",
+    "season": 4,
+    "episode": 5,
+    "guest_ids": [
+      "benwilson"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-2-machine-learning-for-asteroid-mining-and-water-detection",
+    "source_file": "_podcast/machine-learning-for-asteroid-mining-and-water-detection.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/machine-learning-for-asteroid-mining-and-water-detection.md",
+    "title": "Asteroid Mining: Using ML & Hyperspectral Spectroscopy to Detect Water for ISRU",
+    "short": "Using Data for Asteroid Mining",
+    "season": 9,
+    "episode": 2,
+    "guest_ids": [
+      "daynancrull"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-1-machine-learning-in-marketing-attribution-marketing-mix-modeling",
+    "source_file": "_podcast/machine-learning-in-marketing-attribution-marketing-mix-modeling.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/machine-learning-in-marketing-attribution-marketing-mix-modeling.md",
+    "title": "Marketing Data Science: Attribution, Media Mix Modeling, Uplift & Cookieless Tracking",
+    "short": "Machine Learning in Marketing",
+    "season": 9,
+    "episode": 1,
+    "guest_ids": [
+      "juanorduz"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "7-5-machine-learning-system-design-interview",
+    "source_file": "_podcast/machine-learning-system-design-interview.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/machine-learning-system-design-interview.md",
+    "title": "ML System Design Interviews: Production ML, Fraud Detection, Features, A/B Testing & MLOps",
+    "short": "Machine Learning System Design Interview",
+    "season": 7,
+    "episode": 5,
+    "guest_ids": [
+      "valeriybabushkin"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-9-make-money-with-machine-learning-roles-skills",
+    "source_file": "_podcast/make-money-with-machine-learning-roles-skills.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/make-money-with-machine-learning-roles-skills.md",
+    "title": "Monetize Machine Learning: Convert Models to ARR/MRR with ML Product & MLOps Strategy",
+    "short": "New Roles and Key Skills to Monetize Machine Learning",
+    "season": 2,
+    "episode": 9,
+    "guest_ids": [
+      "vinvashishta"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "1-5-mentoring-in-tech-how-to-find-and-become-a-mentor-md",
+    "source_file": "_podcast/mentoring-in-tech-how-to-find-and-become-a-mentor.md.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mentoring-in-tech-how-to-find-and-become-a-mentor.md.md",
+    "title": "How to Find a Mentor and Become One: Mentoring Strategies for Tech Careers",
+    "short": "Mentoring",
+    "season": 1,
+    "episode": 5,
+    "guest_ids": [
+      "rahuljain"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "21-2-mindful-data-strategy-for-business-impact",
+    "source_file": "_podcast/mindful-data-strategy-for-business-impact.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mindful-data-strategy-for-business-impact.md",
+    "title": "Mindful Data Strategy for Business Impact: Wabi-Sabi Approach, Data Trust & Maintenance-Innovation Balance",
+    "short": "Mindful Data Strategy: From Pipelines to Business Impact",
+    "season": 21,
+    "episode": 2,
+    "guest_ids": [
+      "liorbarak"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-3-ml-engineering-kpis-and-metrics-strategy",
+    "source_file": "_podcast/ml-engineering-kpis-and-metrics-strategy.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ml-engineering-kpis-and-metrics-strategy.md",
+    "title": "KPI Design & Metrics Strategy: Prioritize Impact, Avoid Vanity Metrics, and Prove ROI",
+    "short": "Defining Success: Metrics and KPIs",
+    "season": 5,
+    "episode": 3,
+    "guest_ids": [
+      "adamsroka"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-7-ml-product-manager-and-mlops-platform-strategy",
+    "source_file": "_podcast/ml-product-manager-and-mlops-platform-strategy.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ml-product-manager-and-mlops-platform-strategy.md",
+    "title": "Become an ML Product Manager: MLOps Platforms, Observability & Adoption",
+    "short": "Product Management for Machine Learning",
+    "season": 6,
+    "episode": 7,
+    "guest_ids": [
+      "geojolly"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-1-ml-system-design",
+    "source_file": "_podcast/ml-system-design.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/ml-system-design.md",
+    "title": "ML System Design Playbook: Fail-Fast Design Docs, Modular Architecture & Data Drift Monitoring",
+    "short": "Why Machine Learning Design is Broken",
+    "season": 15,
+    "episode": 1,
+    "guest_ids": [
+      "valeriybabushkin"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-5-mlops-and-ml-engineering-in-finance",
+    "source_file": "_podcast/mlops-and-ml-engineering-in-finance.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mlops-and-ml-engineering-in-finance.md",
+    "title": "MLOps in Finance: Regulated Deployment, CI/CD and Model Governance",
+    "short": "Machine Learning Engineering in Finance",
+    "season": 17,
+    "episode": 5,
+    "guest_ids": [
+      "nemanjaradojkovic"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "19-4-mlops-at-scale-reproducibility-adoption",
+    "source_file": "_podcast/mlops-at-scale-reproducibility-adoption.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mlops-at-scale-reproducibility-adoption.md",
+    "title": "MLOps at Scale: CI/CD, Reproducibility, Model Monitoring & Adoption Strategies",
+    "short": "MLOps as a Team",
+    "season": 19,
+    "episode": 4,
+    "guest_ids": [
+      "raphaelhoogvliets"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-12-mlops-community-building-and-meetups",
+    "source_file": "_podcast/mlops-community-building-and-meetups.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mlops-community-building-and-meetups.md",
+    "title": "MLOps Community Playbook: Launch, Grow & Retain Meetups, Members, and Contributors",
+    "short": "Building Online Tech Communities",
+    "season": 2,
+    "episode": 12,
+    "guest_ids": [
+      "demetriosbrinkmann"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-5-mlops-feature-stores-feature-stores-feast-tecton",
+    "source_file": "_podcast/mlops-feature-stores-feature-stores-feast-tecton.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mlops-feature-stores-feature-stores-feast-tecton.md",
+    "title": "Feature Stores for MLOps: Real-Time Feature Engineering, Feast & Tecton Guide",
+    "short": "Feature Stores in MLOps Explained",
+    "season": 2,
+    "episode": 5,
+    "guest_ids": [
+      "willempienaar"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-4-mlops-kubeflow-model-monitoring",
+    "source_file": "_podcast/mlops-kubeflow-model-monitoring.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mlops-kubeflow-model-monitoring.md",
+    "title": "Mastering MLOps: Kubeflow Pipelines, Model Monitoring & Automated Retraining",
+    "short": "The Rise of MLOps",
+    "season": 2,
+    "episode": 4,
+    "guest_ids": [
+      "theofilospapapanagiotou"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-3-mlops-model-monitoring-data-observability",
+    "source_file": "_podcast/mlops-model-monitoring-data-observability.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/mlops-model-monitoring-data-observability.md",
+    "title": "MLOps Architect Guide: Production Model Monitoring, Data Observability & Tooling",
+    "short": "MLOps Architect",
+    "season": 10,
+    "episode": 3,
+    "guest_ids": [
+      "dannyleybzon"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "14-7-modern-data-pipelines-orchestration-ingestion-modeling",
+    "source_file": "_podcast/modern-data-pipelines-orchestration-ingestion-modeling.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/modern-data-pipelines-orchestration-ingestion-modeling.md",
+    "title": "Modern Data Pipeline Architecture: Ingestion, Orchestration, Transformation & MLOps Systems",
+    "short": "Modern Data Pipelines",
+    "season": 14,
+    "episode": 7,
+    "guest_ids": [
+      "santonatuli"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-2-modern-search-systems-vector-databases-llms-semantic-retrieval",
+    "source_file": "_podcast/modern-search-systems-vector-databases-llms-semantic-retrieval.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/modern-search-systems-vector-databases-llms-semantic-retrieval.md",
+    "title": "Modern Search Systems: Vector Databases, LLMs and Semantic Retrieval",
+    "short": "Searching Beyond the Surface: Navigating Challenges and Innovations in Search Technologies",
+    "season": 17,
+    "episode": 2,
+    "guest_ids": [
+      "atitaarora"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-7-nlp-dataset-creation-annotation-tools-workflows",
+    "source_file": "_podcast/nlp-dataset-creation-annotation-tools-workflows.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/nlp-dataset-creation-annotation-tools-workflows.md",
+    "title": "Practical Guide to Dataset Creation & Annotation for NLP: Active Learning, Weak Supervision, Tools",
+    "short": "Dataset Creation and Curation",
+    "season": 10,
+    "episode": 7,
+    "guest_ids": [
+      "christiannswart"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-8-nlp-team-hiring-and-production-mlops",
+    "source_file": "_podcast/nlp-team-hiring-and-production-mlops.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/nlp-team-hiring-and-production-mlops.md",
+    "title": "Lead NLP Teams: Hiring, Production Pipelines, MLOps & LLM Tradeoffs (GPT-3, spaCy)",
+    "short": "Leading NLP Teams",
+    "season": 6,
+    "episode": 8,
+    "guest_ids": [
+      "ivanbilan"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "21-3-nonlinear-path-to-machine-learning-freelancing-and-public-learning",
+    "source_file": "_podcast/nonlinear-path-to-machine-learning-freelancing-and-public-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/nonlinear-path-to-machine-learning-freelancing-and-public-learning.md",
+    "title": "From Medicine to Machine Learning: Skill Stacking, Public Learning & Freelance-Driven Career Building",
+    "short": "From Medicine to Machine Learning: How Public Learning Turned into a Career",
+    "season": 21,
+    "episode": 3,
+    "guest_ids": [
+      "pastorsoto"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-7-open-source-and-volunteering-in-ai-for-data-ml-career-growth",
+    "source_file": "_podcast/open-source-and-volunteering-in-ai-for-data-ml-career-growth.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/open-source-and-volunteering-in-ai-for-data-ml-career-growth.md",
+    "title": "Open Source and Volunteering: Building AI Projects and Career Momentum",
+    "short": "Make an Impact Through Volunteering Open Source Work",
+    "season": 17,
+    "episode": 7,
+    "guest_ids": [
+      "saraelateif"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-3-open-source-ml-contributions",
+    "source_file": "_podcast/open-source-ml-contributions.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/open-source-ml-contributions.md",
+    "title": "Contribute to Open Source ML: scikit-learn Pipelines, PRs, Docs & Rasa Conversational AI",
+    "short": "Getting Started with Open Source",
+    "season": 2,
+    "episode": 3,
+    "guest_ids": [
+      "vincentwarmerdam"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "18-4-open-source-ml-tools-strategy-and-business-models",
+    "source_file": "_podcast/open-source-ml-tools-strategy-and-business-models.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/open-source-ml-tools-strategy-and-business-models.md",
+    "title": "Open Source ML Tools: Scikit-Learn Governance, Sustainability and Business Models",
+    "short": "Working in Open Source - Probabl.ai and sklearn",
+    "season": 18,
+    "episode": 4,
+    "guest_ids": [
+      "vincentwarmerdam"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "9-8-open-source-turned-into-career-and-startup-creation",
+    "source_file": "_podcast/open-source-turned-into-career-and-startup-creation.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/open-source-turned-into-career-and-startup-creation.md",
+    "title": "From Developer to Startup Founder: Building a Career Through Open Source",
+    "short": "From Open-Source Maintainer to Founder",
+    "season": 9,
+    "episode": 8,
+    "guest_ids": [
+      "willmcgugan"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-8-personal-brand-for-data-professionals",
+    "source_file": "_podcast/personal-brand-for-data-professionals.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/personal-brand-for-data-professionals.md",
+    "title": "Build a Personal Brand: Publish on LinkedIn/Medium, Grow Audience, Monetize with Online Courses",
+    "short": "Personal Branding",
+    "season": 2,
+    "episode": 8,
+    "guest_ids": [
+      "admondleekinlim"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-6-postdoc-to-data-science-lead-career-transition",
+    "source_file": "_podcast/postdoc-to-data-science-lead-career-transition.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/postdoc-to-data-science-lead-career-transition.md",
+    "title": "From Postdoc to Data Science Lead: ML Foundations, Docker Deployment & Hiring Tips",
+    "short": "Moving from Academia to Industry",
+    "season": 6,
+    "episode": 6,
+    "guest_ids": [
+      "cjjenkins"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-8-practical-devrel-demofirst-education-and-open-source",
+    "source_file": "_podcast/practical-devrel-demofirst-education-and-open-source.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/practical-devrel-demofirst-education-and-open-source.md",
+    "title": "Developer Advocacy Through Community Impact: Technical Leadership, Open Source Mentorship & Demo-Driven Communication",
+    "short": "Developer Advocacy Through Community Impact",
+    "season": 20,
+    "episode": 8,
+    "guest_ids": [
+      "willrussell"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "16-5-practical-generative-ai-consulting-from-expertise-to-impact",
+    "source_file": "_podcast/practical-generative-ai-consulting-from-expertise-to-impact.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/practical-generative-ai-consulting-from-expertise-to-impact.md",
+    "title": "Launching a Freelance Generative AI Business: NLP Services and Client Acquisition",
+    "short": "From a Research Scientist at Amazon to a Machine Learning/AI Consultant",
+    "season": 16,
+    "episode": 5,
+    "guest_ids": [
+      "verenaweber"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "22-4-practical-llm-engineering-and-rag",
+    "source_file": "_podcast/practical-llm-engineering-and-rag.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/practical-llm-engineering-and-rag.md",
+    "title": "Practical LLM Engineering and RAG: Prompting, Evaluation and Real-World Workflows",
+    "short": "How to Build and Evaluate AI systems in the Age of LLMs",
+    "season": 22,
+    "episode": 4,
+    "guest_ids": [
+      "hugobowneanderson"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-4-practical-llm-use-cases-and-product-patterns",
+    "source_file": "_podcast/practical-llm-use-cases-and-product-patterns.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/practical-llm-use-cases-and-product-patterns.md",
+    "title": "LLM Value Creation: GPT Communities, Business Use Cases & Human-in-the-Loop AI Applications",
+    "short": "The Good, the Bad and the Ugly of GPT",
+    "season": 15,
+    "episode": 4,
+    "guest_ids": [
+      "sandrakublik"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-7-pragmatic-and-standardized-mlops",
+    "source_file": "_podcast/pragmatic-and-standardized-mlops.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/pragmatic-and-standardized-mlops.md",
+    "title": "Pragmatic MLOps: Build Standardized CI/CD, Model Registries, Monitoring & Org Best Practices",
+    "short": "Pragmatic and Standardized MLOps",
+    "season": 15,
+    "episode": 7,
+    "guest_ids": [
+      "mariavechtomova"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-4-product-designer-to-data-product-manager",
+    "source_file": "_podcast/product-designer-to-data-product-manager.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/product-designer-to-data-product-manager.md",
+    "title": "How to Transition from Design to Data Product Manager: SQL, Customer Discovery & Data Quality",
+    "short": "Becoming a Data Product Manager",
+    "season": 6,
+    "episode": 4,
+    "guest_ids": [
+      "saramenefee"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-7-production-ml-mlops-and-data-team-building",
+    "source_file": "_podcast/production-ml-mlops-and-data-team-building.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/production-ml-mlops-and-data-team-building.md",
+    "title": "From Analytics to Production ML: Team Building, Experiments, MLOps & Fraud Detection",
+    "short": "Similarities and Differences between ML and Analytics",
+    "season": 5,
+    "episode": 7,
+    "guest_ids": [
+      "rishabhbhargava"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "4-2-production-ml-pipelines-with-aws-and-kafka",
+    "source_file": "_podcast/production-ml-pipelines-with-aws-and-kafka.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/production-ml-pipelines-with-aws-and-kafka.md",
+    "title": "From Notebooks to Production: Build Data Pipelines & Deploy ML (AWS, Kafka, Streaming)",
+    "short": "Build Your Own Data Pipeline",
+    "season": 4,
+    "episode": 2,
+    "guest_ids": [
+      "andreaskretz"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "17-8-production-ml-search-vector-search-embeddings-hybrid-search",
+    "source_file": "_podcast/production-ml-search-vector-search-embeddings-hybrid-search.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/production-ml-search-vector-search-embeddings-hybrid-search.md",
+    "title": "Production ML Search: Embeddings, Hybrid Architectures and Scalable Indexing",
+    "short": "Building Machine Learning Products",
+    "season": 17,
+    "episode": 8,
+    "guest_ids": [
+      "reemmahmoud"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-5-production-ready-ai-engineering",
+    "source_file": "_podcast/production-ready-ai-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/production-ready-ai-engineering.md",
+    "title": "Production AI Engineering: Data Pipelines, Prompt Optimization and Caching",
+    "short": "Data Intensive AI",
+    "season": 20,
+    "episode": 5,
+    "guest_ids": [
+      "bartoszmikulski"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "3-1-project-manager-to-data-scientist",
+    "source_file": "_podcast/project-manager-to-data-scientist.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/project-manager-to-data-scientist.md",
+    "title": "From Project Manager to Data Scientist: Skills, Tools, ML Courses & Job Search",
+    "short": "Transitioning from Project Management to Data Science",
+    "season": 3,
+    "episode": 1,
+    "guest_ids": [
+      "ksenialegostay"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-10-public-speaking-for-data-scientists",
+    "source_file": "_podcast/public-speaking-for-data-scientists.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/public-speaking-for-data-scientists.md",
+    "title": "Public Speaking for Data Scientists: Master AI Evangelism, Storytelling & Keynotes",
+    "short": "The Essentials of Public Speaking for Career in Data Science",
+    "season": 2,
+    "episode": 10,
+    "guest_ids": [
+      "bentaylor"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "15-5-remote-data-engineering-work-and-building-iot-platforms",
+    "source_file": "_podcast/remote-data-engineering-work-and-building-iot-platforms.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/remote-data-engineering-work-and-building-iot-platforms.md",
+    "title": "Remote Data Engineering Life: Building IoT Platforms, Career Transitions & Newsletter-Driven Personal Growth",
+    "short": "Mastering Data Engineering as a Remote Worker",
+    "season": 15,
+    "episode": 5,
+    "guest_ids": [
+      "josemaria"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-5-research-to-production-ml-systems-roadmap",
+    "source_file": "_podcast/research-to-production-ml-systems-roadmap.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/research-to-production-ml-systems-roadmap.md",
+    "title": "From Research to Production: Build Reproducible, Deployable Full-Stack ML Systems",
+    "short": "What Researchers and Engineers Can Learn from Each Other",
+    "season": 5,
+    "episode": 5,
+    "guest_ids": [
+      "mihaileric"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-9-responsible-explainable-ai-bias-detection",
+    "source_file": "_podcast/responsible-explainable-ai-bias-detection.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/responsible-explainable-ai-bias-detection.md",
+    "title": "Responsible & Explainable AI: Practical Guide to Bias Detection, Fairness & Governance",
+    "short": "Responsible and Explainable AI",
+    "season": 10,
+    "episode": 9,
+    "guest_ids": [
+      "supreetkaur"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-6-s22e06-from-black-box-systems-to-augmented-decision-making",
+    "source_file": "_podcast/s22e06-from-black-box-systems-to-augmented-decision-making.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s22e06-from-black-box-systems-to-augmented-decision-making.md",
+    "title": "S22E06 From Black Box Systems To Augmented Decision Making",
+    "short": null,
+    "season": null,
+    "episode": 6,
+    "guest_ids": [
+      "anushaakkina"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-7-s22e07-reinventing-career-in-tech",
+    "source_file": "_podcast/s22e07-reinventing-career-in-tech.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s22e07-reinventing-career-in-tech.md",
+    "title": "S22E07 Reinventing Career In Tech",
+    "short": null,
+    "season": null,
+    "episode": 7,
+    "guest_ids": [
+      "xiahebleinagel"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "22-8-s22e08-building-pet-health-tech-ml-sensors-and-dog-behavior-data",
+    "source_file": "_podcast/s22e08-building-pet-health-tech-ml-sensors-and-dog-behavior-data.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s22e08-building-pet-health-tech-ml-sensors-and-dog-behavior-data.md",
+    "title": "Building Pet Health Tech: ML, Sensors, and Dog Behavior Data",
+    "short": "Building Pet Health Tech: ML, Sensors, and Dog Behavior Data",
+    "season": 22,
+    "episode": 8,
+    "guest_ids": [
+      "sofyayulpatova"
+    ],
+    "question_count": 9,
+    "categories": [
+      "background",
+      "general",
+      "organizational_reality",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "s-1-s23e01-ai-engineering-skill-stack-agents-llmops-and-how-to-ship-ai-products",
+    "source_file": "_podcast/s23e01-ai-engineering-skill-stack-agents-llmops-and-how-to-ship-ai-products.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e01-ai-engineering-skill-stack-agents-llmops-and-how-to-ship-ai-products.md",
+    "title": "S23E01 Ai Engineering Skill Stack Agents Llmops And How To Ship Ai Products",
+    "short": null,
+    "season": null,
+    "episode": 1,
+    "guest_ids": [
+      "pauliusztin"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-2-s23e02-foundations-of-analytics-engineer-role-skills-scope-and-modern-practices",
+    "source_file": "_podcast/s23e02-foundations-of-analytics-engineer-role-skills-scope-and-modern-practices.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e02-foundations-of-analytics-engineer-role-skills-scope-and-modern-practices.md",
+    "title": "S23E02 Foundations Of Analytics Engineer Role Skills Scope And Modern Practices",
+    "short": null,
+    "season": null,
+    "episode": 2,
+    "guest_ids": [
+      "juanmanuelperafan"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-3-s23e03-future-of-ai-agents",
+    "source_file": "_podcast/s23e03-future-of-ai-agents.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e03-future-of-ai-agents.md",
+    "title": "S23E03 Future Of Ai Agents",
+    "short": null,
+    "season": null,
+    "episode": 3,
+    "guest_ids": [
+      "adityagautam"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-4-s23e04-how-to-become-ai-engineer-after-career-break",
+    "source_file": "_podcast/s23e04-how-to-become-ai-engineer-after-career-break.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e04-how-to-become-ai-engineer-after-career-break.md",
+    "title": "S23E04 How To Become Ai Engineer After Career Break",
+    "short": null,
+    "season": null,
+    "episode": 4,
+    "guest_ids": [
+      "revathyramalingam"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-5-s23e05-inside-ai-engineer-role-tools-skills-and-career-path",
+    "source_file": "_podcast/s23e05-inside-ai-engineer-role-tools-skills-and-career-path.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e05-inside-ai-engineer-role-tools-skills-and-career-path.md",
+    "title": "S23E05 Inside Ai Engineer Role Tools Skills And Career Path",
+    "short": null,
+    "season": null,
+    "episode": 5,
+    "guest_ids": [
+      "ruslanshchuchkin"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-6-s23e06-data-engineer-career-in-2026-roles-specializations-and-what-companies-look-for",
+    "source_file": "_podcast/s23e06-data-engineer-career-in-2026-roles-specializations-and-what-companies-look-for.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e06-data-engineer-career-in-2026-roles-specializations-and-what-companies-look-for.md",
+    "title": "S23E06 Data Engineer Career In 2026 Roles Specializations And What Companies Look For",
+    "short": null,
+    "season": null,
+    "episode": 6,
+    "guest_ids": [
+      "slawomirtulski"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-7-s23e07-understanding-ai-engineer-role",
+    "source_file": "_podcast/s23e07-understanding-ai-engineer-role.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e07-understanding-ai-engineer-role.md",
+    "title": "S23E07 Understanding Ai Engineer Role",
+    "short": null,
+    "season": null,
+    "episode": 7,
+    "guest_ids": [
+      "nasserqadri"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-9-s23e09-starting-data-conference-data-makers-fest-story",
+    "source_file": "_podcast/s23e09-starting-data-conference-data-makers-fest-story.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s23e09-starting-data-conference-data-makers-fest-story.md",
+    "title": "S23E09 Starting Data Conference Data Makers Fest Story",
+    "short": null,
+    "season": null,
+    "episode": 9,
+    "guest_ids": [
+      "leonidkholkine"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-1-s24e01-competitions-beyond-kaggle-leaderboard",
+    "source_file": "_podcast/s24e01-competitions-beyond-kaggle-leaderboard.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s24e01-competitions-beyond-kaggle-leaderboard.md",
+    "title": "S24E01 Competitions Beyond Kaggle Leaderboard",
+    "short": null,
+    "season": null,
+    "episode": 1,
+    "guest_ids": [
+      "tatianagabruseva"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "s-3-s24e03-from-notebook-to-production-building-end-to-end-ai-systems",
+    "source_file": "_podcast/s24e03-from-notebook-to-production-building-end-to-end-ai-systems.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/s24e03-from-notebook-to-production-building-end-to-end-ai-systems.md",
+    "title": "S24E03 From Notebook To Production Building End To End Ai Systems",
+    "short": null,
+    "season": null,
+    "episode": 3,
+    "guest_ids": [
+      "marianosemelman"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-5-scaling-data-engineering-teams-self-service-platforms",
+    "source_file": "_podcast/scaling-data-engineering-teams-self-service-platforms.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/scaling-data-engineering-teams-self-service-platforms.md",
+    "title": "Scale Data Engineering Teams: Build Self-Service Data Platforms, Hire Senior Engineers & Use Kafka",
+    "short": "Growing Data Engineering Team in a Scale-Up",
+    "season": 10,
+    "episode": 5,
+    "guest_ids": [
+      "mehdiouazza"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "10-4-scaling-enterprise-ai-mlops-data-first-strategy",
+    "source_file": "_podcast/scaling-enterprise-ai-mlops-data-first-strategy.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/scaling-enterprise-ai-mlops-data-first-strategy.md",
+    "title": "Scale Enterprise AI: Data-First Strategies, MLOps Best Practices & Realistic Experiments",
+    "short": "Lessons Learned About Data & AI at Enterprises",
+    "season": 10,
+    "episode": 4,
+    "guest_ids": [
+      "alexanderhendorf"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "13-5-software-engineering-for-machine-learning",
+    "source_file": "_podcast/software-engineering-for-machine-learning.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/software-engineering-for-machine-learning.md",
+    "title": "Software Engineering for ML: Prevent Hidden Technical Debt with MLOps, Documentation & Team Alignment",
+    "short": "Software Engineering for ML",
+    "season": 13,
+    "episode": 5,
+    "guest_ids": [
+      "nadianahar"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "5-4-solopreneur-data-scientist",
+    "source_file": "_podcast/solopreneur-data-scientist.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/solopreneur-data-scientist.md",
+    "title": "Solo Data Scientist Playbook: 90-Day Roadmap, Pipelines, A/B Tests & Prioritization",
+    "short": "Introducing Data Science in Startups",
+    "season": 5,
+    "episode": 4,
+    "guest_ids": [
+      "mariannadiachuk"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "6-1-solopreneur-developer-and-data-professional",
+    "source_file": "_podcast/solopreneur-developer-and-data-professional.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/solopreneur-developer-and-data-professional.md",
+    "title": "Solopreneur Guide: Diversify Income with Courses, Consulting, Books & Side-Gigs",
+    "short": "Solopreneur Guide: Diversify Income with Courses, Consulting, Books & Side-Gigs",
+    "season": 6,
+    "episode": 1,
+    "guest_ids": [
+      "noahgift"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "11-9-teaching-mentoring-data-analytics-fintech",
+    "source_file": "_podcast/teaching-mentoring-data-analytics-fintech.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/teaching-mentoring-data-analytics-fintech.md",
+    "title": "Designing FinTech Data Analytics Curriculum: Fraud Detection, BigQuery Labs & Mentoring",
+    "short": "Teaching and Mentoring in Data Analytics",
+    "season": 11,
+    "episode": 9,
+    "guest_ids": [
+      "irinabrudaru"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "12-4-teaching-reproducible-research-and-open-science-coding-practices-for-academia",
+    "source_file": "_podcast/teaching-reproducible-research-and-open-science-coding-practices-for-academia.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/teaching-reproducible-research-and-open-science-coding-practices-for-academia.md",
+    "title": "Teaching Open Science & Reproducible Research: Research Software Engineering Practices for Academia",
+    "short": "Teaching Open Science & Reproducible Research",
+    "season": 12,
+    "episode": 4,
+    "guest_ids": [
+      "johannabayer"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "2-1-technical-writing-for-data-scientists",
+    "source_file": "_podcast/technical-writing-for-data-scientists.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/technical-writing-for-data-scientists.md",
+    "title": "Master Technical Writing: 7-Day Workflow to Accelerate Your Data Science Career",
+    "short": "Master Technical Writing: 7-Day Workflow to Accelerate Your Data Science Career",
+    "season": 2,
+    "episode": 1,
+    "guest_ids": [
+      "eugeneyan"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "20-3-trends-in-modern-data-engineering",
+    "source_file": "_podcast/trends-in-modern-data-engineering.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/trends-in-modern-data-engineering.md",
+    "title": "Modern Data Engineering: Iceberg, Delta Lake & AI-Powered Pipelines",
+    "short": "Trends in Data Engineering",
+    "season": 20,
+    "episode": 3,
+    "guest_ids": [
+      "adrianbrudaru"
+    ],
+    "question_count": 34,
+    "categories": [
+      "background",
+      "future_outlook",
+      "general",
+      "technical_deep_dive"
+    ]
+  },
+  {
+    "episode_id": "19-1-urban-data-science",
+    "source_file": "_podcast/urban-data-science.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/urban-data-science.md",
+    "title": "Urban Data Science: Transport Analytics, Sensors and Liveable Cities",
+    "short": "Using Data to Create Liveable Cities",
+    "season": 19,
+    "episode": 1,
+    "guest_ids": [
+      "rachellim"
+    ],
+    "question_count": 0,
+    "categories": []
+  },
+  {
+    "episode_id": "8-1-visualizing-machine-learning-concepts-to-explain-ml",
+    "source_file": "_podcast/visualizing-machine-learning-concepts-to-explain-ml.md",
+    "source_url": "https://github.com/DataTalksClub/datatalksclub.github.io/tree/main/_podcast/visualizing-machine-learning-concepts-to-explain-ml.md",
+    "title": "Using Visualizations to Explain Machine Learning: Build Intuition with kDimensions, Figma & Templates",
+    "short": "Using Visualizations to Explain Machine Learning",
+    "season": 8,
+    "episode": 1,
+    "guest_ids": [
+      "meoramer"
+    ],
+    "question_count": 0,
+    "categories": []
+  }
+]

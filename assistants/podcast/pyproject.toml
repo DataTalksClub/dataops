@@ -1,0 +1,53 @@
+[project]
+name = "podcast-assistant"
+version = "0.1.0"
+description = "Telegram assistant for collecting podcast prep notes and generating guest question documents."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "groq>=1.0.0",
+    "heru",
+    "httpx>=0.28.1",
+    "pyyaml>=6.0.3",
+    "python-dotenv>=1.2.1",
+    "python-telegram-bot>=22.5",
+]
+
+[project.scripts]
+pytest = "assistant_pytest:main"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "assistant_pytest",
+    "heru_runner",
+    "main",
+    "message_queue",
+    "process_request",
+    "progress_tracker",
+    "session_retrier",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-timeout>=2.4.0",
+]
+
+[tool.uv.sources]
+heru = { path = "../../../heru", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--capture=no"
+markers = [
+    "integration: opt-in tests that launch real Codex or Claude CLIs through Heru",
+]
