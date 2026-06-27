@@ -29,6 +29,10 @@ Files that live here:
 
 - `architecture.md` - deployed app architecture, content lifecycle, CI/CD
   split, credentials model, and upgrade notes.
+- `decisions/` - durable architecture decision records for repository,
+  runtime, data, and process boundaries.
+- `decisions/dataops-knowledge-repository.md` - ADR for the future
+  `DataTalksClub/dataops-knowledge` boundary and migration plan.
 - `local-development.md` - developer command plan for local checks, focused
   verification, handoff, and deployment-adjacent work.
 - `v1-runtime-architecture.md` - V1 runtime decision for the unified operations
