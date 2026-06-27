@@ -1000,6 +1000,198 @@ body[data-view="create"] .editor-view {
   border-top: 1px solid var(--line);
 }
 
+.document-list.is-operations-home {
+  max-width: 1180px;
+  border-top: 0;
+}
+
+.operations-home {
+  display: grid;
+  gap: 24px;
+}
+
+.ops-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ops-stat {
+  display: grid;
+  min-height: 76px;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 14px;
+}
+
+.ops-stat strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.ops-stat span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ops-lanes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.ops-lane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 260px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.ops-lane header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px;
+}
+
+.ops-lane h3,
+.ops-section h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.ops-lane header span,
+.ops-section-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ops-lane-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 8px;
+}
+
+.ops-lane-item,
+.ops-template-card,
+.ops-reference-link {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: var(--control);
+  color: var(--text);
+  text-align: left;
+}
+
+.ops-lane-item:hover,
+.ops-template-card:hover,
+.ops-reference-link:hover {
+  background: var(--control-hover);
+}
+
+.ops-lane-item {
+  gap: 4px;
+  min-height: 86px;
+  padding: 10px;
+}
+
+.ops-lane-item strong,
+.ops-template-card strong,
+.ops-reference-link strong {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-lane-item span,
+.ops-template-card span,
+.ops-reference-link span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ops-lane-item small {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.ops-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ops-section {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ops-template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ops-template-card {
+  gap: 12px;
+  min-height: 154px;
+  padding: 14px;
+}
+
+.ops-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: end;
+}
+
+.ops-card-chips small {
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.ops-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ops-reference-link {
+  gap: 6px;
+  min-height: 92px;
+  padding: 12px;
+  text-decoration: none;
+}
+
 .document-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1891,6 +2083,12 @@ body[data-view="create"] .editor-view {
 }
 
 @media (max-width: 1100px) {
+  .ops-lanes,
+  .ops-template-grid,
+  .ops-reference-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .editor-view {
     grid-template-columns: minmax(0, 760px);
   }
@@ -3281,6 +3479,22 @@ body[data-view="create"] #back-button {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     padding: 14px 0;
+  }
+
+  .ops-summary,
+  .ops-lanes,
+  .ops-template-grid,
+  .ops-reference-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-lane {
+    min-height: 0;
+  }
+
+  .ops-template-card,
+  .ops-reference-link {
+    min-height: 0;
   }
 
   .doc-tags {
