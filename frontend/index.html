@@ -146,6 +146,10 @@
           </div>
           <div class="toolbar-actions">
             <span id="save-state" class="save-state"></span>
+            <button id="work-bell-button" class="quiet-button work-bell-button" type="button" title="Notifications" aria-label="Notifications">
+              <span class="work-bell-icon" aria-hidden="true">&#9737;</span>
+              <span class="work-bell-count" aria-hidden="true">0</span>
+            </button>
             <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
             <button id="doc-pin-button" class="quiet-button" type="button" hidden title="Pin to sidebar">☆</button>
             <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions">⋯</button>
@@ -258,6 +262,14 @@
           </dl>
         </div>
       </div>
+    </div>
+
+    <div id="work-bell-panel" class="work-bell-panel" hidden>
+      <header class="work-bell-header">
+        <strong>Notifications</strong>
+        <button id="work-bell-close" class="quiet-button" type="button" aria-label="Close">Close</button>
+      </header>
+      <div id="work-bell-body" class="work-bell-body"></div>
     </div>
 
     <div id="confirm-modal" class="confirm-modal" hidden>
