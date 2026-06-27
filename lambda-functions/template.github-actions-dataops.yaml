@@ -100,6 +100,7 @@ Resources:
                   - lambda:GetFunctionConfiguration
                   - lambda:GetFunctionUrlConfig
                   - lambda:InvokeFunction
+                  - lambda:ListTags
                   - lambda:RemovePermission
                   - lambda:TagResource
                   - lambda:UntagResource
@@ -109,6 +110,8 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*:*
+                  - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-WorkEngineFunction-*
+                  - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-WorkEngineFunction-*:*
               - Sid: DynamoDbDataOpsExecutionTables
                 Effect: Allow
                 Action:
@@ -136,6 +139,7 @@ Resources:
                   - iam:GetRole
                   - iam:GetRolePolicy
                   - iam:ListAttachedRolePolicies
+                  - iam:ListRoleTags
                   - iam:PassRole
                   - iam:PutRolePolicy
                   - iam:TagRole
@@ -143,6 +147,7 @@ Resources:
                   - iam:UpdateAssumeRolePolicy
                 Resource:
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${FullDocsStackName}-DocsFullAppFunctionRole-*
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${FullDocsStackName}-WorkEngineFunctionRole-*
               - Sid: LogsDataOpsFunction
                 Effect: Allow
                 Action:
@@ -153,7 +158,29 @@ Resources:
                   - logs:TagResource
                   - logs:UntagResource
                 Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${FullDocsRegion}:${AWS::AccountId}:log-group:/aws/lambda/${FullDocsStackName}-DocsFullAppFunction-*
                   - !Sub arn:${AWS::Partition}:logs:${FullDocsRegion}:${AWS::AccountId}:log-group:/aws/lambda/${FullDocsStackName}-DocsFullAppFunction-*:*
+                  - !Sub arn:${AWS::Partition}:logs:${FullDocsRegion}:${AWS::AccountId}:log-group:/aws/lambda/${FullDocsStackName}-WorkEngineFunction-*
+                  - !Sub arn:${AWS::Partition}:logs:${FullDocsRegion}:${AWS::AccountId}:log-group:/aws/lambda/${FullDocsStackName}-WorkEngineFunction-*:*
+              - Sid: SecretsManagerDataOpsPortalSecret
+                Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:ListSecretVersionIds
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                  - secretsmanager:UpdateSecret
+                Resource:
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${FullDocsRegion}:${AWS::AccountId}:secret:${FullDocsStackName}/work-engine/portal-secret-*
+              - Sid: SecretsManagerGeneratePortalSecret
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetRandomPassword
+                Resource: "*"
 
 Outputs:
   GitHubActionsDeployRoleArn:

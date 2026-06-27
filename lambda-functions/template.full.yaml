@@ -274,6 +274,23 @@ Resources:
         - Key: DataClass
           Value: SessionState
 
+  WorkEnginePortalSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub ${AWS::StackName}/work-engine/portal-secret
+      GenerateSecretString:
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: PortalBrokerSecret
+
   DocsFullAppFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -289,6 +306,13 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BasicAuthPasswordSecretName}-*
+              - !Ref WorkEnginePortalSecret
+        - Statement:
+            Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource:
+              - !GetAtt WorkEngineFunction.Arn
       Environment:
         Variables:
           GITHUB_OWNER: !Ref GitHubOwner
@@ -297,6 +321,8 @@ Resources:
           GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
           BASIC_AUTH_USERNAME: !Ref BasicAuthUsername
           BASIC_AUTH_PASSWORD_SECRET_NAME: !Ref BasicAuthPasswordSecretName
+          WORK_ENGINE_FUNCTION_NAME: !Ref WorkEngineFunction
+          WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -312,6 +338,57 @@ Resources:
             - DELETE
           AllowOrigins:
             - "*"
+
+  WorkEngineFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: ../work-engine
+      Runtime: nodejs20.x
+      Handler: dist/handler.handler
+      Timeout: 30
+      MemorySize: 1024
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Resource:
+              - !GetAtt DataOpsTasksTable.Arn
+              - !Sub ${DataOpsTasksTable.Arn}/index/*
+              - !GetAtt DataOpsBundlesTable.Arn
+              - !GetAtt DataOpsTemplatesTable.Arn
+              - !GetAtt DataOpsUsersTable.Arn
+              - !GetAtt DataOpsFilesTable.Arn
+              - !Sub ${DataOpsFilesTable.Arn}/index/*
+              - !GetAtt DataOpsNotificationsTable.Arn
+              - !GetAtt DataOpsSessionsTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Ref WorkEnginePortalSecret
+      Environment:
+        Variables:
+          DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable
+          DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable
+          DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable
+          DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
+          DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable
+          DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
+          DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
+          WORK_ENGINE_AUTH_MODE: portal
+          WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
 
 Outputs:
   DocsFullAppUrl:
@@ -338,3 +415,9 @@ Outputs:
   DataOpsSessionsTableName:
     Description: DynamoDB table for session state
     Value: !Ref DataOpsSessionsTable
+  WorkEngineFunctionName:
+    Description: Private DataOps work-engine Lambda function
+    Value: !Ref WorkEngineFunction
+  WorkEnginePortalSecretName:
+    Description: Secret shared by the portal broker and private work engine
+    Value: !Ref WorkEnginePortalSecret

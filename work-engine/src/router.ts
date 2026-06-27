@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { timingSafeEqual } from 'crypto';
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { handleBundleRoutes } from './routes/bundles';
@@ -28,6 +30,8 @@ import { listFilesByTask } from './db/files';
 import type { LambdaEvent, LambdaResponse, Task } from './types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
+let cachedPortalSecret: string | null | undefined;
+let secretsClient: SecretsManagerClient | null = null;
 
 // Routes that do NOT require authentication
 const AUTH_EXEMPT_PATHS = new Set([
@@ -41,6 +45,46 @@ function isAuthExempt(method: string, path: string): boolean {
   // Static assets
   if (method === 'GET' && path.startsWith('/public/')) return true;
   return false;
+}
+
+function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
+  if (!headers) return '';
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  return match ? String(match[1]) : '';
+}
+
+async function portalSecret(): Promise<string> {
+  if (process.env.WORK_ENGINE_PORTAL_SECRET) return process.env.WORK_ENGINE_PORTAL_SECRET;
+  if (cachedPortalSecret !== undefined) return cachedPortalSecret || '';
+
+  const secretName = process.env.WORK_ENGINE_PORTAL_SECRET_NAME;
+  if (!secretName) {
+    cachedPortalSecret = null;
+    return '';
+  }
+
+  secretsClient ||= new SecretsManagerClient({});
+  const result = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
+  const secret = result.SecretString || (result.SecretBinary ? Buffer.from(result.SecretBinary).toString('utf-8') : '');
+  cachedPortalSecret = secret || null;
+  return secret;
+}
+
+function constantTimeEquals(actual: string, expected: string): boolean {
+  if (!actual || !expected) return false;
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+async function portalTrustedUserId(event: LambdaEvent): Promise<string | null> {
+  if (process.env.WORK_ENGINE_AUTH_MODE !== 'portal') return null;
+  const portalAuth = headerValue(event.headers, 'x-portal-auth');
+  if (portalAuth !== 'true') return null;
+  const expectedSecret = await portalSecret();
+  const providedSecret = headerValue(event.headers, 'x-portal-secret');
+  if (!constantTimeEquals(providedSecret, expectedSecret)) return null;
+  return headerValue(event.headers, 'x-user-id') || 'portal-admin';
 }
 
 function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
@@ -61,6 +105,12 @@ function parseBody(event: LambdaEvent): Record<string, unknown> | null {
   }
 }
 
+function decodeBase64Body(event: LambdaEvent): void {
+  if (!event.isBase64Encoded || typeof event.body !== 'string') return;
+  event.body = Buffer.from(event.body, 'base64').toString('binary');
+  event.isBase64Encoded = false;
+}
+
 function extractTaskId(reqPath: string): string | null {
   const prefix = '/api/tasks/';
   if (reqPath.startsWith(prefix) && reqPath.length > prefix.length) {
@@ -74,9 +124,17 @@ const ALLOWED_UPDATE_FIELDS = ['description', 'date', 'comment', 'status', 'bund
 async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const method = event.httpMethod || 'GET';
   const reqPath = event.path || '/';
+  decodeBase64Body(event);
 
   try {
     // ── Auth routes (exempt from middleware) ─────────────────────
+    const portalUserId = await portalTrustedUserId(event);
+    if (process.env.WORK_ENGINE_AUTH_MODE === 'portal' && reqPath.startsWith('/api/auth')) {
+      return jsonResponse(404, { error: 'Not found' });
+    }
+    if (process.env.WORK_ENGINE_AUTH_MODE === 'portal' && reqPath === '/api/me' && portalUserId) {
+      return jsonResponse(200, { user: { id: portalUserId, name: 'Portal user' } });
+    }
     if (reqPath.startsWith('/api/auth') || reqPath === '/api/me') {
       const result = await handleAuthRoutes(event);
       if (result) return result;
@@ -86,7 +144,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // All /api/* routes (except exempt ones) require a valid session.
     // In test mode (NODE_ENV=test), auth can be bypassed with SKIP_AUTH=true.
     const skipAuth = process.env.NODE_ENV === 'test' && process.env.SKIP_AUTH === 'true';
-    if (!skipAuth && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    if (portalUserId) {
+      if (!event.headers) event.headers = {};
+      event.headers['x-user-id'] = portalUserId;
+    }
+    if (!skipAuth && !portalUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });

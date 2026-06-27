@@ -11,6 +11,7 @@ on:
       - "lambda-functions/**"
       - "scripts/**"
       - "tests/docs_app/**"
+      - "work-engine/**"
       - "package.json"
       - "pyproject.toml"
       - "uv.lock"
@@ -47,9 +48,28 @@ jobs:
       - name: Install Python
         run: uv python install
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: work-engine/package-lock.json
+
       - name: Run docs app tests
         working-directory: .
         run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
+
+      - name: Install work-engine dependencies
+        working-directory: work-engine
+        run: npm ci
+
+      - name: Run work-engine tests
+        working-directory: work-engine
+        run: npm test
+
+      - name: Typecheck work-engine
+        working-directory: work-engine
+        run: npm run typecheck
 
       - name: Build search index
         run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-search.index
@@ -112,6 +132,13 @@ jobs:
       - name: Install Python
         run: uv python install
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: work-engine/package-lock.json
+
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
         with:
@@ -137,3 +164,23 @@ jobs:
               "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
               "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"
+
+      - name: Smoke test private work engine Lambda
+        run: |
+          function_name="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='WorkEngineFunctionName'].OutputValue" \
+            --output text)"
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"httpMethod":"GET","path":"/api/health"}' \
+            /tmp/work-engine-health.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          response = json.loads(Path("/tmp/work-engine-health.json").read_text())
+          assert response["statusCode"] == 200, response
+          assert json.loads(response["body"]) == {"status": "ok"}, response
+          PY

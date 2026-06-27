@@ -77,6 +77,38 @@ def test_dataops_table_outputs_are_available_for_work_engine_env_wiring():
         assert f"  {output}:" in template
 
 
+def test_private_work_engine_lambda_is_wired_to_dataops_tables():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    work_engine = _resource_block(template, "WorkEngineFunction")
+    docs_app = _resource_block(template, "DocsFullAppFunction")
+    portal_secret = _resource_block(template, "WorkEnginePortalSecret")
+
+    assert "Type: AWS::SecretsManager::Secret" in portal_secret
+    assert "GenerateSecretString" in portal_secret
+    assert "DeletionPolicy: Retain" in portal_secret
+    assert "UpdateReplacePolicy: Retain" in portal_secret
+    assert "Type: AWS::Serverless::Function" in work_engine
+    assert "BuildMethod: makefile" in work_engine
+    assert "CodeUri: ../work-engine" in work_engine
+    assert "Runtime: nodejs20.x" in work_engine
+    assert "Handler: dist/handler.handler" in work_engine
+    assert "FunctionUrlConfig" not in work_engine
+    assert "WORK_ENGINE_AUTH_MODE: portal" in work_engine
+    assert "DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable" in work_engine
+    assert "DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable" in work_engine
+    assert "dynamodb:Query" in work_engine
+    assert "${DataOpsTasksTable.Arn}/index/*" in work_engine
+    assert "secretsmanager:GetSecretValue" in work_engine
+    assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret" in work_engine
+
+    assert "WORK_ENGINE_FUNCTION_NAME: !Ref WorkEngineFunction" in docs_app
+    assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret" in docs_app
+    assert "lambda:InvokeFunction" in docs_app
+    assert "!GetAtt WorkEngineFunction.Arn" in docs_app
+    assert "  WorkEngineFunctionName:" in template
+    assert "  WorkEnginePortalSecretName:" in template
+
+
 def test_github_deploy_role_can_manage_dataops_execution_tables():
     template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
 
@@ -86,3 +118,16 @@ def test_github_deploy_role_can_manage_dataops_execution_tables():
     assert "dynamodb:UpdateContinuousBackups" in template
     assert "dynamodb:UpdateTable" in template
     assert "table/${FullDocsStackName}-*" in template
+
+
+def test_github_deploy_role_can_manage_work_engine_lambda():
+    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "lambda:ListTags" in template
+    assert "iam:ListRoleTags" in template
+    assert "function:${FullDocsStackName}-WorkEngineFunction-*" in template
+    assert "role/${FullDocsStackName}-WorkEngineFunctionRole-*" in template
+    assert "/aws/lambda/${FullDocsStackName}-WorkEngineFunction-*" in template
+    assert "Sid: SecretsManagerDataOpsPortalSecret" in template
+    assert "secretsmanager:CreateSecret" in template
+    assert "secretsmanager:GetRandomPassword" in template

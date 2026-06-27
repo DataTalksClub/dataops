@@ -136,6 +136,34 @@ describe('API - File uploads', () => {
     assert.strictEqual(parsed.file.category, 'document');
   });
 
+  it('POST /api/files decodes base64 Lambda request bodies', async () => {
+    const fileContent = Buffer.from('base64 upload content');
+    const { body, contentType } = buildMultipart(
+      { taskId },
+      { fieldName: 'file', filename: 'base64.txt', content: fileContent, contentType: 'text/plain' }
+    );
+
+    const uploadRes = await handler({
+      httpMethod: 'POST',
+      path: '/api/files',
+      headers: { 'content-type': contentType },
+      body: Buffer.from(body, 'binary').toString('base64'),
+      isBase64Encoded: true,
+    }, {});
+
+    assert.strictEqual(uploadRes.statusCode, 201);
+    const uploaded = JSON.parse(uploadRes.body);
+    assert.strictEqual(uploaded.file.filename, 'base64.txt');
+
+    const downloadRes = await handler({
+      httpMethod: 'GET',
+      path: `/api/files/${uploaded.file.id}/download`,
+    }, {});
+
+    assert.strictEqual(downloadRes.statusCode, 200);
+    assert.deepStrictEqual(Buffer.from(downloadRes.body, 'binary'), fileContent);
+  });
+
   it('POST /api/files returns 400 when taskId missing', async () => {
     const fileContent = Buffer.from('no task id');
     const { body, contentType } = buildMultipart(
