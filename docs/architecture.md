@@ -52,10 +52,14 @@ The deployed function is `DocsFullAppFunction`, implemented by
 - GitHub-backed persistence.
 - Search through a `minsearch` index.
 - Compatibility `/git/*` endpoints used by the frontend.
+- Same-origin `/work/api/*` brokering to the private work-engine Lambda.
 
 The Lambda Function URL is public at the AWS edge, but the app requires its own
-basic-auth session before serving internal docs. The password is stored in AWS
-Secrets Manager.
+basic-auth session before serving internal docs or work routes. The password is
+stored in AWS Secrets Manager. V1 has no public work-engine URL: the browser
+uses the portal session cookie, and the Python portal invokes the private
+work-engine Lambda with trusted portal headers and a SAM-owned Secrets Manager
+shared secret.
 
 ## Content Save Lifecycle
 

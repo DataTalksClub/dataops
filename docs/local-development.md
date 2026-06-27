@@ -94,6 +94,10 @@ When `WORK_ENGINE_DEV_URL` is set, the portal local server intercepts all
 - `/work/health` -> `http://127.0.0.1:3000/api/health`
 
 This mirrors the production broker path without requiring a deployed Lambda.
+It is still a local-only HTTP proxy. In production, `/work/api/*` is handled by
+the authenticated Python portal, rewritten to `/api/*`, and invoked against the
+private `WorkEngineFunction` Lambda with the portal broker headers and shared
+Secrets Manager secret.
 
 When `WORK_ENGINE_DEV_URL` is not set, `/work/api/*` requests return a 503 and
 the dashboard falls back to doc-based lanes.
@@ -101,9 +105,15 @@ the dashboard falls back to doc-based lanes.
 ## Auth In Local Dev
 
 The work-engine dev server runs with `IS_LOCAL=true`, which enables `SKIP_AUTH`.
-The portal local server does not enforce session auth. In production, the portal
-authenticates every `/work/api/*` request before brokering it to the private
-work-engine Lambda.
+The portal local server does not enforce session auth. These bypasses are only
+for local development and tests.
+
+Production uses one browser-facing login path: `/login`, `/logout`, and the
+portal `dtc_auth` cookie. The frontend calls same-origin `/work/api/*` and does
+not use a standalone work-engine sign-in or localStorage bearer token. The
+deployed work-engine runs with `WORK_ENGINE_AUTH_MODE=portal`, remains private,
+and accepts protected `/api/*` calls only when the portal broker forwards valid
+trusted headers and the shared portal secret.
 
 ## Changed Area Matrix
 

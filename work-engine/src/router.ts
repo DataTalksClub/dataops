@@ -310,16 +310,20 @@ function validateDoneProofOnCreate(taskData: Record<string, unknown>): string | 
 async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const method = event.httpMethod || 'GET';
   const reqPath = event.path || '/';
+  const portalMode = process.env.WORK_ENGINE_AUTH_MODE === 'portal';
   decodeBase64Body(event);
 
   try {
     // ── Auth routes (exempt from middleware) ─────────────────────
     const portalUserId = await portalTrustedUserId(event);
-    if (process.env.WORK_ENGINE_AUTH_MODE === 'portal' && reqPath.startsWith('/api/auth')) {
+    if (portalMode && reqPath.startsWith('/api/auth')) {
       return jsonResponse(404, { error: 'Not found' });
     }
-    if (process.env.WORK_ENGINE_AUTH_MODE === 'portal' && reqPath === '/api/me' && portalUserId) {
-      return jsonResponse(200, { user: { id: portalUserId, name: 'Portal user' } });
+    if (portalMode && reqPath === '/api/me') {
+      if (portalUserId) {
+        return jsonResponse(200, { user: { id: portalUserId, name: 'Portal user' } });
+      }
+      return jsonResponse(401, { error: 'Unauthorized' });
     }
     if (reqPath.startsWith('/api/auth') || reqPath === '/api/me') {
       const result = await handleAuthRoutes(event);
@@ -333,6 +337,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (portalUserId) {
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = portalUserId;
+    }
+    if (portalMode && !portalUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+      return jsonResponse(401, { error: 'Unauthorized' });
     }
     if (!skipAuth && !portalUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
       const token = extractToken(event);

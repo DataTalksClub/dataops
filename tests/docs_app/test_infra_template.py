@@ -45,6 +45,20 @@ def test_dataops_execution_tables_have_retention_pitr_and_tags():
         assert "Value: ExecutionState" in block
 
 
+def test_dataops_sessions_table_is_retained_session_state_not_durable_execution_state():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    sessions = _resource_block(template, "DataOpsSessionsTable")
+
+    assert "Type: AWS::DynamoDB::Table" in sessions
+    assert "DeletionPolicy: Retain" in sessions
+    assert "UpdateReplacePolicy: Retain" in sessions
+    assert "BillingMode: PAY_PER_REQUEST" in sessions
+    assert "SSEEnabled: true" in sessions
+    assert "PointInTimeRecoveryEnabled: true" not in sessions
+    assert "Value: SessionState" in sessions
+    assert "Value: ExecutionState" not in sessions
+
+
 def test_dataops_execution_tables_match_work_engine_access_patterns():
     template = TEMPLATE.read_text(encoding="utf-8")
     tasks = _resource_block(template, "DataOpsTasksTable")

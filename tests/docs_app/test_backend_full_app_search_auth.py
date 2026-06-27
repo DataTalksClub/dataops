@@ -196,6 +196,8 @@ def test_full_app_brokers_work_api_to_private_work_engine(monkeypatch):
                 "content-type": "application/json",
                 "accept": "application/json",
                 "authorization": "Basic should-not-forward",
+                "cookie": "dtc_auth=should-not-forward; unrelated=value",
+                "x-random-browser-header": "should-not-forward",
             },
             queryStringParameters={"date": "2028-10-03"},
             body=json.dumps({"description": "Brokered task"}),
@@ -299,6 +301,16 @@ def test_full_app_work_api_requires_portal_auth_before_broker(monkeypatch):
 
     assert response["statusCode"] == 302
     assert response["headers"]["location"] == "/login"
+
+
+def test_full_app_work_shell_routes_require_portal_auth(monkeypatch):
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: full_app_handler.redirect_to_login())
+
+    for path in ["/work", "/work/tasks"]:
+        response = full_app_handler.handler(_event(path, "GET"), None)
+
+        assert response["statusCode"] == 302
+        assert response["headers"]["location"] == "/login"
 
 
 def test_full_app_reports_unconfigured_work_engine(monkeypatch):
