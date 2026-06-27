@@ -1,0 +1,139 @@
+name: Deploy DataOps V1 Lambda
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-dataops-v1.yml"
+      - "content/**"
+      - "frontend/**"
+      - "lambda-functions/**"
+      - "scripts/**"
+      - "tests/docs_app/**"
+      - "package.json"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  AWS_DEFAULT_REGION: eu-west-1
+  AWS_ROLE_ARN: arn:aws:iam::817685572750:role/dataops-github-actions-deploy
+  DOCS_GITHUB_OWNER: DataTalksClub
+  DOCS_GITHUB_REPO: dataops
+  DOCS_GITHUB_BRANCH: main
+  BASIC_AUTH_USERNAME: admin
+
+jobs:
+  checks:
+    name: Check DataOps v1 app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lambda-functions
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Run docs app tests
+        working-directory: .
+        run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
+
+      - name: Build search index
+        run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-search.index
+
+      - name: Smoke test full app handler
+        env:
+          BASIC_AUTH_PASSWORD: smoke-test-password
+          BASIC_AUTH_USERNAME: smoke-test-user
+        run: |
+          uv run --extra search python - <<'PY'
+          from lambda_functions.full_app_handler import handler
+
+          login = handler(
+              {
+                  "rawPath": "/login",
+                  "requestContext": {"http": {"method": "GET"}},
+              },
+              None,
+          )
+          assert login["statusCode"] == 200, login
+
+          protected = handler(
+              {
+                  "rawPath": "/",
+                  "requestContext": {"http": {"method": "GET"}},
+              },
+              None,
+          )
+          assert protected["statusCode"] == 302, protected
+          assert protected["headers"]["location"] == "/login", protected
+          PY
+
+      - name: Set up SAM
+        uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate SAM template
+        run: sam validate --template-file template.full.yaml
+
+      - name: Build SAM artifact
+        run: sam build --config-env full-sandbox
+
+  deploy:
+    name: Deploy DataOps v1 app
+    runs-on: ubuntu-latest
+    needs: checks
+    defaults:
+      run:
+        working-directory: lambda-functions
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Set up SAM
+        uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: dataops-v1-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build SAM artifact
+        run: sam build --config-env full-sandbox
+
+      - name: Deploy DataOps v1 stack
+        run: |
+          sam deploy \
+            --config-env full-sandbox \
+            --parameter-overrides \
+              "ParameterKey=GitHubOwner,ParameterValue=$DOCS_GITHUB_OWNER" \
+              "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
+              "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
+              "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"

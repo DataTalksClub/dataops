@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: DataTalksClub DataOps v1 protected Lambda app
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: DataTalksClub
+  GitHubRepo:
+    Type: String
+    Default: dataops
+  GitHubBranch:
+    Type: String
+    Default: main
+  GitHubTokenSecretName:
+    Type: String
+    Default: dtc-operations/full-app/github-token
+  BasicAuthUsername:
+    Type: String
+    Default: admin
+  BasicAuthPasswordSecretName:
+    Type: String
+    Default: dtc-operations/full-app/basic-auth-password
+
+Globals:
+  Function:
+    Runtime: python3.14
+    Timeout: 60
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+
+Resources:
+  DocsFullAppFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: lambda_functions.full_app_handler.handler
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BasicAuthPasswordSecretName}-*
+      Environment:
+        Variables:
+          GITHUB_OWNER: !Ref GitHubOwner
+          GITHUB_REPO: !Ref GitHubRepo
+          GITHUB_BRANCH: !Ref GitHubBranch
+          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
+          BASIC_AUTH_USERNAME: !Ref BasicAuthUsername
+          BASIC_AUTH_PASSWORD_SECRET_NAME: !Ref BasicAuthPasswordSecretName
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowCredentials: false
+          AllowHeaders:
+            - authorization
+            - content-type
+            - x-user-email
+          AllowMethods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+          AllowOrigins:
+            - "*"
+
+Outputs:
+  DocsFullAppUrl:
+    Description: Protected DataOps v1 Lambda Function URL
+    Value: !GetAtt DocsFullAppFunctionUrl.FunctionUrl

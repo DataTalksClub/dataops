@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: GitHub Actions OIDC deploy identity for DTC operations docs
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: DataTalksClub
+  GitHubRepo:
+    Type: String
+    Default: dtc-operations
+  GitHubBranch:
+    Type: String
+    Default: main
+  DeployRoleName:
+    Type: String
+    Default: dtc-operations-github-actions-deploy
+  FullDocsStackName:
+    Type: String
+    Default: dtc-operations-full-sandbox
+  FullDocsRegion:
+    Type: String
+    Default: eu-west-1
+  ApiStackName:
+    Type: String
+    Default: dtc-operations-api
+  ApiRegion:
+    Type: String
+    Default: eu-central-1
+  SamArtifactBucketName:
+    Type: String
+    Default: aws-sam-cli-managed-default-samclisourcebucket-dgwncwijmnpd
+  GitHubOidcThumbprint:
+    Type: String
+    Default: 22ff89586561fc2d52f77491e9f1eff1b80be33e
+
+Resources:
+  GitHubActionsOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - !Ref GitHubOidcThumbprint
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RoleName: !Ref DeployRoleName
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubActionsOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}
+      Policies:
+        - PolicyName: dtc-operations-full-docs-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: CloudFormationFullDocsStack
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                  - cloudformation:UpdateStack
+                  - cloudformation:ValidateTemplate
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${FullDocsRegion}:${AWS::AccountId}:stack/${FullDocsStackName}/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${ApiRegion}:${AWS::AccountId}:stack/${ApiStackName}/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${FullDocsRegion}:aws:transform/Serverless-2016-10-31
+                  - !Sub arn:${AWS::Partition}:cloudformation:${ApiRegion}:aws:transform/Serverless-2016-10-31
+              - Sid: CloudFormationRead
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ListStacks
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: SamArtifacts
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteObject
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${SamArtifactBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::${SamArtifactBucketName}/*
+                  - !Sub arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default-*
+                  - !Sub arn:${AWS::Partition}:s3:::aws-sam-cli-managed-default-*/*
+              - Sid: LambdaFullDocsFunction
+                Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:GetFunctionUrlConfig
+                  - lambda:InvokeFunction
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:UpdateFunctionUrlConfig
+                  - lambda:CreateFunctionUrlConfig
+                  - lambda:DeleteFunctionUrlConfig
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                Resource:
+                  - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*
+                  - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*:*
+                  - !Sub arn:${AWS::Partition}:lambda:${ApiRegion}:${AWS::AccountId}:function:${ApiStackName}-DocsApiFunction-*
+                  - !Sub arn:${AWS::Partition}:lambda:${ApiRegion}:${AWS::AccountId}:function:${ApiStackName}-DocsApiFunction-*:*
+              - Sid: IamFullDocsRole
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${FullDocsStackName}-DocsFullAppFunctionRole-*
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiStackName}-DocsApiFunctionRole-*
+              - Sid: LogsFullDocs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:DescribeLogGroups
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${FullDocsRegion}:${AWS::AccountId}:log-group:/aws/lambda/${FullDocsStackName}-DocsFullAppFunction-*:*
+                  - !Sub arn:${AWS::Partition}:logs:${ApiRegion}:${AWS::AccountId}:log-group:/aws/lambda/${ApiStackName}-DocsApiFunction-*:*
+
+Outputs:
+  GitHubActionsDeployRoleArn:
+    Description: Role ARN for aws-actions/configure-aws-credentials
+    Value: !GetAtt GitHubActionsDeployRole.Arn

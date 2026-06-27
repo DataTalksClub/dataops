@@ -1,0 +1,17 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+reports/
+.tmp/
+dist/
+.aws-sam/
+.env
+.env.*
+!.env.example
+*.zip
+frontend/.vite/
+frontend/dist/
+backend/dist/
+lambda-functions/src/lambda_functions/search.index
+lambda-functions/.aws-sam/

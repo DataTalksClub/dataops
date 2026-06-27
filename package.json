@@ -1,0 +1,10 @@
+{
+  "name": "dataops",
+  "private": true,
+  "scripts": {
+    "build:work-engine": "npm --prefix work-engine run build",
+    "dev:work-engine": "npm --prefix work-engine run dev",
+    "test:work-engine": "npm --prefix work-engine test",
+    "typecheck:work-engine": "npm --prefix work-engine run typecheck"
+  }
+}
