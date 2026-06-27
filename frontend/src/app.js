@@ -141,6 +141,7 @@ let lastSavedContent = "";
 let hasDraft = false;
 let searchController = null;
 let operationsWorkSnapshot = emptyOperationsWorkSnapshot();
+let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
 const DRAFT_PREFIX = "dtc-doc-draft:";
 const customSelects = [];
 const LIST_LIMIT = 120;
@@ -368,6 +369,7 @@ async function loadDocuments() {
     renderRecentlyViewed();
     renderPinned();
     refreshOperationsWorkSnapshot({ rerender: true });
+    refreshOperationsRecurringSnapshot({ rerender: true });
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -630,6 +632,7 @@ function renderOperationsHome(documents) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
     workSnapshot: operationsWorkSnapshot,
+    recurringSnapshot: operationsRecurringSnapshot,
   });
   documentList.classList.add("is-operations-home");
   libraryTitle.textContent = "Operations Home";
@@ -677,8 +680,15 @@ function renderOperationsHome(documents) {
   quickWorkflow.className = "ops-quick-btn";
   quickWorkflow.textContent = "+ Workflow";
   quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
-  quickBar.append(quickTask, quickWorkflow);
+  const quickRecurring = document.createElement("button");
+  quickRecurring.type = "button";
+  quickRecurring.className = "ops-quick-btn";
+  quickRecurring.textContent = "+ Recurring";
+  quickRecurring.addEventListener("click", () => openQuickRecurringForm());
+  quickBar.append(quickTask, quickWorkflow, quickRecurring);
   wrap.append(quickBar);
+
+  wrap.append(renderRecurringOperationsSection(model.recurring));
 
   const lanes = document.createElement("section");
   lanes.className = "ops-lanes";
@@ -742,6 +752,7 @@ function buildOperationsHomeModel(documents, options) {
     bundleTasks: options.bundleTasks,
     errors: options.workErrors,
   }, { today });
+  const recurring = normalizeOperationsRecurringSnapshot(options.recurringSnapshot || {});
   const hasLiveWork = work.loaded || work.todayTasks.length > 0 || work.overdueTasks.length > 0 || work.waitingTasks.length > 0 || work.activeBundles.length > 0;
   const templates = docs
     .filter(isWorkflowTemplateDoc)
@@ -798,6 +809,7 @@ function buildOperationsHomeModel(documents, options) {
     lanes,
     templates,
     references: buildOperationsReferenceLinks(docs),
+    recurring,
     stats: {
       totalDocs: docs.length,
       workflowTemplates: templates.length,
@@ -807,6 +819,8 @@ function buildOperationsHomeModel(documents, options) {
       overdueTasks: work.overdueTasks.length,
       waitingTasks: work.waitingTasks.length,
       activeBundles: work.activeBundles.length,
+      recurringConfigs: recurring.configs.length,
+      enabledRecurringConfigs: recurring.enabled.length,
       workErrors: work.errors,
     },
   };
@@ -822,6 +836,27 @@ function emptyOperationsWorkSnapshot() {
     bundleTasks: {},
     errors: [],
   };
+}
+
+function emptyOperationsRecurringSnapshot() {
+  return {
+    loaded: false,
+    recurringConfigs: [],
+    errors: [],
+  };
+}
+
+async function refreshOperationsRecurringSnapshot(options = {}) {
+  const snapshot = emptyOperationsRecurringSnapshot();
+  try {
+    const payload = await request(workApiUrl("/api/recurring"));
+    snapshot.loaded = true;
+    snapshot.recurringConfigs = recurringConfigsFromPayload(payload);
+  } catch (err) {
+    snapshot.errors = [err?.message || "Recurring API request failed"];
+  }
+  operationsRecurringSnapshot = normalizeOperationsRecurringSnapshot(snapshot);
+  if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
 }
 
 async function refreshOperationsWorkSnapshot(options = {}) {
@@ -1815,6 +1850,80 @@ async function openQuickWorkflowForm() {
   });
 }
 
+function openQuickRecurringForm() {
+  const overlay = createQuickFormOverlay("New recurring operation");
+  const form = document.createElement("div");
+  form.className = "quick-form";
+
+  const descriptionInput = createQuickInput("Description", "text", "");
+  const scheduleLabel = document.createElement("label");
+  scheduleLabel.className = "quick-form-label";
+  scheduleLabel.textContent = "Schedule";
+  const scheduleSelect = document.createElement("select");
+  scheduleSelect.className = "quick-form-select";
+  for (const [value, label] of [["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]]) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    scheduleSelect.append(opt);
+  }
+  scheduleLabel.append(scheduleSelect);
+
+  const timeInput = createQuickInput("Time", "time", "09:00");
+  const weekday = createQuickSelect("Weekday", [
+    ["1", "Monday"],
+    ["2", "Tuesday"],
+    ["3", "Wednesday"],
+    ["4", "Thursday"],
+    ["5", "Friday"],
+    ["6", "Saturday"],
+    ["0", "Sunday"],
+  ], "1");
+  const monthDay = createQuickInput("Day of month", "number", "1");
+  monthDay.input.min = "1";
+  monthDay.input.max = "31";
+  const enabled = createQuickCheckbox("Enabled", true);
+
+  const syncScheduleFields = () => {
+    weekday.label.hidden = scheduleSelect.value !== "weekly";
+    monthDay.label.hidden = scheduleSelect.value !== "monthly";
+  };
+  scheduleSelect.addEventListener("change", syncScheduleFields);
+  syncScheduleFields();
+
+  const createBtn = document.createElement("button");
+  createBtn.type = "button";
+  createBtn.className = "task-action-btn is-primary";
+  createBtn.textContent = "Create recurring";
+  createBtn.addEventListener("click", async () => {
+    const description = descriptionInput.input.value.trim();
+    if (!description) { reportError("Recurring description is required."); return; }
+    const cronExpression = cronExpressionFromRecurringForm(scheduleSelect.value, timeInput.input.value, weekday.input.value, monthDay.input.value);
+    if (!cronExpression) return;
+    createBtn.disabled = true;
+    createBtn.textContent = "Creating...";
+    try {
+      await request(workApiUrl("/api/recurring"), {
+        method: "POST",
+        body: JSON.stringify({
+          description,
+          cronExpression,
+          enabled: enabled.input.checked,
+        }),
+      });
+      overlay.remove();
+      await refreshOperationsRecurringSnapshot({ rerender: true });
+    } catch (err) {
+      reportError(`Could not create recurring operation: ${err.message || "request failed"}`);
+      createBtn.disabled = false;
+      createBtn.textContent = "Create recurring";
+    }
+  });
+
+  form.append(descriptionInput.label, scheduleLabel, timeInput.label, weekday.label, monthDay.label, enabled.label, createBtn);
+  overlay.querySelector(".quick-form-body").append(form);
+}
+
 function createQuickInput(labelText, type, value) {
   const label = document.createElement("label");
   label.className = "quick-form-label";
@@ -1824,6 +1933,66 @@ function createQuickInput(labelText, type, value) {
   input.value = value;
   label.append(input);
   return { label, input };
+}
+
+function createQuickSelect(labelText, options, value) {
+  const label = document.createElement("label");
+  label.className = "quick-form-label";
+  label.textContent = labelText;
+  const input = document.createElement("select");
+  input.className = "quick-form-select";
+  for (const [optionValue, optionLabel] of options) {
+    const opt = document.createElement("option");
+    opt.value = optionValue;
+    opt.textContent = optionLabel;
+    if (optionValue === value) opt.selected = true;
+    input.append(opt);
+  }
+  label.append(input);
+  return { label, input };
+}
+
+function createQuickCheckbox(labelText, checked) {
+  const label = document.createElement("label");
+  label.className = "quick-form-label quick-form-checkbox";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(checked);
+  label.append(input, document.createTextNode(labelText));
+  return { label, input };
+}
+
+function cronExpressionFromRecurringForm(schedule, timeValue, weekday, dayOfMonth) {
+  const time = String(timeValue || "").match(/^(\d{2}):(\d{2})$/);
+  if (!time) {
+    reportError("Choose a valid time.");
+    return "";
+  }
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    reportError("Choose a valid time.");
+    return "";
+  }
+  if (schedule === "daily") return `${minute} ${hour} * * *`;
+  if (schedule === "weekly") {
+    const day = Number(weekday);
+    if (day < 0 || day > 6) {
+      reportError("Choose a valid weekday.");
+      return "";
+    }
+    return `${minute} ${hour} * * ${day}`;
+  }
+  if (schedule === "monthly") {
+    const day = Number(dayOfMonth);
+    if (day < 1 || day > 31) {
+      reportError("Choose a valid day of month.");
+      return "";
+    }
+    return `${minute} ${hour} ${day} * *`;
+  }
+  reportError("Choose a recurring schedule.");
+  return "";
 }
 
 function createQuickFormOverlay(titleText) {
@@ -1878,6 +2047,36 @@ function bundlesFromWorkPayload(payload) {
   if (Array.isArray(payload.bundles)) return payload.bundles;
   if (Array.isArray(payload.items)) return payload.items;
   return [];
+}
+
+function recurringConfigsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.recurringConfigs)) return payload.recurringConfigs;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+function normalizeOperationsRecurringSnapshot(input) {
+  const snapshot = input && typeof input === "object" ? input : {};
+  const configs = recurringConfigsFromPayload(snapshot.recurringConfigs || snapshot.configs || []);
+  const normalized = configs
+    .filter((config) => config && typeof config === "object")
+    .map((config) => ({
+      ...config,
+      enabled: config.enabled !== false,
+    }))
+    .sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      return recurringConfigTitle(a).localeCompare(recurringConfigTitle(b));
+    });
+  return {
+    loaded: Boolean(snapshot.loaded),
+    configs: normalized,
+    enabled: normalized.filter((config) => config.enabled !== false),
+    disabled: normalized.filter((config) => config.enabled === false),
+    errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
+  };
 }
 
 function normalizeOperationsWorkSnapshot(input, options) {
@@ -2293,6 +2492,66 @@ function renderOperationsLaneItem(item) {
   return button;
 }
 
+function renderRecurringOperationsSection(recurring) {
+  const section = document.createElement("section");
+  section.className = "ops-section ops-recurring-section";
+  section.setAttribute("aria-label", "Recurring operations");
+
+  const header = document.createElement("div");
+  header.className = "ops-section-header";
+  const title = document.createElement("h3");
+  title.textContent = "Recurring Operations";
+  const meta = document.createElement("span");
+  const enabled = recurring?.enabled?.length || 0;
+  const paused = recurring?.disabled?.length || 0;
+  meta.textContent = recurring?.loaded ? `${enabled} enabled - ${paused} paused` : "Not loaded";
+  header.append(title, meta);
+
+  const generate = document.createElement("button");
+  generate.type = "button";
+  generate.className = "ops-quick-btn";
+  generate.textContent = "Generate today";
+  generate.addEventListener("click", () => generateRecurringTasksForToday(generate));
+  header.append(generate);
+  section.append(header);
+
+  const list = document.createElement("div");
+  list.className = "ops-recurring-list";
+  const configs = Array.isArray(recurring?.configs) ? recurring.configs.slice(0, 6) : [];
+  if (configs.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "ops-empty";
+    empty.textContent = recurring?.errors?.length ? "Recurring configs could not be loaded." : "No recurring configs yet.";
+    list.append(empty);
+  } else {
+    for (const config of configs) list.append(renderRecurringConfigItem(config));
+  }
+  section.append(list);
+  return section;
+}
+
+function renderRecurringConfigItem(config) {
+  const item = document.createElement("div");
+  item.className = "ops-recurring-item";
+  if (config.enabled === false) item.classList.add("is-paused");
+
+  const text = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = recurringConfigTitle(config);
+  const meta = document.createElement("span");
+  meta.textContent = formatRecurringSchedule(config.cronExpression || "");
+  text.append(title, meta);
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "task-action-btn";
+  toggle.textContent = config.enabled === false ? "Resume" : "Pause";
+  toggle.addEventListener("click", () => toggleRecurringConfig(config.id, config.enabled === false, toggle));
+
+  item.append(text, toggle);
+  return item;
+}
+
 function renderWorkflowTemplateCard(template) {
   const button = document.createElement("button");
   button.type = "button";
@@ -2317,6 +2576,80 @@ function renderWorkflowTemplateCard(template) {
   }
   button.append(title, summary, chips);
   return button;
+}
+
+async function generateRecurringTasksForToday(button) {
+  const originalText = button?.textContent || "Generate today";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Generating...";
+  }
+  const today = todayIsoDate();
+  try {
+    await request(workApiUrl("/api/recurring/generate"), {
+      method: "POST",
+      body: JSON.stringify({ startDate: today, endDate: today }),
+    });
+    await refreshOperationsWorkSnapshot({ rerender: true });
+    await refreshOperationsRecurringSnapshot({ rerender: true });
+  } catch (err) {
+    reportError(`Could not generate recurring tasks: ${err.message || "request failed"}`);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+async function toggleRecurringConfig(configId, enabled, button) {
+  const originalText = button?.textContent || (enabled ? "Resume" : "Pause");
+  if (button) {
+    button.disabled = true;
+    button.textContent = enabled ? "Resuming..." : "Pausing...";
+  }
+  try {
+    await request(workApiUrl(`/api/recurring/${encodeURIComponent(configId)}`), {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+    await refreshOperationsRecurringSnapshot({ rerender: true });
+  } catch (err) {
+    reportError(`Could not update recurring operation: ${err.message || "request failed"}`);
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+function recurringConfigTitle(config) {
+  return String(config?.description || config?.name || config?.id || "Recurring operation");
+}
+
+function formatRecurringSchedule(cronExpression) {
+  const parts = String(cronExpression || "").trim().split(/\s+/);
+  if (parts.length !== 5) return cronExpression || "No schedule";
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  if (month !== "*") return cronExpression;
+  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  if (dayOfMonth === "*" && dayOfWeek === "*") return `Daily at ${time}`;
+  if (dayOfMonth === "*" && dayOfWeek !== "*") return `Weekly on ${weekdayName(dayOfWeek)} at ${time}`;
+  if (dayOfMonth !== "*" && dayOfWeek === "*") return `Monthly on day ${dayOfMonth} at ${time}`;
+  return cronExpression;
+}
+
+function weekdayName(value) {
+  const names = {
+    0: "Sunday",
+    1: "Monday",
+    2: "Tuesday",
+    3: "Wednesday",
+    4: "Thursday",
+    5: "Friday",
+    6: "Saturday",
+  };
+  return names[String(value)] || value;
 }
 
 function renderOperationsReference(ref) {

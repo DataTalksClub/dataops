@@ -1220,6 +1220,51 @@ body[data-view="create"] .editor-view {
   text-decoration: none;
 }
 
+.ops-recurring-section {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.ops-recurring-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ops-recurring-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--control);
+  padding: 10px;
+}
+
+.ops-recurring-item.is-paused {
+  opacity: 0.72;
+}
+
+.ops-recurring-item > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ops-recurring-item strong,
+.ops-recurring-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-recurring-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ---------- Task action panel ---------- */
 
 .task-panel[hidden] {
@@ -1548,6 +1593,17 @@ body[data-view="create"] .editor-view {
 .quick-form-select {
   width: 100%;
   appearance: auto;
+}
+
+.quick-form-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-form-checkbox input {
+  width: auto;
+  padding: 0;
 }
 
 /* ---------- Notification bell ---------- */
@@ -2553,6 +2609,7 @@ body.dark .task-status-badge.waiting {
 @media (max-width: 1100px) {
   .ops-lanes,
   .ops-template-grid,
+  .ops-recurring-list,
   .ops-reference-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3952,6 +4009,7 @@ body[data-view="create"] #back-button {
   .ops-summary,
   .ops-lanes,
   .ops-template-grid,
+  .ops-recurring-list,
   .ops-reference-grid {
     grid-template-columns: 1fr;
   }

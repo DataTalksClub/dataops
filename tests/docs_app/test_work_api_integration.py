@@ -40,6 +40,9 @@ def test_frontend_builds_work_api_urls_not_bare_api():
     assert "workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`)" in source, (
         "task panel must fetch task detail via /work/api/tasks/:id"
     )
+    assert 'workApiUrl("/api/recurring")' in source, (
+        "dashboard must load recurring configs via /work/api/recurring"
+    )
 
 
 def test_frontend_task_and_workflow_mutations_use_work_api():
@@ -56,6 +59,15 @@ def test_frontend_task_and_workflow_mutations_use_work_api():
     )
     assert "request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`), {" in source, (
         "bundle stage/link/reference updates must go through /work/api/bundles/:id"
+    )
+    assert 'request(workApiUrl("/api/recurring"), {' in source, (
+        "recurring config creation must POST through /work/api/recurring"
+    )
+    assert 'request(workApiUrl("/api/recurring/generate"), {' in source, (
+        "recurring generation must POST through /work/api/recurring/generate"
+    )
+    assert "request(workApiUrl(`/api/recurring/${encodeURIComponent(configId)}`), {" in source, (
+        "recurring toggles must update through /work/api/recurring/:id"
     )
 
 
