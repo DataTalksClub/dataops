@@ -1191,6 +1191,19 @@ body[data-view="create"] .editor-view {
   padding: 14px;
 }
 
+.ops-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: end;
+}
+
+.ops-template-actions .task-action-btn {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .ops-card-chips {
   display: flex;
   flex-wrap: wrap;
