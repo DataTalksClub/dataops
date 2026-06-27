@@ -180,6 +180,88 @@ assert.equal(basename("content/finance/sops/pay-vat.md"), "pay vat");
     assert result["ok"] is True
 
 
+def test_operations_home_model_builds_daily_lanes_from_docs_metadata():
+    result = _run_app_js_functions(
+        """
+const docs = [
+  {
+    path: "content/tasks/templates/newsletter.md",
+    title: "Newsletter Task Template",
+    summary: "Git-backed DataTasks template for the Newsletter operational workflow.",
+    doc_type: "task-template",
+    tags: ["Newsletter", "task-template", "newsletter"],
+  },
+  {
+    path: "content/tasks/templates/podcast.md",
+    title: "Podcast Task Template",
+    summary: "Git-backed DataTasks template for the Podcast operational workflow.",
+    doc_type: "task-template",
+    tags: ["Podcast", "task-template", "podcast"],
+  },
+  {
+    path: "content/tasks/templates/social-media.md",
+    title: "Social Media Weekly Task Template",
+    summary: "Git-backed DataTasks template for the Social Media Weekly operational workflow.",
+    doc_type: "task-template",
+    tags: ["Social media", "task-template", "social-media"],
+  },
+  {
+    path: "content/media/podcast/templates/remind-guest.md",
+    title: "Podcast reminder email",
+    summary: "Follow up with the guest before the event.",
+    doc_type: "template",
+    tags: ["podcast", "email"],
+  },
+  {
+    path: "content/finance/reference/invoices-receipts-and-statements.md",
+    title: "Invoices, Receipts, And Statements",
+    summary: "Finance reference.",
+    doc_type: "reference",
+    tags: ["finance"],
+  },
+];
+
+const model = buildOperationsHomeModel(docs, {
+  draftPaths: ["content/media/podcast/templates/remind-guest.md"],
+});
+
+assert.equal(model.stats.totalDocs, 5);
+assert.equal(model.stats.workflowTemplates, 3);
+assert.equal(model.stats.recurringTemplates, 2);
+assert.deepEqual(model.templates.map((template) => template.slug), ["newsletter", "podcast", "social-media"]);
+assert.equal(model.templates[0].title, "Newsletter");
+assert.equal(model.templates[0].recurring, true);
+assert.equal(model.templates[1].atRisk, true);
+
+const lanes = Object.fromEntries(model.lanes.map((lane) => [lane.id, lane]));
+assert.deepEqual(lanes.recurring.items.map((item) => item.title), ["Newsletter", "Social Media Weekly"]);
+assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Podcast reminder email"]);
+assert.equal(lanes.waiting.items[0].title, "Podcast reminder email");
+assert.equal(lanes.risk.items.some((item) => item.title === "Podcast"), true);
+assert.equal(model.references.some((ref) => ref.title === "DataOps V1 Goal" && ref.href.includes(".goal-v1.md")), true);
+assert.equal(model.references.some((ref) => ref.path === "content/finance/reference/invoices-receipts-and-statements.md"), true);
+""",
+        [
+            "buildOperationsHomeModel",
+            "isWorkflowTemplateDoc",
+            "summarizeWorkflowTemplate",
+            "workflowSlugFromDoc",
+            "workflowPriority",
+            "isRecurringWorkflowSlug",
+            "isAtRiskWorkflowSlug",
+            "isFollowUpDoc",
+            "operationItemFromTemplate",
+            "operationItemFromDoc",
+            "dedupeOperationItems",
+            "buildOperationsReferenceLinks",
+            "basename",
+            "cleanPath",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
 def test_markdown_and_wiki_links_render_internal_docs_as_app_routes():
     result = _run_app_js_functions(
         """

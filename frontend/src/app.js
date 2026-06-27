@@ -49,6 +49,7 @@ const gitCommitCancel = document.querySelector("#git-commit-cancel");
 const gitCommitSubmit = document.querySelector("#git-commit-submit");
 const gitResult = document.querySelector("#git-result");
 const mobileNewButton = document.querySelector("#mobile-new-button");
+const operationsHomeButton = document.querySelector("#operations-home-button");
 const newDocumentButton = document.querySelector("#new-document-button");
 const searchForm = document.querySelector("#search-form");
 const searchInput = document.querySelector("#search-input");
@@ -130,6 +131,7 @@ gitCommitCancel.addEventListener("click", closeCommitForm);
 gitCommitBackdrop.addEventListener("click", closeCommitForm);
 document.querySelector("[data-action='cancel-commit']").addEventListener("click", closeCommitForm);
 gitCommitForm.addEventListener("submit", submitCommitForm);
+operationsHomeButton.addEventListener("click", showOperationsHome);
 newDocumentButton.addEventListener("click", showCreate);
 mobileNewButton.addEventListener("click", showCreate);
 backButton.addEventListener("click", showLibrary);
@@ -524,11 +526,10 @@ async function refreshDocuments() {
     renderTree(localFiltered);
 
     if (!selectedFolder) {
-      // No folder or search: show a lightweight landing pane and skip
+      // No folder or search: show the daily operations home and skip
       // rendering the (potentially huge) document list.
       visibleDocuments = [];
-      renderLanding(localFiltered.length);
-      setStatus(`${localFiltered.length} documents available.`);
+      renderOperationsHome(localFiltered);
       syncLibraryPageTitle();
       return;
     }
@@ -582,72 +583,347 @@ function restoreFiltersExpanded() {
   setFiltersExpanded(expanded || activeFilterCount() > 0);
 }
 
-function renderLanding(total) {
-  libraryTitle.textContent = "DataOps";
+function renderOperationsHome(documents) {
+  const model = buildOperationsHomeModel(documents, { draftPaths: listDraftPaths() });
+  documentList.classList.add("is-operations-home");
+  libraryTitle.textContent = "Operations Home";
+  setPageTitle("Operations Home", "Home");
   clearSelectionButton.hidden = true;
+  setStatus(`${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} workflow templates · ${model.stats.recurringTemplates} recurring.`);
 
   const wrap = document.createElement("div");
-  wrap.className = "landing";
+  wrap.className = "operations-home";
 
-  const heading = document.createElement("p");
-  heading.className = "landing-heading";
-  heading.textContent = total === 0 ? "No documents indexed yet." : "Start from the page tree.";
-  wrap.append(heading);
-
-  const hint = document.createElement("p");
-  hint.className = "landing-hint";
-  hint.textContent = "Pick a folder in the sidebar, search to find a doc, or open the palette with Cmd/Ctrl+P.";
-  wrap.append(hint);
-
-  const shortcutsBlock = document.createElement("section");
-  shortcutsBlock.className = "landing-shortcuts";
-  const sh = document.createElement("h3");
-  sh.textContent = "Shortcuts";
-  shortcutsBlock.append(sh);
-  const dl = document.createElement("dl");
-  const shortcuts = [
-    ["/", "Focus sidebar search"],
-    ["Cmd / Ctrl + K", "Focus search from anywhere"],
-    ["Cmd / Ctrl + P", "Quick-open any doc"],
-    ["Cmd / Ctrl + S", "Save current doc"],
-    ["Cmd / Ctrl + Shift + S", "Save all drafts"],
-    ["Esc", "Close modals · cancel inline edit"],
-    ["Cmd / Ctrl + Enter", "Commit inline edit"],
-  ];
-  for (const [key, desc] of shortcuts) {
-    const dt = document.createElement("dt");
-    dt.innerHTML = `<kbd>${key}</kbd>`;
-    const dd = document.createElement("dd");
-    dd.textContent = desc;
-    dl.append(dt, dd);
-  }
-  shortcutsBlock.append(dl);
-  wrap.append(shortcutsBlock);
-
-  const tipsBlock = document.createElement("section");
-  tipsBlock.className = "landing-shortcuts";
-  const th = document.createElement("h3");
-  th.textContent = "Block view tips";
-  tipsBlock.append(th);
-  const tips = document.createElement("ul");
-  for (const t of [
-    "Click a Step body, Section, Group title, or caption to edit inline.",
-    "Drop or paste images on a Step to attach them as screenshots.",
-    "Drag the ⋮⋮ handle to reorder steps, groups, prose, or screenshots.",
-    "Save all drafts at once via the Pending changes panel.",
-    "Review lint and commit from the publish dialog once you're done.",
+  const summary = document.createElement("section");
+  summary.className = "ops-summary";
+  summary.setAttribute("aria-label", "Operations summary");
+  for (const stat of [
+    ["Today", model.lanes.find((lane) => lane.id === "today")?.items.length || 0],
+    ["Overdue", model.lanes.find((lane) => lane.id === "overdue")?.items.length || 0],
+    ["Waiting", model.lanes.find((lane) => lane.id === "waiting")?.items.length || 0],
+    ["Recurring", model.stats.recurringTemplates],
   ]) {
-    const li = document.createElement("li");
-    li.textContent = t;
-    tips.append(li);
+    const box = document.createElement("div");
+    box.className = "ops-stat";
+    const value = document.createElement("strong");
+    value.textContent = String(stat[1]);
+    const label = document.createElement("span");
+    label.textContent = stat[0];
+    box.append(value, label);
+    summary.append(box);
   }
-  tipsBlock.append(tips);
-  wrap.append(tipsBlock);
+  wrap.append(summary);
+
+  const lanes = document.createElement("section");
+  lanes.className = "ops-lanes";
+  lanes.setAttribute("aria-label", "Daily lanes");
+  for (const lane of model.lanes) lanes.append(renderOperationsLane(lane));
+  wrap.append(lanes);
+
+  const templates = document.createElement("section");
+  templates.className = "ops-section";
+  templates.setAttribute("aria-label", "Workflow templates");
+  const templatesHeader = document.createElement("div");
+  templatesHeader.className = "ops-section-header";
+  const templatesTitle = document.createElement("h3");
+  templatesTitle.textContent = "Workflow Templates";
+  const templatesMeta = document.createElement("span");
+  templatesMeta.textContent = `${model.templates.length} available`;
+  templatesHeader.append(templatesTitle, templatesMeta);
+  templates.append(templatesHeader);
+  const templateGrid = document.createElement("div");
+  templateGrid.className = "ops-template-grid";
+  for (const template of model.templates) templateGrid.append(renderWorkflowTemplateCard(template));
+  if (model.templates.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "ops-empty";
+    empty.textContent = "No workflow templates indexed.";
+    templateGrid.append(empty);
+  }
+  templates.append(templateGrid);
+  wrap.append(templates);
+
+  const refs = document.createElement("section");
+  refs.className = "ops-section";
+  refs.setAttribute("aria-label", "Goal and reference docs");
+  const refsHeader = document.createElement("div");
+  refsHeader.className = "ops-section-header";
+  const refsTitle = document.createElement("h3");
+  refsTitle.textContent = "Goal And Reference Docs";
+  refsHeader.append(refsTitle);
+  refs.append(refsHeader);
+  const refsGrid = document.createElement("div");
+  refsGrid.className = "ops-reference-grid";
+  for (const ref of model.references) refsGrid.append(renderOperationsReference(ref));
+  refs.append(refsGrid);
+  wrap.append(refs);
 
   documentList.replaceChildren(wrap);
 }
 
+function buildOperationsHomeModel(documents, options) {
+  options = options || {};
+  const docs = Array.isArray(documents) ? documents : [];
+  const draftPaths = Array.isArray(options.draftPaths) ? options.draftPaths : [];
+  const templates = docs
+    .filter(isWorkflowTemplateDoc)
+    .map((doc) => summarizeWorkflowTemplate(doc))
+    .sort((a, b) => workflowPriority(a.slug) - workflowPriority(b.slug) || a.title.localeCompare(b.title));
+
+  const draftItems = draftPaths.map((path) => {
+    const doc = docs.find((candidate) => candidate.path === path) || { path, title: basename(path), summary: "" };
+    return operationItemFromDoc(doc, "Local draft");
+  });
+  const recurringItems = templates.filter((template) => template.recurring).map(operationItemFromTemplate);
+  const atRiskItems = templates.filter((template) => template.atRisk).map(operationItemFromTemplate);
+  const followUpItems = docs.filter(isFollowUpDoc).slice(0, 6).map((doc) => operationItemFromDoc(doc, "Follow-up"));
+  const todayItems = dedupeOperationItems([...recurringItems, ...templates.slice(0, 3).map(operationItemFromTemplate)]).slice(0, 6);
+
+  const lanes = [
+    {
+      id: "today",
+      title: "Today",
+      empty: "No daily workflow docs indexed.",
+      items: todayItems,
+    },
+    {
+      id: "overdue",
+      title: "Overdue",
+      empty: "No local overdue signals.",
+      items: draftItems,
+    },
+    {
+      id: "waiting",
+      title: "Waiting / Follow-Ups",
+      empty: "No follow-up docs matched.",
+      items: followUpItems,
+    },
+    {
+      id: "risk",
+      title: "At-Risk Workflows",
+      empty: "No at-risk workflow templates matched.",
+      items: atRiskItems,
+    },
+    {
+      id: "recurring",
+      title: "Recurring",
+      empty: "No recurring workflow templates indexed.",
+      items: recurringItems,
+    },
+  ];
+
+  return {
+    lanes,
+    templates,
+    references: buildOperationsReferenceLinks(docs),
+    stats: {
+      totalDocs: docs.length,
+      workflowTemplates: templates.length,
+      recurringTemplates: recurringItems.length,
+    },
+  };
+}
+
+function isWorkflowTemplateDoc(doc) {
+  if (!doc || !doc.path) return false;
+  return doc.doc_type === "task-template" || cleanPath(doc.path).startsWith("tasks/templates/");
+}
+
+function summarizeWorkflowTemplate(doc) {
+  const slug = workflowSlugFromDoc(doc);
+  const tags = Array.isArray(doc.tags) ? doc.tags.filter((tag) => tag && tag !== "task-template") : [];
+  return {
+    title: (doc.title || basename(doc.path || "")).replace(/\s+Task Template$/i, ""),
+    summary: doc.summary || "Git-backed operational workflow template.",
+    path: doc.path,
+    slug,
+    tags,
+    recurring: isRecurringWorkflowSlug(slug),
+    atRisk: isAtRiskWorkflowSlug(slug),
+  };
+}
+
+function workflowSlugFromDoc(doc) {
+  const path = cleanPath(doc.path || "");
+  const filename = path.split("/").pop() || "";
+  return filename.replace(/\.md$/, "");
+}
+
+function workflowPriority(slug) {
+  const order = [
+    "newsletter",
+    "podcast",
+    "webinar",
+    "workshop",
+    "book-of-the-week",
+    "course",
+    "office-hours",
+    "tax-report",
+    "social-media",
+    "oss",
+    "maven-ll",
+  ];
+  const index = order.indexOf(slug);
+  return index === -1 ? order.length : index;
+}
+
+function isRecurringWorkflowSlug(slug) {
+  return ["newsletter", "social-media", "tax-report"].includes(slug);
+}
+
+function isAtRiskWorkflowSlug(slug) {
+  return ["podcast", "webinar", "workshop", "newsletter", "tax-report"].includes(slug);
+}
+
+function isFollowUpDoc(doc) {
+  if (!doc || isWorkflowTemplateDoc(doc)) return false;
+  const haystack = `${doc.title || ""} ${doc.summary || ""} ${(doc.tags || []).join(" ")} ${doc.path || ""}`.toLowerCase();
+  return /\b(waiting|follow[- ]?up|remind|reminder|reach[- ]?out|contact|reply|email)\b/.test(haystack);
+}
+
+function operationItemFromTemplate(template) {
+  const badges = [];
+  if (template.recurring) badges.push("Recurring");
+  if (template.atRisk) badges.push("Watch");
+  return {
+    title: template.title,
+    summary: template.summary,
+    meta: badges.join(" · ") || "Workflow",
+    path: template.path,
+  };
+}
+
+function operationItemFromDoc(doc, meta) {
+  return {
+    title: doc.title || basename(doc.path || ""),
+    summary: doc.summary || doc.path || "",
+    meta,
+    path: doc.path,
+  };
+}
+
+function dedupeOperationItems(items) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const key = item.path || item.title;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function buildOperationsReferenceLinks(docs) {
+  const indexed = [
+    docs.find((doc) => doc.path === "content/tasks/templates/newsletter.md"),
+    docs.find((doc) => doc.path === "content/tasks/templates/podcast.md"),
+    docs.find((doc) => doc.path === "content/finance/reference/invoices-receipts-and-statements.md"),
+    docs.find((doc) => doc.path === "content/courses/reference/course-guide.md"),
+    docs.find((doc) => doc.path === "content/overview/reference/schedule.md"),
+  ].filter(Boolean).map((doc) => ({
+    title: doc.title || basename(doc.path),
+    summary: doc.summary || doc.path,
+    path: doc.path,
+  }));
+
+  const repoRefs = [
+    ["DataOps V1 Goal", "https://github.com/DataTalksClub/dataops/blob/main/.goal-v1.md"],
+    ["Project Plan", "https://github.com/DataTalksClub/dataops/blob/main/PROJECT_PLAN.md"],
+    ["Portal Analysis", "https://github.com/DataTalksClub/dataops/blob/main/PORTAL_ANALYSIS.md"],
+    ["Merge Plan", "https://github.com/DataTalksClub/dataops/blob/main/_docs/MERGE_PLAN.md"],
+  ].map(([title, href]) => ({ title, href, summary: "Planning reference" }));
+
+  return [...indexed, ...repoRefs];
+}
+
+function renderOperationsLane(lane) {
+  const section = document.createElement("section");
+  section.className = `ops-lane ops-lane-${lane.id}`;
+  const header = document.createElement("header");
+  const title = document.createElement("h3");
+  title.textContent = lane.title;
+  const count = document.createElement("span");
+  count.textContent = String(lane.items.length);
+  header.append(title, count);
+  section.append(header);
+
+  const list = document.createElement("div");
+  list.className = "ops-lane-list";
+  if (lane.items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "ops-empty";
+    empty.textContent = lane.empty;
+    list.append(empty);
+  } else {
+    for (const item of lane.items.slice(0, 6)) list.append(renderOperationsLaneItem(item));
+  }
+  section.append(list);
+  return section;
+}
+
+function renderOperationsLaneItem(item) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ops-lane-item";
+  if (item.path) button.addEventListener("click", () => openDocument(item.path));
+  const title = document.createElement("strong");
+  title.textContent = item.title;
+  const summary = document.createElement("span");
+  summary.textContent = item.summary || item.path || "";
+  const meta = document.createElement("small");
+  meta.textContent = item.meta || "";
+  button.append(title, summary, meta);
+  return button;
+}
+
+function renderWorkflowTemplateCard(template) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ops-template-card";
+  button.addEventListener("click", () => openDocument(template.path));
+
+  const title = document.createElement("strong");
+  title.textContent = template.title;
+  const summary = document.createElement("span");
+  summary.textContent = template.summary;
+  const chips = document.createElement("div");
+  chips.className = "ops-card-chips";
+  const chipValues = [
+    template.recurring ? "Recurring" : "Manual",
+    template.atRisk ? "Watch" : "",
+    ...template.tags.slice(0, 2),
+  ].filter(Boolean);
+  for (const value of chipValues) {
+    const chip = document.createElement("small");
+    chip.textContent = value;
+    chips.append(chip);
+  }
+  button.append(title, summary, chips);
+  return button;
+}
+
+function renderOperationsReference(ref) {
+  const el = ref.path ? document.createElement("button") : document.createElement("a");
+  el.className = "ops-reference-link";
+  if (ref.path) {
+    el.type = "button";
+    el.addEventListener("click", () => openDocument(ref.path));
+  } else {
+    el.href = ref.href;
+    el.target = "_blank";
+    el.rel = "noopener";
+  }
+  const title = document.createElement("strong");
+  title.textContent = ref.title;
+  const summary = document.createElement("span");
+  summary.textContent = ref.summary || "";
+  el.append(title, summary);
+  return el;
+}
+
 function renderDocuments(documents, title) {
+  documentList.classList.remove("is-operations-home");
   libraryTitle.textContent = title;
   const hasFilter = !!(selectedFolder || searchInput.value.trim());
   clearSelectionButton.hidden = !hasFilter;
@@ -1186,7 +1462,22 @@ function showLibrary(options = {}) {
 
 function syncLibraryPageTitle() {
   if (body.dataset.view !== "library") return;
+  if (!selectedFolder && !searchInput.value.trim()) {
+    setPageTitle("Operations Home", "Home");
+    return;
+  }
   setPageTitle("", "");
+}
+
+async function showOperationsHome() {
+  if (!(await canLeaveCurrentDocument())) return;
+  selectedFolder = "";
+  searchInput.value = "";
+  clearDocumentFilters();
+  setFolderUrl("");
+  setView("library");
+  refreshDocuments();
+  closeSidebar();
 }
 
 async function showCreate() {
@@ -1206,6 +1497,15 @@ function clearSelection() {
   searchInput.value = "";
   setFolderUrl("");
   refreshDocuments();
+}
+
+function clearDocumentFilters() {
+  for (const select of [domainFilter, typeFilter, systemFilter, tagFilter]) {
+    select.value = "";
+    const entry = customSelects.find((item) => item.select === select);
+    if (entry) updateCustomSelect(entry.root);
+  }
+  updateFilterSummary();
 }
 
 function setView(view) {
