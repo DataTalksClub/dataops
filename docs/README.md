@@ -24,6 +24,9 @@ Files that live here:
 
 - `architecture.md` — deployed app architecture, content lifecycle, CI/CD
   split, credentials model, and upgrade notes.
+- `v1-runtime-architecture.md` — V1 runtime decision for the unified
+  operations workspace, including Lambda boundaries, DynamoDB execution state,
+  backup/export strategy, and work-engine integration.
 - `STRUCTURE.md` — required frontmatter and section conventions.
 - `sop-format.md` — strict spec for the structured-SOP markdown format.
 - `sop-format-design.md` — design log and tooling notes.
