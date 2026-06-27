@@ -117,8 +117,8 @@ Environment variables:
 - `DATAOPS_ARTIFACTS_TABLE`
 - `DATAOPS_NOTIFICATIONS_TABLE`
 - `DATAOPS_SESSIONS_TABLE`
-- later: `DATAOPS_ASSISTANT_JOBS_TABLE`
-- later: `DATAOPS_AUDIT_EVENTS_TABLE`
+- `DATAOPS_ASSISTANT_JOBS_TABLE`
+- `DATAOPS_AUDIT_EVENTS_TABLE`
 
 Local defaults may map to the existing prototype names:
 
@@ -127,6 +127,9 @@ Local defaults may map to the existing prototype names:
 - `Templates`
 - `Users`
 - `Files`
+- `Artifacts`
+- `AssistantJobs`
+- `AuditEvents`
 - `Notifications`
 - `Sessions`
 
@@ -383,7 +386,7 @@ status, and type. Dedicated GSIs can be added when production access patterns
 and volume require them.
 
 `status=approved` is the only status that satisfies an artifact proof gate.
-`assistant_job_id` is optional and opaque until assistant jobs are implemented.
+`assistant_job_id` references an exported assistant job when present.
 
 ## Notifications Table
 
@@ -421,8 +424,6 @@ Application fields:
 Sessions aren't part of normal portable exports, so they may use TTL and don't
 need long-retention backups.
 
-## Future Tables
-
 ## Assistant Jobs Table
 
 Assistant jobs track long-running assistant work.
@@ -430,30 +431,46 @@ Assistant jobs track long-running assistant work.
 Fields:
 
 - `assistant_job_id`
+- `assistant_type`
+- `title`
+- `status`
 - `task_id`
 - `bundle_id`
 - `requested_by`
-- `assistant_type`
-- `status`
 - `input_refs`
 - `output_artifact_ids`
-- `error`
+- `log_refs`
+- `approval_required`
+- `approval`
+- `attempt_count`
+- `max_attempts`
+- `retry_of_job_id`
+- `last_error`
 - `created_at`
+- `queued_at`
+- `started_at`
+- `completed_at`
 - `updated_at`
+
+Statuses are `draft`, `queued`, `running`, `waiting_approval`, `approved`,
+`rejected`, `retrying`, `succeeded`, `failed`, and `canceled`. Jobs must link to
+at least one task or bundle. Outputs link to artifact metadata through
+`output_artifact_ids`; raw transcripts and unbounded logs are artifact/log
+references, not DynamoDB blobs.
 
 ## Audit Events Table
 
-Audit events record what changed and who did it.
+Audit events record assistant lifecycle changes and can later hold broader
+workflow history.
 
 Fields:
 
 - `audit_event_id`
+- `assistant_job_id`
 - `actor_id`
-- `entity_type`
-- `entity_id`
 - `action`
-- `before`
-- `after`
+- `summary`
+- `metadata`
 - `created_at`
 
 Audit events should be append-only.

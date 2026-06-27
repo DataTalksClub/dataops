@@ -15,6 +15,8 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         users: mod.TABLE_USERS,
         files: mod.TABLE_FILES,
         artifacts: mod.TABLE_ARTIFACTS,
+        assistantJobs: mod.TABLE_ASSISTANT_JOBS,
+        auditEvents: mod.TABLE_AUDIT_EVENTS,
         notifications: mod.TABLE_NOTIFICATIONS,
         sessions: mod.TABLE_SESSIONS,
         autoCreate: mod.shouldAutoCreateTables(),
@@ -46,6 +48,8 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.users, 'Users');
     assert.strictEqual(setup.files, 'Files');
     assert.strictEqual(setup.artifacts, 'Artifacts');
+    assert.strictEqual(setup.assistantJobs, 'AssistantJobs');
+    assert.strictEqual(setup.auditEvents, 'AuditEvents');
     assert.strictEqual(setup.notifications, 'Notifications');
     assert.strictEqual(setup.sessions, 'Sessions');
     assert.strictEqual(setup.autoCreate, false);
@@ -59,6 +63,8 @@ describe('DynamoDB table setup environment', () => {
       DATAOPS_USERS_TABLE: 'prod-users',
       DATAOPS_FILES_TABLE: 'prod-files',
       DATAOPS_ARTIFACTS_TABLE: 'prod-artifacts',
+      DATAOPS_ASSISTANT_JOBS_TABLE: 'prod-assistant-jobs',
+      DATAOPS_AUDIT_EVENTS_TABLE: 'prod-audit-events',
       DATAOPS_NOTIFICATIONS_TABLE: 'prod-notifications',
       DATAOPS_SESSIONS_TABLE: 'prod-sessions',
     });
@@ -69,6 +75,8 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.users, 'prod-users');
     assert.strictEqual(setup.files, 'prod-files');
     assert.strictEqual(setup.artifacts, 'prod-artifacts');
+    assert.strictEqual(setup.assistantJobs, 'prod-assistant-jobs');
+    assert.strictEqual(setup.auditEvents, 'prod-audit-events');
     assert.strictEqual(setup.notifications, 'prod-notifications');
     assert.strictEqual(setup.sessions, 'prod-sessions');
     assert.strictEqual(setup.autoCreate, false);

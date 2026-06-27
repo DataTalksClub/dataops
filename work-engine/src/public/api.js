@@ -196,6 +196,71 @@
       },
     },
 
+    assistantJobs: {
+      list: function (params) {
+        var qs = new URLSearchParams(params || {}).toString();
+        return fetch('/api/assistant-jobs' + (qs ? '?' + qs : ''), {
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      get: function (id) {
+        return fetch('/api/assistant-jobs/' + id, {
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      create: function (data) {
+        return fetch('/api/assistant-jobs', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      update: function (id, data) {
+        return fetch('/api/assistant-jobs/' + id, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      submit: function (id) {
+        return fetch('/api/assistant-jobs/' + id + '/submit', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      runDry: function (id) {
+        return fetch('/api/assistant-jobs/' + id + '/run-dry', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      approve: function (id) {
+        return fetch('/api/assistant-jobs/' + id + '/approve', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      reject: function (id, reason) {
+        return fetch('/api/assistant-jobs/' + id + '/reject', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ reason: reason }),
+        }).then(handleResponse);
+      },
+      retry: function (id) {
+        return fetch('/api/assistant-jobs/' + id + '/retry', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      cancel: function (id) {
+        return fetch('/api/assistant-jobs/' + id + '/cancel', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+    },
+
     templates: {
       list: function () {
         return fetch('/api/templates', {

@@ -317,8 +317,7 @@ Fields:
 - `tags`
 - small redacted `metadata`
 
-`assistant_job_id` is an opaque optional relationship until #30 exports
-assistant jobs. Podcast Assistant local folders such as `documents/`, `inbox/`,
+`assistant_job_id` references an assistant job when present. Podcast Assistant local folders such as `documents/`, `inbox/`,
 and `heru_runs/` are local runtime/dev storage; attached assistant outputs must
 be represented by artifact metadata instead of committed as durable artifacts.
 
@@ -333,7 +332,13 @@ Fields:
 - `assistant_type`
 - `status`
 
-Detailed assistant job lifecycle rules belong to #30.
+Assistant job records hold the detailed lifecycle: `draft`, `queued`,
+`running`, `waiting_approval`, `approved`, `rejected`, `retrying`,
+`succeeded`, `failed`, and `canceled`. Jobs are linked to a task, bundle, or
+both; output artifacts are linked through `output_artifact_ids` and the
+artifact table. Workflow screens show the lightweight refs so the operator can
+request help, see whether a job is waiting/running/failed/needs approval, and
+act on the next step without leaving the task or bundle context.
 
 ## Audit Events
 
@@ -365,7 +370,7 @@ Every durable workflow entity must export with:
 - no binary payloads
 - omitted entity markers for entities that are not implemented yet
 
-The V1 portable export continues to use `templates.jsonl`, `bundles.jsonl`,
-`tasks.jsonl`, `notifications.jsonl`, `files.jsonl`, and omitted markers for
-`artifacts.jsonl`, `assistant_jobs.jsonl`, and `audit_events.jsonl` until those
-tables are implemented.
+The V1 portable export includes `templates.jsonl`, `bundles.jsonl`,
+`tasks.jsonl`, `notifications.jsonl`, `files.jsonl`, `artifacts.jsonl`,
+`assistant_jobs.jsonl`, and `audit_events.jsonl`. Omitted entity markers are
+reserved for durable entities that are not implemented yet.

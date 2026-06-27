@@ -149,9 +149,7 @@ Example:
     "users.password_hash",
     "sessions"
   ],
-  "omitted_entities": [
-    "assistant_jobs"
-  ]
+  "omitted_entities": []
 }
 ```
 
@@ -210,8 +208,8 @@ exports, or a separate artifact export archive.
 `artifacts.jsonl` is implemented in V1 and must be present in normal exports.
 It contains metadata only. It must not contain binary payloads, large assistant
 outputs, raw assistant logs, signed temporary URLs, OAuth tokens, cookies, API
-keys, or private credentials. `assistant_job_id` may be present as an opaque
-optional value until #30 exports assistant jobs.
+keys, or private credentials. `assistant_job_id` must reference an exported
+assistant job when present.
 
 ## Restore Validation
 
@@ -236,8 +234,13 @@ Relationship checks:
 - every file `task_id` references an exported task
 - every artifact `task_id`, `bundle_id`, and `file_id` references an entity
   from the same export or is empty
-- artifact `assistant_job_id` is optional and opaque until assistant jobs are
-  exported
+- every artifact `assistant_job_id` references an exported assistant job or is
+  empty
+- every assistant job `task_id`, `bundle_id`, `requested_by`,
+  `output_artifact_ids`, and `retry_of_job_id` references an exported entity or
+  is empty, and each job must reference at least one task or bundle
+- every audit event `assistant_job_id` and `actor_id` references an exported
+  entity or is empty
 - every notification relation references an exported entity or is empty
 
 ## Dry-Run Import

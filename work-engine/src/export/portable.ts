@@ -7,6 +7,8 @@ import { ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb'
 import {
   TABLE_BUNDLES,
   TABLE_ARTIFACTS,
+  TABLE_ASSISTANT_JOBS,
+  TABLE_AUDIT_EVENTS,
   TABLE_FILES,
   TABLE_NOTIFICATIONS,
   TABLE_TASKS,
@@ -59,11 +61,13 @@ type ExportEntityName =
   | 'recurring_configs'
   | 'files'
   | 'artifacts'
+  | 'assistant_jobs'
+  | 'audit_events'
   | 'notifications';
 
 const SCHEMA_VERSION = 'dataops.execution.v1';
 const EXPORT_FORMAT_VERSION = 1;
-const OMITTED_ENTITIES = ['sessions', 'assistant_jobs', 'audit_events'];
+const OMITTED_ENTITIES = ['sessions'];
 const REDACTIONS = ['users.password_hash', 'sessions'];
 const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
 const VALID_NOTIFICATION_TYPES = new Set([
@@ -81,6 +85,8 @@ const VALID_ARTIFACT_STATUSES = new Set(['draft', 'needs-review', 'approved', 'r
 const VALID_ARTIFACT_STORAGE_PROVIDERS = new Set(['s3', 'dropbox', 'google-drive', 'github', 'external-url', 'local-dev', 'unknown']);
 const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 'sensitive']);
 const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
+const VALID_ASSISTANT_JOB_STATUSES = new Set(['draft', 'queued', 'running', 'waiting_approval', 'approved', 'rejected', 'retrying', 'succeeded', 'failed', 'canceled']);
+const VALID_ASSISTANT_EVENT_ACTIONS = new Set(['created', 'queued', 'started', 'log-appended', 'artifact-attached', 'approval-requested', 'approved', 'rejected', 'retry-requested', 'failed', 'canceled', 'succeeded']);
 const SECRET_EXPORT_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
 const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=)/i;
 
@@ -133,6 +139,20 @@ const ENTITY_SPECS: EntitySpec[] = [
     tableName: TABLE_ARTIFACTS,
     prefix: 'ARTIFACT#',
     map: mapArtifact,
+  },
+  {
+    name: 'assistant_jobs',
+    filename: 'assistant_jobs.jsonl',
+    tableName: TABLE_ASSISTANT_JOBS,
+    prefix: 'ASSISTANT_JOB#',
+    map: mapAssistantJob,
+  },
+  {
+    name: 'audit_events',
+    filename: 'audit_events.jsonl',
+    tableName: TABLE_AUDIT_EVENTS,
+    prefix: 'AUDIT_EVENT#',
+    map: mapAuditEvent,
   },
   {
     name: 'notifications',
@@ -324,6 +344,44 @@ function mapArtifact(item: Record<string, unknown>): JsonRecord {
     reviewed_at: optionalString(item.reviewedAt),
     tags: stringArray(item.tags),
     metadata: optionalJsonStringOrObject(item.metadata),
+  });
+}
+
+function mapAssistantJob(item: Record<string, unknown>): JsonRecord {
+  return stripEmpty({
+    assistant_job_id: optionalString(item.id),
+    assistant_type: optionalString(item.assistantType),
+    title: optionalString(item.title),
+    status: optionalString(item.status),
+    task_id: optionalString(item.taskId),
+    bundle_id: optionalString(item.bundleId),
+    requested_by: optionalString(item.requestedBy),
+    input_refs: jsonArray(item.inputRefs),
+    output_artifact_ids: stringArray(item.outputArtifactIds),
+    log_refs: jsonArray(item.logRefs),
+    approval_required: optionalBoolean(item.approvalRequired),
+    approval: optionalJsonStringOrObject(item.approval),
+    attempt_count: optionalNumber(item.attemptCount),
+    max_attempts: optionalNumber(item.maxAttempts),
+    retry_of_job_id: optionalString(item.retryOfJobId),
+    last_error: optionalJsonStringOrObject(item.lastError),
+    created_at: optionalString(item.createdAt),
+    queued_at: optionalString(item.queuedAt),
+    started_at: optionalString(item.startedAt),
+    completed_at: optionalString(item.completedAt),
+    updated_at: optionalString(item.updatedAt),
+  });
+}
+
+function mapAuditEvent(item: Record<string, unknown>): JsonRecord {
+  return stripEmpty({
+    audit_event_id: optionalString(item.id),
+    assistant_job_id: optionalString(item.assistantJobId),
+    actor_id: optionalString(item.actorId),
+    action: optionalString(item.action),
+    summary: optionalString(item.summary),
+    metadata: optionalJsonStringOrObject(item.metadata),
+    created_at: optionalString(item.createdAt),
   });
 }
 
@@ -898,6 +956,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
   const fileIds = collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
   const artifactIds = collectIds(recordsByEntity.artifacts || [], 'artifact_id', 'artifacts', errors);
+  const assistantJobIds = collectIds(recordsByEntity.assistant_jobs || [], 'assistant_job_id', 'assistant_jobs', errors);
+  collectIds(recordsByEntity.audit_events || [], 'audit_event_id', 'audit_events', errors);
   collectIds(recordsByEntity.notifications || [], 'notification_id', 'notifications', errors);
   const taskFileIds = new Set(
     (recordsByEntity.files || [])
@@ -952,6 +1012,13 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);
+    if (Array.isArray(task.assistant_job_refs)) {
+      task.assistant_job_refs.forEach((ref, refIndex) => {
+        if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
+          optionalReference(ref as JsonRecord, 'assistantJobId', assistantJobIds, errors, `${context}.assistant_job_refs[${refIndex}]`);
+        }
+      });
+    }
     validateCompletedTaskProof(task, proofRequirement, taskFileIds, approvedArtifactTaskIds, approvedArtifactBundleIds, approvedArtifactIds, errors, context);
   }
 
@@ -964,6 +1031,13 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalRefArrayField(bundle, 'artifact_refs', 'artifactId', errors, context);
     optionalRefArrayField(bundle, 'assistant_job_refs', 'assistantJobId', errors, context);
     optionalRefArrayField(bundle, 'audit_event_refs', 'auditEventId', errors, context);
+    if (Array.isArray(bundle.assistant_job_refs)) {
+      bundle.assistant_job_refs.forEach((ref, refIndex) => {
+        if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
+          optionalReference(ref as JsonRecord, 'assistantJobId', assistantJobIds, errors, `${context}.assistant_job_refs[${refIndex}]`);
+        }
+      });
+    }
   }
 
   for (const [index, template] of (recordsByEntity.templates || []).entries()) {
@@ -1011,6 +1085,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(artifact, 'task_id', taskIds, errors, context);
     optionalReference(artifact, 'bundle_id', bundleIds, errors, context);
     optionalReference(artifact, 'file_id', fileIds, errors, context);
+    optionalReference(artifact, 'assistant_job_id', assistantJobIds, errors, context);
     optionalReference(artifact, 'created_by', userIds, errors, context);
     optionalReference(artifact, 'reviewed_by', userIds, errors, context);
     validateNoSecretPayload(artifact, errors, context);
@@ -1020,10 +1095,70 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     if ((status === 'approved' || status === 'rejected') && typeof artifact.reviewed_at !== 'string') {
       errors.push(`${context} reviewed_at is required for reviewed artifacts`);
     }
-    if (artifactIds.size > 0) {
-      // assistant_job_id is intentionally opaque until assistant_jobs is exported by #30.
-      optionalStringField(artifact, 'assistant_job_id', errors, context);
+  }
+
+  for (const [index, job] of (recordsByEntity.assistant_jobs || []).entries()) {
+    const context = `assistant_jobs[${index}]`;
+    requireString(job, 'assistant_type', errors, context);
+    requireString(job, 'title', errors, context);
+    const status = optionalEnum(job, 'status', VALID_ASSISTANT_JOB_STATUSES, errors, context);
+    optionalReference(job, 'task_id', taskIds, errors, context);
+    optionalReference(job, 'bundle_id', bundleIds, errors, context);
+    if (job.task_id === undefined && job.bundle_id === undefined) {
+      errors.push(`${context} must reference task_id or bundle_id`);
     }
+    optionalReference(job, 'requested_by', userIds, errors, context);
+    optionalReference(job, 'retry_of_job_id', assistantJobIds, errors, context);
+    optionalStringArrayField(job, 'output_artifact_ids', errors, context);
+    if (Array.isArray(job.output_artifact_ids)) {
+      job.output_artifact_ids.forEach((artifactId, artifactIndex) => {
+        if (typeof artifactId === 'string' && !artifactIds.has(artifactId)) {
+          errors.push(`${context}.output_artifact_ids[${artifactIndex}] references missing artifact_id: ${artifactId}`);
+        }
+      });
+    }
+    if (job.input_refs !== undefined && !Array.isArray(job.input_refs)) {
+      errors.push(`${context} field input_refs must be an array when present`);
+    }
+    if (job.log_refs !== undefined && !Array.isArray(job.log_refs)) {
+      errors.push(`${context} field log_refs must be an array when present`);
+    }
+    if (job.approval_required !== undefined && typeof job.approval_required !== 'boolean') {
+      errors.push(`${context} field approval_required must be a boolean when present`);
+    }
+    optionalNumberField(job, 'attempt_count', errors, context);
+    optionalNumberField(job, 'max_attempts', errors, context);
+    validateDateOrTimestampField(job, 'created_at', errors, context, true);
+    validateDateOrTimestampField(job, 'updated_at', errors, context, true);
+    validateDateOrTimestampField(job, 'queued_at', errors, context);
+    validateDateOrTimestampField(job, 'started_at', errors, context);
+    validateDateOrTimestampField(job, 'completed_at', errors, context);
+    validateNoSecretPayload(job, errors, context);
+    if (job.approval !== undefined) {
+      if (job.approval === null || typeof job.approval !== 'object' || Array.isArray(job.approval)) {
+        errors.push(`${context} field approval must be an object when present`);
+      } else {
+        const approval = job.approval as JsonRecord;
+        optionalEnum(approval, 'status', new Set(['pending', 'approved', 'rejected']), errors, `${context}.approval`);
+        optionalReference(approval, 'decidedBy', userIds, errors, `${context}.approval`);
+        validateDateOrTimestampField(approval, 'decidedAt', errors, `${context}.approval`);
+        if (status === 'rejected') requireString(approval, 'reason', errors, `${context}.approval`);
+      }
+    }
+    if (status === 'waiting_approval' && job.approval_required === false) {
+      errors.push(`${context} cannot wait for approval when approval_required is false`);
+    }
+  }
+
+  for (const [index, event] of (recordsByEntity.audit_events || []).entries()) {
+    const context = `audit_events[${index}]`;
+    requireString(event, 'summary', errors, context);
+    requireString(event, 'action', errors, context);
+    optionalEnum(event, 'action', VALID_ASSISTANT_EVENT_ACTIONS, errors, context);
+    optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
+    optionalReference(event, 'actor_id', userIds, errors, context);
+    validateDateOrTimestampField(event, 'created_at', errors, context, true);
+    validateNoSecretPayload(event, errors, context);
   }
 
   for (const [index, notification] of (recordsByEntity.notifications || []).entries()) {

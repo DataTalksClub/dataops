@@ -7,6 +7,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
+import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
 import { createBundle } from '../src/db/bundles';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
@@ -70,7 +71,7 @@ describe('portable execution data export', () => {
       templateId: template.id,
       status: 'active',
       artifactRefs: [{ artifactId: 'artifact-bundle-ref', type: 'document' }],
-      assistantJobRefs: [{ assistantJobId: 'assistant-bundle-ref', assistantType: 'research' }],
+      assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-bundle-ref', action: 'created' }],
     });
     const task = await createTask(client, {
@@ -90,7 +91,7 @@ describe('portable execution data export', () => {
       requiredLinkName: 'Source document',
       proofRequirement: { type: 'url', label: 'Source document' },
       artifactRefs: [{ artifactId: 'artifact-task-ref', type: 'document' }],
-      assistantJobRefs: [{ assistantJobId: 'assistant-task-ref', assistantType: 'research' }],
+      assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-task-ref', action: 'completed' }],
       completedBy: user.id,
       completedAt: '2026-06-20T12:00:00.000Z',
@@ -108,7 +109,25 @@ describe('portable execution data export', () => {
       category: 'document',
       storagePath: `uploads/${task.id}/proof.txt`,
     });
-    await createArtifact(client, {
+    const assistantJob = await createAssistantJob(client, {
+      id: 'assistant-job-export',
+      assistantType: 'podcast',
+      title: 'Podcast prep assistant',
+      status: 'waiting_approval',
+      taskId: task.id,
+      bundleId: bundle.id,
+      requestedBy: user.id,
+      inputRefs: [{ type: 'task', id: task.id }],
+      outputArtifactIds: [],
+      logRefs: [{ artifactId: 'artifact-log-export', title: 'Dry-run log' }],
+      approvalRequired: true,
+      approval: { status: 'pending' },
+      attemptCount: 1,
+      maxAttempts: 2,
+      queuedAt: '2026-06-20T11:00:00.000Z',
+      startedAt: '2026-06-20T11:01:00.000Z',
+    });
+    const artifact = await createArtifact(client, {
       type: 'external-link',
       title: 'Reviewed source artifact',
       description: 'Public proof URL registered as artifact metadata',
@@ -119,12 +138,22 @@ describe('portable execution data export', () => {
       visibility: 'public',
       taskId: task.id,
       bundleId: bundle.id,
+      assistantJobId: assistantJob.id,
       sourceType: 'manual-link',
       createdBy: user.id,
       reviewedBy: user.id,
       reviewedAt: '2026-06-20T12:00:00.000Z',
       tags: ['proof'],
       metadata: { source: 'operator' },
+    });
+    await updateAssistantJob(client, assistantJob.id, { outputArtifactIds: [artifact.id] });
+    await appendAssistantJobEvent(client, {
+      assistantJobId: assistantJob.id,
+      actorId: user.id,
+      action: 'approval-requested',
+      summary: 'Assistant output is ready for review',
+      metadata: { artifactIds: [artifact.id] },
+      createdAt: '2026-06-20T11:02:00.000Z',
     });
     await createNotification(client, {
       type: 'follow-up-due',
@@ -152,10 +181,14 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
+    assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
+    assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
     assert.strictEqual(result.manifest.entity_counts.notifications, 1);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
     assert.ok(result.manifest.omitted_entities.includes('sessions'));
     assert.ok(!result.manifest.omitted_entities.includes('artifacts'));
+    assert.ok(!result.manifest.omitted_entities.includes('assistant_jobs'));
+    assert.ok(!result.manifest.omitted_entities.includes('audit_events'));
 
     const usersJsonl = await fs.readFile(path.join(exportDir, 'users.jsonl'), 'utf8');
     assert.match(usersJsonl, /"user_id"/);
@@ -175,7 +208,7 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"required_link_name":"Source document"/);
     assert.match(tasksJsonl, /"link":"https:\/\/example.com\/source-document"/);
     assert.match(tasksJsonl, /"artifact_refs":\[\{"artifactId":"artifact-task-ref","type":"document"\}\]/);
-    assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-task-ref","assistantType":"research"\}\]/);
+    assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(tasksJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-task-ref","action":"completed"\}\]/);
     assert.match(tasksJsonl, /"completed_by"/);
     assert.match(tasksJsonl, /"completed_at":"2026-06-20T12:00:00.000Z"/);
@@ -183,7 +216,7 @@ describe('portable execution data export', () => {
 
     const bundlesJsonl = await fs.readFile(path.join(exportDir, 'bundles.jsonl'), 'utf8');
     assert.match(bundlesJsonl, /"artifact_refs":\[\{"artifactId":"artifact-bundle-ref","type":"document"\}\]/);
-    assert.match(bundlesJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-bundle-ref","assistantType":"research"\}\]/);
+    assert.match(bundlesJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(bundlesJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-bundle-ref","action":"created"\}\]/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
@@ -205,8 +238,21 @@ describe('portable execution data export', () => {
     assert.match(artifactsJsonl, /"status":"approved"/);
     assert.match(artifactsJsonl, /"task_id"/);
     assert.match(artifactsJsonl, /"bundle_id"/);
+    assert.match(artifactsJsonl, /"assistant_job_id":"assistant-job-export"/);
     assert.match(artifactsJsonl, /"metadata":\{"source":"operator"\}/);
     assert.doesNotMatch(artifactsJsonl, /binary|password|token/i);
+
+    const assistantJobsJsonl = await fs.readFile(path.join(exportDir, 'assistant_jobs.jsonl'), 'utf8');
+    assert.match(assistantJobsJsonl, /"assistant_job_id":"assistant-job-export"/);
+    assert.match(assistantJobsJsonl, /"assistant_type":"podcast"/);
+    assert.match(assistantJobsJsonl, /"status":"waiting_approval"/);
+    assert.match(assistantJobsJsonl, /"output_artifact_ids":\["/);
+    assert.doesNotMatch(assistantJobsJsonl, /password|token|secret/i);
+
+    const auditEventsJsonl = await fs.readFile(path.join(exportDir, 'audit_events.jsonl'), 'utf8');
+    assert.match(auditEventsJsonl, /"assistant_job_id":"assistant-job-export"/);
+    assert.match(auditEventsJsonl, /"action":"approval-requested"/);
+    assert.doesNotMatch(auditEventsJsonl, /password|token|secret/i);
 
     const validation = await validatePortableExport(exportDir);
     assert.deepStrictEqual(validation.errors, []);
