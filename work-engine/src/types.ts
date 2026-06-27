@@ -1,12 +1,16 @@
 // --- Task ---
 
+export type TaskStatus = 'todo' | 'waiting' | 'done' | 'archived';
+
 export interface Task {
   id: string;
   description: string;
   date: string;
-  status: string;
+  status: TaskStatus;
   source?: string;
   comment?: string | null;
+  waitingFor?: string;
+  followUpAt?: string;
   instructionsUrl?: string;
   link?: string;
   requiredLinkName?: string;

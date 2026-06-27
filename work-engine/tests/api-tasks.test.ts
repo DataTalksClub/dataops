@@ -67,6 +67,70 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.source, 'telegram');
     });
 
+    it('creates a waiting task with follow-up metadata', async () => {
+      const event = {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Wait for speaker confirmation',
+          date: '2026-03-10',
+          status: 'waiting',
+          waitingFor: 'Speaker reply',
+          followUpAt: '2026-03-12T09:00:00.000Z',
+        }),
+      };
+      const res = await handler(event, {});
+      assert.strictEqual(res.statusCode, 201);
+
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.status, 'waiting');
+      assert.strictEqual(body.waitingFor, 'Speaker reply');
+      assert.strictEqual(body.followUpAt, '2026-03-12T09:00:00.000Z');
+
+      const getRes = await handler({ httpMethod: 'GET', path: `/api/tasks/${body.id}` }, {});
+      assert.strictEqual(getRes.statusCode, 200);
+      const fetched = JSON.parse(getRes.body);
+      assert.strictEqual(fetched.waitingFor, 'Speaker reply');
+      assert.strictEqual(fetched.followUpAt, '2026-03-12T09:00:00.000Z');
+    });
+
+    it('returns 400 when creating a waiting task without follow-up metadata', async () => {
+      const event = {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Blocked task',
+          date: '2026-03-10',
+          status: 'waiting',
+          waitingFor: 'External reply',
+        }),
+      };
+      const res = await handler(event, {});
+      assert.strictEqual(res.statusCode, 400);
+
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.error, 'Waiting tasks require waitingFor and followUpAt');
+    });
+
+    it('returns 400 when waiting metadata is blank', async () => {
+      const event = {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Blank waiting fields',
+          date: '2026-03-10',
+          status: 'waiting',
+          waitingFor: '   ',
+          followUpAt: '2026-03-12T09:00:00.000Z',
+        }),
+      };
+      const res = await handler(event, {});
+      assert.strictEqual(res.statusCode, 400);
+
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.error, 'Waiting tasks require waitingFor and followUpAt');
+    });
+
     it('returns 400 when description is missing', async () => {
       const event = {
         httpMethod: 'POST',
@@ -245,6 +309,36 @@ describe('API — CRUD for tasks', () => {
       }
     });
 
+    it('returns tasks filtered by waiting status', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Waiting filter target',
+          date: '2093-09-10',
+          status: 'waiting',
+          waitingFor: 'Partner approval',
+          followUpAt: '2093-09-12T09:00:00.000Z',
+        }),
+      }, {});
+      assert.strictEqual(createRes.statusCode, 201);
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { status: 'waiting' },
+      }, {});
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      const found = body.tasks.find((task: any) => task.id === created.id);
+      assert.ok(found, 'Waiting task should appear in waiting status results');
+      assert.strictEqual(found.status, 'waiting');
+      assert.strictEqual(found.waitingFor, 'Partner approval');
+      assert.strictEqual(found.followUpAt, '2093-09-12T09:00:00.000Z');
+    });
+
     it('returns 400 when no query parameters provided', async () => {
       const res = await handler({
         httpMethod: 'GET',
@@ -302,7 +396,7 @@ describe('API — CRUD for tasks', () => {
 
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, "Invalid status. Must be 'todo', 'done', or 'archived'");
+      assert.strictEqual(body.error, "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'");
     });
   });
 
@@ -455,6 +549,111 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.error, 'No valid fields to update');
+    });
+
+    it('updates a task to waiting with follow-up metadata', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Move to waiting', date: '2026-03-10' }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({
+          status: 'waiting',
+          waitingFor: 'Venue response',
+          followUpAt: '2026-03-15T10:30:00.000Z',
+        }),
+      }, {});
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.status, 'waiting');
+      assert.strictEqual(body.waitingFor, 'Venue response');
+      assert.strictEqual(body.followUpAt, '2026-03-15T10:30:00.000Z');
+
+      const getRes = await handler({ httpMethod: 'GET', path: `/api/tasks/${created.id}` }, {});
+      assert.strictEqual(getRes.statusCode, 200);
+      const fetched = JSON.parse(getRes.body);
+      assert.strictEqual(fetched.status, 'waiting');
+      assert.strictEqual(fetched.waitingFor, 'Venue response');
+      assert.strictEqual(fetched.followUpAt, '2026-03-15T10:30:00.000Z');
+    });
+
+    it('returns 400 when updating a task to waiting without follow-up metadata', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Invalid waiting update', date: '2026-03-10' }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ status: 'waiting' }),
+      }, {});
+
+      assert.strictEqual(res.statusCode, 400);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.error, 'Waiting tasks require waitingFor and followUpAt');
+    });
+
+    it('allows a waiting task to move back to todo while preserving follow-up metadata', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Resume task',
+          date: '2026-03-10',
+          status: 'waiting',
+          waitingFor: 'Sponsor answer',
+          followUpAt: '2026-03-16T08:00:00.000Z',
+        }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ status: 'todo' }),
+      }, {});
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.status, 'todo');
+      assert.strictEqual(body.waitingFor, 'Sponsor answer');
+      assert.strictEqual(body.followUpAt, '2026-03-16T08:00:00.000Z');
+    });
+
+    it('allows a waiting task to move to done while preserving follow-up metadata', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Finish waiting task',
+          date: '2026-03-10',
+          status: 'waiting',
+          waitingFor: 'Contract signature',
+          followUpAt: '2026-03-17T08:00:00.000Z',
+        }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ status: 'done' }),
+      }, {});
+
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.status, 'done');
+      assert.strictEqual(body.waitingFor, 'Contract signature');
+      assert.strictEqual(body.followUpAt, '2026-03-17T08:00:00.000Z');
     });
   });
 

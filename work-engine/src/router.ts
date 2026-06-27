@@ -27,7 +27,7 @@ import {
 } from './db/tasks';
 import { updateBundle } from './db/bundles';
 import { listFilesByTask } from './db/files';
-import type { LambdaEvent, LambdaResponse, Task } from './types';
+import type { LambdaEvent, LambdaResponse, Task, TaskStatus } from './types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
@@ -119,7 +119,17 @@ function extractTaskId(reqPath: string): string | null {
   return null;
 }
 
-const ALLOWED_UPDATE_FIELDS = ['description', 'date', 'comment', 'status', 'bundleId', 'source', 'instructionsUrl', 'link', 'requiredLinkName', 'requiresFile', 'assigneeId', 'tags'];
+const ALLOWED_UPDATE_FIELDS = ['description', 'date', 'comment', 'status', 'bundleId', 'source', 'waitingFor', 'followUpAt', 'instructionsUrl', 'link', 'requiredLinkName', 'requiresFile', 'assigneeId', 'tags'];
+const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
+const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor and followUpAt';
+
+function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && VALID_TASK_STATUSES.has(value as TaskStatus);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
 
 async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const method = event.httpMethod || 'GET';
@@ -231,6 +241,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.date) taskData.date = body.date;
       if (body.comment !== undefined) taskData.comment = body.comment;
       if (body.bundleId !== undefined) taskData.bundleId = body.bundleId;
+      if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
+      if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
       if (body.instructionsUrl !== undefined) taskData.instructionsUrl = body.instructionsUrl;
       if (body.link !== undefined) taskData.link = body.link;
       if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
@@ -238,6 +250,15 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.assigneeId !== undefined) taskData.assigneeId = body.assigneeId;
       if (body.tags !== undefined) taskData.tags = body.tags;
       taskData.source = (body.source as string) || 'manual';
+      if (body.status !== undefined) {
+        if (!isTaskStatus(body.status)) {
+          return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
+        }
+        taskData.status = body.status;
+      }
+      if (taskData.status === 'waiting' && (!isNonEmptyString(taskData.waitingFor) || !isNonEmptyString(taskData.followUpAt))) {
+        return jsonResponse(400, { error: WAITING_FIELDS_ERROR });
+      }
 
       const task = await createTask(client, taskData);
       return jsonResponse(201, task);
@@ -276,9 +297,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
 
       if (status) {
-        if (status !== 'todo' && status !== 'done' && status !== 'archived') {
+        if (!isTaskStatus(status)) {
           return jsonResponse(400, {
-            error: "Invalid status. Must be 'todo', 'done', or 'archived'",
+            error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'",
           });
         }
         const tasks = await listTasksByStatus(client, status);
@@ -322,11 +343,23 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (Object.keys(updates).length === 0) {
         return jsonResponse(400, { error: 'No valid fields to update' });
       }
+      if (updates.status !== undefined && !isTaskStatus(updates.status)) {
+        return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
+      }
 
       // Verify task exists
       const existing = await getTask(client, id);
       if (!existing) {
         return jsonResponse(404, { error: 'Task not found' });
+      }
+
+      const effectiveStatus = updates.status !== undefined ? updates.status : existing.status;
+      if (effectiveStatus === 'waiting') {
+        const effectiveWaitingFor = updates.waitingFor !== undefined ? updates.waitingFor : existing.waitingFor;
+        const effectiveFollowUpAt = updates.followUpAt !== undefined ? updates.followUpAt : existing.followUpAt;
+        if (!isNonEmptyString(effectiveWaitingFor) || !isNonEmptyString(effectiveFollowUpAt)) {
+          return jsonResponse(400, { error: WAITING_FIELDS_ERROR });
+        }
       }
 
       // requiredLinkName validation: cannot mark done if requiredLinkName is set but link is empty
