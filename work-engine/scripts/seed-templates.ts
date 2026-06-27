@@ -1,12 +1,418 @@
 import { getClient, startLocal } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { listTemplates, createTemplate, deleteTemplate } from '../src/db/templates';
-import type { Template } from '../src/types';
+import type { ProofRequirement, TaskDefinition, Template, WorkflowPhase } from '../src/types';
 
 // User IDs from seed-users.ts
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
 const ALEXEY_ID = '00000000-0000-0000-0000-000000000003';
+
+const PODCAST_PHASES: WorkflowPhase[] = [
+  { id: 'guest-intake', name: 'Guest intake and date confirmation', stage: 'preparation' },
+  { id: 'prep-document', name: 'Podcast prep document and guest collaboration', stage: 'preparation' },
+  { id: 'event-setup', name: 'Event setup and announcements', stage: 'preparation' },
+  { id: 'pre-event-reminders', name: 'Pre-event reminders', stage: 'announced' },
+  { id: 'live-stream', name: 'Live stream', stage: 'announced' },
+  { id: 'post-production', name: 'Recording, transcript, and YouTube production', stage: 'after-event' },
+  { id: 'publication', name: 'Podcast publication', stage: 'after-event' },
+  { id: 'follow-up-archive', name: 'Guest follow-up, newsletter, social, and archive', stage: 'after-event' },
+];
+
+const PODCAST_REQUIRED_BUNDLE_LINKS = [
+  'Guest email',
+  'Podcast document',
+  'Luma',
+  'Meetup',
+  'YouTube stream/video',
+  'Transcription',
+  'Spotify for Podcasters',
+  'Public Spotify episode',
+  'Apple Podcasts episode',
+  'DTC webpage podcast link',
+  'Dropbox recording folder',
+  'Podcast banner or cover',
+];
+
+const PODCAST_SOURCE_DOC_IDS = [
+  'task-template.tasks.podcast',
+  'sop.media.podcast.create-podcast-document',
+  'sop.media.podcast.managing-podcast-workflow',
+  'sop.media.podcast.reach-out-to-guests-and-propose-a-date-on-linkedin',
+  'sop.media.podcast.select-and-propose-a-date-for-events',
+  'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event',
+  'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma',
+  'sop.events.meetup.create-events-in-meetup-com',
+  'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website',
+  'sop.events.announce-event-in-slack-in-announcements',
+  'sop.media.podcast.creating-podcast-transcription-document',
+  'sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster',
+  'sop.media.podcast.add-a-podcast-episode-via-airtable-form',
+  'sop.media.podcast.move-podcast-documents-to-archive-in-google-drive',
+  'sop.social-media.post-podcast-guest-recommendations',
+  'template.media.podcast.podcast-guest-intake',
+  'assistant.podcast.process.podcast',
+];
+
+const PODCAST_PHASE_BY_REF: Record<string, string> = {
+  'obtain-speaker-email': 'guest-intake',
+  'create-proposed-calendar-invite': 'guest-intake',
+  'agree-on-a-date': 'guest-intake',
+  'create-podcast-document': 'prep-document',
+  'include-johanna-ask-guest-bio': 'prep-document',
+  'add-guest-as-editor': 'prep-document',
+  'share-podcast-document-slack': 'prep-document',
+  'create-calendar-invite': 'prep-document',
+  'add-guest-bio-to-document': 'prep-document',
+  'fill-people-form-airtable': 'prep-document',
+  'create-banner-figma': 'prep-document',
+  'create-event-luma': 'event-setup',
+  'create-event-meetup': 'event-setup',
+  'check-meetup-location': 'event-setup',
+  'create-event-calendar': 'event-setup',
+  'announce-event-slack': 'event-setup',
+  'fill-event-form-airtable': 'event-setup',
+  'add-event-to-webpage': 'event-setup',
+  'schedule-posts-linkedin-twitter': 'event-setup',
+  'remind-guest-7d': 'pre-event-reminders',
+  'remind-guest-1d': 'pre-event-reminders',
+  'actual-stream': 'live-stream',
+  'upload-recording-dropbox': 'post-production',
+  'update-youtube-cover': 'post-production',
+  'remove-beginning-recording': 'post-production',
+  'recheck-video-edit': 'post-production',
+  'create-transcript-document': 'post-production',
+  'add-to-playlists': 'post-production',
+  'add-youtube-link-to-website': 'post-production',
+  'edit-video-description': 'post-production',
+  'include-timecodes': 'post-production',
+  'ask-guest-for-links': 'post-production',
+  'schedule-podcast-spotify': 'publication',
+  'moving-podcast-audio-dropbox': 'publication',
+  'add-podcast-episode-airtable': 'publication',
+  'create-podcast-page': 'publication',
+  'ask-guest-share-podcast-page': 'follow-up-archive',
+  'move-podcast-documents-archive': 'follow-up-archive',
+  'upload-luma-emails-mailchimp': 'follow-up-archive',
+  'add-podcast-webpage-newsletter': 'follow-up-archive',
+  'schedule-posts-overview-after-event': 'follow-up-archive',
+  'schedule-posts-guest-recommendations': 'follow-up-archive',
+};
+
+const PODCAST_PHASE_SYSTEMS: Record<string, string[]> = {
+  'guest-intake': ['email', 'google-calendar', 'linkedin'],
+  'prep-document': ['google-docs', 'google-drive', 'email', 'slack'],
+  'event-setup': ['luma', 'meetup', 'airtable', 'website', 'slack', 'linkedin', 'twitter'],
+  'pre-event-reminders': ['email', 'luma'],
+  'live-stream': ['youtube', 'google-calendar'],
+  'post-production': ['youtube', 'dropbox', 'google-docs', 'email'],
+  publication: ['spotify', 'apple-podcasts', 'airtable', 'dropbox', 'website'],
+  'follow-up-archive': ['email', 'google-drive', 'mailchimp', 'linkedin', 'twitter'],
+};
+
+const PODCAST_DOC_CONTEXT: Record<string, Pick<TaskDefinition, 'instructionDocId' | 'instructionStepId' | 'systems'>> = {
+  'obtain-speaker-email': {
+    instructionDocId: 'sop.events.outreach.how-to-find-emails-of-previous-guests',
+    systems: ['email', 'linkedin', 'google-search'],
+  },
+  'create-proposed-calendar-invite': {
+    instructionDocId: 'sop.events.calendar.creating-tentative-event-on-google-calendar',
+    instructionStepId: '1',
+    systems: ['google-calendar', 'email'],
+  },
+  'agree-on-a-date': {
+    instructionDocId: 'sop.media.podcast.select-and-propose-a-date-for-events',
+    instructionStepId: '1',
+    systems: ['email', 'google-calendar'],
+  },
+  'create-podcast-document': {
+    instructionDocId: 'sop.media.podcast.create-podcast-document',
+    instructionStepId: '1',
+    systems: ['google-drive', 'google-docs', 'github', 'linkedin', 'twitter', 'assistant'],
+  },
+  'include-johanna-ask-guest-bio': {
+    instructionDocId: 'template.media.podcast.podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker',
+    systems: ['email', 'google-docs'],
+  },
+  'add-guest-as-editor': {
+    instructionDocId: 'sop.media.podcast.create-podcast-document',
+    instructionStepId: '6',
+    systems: ['google-docs', 'email'],
+  },
+  'share-podcast-document-slack': {
+    instructionDocId: 'template.media.podcast.sending-podcast-document-on-slack-the-dtc-podcast-help-channel',
+    systems: ['slack', 'google-docs'],
+  },
+  'create-calendar-invite': {
+    instructionDocId: 'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event',
+    instructionStepId: '1',
+    systems: ['google-calendar', 'youtube'],
+  },
+  'add-guest-bio-to-document': {
+    instructionDocId: 'sop.media.podcast.add-a-guest-bio-to-the-podcast-document',
+    instructionStepId: '1',
+    systems: ['google-docs', 'email'],
+  },
+  'fill-people-form-airtable': {
+    instructionDocId: 'sop.events.planning.create-speaker-profiles-via-airtable-form',
+    instructionStepId: '1',
+    systems: ['airtable'],
+  },
+  'create-banner-figma': {
+    instructionDocId: 'sop.media.podcast.making-event-announcements-when-topic-bio-or-outline-is-missing',
+    systems: ['figma', 'google-docs'],
+  },
+  'create-event-luma': {
+    instructionDocId: 'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma',
+    instructionStepId: '1',
+    systems: ['luma', 'google-calendar', 'youtube'],
+  },
+  'create-event-meetup': {
+    instructionDocId: 'sop.events.meetup.create-events-in-meetup-com',
+    instructionStepId: '1',
+    systems: ['meetup', 'luma', 'youtube'],
+  },
+  'check-meetup-location': {
+    instructionDocId: 'sop.events.meetup.create-events-in-meetup-com',
+    systems: ['meetup', 'youtube'],
+  },
+  'create-event-calendar': {
+    instructionDocId: 'sop.events.luma.creating-events-on-google-calendar',
+    systems: ['google-calendar', 'luma'],
+  },
+  'announce-event-slack': {
+    instructionDocId: 'sop.events.announce-event-in-slack-in-announcements',
+    instructionStepId: '1',
+    systems: ['slack', 'luma'],
+  },
+  'fill-event-form-airtable': {
+    instructionDocId: 'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website',
+    instructionStepId: '1',
+    systems: ['airtable', 'luma'],
+  },
+  'add-event-to-webpage': {
+    instructionDocId: 'sop.media.podcast.update-the-website-with-the-information-from-forms',
+    systems: ['github', 'website', 'airtable'],
+  },
+  'schedule-posts-linkedin-twitter': {
+    instructionDocId: 'template.social-media.template-new-event-announcements-podcasts-webinars-workshops',
+    systems: ['linkedin', 'twitter', 'hootsuite'],
+  },
+  'remind-guest-7d': {
+    instructionDocId: 'template.media.podcast.podcast-remind-about-the-event-in-a-week-share-registration-link-template',
+    systems: ['email', 'luma'],
+  },
+  'remind-guest-1d': {
+    instructionDocId: 'template.media.podcast.podcast-remind-the-guest-about-the-event-a-day-before-template',
+    systems: ['email', 'luma'],
+  },
+  'actual-stream': {
+    instructionDocId: 'sop.media.podcast.managing-podcast-workflow',
+    instructionStepId: '1',
+    systems: ['youtube', 'streamyard', 'google-calendar'],
+  },
+  'upload-recording-dropbox': {
+    instructionDocId: 'sop.media.podcast.managing-podcast-workflow',
+    instructionStepId: '1',
+    systems: ['dropbox', 'youtube'],
+  },
+  'update-youtube-cover': {
+    instructionDocId: 'sop.media.podcast.updating-the-cover-of-the-youtube-video',
+    instructionStepId: '1',
+    systems: ['youtube', 'figma'],
+  },
+  'remove-beginning-recording': {
+    instructionDocId: 'sop.media.podcast.removing-the-beginning-from-the-youtube-stream',
+    instructionStepId: '1',
+    systems: ['youtube'],
+  },
+  'recheck-video-edit': {
+    instructionDocId: 'sop.media.podcast.removing-the-beginning-from-the-youtube-stream',
+    systems: ['youtube'],
+  },
+  'create-transcript-document': {
+    instructionDocId: 'sop.media.podcast.creating-podcast-transcription-document',
+    instructionStepId: '1',
+    systems: ['google-docs', 'dropbox', 'email'],
+  },
+  'add-to-playlists': {
+    instructionDocId: 'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist',
+    systems: ['youtube'],
+  },
+  'add-youtube-link-to-website': {
+    instructionDocId: 'sop.media.podcast.add-links-to-youtube-after-the-stream-is-over',
+    instructionStepId: '1',
+    systems: ['github', 'website', 'youtube'],
+  },
+  'edit-video-description': {
+    instructionDocId: 'sop.media.podcast.add-links-to-youtube-after-the-stream-is-over',
+    systems: ['youtube'],
+  },
+  'include-timecodes': {
+    instructionDocId: 'sop.media.podcast.generate-timecodes-from-docx-transcriptions',
+    instructionStepId: '1',
+    systems: ['youtube', 'google-docs'],
+  },
+  'ask-guest-for-links': {
+    instructionDocId: 'template.media.podcast.podcast-links-after-the-event-is-over',
+    systems: ['email', 'google-docs'],
+  },
+  'schedule-podcast-spotify': {
+    instructionDocId: 'sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster',
+    instructionStepId: '1',
+    systems: ['spotify', 'apple-podcasts'],
+  },
+  'moving-podcast-audio-dropbox': {
+    instructionDocId: 'sop.media.podcast.moving-podcast-audio-in-dropbox',
+    instructionStepId: '1',
+    systems: ['dropbox'],
+  },
+  'add-podcast-episode-airtable': {
+    instructionDocId: 'sop.media.podcast.add-a-podcast-episode-via-airtable-form',
+    instructionStepId: '1',
+    systems: ['airtable', 'spotify', 'apple-podcasts'],
+  },
+  'create-podcast-page': {
+    instructionDocId: 'sop.media.podcast.update-the-website-with-the-information-from-forms',
+    systems: ['github', 'website', 'airtable'],
+  },
+  'ask-guest-share-podcast-page': {
+    instructionDocId: 'template.media.podcast.podcast-share-the-podcast-page-template',
+    systems: ['email', 'website'],
+  },
+  'move-podcast-documents-archive': {
+    instructionDocId: 'sop.media.podcast.move-podcast-documents-to-archive-in-google-drive',
+    instructionStepId: '1',
+    systems: ['google-drive'],
+  },
+  'upload-luma-emails-mailchimp': {
+    instructionDocId: 'sop.events.luma.downloading-the-csv-file-on-luma',
+    systems: ['luma', 'mailchimp'],
+  },
+  'add-podcast-webpage-newsletter': {
+    instructionDocId: 'sop.media.podcast.sending-a-podcast-scheduled-email-to-pavel-after-the-event',
+    systems: ['mailchimp', 'website'],
+  },
+  'schedule-posts-overview-after-event': {
+    instructionDocId: 'reference.social-media.post-podcast-overview-after-the-event',
+    systems: ['linkedin', 'twitter', 'hootsuite'],
+  },
+  'schedule-posts-guest-recommendations': {
+    instructionDocId: 'sop.social-media.post-podcast-guest-recommendations',
+    systems: ['linkedin', 'twitter', 'hootsuite'],
+  },
+};
+
+const PODCAST_WAITING_TASKS: Record<string, string> = {
+  'obtain-speaker-email': 'speaker email or working contact path',
+  'agree-on-a-date': 'guest date confirmation',
+  'include-johanna-ask-guest-bio': 'guest bio, links, and prep material',
+  'add-guest-bio-to-document': 'guest bio and links',
+  'create-event-luma': 'complete topic, bio, outline, banner, and stream details',
+  'create-event-meetup': 'Luma event and YouTube stream link',
+  'ask-guest-for-links': 'guest post-stream links',
+  'create-transcript-document': 'freelancer transcript handoff and returned transcript',
+  'schedule-podcast-spotify': 'public Spotify and Apple Podcasts publication links',
+  'ask-guest-share-podcast-page': 'guest reply or share confirmation',
+};
+
+const PODCAST_AT_RISK_BY_REF: Record<string, string[]> = {
+  'create-podcast-document': ['missing podcast document', 'unresolved assistant TODOs'],
+  'create-event-luma': ['missing podcast document', 'missing event page'],
+  'create-event-meetup': ['missing Luma link', 'missing YouTube link', 'missing Meetup page'],
+  'actual-stream': ['missing YouTube stream/video link'],
+  'upload-recording-dropbox': ['missing recording upload'],
+  'create-transcript-document': ['missing recording', 'missing transcription'],
+  'schedule-podcast-spotify': ['missing Spotify for Podcasters link', 'missing public Spotify episode', 'missing Apple Podcasts episode'],
+  'create-podcast-page': ['missing DTC podcast page'],
+};
+
+function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
+  return tasks.map((task) => {
+    const phase = PODCAST_PHASE_BY_REF[task.refId];
+    const docContext = PODCAST_DOC_CONTEXT[task.refId] || {};
+    const proofRequirement = podcastProofRequirement(task);
+    const waitingFor = PODCAST_WAITING_TASKS[task.refId];
+    const requiredBundleLinks = task.refId === 'schedule-podcast-spotify'
+      ? ['Spotify for Podcasters', 'Public Spotify episode', 'Apple Podcasts episode']
+      : task.requiredLinkName
+        ? [task.requiredLinkName]
+        : [];
+    const validation: Record<string, unknown> = {
+      operatorAction: task.description,
+      completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
+      requiredBundleLinks,
+      reminderSemantics: {
+        due: true,
+        overdue: true,
+        missingEvidence: proofRequirement.required !== false,
+        waitingFollowUp: Boolean(waitingFor),
+        preEventReminder: task.refId === 'remind-guest-7d' || task.refId === 'remind-guest-1d',
+        postEventFollowUp: task.offsetDays > 0,
+      },
+      atRiskWhen: PODCAST_AT_RISK_BY_REF[task.refId] || [],
+      dashboardStates: ['today', 'overdue', 'waiting', 'follow-up-due', 'missing-evidence', 'at-risk'],
+      ...(typeof task.validation === 'object' && task.validation !== null ? task.validation : {}),
+    };
+    if (waitingFor) {
+      validation.waitingSemantics = {
+        waitingFor,
+        requires: ['waitingFor', 'followUpAt', 'comment'],
+        followUpDefaultDays: task.offsetDays < 0 ? 2 : 1,
+      };
+    }
+
+    return {
+      ...task,
+      ...docContext,
+      phase,
+      systems: docContext.systems || task.systems || PODCAST_PHASE_SYSTEMS[phase] || ['dataops'],
+      proofRequirement,
+      validation,
+      ...(task.refId === 'create-podcast-document'
+        ? {
+            artifactRefs: [
+              {
+                artifactId: 'artifact.podcast-assistant-draft',
+                type: 'podcast-prep-draft',
+                title: 'Podcast Assistant draft',
+                status: 'planned',
+              },
+            ],
+            assistantJobRefs: [
+              {
+                assistantJobId: 'assistant-job.podcast-prep-draft',
+                assistantType: 'podcast',
+                status: 'planned',
+              },
+            ],
+          }
+        : {}),
+    };
+  });
+}
+
+function podcastProofRequirement(task: TaskDefinition): ProofRequirement {
+  if (task.requiredLinkName) {
+    return { type: 'url', label: task.requiredLinkName, required: true };
+  }
+  if (task.requiresFile) {
+    return { type: 'file', label: task.refId === 'create-banner-figma' ? 'Podcast banner or cover' : 'Required file', required: true };
+  }
+  if (task.refId === 'create-podcast-document') {
+    return { type: 'artifact', label: 'Accepted Podcast Assistant draft or podcast document link', required: true };
+  }
+  if (task.refId === 'recheck-video-edit') {
+    return { type: 'external-status', label: 'Edited YouTube video verified', required: true };
+  }
+  if (task.refId === 'schedule-podcast-spotify') {
+    return { type: 'external-status', label: 'Spotify and Apple Podcasts publication links captured', required: true };
+  }
+  if (task.isMilestone || task.stageOnComplete) {
+    return { type: 'comment', label: `${task.description} confirmed`, required: true };
+  }
+  return { type: 'comment', label: 'Manual completion confirmation', required: false };
+}
 
 const DEFAULT_TEMPLATES = [
   // 1. Newsletter
@@ -295,27 +701,19 @@ const DEFAULT_TEMPLATES = [
     type: 'podcast',
     emoji: '\u{1F399}\u{FE0F}',
     tags: ['Podcast'],
-    sourceDocIds: ['task-template.tasks.podcast'],
+    phases: PODCAST_PHASES,
+    sourceDocIds: PODCAST_SOURCE_DOC_IDS,
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [
       { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
       { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
       { name: 'Events (live) - podcast', url: 'https://docs.google.com/document/d/19d_kBOVQJ2p5qZCtGywzWzYeyCv5FWeHApZnEUZIYRg/edit' },
+      { name: 'Podcast Assistant README', url: 'assistants/podcast/README.md' },
+      { name: 'Podcast Assistant process', url: 'assistants/podcast/process/podcast.md' },
     ],
-    bundleLinkDefinitions: [
-      { name: 'Guest email' },
-      { name: 'Podcast document' },
-      { name: 'Luma' },
-      { name: 'Meetup' },
-      { name: 'Youtube' },
-      { name: 'Transcription' },
-      { name: 'Spotify for podcasters link' },
-      { name: 'Spotify podcast link' },
-      { name: 'Apple podcasts link' },
-      { name: 'DTC webpage podcast link' },
-    ],
-    taskDefinitions: [
+    bundleLinkDefinitions: PODCAST_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    taskDefinitions: withPodcastTaskSemantics([
       {
         refId: 'obtain-speaker-email',
         description: "Obtain speaker's email",
@@ -461,19 +859,21 @@ const DEFAULT_TEMPLATES = [
         offsetDays: 0,
         isMilestone: true,
         stageOnComplete: 'after-event',
-        requiredLinkName: 'Youtube',
+        requiredLinkName: 'YouTube stream/video',
       },
       {
         refId: 'upload-recording-dropbox',
         description: 'Upload the recording to the shared folder in dropbox',
         offsetDays: 1,
         assigneeId: ALEXEY_ID,
+        requiredLinkName: 'Dropbox recording folder',
       },
       {
         refId: 'update-youtube-cover',
         description: 'Update the cover of the YouTube video',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1pRxR7z_XUey3LVcbjmD4_vCEuH4XxdfhAUAZFoJSlgw/edit',
+        requiredLinkName: 'Podcast banner or cover',
       },
       {
         refId: 'remove-beginning-recording',
@@ -528,7 +928,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Schedule the edited podcast episode with Spotify for Podcasters',
         offsetDays: 4,
         instructionsUrl: 'https://docs.google.com/document/d/1moSrrDw501TzG3X_DqreK2ZkhRZ40I_d9lCjhF4agQA/edit',
-        requiredLinkName: 'Spotify for podcasters link',
+        requiredLinkName: 'Spotify for Podcasters',
       },
       {
         refId: 'moving-podcast-audio-dropbox',
@@ -541,6 +941,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Add a podcast episode via Airtable form',
         offsetDays: 4,
         instructionsUrl: 'https://docs.google.com/document/d/1nUvqLRX18fEWgqeJO-9FNuXDX8SBZpjauIjvfXwaL4k/edit',
+        requiredLinkName: 'Public Spotify episode',
       },
       {
         refId: 'create-podcast-page',
@@ -588,7 +989,7 @@ const DEFAULT_TEMPLATES = [
         stageOnComplete: 'done',
         instructionsUrl: 'https://docs.google.com/document/d/1XDOfmUHMjKdtlImd5C5LGalCWD8tChefCbB_dtskfWs/edit',
       },
-    ],
+    ]),
   },
 
   // 4. Webinar

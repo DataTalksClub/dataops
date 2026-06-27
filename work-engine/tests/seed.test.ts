@@ -4,7 +4,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
-import { listTemplates } from '../src/db/templates';
+import { listTemplates, instantiateTemplate } from '../src/db/templates';
 import { seed, DEFAULT_TEMPLATES } from '../scripts/seed-templates';
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
@@ -113,13 +113,64 @@ describe('Seed script', () => {
     const podcast = templates.find((t) => t.type === 'podcast');
     assert.ok(podcast, 'Podcast template should exist');
     assert.strictEqual(podcast.taskDefinitions!.length, 42);
-    assert.deepStrictEqual(podcast.sourceDocIds, ['task-template.tasks.podcast']);
+    assert.ok(podcast.sourceDocIds!.includes('task-template.tasks.podcast'));
+    assert.ok(podcast.sourceDocIds!.includes('sop.media.podcast.create-podcast-document'));
+    assert.ok(podcast.sourceDocIds!.includes('assistant.podcast.process.podcast'));
+    assert.strictEqual(podcast.triggerType, 'manual');
+    assert.deepStrictEqual(podcast.phases!.map((phase) => phase.id), [
+      'guest-intake',
+      'prep-document',
+      'event-setup',
+      'pre-event-reminders',
+      'live-stream',
+      'post-production',
+      'publication',
+      'follow-up-archive',
+    ]);
+
+    const linkNames = podcast.bundleLinkDefinitions!.map((link) => link.name);
+    for (const requiredLink of [
+      'Guest email',
+      'Podcast document',
+      'Luma',
+      'Meetup',
+      'YouTube stream/video',
+      'Transcription',
+      'Spotify for Podcasters',
+      'Public Spotify episode',
+      'Apple Podcasts episode',
+      'DTC webpage podcast link',
+      'Dropbox recording folder',
+      'Podcast banner or cover',
+    ]) {
+      assert.ok(linkNames.includes(requiredLink), `Podcast bundle should require ${requiredLink}`);
+    }
 
     const createPodcastDocument = podcast.taskDefinitions!.find((td) => td.refId === 'create-podcast-document');
     assert.ok(createPodcastDocument);
     assert.strictEqual(createPodcastDocument.instructionDocId, 'sop.media.podcast.create-podcast-document');
     assert.strictEqual(createPodcastDocument.instructionStepId, '1');
-    assert.strictEqual(createPodcastDocument.phase, 'preparation');
+    assert.strictEqual(createPodcastDocument.phase, 'prep-document');
+    assert.deepStrictEqual(createPodcastDocument.proofRequirement, {
+      type: 'url',
+      label: 'Podcast document',
+      required: true,
+    });
+    assert.deepStrictEqual(createPodcastDocument.artifactRefs, [
+      {
+        artifactId: 'artifact.podcast-assistant-draft',
+        type: 'podcast-prep-draft',
+        title: 'Podcast Assistant draft',
+        status: 'planned',
+      },
+    ]);
+    assert.deepStrictEqual(createPodcastDocument.assistantJobRefs, [
+      {
+        assistantJobId: 'assistant-job.podcast-prep-draft',
+        assistantType: 'podcast',
+        status: 'planned',
+      },
+    ]);
 
     // Check "Actual stream" milestone
     const actualStream = podcast.taskDefinitions!.find((td) => td.refId === 'actual-stream');
@@ -127,24 +178,32 @@ describe('Seed script', () => {
     assert.strictEqual(actualStream.isMilestone, true);
     assert.strictEqual(actualStream.offsetDays, 0);
     assert.strictEqual(actualStream.stageOnComplete, 'after-event');
-    assert.strictEqual(actualStream.requiredLinkName, 'Youtube');
+    assert.strictEqual(actualStream.requiredLinkName, 'YouTube stream/video');
+    assert.deepStrictEqual(actualStream.proofRequirement, {
+      type: 'url',
+      label: 'YouTube stream/video',
+      required: true,
+    });
 
     // Check -7d reminder milestone
     const remind7d = podcast.taskDefinitions!.find((td) => td.refId === 'remind-guest-7d');
     assert.ok(remind7d);
     assert.strictEqual(remind7d.isMilestone, true);
     assert.strictEqual(remind7d.offsetDays, -7);
+    assert.strictEqual((remind7d.validation as any).reminderSemantics.preEventReminder, true);
 
     // Check -1d reminder milestone
     const remind1d = podcast.taskDefinitions!.find((td) => td.refId === 'remind-guest-1d');
     assert.ok(remind1d);
     assert.strictEqual(remind1d.isMilestone, true);
     assert.strictEqual(remind1d.offsetDays, -1);
+    assert.strictEqual((remind1d.validation as any).reminderSemantics.preEventReminder, true);
 
     // Check Alexey assignee on upload recording
     const upload = podcast.taskDefinitions!.find((td) => td.refId === 'upload-recording-dropbox');
     assert.ok(upload);
     assert.strictEqual(upload.assigneeId, ALEXEY_ID);
+    assert.strictEqual(upload.requiredLinkName, 'Dropbox recording folder');
 
     // Check Valeriia assignee on newsletter task
     const newsletter = podcast.taskDefinitions!.find((td) => td.refId === 'add-podcast-webpage-newsletter');
@@ -157,6 +216,83 @@ describe('Seed script', () => {
     assert.strictEqual(socialMedia.isMilestone, true);
     assert.strictEqual(socialMedia.offsetDays, 7);
     assert.strictEqual(socialMedia.stageOnComplete, 'done');
+
+    for (const td of podcast.taskDefinitions!) {
+      assert.ok(td.phase, `${td.refId} should declare a phase`);
+      assert.ok(td.systems && td.systems.length > 0, `${td.refId} should declare systems`);
+      assert.ok(td.proofRequirement, `${td.refId} should declare completion proof semantics`);
+      assert.ok(td.validation && typeof td.validation === 'object', `${td.refId} should declare validation semantics`);
+      assert.ok((td.validation as any).operatorAction, `${td.refId} should declare operator action`);
+      assert.ok((td.validation as any).reminderSemantics, `${td.refId} should declare reminder semantics`);
+      assert.ok((td.validation as any).dashboardStates, `${td.refId} should declare dashboard states`);
+      assert.ok(td.instructionsUrl || td.instructionDocId, `${td.refId} should link operator instructions`);
+    }
+  });
+
+  it('Podcast template instantiates sample workflow tasks with V1 semantics', async () => {
+    const templates = await listTemplates(client);
+    const podcast = templates.find((t) => t.type === 'podcast');
+    assert.ok(podcast, 'Podcast template should exist');
+
+    const tasks = await instantiateTemplate(client, podcast.id, 'bundle-podcast-sample', '2026-08-17');
+    assert.strictEqual(tasks.length, 42);
+
+    const createPodcastDocument = tasks.find((task) => task.templateTaskRef === 'create-podcast-document');
+    assert.ok(createPodcastDocument);
+    assert.strictEqual(createPodcastDocument.date, '2026-07-23');
+    assert.strictEqual(createPodcastDocument.phase, 'prep-document');
+    assert.strictEqual(createPodcastDocument.requiredLinkName, 'Podcast document');
+    assert.deepStrictEqual(createPodcastDocument.proofRequirement, {
+      type: 'url',
+      label: 'Podcast document',
+      required: true,
+    });
+    assert.deepStrictEqual(createPodcastDocument.artifactRefs, [
+      {
+        artifactId: 'artifact.podcast-assistant-draft',
+        type: 'podcast-prep-draft',
+        title: 'Podcast Assistant draft',
+        status: 'planned',
+      },
+    ]);
+    assert.deepStrictEqual(createPodcastDocument.assistantJobRefs, [
+      {
+        assistantJobId: 'assistant-job.podcast-prep-draft',
+        assistantType: 'podcast',
+        status: 'planned',
+      },
+    ]);
+
+    const dateConfirmation = tasks.find((task) => task.templateTaskRef === 'agree-on-a-date');
+    assert.ok(dateConfirmation);
+    assert.strictEqual(dateConfirmation.date, '2026-07-22');
+    assert.strictEqual((dateConfirmation.validation as any).waitingSemantics.waitingFor, 'guest date confirmation');
+    assert.deepStrictEqual((dateConfirmation.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
+
+    const remind7d = tasks.find((task) => task.templateTaskRef === 'remind-guest-7d');
+    assert.ok(remind7d);
+    assert.strictEqual(remind7d.date, '2026-08-10');
+    assert.strictEqual((remind7d.validation as any).reminderSemantics.preEventReminder, true);
+
+    const actualStream = tasks.find((task) => task.templateTaskRef === 'actual-stream');
+    assert.ok(actualStream);
+    assert.strictEqual(actualStream.date, '2026-08-17');
+    assert.strictEqual(actualStream.stageOnComplete, 'after-event');
+    assert.strictEqual(actualStream.requiredLinkName, 'YouTube stream/video');
+
+    const publish = tasks.find((task) => task.templateTaskRef === 'schedule-podcast-spotify');
+    assert.ok(publish);
+    assert.strictEqual(publish.date, '2026-08-21');
+    assert.deepStrictEqual((publish.validation as any).requiredBundleLinks, [
+      'Spotify for Podcasters',
+      'Public Spotify episode',
+      'Apple Podcasts episode',
+    ]);
+
+    const doneTask = tasks.find((task) => task.templateTaskRef === 'schedule-posts-guest-recommendations');
+    assert.ok(doneTask);
+    assert.strictEqual(doneTask.date, '2026-08-24');
+    assert.strictEqual(doneTask.stageOnComplete, 'done');
   });
 
   it('Social Media Weekly template has all-milestone tasks', async () => {
