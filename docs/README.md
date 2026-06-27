@@ -29,6 +29,9 @@ Files that live here:
 
 - `architecture.md` - deployed app architecture, content lifecycle, CI/CD
   split, credentials model, and upgrade notes.
+- `design-system.md` - internal V1 design-system spec for shared DataOps
+  tokens, component primitives, current portal/work-engine mappings,
+  accessibility, responsive behavior, and migration sequencing.
 - `decisions/` - durable architecture decision records for repository,
   runtime, data, and process boundaries.
 - `decisions/dataops-knowledge-repository.md` - ADR for the future
