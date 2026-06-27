@@ -179,3 +179,24 @@ assert.equal(plain[0].nodeType, 3);
         ["formatHistoryLine"],
     )
     assert result["ok"] is True
+
+
+
+def test_bundle_checklist_sorts_done_last():
+    """The bundle checklist should sort done tasks below active tasks so
+    the operator's attention stays on pending work."""
+    result = _run_app_js_functions(
+        """
+const tasks = [
+  { id: "t1", description: "Done task", status: "done", date: "2026-06-25" },
+  { id: "t2", description: "Active task", status: "todo", date: "2026-06-28" },
+  { id: "t3", description: "Waiting task", status: "waiting", date: "2026-06-27" },
+];
+const sorted = sortBundleChecklistTasks(tasks, "2026-06-27");
+assert.equal(sorted[0].description, "Waiting task");
+assert.equal(sorted[1].description, "Active task");
+assert.equal(sorted[2].description, "Done task");
+""",
+        ["sortBundleChecklistTasks", "compareIsoDate", "taskDate"],
+    )
+    assert result["ok"] is True
