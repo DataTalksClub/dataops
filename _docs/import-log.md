@@ -158,23 +158,26 @@ with the reusable fields required by the policy above.
   `../podcast-assistant/.git` is absent.
 - Source-state commands:
   - `test -d ../podcast-assistant`
-    - Status: passed on 2026-06-27 during #12 verification.
+    - Status: passed on 2026-06-27 during #7 verification.
   - `test ! -d ../podcast-assistant/.git`
-    - Status: passed on 2026-06-27 during #12 verification.
+    - Status: passed on 2026-06-27 during #7 verification.
 - Destination paths in this repo:
-  - `podcast-assistant/` as the current transitional import location.
+  - `assistants/podcast/` as the canonical in-repo Podcast Assistant location.
+  - Root-level `podcast-assistant/` was removed during #7; no compatibility
+    shim was kept because the import can run directly from the canonical
+    module path.
 - Copied path groups currently represented in this repo:
-  - `podcast-assistant/data/`
-  - `podcast-assistant/documents/`
-  - `podcast-assistant/inbox/`
-  - `podcast-assistant/knowledge_base/`
-  - `podcast-assistant/podcast_examples/`
-  - `podcast-assistant/process/`
-  - `podcast-assistant/scripts/`
-  - `podcast-assistant/templates/`
-  - `podcast-assistant/tests/`
-  - `podcast-assistant/tests_integration/`
-  - Root assistant files such as `README.md`, `main.py`,
+  - `assistants/podcast/data/`
+  - `assistants/podcast/documents/` with `.gitkeep` only
+  - `assistants/podcast/inbox/` with `.gitkeep` placeholders only
+  - `assistants/podcast/knowledge_base/`
+  - `assistants/podcast/podcast_examples/`
+  - `assistants/podcast/process/`
+  - `assistants/podcast/scripts/`
+  - `assistants/podcast/templates/`
+  - `assistants/podcast/tests/`
+  - `assistants/podcast/tests_integration/`
+  - Assistant files such as `.env.example`, `README.md`, `main.py`,
     `process_request.py`, `message_queue.py`, `progress_tracker.py`,
     `session_retrier.py`, `heru_runner.py`, `pyproject.toml`, and `uv.lock`.
 - Deliberate exclusions recorded by the initial import:
@@ -183,23 +186,37 @@ with the reusable fields required by the policy above.
   - `.pytest_cache`
   - `.env`
   - Local-only environment files
-- Local non-Git exclusions observed during #12 verification:
+- Deliberate exclusions confirmed during #7 canonicalization:
   - `../podcast-assistant/.tmp`
   - `../podcast-assistant/.venv`
+  - `assistants/podcast/.env`
+  - `assistants/podcast/.env.*` except `.env.example`
+  - `assistants/podcast/.tmp/`
+  - `assistants/podcast/.venv/`
+  - `assistants/podcast/heru_runs/`
+  - Generated/private files under `assistants/podcast/inbox/raw/`
+  - Generated/private files under `assistants/podcast/inbox/used/`
+  - Generated podcast documents under `assistants/podcast/documents/`
 - Purpose: podcast operations workflow, guest-intake template, podcast process
   document preparation, and knowledge-base tooling.
 - Validation:
-  - `test -f _docs/import-log.md`: passed on 2026-06-27 during #12
-    verification.
-  - `rg -n "policy|DTC Operations|DataTasks|Podcast Assistant|Validation" _docs/import-log.md`:
-    passed on 2026-06-27 during #12 final verification.
-  - `test -d ../podcast-assistant`: passed on 2026-06-27 during #12
-    verification.
-  - `test ! -d ../podcast-assistant/.git`: passed on 2026-06-27 during #12
-    verification.
-  - Full Podcast Assistant test suites: not rerun for #12; this issue is
-    documentation-only.
+  - `test -d ../podcast-assistant && test ! -d ../podcast-assistant/.git && test ! -e podcast-assistant`:
+    passed on 2026-06-27 during #7 verification.
+  - `uv lock --project assistants/podcast`: passed on 2026-06-27 during #7
+    verification after updating the editable Heru path to
+    `../../../heru` from `assistants/podcast/`.
+  - `uv run --project assistants/podcast pytest`: passed on 2026-06-27 during
+    #7 follow-up verification after adding a package-local pytest entrypoint;
+    28 tests passed.
+  - `cd assistants/podcast && uv run pytest`: passed on 2026-06-27 during #7
+    follow-up verification; 28 tests passed.
+  - `cd assistants/podcast && uv run pytest tests/test_session_retrier.py tests/test_main.py`:
+    passed on 2026-06-27 during #7 follow-up verification; 12 tests passed,
+    including retry/resume and default no-push coverage.
+  - `cd assistants/podcast && uv run python scripts/search_podcast_kb.py "AI agents evaluation"`:
+    passed on 2026-06-27 during #7 verification.
+  - `git diff --check`: passed on 2026-06-27 during #7 verification.
 - Follow-up context:
-  - #7 should move or canonicalize the transitional `podcast-assistant/` import
-    under `assistants/podcast/` and should update this log with the final
-    destination, source state, copied paths, exclusions, and validation status.
+  - #7 completed the canonical path move. Local `inbox/`, `documents/`, and
+    Heru logs remain transitional development storage until later assistant
+    job/artifact work attaches outputs to DataOps workflow records.
