@@ -1373,6 +1373,38 @@ body[data-view="create"] .editor-view {
   padding-top: 12px;
 }
 
+.task-file-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.task-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.task-file-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-file-remove {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: auto;
+}
+
+.task-file-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .task-history-label {
   font-size: 11px;
   font-weight: 650;
@@ -1434,6 +1466,26 @@ body[data-view="create"] .editor-view {
   color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
+}
+
+.bundle-checklist-evidence {
+  display: inline-block;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.bundle-stage-select {
+  border: 1px solid var(--line-strong);
+  background: var(--control);
+  color: var(--text);
+  padding: 3px 6px;
+  font-size: 12px;
+  appearance: auto;
 }
 
 .ops-quick-bar {
