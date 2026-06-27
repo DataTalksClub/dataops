@@ -84,6 +84,11 @@ metadata. DynamoDB shouldn't store the file binaries.
 
 Portable exports are application-level snapshots.
 
+Current implementation:
+
+- `npm --prefix work-engine run export:data -- <export-dir>`
+- `npm --prefix work-engine run validate:export -- <export-dir>`
+
 Required archive layout:
 
 ```text
