@@ -1110,15 +1110,28 @@ async function loadTaskFiles(taskId, container) {
   try {
     const payload = await request(workApiUrl("/api/files", { taskId }));
     const files = Array.isArray(payload) ? payload : payload.files || [];
+    const hasActiveTask = activeTaskPanelTask && activeTaskPanelTask.id === taskId;
+    const hadFiles = Boolean(hasActiveTask && activeTaskPanelTask._hasFiles);
     container.replaceChildren();
     if (files.length === 0) {
+      if (hasActiveTask) activeTaskPanelTask._hasFiles = false;
+      if (hadFiles && activeTaskPanelId === taskId) {
+        renderTaskPanel();
+        return;
+      }
       const empty = document.createElement("small");
       empty.className = "task-file-empty";
       empty.textContent = "No files attached.";
       container.append(empty);
       return;
     }
-    if (activeTaskPanelTask) activeTaskPanelTask._hasFiles = true;
+    if (hasActiveTask) {
+      activeTaskPanelTask._hasFiles = true;
+      if (!hadFiles && activeTaskPanelId === taskId) {
+        renderTaskPanel();
+        return;
+      }
+    }
     for (const file of files) {
       const item = document.createElement("div");
       item.className = "task-file-item";

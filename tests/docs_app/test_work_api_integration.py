@@ -42,6 +42,23 @@ def test_frontend_builds_work_api_urls_not_bare_api():
     )
 
 
+def test_frontend_task_and_workflow_mutations_use_work_api():
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert 'request(workApiUrl("/api/tasks"), {' in source, (
+        "quick task creation must POST through /work/api/tasks"
+    )
+    assert 'request(workApiUrl("/api/bundles"), {' in source, (
+        "quick workflow creation must POST through /work/api/bundles"
+    )
+    assert "request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {" in source, (
+        "task action helpers must update tasks through /work/api/tasks/:id"
+    )
+    assert "request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`), {" in source, (
+        "bundle stage/link/reference updates must go through /work/api/bundles/:id"
+    )
+
+
 def test_frontend_request_helper_rejects_non_json_responses():
     """The request helper must throw on non-JSON so login HTML cannot render
     as an empty dashboard. Commit d981f47 tightened this; this test locks it."""

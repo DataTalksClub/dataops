@@ -128,4 +128,80 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(response.statusCode, 200);
     assert.deepStrictEqual(JSON.parse(response.body), { user: { id: 'ops-manager', name: 'Portal user' } });
   });
+
+  it('allows portal broker headers to perform Operations Home write actions', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const headers = {
+      'x-portal-auth': 'true',
+      'x-portal-secret': 'test-portal-secret',
+      'x-user-id': 'ops-manager',
+    };
+    const suffix = Date.now().toString(36);
+
+    const createTaskResponse = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: `Portal action task ${suffix}`, date: '2028-10-05' }),
+        headers,
+      },
+      {},
+    );
+    assert.strictEqual(createTaskResponse.statusCode, 201);
+    const createdTask = JSON.parse(createTaskResponse.body);
+
+    const waitingTaskResponse = await handler(
+      {
+        httpMethod: 'PUT',
+        path: `/api/tasks/${createdTask.id}`,
+        body: JSON.stringify({
+          status: 'waiting',
+          waitingFor: 'guest bio',
+          followUpAt: '2028-10-06',
+          comment: '[2028-10-05T10:00:00.000Z] Follow-up sent; next follow-up 2028-10-06',
+        }),
+        headers,
+      },
+      {},
+    );
+    assert.strictEqual(waitingTaskResponse.statusCode, 200);
+    const waitingTask = JSON.parse(waitingTaskResponse.body);
+    assert.strictEqual(waitingTask.status, 'waiting');
+    assert.strictEqual(waitingTask.waitingFor, 'guest bio');
+    assert.strictEqual(waitingTask.followUpAt, '2028-10-06');
+
+    const createBundleResponse = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/bundles',
+        body: JSON.stringify({ title: `Portal action bundle ${suffix}`, anchorDate: '2028-10-05' }),
+        headers,
+      },
+      {},
+    );
+    assert.strictEqual(createBundleResponse.statusCode, 201);
+    const createdBundle = JSON.parse(createBundleResponse.body).bundle;
+
+    const updateBundleResponse = await handler(
+      {
+        httpMethod: 'PUT',
+        path: `/api/bundles/${createdBundle.id}`,
+        body: JSON.stringify({
+          stage: 'announced',
+          bundleLinks: [{ name: 'Podcast doc', url: 'https://example.com/doc' }],
+          references: [{ name: 'Guest notes', url: 'https://example.com/notes' }],
+        }),
+        headers,
+      },
+      {},
+    );
+    assert.strictEqual(updateBundleResponse.statusCode, 200);
+    const updatedBundle = JSON.parse(updateBundleResponse.body).bundle;
+    assert.strictEqual(updatedBundle.stage, 'announced');
+    assert.deepStrictEqual(updatedBundle.bundleLinks, [{ name: 'Podcast doc', url: 'https://example.com/doc' }]);
+    assert.deepStrictEqual(updatedBundle.references, [{ name: 'Guest notes', url: 'https://example.com/notes' }]);
+  });
 });
