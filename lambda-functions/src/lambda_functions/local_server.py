@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import urllib.request
+
 from lambda_functions.api_handler import handler as api_handler
 from lambda_functions.docs_index import build_index
 from lambda_functions.search_handler import DEFAULT_INDEX_PATH, handler as search_handler, reset_index
@@ -14,6 +16,8 @@ from lambda_functions.search_handler import DEFAULT_INDEX_PATH, handler as searc
 class LocalLambdaHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if self._maybe_proxy_work_api(method="GET"):
+            return
         if parsed.path == "/health":
             self.respond({"statusCode": 200, "headers": {"content-type": "application/json"}, "body": '{"ok": true}'})
             return
@@ -39,12 +43,18 @@ class LocalLambdaHandler(BaseHTTPRequestHandler):
         self.respond(api_handler(lambda_event("GET", parsed.query, parsed.path), None))
 
     def do_POST(self) -> None:
+        if self._maybe_proxy_work_api(method="POST"):
+            return
         self.handle_mutation("POST")
 
     def do_PUT(self) -> None:
+        if self._maybe_proxy_work_api(method="PUT"):
+            return
         self.handle_mutation("PUT")
 
     def do_DELETE(self) -> None:
+        if self._maybe_proxy_work_api(method="DELETE"):
+            return
         self.handle_mutation("DELETE")
 
     def do_OPTIONS(self) -> None:
@@ -69,6 +79,54 @@ class LocalLambdaHandler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")
+
+    def _maybe_proxy_work_api(self, method: str) -> bool:
+        """Proxy /work/api/* and /work/health to the work-engine dev server.
+
+        In production the full_app_handler brokers these via Lambda invoke.
+        Locally we proxy to the work-engine dev server (default port 3000)
+        so the frontend gets real JSON without CORS or a second public URL.
+        """
+        base_url = os.environ.get("WORK_ENGINE_DEV_URL", "")
+        parsed = urlparse(self.path)
+        if not base_url or not parsed.path.startswith("/work/"):
+            return False
+        # Map /work/health -> /api/health to match the production broker,
+        # which rewrites health checks to the canonical API path.
+        if parsed.path == "/work/health":
+            work_path = "/api/health"
+        else:
+            work_path = parsed.path.removeprefix("/work")
+        target = f"{base_url.rstrip('/')}{work_path}"
+        if parsed.query:
+            target += f"?{parsed.query}"
+        body = self.read_body().encode("utf-8") if method in {"POST", "PUT", "DELETE", "PATCH"} else None
+        req = urllib.request.Request(target, data=body, method=method)
+        req.add_header("content-type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as upstream:
+                response_body = upstream.read()
+                content_type = upstream.headers.get("content-type", "application/json")
+                self.respond_raw(upstream.status, content_type, response_body)
+        except urllib.error.HTTPError as exc:
+            response_body = exc.read()
+            content_type = exc.headers.get("content-type", "application/json") if exc.headers else "application/json"
+            self.respond_raw(exc.code, content_type, response_body)
+        except urllib.error.URLError as exc:
+            self.respond(
+                {
+                    "statusCode": 503,
+                    "headers": {"content-type": "application/json"},
+                    "body": json.dumps({"error": f"Work engine dev server unreachable: {exc.reason}"}),
+                }
+            )
+        return True
+
+    def respond_raw(self, status: int, content_type: str, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("content-type", content_type)
+        self.end_headers()
+        self.wfile.write(body)
 
     def read_body(self) -> str:
         content_length = int(self.headers.get("content-length") or "0")
