@@ -13,6 +13,21 @@ const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json
 
 const VALID_STAGES = ['preparation', 'announced', 'after-event', 'done'];
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isValidationPayload(value: unknown): boolean {
+  return (
+    typeof value === 'string'
+    || (
+      value !== null
+      && typeof value === 'object'
+      && !Array.isArray(value)
+    )
+  );
+}
+
 /**
  * Validate an array of task definitions.
  * Returns an error string if invalid, or null if valid.
@@ -36,6 +51,21 @@ function validateTaskDefinitions(taskDefinitions: unknown): string | null {
     if (td.instructionsUrl !== undefined && typeof td.instructionsUrl !== 'string') {
       return `taskDefinitions[${i}].instructionsUrl must be a string`;
     }
+    if (td.instructionDocId !== undefined && typeof td.instructionDocId !== 'string') {
+      return `taskDefinitions[${i}].instructionDocId must be a string`;
+    }
+    if (td.instructionStepId !== undefined && typeof td.instructionStepId !== 'string') {
+      return `taskDefinitions[${i}].instructionStepId must be a string`;
+    }
+    if (td.phase !== undefined && typeof td.phase !== 'string') {
+      return `taskDefinitions[${i}].phase must be a string`;
+    }
+    if (td.systems !== undefined && !isStringArray(td.systems)) {
+      return `taskDefinitions[${i}].systems must be an array of strings`;
+    }
+    if (td.validation !== undefined && !isValidationPayload(td.validation)) {
+      return `taskDefinitions[${i}].validation must be a string or object`;
+    }
     if (td.isMilestone !== undefined && typeof td.isMilestone !== 'boolean') {
       return `taskDefinitions[${i}].isMilestone must be a boolean`;
     }
@@ -55,6 +85,13 @@ function validateTaskDefinitions(taskDefinitions: unknown): string | null {
     }
   }
 
+  return null;
+}
+
+function validateTemplateDocContext(body: Record<string, unknown>): string | null {
+  if (body.sourceDocIds !== undefined && !isStringArray(body.sourceDocIds)) {
+    return 'sourceDocIds must be an array of strings';
+  }
   return null;
 }
 
@@ -160,6 +197,14 @@ async function handleCollection(method: string, rawBody: string | null, client: 
         body: JSON.stringify({ error: tdError }),
       };
     }
+    const docContextError = validateTemplateDocContext(body);
+    if (docContextError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: docContextError }),
+      };
+    }
 
     const templateData: Record<string, unknown> = {
       name: body.name,
@@ -169,7 +214,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 
     // Pick optional template-level fields
     const optionalFields = [
-      'emoji', 'tags', 'defaultAssigneeId', 'references',
+      'emoji', 'tags', 'defaultAssigneeId', 'sourceDocIds', 'references',
       'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
     ];
     for (const field of optionalFields) {
@@ -248,7 +293,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
     // Only allow updating known fields
     const allowedFields = [
       'name', 'type', 'taskDefinitions',
-      'emoji', 'tags', 'defaultAssigneeId', 'references',
+      'emoji', 'tags', 'defaultAssigneeId', 'sourceDocIds', 'references',
       'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
     ];
     const updates: Record<string, unknown> = {};
@@ -276,6 +321,14 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
           body: JSON.stringify({ error: tdError }),
         };
       }
+    }
+    const docContextError = validateTemplateDocContext(updates);
+    if (docContextError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: docContextError }),
+      };
     }
 
     const template = await updateTemplate(client, id, updates);

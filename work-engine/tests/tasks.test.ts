@@ -137,11 +137,16 @@ describe('Tasks data layer', () => {
     assert.deepStrictEqual(descriptions, ['P1', 'P2']);
   });
 
-  it('createTask persists new fields (instructionsUrl, link, requiredLinkName, assigneeId, tags)', async () => {
+  it('createTask persists new fields (instructionsUrl, doc context, link, requiredLinkName, assigneeId, tags)', async () => {
     const task = await createTask(client, {
       description: 'Task with new fields',
       date: '2026-04-01',
       instructionsUrl: 'https://docs.google.com/howto',
+      instructionDocId: 'sop.media.podcast.create-podcast-document',
+      instructionStepId: '4',
+      phase: 'preparation',
+      systems: ['google-drive', 'github'],
+      validation: { requiredEvidence: 'Podcast document link' },
       link: 'https://luma.com/event-123',
       requiredLinkName: 'Luma',
       assigneeId: 'user-grace',
@@ -150,6 +155,11 @@ describe('Tasks data layer', () => {
 
     assert.strictEqual(task.description, 'Task with new fields');
     assert.strictEqual((task as any).instructionsUrl, 'https://docs.google.com/howto');
+    assert.strictEqual((task as any).instructionDocId, 'sop.media.podcast.create-podcast-document');
+    assert.strictEqual((task as any).instructionStepId, '4');
+    assert.strictEqual((task as any).phase, 'preparation');
+    assert.deepStrictEqual((task as any).systems, ['google-drive', 'github']);
+    assert.deepStrictEqual((task as any).validation, { requiredEvidence: 'Podcast document link' });
     assert.strictEqual((task as any).link, 'https://luma.com/event-123');
     assert.strictEqual((task as any).requiredLinkName, 'Luma');
     assert.strictEqual((task as any).assigneeId, 'user-grace');
@@ -159,6 +169,11 @@ describe('Tasks data layer', () => {
     const fetched = await getTask(client, task.id);
     assert.ok(fetched);
     assert.strictEqual((fetched as any).instructionsUrl, 'https://docs.google.com/howto');
+    assert.strictEqual((fetched as any).instructionDocId, 'sop.media.podcast.create-podcast-document');
+    assert.strictEqual((fetched as any).instructionStepId, '4');
+    assert.strictEqual((fetched as any).phase, 'preparation');
+    assert.deepStrictEqual((fetched as any).systems, ['google-drive', 'github']);
+    assert.deepStrictEqual((fetched as any).validation, { requiredEvidence: 'Podcast document link' });
     assert.strictEqual((fetched as any).link, 'https://luma.com/event-123');
     assert.strictEqual((fetched as any).requiredLinkName, 'Luma');
     assert.strictEqual((fetched as any).assigneeId, 'user-grace');
@@ -175,6 +190,11 @@ describe('Tasks data layer', () => {
 
     const updated = await updateTask(client, task.id, {
       instructionsUrl: 'https://docs.google.com/updated',
+      instructionDocId: 'sop.media.podcast.updated',
+      instructionStepId: '7',
+      phase: 'after-event',
+      systems: ['youtube'],
+      validation: 'Confirm the doc is shared',
       assigneeId: 'user-valeriia',
       tags: ['newsletter'],
       link: 'https://example.com/link',
@@ -182,6 +202,11 @@ describe('Tasks data layer', () => {
 
     assert.ok(updated);
     assert.strictEqual((updated as any).instructionsUrl, 'https://docs.google.com/updated');
+    assert.strictEqual((updated as any).instructionDocId, 'sop.media.podcast.updated');
+    assert.strictEqual((updated as any).instructionStepId, '7');
+    assert.strictEqual((updated as any).phase, 'after-event');
+    assert.deepStrictEqual((updated as any).systems, ['youtube']);
+    assert.strictEqual((updated as any).validation, 'Confirm the doc is shared');
     assert.strictEqual((updated as any).assigneeId, 'user-valeriia');
     assert.deepStrictEqual((updated as any).tags, ['newsletter']);
     assert.strictEqual((updated as any).link, 'https://example.com/link');
@@ -195,6 +220,11 @@ describe('Tasks data layer', () => {
     });
 
     assert.strictEqual((task as any).instructionsUrl, undefined);
+    assert.strictEqual((task as any).instructionDocId, undefined);
+    assert.strictEqual((task as any).instructionStepId, undefined);
+    assert.strictEqual((task as any).phase, undefined);
+    assert.strictEqual((task as any).systems, undefined);
+    assert.strictEqual((task as any).validation, undefined);
     assert.strictEqual((task as any).link, undefined);
     assert.strictEqual((task as any).requiredLinkName, undefined);
     assert.strictEqual((task as any).assigneeId, undefined);

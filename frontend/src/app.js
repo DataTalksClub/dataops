@@ -1103,7 +1103,9 @@ function renderTaskPanel() {
   }
 
   // Instructions link
-  if (task.instructionsUrl) {
+  if (task.instructionDocId) {
+    taskPanelBody.append(renderTaskInstructionDoc(task));
+  } else if (task.instructionsUrl) {
     const instructions = document.createElement("div");
     instructions.className = "task-detail-meta";
     const link = document.createElement("a");
@@ -1114,6 +1116,88 @@ function renderTaskPanel() {
     instructions.append(link);
     taskPanelBody.append(instructions);
   }
+}
+
+function renderTaskInstructionDoc(task) {
+  const instruction = document.createElement("div");
+  instruction.className = "task-instruction-doc";
+  const docId = String(task.instructionDocId || "");
+  const doc = resolveDocReference(docId);
+
+  const label = document.createElement("div");
+  label.className = "task-history-label";
+  label.textContent = "Process doc";
+  instruction.append(label);
+
+  if (doc) {
+    const title = document.createElement("button");
+    title.type = "button";
+    title.className = "task-instruction-doc-link";
+    title.textContent = doc.title || doc.id || doc.path;
+    title.addEventListener("click", () => openDocument(doc.path));
+    instruction.append(title);
+
+    const meta = document.createElement("div");
+    meta.className = "task-detail-meta";
+    const docMeta = [doc.doc_type, doc.path].filter(Boolean).join(" - ");
+    if (docMeta) meta.append(document.createTextNode(docMeta));
+    if (doc.summary) {
+      const summary = document.createElement("span");
+      summary.textContent = doc.summary;
+      meta.append(summary);
+    }
+    instruction.append(meta);
+  } else {
+    const missing = document.createElement("div");
+    missing.className = "task-detail-meta";
+    missing.textContent = `Document unavailable: ${docId}`;
+    instruction.append(missing);
+  }
+
+  if (task.phase || task.instructionStepId || (Array.isArray(task.systems) && task.systems.length > 0)) {
+    const context = document.createElement("div");
+    context.className = "task-detail-meta";
+    if (task.phase) {
+      const phase = document.createElement("span");
+      phase.textContent = `Phase: ${task.phase}`;
+      context.append(phase);
+    }
+    if (task.instructionStepId) {
+      const step = document.createElement("span");
+      step.textContent = `Step: ${task.instructionStepId}`;
+      context.append(step);
+    }
+    if (Array.isArray(task.systems) && task.systems.length > 0) {
+      const systems = document.createElement("div");
+      systems.className = "ops-card-chips";
+      for (const system of task.systems) {
+        const chip = document.createElement("small");
+        chip.textContent = system;
+        systems.append(chip);
+      }
+      context.append(systems);
+    }
+    instruction.append(context);
+  }
+
+  if (task.validation) {
+    const validation = document.createElement("div");
+    validation.className = "task-detail-meta";
+    validation.append(document.createTextNode("Validation "), formatValidationInstruction(task.validation));
+    instruction.append(validation);
+  }
+
+  return instruction;
+}
+
+function formatValidationInstruction(validation) {
+  if (typeof validation === "string") return formatMetaText(validation);
+  if (!validation || typeof validation !== "object") return formatMetaText("");
+  const parts = [];
+  if (validation.requiredEvidence) parts.push(`Required evidence: ${validation.requiredEvidence}`);
+  if (validation.acceptance) parts.push(String(validation.acceptance));
+  if (parts.length === 0) parts.push(JSON.stringify(validation));
+  return formatMetaText(parts.join(" - "));
 }
 
 function renderTaskFileSection(task) {

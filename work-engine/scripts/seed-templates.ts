@@ -295,6 +295,7 @@ const DEFAULT_TEMPLATES = [
     type: 'podcast',
     emoji: '\u{1F399}\u{FE0F}',
     tags: ['Podcast'],
+    sourceDocIds: ['task-template.tasks.podcast'],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [
@@ -338,6 +339,13 @@ const DEFAULT_TEMPLATES = [
         description: 'Create a podcast document with the questions',
         offsetDays: -25,
         instructionsUrl: 'https://docs.google.com/document/d/1IVNQQs-Hk-8LzZWox8YWbShJ6Y3sl47H5Z2PC2ra9ZU/edit',
+        instructionDocId: 'sop.media.podcast.create-podcast-document',
+        instructionStepId: '1',
+        phase: 'preparation',
+        systems: ['github', 'linkedin', 'loom', 'trello', 'twitter'],
+        validation: {
+          requiredEvidence: 'Podcast document link',
+        },
         requiredLinkName: 'Podcast document',
       },
       {

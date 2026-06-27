@@ -14,6 +14,11 @@ export interface Task {
   completedBy?: string;
   completedAt?: string;
   instructionsUrl?: string;
+  instructionDocId?: string;
+  instructionStepId?: string;
+  phase?: string;
+  systems?: string[];
+  validation?: string | Record<string, unknown>;
   link?: string;
   requiredLinkName?: string;
   requiresFile?: boolean;
@@ -81,6 +86,11 @@ export interface TaskDefinition {
   stageOnComplete?: string;
   assigneeId?: string;
   instructionsUrl?: string;
+  instructionDocId?: string;
+  instructionStepId?: string;
+  phase?: string;
+  systems?: string[];
+  validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
 }
@@ -92,6 +102,7 @@ export interface Template {
   emoji?: string;
   tags?: string[];
   defaultAssigneeId?: string;
+  sourceDocIds?: string[];
   references?: Reference[];
   bundleLinkDefinitions?: BundleLinkDefinition[];
   triggerType?: string;

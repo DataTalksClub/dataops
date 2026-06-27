@@ -831,7 +831,7 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
-  // ── New fields (instructionsUrl, link, requiredLinkName, assigneeId, tags) ──
+  // ── New fields (instructionsUrl, doc context, link, requiredLinkName, assigneeId, tags) ──
 
   describe('POST /api/tasks with new fields', () => {
     it('creates a task with all new fields', async () => {
@@ -842,6 +842,11 @@ describe('API — CRUD for tasks', () => {
           description: 'Create Luma event',
           date: '2026-04-01',
           instructionsUrl: 'https://docs.google.com/luma-howto',
+          instructionDocId: 'sop.media.podcast.create-podcast-document',
+          instructionStepId: '4',
+          phase: 'preparation',
+          systems: ['luma', 'airtable'],
+          validation: { requiredEvidence: 'Luma link' },
           link: 'https://luma.com/event-123',
           requiredLinkName: 'Luma',
           assigneeId: 'user-grace',
@@ -858,6 +863,11 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.status, 'todo');
       assert.strictEqual(body.source, 'manual');
       assert.strictEqual(body.instructionsUrl, 'https://docs.google.com/luma-howto');
+      assert.strictEqual(body.instructionDocId, 'sop.media.podcast.create-podcast-document');
+      assert.strictEqual(body.instructionStepId, '4');
+      assert.strictEqual(body.phase, 'preparation');
+      assert.deepStrictEqual(body.systems, ['luma', 'airtable']);
+      assert.deepStrictEqual(body.validation, { requiredEvidence: 'Luma link' });
       assert.strictEqual(body.link, 'https://luma.com/event-123');
       assert.strictEqual(body.requiredLinkName, 'Luma');
       assert.strictEqual(body.assigneeId, 'user-grace');
@@ -875,6 +885,7 @@ describe('API — CRUD for tasks', () => {
 
       const body = JSON.parse(res.body);
       assert.strictEqual(body.instructionsUrl, undefined);
+      assert.strictEqual(body.instructionDocId, undefined);
       assert.strictEqual(body.link, undefined);
       assert.strictEqual(body.requiredLinkName, undefined);
       assert.strictEqual(body.assigneeId, undefined);
@@ -896,6 +907,11 @@ describe('API — CRUD for tasks', () => {
         path: `/api/tasks/${created.id}`,
         body: JSON.stringify({
           instructionsUrl: 'https://docs.google.com/guide',
+          instructionDocId: 'sop.media.podcast.create-podcast-document',
+          instructionStepId: '2',
+          phase: 'preparation',
+          systems: ['google-drive'],
+          validation: 'Check the shared doc',
           assigneeId: 'user-valeriia',
           tags: ['newsletter'],
         }),
@@ -904,9 +920,39 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.instructionsUrl, 'https://docs.google.com/guide');
+      assert.strictEqual(body.instructionDocId, 'sop.media.podcast.create-podcast-document');
+      assert.strictEqual(body.instructionStepId, '2');
+      assert.strictEqual(body.phase, 'preparation');
+      assert.deepStrictEqual(body.systems, ['google-drive']);
+      assert.strictEqual(body.validation, 'Check the shared doc');
       assert.strictEqual(body.assigneeId, 'user-valeriia');
       assert.deepStrictEqual(body.tags, ['newsletter']);
       assert.strictEqual(body.description, 'Base task');
+    });
+
+    it('rejects malformed doc-context fields', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Base task', date: '2026-04-01' }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const badSystems = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ systems: ['github', 42] }),
+      }, {});
+      assert.strictEqual(badSystems.statusCode, 400);
+      assert.match(JSON.parse(badSystems.body).error, /systems/);
+
+      const badValidation = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ validation: ['nope'] }),
+      }, {});
+      assert.strictEqual(badValidation.statusCode, 400);
+      assert.match(JSON.parse(badValidation.body).error, /validation/);
     });
   });
 

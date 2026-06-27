@@ -119,7 +119,27 @@ function extractTaskId(reqPath: string): string | null {
   return null;
 }
 
-const ALLOWED_UPDATE_FIELDS = ['description', 'date', 'comment', 'status', 'bundleId', 'source', 'waitingFor', 'followUpAt', 'instructionsUrl', 'link', 'requiredLinkName', 'requiresFile', 'assigneeId', 'tags'];
+const ALLOWED_UPDATE_FIELDS = [
+  'description',
+  'date',
+  'comment',
+  'status',
+  'bundleId',
+  'source',
+  'waitingFor',
+  'followUpAt',
+  'instructionsUrl',
+  'instructionDocId',
+  'instructionStepId',
+  'phase',
+  'systems',
+  'validation',
+  'link',
+  'requiredLinkName',
+  'requiresFile',
+  'assigneeId',
+  'tags',
+];
 const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
 const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor and followUpAt';
 
@@ -129,6 +149,36 @@ function isTaskStatus(value: unknown): value is TaskStatus {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isValidationPayload(value: unknown): boolean {
+  return (
+    typeof value === 'string'
+    || (
+      value !== null
+      && typeof value === 'object'
+      && !Array.isArray(value)
+    )
+  );
+}
+
+function validateTaskDocContext(fields: Record<string, unknown>): string | null {
+  for (const field of ['instructionDocId', 'instructionStepId', 'phase']) {
+    if (fields[field] !== undefined && typeof fields[field] !== 'string') {
+      return `${field} must be a string`;
+    }
+  }
+  if (fields.systems !== undefined && !isStringArray(fields.systems)) {
+    return 'systems must be an array of strings';
+  }
+  if (fields.validation !== undefined && !isValidationPayload(fields.validation)) {
+    return 'validation must be a string or object';
+  }
+  return null;
 }
 
 async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -244,6 +294,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
       if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
       if (body.instructionsUrl !== undefined) taskData.instructionsUrl = body.instructionsUrl;
+      if (body.instructionDocId !== undefined) taskData.instructionDocId = body.instructionDocId;
+      if (body.instructionStepId !== undefined) taskData.instructionStepId = body.instructionStepId;
+      if (body.phase !== undefined) taskData.phase = body.phase;
+      if (body.systems !== undefined) taskData.systems = body.systems;
+      if (body.validation !== undefined) taskData.validation = body.validation;
       if (body.link !== undefined) taskData.link = body.link;
       if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
       if (body.requiresFile !== undefined) taskData.requiresFile = body.requiresFile;
@@ -258,6 +313,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
       if (taskData.status === 'waiting' && (!isNonEmptyString(taskData.waitingFor) || !isNonEmptyString(taskData.followUpAt))) {
         return jsonResponse(400, { error: WAITING_FIELDS_ERROR });
+      }
+      const docContextError = validateTaskDocContext(taskData);
+      if (docContextError) {
+        return jsonResponse(400, { error: docContextError });
       }
 
       const task = await createTask(client, taskData);
@@ -345,6 +404,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
       if (updates.status !== undefined && !isTaskStatus(updates.status)) {
         return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
+      }
+      const docContextError = validateTaskDocContext(updates);
+      if (docContextError) {
+        return jsonResponse(400, { error: docContextError });
       }
 
       // Verify task exists
