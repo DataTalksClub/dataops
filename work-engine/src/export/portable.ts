@@ -73,6 +73,7 @@ const VALID_NOTIFICATION_TYPES = new Set([
   'stage-change',
   'automation-failure',
 ]);
+const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
 
 const ENTITY_SPECS: EntitySpec[] = [
   {
@@ -183,6 +184,8 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     comment: optionalString(item.comment),
     waiting_for: optionalString(item.waitingFor),
     follow_up_at: optionalString(item.followUpAt),
+    proof_requirement: optionalJsonStringOrObject(item.proofRequirement),
+    external_status: optionalString(item.externalStatus),
     instructions_url: optionalString(item.instructionsUrl),
     instruction_doc_id: optionalString(item.instructionDocId),
     instruction_step_id: optionalString(item.instructionStepId),
@@ -194,9 +197,13 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     requires_file: optionalBoolean(item.requiresFile),
     assignee_id: optionalString(item.assigneeId),
     bundle_id: optionalString(item.bundleId),
+    template_id: optionalString(item.templateId),
     template_task_ref: optionalString(item.templateTaskRef),
     recurring_config_id: optionalString(item.recurringConfigId),
     stage_on_complete: optionalString(item.stageOnComplete),
+    artifact_refs: jsonArray(item.artifactRefs),
+    assistant_job_refs: jsonArray(item.assistantJobRefs),
+    audit_event_refs: jsonArray(item.auditEventRefs),
     tags: stringArray(item.tags),
     completed_by: optionalString(item.completedBy),
     completed_at: optionalString(item.completedAt),
@@ -217,6 +224,9 @@ function mapBundle(item: Record<string, unknown>): JsonRecord {
     references: jsonArray(item.references),
     bundle_links: jsonArray(item.bundleLinks),
     tags: stringArray(item.tags),
+    artifact_refs: jsonArray(item.artifactRefs),
+    assistant_job_refs: jsonArray(item.assistantJobRefs),
+    audit_event_refs: jsonArray(item.auditEventRefs),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
@@ -229,6 +239,7 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     type: optionalString(item.type),
     tags: stringArray(item.tags),
     default_assignee_id: optionalString(item.defaultAssigneeId),
+    phases: jsonArray(item.phases),
     source_doc_ids: stringArray(item.sourceDocIds),
     references: jsonArray(item.references),
     bundle_link_definitions: jsonArray(item.bundleLinkDefinitions),
@@ -501,6 +512,58 @@ function optionalStringOrObjectField(
   errors.push(`${context} field ${field} must be a string or object when present`);
 }
 
+function optionalRefArrayField(
+  record: JsonRecord,
+  field: string,
+  idField: string,
+  errors: string[],
+  context: string
+): void {
+  const value = record[field];
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    errors.push(`${context} field ${field} must be an array when present`);
+    return;
+  }
+  for (const [index, item] of value.entries()) {
+    const itemContext = `${context}.${field}[${index}]`;
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      errors.push(`${itemContext} must be an object`);
+      continue;
+    }
+    const id = (item as JsonRecord)[idField];
+    if (typeof id !== 'string' || id.length === 0) {
+      errors.push(`${itemContext} missing required string field ${idField}`);
+    }
+  }
+}
+
+function optionalProofRequirementField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string
+): JsonRecord | null {
+  const value = record[field];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${context} field ${field} must be an object when present`);
+    return null;
+  }
+  const proofRequirement = value as JsonRecord;
+  const type = proofRequirement.type;
+  if (typeof type !== 'string' || !VALID_PROOF_REQUIREMENT_TYPES.has(type)) {
+    errors.push(`${context} field ${field}.type must be one of: ${Array.from(VALID_PROOF_REQUIREMENT_TYPES).join(', ')}`);
+  }
+  if (proofRequirement.label !== undefined && typeof proofRequirement.label !== 'string') {
+    errors.push(`${context} field ${field}.label must be a string when present`);
+  }
+  if (proofRequirement.required !== undefined && typeof proofRequirement.required !== 'boolean') {
+    errors.push(`${context} field ${field}.required must be a boolean when present`);
+  }
+  return proofRequirement;
+}
+
 function validateTaskDefinitionDocContext(
   template: JsonRecord,
   errors: string[],
@@ -524,6 +587,75 @@ function validateTaskDefinitionDocContext(
     }
     optionalStringArrayField(record, 'systems', errors, definitionContext);
     optionalStringOrObjectField(record, 'validation', errors, definitionContext);
+    optionalProofRequirementField(record, 'proofRequirement', errors, definitionContext);
+    optionalRefArrayField(record, 'artifactRefs', 'artifactId', errors, definitionContext);
+    optionalRefArrayField(record, 'assistantJobRefs', 'assistantJobId', errors, definitionContext);
+    optionalRefArrayField(record, 'auditEventRefs', 'auditEventId', errors, definitionContext);
+  }
+}
+
+function validateWorkflowPhases(
+  template: JsonRecord,
+  errors: string[],
+  context: string
+): void {
+  const phases = template.phases;
+  if (phases === undefined || phases === null) return;
+  if (!Array.isArray(phases)) {
+    errors.push(`${context} field phases must be an array when present`);
+    return;
+  }
+  for (const [index, phase] of phases.entries()) {
+    const phaseContext = `${context}.phases[${index}]`;
+    if (phase === null || typeof phase !== 'object' || Array.isArray(phase)) {
+      errors.push(`${phaseContext} must be an object`);
+      continue;
+    }
+    const record = phase as JsonRecord;
+    requireString(record, 'id', errors, phaseContext);
+    requireString(record, 'name', errors, phaseContext);
+    optionalStringField(record, 'stage', errors, phaseContext);
+  }
+}
+
+function validateCompletedTaskProof(
+  task: JsonRecord,
+  proofRequirement: JsonRecord | null,
+  taskFileIds: Set<string>,
+  errors: string[],
+  context: string
+): void {
+  if (task.status !== 'done') return;
+
+  const requiredLinkName = task.required_link_name;
+  if (typeof requiredLinkName === 'string' && requiredLinkName.length > 0) {
+    const link = task.link;
+    if (typeof link !== 'string' || link.length === 0) {
+      errors.push(`${context} cannot be done without required link ${requiredLinkName}`);
+    }
+  }
+
+  const taskId = typeof task.task_id === 'string' ? task.task_id : null;
+  if (task.requires_file === true && taskId && !taskFileIds.has(taskId)) {
+    errors.push(`${context} cannot be done without an exported file proof`);
+  }
+
+  if (!proofRequirement || proofRequirement.required === false) return;
+  const type = proofRequirement.type;
+  if (type === 'url' && (typeof task.link !== 'string' || task.link.length === 0)) {
+    errors.push(`${context} cannot be done without required url proof`);
+  }
+  if (type === 'comment' && (typeof task.comment !== 'string' || task.comment.trim().length === 0)) {
+    errors.push(`${context} cannot be done without required comment proof`);
+  }
+  if (type === 'external-status' && (typeof task.external_status !== 'string' || task.external_status.length === 0)) {
+    errors.push(`${context} cannot be done without required external-status proof`);
+  }
+  if (type === 'artifact' && (!Array.isArray(task.artifact_refs) || task.artifact_refs.length === 0)) {
+    errors.push(`${context} cannot be done without required artifact proof`);
+  }
+  if (type === 'file' && taskId && !taskFileIds.has(taskId)) {
+    errors.push(`${context} cannot be done without required file proof`);
   }
 }
 
@@ -669,6 +801,11 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
   collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
   collectIds(recordsByEntity.notifications || [], 'notification_id', 'notifications', errors);
+  const taskFileIds = new Set(
+    (recordsByEntity.files || [])
+      .map((file) => file.task_id)
+      .filter((taskId): taskId is string => typeof taskId === 'string' && taskId.length > 0)
+  );
 
   for (const [index, task] of (recordsByEntity.tasks || []).entries()) {
     const context = `tasks[${index}]`;
@@ -690,9 +827,16 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalStringField(task, 'phase', errors, context);
     optionalStringArrayField(task, 'systems', errors, context);
     optionalStringOrObjectField(task, 'validation', errors, context);
+    const proofRequirement = optionalProofRequirementField(task, 'proof_requirement', errors, context);
+    optionalStringField(task, 'external_status', errors, context);
+    optionalRefArrayField(task, 'artifact_refs', 'artifactId', errors, context);
+    optionalRefArrayField(task, 'assistant_job_refs', 'assistantJobId', errors, context);
+    optionalRefArrayField(task, 'audit_event_refs', 'auditEventId', errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
+    optionalReference(task, 'template_id', templateIds, errors, context);
+    validateCompletedTaskProof(task, proofRequirement, taskFileIds, errors, context);
   }
 
   for (const [index, bundle] of (recordsByEntity.bundles || []).entries()) {
@@ -701,6 +845,9 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(bundle, 'created_at', errors, context);
     validateDateOrTimestampField(bundle, 'updated_at', errors, context);
     optionalReference(bundle, 'template_id', templateIds, errors, context);
+    optionalRefArrayField(bundle, 'artifact_refs', 'artifactId', errors, context);
+    optionalRefArrayField(bundle, 'assistant_job_refs', 'assistantJobId', errors, context);
+    optionalRefArrayField(bundle, 'audit_event_refs', 'auditEventId', errors, context);
   }
 
   for (const [index, template] of (recordsByEntity.templates || []).entries()) {
@@ -708,6 +855,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(template, 'created_at', errors, context);
     validateDateOrTimestampField(template, 'updated_at', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
+    validateWorkflowPhases(template, errors, context);
     validateTaskDefinitionDocContext(template, errors, context);
   }
 

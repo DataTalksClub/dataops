@@ -1051,6 +1051,112 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
+  describe('proofRequirement validation', () => {
+    it('rejects done without required comment proof and does not record completion fields', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Comment proof task',
+          date: '2026-04-01',
+          proofRequirement: { type: 'comment', label: 'Completion note' },
+        }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const res = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ status: 'done' }),
+      }, {});
+
+      assert.strictEqual(res.statusCode, 400);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.error, "Cannot mark task as done: required comment proof 'Completion note' is missing");
+
+      const fetchedRes = await handler({ httpMethod: 'GET', path: `/api/tasks/${created.id}` }, {});
+      const fetched = JSON.parse(fetchedRes.body);
+      assert.strictEqual(fetched.status, 'todo');
+      assert.strictEqual(fetched.completedAt, undefined);
+      assert.strictEqual(fetched.completedBy, undefined);
+    });
+
+    it('allows done with required artifact and external-status proof represented as metadata refs', async () => {
+      const artifactTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Artifact proof task',
+          date: '2026-04-01',
+          proofRequirement: { type: 'artifact', label: 'Generated draft' },
+        }),
+      }, {});
+      const artifactTask = JSON.parse(artifactTaskRes.body);
+
+      const artifactDone = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${artifactTask.id}`,
+        body: JSON.stringify({
+          status: 'done',
+          artifactRefs: [{ artifactId: 'artifact-1', type: 'draft', storageUri: 's3://bucket/draft.md' }],
+        }),
+      }, {});
+      assert.strictEqual(artifactDone.statusCode, 200);
+      const artifactDoneBody = JSON.parse(artifactDone.body);
+      assert.strictEqual(artifactDoneBody.status, 'done');
+      assert.deepStrictEqual(artifactDoneBody.artifactRefs, [
+        { artifactId: 'artifact-1', type: 'draft', storageUri: 's3://bucket/draft.md' },
+      ]);
+
+      const statusTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'External status proof task',
+          date: '2026-04-01',
+          proofRequirement: { type: 'external-status', label: 'External approval' },
+        }),
+      }, {});
+      const statusTask = JSON.parse(statusTaskRes.body);
+
+      const statusDone = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${statusTask.id}`,
+        body: JSON.stringify({ status: 'done', externalStatus: 'approved' }),
+      }, {});
+      assert.strictEqual(statusDone.statusCode, 200);
+      const statusDoneBody = JSON.parse(statusDone.body);
+      assert.strictEqual(statusDoneBody.status, 'done');
+      assert.strictEqual(statusDoneBody.externalStatus, 'approved');
+    });
+
+    it('rejects malformed proof requirements and metadata refs', async () => {
+      const badProof = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Bad proof task',
+          date: '2026-04-01',
+          proofRequirement: { type: 'unsupported' },
+        }),
+      }, {});
+      assert.strictEqual(badProof.statusCode, 400);
+      assert.match(JSON.parse(badProof.body).error, /proofRequirement\.type/);
+
+      const badRefs = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Bad refs task',
+          date: '2026-04-01',
+          artifactRefs: [{ type: 'draft' }],
+        }),
+      }, {});
+      assert.strictEqual(badRefs.statusCode, 400);
+      assert.match(JSON.parse(badRefs.body).error, /artifactRefs/);
+    });
+  });
+
   describe('Archived status filter', () => {
     it('returns tasks filtered by archived status', async () => {
       const createRes = await handler({

@@ -39,41 +39,61 @@ describe('portable execution data export', () => {
       passwordHash: 'must-not-export',
     });
     const template = await createTemplate(client, {
-      name: 'Podcast',
-      type: 'podcast',
-      sourceDocIds: ['task-template.tasks.podcast'],
+      name: 'Representative workflow',
+      type: 'workflow',
+      phases: [
+        { id: 'preparation', name: 'Preparation', stage: 'preparation' },
+      ],
+      sourceDocIds: ['workflow.definition.example'],
       taskDefinitions: [
         {
           refId: 'send-follow-up',
-          description: 'Send guest follow-up',
+          description: 'Send external follow-up',
           offsetDays: -7,
-          instructionDocId: 'sop.media.podcast.create-podcast-document',
+          instructionDocId: 'sop.workflow.collect-inputs',
           instructionStepId: '4',
           phase: 'preparation',
           systems: ['google-drive'],
-          validation: { requiredEvidence: 'Podcast document link' },
+          validation: { requiredEvidence: 'Source document link' },
+          requiredLinkName: 'Source document',
+          proofRequirement: { type: 'url', label: 'Source document' },
+          artifactRefs: [{ artifactId: 'artifact-template-ref', type: 'document' }],
+          assistantJobRefs: [{ assistantJobId: 'assistant-template-ref', assistantType: 'research' }],
+          auditEventRefs: [{ auditEventId: 'audit-template-ref', action: 'defined' }],
         },
       ],
     });
     const bundle = await createBundle(client, {
-      title: 'Podcast episode',
+      title: 'Representative workflow run',
       anchorDate: '2026-06-27',
       templateId: template.id,
       status: 'active',
+      artifactRefs: [{ artifactId: 'artifact-bundle-ref', type: 'document' }],
+      assistantJobRefs: [{ assistantJobId: 'assistant-bundle-ref', assistantType: 'research' }],
+      auditEventRefs: [{ auditEventId: 'audit-bundle-ref', action: 'created' }],
     });
     const task = await createTask(client, {
-      description: 'Send guest follow-up',
+      description: 'Send external follow-up',
       date: '2026-06-20',
       assigneeId: user.id,
       bundleId: bundle.id,
+      templateId: template.id,
+      templateTaskRef: 'send-follow-up',
       source: 'template',
-      instructionDocId: 'sop.media.podcast.create-podcast-document',
+      instructionDocId: 'sop.workflow.collect-inputs',
       instructionStepId: '4',
       phase: 'preparation',
       systems: ['google-drive'],
-      validation: { requiredEvidence: 'Podcast document link' },
+      validation: { requiredEvidence: 'Source document link' },
+      link: 'https://example.com/source-document',
+      requiredLinkName: 'Source document',
+      proofRequirement: { type: 'url', label: 'Source document' },
+      artifactRefs: [{ artifactId: 'artifact-task-ref', type: 'document' }],
+      assistantJobRefs: [{ assistantJobId: 'assistant-task-ref', assistantType: 'research' }],
+      auditEventRefs: [{ auditEventId: 'audit-task-ref', action: 'completed' }],
       completedBy: user.id,
       completedAt: '2026-06-20T12:00:00.000Z',
+      status: 'done',
     });
     await createRecurringConfig(client, {
       description: 'Weekly community backup',
@@ -123,18 +143,33 @@ describe('portable execution data export', () => {
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
-    assert.match(tasksJsonl, /"instruction_doc_id":"sop.media.podcast.create-podcast-document"/);
+    assert.match(tasksJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
     assert.match(tasksJsonl, /"instruction_step_id":"4"/);
     assert.match(tasksJsonl, /"phase":"preparation"/);
     assert.match(tasksJsonl, /"systems":\["google-drive"\]/);
-    assert.match(tasksJsonl, /"validation":\{"requiredEvidence":"Podcast document link"\}/);
+    assert.match(tasksJsonl, /"validation":\{"requiredEvidence":"Source document link"\}/);
+    assert.match(tasksJsonl, /"template_id"/);
+    assert.match(tasksJsonl, /"template_task_ref":"send-follow-up"/);
+    assert.match(tasksJsonl, /"proof_requirement":\{"type":"url","label":"Source document"\}/);
+    assert.match(tasksJsonl, /"required_link_name":"Source document"/);
+    assert.match(tasksJsonl, /"link":"https:\/\/example.com\/source-document"/);
+    assert.match(tasksJsonl, /"artifact_refs":\[\{"artifactId":"artifact-task-ref","type":"document"\}\]/);
+    assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-task-ref","assistantType":"research"\}\]/);
+    assert.match(tasksJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-task-ref","action":"completed"\}\]/);
     assert.match(tasksJsonl, /"completed_by"/);
     assert.match(tasksJsonl, /"completed_at":"2026-06-20T12:00:00.000Z"/);
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
 
+    const bundlesJsonl = await fs.readFile(path.join(exportDir, 'bundles.jsonl'), 'utf8');
+    assert.match(bundlesJsonl, /"artifact_refs":\[\{"artifactId":"artifact-bundle-ref","type":"document"\}\]/);
+    assert.match(bundlesJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-bundle-ref","assistantType":"research"\}\]/);
+    assert.match(bundlesJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-bundle-ref","action":"created"\}\]/);
+
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
-    assert.match(templatesJsonl, /"source_doc_ids":\["task-template.tasks.podcast"\]/);
-    assert.match(templatesJsonl, /"instructionDocId":"sop.media.podcast.create-podcast-document"/);
+    assert.match(templatesJsonl, /"phases":\[\{"id":"preparation","name":"Preparation","stage":"preparation"\}\]/);
+    assert.match(templatesJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
+    assert.match(templatesJsonl, /"instructionDocId":"sop.workflow.collect-inputs"/);
+    assert.match(templatesJsonl, /"proofRequirement":\{"type":"url","label":"Source document"\}/);
 
     const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');
     assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
@@ -192,10 +227,11 @@ describe('portable execution data export', () => {
           task_id: 'task-invalid-date',
           description: 'Invalid date fields',
           date: '2026-99-99',
-          status: 'todo',
+          status: 'done',
           instruction_doc_id: 123,
           systems: ['github', 42],
           validation: ['not-valid'],
+          proof_requirement: { type: 'url' },
           created_at: 123,
           updated_at: 'not-a-timestamp',
         }) + '\n',
@@ -216,6 +252,10 @@ describe('portable execution data export', () => {
               instructionDocId: 42,
               systems: ['github', 42],
               validation: ['not-valid'],
+              proofRequirement: { type: 'unsupported' },
+              artifactRefs: [{ type: 'missing-id' }],
+              assistantJobRefs: [{ assistantType: 'missing-id' }],
+              auditEventRefs: [{ action: 'missing-id' }],
             },
           ],
           created_at: '2026-06-27T00:00:00.000Z',
@@ -262,12 +302,17 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field instruction_doc_id must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field validation must be a string or object when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] cannot be done without required url proof')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field created_at must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field updated_at must be a parseable date or timestamp')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0] field source_doc_ids must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field instructionDocId must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field validation must be a string or object when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field proofRequirement.type must be one of')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].artifactRefs[0] missing required string field artifactId')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].assistantJobRefs[0] missing required string field assistantJobId')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].auditEventRefs[0] missing required string field auditEventId')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[0] field notification_type has unknown value: unknown-reminder')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[1] missing required string field due_at')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[2] field due_at must be a parseable date or timestamp')));

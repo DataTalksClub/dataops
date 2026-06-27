@@ -1,6 +1,48 @@
 // --- Task ---
 
 export type TaskStatus = 'todo' | 'waiting' | 'done' | 'archived';
+export type ProofRequirementType = 'url' | 'file' | 'artifact' | 'comment' | 'external-status';
+export type NotificationType =
+  | 'task-due'
+  | 'task-overdue'
+  | 'follow-up-due'
+  | 'missing-evidence'
+  | 'recurring-due'
+  | 'stage-change'
+  | 'automation-failure';
+export type WorkflowStage = 'preparation' | 'announced' | 'after-event' | 'done' | string;
+
+export interface ProofRequirement {
+  type: ProofRequirementType;
+  label?: string;
+  required?: boolean;
+}
+
+export interface WorkflowPhase {
+  id: string;
+  name: string;
+  stage?: WorkflowStage;
+}
+
+export interface ArtifactRef {
+  artifactId: string;
+  type?: string;
+  title?: string;
+  storageUri?: string;
+  status?: string;
+}
+
+export interface AssistantJobRef {
+  assistantJobId: string;
+  assistantType?: string;
+  status?: string;
+}
+
+export interface AuditEventRef {
+  auditEventId: string;
+  action?: string;
+  createdAt?: string;
+}
 
 export interface Task {
   id: string;
@@ -13,6 +55,8 @@ export interface Task {
   followUpAt?: string;
   completedBy?: string;
   completedAt?: string;
+  proofRequirement?: ProofRequirement;
+  externalStatus?: string;
   instructionsUrl?: string;
   instructionDocId?: string;
   instructionStepId?: string;
@@ -25,9 +69,13 @@ export interface Task {
   assigneeId?: string;
   tags?: string[];
   bundleId?: string;
+  templateId?: string;
   templateTaskRef?: string;
   stageOnComplete?: string;
   recurringConfigId?: string;
+  artifactRefs?: ArtifactRef[];
+  assistantJobRefs?: AssistantJobRef[];
+  auditEventRefs?: AuditEventRef[];
   createdAt: string;
   updatedAt: string;
 }
@@ -63,6 +111,9 @@ export interface Bundle {
   tags?: string[];
   stage?: string;
   status?: string;
+  artifactRefs?: ArtifactRef[];
+  assistantJobRefs?: AssistantJobRef[];
+  auditEventRefs?: AuditEventRef[];
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +144,10 @@ export interface TaskDefinition {
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
+  proofRequirement?: ProofRequirement;
+  artifactRefs?: ArtifactRef[];
+  assistantJobRefs?: AssistantJobRef[];
+  auditEventRefs?: AuditEventRef[];
 }
 
 export interface Template {
@@ -102,6 +157,7 @@ export interface Template {
   emoji?: string;
   tags?: string[];
   defaultAssigneeId?: string;
+  phases?: WorkflowPhase[];
   sourceDocIds?: string[];
   references?: Reference[];
   bundleLinkDefinitions?: BundleLinkDefinition[];
@@ -148,7 +204,7 @@ export interface Session {
 export interface Notification {
   id: string;
   message: string;
-  type?: string;
+  type?: NotificationType | string;
   taskId?: string;
   bundleId?: string;
   templateId?: string;

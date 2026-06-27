@@ -33,6 +33,8 @@ Files that live here:
   verification, handoff, and deployment-adjacent work.
 - `v1-runtime-architecture.md` - V1 runtime decision for the unified operations
   workspace and its Lambda, DynamoDB, and work-engine boundaries.
+- `v1-workflow-data-model.md` - shared workflow contract for definitions,
+  runtime bundles, tasks, reminders, proof, references, and migration-safe IDs.
 - `v1-execution-state-schema.md` - production-facing DynamoDB schema definition
   for V1 mutable execution state.
 - `v1-execution-data-safety.md` - backup, restore, and portable export format
