@@ -37,6 +37,7 @@ API_ROUTES = ("/docs", "/images", "/folders", "/lint", "/parse")
 MUTATING_METHODS = {"POST", "PUT", "DELETE"}
 STORE = GitHubStore(CACHE_ROOT)
 _search_ready = False
+_work_engine_client: Any | None = None
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -66,6 +67,14 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return auth_response
 
     try:
+        if path == "/work/health" and method == "GET":
+            return broker_work_api(event, "/api/health", method)
+        if path == "/work" and method == "GET":
+            return serve_index(event)
+        if path.startswith("/work/api/"):
+            return broker_work_api(event, path.removeprefix("/work"), method)
+        if path.startswith("/work/") and method == "GET":
+            return serve_index(event)
         if path in ("/", "/index.html") and method == "GET":
             return serve_index(event)
         if path.startswith("/src/") and method == "GET":
@@ -298,6 +307,92 @@ def handle_api(event: dict[str, Any], context: Any, path: str, method: str) -> d
         commit_mutation(path, method, event, before, response)
         rebuild_search()
     return response
+
+
+def broker_work_api(event: dict[str, Any], work_path: str, method: str) -> dict[str, Any]:
+    function_name = os.environ.get("WORK_ENGINE_FUNCTION_NAME", "")
+    if not function_name:
+        return json_response(503, {"error": "Work engine is not configured"})
+    portal_secret = work_engine_portal_secret()
+    if not portal_secret:
+        return json_response(503, {"error": "Work engine portal secret is not configured"})
+
+    invoke_event = {
+        "httpMethod": method,
+        "path": work_path,
+        "headers": work_engine_headers(event, portal_secret),
+        "body": event.get("body"),
+        "isBase64Encoded": bool(event.get("isBase64Encoded")),
+        "queryStringParameters": event.get("queryStringParameters") or None,
+    }
+
+    result = work_engine_client().invoke(
+        FunctionName=function_name,
+        InvocationType="RequestResponse",
+        Payload=json.dumps(invoke_event).encode("utf-8"),
+    )
+    payload_stream = result.get("Payload")
+    raw_payload = payload_stream.read() if payload_stream else b"{}"
+    try:
+        lambda_response = json.loads(raw_payload.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return json_response(502, {"error": "Work engine returned an invalid response", "detail": str(exc)})
+    if not isinstance(lambda_response, dict):
+        return json_response(502, {"error": "Work engine returned an invalid response"})
+
+    if "FunctionError" in result:
+        return json_response(502, {"error": "Work engine failed", "detail": lambda_response})
+
+    return normalize_work_engine_response(lambda_response)
+
+
+def work_engine_portal_secret() -> str:
+    secret = os.environ.get("WORK_ENGINE_PORTAL_SECRET", "")
+    secret_name = os.environ.get("WORK_ENGINE_PORTAL_SECRET_NAME", "")
+    if secret or not secret_name:
+        return secret
+    return secret_string(secret_name)
+
+
+def work_engine_headers(event: dict[str, Any], portal_secret: str) -> dict[str, str]:
+    forwarded: dict[str, str] = {
+        "x-portal-auth": "true",
+        "x-portal-secret": portal_secret,
+        "x-user-id": os.environ.get("WORK_ENGINE_PORTAL_USER_ID", "portal-admin"),
+    }
+    content_type = header_value(event, "content-type")
+    if content_type:
+        forwarded["content-type"] = content_type
+    accept = header_value(event, "accept")
+    if accept:
+        forwarded["accept"] = accept
+    return forwarded
+
+
+def work_engine_client() -> Any:
+    global _work_engine_client
+    if _work_engine_client is None:
+        import boto3  # type: ignore[import-not-found]
+
+        _work_engine_client = boto3.client("lambda")
+    return _work_engine_client
+
+
+def normalize_work_engine_response(response: dict[str, Any]) -> dict[str, Any]:
+    try:
+        status = int(response.get("statusCode", 502))
+    except (TypeError, ValueError):
+        return json_response(502, {"error": "Work engine returned an invalid response"})
+    headers = response.get("headers") if isinstance(response.get("headers"), dict) else {}
+    body = response.get("body", "")
+    normalized = {
+        "statusCode": status,
+        "headers": {str(key): str(value) for key, value in headers.items()},
+        "body": body if isinstance(body, str) else json.dumps(body),
+    }
+    if response.get("isBase64Encoded"):
+        normalized["isBase64Encoded"] = True
+    return normalized
 
 
 def mutation_snapshot(path: str, method: str, event: dict[str, Any]) -> dict[str, Any]:

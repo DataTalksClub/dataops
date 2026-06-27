@@ -145,6 +145,7 @@ export interface LambdaEvent {
   path: string;
   headers?: Record<string, string> | null;
   body?: string | null;
+  isBase64Encoded?: boolean;
   queryStringParameters?: Record<string, string> | null;
 }
 

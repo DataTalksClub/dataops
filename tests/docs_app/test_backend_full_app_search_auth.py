@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import sys
 import types
@@ -161,6 +162,153 @@ def test_full_app_internal_refresh_bypasses_http_auth_and_rebuilds_search(tmp_pa
     assert response["statusCode"] == 200
     assert _json_body(response) == {"ok": True, "refreshed": True, "branch": "main"}
     assert calls == ["reset", "reset-index", "sync", "rebuild"]
+
+
+def test_full_app_brokers_work_api_to_private_work_engine(monkeypatch):
+    captured: dict = {}
+
+    class FakeLambda:
+        def invoke(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "Payload": io.BytesIO(
+                    json.dumps(
+                        {
+                            "statusCode": 201,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({"id": "task-1"}),
+                        }
+                    ).encode("utf-8")
+                )
+            }
+
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_USER_ID", "ops-manager")
+    monkeypatch.setattr(full_app_handler, "_work_engine_client", FakeLambda())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    response = full_app_handler.handler(
+        _event(
+            "/work/api/tasks",
+            "POST",
+            headers={
+                "content-type": "application/json",
+                "accept": "application/json",
+                "authorization": "Basic should-not-forward",
+            },
+            queryStringParameters={"date": "2028-10-03"},
+            body=json.dumps({"description": "Brokered task"}),
+        ),
+        None,
+    )
+
+    assert response["statusCode"] == 201
+    assert response["headers"] == {"Content-Type": "application/json"}
+    assert _json_body(response) == {"id": "task-1"}
+    assert captured["FunctionName"] == "dataops-v1-work-engine"
+    assert captured["InvocationType"] == "RequestResponse"
+
+    invoke_event = json.loads(captured["Payload"].decode("utf-8"))
+    assert invoke_event == {
+        "httpMethod": "POST",
+        "path": "/api/tasks",
+        "headers": {
+            "x-portal-auth": "true",
+            "x-portal-secret": "broker-secret",
+            "x-user-id": "ops-manager",
+            "content-type": "application/json",
+            "accept": "application/json",
+        },
+        "body": json.dumps({"description": "Brokered task"}),
+        "isBase64Encoded": False,
+        "queryStringParameters": {"date": "2028-10-03"},
+    }
+
+
+def test_full_app_work_api_requires_portal_auth_before_broker(monkeypatch):
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")
+    monkeypatch.setattr(full_app_handler, "_work_engine_client", object())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: full_app_handler.redirect_to_login())
+
+    response = full_app_handler.handler(_event("/work/api/tasks", "GET"), None)
+
+    assert response["statusCode"] == 302
+    assert response["headers"]["location"] == "/login"
+
+
+def test_full_app_reports_unconfigured_work_engine(monkeypatch):
+    monkeypatch.delenv("WORK_ENGINE_FUNCTION_NAME", raising=False)
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    response = full_app_handler.handler(_event("/work/api/health", "GET"), None)
+
+    assert response["statusCode"] == 503
+    assert _json_body(response) == {"error": "Work engine is not configured"}
+
+
+def test_full_app_reports_unconfigured_work_engine_portal_secret(monkeypatch):
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.delenv("WORK_ENGINE_PORTAL_SECRET", raising=False)
+    monkeypatch.delenv("WORK_ENGINE_PORTAL_SECRET_NAME", raising=False)
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    response = full_app_handler.handler(_event("/work/api/health", "GET"), None)
+
+    assert response["statusCode"] == 503
+    assert _json_body(response) == {"error": "Work engine portal secret is not configured"}
+
+
+def test_full_app_reports_work_engine_lambda_errors(monkeypatch):
+    class FakeLambda:
+        def invoke(self, **kwargs):
+            return {
+                "FunctionError": "Unhandled",
+                "Payload": io.BytesIO(json.dumps({"errorMessage": "boom"}).encode("utf-8")),
+            }
+
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")
+    monkeypatch.setattr(full_app_handler, "_work_engine_client", FakeLambda())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    response = full_app_handler.handler(_event("/work/health", "GET"), None)
+
+    assert response["statusCode"] == 502
+    assert _json_body(response) == {"error": "Work engine failed", "detail": {"errorMessage": "boom"}}
+
+
+def test_full_app_reports_invalid_work_engine_payload_as_bad_gateway(monkeypatch):
+    class FakeLambda:
+        def invoke(self, **kwargs):
+            return {"Payload": io.BytesIO(b"not json")}
+
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")
+    monkeypatch.setattr(full_app_handler, "_work_engine_client", FakeLambda())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    response = full_app_handler.handler(_event("/work/api/tasks", "GET"), None)
+
+    assert response["statusCode"] == 502
+    assert _json_body(response)["error"] == "Work engine returned an invalid response"
+
+
+def test_full_app_reports_bad_work_engine_status_as_bad_gateway(monkeypatch):
+    class FakeLambda:
+        def invoke(self, **kwargs):
+            return {"Payload": io.BytesIO(json.dumps({"statusCode": "bad", "body": ""}).encode("utf-8"))}
+
+    monkeypatch.setenv("WORK_ENGINE_FUNCTION_NAME", "dataops-v1-work-engine")
+    monkeypatch.setenv("WORK_ENGINE_PORTAL_SECRET", "broker-secret")
+    monkeypatch.setattr(full_app_handler, "_work_engine_client", FakeLambda())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+
+    response = full_app_handler.handler(_event("/work/api/tasks", "GET"), None)
+
+    assert response["statusCode"] == 502
+    assert _json_body(response) == {"error": "Work engine returned an invalid response"}
 
 
 def test_full_app_public_refresh_requires_auth(monkeypatch):
