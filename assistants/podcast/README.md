@@ -31,8 +31,14 @@ HERU_ENGINE=codex
 ```
 
 `HERU_ENGINE` can be `codex` or `claude`. The DataOps checkout expects the local
-Heru source at `../heru` relative to the repo root; `pyproject.toml` references it
-as `../../../heru` from this directory.
+Heru source at `../heru` relative to the repo root for live processing. Heru is
+not installed by default because unit CI must run from a clean checkout without
+local source repos or real Codex/Claude engines. Install it explicitly before
+running `/process` or `process_request.py`:
+
+```bash
+uv pip install -e ../../../heru
+```
 
 ## Commands
 
@@ -61,6 +67,21 @@ folders as durable workflow storage.
 
 Live `/process` runs do not commit or push by default. Generated files stay as
 local working-tree changes for review through the normal DataOps pipeline.
+
+## Tests
+
+Run the default safe unit suite from the DataOps repo root:
+
+```bash
+uv run --project assistants/podcast pytest
+```
+
+Default tests do not require Telegram, Groq, Heru, Codex, or Claude credentials.
+Real-engine integration tests remain opt-in. From `assistants/podcast/`:
+
+```bash
+PODCAST_ASSISTANT_INTEGRATION_ENGINES=codex uv run pytest tests_integration -q
+```
 
 The exact podcast document format is intentionally left in `process/podcast.md` as a placeholder
 until you provide the final format.

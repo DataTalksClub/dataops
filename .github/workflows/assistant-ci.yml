@@ -1,0 +1,39 @@
+name: Assistant CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/assistant-ci.yml"
+      - "assistants/**"
+  pull_request:
+    paths:
+      - ".github/workflows/assistant-ci.yml"
+      - "assistants/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  podcast-assistant:
+    name: Podcast Assistant tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Run Podcast Assistant unit tests
+        run: uv run --project assistants/podcast pytest
+
+      - name: Verify real-engine tests are opt-in
+        working-directory: assistants/podcast
+        run: uv run pytest tests_integration -q
