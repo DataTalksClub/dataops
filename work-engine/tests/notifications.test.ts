@@ -6,12 +6,14 @@ import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import {
   createNotification,
+  createDueFollowUpNotifications,
   getNotification,
   dismissNotification,
   listUndismissedNotifications,
   listAllNotifications,
   dismissAllNotifications,
 } from '../src/db/notifications';
+import { createTask, updateTask } from '../src/db/tasks';
 
 describe('Notifications data layer', () => {
   let client: DynamoDBDocumentClient;
@@ -144,6 +146,77 @@ describe('Notifications data layer', () => {
     assert.ok(idxActive >= 0, 'should contain active notification');
     assert.ok(idxDismissed >= 0, 'should contain dismissed notification');
     assert.ok(idxActive < idxDismissed, 'undismissed should come before dismissed');
+  });
+
+  it('createDueFollowUpNotifications creates one reminder for each due waiting task', async () => {
+    const dueTask = await createTask(client, {
+      description: 'Confirm speaker bio',
+      date: '2098-01-20',
+      status: 'waiting',
+      waitingFor: 'Speaker',
+      followUpAt: '2098-01-15T09:00:00.000Z',
+      bundleId: 'bundle-follow-up-test',
+    });
+    await createTask(client, {
+      description: 'Future waiting task',
+      date: '2098-01-20',
+      status: 'waiting',
+      waitingFor: 'Sponsor',
+      followUpAt: '2100-01-18T09:00:00.000Z',
+    });
+    await createTask(client, {
+      description: 'Todo task with follow-up metadata should not notify',
+      date: '2098-01-20',
+      status: 'todo',
+      waitingFor: 'Someone',
+      followUpAt: '2098-01-15T09:00:00.000Z',
+    });
+
+    const created = await createDueFollowUpNotifications(client, {
+      now: '2098-01-16T10:00:00.000Z',
+    });
+
+    assert.strictEqual(created.length, 1);
+    assert.strictEqual(created[0].type, 'follow-up-due');
+    assert.strictEqual(created[0].taskId, dueTask.id);
+    assert.strictEqual(created[0].bundleId, 'bundle-follow-up-test');
+    assert.strictEqual(created[0].dueAt, '2098-01-15T09:00:00.000Z');
+    assert.ok(created[0].message.includes('Confirm speaker bio'));
+    assert.ok(created[0].message.includes('Speaker'));
+  });
+
+  it('createDueFollowUpNotifications is idempotent per task and followUpAt', async () => {
+    const task = await createTask(client, {
+      description: 'Confirm venue',
+      date: '2098-02-20',
+      status: 'waiting',
+      waitingFor: 'Venue',
+      followUpAt: '2098-02-15T09:00:00.000Z',
+    });
+
+    const first = await createDueFollowUpNotifications(client, {
+      now: '2098-02-16T10:00:00.000Z',
+    });
+    const second = await createDueFollowUpNotifications(client, {
+      now: '2098-02-16T10:00:00.000Z',
+    });
+
+    assert.strictEqual(first.length, 1);
+    assert.strictEqual(second.length, 0);
+
+    await dismissNotification(client, first[0].id);
+    const afterDismiss = await createDueFollowUpNotifications(client, {
+      now: '2098-02-16T10:00:00.000Z',
+    });
+    assert.strictEqual(afterDismiss.length, 0);
+
+    await updateTask(client, task.id, { followUpAt: '2098-02-17T09:00:00.000Z' });
+    const afterNewFollowUp = await createDueFollowUpNotifications(client, {
+      now: '2098-02-17T10:00:00.000Z',
+    });
+    assert.strictEqual(afterNewFollowUp.length, 1);
+    assert.strictEqual(afterNewFollowUp[0].taskId, task.id);
+    assert.strictEqual(afterNewFollowUp[0].dueAt, '2098-02-17T09:00:00.000Z');
   });
 
   it('dismissAllNotifications dismisses all undismissed and returns count', async () => {

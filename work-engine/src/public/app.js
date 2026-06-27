@@ -942,11 +942,17 @@
 
     Promise.all([
       api.tasks.list({ date: today }),
+      api.tasks.list({ status: 'waiting' }),
       loadUsersOnce()
     ]).then(function (results) {
       var data = results[0];
-      var usersMap = results[1];
-      var tasks = data.tasks || [];
+      var waitingData = results[1];
+      var usersMap = results[2];
+      var todayTasks = data.tasks || [];
+      var dueWaitingTasks = (waitingData.tasks || []).filter(function (task) {
+        return isDueFollowUpTask(task);
+      });
+      var tasks = dedupeTasksById(todayTasks.concat(dueWaitingTasks));
 
       // Apply assigned-to-me filter
       if (dashboardState.assignedToMe && dashboardState.currentUserId) {
@@ -1029,6 +1035,12 @@
       if (t.instructionsUrl) {
         instructionsHtml = renderInstructionLink(t.instructionsUrl, t.description);
       }
+      if (t.status === 'waiting') {
+        var waitingText = 'Waiting';
+        if (t.waitingFor) waitingText += ': ' + t.waitingFor;
+        if (t.followUpAt) waitingText += ' · follow up ' + formatDateLabel(t.followUpAt);
+        instructionsHtml += '<span class="badge-waiting">' + escapeHtml(waitingText) + '</span>';
+      }
 
       // Assignee name
       var assigneeHtml = '';
@@ -1110,6 +1122,30 @@
         e.stopPropagation();
       });
     });
+  }
+
+  function dedupeTasksById(tasks) {
+    var seen = {};
+    var out = [];
+    (tasks || []).forEach(function (task) {
+      if (!task || !task.id || seen[task.id]) return;
+      seen[task.id] = true;
+      out.push(task);
+    });
+    return out;
+  }
+
+  function isDueFollowUpTask(task) {
+    if (!task || task.status !== 'waiting' || !task.followUpAt) return false;
+    return String(task.followUpAt).slice(0, 10) <= todayString();
+  }
+
+  function formatDateLabel(value) {
+    var date = String(value || '').slice(0, 10);
+    if (!date) return '';
+    var today = todayString();
+    if (date === today) return 'today';
+    return date;
   }
 
   // ── Tasks View ──────────────────────────────────────────────────
