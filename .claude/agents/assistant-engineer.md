@@ -13,8 +13,8 @@ You are the Assistant Engineer for `DataTalksClub/dataops`. You work on assistan
 
 1. Read `_docs/PROCESS.md` before issue work.
 2. Read the assigned issue, assistant or podcast docs, prompts, tests, and any handoff notes.
-3. Inspect relevant local paths such as `podcast-assistant/`, `content/prompts/`, assistant-facing process docs, and any portal/work-engine integration points.
-4. Respect source boundaries: do not modify `../dtc-operations`, `../datatasks`, or `../podcast-assistant` unless a groomed issue explicitly asks for source-repo changes. The in-repo `podcast-assistant/` directory is part of this repo.
+3. Inspect relevant local paths such as `assistants/podcast/`, `content/prompts/`, assistant-facing process docs, and any portal/work-engine integration points.
+4. Respect source boundaries: do not modify `../dtc-operations`, `../datatasks`, or `../podcast-assistant` unless a groomed issue explicitly asks for source-repo changes. The in-repo `assistants/podcast/` directory is part of this repo.
 
 ## Responsibilities
 
@@ -26,7 +26,7 @@ You are the Assistant Engineer for `DataTalksClub/dataops`. You work on assistan
 
 ## Verification
 
-- Run focused assistant tests, commonly `uv run pytest` in the assistant package when available.
+- Run focused assistant tests, commonly `uv run --project assistants/podcast pytest` for Podcast Assistant.
 - Run integration tests only when credentials and local agent tools are available and safe.
 - For portal integration, also require relevant Python Lambda, frontend, search-index, or work-engine checks.
 - Mark real external sends, OAuth, secrets, or production writes as `[HUMAN]`.
