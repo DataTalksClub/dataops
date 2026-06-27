@@ -10,7 +10,7 @@ Version 1 focuses on operations docs and tasks:
 
 The first deployed app uses the DTC Operations docs portal as the base Lambda
 application. DataTasks is imported under `work-engine/` for the task execution
-engine, and the podcast assistant is imported under `podcast-assistant/` for
+engine, and the podcast assistant is imported under `assistants/podcast/` for
 the podcast operations workflow.
 
 ## Layout
@@ -18,7 +18,7 @@ the podcast operations workflow.
 - `content/` — operational documentation (SOPs, templates, references,
   playbooks, prompts) and its image assets.
 - `work-engine/` — imported DataTasks task execution system.
-- `podcast-assistant/` — imported podcast workflow assistant, process docs,
+- `assistants/podcast/` — imported podcast workflow assistant, process docs,
   guest-intake template, knowledge-base builder, and tests.
 - `docs/` — repo-meta docs (this README, `STRUCTURE.md`, `sop-format*.md`,
   archived materials).
