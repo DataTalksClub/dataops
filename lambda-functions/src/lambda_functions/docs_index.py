@@ -9,7 +9,7 @@ from lambda_functions.doc_registry import DocumentRegistry, build_registry
 from lambda_functions import sop_parse
 
 
-TEXT_FIELDS = ["title", "summary", "description", "purpose", "headings", "body"]
+TEXT_FIELDS = ["title", "summary", "description", "purpose", "headings", "body", "tags", "systems"]
 KEYWORD_FIELDS = ["path", "id", "domain", "doc_type"]
 BOOSTS = {
     "title": 4.0,
@@ -84,6 +84,8 @@ def iter_docs(docs_dir: Path, registry: DocumentRegistry | None = None) -> list[
                 "summary": summary,
                 "description": description,
                 "purpose": scalar_frontmatter_value(post.metadata.get("purpose")),
+                "tags": scalar_frontmatter_value(post.metadata.get("tags")),
+                "systems": scalar_frontmatter_value(post.metadata.get("systems")),
                 "headings": "\n".join(headings),
                 "body": search_body,
             }

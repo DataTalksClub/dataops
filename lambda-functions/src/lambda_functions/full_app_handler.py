@@ -83,7 +83,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return serve_content(path, event)
         if path == "/search" and method in {"GET", "OPTIONS"}:
             ensure_search()
-            return search_handler.handler(event, context)
+            return call_search_handler(event, context)
         if path == "/admin/refresh" and method == "POST":
             return refresh_from_github()
         if is_api_path(path):
@@ -344,6 +344,37 @@ def broker_work_api(event: dict[str, Any], work_path: str, method: str) -> dict[
         return json_response(502, {"error": "Work engine failed", "detail": lambda_response})
 
     return normalize_work_engine_response(lambda_response)
+
+
+def fetch_work_search_payload(event: dict[str, Any], work_path: str, params: dict[str, str]) -> dict[str, Any]:
+    work_event = dict(event)
+    work_event["queryStringParameters"] = params or None
+    work_event["rawQueryString"] = urllib.parse.urlencode(params) if params else ""
+    response = broker_work_api(work_event, work_path, "GET")
+    status = int(response.get("statusCode", 500))
+    try:
+        payload = json.loads(response.get("body") or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{work_path} returned invalid JSON") from exc
+    if status < 200 or status >= 300:
+        detail = payload.get("error") if isinstance(payload, dict) else ""
+        raise RuntimeError(detail or f"{work_path} returned HTTP {status}")
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{work_path} returned an unsupported payload")
+    return payload
+
+
+def call_search_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    try:
+        return search_handler.handler(
+            event,
+            context,
+            work_fetcher=lambda work_path, params: fetch_work_search_payload(event, work_path, params),
+        )
+    except TypeError as exc:
+        if "work_fetcher" not in str(exc):
+            raise
+        return search_handler.handler(event, context)
 
 
 def work_engine_portal_secret() -> str:
