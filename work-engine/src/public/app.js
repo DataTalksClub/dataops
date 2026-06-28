@@ -230,6 +230,56 @@
     }
   }
 
+  var pendingNotice = null;
+
+  function queueNotice(msg, type) {
+    pendingNotice = { msg: msg, type: type || 'success' };
+  }
+
+  function flushPendingNotice() {
+    if (!pendingNotice) return;
+    var notice = pendingNotice;
+    pendingNotice = null;
+    showNotice(notice.msg, notice.type);
+  }
+
+  function parseHash() {
+    var raw = location.hash || '#/';
+    var queryIndex = raw.indexOf('?');
+    var path = queryIndex === -1 ? raw : raw.slice(0, queryIndex);
+    var query = queryIndex === -1 ? '' : raw.slice(queryIndex + 1);
+    return { path: path || '#/', params: new URLSearchParams(query) };
+  }
+
+  function buildHash(path, params) {
+    var search = new URLSearchParams();
+    Object.keys(params || {}).forEach(function (key) {
+      if (params[key]) search.set(key, params[key]);
+    });
+    var query = search.toString();
+    return path + (query ? '?' + query : '');
+  }
+
+  function bundleHash(bundleId, taskId) {
+    return buildHash('#/bundles', { bundleId: bundleId, taskId: taskId });
+  }
+
+  function taskHash(taskId, date, contextBundleId) {
+    return buildHash('#/tasks', { taskId: taskId, date: date, contextBundleId: contextBundleId });
+  }
+
+  function focusTaskRow(container, taskId) {
+    if (!container || !taskId) return;
+    setTimeout(function () {
+      var row = container.querySelector('[data-task-row="' + CSS.escape(taskId) + '"]');
+      if (!row) return;
+      row.classList.add('task-target-row');
+      row.setAttribute('tabindex', '-1');
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      row.focus({ preventScroll: true });
+    }, 0);
+  }
+
   function setButtonBusy(btn, busy, label, busyLabel) {
     if (!btn) return;
     if (busy) {
@@ -258,7 +308,7 @@
 
   function renderBundleBadgeLink(bundleId, title) {
     var safeTitle = title || 'Untitled';
-    return '<a class="badge-bundle" href="#/bundles" data-nav-bundle="' + escapeHtml(bundleId) + '" aria-label="Open bundle ' + escapeHtml(safeTitle) + '">' + escapeHtml(safeTitle) + '</a>';
+    return '<a class="badge-bundle" href="' + escapeHtml(bundleHash(bundleId)) + '" data-nav-bundle="' + escapeHtml(bundleId) + '" aria-label="Open bundle ' + escapeHtml(safeTitle) + '">' + escapeHtml(safeTitle) + '</a>';
   }
 
   function instructionLabel(description) {
@@ -1129,7 +1179,8 @@
   };
 
   function navigate() {
-    var hash = location.hash || '';
+    var parsed = parseHash();
+    var hash = parsed.path;
     var handler = routes[hash];
     if (!handler) {
       location.hash = '#/';
@@ -1158,6 +1209,7 @@
     // Refresh bell badge
     refreshBellBadge();
     handler();
+    flushPendingNotice();
   }
 
   window.addEventListener('hashchange', navigate);
@@ -1668,7 +1720,7 @@
 
     function openBundle() {
       currentBundleId = b.id;
-      location.hash = '#/bundles';
+      location.hash = bundleHash(currentBundleId);
     }
 
     card.addEventListener('click', openBundle);
@@ -2098,7 +2150,7 @@
         e.preventDefault();
         e.stopPropagation();
         currentBundleId = el.getAttribute('data-nav-bundle');
-        location.hash = '#/bundles';
+        location.hash = bundleHash(currentBundleId);
       });
     });
     bindAssistantLinks(container);
@@ -2431,7 +2483,8 @@
     endDate: '',
     statusFilter: 'all',
     assigneeFilter: '',
-    bundleFilter: ''
+    bundleFilter: '',
+    targetTaskId: ''
   };
 
   // Cached users map: { id: { id, name, email } }
@@ -2472,19 +2525,25 @@
   function renderTasks() {
     clearApp();
 
+    var routeParams = parseHash().params;
+    var routeTaskId = routeParams.get('taskId') || '';
+    var routeDate = routeParams.get('date') || '';
+    var routeBundleId = routeParams.get('bundleId') || '';
+    var routeContextBundleId = routeParams.get('contextBundleId') || '';
     var today = todayString();
-    taskState.date = today;
-    taskState.startDate = today;
-    taskState.endDate = today;
+    taskState.date = routeDate || today;
+    taskState.startDate = routeDate || today;
+    taskState.endDate = routeDate || today;
     taskState.statusFilter = 'all';
     taskState.assigneeFilter = '';
-    taskState.bundleFilter = '';
+    taskState.bundleFilter = routeBundleId;
+    taskState.targetTaskId = routeTaskId;
 
     // Date filter bar
     var header = document.createElement('div');
     header.className = 'task-toolbar';
     header.innerHTML = '<h2>Tasks</h2>' +
-      '<input type="date" id="task-date" value="' + today + '" />' +
+      '<input type="date" id="task-date" value="' + taskState.date + '" />' +
       '<button class="btn-today" id="btn-today">Today</button>' +
       '<label class="range-toggle">' +
         '<input type="checkbox" id="range-toggle" />' +
@@ -2492,7 +2551,7 @@
       '</label>' +
       '<span id="range-end-container" class="task-toolbar-range" style="display:none;">' +
         '<span style="font-size:13px;color:#555;">to</span> ' +
-        '<input type="date" id="task-date-end" value="' + today + '" />' +
+        '<input type="date" id="task-date-end" value="' + taskState.endDate + '" />' +
       '</span>';
     app.appendChild(header);
 
@@ -2511,6 +2570,19 @@
       '<label for="filter-bundle">Bundle</label>' +
       '<select id="filter-bundle"><option value="">All (by date)</option></select>';
     app.appendChild(filterBar);
+
+    if (routeContextBundleId) {
+      var contextBanner = document.createElement('div');
+      contextBanner.className = 'task-context-banner';
+      contextBanner.setAttribute('data-testid', 'task-workflow-context');
+      contextBanner.innerHTML = 'Workflow context: <a href="' + escapeHtml(bundleHash(routeContextBundleId)) + '" data-nav-bundle="' + escapeHtml(routeContextBundleId) + '">' + escapeHtml(routeContextBundleId) + '</a>';
+      app.appendChild(contextBanner);
+      api.bundles.get(routeContextBundleId).then(function (data) {
+        var bundle = data.bundle || {};
+        var link = contextBanner.querySelector('[data-nav-bundle]');
+        if (link) link.textContent = bundle.title || routeContextBundleId;
+      }).catch(function () {});
+    }
 
     var dateInput = document.getElementById('task-date');
     var rangeToggle = document.getElementById('range-toggle');
@@ -2538,6 +2610,7 @@
         var opt = document.createElement('option');
         opt.value = b.id;
         opt.textContent = b.title || 'Untitled';
+        if (routeBundleId && b.id === routeBundleId) opt.selected = true;
         bundleFilterEl.appendChild(opt);
       });
     });
@@ -2611,7 +2684,7 @@
         '</div>' +
         '<div class="form-group">' +
           '<label for="task-date-input">Date</label>' +
-          '<input type="date" id="task-date-input" value="' + today + '" />' +
+          '<input type="date" id="task-date-input" value="' + taskState.date + '" />' +
         '</div>' +
         '<div class="form-group">' +
           '<label for="task-assignee">Assignee</label>' +
@@ -2684,7 +2757,26 @@
       loadTasks(params);
     }
 
-    reloadTasks();
+    if (routeTaskId && !routeDate && !routeBundleId) {
+      api.tasks.get(routeTaskId).then(function (task) {
+        if (task && task.bundleId) {
+          taskState.bundleFilter = task.bundleId;
+          if (bundleFilterEl) bundleFilterEl.value = task.bundleId;
+        } else if (task && task.date) {
+          taskState.date = task.date;
+          taskState.startDate = task.date;
+          taskState.endDate = task.date;
+          if (dateInput) dateInput.value = task.date;
+          if (dateEndInput) dateEndInput.value = task.date;
+        }
+        syncFormDate();
+        reloadTasks();
+      }).catch(function () {
+        reloadTasks();
+      });
+    } else {
+      reloadTasks();
+    }
   }
 
   function loadTasks(params) {
@@ -2766,6 +2858,7 @@
         });
 
         renderTaskTable(tasks, bundleMap, usersMap, container, params);
+        focusTaskRow(container, taskState.targetTaskId);
       });
     }).catch(function (err) {
       container.innerHTML = '';
@@ -2881,7 +2974,7 @@
           e.preventDefault();
           e.stopPropagation();
           currentBundleId = el.getAttribute('data-nav-bundle');
-          location.hash = '#/bundles';
+          location.hash = bundleHash(currentBundleId);
         });
       });
       bindAssistantLinks(container);
@@ -3116,8 +3209,13 @@
   function renderBundles() {
     clearApp();
 
+    var routeParams = parseHash().params;
+    var routeBundleId = routeParams.get('bundleId') || '';
+    var routeTaskId = routeParams.get('taskId') || '';
+    currentBundleId = routeBundleId || null;
+
     if (currentBundleId) {
-      renderBundleDetail(currentBundleId);
+      renderBundleDetail(currentBundleId, routeTaskId);
       return;
     }
 
@@ -3308,7 +3406,7 @@
         bundlesCache = null;
         currentBundleId = created.bundle.id;
         showSuccess('Podcast workflow started.');
-        renderBundles();
+        location.hash = bundleHash(currentBundleId);
       }).catch(function (err) {
         showError('Failed to start Podcast workflow: ' + err.message);
       }).finally(function () {
@@ -3472,13 +3570,13 @@
           card.className = 'bundle-card';
           card.setAttribute('data-card-bundle-id', b.id);
           card.innerHTML =
-            '<a class="bundle-card-title" href="#/bundles" data-bundle-id="' + b.id + '" aria-label="Open bundle ' + escapeHtml(b.title || 'Untitled') + '">' + escapeHtml(b.title) + '</a>' +
+            '<a class="bundle-card-title" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '" aria-label="Open bundle ' + escapeHtml(b.title || 'Untitled') + '">' + escapeHtml(b.title) + '</a>' +
             '<div class="bundle-card-date">' + escapeHtml(b.anchorDate || '') + '</div>' +
             (truncatedDesc ? '<div class="bundle-card-desc">' + escapeHtml(truncatedDesc) + '</div>' : '') +
             '<div class="bundle-card-footer">' +
               '<span class="' + badgeClass + '">' + doneCount + ' / ' + totalCount + ' done</span>' +
               '<div class="card-footer-actions">' +
-                '<a class="card-action-link" href="#/bundles" data-bundle-id="' + b.id + '">Open bundle</a>' +
+                '<a class="card-action-link" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '">Open bundle</a>' +
                 '<button class="btn-danger" data-delete-bundle="' + b.id + '">Delete</button>' +
               '</div>' +
             '</div>';
@@ -3492,7 +3590,7 @@
             if (e.target.closest('button')) return;
             if (e.target.closest('[data-bundle-id]')) return;
             currentBundleId = cardEl.getAttribute('data-card-bundle-id');
-            renderBundles();
+            location.hash = bundleHash(currentBundleId);
           });
         });
 
@@ -3501,7 +3599,7 @@
           el.addEventListener('click', function (e) {
             e.preventDefault();
             currentBundleId = el.getAttribute('data-bundle-id');
-            renderBundles();
+            location.hash = bundleHash(currentBundleId);
           });
         });
 
@@ -3537,7 +3635,7 @@
     'after-event': { label: 'Mark Done', nextStage: 'done' },
   };
 
-  function renderBundleDetail(bundleId) {
+  function renderBundleDetail(bundleId, targetTaskId) {
     var backBtn = document.createElement('button');
     backBtn.className = 'btn-back';
     backBtn.textContent = '\u2190 Back to Home';
@@ -3552,10 +3650,10 @@
     detailContainer.innerHTML = '<p>Loading...</p>';
     app.appendChild(detailContainer);
 
-    loadBundleDetail(bundleId);
+    loadBundleDetail(bundleId, targetTaskId);
   }
 
-  function loadBundleDetail(bundleId) {
+  function loadBundleDetail(bundleId, targetTaskId) {
     var container = document.getElementById('bundle-detail');
     if (!container) return;
 
@@ -3850,6 +3948,7 @@
       container.appendChild(tasksContainer);
 
       renderBundleTasksTable(bundleId, tasks, usersMap, bundle, filesByTask);
+      focusTaskRow(tasksContainer, targetTaskId);
     }).catch(function (err) {
       container.innerHTML = '';
       showError('Failed to load bundle: ' + err.message);
@@ -4353,7 +4452,7 @@
     var parts = [];
     if (job.bundleId) {
       var bundle = bundleMap[job.bundleId] || {};
-      parts.push('<a href="#/bundles" data-nav-bundle="' + escapeHtml(job.bundleId) + '">Workflow: ' + escapeHtml(bundle.title || job.bundleId) + '</a>');
+      parts.push('<a href="' + escapeHtml(bundleHash(job.bundleId)) + '" data-nav-bundle="' + escapeHtml(job.bundleId) + '">Workflow: ' + escapeHtml(bundle.title || job.bundleId) + '</a>');
     }
     if (job.taskId) {
       var task = taskMap[job.taskId] || {};
@@ -4376,7 +4475,7 @@
         e.preventDefault();
         e.stopPropagation();
         currentBundleId = el.getAttribute('data-nav-bundle');
-        location.hash = '#/bundles';
+        location.hash = bundleHash(currentBundleId);
       });
     });
   }
@@ -4805,11 +4904,45 @@
       showSuccess(message);
       if (options && options.onDone) options.onDone();
     }
+    function openWorkflowContext(bundleId, taskId, message) {
+      queueNotice(message);
+      currentBundleId = bundleId;
+      location.hash = bundleHash(bundleId, taskId);
+    }
+    function openTaskContext(task, fallbackBundleId, message) {
+      if (task && task.bundleId) {
+        openWorkflowContext(task.bundleId, task.id, message);
+        return;
+      }
+      queueNotice(message);
+      location.hash = taskHash(task && task.id, task && task.date, fallbackBundleId);
+    }
+    function openAttachedContext(result, fallbackTaskId, fallbackBundleId) {
+      var updatedItem = (result && result.item) || result || {};
+      var taskIds = updatedItem.taskIds || [];
+      var bundleIds = updatedItem.bundleIds || [];
+      var taskId = fallbackTaskId || taskIds[taskIds.length - 1] || '';
+      var bundleId = fallbackBundleId || bundleIds[bundleIds.length - 1] || '';
+      if (taskId) {
+        api.tasks.get(taskId).then(function (task) {
+          openTaskContext(task, bundleId, 'Intake attached to task context.');
+        }).catch(function () {
+          queueNotice('Intake attached to task context.');
+          location.hash = taskHash(taskId, '', bundleId);
+        });
+        return;
+      }
+      if (bundleId) {
+        openWorkflowContext(bundleId, '', 'Intake attached to workflow context.');
+        return;
+      }
+      reloadDone('Intake attached to workflow context.');
+    }
     document.getElementById('intake-attach-btn').addEventListener('click', function () {
       var taskId = document.getElementById('intake-task-id').value.trim();
       var bundleId = document.getElementById('intake-bundle-id').value;
-      api.intake.attach(item.id, { taskIds: taskId ? [taskId] : [], bundleIds: bundleId ? [bundleId] : [] }).then(function () {
-        reloadDone('Intake attached to workflow context.');
+      api.intake.attach(item.id, { taskIds: taskId ? [taskId] : [], bundleIds: bundleId ? [bundleId] : [] }).then(function (result) {
+        openAttachedContext(result, taskId, bundleId);
       }).catch(function (err) { showError(err.message); });
     });
     document.getElementById('intake-convert-btn').addEventListener('click', function () {
@@ -4818,8 +4951,7 @@
         assigneeId: document.getElementById('intake-assignee-id').value.trim() || undefined,
         bundleId: document.getElementById('intake-bundle-id').value || undefined,
       }).then(function (result) {
-        reloadDone('Task created from intake.');
-        if (result && result.task && result.task.bundleId) location.hash = '#/bundles';
+        openTaskContext(result && result.task, '', 'Task created from intake.');
       }).catch(function (err) { showError(err.message); });
     });
     document.getElementById('intake-duplicate-btn').addEventListener('click', function () {
