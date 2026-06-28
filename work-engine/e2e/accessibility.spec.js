@@ -58,7 +58,7 @@ test.describe('Keyboard accessibility', () => {
 
       const badge = page.getByRole('link', { name: 'Open bundle ' + title });
       await expect(badge).toBeVisible();
-      await expect(badge).toHaveAttribute('href', '#/bundles');
+      await expect(badge).toHaveAttribute('href', new RegExp('^#/bundles\\?bundleId=' + bundle.id + '$'));
       await badge.focus();
       await expect(badge).toBeFocused();
       await page.keyboard.press('Enter');
