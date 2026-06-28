@@ -1894,7 +1894,7 @@
 
   function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask) {
     var html = '<table class="task-table-compact"><thead><tr>' +
-      '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th><th>Actions</th>' +
+      '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Required Proof</th><th>Next Action</th>' +
       '</tr></thead><tbody>';
     var queueGroupOrder = {
       'Follow-ups due': 0,
@@ -1923,7 +1923,7 @@
       var queueGroup = taskPrimaryQueueGroup(t, taskFiles, todayString(), bundle);
       if (queueGroup !== currentGroup) {
         currentGroup = queueGroup;
-        html += '<tr class="dashboard-queue-group"><td colspan="8">' + escapeHtml(queueGroup) + '</td></tr>';
+        html += '<tr class="dashboard-queue-group"><td colspan="7">' + escapeHtml(queueGroup) + '</td></tr>';
       }
 
       var checkboxDisabled = '';
@@ -2040,20 +2040,23 @@
       }
       var fullWidthActionsHtml = t.status === 'waiting' ? actionsHtml : '';
       var actionsCellHtml = fullWidthActionsHtml ? '<span class="task-action-empty">Follow-up controls</span>' : actionsHtml;
+      var taskCellHtml = '<div class="dashboard-task-main">' +
+        '<div class="dashboard-task-description">' + renderMarkdownLinks(t.description) + '</div>' +
+        '<div class="dashboard-task-workflow">' + bundleBadge + '</div>' +
+        '</div>';
 
       html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
         '<td class="task-status"><input type="checkbox" class="task-status-checkbox" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></td>' +
         '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
-        '<td class="task-description" data-label="Description">' + renderMarkdownLinks(t.description) + '</td>' +
-        '<td data-label="Bundle">' + bundleBadge + '</td>' +
-        '<td data-label="Info">' + instructionsHtml + '</td>' +
+        '<td class="task-description" data-label="Task">' + taskCellHtml + '</td>' +
+        '<td data-label="Status / Proof">' + instructionsHtml + '</td>' +
         '<td data-label="Assignee">' + assigneeHtml + '</td>' +
-        '<td data-label="Required Link">' + requiredLinkHtml + '</td>' +
-        '<td data-label="Actions">' + actionsCellHtml + '</td>' +
+        '<td data-label="Required Proof">' + requiredLinkHtml + '</td>' +
+        '<td data-label="Next Action">' + actionsCellHtml + '</td>' +
         '</tr>';
       if (fullWidthActionsHtml) {
         html += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' +
-          '<td colspan="8">' + fullWidthActionsHtml + '</td>' +
+          '<td colspan="7">' + fullWidthActionsHtml + '</td>' +
           '</tr>';
       }
     });
