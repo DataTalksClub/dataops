@@ -21,6 +21,18 @@ Parameters:
   BasicAuthPasswordSecretName:
     Type: String
     Default: dataops-v1/full-app/basic-auth-password
+  DataOpsEnvironment:
+    Type: String
+    Default: prod
+    AllowedPattern: "^[a-zA-Z0-9_.-]+$"
+  ExportArchivePrefix:
+    Type: String
+    Default: execution-exports
+    AllowedPattern: "^[a-zA-Z0-9_.\\/-]+$"
+  ExportArchiveRetentionDays:
+    Type: Number
+    Default: 365
+    MinValue: 90
 
 Globals:
   Function:
@@ -453,6 +465,38 @@ Resources:
         - Key: DataClass
           Value: SessionState
 
+  DataOpsExportArchiveBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainPortableExecutionExports
+            Status: Enabled
+            Prefix: !Sub ${ExportArchivePrefix}/
+            NoncurrentVersionExpirationInDays: !Ref ExportArchiveRetentionDays
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionExportArchive
+        - Key: BackupSelection
+          Value: DataOpsV1ExecutionExports
+
   WorkEnginePortalSecret:
     Type: AWS::SecretsManager::Secret
     DeletionPolicy: Retain
@@ -524,7 +568,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       CodeUri: ..
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       Handler: dist/handler.handler
       Timeout: 30
       MemorySize: 1024
@@ -559,8 +603,15 @@ Resources:
               - secretsmanager:GetSecretValue
             Resource:
               - !Ref WorkEnginePortalSecret
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub ${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*
       Environment:
         Variables:
+          DATAOPS_ENV: !Ref DataOpsEnvironment
           DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable
           DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable
           DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable
@@ -572,6 +623,8 @@ Resources:
           DATAOPS_INTAKE_TABLE: !Ref DataOpsIntakeTable
           DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
+          DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
+          DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
       Events:
@@ -581,6 +634,13 @@ Resources:
             Description: Run DataOps recurring task and automatic template generation once per day.
             Schedule: cron(0 8 * * ? *)
             Enabled: true
+        DailyWorkEngineExport:
+          Type: Schedule
+          Properties:
+            Description: Export DataOps execution data to the retained offsite archive bucket once per day.
+            Schedule: cron(30 8 * * ? *)
+            Enabled: true
+            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}'
 
 Outputs:
   DocsFullAppUrl:
@@ -619,6 +679,12 @@ Outputs:
   DataOpsSessionsTableName:
     Description: DynamoDB table for session state
     Value: !Ref DataOpsSessionsTable
+  DataOpsExportArchiveBucketName:
+    Description: Retained S3 bucket for portable execution export archives
+    Value: !Ref DataOpsExportArchiveBucket
+  DataOpsExportArchivePrefix:
+    Description: Prefix used for portable execution export archives
+    Value: !Ref ExportArchivePrefix
   WorkEngineFunctionName:
     Description: Private DataOps work-engine Lambda function
     Value: !Ref WorkEngineFunction

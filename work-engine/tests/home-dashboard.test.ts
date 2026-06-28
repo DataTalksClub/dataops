@@ -99,8 +99,10 @@ describe('Home dashboard (issue #26)', () => {
       const event = { httpMethod: 'GET', path: '/' };
       const result = await handler(event, {});
       assert.ok(result.body.includes('#dashboard-tasks'), 'should target dashboard task queue');
-      assert.ok(result.body.includes('overflow-x: auto'), 'should contain wide queue controls inside the dashboard');
-      assert.ok(result.body.includes('table-layout: fixed'), 'should prevent queue table content from expanding the page');
+      assert.ok(result.body.includes('#dashboard-tasks .task-table-compact thead tr'), 'should size dashboard queue header columns explicitly');
+      assert.ok(result.body.includes('grid-template-columns: 34px'), 'should keep dense queue rows in stable grid columns');
+      assert.ok(result.body.includes('#dashboard-tasks .task-table-compact tbody tr[data-task-row]'), 'should size dashboard queue body rows explicitly');
+      assert.ok(result.body.includes('#dashboard-tasks .task-table-compact tbody tr[data-task-row],'), 'should reset queue rows for mobile card layout');
     });
   });
 

@@ -168,8 +168,15 @@ def result_matches_filters(result: dict[str, Any], params: dict[str, str]) -> bo
         return False
 
     assignee = (params.get("assignee") or params.get("assignee_id") or "").strip().lower()
-    if assignee and result.get("type") == "task" and assignee != str(result.get("fields", {}).get("assignee") or "").lower():
-        return False
+    if assignee and result.get("type") == "task":
+        fields = result.get("fields", {})
+        assignee_values = {
+            str(fields.get("assignee") or "").lower(),
+            str(fields.get("assignee_name") or "").lower(),
+            str(fields.get("assignee_id") or "").lower(),
+        }
+        if assignee not in assignee_values:
+            return False
 
     due_bucket = (params.get("due") or params.get("due_bucket") or "").strip().lower()
     if due_bucket and result.get("type") == "task" and due_bucket != str(result.get("fields", {}).get("due_bucket") or "").lower():
@@ -212,6 +219,7 @@ def search_work_sources(query: str, params: dict[str, str], fetcher: WorkFetcher
     artifacts = fetch_work_collection("artifacts", fetcher, [("/api/artifacts", {})], "artifacts", sources)
     files = fetch_work_collection("files", fetcher, [("/api/files", {})], "files", sources)
     assistant_jobs = fetch_work_collection("assistant-jobs", fetcher, [("/api/assistant-jobs", {})], "jobs", sources)
+    users = fetch_work_collection("users", fetcher, [("/api/users", {})], "users", sources)
 
     tasks_by_bundle: dict[str, list[dict[str, Any]]] = {}
     for bundle in bundles[:20]:
@@ -224,10 +232,11 @@ def search_work_sources(query: str, params: dict[str, str], fetcher: WorkFetcher
         except Exception as exc:
             sources.append({"source": "work-engine:workflow-tasks", "status": "unavailable", "error": str(exc), "owner_id": bundle_id})
 
-    docs_by_id: dict[str, dict[str, Any]] = {}
+    users_by_id = {str(user.get("id")): user for user in users if user.get("id")}
+    bundles_by_id = {str(bundle.get("id")): bundle for bundle in bundles if bundle.get("id")}
 
     for task in dedupe_records(tasks + [task for group in tasks_by_bundle.values() for task in group]):
-        result = format_task_result(task, today)
+        result = format_task_result(task, today, users_by_id=users_by_id, bundles_by_id=bundles_by_id)
         if work_result_matches(result, query, params):
             results.append(result)
 
@@ -315,23 +324,34 @@ def collection_from_payload(payload: Any, key: str) -> list[dict[str, Any]]:
     return []
 
 
-def format_task_result(task: dict[str, Any], today: str) -> dict[str, Any]:
+def format_task_result(
+    task: dict[str, Any],
+    today: str,
+    *,
+    users_by_id: dict[str, dict[str, Any]] | None = None,
+    bundles_by_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     task_id = str(task.get("id") or "")
     title = str(task.get("description") or task.get("title") or task_id or "Task")
     status = str(task.get("status") or "todo")
     due = str(task.get("date") or "")
     proof = proof_state(task)
+    assignee_id = str(task.get("assigneeId") or "")
+    bundle_id = str(task.get("bundleId") or "")
+    assignee_label = user_display_label((users_by_id or {}).get(assignee_id))
+    workflow_label = bundle_display_label((bundles_by_id or {}).get(bundle_id))
     summary = " · ".join(
         part
         for part in [
             f"Status {status}",
             f"Due {due}" if due else "",
-            f"Assignee {task.get('assigneeId')}" if task.get("assigneeId") else "",
-            f"Workflow {task.get('bundleId')}" if task.get("bundleId") else "",
+            f"Assignee {assignee_label}" if assignee_label else "Assigned" if assignee_id else "",
+            f"Workflow {workflow_label}" if workflow_label else "Workflow linked" if bundle_id else "",
             proof,
         ]
         if part
     )
+    context = str(task.get("comment") or task.get("waitingFor") or task.get("requiredLinkName") or summary)
     return {
         "type": "task",
         "source": "work-engine",
@@ -340,7 +360,7 @@ def format_task_result(task: dict[str, Any], today: str) -> dict[str, Any]:
         "id": task_id,
         "title": title,
         "summary": summary,
-        "context": str(task.get("comment") or task.get("waitingFor") or task.get("requiredLinkName") or task.get("instructionDocId") or ""),
+        "context": context,
         "tags": list_values(task.get("tags")),
         "systems": list_values(task.get("systems")),
         "route": {
@@ -354,8 +374,11 @@ def format_task_result(task: dict[str, Any], today: str) -> dict[str, Any]:
             "status": status,
             "due_date": due,
             "due_bucket": due_bucket(due, today),
-            "assignee": task.get("assigneeId") or "",
-            "bundle_id": task.get("bundleId") or "",
+            "assignee": assignee_label,
+            "assignee_name": assignee_label,
+            "assignee_id": assignee_id,
+            "workflow_title": workflow_label,
+            "bundle_id": bundle_id,
             "template_id": task.get("templateId") or "",
             "instructionDocId": task.get("instructionDocId") or "",
             "instructionStepId": task.get("instructionStepId") or "",
@@ -364,7 +387,7 @@ def format_task_result(task: dict[str, Any], today: str) -> dict[str, Any]:
             "systems": list_values(task.get("systems")),
             "tags": list_values(task.get("tags")),
         },
-        "_search_text": stringify_search_text(task, [title, summary, proof]),
+        "_search_text": stringify_search_text(task, [title, summary, assignee_label, workflow_label, proof]),
     }
 
 
@@ -638,6 +661,26 @@ def proof_state(task: dict[str, Any]) -> str:
     proof = task.get("proofRequirement")
     if isinstance(proof, dict) and proof.get("required", True):
         return f"{proof.get('type', 'proof')} proof required"
+    return ""
+
+
+def user_display_label(user: dict[str, Any] | None) -> str:
+    if not isinstance(user, dict):
+        return ""
+    for key in ("name", "displayName", "fullName", "email"):
+        value = str(user.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def bundle_display_label(bundle: dict[str, Any] | None) -> str:
+    if not isinstance(bundle, dict):
+        return ""
+    for key in ("title", "name"):
+        value = str(bundle.get(key) or "").strip()
+        if value:
+            return value
     return ""
 
 
