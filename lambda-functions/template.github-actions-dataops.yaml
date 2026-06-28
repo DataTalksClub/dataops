@@ -112,6 +112,20 @@ Resources:
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-DocsFullAppFunction-*:*
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-WorkEngineFunction-*
                   - !Sub arn:${AWS::Partition}:lambda:${FullDocsRegion}:${AWS::AccountId}:function:${FullDocsStackName}-WorkEngineFunction-*:*
+              - Sid: EventBridgeDataOpsRules
+                Effect: Allow
+                Action:
+                  - events:DeleteRule
+                  - events:DescribeRule
+                  - events:ListTagsForResource
+                  - events:ListTargetsByRule
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:RemoveTargets
+                  - events:TagResource
+                  - events:UntagResource
+                Resource:
+                  - !Sub arn:${AWS::Partition}:events:${FullDocsRegion}:${AWS::AccountId}:rule/${FullDocsStackName}-*
               - Sid: DynamoDbDataOpsExecutionTables
                 Effect: Allow
                 Action:
