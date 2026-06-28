@@ -136,6 +136,13 @@ workflow level and `instruction_doc_id`, `instruction_step_id`, `phase`,
 `systems`, and `validation` at the task level. `instructions_url` remains a
 legacy fallback when no registered document ID is available.
 
+For workflow-critical process docs, `source_doc_ids` and `instruction_doc_id`
+must refer to registry-backed stable IDs from Markdown frontmatter. Generated
+path IDs are transitional for legacy docs only. Assistant-local process files
+that are not indexed by the content registry must be called out as external
+source references and keep a local path or URL in `references` until the
+registry supports that source.
+
 ## Runtime Bundle
 
 A workflow bundle is one runtime execution package, such as one event, report,

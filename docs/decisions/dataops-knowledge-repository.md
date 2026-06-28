@@ -195,6 +195,11 @@ migration, convert the 11 current templates to YAML and keep generated
 Markdown/portal views derived from YAML if human-readable template pages are
 still needed.
 
+The stable ID is the migration boundary between `dataops` and the future
+knowledge repository. File paths, Google Docs URLs, and `source` provenance can
+change during the split; task and workflow records should still open the same
+process context by resolving the stable ID or one of its aliases.
+
 Runtime behavior:
 
 - The work engine loads or syncs runtime template records from the Git-backed
