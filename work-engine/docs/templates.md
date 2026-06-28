@@ -556,34 +556,54 @@ Tasks (5):
   - Emoji: (none)
   - Tags: Tax, Finance
   - Title: Tax Report
-- Anchor date: Month end date (no specific event day, tasks are sequential)
-- Trigger: automatic, monthly. Create bundle on 1st of the following month (month must close before report work begins)
+- Anchor date: First day of the month when the workflow is generated
+- Trigger: automatic, monthly. Create bundle at `0 9 1 * *` with `triggerLeadDays: 0` (month must close before report work begins)
 
 Monthly tax/bookkeeping report. Involves reviewing financials, cross-checking bank accounts, and preparing a report for the accountants.
 
 Bundle links:
-- [Upload link](https://tilz.quickconnect.to/sharing/UcXMIHLOH)
+- Monthly report/spreadsheet
+- Accountant upload/share link
+- Accountant email thread
 
 References:
 - [Process documents](https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit)
 - [Tax reports](https://docs.google.com/document/d/1fuWlBKFxWfupmRz9442En78xAwyXjYw_9Aspf81lhv8/edit)
 
-Tasks (8):
+Runtime notes:
+- The canonical executable template is `content/tasks/templates/tax-report.md` and `work-engine/scripts/seed-templates.ts`.
+- The runtime template keeps 9 stable task refs by splitting Finom and Revolut statement export into separate required-file tasks.
+- Required runtime proof is not stored in Git: month-specific report link, Finom statement file, Revolut statement file, tax ZIP file, accountant upload/share link, and accountant email thread are captured on the generated workflow.
+- Waiting work uses status `waiting` with `waitingFor`, `followUpAt`, and a comment; due follow-ups appear through existing `follow-up-due` notifications.
+- The final cleanup task moves the bundle to `done` only after proof gates and unresolved waiting follow-ups are clear.
 
-- Open the bookkeeping report for the specific month
-- Review and update to-dos with actual numbers from Dropbox documents, receipts, and invoices
+Tasks (9):
+
+- Open the monthly bookkeeping/tax report and attach the month-specific report or spreadsheet link
+  - required link: Monthly report/spreadsheet
+- Review Dropbox documents, receipts, invoices, and spreadsheet rows; replace TODO values with actual numbers
   - instructions: https://docs.google.com/document/d/1O9TVl2Q2tTDDFaiZro0XTYXpB8i1r9Q6Ryp-dshGFbQ/edit
-- Convert any USD or other non-euro currencies to EUR using WISE
+  - proof: external status that no reportable transaction has unresolved TODO values
+- Convert USD or other non-EUR transactions to EUR using Wise/Revolut evidence and update the spreadsheet
   - instructions: https://docs.google.com/document/d/1WWhBApSyw2JsvkVL6WdmYYRcd9ETf58D5SmN2JnJCXo/edit
-- Create Bank Statements from Finom and Revolut
-  - instructions (Finom): https://docs.google.com/document/d/198F0Z2auEkvRGHXgD5k2zYx7Cjk2mW6sUHuGeNspsYU/edit
-  - instructions (Revolut): https://docs.google.com/document/d/1gzRoauqf8UVmJogYV4VphrgADesOrBpFSkOc-8uTq4Q/edit
-- Cross-check Revolut and Finom for any missing expenses or income
+  - proof: completion comment with conversion source/date or linked conversion evidence
+- Download/create the Finom bank statement for the month
+  - instructions: https://docs.google.com/document/d/198F0Z2auEkvRGHXgD5k2zYx7Cjk2mW6sUHuGeNspsYU/edit
+  - proof: file required
+- Download/create the Revolut bank statement for the month
+  - instructions: https://docs.google.com/document/d/1gzRoauqf8UVmJogYV4VphrgADesOrBpFSkOc-8uTq4Q/edit
+  - proof: file required
+- Cross-check Finom and Revolut transactions against the bookkeeping spreadsheet and add missing income/expenses
   - instructions: https://docs.google.com/document/d/1Uh6ZQwQ2wBV2S7WZVnph_SauyPQQTQsym5zrrX94vHg/edit
-- Prepare a zip archive of the report and send it to accounting
+  - proof: external status that statement counts and report rows were reconciled
+- Prepare the datatalksclub-YYYY-MM.zip tax package and upload it to the accountant handoff destination
   - instructions: https://docs.google.com/document/d/1__AYDWyzYiMzByGcWfdNq9wIWeCXy71Q7YHxq_LWmSs/edit
-- Notify the accountants that the report is ready
-- Organize invoices folders: Expenses and Incoming Transactions
+  - proof: file required and Accountant upload/share link required
+- Send the accountant email with the monthly report summary and uploaded package reference, cc Alexey
+  - instructions: https://docs.google.com/document/d/1AYDWyzYiMzByGcWfdNq9wIWeCXy71Q7YHxq_LWmSs/edit
+  - proof: Accountant email thread required
+- Move processed expense and incoming invoice files into the correct processed folders and close the monthly workflow
+  - proof: external status that folders were organized; stage: done
 
 ---
 
@@ -664,7 +684,7 @@ Tasks (5):
 | 6 | Open-Source Spotlight | oss | Open-Source Spotlight | 14 | Manual (author agrees) | Publish date |
 | 7 | Course | course | Course | 8 | Manual (cohort planned) | Course start date |
 | 8 | Social Media Weekly | social-media | Social media | 5 | Automatic (weekly, Friday) | Week start (Mon) |
-| 9 | Tax Report | tax-report | Tax, Finance | 8 | Automatic (monthly, 1st) | Month end |
+| 9 | Tax Report | tax-report | Tax, Finance | 9 | Automatic (monthly, 1st) | First day of month |
 | 10 | Maven LL | maven-ll | Maven, Maven Lightning Lesson | 7 | Manual (Alexey sends content) | Event date |
 | 11 | Office Hours | office-hours | Office Hours | 5 | Manual (Alexey sends recording) | Event date |
 
