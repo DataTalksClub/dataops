@@ -16,6 +16,7 @@
  *   --csv-only        Only import CSV tasks
  *   --cards-only      Only import active Trello cards as bundles+tasks
  *   --include-done    Also import done CSV tasks (skipped by default)
+ *   --source          Local Trello JSON export to import instead of bundled data
  *   --source-todo     Local TODO CSV export to import instead of bundled data
  *   --source-done     Local done CSV export to analyze instead of bundled data
  *
@@ -33,8 +34,11 @@ import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient, startLocal } from '../src/db/client';
 import { createTables, TABLE_TASKS } from '../src/db/setup';
 import { createTemplate, listTemplates } from '../src/db/templates';
-import { createBundle } from '../src/db/bundles';
-import { createTask } from '../src/db/tasks';
+import { createBundle, getBundle, updateBundle } from '../src/db/bundles';
+import { createTask, getTask, updateTask } from '../src/db/tasks';
+import { createArtifact, getArtifact, updateArtifact } from '../src/db/artifacts';
+import { appendAssistantJobEvent } from '../src/db/assistantJobs';
+import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
 
 // ---------------------------------------------------------------------------
@@ -69,6 +73,7 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const TRELLO_FILE = path.join(DATA_DIR, 'qVB6fAUG - datatalksclub.json');
 const CSV_TODO_FILE = path.join(DATA_DIR, 'TODO list - todo.csv');
 const CSV_DONE_FILE = path.join(DATA_DIR, 'TODO list - done.csv');
+const SOURCE_TRELLO_FILE = readFlagValue('--source') || TRELLO_FILE;
 const SOURCE_TODO_FILE = readFlagValue('--source-todo') || CSV_TODO_FILE;
 const SOURCE_DONE_FILE = readFlagValue('--source-done') || CSV_DONE_FILE;
 
@@ -194,7 +199,7 @@ interface TrelloCard {
   idList: string;
   idChecklists: string[];
   labels: { name: string }[];
-  attachments: { name?: string; url: string }[];
+  attachments: { id?: string; name?: string; url: string; mimeType?: string; date?: string }[];
   dateLastActivity?: string;
 }
 
@@ -206,6 +211,7 @@ interface TrelloChecklist {
 }
 
 interface TrelloCheckItem {
+  id?: string;
   name: string;
   pos: number;
   state: string;
@@ -334,6 +340,27 @@ function extractReferences(desc: string | undefined): { name: string; url: strin
   return references;
 }
 
+function extractMarkdownAndBareLinks(text: string | undefined): { name: string; url: string }[] {
+  if (!text) return [];
+  const links: { name: string; url: string }[] = [];
+  const markdown = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  let match;
+  const seen = new Set<string>();
+  while ((match = markdown.exec(text)) !== null) {
+    if (!seen.has(match[2])) {
+      links.push({ name: match[1], url: match[2] });
+      seen.add(match[2]);
+    }
+  }
+  for (const url of text.match(/https?:\/\/[^\s)>,"]+/g) || []) {
+    if (!seen.has(url)) {
+      links.push({ name: url, url });
+      seen.add(url);
+    }
+  }
+  return links;
+}
+
 function trelloTemplateToAppTemplate(card: TrelloCard, boardChecklists: TrelloChecklist[]) {
   const cardChecklists = (card.idChecklists || [])
     .map((clId) => boardChecklists.find((cl) => cl.id === clId))
@@ -415,9 +442,19 @@ function extractInstructionsUrl(text: string): { description: string; instructio
 
 function extractBundleLinks(card: TrelloCard): { name: string; url: string }[] {
   const attachments = card.attachments || [];
-  return attachments
-    .filter((a) => a.url && !a.url.includes('trello.com/1/cards/'))
-    .map((a) => ({ name: a.name || a.url, url: a.url }));
+  const candidates = [
+    ...attachments.map((a) => ({ name: a.name || a.url, url: a.url })),
+    ...extractMarkdownAndBareLinks(card.desc),
+  ];
+  const links: { name: string; url: string }[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate.url || seen.has(candidate.url)) continue;
+    if (!isSafeExternalUrl(candidate.url)) continue;
+    links.push(candidate);
+    seen.add(candidate.url);
+  }
+  return links;
 }
 
 function slugify(str: string): string {
@@ -429,6 +466,148 @@ function slugify(str: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .substring(0, 50);
+}
+
+function stableMigrationId(prefix: string, sourceId: string): string {
+  const clean = sourceId.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72);
+  if (clean.length > 0) return `${prefix}-${clean}`;
+  const hash = crypto.createHash('sha256').update(sourceId).digest('hex').slice(0, 16);
+  return `${prefix}-${hash}`;
+}
+
+function trelloCardSourceKey(card: TrelloCard): string {
+  return `trello:card:${card.id}`;
+}
+
+function trelloCheckItemSourceKey(card: TrelloCard, checklist: TrelloChecklist, item: TrelloCheckItem, index: number): string {
+  return `trello:card:${card.id}:checklist:${checklist.id}:item:${item.id || index}`;
+}
+
+function isTrelloInternalUrl(url: string): boolean {
+  return /https?:\/\/(?:[^/]+\.)?trello\.com\/(?:1\/cards|c\/|b\/)/i.test(url);
+}
+
+function isSafeExternalUrl(url: string): boolean {
+  if (!/^https?:\/\//i.test(url)) return false;
+  if (isTrelloInternalUrl(url)) return false;
+  return !/(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|access_token=|token=|sig=|signature=|api[_-]?key=|password=|secret=|cookie=|session=)/i.test(url);
+}
+
+function artifactTypeForUrl(name: string, url: string): string {
+  const text = `${name} ${url}`.toLowerCase();
+  if (/(invoice|receipt)/.test(text)) return 'invoice';
+  if (/(podcast|google.*doc|docs\.google\.com\/document)/.test(text)) return 'podcast-doc';
+  if (/(youtube|zoom|recording|video)/.test(text)) return 'recording';
+  if (/(luma|lu\.ma|meetup|event|website|web page)/.test(text)) return 'event-page';
+  if (/(report|spreadsheet|docs\.google\.com\/spreadsheets)/.test(text)) return 'report';
+  return 'external-link';
+}
+
+function requiredLinkNameForText(text: string): string | null {
+  const lower = text.toLowerCase();
+  if (/\bluma\b|lu\.ma/.test(lower)) return 'Luma';
+  if (/\bmeetup\b/.test(lower)) return 'Meetup';
+  if (/\byoutube\b|youtu\.be/.test(lower)) return 'YouTube';
+  if (/\blinkedin\b/.test(lower)) return 'LinkedIn';
+  if (/\btwitter\b|\bx\b announcement/.test(lower)) return 'X announcement';
+  if (/\bslack\b/.test(lower)) return 'Slack link';
+  if (/\bairtable\b/.test(lower)) return 'Airtable record';
+  if (/\bpodcast\b.*\bdoc|\bpodcast document\b/.test(lower)) return 'Podcast document';
+  if (/\breport\b/.test(lower)) return 'Report';
+  if (/\bspreadsheet\b|\bgoogle sheet\b/.test(lower)) return 'Spreadsheet';
+  if (/\bwebsite\b|\bweb page\b|\bpage\b/.test(lower)) return 'Website page';
+  if (/\blink\b|\burl\b/.test(lower)) return 'Completion proof';
+  return null;
+}
+
+function inferTrelloProofRequirement(text: string, urls: string[]): Record<string, unknown> | null {
+  const lower = text.toLowerCase();
+  if (/(invoice|receipt)/.test(lower)) {
+    return { proofRequirement: { type: 'file', label: 'Invoice or receipt', required: true }, requiresFile: true };
+  }
+  const requiredLinkName = requiredLinkNameForText(text);
+  if (requiredLinkName) {
+    return {
+      proofRequirement: { type: 'url', label: requiredLinkName, required: true },
+      requiredLinkName,
+    };
+  }
+  if (/(airtable|scheduled|published|sent|submitted|external status|status)/.test(lower)) {
+    return { proofRequirement: { type: 'external-status', label: 'External status confirmation', required: true } };
+  }
+  return inferProofRequirement(text, urls);
+}
+
+interface ProcessDocIndex {
+  byId: Map<string, string>;
+  byRelativePath: Map<string, string>;
+  byBasename: Map<string, string>;
+}
+
+let cachedProcessDocIndex: ProcessDocIndex | null = null;
+
+function walkMarkdownFiles(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkMarkdownFiles(fullPath));
+    } else if (entry.isFile() && /\.mdx?$/i.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function getProcessDocIndex(): ProcessDocIndex {
+  if (cachedProcessDocIndex) return cachedProcessDocIndex;
+  const contentDir = path.resolve(__dirname, '..', '..', 'content');
+  const index: ProcessDocIndex = {
+    byId: new Map(),
+    byRelativePath: new Map(),
+    byBasename: new Map(),
+  };
+  for (const file of walkMarkdownFiles(contentDir)) {
+    const body = fs.readFileSync(file, 'utf8');
+    const id = body.match(/^id:\s*("?)([A-Za-z0-9._-]+)\1\s*$/m)?.[2];
+    if (!id) continue;
+    const relative = path.relative(contentDir, file).split(path.sep).join('/');
+    index.byId.set(id, id);
+    index.byRelativePath.set(relative, id);
+    index.byRelativePath.set(`content/${relative}`, id);
+    index.byBasename.set(path.basename(file), id);
+  }
+  cachedProcessDocIndex = index;
+  return index;
+}
+
+function resolveInstructionDocFromUrl(url: string | null): { instructionDocId?: string; unresolvedUrl?: string } {
+  if (!url) return {};
+  const index = getProcessDocIndex();
+  try {
+    const parsed = new URL(url);
+    const decodedPath = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+    const contentIndex = decodedPath.indexOf('content/');
+    if (contentIndex >= 0) {
+      const relative = decodedPath.slice(contentIndex);
+      const docId = index.byRelativePath.get(relative);
+      if (docId) return { instructionDocId: docId };
+    }
+    const basename = path.basename(decodedPath);
+    const basenameDocId = index.byBasename.get(basename);
+    if (basenameDocId) return { instructionDocId: basenameDocId };
+  } catch {
+    const normalized = url.replace(/^\/+/, '');
+    const contentIndex = normalized.indexOf('content/');
+    const relative = contentIndex >= 0 ? normalized.slice(contentIndex) : normalized;
+    const docId = index.byRelativePath.get(relative) || index.byBasename.get(path.basename(relative));
+    if (docId) return { instructionDocId: docId };
+  }
+  const explicitId = url.match(/\b(sop|template|reference|task-template)\.[A-Za-z0-9._-]+/);
+  if (explicitId && index.byId.has(explicitId[0])) return { instructionDocId: explicitId[0] };
+  return { unresolvedUrl: url };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +709,501 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
   }
 
   return tasks;
+}
+
+// ---------------------------------------------------------------------------
+// Trello active cards -> integrated work planning
+// ---------------------------------------------------------------------------
+
+const ACTIVE_TRELLO_LIST_NAMES = ['Preparation', 'Announced', 'After event'];
+
+interface TrelloSkippedCard {
+  sourceId: string;
+  name: string;
+  reason: 'template-card' | 'closed-card' | 'inactive-list' | 'closed-list' | 'missing-list';
+  listName?: string;
+}
+
+interface TrelloArtifactPlan {
+  sourceKey: string;
+  artifact: Record<string, unknown>;
+}
+
+interface TrelloActiveCardPlan {
+  sourceKey: string;
+  listName: string;
+  bundle: Record<string, unknown>;
+  tasks: Record<string, unknown>[];
+  artifacts: TrelloArtifactPlan[];
+  warnings: string[];
+}
+
+interface TrelloActiveCardStats {
+  cardsPlanned: number;
+  cardsSkipped: number;
+  bundlesCreated: number;
+  bundlesUpdated: number;
+  tasksPlanned: number;
+  tasksCreated: number;
+  tasksUpdated: number;
+  artifactsPlanned: number;
+  artifactsCreated: number;
+  artifactsUpdated: number;
+  bundleLinks: number;
+  waitingTasks: number;
+  proofRequirements: number;
+  unresolvedProcessDocs: number;
+  unresolvedWorkflowTypes: number;
+  invalidDates: number;
+  unknownAssignees: number;
+  invalidUrls: number;
+  unsafeArtifactUrls: number;
+  unsupportedProofInferences: number;
+  duplicateSourceIds: number;
+  followUpNotificationsCreated: number;
+}
+
+interface TrelloActiveCardReport {
+  stats: TrelloActiveCardStats;
+  skippedRecords: TrelloSkippedCard[];
+  unresolvedDocs: string[];
+  unresolvedWorkflowTypes: string[];
+  invalidDates: string[];
+  unknownAssignees: string[];
+  invalidUrls: string[];
+  unsafeArtifactUrls: string[];
+  unsupportedProofInferences: string[];
+  duplicateSourceIds: string[];
+  plans: TrelloActiveCardPlan[];
+}
+
+const DEFAULT_TRELLO_ACTIVE_STATS: TrelloActiveCardStats = {
+  cardsPlanned: 0,
+  cardsSkipped: 0,
+  bundlesCreated: 0,
+  bundlesUpdated: 0,
+  tasksPlanned: 0,
+  tasksCreated: 0,
+  tasksUpdated: 0,
+  artifactsPlanned: 0,
+  artifactsCreated: 0,
+  artifactsUpdated: 0,
+  bundleLinks: 0,
+  waitingTasks: 0,
+  proofRequirements: 0,
+  unresolvedProcessDocs: 0,
+  unresolvedWorkflowTypes: 0,
+  invalidDates: 0,
+  unknownAssignees: 0,
+  invalidUrls: 0,
+  unsafeArtifactUrls: 0,
+  unsupportedProofInferences: 0,
+  duplicateSourceIds: 0,
+  followUpNotificationsCreated: 0,
+};
+
+function emptyTrelloActiveCardReport(): TrelloActiveCardReport {
+  return {
+    stats: { ...DEFAULT_TRELLO_ACTIVE_STATS },
+    skippedRecords: [],
+    unresolvedDocs: [],
+    unresolvedWorkflowTypes: [],
+    invalidDates: [],
+    unknownAssignees: [],
+    invalidUrls: [],
+    unsafeArtifactUrls: [],
+    unsupportedProofInferences: [],
+    duplicateSourceIds: [],
+    plans: [],
+  };
+}
+
+function isActiveTrelloListName(listName: string): boolean {
+  const lower = listName.toLowerCase();
+  return ACTIVE_TRELLO_LIST_NAMES.some((name) => lower === name.toLowerCase());
+}
+
+function selectActiveTrelloCards(
+  cards: TrelloCard[],
+  lists: TrelloList[]
+): { activeCards: TrelloCard[]; skippedRecords: TrelloSkippedCard[]; listMap: Record<string, TrelloList> } {
+  const listMap: Record<string, TrelloList> = {};
+  for (const list of lists) listMap[list.id] = list;
+
+  const activeCards: TrelloCard[] = [];
+  const skippedRecords: TrelloSkippedCard[] = [];
+
+  for (const card of cards) {
+    const list = listMap[card.idList];
+    const listName = list?.name;
+    if (!list) {
+      skippedRecords.push({ sourceId: card.id, name: card.name, reason: 'missing-list' });
+      continue;
+    }
+    if (card.isTemplate) {
+      skippedRecords.push({ sourceId: card.id, name: card.name, reason: 'template-card', listName });
+      continue;
+    }
+    if (card.closed) {
+      skippedRecords.push({ sourceId: card.id, name: card.name, reason: 'closed-card', listName });
+      continue;
+    }
+    if (list.closed) {
+      skippedRecords.push({ sourceId: card.id, name: card.name, reason: 'closed-list', listName });
+      continue;
+    }
+    if (!isActiveTrelloListName(list.name)) {
+      skippedRecords.push({ sourceId: card.id, name: card.name, reason: 'inactive-list', listName });
+      continue;
+    }
+    activeCards.push(card);
+  }
+
+  return { activeCards, skippedRecords, listMap };
+}
+
+function appendMigrationProvenance(text: string | null | undefined, lines: string[]): string {
+  const cleanText = text?.trim();
+  const provenance = `Migration provenance: ${lines.join('; ')}`;
+  return cleanText ? `${cleanText}\n\n${provenance}` : provenance;
+}
+
+function systemsForText(text: string): string[] {
+  const systems = new Set<string>();
+  const lower = text.toLowerCase();
+  if (/(google doc|google drive|docs\.google\.com|spreadsheet|google sheet)/.test(lower)) systems.add('google-drive');
+  if (/(mailchimp|newsletter)/.test(lower)) systems.add('mailchimp');
+  if (/(luma|lu\.ma)/.test(lower)) systems.add('luma');
+  if (/\bmeetup\b/.test(lower)) systems.add('meetup');
+  if (/\byoutube\b|youtu\.be/.test(lower)) systems.add('youtube');
+  if (/\bslack\b/.test(lower)) systems.add('slack');
+  if (/\bairtable\b/.test(lower)) systems.add('airtable');
+  if (/\blinkedin\b/.test(lower)) systems.add('linkedin');
+  if (/\btwitter\b|\bx\b/.test(lower)) systems.add('x');
+  if (/\bfinom\b|invoice|receipt/.test(lower)) systems.add('finom');
+  return [...systems].sort();
+}
+
+function addReportWarning(report: TrelloActiveCardReport, warning: string, context: string): void {
+  if (warning.startsWith('unresolved process doc:')) {
+    report.stats.unresolvedProcessDocs++;
+    report.unresolvedDocs.push(`${context} ${warning.replace('unresolved process doc: ', '')}`);
+  } else if (warning.startsWith('unresolved workflow type:')) {
+    report.stats.unresolvedWorkflowTypes++;
+    report.unresolvedWorkflowTypes.push(`${context} ${warning.replace('unresolved workflow type: ', '')}`);
+  } else if (warning.startsWith('invalid date:')) {
+    report.stats.invalidDates++;
+    report.invalidDates.push(`${context} ${warning.replace('invalid date: ', '')}`);
+  } else if (warning.startsWith('unknown assignee:')) {
+    report.stats.unknownAssignees++;
+    report.unknownAssignees.push(`${context} ${warning.replace('unknown assignee: ', '')}`);
+  } else if (warning.startsWith('invalid URL:')) {
+    report.stats.invalidUrls++;
+    report.invalidUrls.push(`${context} ${warning.replace('invalid URL: ', '')}`);
+  } else if (warning.startsWith('unsafe artifact URL:')) {
+    report.stats.unsafeArtifactUrls++;
+    report.unsafeArtifactUrls.push(`${context} ${warning.replace('unsafe artifact URL: ', '')}`);
+  } else if (warning.startsWith('unsupported proof inference:')) {
+    report.stats.unsupportedProofInferences++;
+    report.unsupportedProofInferences.push(`${context} ${warning.replace('unsupported proof inference: ', '')}`);
+  } else if (warning.startsWith('duplicate source ID:')) {
+    report.stats.duplicateSourceIds++;
+    report.duplicateSourceIds.push(`${context} ${warning.replace('duplicate source ID: ', '')}`);
+  }
+}
+
+function buildTrelloArtifactPlans(card: TrelloCard, bundleId: string, warnings: string[]): TrelloArtifactPlan[] {
+  const candidates = [
+    ...(card.attachments || []).map((a) => ({ sourceId: a.id || a.url, name: a.name || a.url, url: a.url, source: 'attachment' })),
+    ...extractMarkdownAndBareLinks(card.desc).map((link) => ({ sourceId: link.url, name: link.name, url: link.url, source: 'description-link' })),
+  ];
+  const artifacts: TrelloArtifactPlan[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate.url || seen.has(candidate.url)) continue;
+    seen.add(candidate.url);
+    if (!/^https?:\/\//i.test(candidate.url)) {
+      warnings.push(`invalid URL: ${candidate.url}`);
+      continue;
+    }
+    if (!isSafeExternalUrl(candidate.url)) {
+      warnings.push(`unsafe artifact URL: ${candidate.url}`);
+      continue;
+    }
+    const sourceKey = `trello:card:${card.id}:artifact:${candidate.sourceId}`;
+    artifacts.push({
+      sourceKey,
+      artifact: {
+        id: stableMigrationId('trello-artifact', `${card.id}-${candidate.sourceId}`),
+        type: artifactTypeForUrl(candidate.name, candidate.url),
+        title: candidate.name,
+        description: `Imported from Trello ${candidate.source} on card "${card.name}".`,
+        status: 'approved',
+        storageProvider: 'external-url',
+        storageUri: candidate.url,
+        visibility: 'internal',
+        dataClass: 'internal',
+        bundleId,
+        sourceType: 'migration',
+        reviewedAt: card.dateLastActivity || new Date().toISOString(),
+        tags: ['trello-import', candidate.source],
+        metadata: {
+          source: 'trello-active-card-migration',
+          sourceCardId: card.id,
+          sourceKey,
+        },
+      },
+    });
+  }
+  return artifacts;
+}
+
+function planTrelloActiveCard(
+  card: TrelloCard,
+  listName: string,
+  boardChecklists: TrelloChecklist[]
+): TrelloActiveCardPlan {
+  const sourceKey = trelloCardSourceKey(card);
+  const bundleId = stableMigrationId('trello-card', card.id);
+  const bundle = trelloCardToBundle(card, listName);
+  const warnings: string[] = [];
+  const templateType = mapTemplateType(card.name, card.labels);
+  const bundleTags = new Set([...(Array.isArray(bundle.tags) ? bundle.tags as string[] : []), 'trello-import', templateType]);
+  const bundleLinks = extractBundleLinks(card);
+
+  Object.assign(bundle, {
+    id: bundleId,
+    status: 'active',
+    tags: [...bundleTags].filter(Boolean),
+    bundleLinks,
+    description: appendMigrationProvenance(bundle.description as string | null | undefined, [
+      `source=trello-active-card`,
+      `source_card_id=${card.id}`,
+      `source_list=${listName}`,
+      `source_key=${sourceKey}`,
+    ]),
+  });
+
+  const artifacts = buildTrelloArtifactPlans(card, bundleId, warnings);
+  if (artifacts.length > 0) {
+    bundle.artifactRefs = artifacts.map((artifactPlan) => ({
+      artifactId: artifactPlan.artifact.id,
+      type: artifactPlan.artifact.type,
+      title: artifactPlan.artifact.title,
+      storageUri: artifactPlan.artifact.storageUri,
+      status: artifactPlan.artifact.status,
+    }));
+  }
+
+  bundle.auditEventRefs = [{ auditEventId: stableMigrationId('trello-audit', sourceKey), action: 'created' }];
+
+  const cardChecklists = (card.idChecklists || [])
+    .map((clId) => boardChecklists.find((cl) => cl.id === clId))
+    .filter((cl): cl is TrelloChecklist => Boolean(cl))
+    .sort((a, b) => a.pos - b.pos);
+
+  const tasks: Record<string, unknown>[] = [];
+  const fallbackDate = card.dateLastActivity ? card.dateLastActivity.split('T')[0] : new Date().toISOString().split('T')[0];
+  const anchorDate = String(bundle.anchorDate || fallbackDate);
+  let itemIndex = 0;
+  const sourceIds = new Set<string>([sourceKey]);
+
+  for (const checklist of cardChecklists) {
+    const phase = slugify(checklist.name) || mapStageFromList(listName);
+    const items = (checklist.checkItems || []).sort((a, b) => a.pos - b.pos);
+    for (const item of items) {
+      const itemSourceKey = trelloCheckItemSourceKey(card, checklist, item, itemIndex);
+      if (sourceIds.has(itemSourceKey)) warnings.push(`duplicate source ID: ${itemSourceKey}`);
+      sourceIds.add(itemSourceKey);
+
+      const rawDate = item.due || card.due || anchorDate;
+      const date = parseDate(rawDate) || anchorDate;
+      if (!parseDate(rawDate)) warnings.push(`invalid date: ${rawDate}`);
+
+      const { description: cleanedName, instructionsUrl } = extractInstructionsUrl(item.name);
+      const { description: finalName, assigneeId } = extractAssigneeHint(cleanedName);
+      if (/\(assignee:\s*[^)]+\)/i.test(cleanedName) && !assigneeId) {
+        warnings.push(`unknown assignee: ${cleanedName}`);
+      }
+
+      const contextText = `${finalName}\n${card.name}\n${card.desc || ''}`;
+      const proofText = `${finalName}\n${instructionsUrl || ''}`;
+      const { safeUrls } = extractSafeUrls(proofText);
+      const proof = inferTrelloProofRequirement(proofText, safeUrls);
+      const waiting = inferWaiting(contextText, date);
+      if (!waiting && mentionsReviewerButNotWaiting(contextText)) {
+        warnings.push(`unsupported proof inference: ambiguous waiting for ${finalName}`);
+      }
+
+      const docResolution = resolveInstructionDocFromUrl(instructionsUrl);
+      if (docResolution.unresolvedUrl) warnings.push(`unresolved process doc: ${docResolution.unresolvedUrl}`);
+
+      const taskId = stableMigrationId('trello-checkitem', `${card.id}-${checklist.id}-${item.id || itemIndex}`);
+      const refId = slugify(`${checklist.name}-${finalName}`.substring(0, 60)) || `item-${itemIndex}`;
+      let status = item.state === 'complete' ? 'done' : waiting ? 'waiting' : 'todo';
+      const task: Record<string, unknown> = {
+        id: taskId,
+        description: `[${checklist.name}] ${finalName}`,
+        date,
+        status,
+        source: 'import',
+        bundleId,
+        templateTaskRef: `${refId}-${item.id || itemIndex}`,
+        phase,
+        tags: ['trello-import', templateType],
+        comment: appendMigrationProvenance(waiting?.note, [
+          `source=trello-active-card`,
+          `source_card_id=${card.id}`,
+          `source_checklist_id=${checklist.id}`,
+          `source_checkitem_id=${item.id || itemIndex}`,
+          `source_list=${listName}`,
+          `source_key=${itemSourceKey}`,
+        ]),
+        auditEventRefs: [{ auditEventId: stableMigrationId('trello-audit', sourceKey), action: 'created' }],
+      };
+
+      const systems = systemsForText(contextText);
+      if (systems.length > 0) task.systems = systems;
+      if (instructionsUrl) task.instructionsUrl = instructionsUrl;
+      if (docResolution.instructionDocId) task.instructionDocId = docResolution.instructionDocId;
+      if (assigneeId) task.assigneeId = assigneeId;
+      if (safeUrls[0]) task.link = safeUrls[0];
+      if (proof) Object.assign(task, proof);
+      if (waiting && status === 'waiting') {
+        task.waitingFor = waiting.waitingFor;
+        task.followUpAt = waiting.followUpAt;
+      }
+      if (status === 'done') {
+        if (task.requiresFile === true) {
+          status = 'todo';
+          task.status = status;
+          warnings.push(`unsupported proof inference: completed file-proof item lacks migrated file for ${itemSourceKey}`);
+        } else if ((task.proofRequirement as Record<string, unknown> | undefined)?.type === 'external-status') {
+          task.externalStatus = 'trello-checkitem-complete';
+          task.completedAt = `${date}T00:00:00.000Z`;
+        } else if (!(task.proofRequirement as Record<string, unknown> | undefined)?.type || task.link || task.comment) {
+          task.completedAt = `${date}T00:00:00.000Z`;
+        }
+      }
+
+      tasks.push(task);
+      itemIndex++;
+    }
+  }
+
+  if (!templateType || templateType === 'other') {
+    warnings.push(`unresolved workflow type: ${card.name}`);
+  }
+
+  return { sourceKey, listName, bundle, tasks, artifacts, warnings };
+}
+
+async function upsertTrelloActiveCardPlan(
+  client: DynamoDBDocumentClient,
+  plan: TrelloActiveCardPlan,
+  report: TrelloActiveCardReport
+): Promise<void> {
+  const bundleId = String(plan.bundle.id);
+  const existingBundle = await getBundle(client, bundleId);
+  if (existingBundle) {
+    await updateBundle(client, bundleId, plan.bundle);
+    report.stats.bundlesUpdated++;
+  } else {
+    await createBundle(client, plan.bundle);
+    report.stats.bundlesCreated++;
+  }
+
+  for (const task of plan.tasks) {
+    const taskId = String(task.id);
+    const existingTask = await getTask(client, taskId);
+    if (existingTask) {
+      await updateTask(client, taskId, task);
+      report.stats.tasksUpdated++;
+    } else {
+      await createTask(client, task);
+      report.stats.tasksCreated++;
+    }
+  }
+
+  for (const artifactPlan of plan.artifacts) {
+    const artifactId = String(artifactPlan.artifact.id);
+    const existingArtifact = await getArtifact(client, artifactId);
+    if (existingArtifact) {
+      await updateArtifact(client, artifactId, artifactPlan.artifact);
+      report.stats.artifactsUpdated++;
+    } else {
+      await createArtifact(client, artifactPlan.artifact);
+      report.stats.artifactsCreated++;
+    }
+  }
+
+  await appendAssistantJobEvent(client, {
+    id: stableMigrationId('trello-audit', plan.sourceKey),
+    action: 'created',
+    summary: `Imported Trello active card "${plan.bundle.title}" as operations-manager work`,
+    metadata: {
+      source: 'trello-active-card-migration',
+      sourceKey: plan.sourceKey,
+      bundleId,
+      taskIds: plan.tasks.map((task) => task.id),
+      artifactIds: plan.artifacts.map((artifactPlan) => artifactPlan.artifact.id),
+    },
+  });
+}
+
+async function migrateTrelloActiveCards(
+  client: DynamoDBDocumentClient | null,
+  cards: TrelloCard[],
+  boardChecklists: TrelloChecklist[],
+  listMap: Record<string, TrelloList>,
+  skippedRecords: TrelloSkippedCard[]
+): Promise<TrelloActiveCardReport> {
+  const report = emptyTrelloActiveCardReport();
+  report.skippedRecords.push(...skippedRecords);
+  report.stats.cardsSkipped = skippedRecords.length;
+
+  const seenSourceKeys = new Set<string>();
+  for (const card of cards) {
+    const listName = listMap[card.idList]?.name || 'Unknown';
+    const plan = planTrelloActiveCard(card, listName, boardChecklists);
+    if (seenSourceKeys.has(plan.sourceKey)) {
+      plan.warnings.push(`duplicate source ID: ${plan.sourceKey}`);
+    }
+    seenSourceKeys.add(plan.sourceKey);
+    report.plans.push(plan);
+    report.stats.cardsPlanned++;
+    report.stats.tasksPlanned += plan.tasks.length;
+    report.stats.artifactsPlanned += plan.artifacts.length;
+    report.stats.bundleLinks += Array.isArray(plan.bundle.bundleLinks) ? plan.bundle.bundleLinks.length : 0;
+    report.stats.waitingTasks += plan.tasks.filter((task) => task.status === 'waiting').length;
+    report.stats.proofRequirements += plan.tasks.filter((task) => task.proofRequirement).length;
+    for (const warning of plan.warnings) addReportWarning(report, warning, `${plan.sourceKey}`);
+
+    if (client) await upsertTrelloActiveCardPlan(client, plan, report);
+  }
+
+  if (client) {
+    const notifications = await createDueFollowUpNotifications(client);
+    report.stats.followUpNotificationsCreated = notifications.length;
+  }
+
+  return report;
+}
+
+function printTrelloActiveCardReport(report: TrelloActiveCardReport): void {
+  console.log('  Trello active-card dry-run/import report:');
+  console.log(JSON.stringify({
+    stats: report.stats,
+    skippedRecords: report.skippedRecords,
+    unresolvedDocs: report.unresolvedDocs,
+    unresolvedWorkflowTypes: report.unresolvedWorkflowTypes,
+    invalidDates: report.invalidDates,
+    unknownAssignees: report.unknownAssignees,
+    invalidUrls: report.invalidUrls,
+    unsafeArtifactUrls: report.unsafeArtifactUrls,
+    unsupportedProofInferences: report.unsupportedProofInferences,
+    duplicateSourceIds: report.duplicateSourceIds,
+  }, null, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,7 +1770,11 @@ async function main() {
 
   if (needsTrello) {
     console.log('Loading Trello board export...');
-    const trello = JSON.parse(fs.readFileSync(TRELLO_FILE, 'utf-8'));
+    if (!fs.existsSync(SOURCE_TRELLO_FILE)) {
+      throw new Error(`--source file does not exist: ${SOURCE_TRELLO_FILE}`);
+    }
+    console.log(`  Source: ${SOURCE_TRELLO_FILE}`);
+    const trello = JSON.parse(fs.readFileSync(SOURCE_TRELLO_FILE, 'utf-8'));
     allCards = trello.cards || [];
     allChecklists = trello.checklists || [];
     allLists = trello.lists || [];
@@ -1105,24 +1783,15 @@ async function main() {
     console.log(`  Checklists: ${allChecklists.length}`);
     console.log(`  Lists: ${allLists.length}`);
 
-    // Identify lists
-    for (const list of allLists) {
-      listMap[list.id] = list;
-    }
-
     // Separate template cards from regular cards
     templateCards = allCards.filter((c) => c.isTemplate);
-    const activeListNames = ['Preparation', 'Announced', 'After event'];
-    const activeLists = allLists.filter(
-      (l) => activeListNames.some((n) => l.name.toLowerCase().includes(n.toLowerCase())) && !l.closed
-    );
-    const activeListIds = new Set(activeLists.map((l) => l.id));
-    activeCards = allCards.filter(
-      (c) => !c.isTemplate && !c.closed && activeListIds.has(c.idList)
-    );
+    const selection = selectActiveTrelloCards(allCards, allLists);
+    Object.assign(listMap, selection.listMap);
+    activeCards = selection.activeCards;
 
     console.log(`  Template cards: ${templateCards.length}`);
     console.log(`  Active cards (Preparation/Announced/After event): ${activeCards.length}`);
+    console.log(`  Active-card path skipped records: ${selection.skippedRecords.length}`);
   }
 
   // Connect to DB (persistent LevelDB in .data/)
@@ -1203,39 +1872,31 @@ async function main() {
   if (IMPORT_ALL || CARDS_ONLY) {
     console.log('\n--- Importing Active Trello Cards as Bundles ---');
 
-    for (const card of activeCards) {
-      const listName = listMap[card.idList]?.name || 'Unknown';
-      const bundleData = trelloCardToBundle(card, listName);
-
-      const emoji = bundleData.emoji ? `${bundleData.emoji} ` : '';
-      const tags = bundleData.tags ? ` tags=${JSON.stringify(bundleData.tags)}` : '';
-      const stage = bundleData.stage ? ` stage=${bundleData.stage}` : '';
-      const bundleLinksCount = (bundleData.bundleLinks as unknown[])?.length || 0;
-      const refsCount = (bundleData.references as unknown[])?.length || 0;
-      console.log(`  Bundle: ${emoji}${(bundleData.title as string).substring(0, 70)} [${listName}]${stage}${tags} bundleLinks=${bundleLinksCount} refs=${refsCount}`);
-
-      let bundleId: string | null = null;
-
-      if (!DRY_RUN) {
-        const bundle = await createBundle(client!, bundleData);
-        bundleId = bundle.id;
-      }
-
-      stats.bundles++;
-
-      // Create tasks from checklists
-      const tasks = trelloChecklistItemsToTasks(card, allChecklists, bundleId);
-      for (const task of tasks) {
-        if (DRY_RUN) {
-          const instrUrl = task.instructionsUrl ? ` [instructions: ${task.instructionsUrl}]` : '';
-          const assignee = task.assigneeId ? ` (assignee: ${task.assigneeId})` : '';
-          console.log(`    [${task.status}] ${(task.description as string).substring(0, 70)}${instrUrl}${assignee}`);
-        } else {
-          await createTask(client!, task);
+    const selection = selectActiveTrelloCards(allCards, allLists);
+    const trelloReport = await migrateTrelloActiveCards(
+      client,
+      selection.activeCards,
+      allChecklists,
+      selection.listMap,
+      selection.skippedRecords
+    );
+    for (const plan of trelloReport.plans) {
+      const emoji = plan.bundle.emoji ? `${plan.bundle.emoji} ` : '';
+      const tags = plan.bundle.tags ? ` tags=${JSON.stringify(plan.bundle.tags)}` : '';
+      const stage = plan.bundle.stage ? ` stage=${plan.bundle.stage}` : '';
+      console.log(`  Bundle: ${emoji}${String(plan.bundle.title).substring(0, 70)} [${plan.listName}]${stage}${tags} tasks=${plan.tasks.length} artifacts=${plan.artifacts.length}`);
+      if (DRY_RUN) {
+        for (const task of plan.tasks) {
+          const instr = task.instructionDocId ? ` [doc: ${task.instructionDocId}]` : task.instructionsUrl ? ` [instructions: ${task.instructionsUrl}]` : '';
+          const waiting = task.status === 'waiting' ? ` [waiting: ${task.waitingFor} ${task.followUpAt}]` : '';
+          const proof = task.proofRequirement ? ` [proof: ${JSON.stringify(task.proofRequirement)}]` : '';
+          console.log(`    [${task.status}] ${String(task.description).substring(0, 70)}${instr}${waiting}${proof}`);
         }
-        stats.tasks++;
       }
     }
+    printTrelloActiveCardReport(trelloReport);
+    stats.bundles += trelloReport.stats.bundlesCreated + (DRY_RUN ? trelloReport.stats.cardsPlanned : 0);
+    stats.tasks += DRY_RUN ? trelloReport.stats.tasksPlanned : trelloReport.stats.tasksCreated;
   }
 
   // -----------------------------------------------------------------------
@@ -1302,6 +1963,10 @@ export {
   extractAssigneeHint,
   trelloCardToBundle,
   trelloChecklistItemsToTasks,
+  selectActiveTrelloCards,
+  planTrelloActiveCard,
+  migrateTrelloActiveCards,
+  emptyTrelloActiveCardReport,
   trelloTemplateToAppTemplate,
   mapTriggerType,
   cleanTemplateName,

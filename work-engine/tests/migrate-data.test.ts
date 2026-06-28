@@ -12,8 +12,10 @@ import {
   extractBundleLinks,
   extractInstructionsUrl,
   extractAssigneeHint,
+  selectActiveTrelloCards,
   trelloCardToBundle,
   trelloChecklistItemsToTasks,
+  migrateTrelloActiveCards,
   trelloTemplateToAppTemplate,
   mapTriggerType,
   parseCSVFile,
@@ -28,8 +30,10 @@ import {
 } from '../scripts/migrate-data';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
+import { listBundles } from '../src/db/bundles';
 import { listRecurringConfigs } from '../src/db/recurring';
-import { listTasksByStatus } from '../src/db/tasks';
+import { listTasksByBundle, listTasksByStatus } from '../src/db/tasks';
+import { listArtifacts } from '../src/db/artifacts';
 import { dryRunImport, validatePortableExport, writePortableExport } from '../src/export/portable';
 
 // ---------------------------------------------------------------------------
@@ -292,6 +296,7 @@ describe('trelloCardToBundle', () => {
     ]);
     assert.deepStrictEqual(bundle.bundleLinks, [
       { name: 'Luma event', url: 'https://lu.ma/abc' },
+      { name: 'Process docs', url: 'https://docs.google.com/proc' },
     ]);
     // Should NOT have the old links field
     assert.strictEqual(bundle.links, undefined);
@@ -520,6 +525,127 @@ describe('trelloTemplateToAppTemplate', () => {
     const template = trelloTemplateToAppTemplate(card, checklists);
     const td = (template.taskDefinitions as { instructionsUrl?: string }[])[0];
     assert.strictEqual(td.instructionsUrl, 'https://docs.google.com/doc123');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Trello active-card migration
+// ---------------------------------------------------------------------------
+
+describe('Trello active-card migration', () => {
+  const fixture = path.join(__dirname, 'fixtures', 'trello-active-cards.json');
+
+  async function loadFixture(): Promise<{
+    cards: TrelloCard[];
+    checklists: TrelloChecklist[];
+    lists: { id: string; name: string; closed: boolean; pos: number }[];
+  }> {
+    return JSON.parse(await fs.readFile(fixture, 'utf8'));
+  }
+
+  it('selects only active non-template cards from active lists and reports skipped records', async () => {
+    const trello = await loadFixture();
+    const selection = selectActiveTrelloCards(trello.cards, trello.lists);
+
+    assert.deepStrictEqual(selection.activeCards.map((card) => card.id), [
+      'card-preparation',
+      'card-announced',
+      'card-after-event',
+    ]);
+    assert.ok(selection.skippedRecords.some((record) => record.sourceId === 'card-template' && record.reason === 'template-card'));
+    assert.ok(selection.skippedRecords.some((record) => record.sourceId === 'card-done' && record.reason === 'inactive-list'));
+  });
+
+  it('imports active cards idempotently as bundles, tasks, artifacts, notifications, and valid portable export data', async () => {
+    const trello = await loadFixture();
+    const selection = selectActiveTrelloCards(trello.cards, trello.lists);
+    const dryRunReport = await migrateTrelloActiveCards(null, selection.activeCards, trello.checklists, selection.listMap, selection.skippedRecords);
+    assert.strictEqual(dryRunReport.stats.cardsPlanned, 3);
+    assert.strictEqual(dryRunReport.stats.cardsSkipped, 2);
+    assert.strictEqual(dryRunReport.stats.tasksPlanned, 7);
+    assert.strictEqual(dryRunReport.stats.waitingTasks, 2);
+    assert.ok(dryRunReport.stats.proofRequirements >= 4);
+    assert.ok(dryRunReport.stats.unsafeArtifactUrls >= 1);
+
+    const preparationPlan = dryRunReport.plans.find((plan) => plan.sourceKey === 'trello:card:card-preparation');
+    assert.ok(preparationPlan);
+    assert.strictEqual(preparationPlan.bundle.stage, 'preparation');
+    assert.ok((preparationPlan.bundle.bundleLinks as { url: string }[]).some((link) => link.url === 'https://lu.ma/prep-event'));
+    const docTask = preparationPlan.tasks.find((task) => String(task.description).includes('Create podcast document'));
+    assert.strictEqual(docTask?.instructionDocId, 'sop.media.podcast.create-podcast-document');
+    const waitingTask = preparationPlan.tasks.find((task) => String(task.description).includes('Follow up with guest'));
+    assert.strictEqual(waitingTask?.status, 'waiting');
+    assert.strictEqual(waitingTask?.waitingFor, 'Guest');
+    assert.strictEqual(waitingTask?.followUpAt, '2026-06-18');
+    const lumaTask = preparationPlan.tasks.find((task) => String(task.description).includes('Publish Luma'));
+    assert.deepStrictEqual(lumaTask?.proofRequirement, { type: 'url', label: 'Luma', required: true });
+    assert.strictEqual(lumaTask?.requiredLinkName, 'Luma');
+
+    const announcedPlan = dryRunReport.plans.find((plan) => plan.sourceKey === 'trello:card:card-announced');
+    assert.strictEqual(announcedPlan?.bundle.stage, 'announced');
+    assert.ok(announcedPlan?.tasks.some((task) => task.status === 'waiting' && task.waitingFor === 'Sponsor'));
+
+    const afterEventPlan = dryRunReport.plans.find((plan) => plan.sourceKey === 'trello:card:card-after-event');
+    assert.strictEqual(afterEventPlan?.bundle.stage, 'after-event');
+    assert.ok(afterEventPlan?.artifacts.some((artifactPlan) => artifactPlan.artifact.sourceType === 'migration'));
+    assert.ok(afterEventPlan?.tasks.some((task) => task.status === 'done' && task.link === 'https://youtube.com/watch?v=duckdb123'));
+
+    const port = await startLocal();
+    const client = await getClient(port);
+    const exportDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-trello-export-'));
+    try {
+      await createTables(client);
+
+      const firstReport = await migrateTrelloActiveCards(client, selection.activeCards, trello.checklists, selection.listMap, selection.skippedRecords);
+      assert.strictEqual(firstReport.stats.bundlesCreated, 3);
+      assert.strictEqual(firstReport.stats.tasksCreated, 7);
+      assert.ok(firstReport.stats.artifactsCreated >= 3);
+      assert.strictEqual(firstReport.stats.followUpNotificationsCreated, 2);
+
+      const secondReport = await migrateTrelloActiveCards(client, selection.activeCards, trello.checklists, selection.listMap, selection.skippedRecords);
+      assert.strictEqual(secondReport.stats.bundlesCreated, 0);
+      assert.strictEqual(secondReport.stats.tasksCreated, 0);
+      assert.strictEqual(secondReport.stats.bundlesUpdated, 3);
+      assert.strictEqual(secondReport.stats.tasksUpdated, 7);
+      assert.strictEqual(secondReport.stats.followUpNotificationsCreated, 0);
+
+      const bundles = await listBundles(client);
+      assert.strictEqual(bundles.length, 3);
+      assert.deepStrictEqual(new Set(bundles.map((bundle) => bundle.stage)), new Set(['preparation', 'announced', 'after-event']));
+      const prepBundle = bundles.find((bundle) => bundle.stage === 'preparation');
+      assert.ok(prepBundle);
+      assert.ok(prepBundle.description?.includes('source_key=trello:card:card-preparation'));
+      assert.ok(prepBundle.artifactRefs && prepBundle.artifactRefs.length > 0);
+
+      const prepTasks = await listTasksByBundle(client, prepBundle.id);
+      assert.ok(prepTasks.some((task) => task.instructionDocId === 'sop.media.podcast.create-podcast-document'));
+      assert.ok(prepTasks.some((task) => task.status === 'waiting' && task.waitingFor === 'Guest' && task.followUpAt === '2026-06-18'));
+      assert.ok(prepTasks.some((task) => task.requiredLinkName === 'Luma' && task.proofRequirement?.type === 'url'));
+
+      const artifacts = await listArtifacts(client);
+      assert.ok(artifacts.some((artifact) => artifact.sourceType === 'migration' && artifact.storageUri === 'https://lu.ma/prep-event'));
+      assert.ok(artifacts.every((artifact) => !artifact.storageUri.includes('X-Amz-Signature')));
+
+      await writePortableExport(client, exportDir, {
+        generatedAt: '2026-06-28T00:00:00.000Z',
+        sourceEnvironment: 'test',
+        sourceStack: 'test-stack',
+        sourceRegion: 'eu-west-1',
+        appGitSha: 'test-sha',
+      });
+      const validation = await validatePortableExport(exportDir);
+      assert.strictEqual(validation.valid, true);
+      const dryRun = await dryRunImport(exportDir);
+      assert.strictEqual(dryRun.valid, true);
+      assert.strictEqual(dryRun.wouldWrite.bundles, 3);
+      assert.strictEqual(dryRun.wouldWrite.tasks, 7);
+      assert.ok(dryRun.wouldWrite.artifacts >= 3);
+      assert.strictEqual(dryRun.wouldWrite.notifications, 2);
+      assert.strictEqual(dryRun.wouldWrite.audit_events, 3);
+    } finally {
+      await fs.rm(exportDir, { recursive: true, force: true });
+      await stopLocal();
+    }
   });
 });
 

@@ -28,7 +28,7 @@ async function createArtifact(
   client: DynamoDBDocumentClient,
   data: Record<string, unknown>
 ): Promise<ArtifactRecord> {
-  const id = crypto.randomUUID();
+  const id = typeof data.id === 'string' && data.id.trim().length > 0 ? data.id : crypto.randomUUID();
   const now = new Date().toISOString();
   const item = {
     PK: `ARTIFACT#${id}`,
