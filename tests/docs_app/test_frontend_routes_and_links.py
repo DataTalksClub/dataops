@@ -275,6 +275,7 @@ assert.equal(model.maintainerFindings.length, 1);
             "runtimeTaskQualityFindings",
             "taskNeedsProofInstruction",
             "taskHasClearProofInstruction",
+            "resolveDocReference",
             "findingMatchesDoc",
             "findingMatchesBundle",
             "dedupeQualityFindings",
@@ -633,6 +634,8 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "bundlesFromWorkPayload",
             "recurringConfigsFromPayload",
             "currentOperatorIdFromPayload",
+            "currentOperatorIdForTodayScope",
+            "isSyntheticCurrentOperatorId",
             "normalizeOperationsRecurringSnapshot",
             "buildProcessQualityModel",
             "normalizeOperationsQualitySnapshot",
@@ -642,6 +645,7 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "runtimeTaskQualityFindings",
             "taskNeedsProofInstruction",
             "taskHasClearProofInstruction",
+            "resolveDocReference",
             "findingMatchesDoc",
             "findingMatchesBundle",
             "dedupeQualityFindings",
@@ -746,6 +750,8 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "bundlesFromWorkPayload",
             "recurringConfigsFromPayload",
             "currentOperatorIdFromPayload",
+            "currentOperatorIdForTodayScope",
+            "isSyntheticCurrentOperatorId",
             "normalizeOperationsRecurringSnapshot",
             "buildProcessQualityModel",
             "normalizeOperationsQualitySnapshot",
@@ -755,6 +761,154 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "runtimeTaskQualityFindings",
             "taskNeedsProofInstruction",
             "taskHasClearProofInstruction",
+            "resolveDocReference",
+            "findingMatchesDoc",
+            "findingMatchesBundle",
+            "dedupeQualityFindings",
+            "compareQualityFindings",
+            "allWorkTasks",
+            "dedupeWorkTasks",
+            "sortWorkTasks",
+            "taskSortDate",
+            "isOpenWorkTask",
+            "isTaskDueToday",
+            "isCurrentOperatorTodayTask",
+            "isTaskOverdue",
+            "isWaitingOrFollowUpTask",
+            "isFollowUpDueTask",
+            "taskDate",
+            "isActiveWorkBundle",
+            "sortActiveWorkBundles",
+            "summarizeBundleProgress",
+            "nextDueOpenTask",
+            "missingBundleLinks",
+            "hasTaskFileEvidence",
+            "taskProofState",
+            "taskRequiresApprovedArtifact",
+            "hasApprovedArtifactEvidence",
+            "taskSourceLabel",
+            "taskNextActionLabel",
+            "isWorkflowTemplateDoc",
+            "summarizeWorkflowTemplate",
+            "workflowSlugFromDoc",
+            "workflowPriority",
+            "isRecurringWorkflowSlug",
+            "isAtRiskWorkflowSlug",
+            "isFollowUpDoc",
+            "operationItemFromTemplate",
+            "operationItemFromDoc",
+            "operationItemFromTask",
+            "operationItemFromBundle",
+            "workTaskTitle",
+            "workBundleTitle",
+            "recurringConfigTitle",
+            "formatTaskDateMeta",
+            "labelizeWorkValue",
+            "todayIsoDate",
+            "addDaysIso",
+            "toIsoDate",
+            "parseIsoDateValue",
+            "compareIsoDate",
+            "isBeforeIsoDate",
+            "dedupeOperationItems",
+            "buildOperationsFutureSections",
+            "buildOperationsReferenceLinks",
+            "basename",
+            "cleanPath",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_operations_home_model_does_not_scope_today_to_synthetic_portal_actor():
+    result = _run_app_js_functions(
+        """
+documentIdMap = new Map([
+  ["sop.podcast.prep", { id: "sop.podcast.prep", path: "content/podcast/sops/prep.md", title: "Podcast Prep SOP" }],
+]);
+
+const model = buildOperationsHomeModel([], {
+  today: "2026-06-28",
+  qualitySnapshot: { loaded: true, ok: true, findings: [] },
+  workSnapshot: {
+    loaded: true,
+    currentOperatorId: "portal-admin",
+    todayTasks: [
+      {
+        id: "task-grace-blocked",
+        description: "Seed recurring newsletter",
+        date: "2026-06-28",
+        status: "todo",
+        assigneeId: "grace",
+      },
+      {
+        id: "task-grace-ready",
+        description: "Seed recurring podcast prep",
+        date: "2026-06-28",
+        status: "todo",
+        assigneeId: "grace",
+        instructionDocId: "sop.podcast.prep",
+      },
+    ],
+    overdueTasks: [],
+    waitingTasks: [],
+    bundles: [],
+    bundleTasks: {},
+  },
+});
+
+const todayLane = model.lanes.find((lane) => lane.id === "today");
+assert.equal(model.stats.currentOperatorId, "portal-admin");
+assert.equal(model.stats.todayTasks, 2);
+assert.deepEqual(todayLane.items.map((item) => item.taskId), ["task-grace-blocked", "task-grace-ready"]);
+assert.deepEqual(todayLane.items.map((item) => item.title), ["Seed recurring newsletter", "Seed recurring podcast prep"]);
+assert.equal(todayLane.empty, "No live tasks due today.");
+assert.equal(model.quality.activeBlockingCount, 1);
+assert.equal(model.quality.visibleHomeFindings[0].taskId, "task-grace-blocked");
+
+const scoped = buildOperationsHomeModel([], {
+  today: "2026-06-28",
+  workSnapshot: {
+    loaded: true,
+    currentOperatorId: "grace",
+    todayTasks: [
+      { id: "task-grace", description: "Grace task", date: "2026-06-28", status: "todo", assigneeId: "grace" },
+      { id: "task-shared", description: "Shared task", date: "2026-06-28", status: "todo" },
+      { id: "task-other", description: "Other operator task", date: "2026-06-28", status: "todo", assigneeId: "other" },
+    ],
+    overdueTasks: [],
+    waitingTasks: [],
+    bundles: [],
+    bundleTasks: {},
+  },
+});
+
+assert.deepEqual(scoped.lanes.find((lane) => lane.id === "today").items.map((item) => item.taskId), ["task-grace", "task-shared"]);
+assert.equal(scoped.stats.todayTasks, 2);
+assert.equal(currentOperatorIdForTodayScope("portal-admin"), "");
+assert.equal(currentOperatorIdForTodayScope("grace"), "grace");
+""",
+        [
+            "buildOperationsHomeModel",
+            "normalizeOperationsWorkSnapshot",
+            "normalizeBundleTaskMap",
+            "tasksFromWorkPayload",
+            "bundlesFromWorkPayload",
+            "recurringConfigsFromPayload",
+            "currentOperatorIdFromPayload",
+            "currentOperatorIdForTodayScope",
+            "isSyntheticCurrentOperatorId",
+            "normalizeOperationsRecurringSnapshot",
+            "buildProcessQualityModel",
+            "normalizeOperationsQualitySnapshot",
+            "normalizeQualityFinding",
+            "normalizeQualitySeverity",
+            "activeProcessQualityFindings",
+            "runtimeTaskQualityFindings",
+            "taskNeedsProofInstruction",
+            "taskHasClearProofInstruction",
+            "resolveDocReference",
             "findingMatchesDoc",
             "findingMatchesBundle",
             "dedupeQualityFindings",
