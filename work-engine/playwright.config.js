@@ -11,13 +11,20 @@ if (!fs.existsSync(AUTH_STATE_PATH)) {
 
 module.exports = defineConfig({
   testDir: './e2e',
+  outputDir: './test-results',
   timeout: 30000,
   retries: 0,
+  reporter: process.env.CI
+    ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
+    : [['list']],
   globalSetup: './e2e/global-setup.js',
   globalTeardown: './e2e/global-teardown.js',
   use: {
     baseURL: 'http://localhost:3001',
     headless: true,
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
     // All browser tests use the auth state (pre-logged-in as Grace)
     storageState: AUTH_STATE_PATH,
   },
