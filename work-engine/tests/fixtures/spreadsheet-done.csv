@@ -1,0 +1,5 @@
+Date,Task,Notes,Status
+2026-06-01,"Create a slack dump","historical recurring row",DONE
+2026-06-02,"Completed ad-hoc task","history should not become active",DONEDONE
+2026-06-03,"Completed report without proof","requires report",DONE
+2026-06-04,"Done row whose status is blank","status follows done file",

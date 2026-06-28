@@ -16,6 +16,8 @@
  *   --csv-only        Only import CSV tasks
  *   --cards-only      Only import active Trello cards as bundles+tasks
  *   --include-done    Also import done CSV tasks (skipped by default)
+ *   --source-todo     Local TODO CSV export to import instead of bundled data
+ *   --source-done     Local done CSV export to analyze instead of bundled data
  *
  * Data sources:
  *   data/qVB6fAUG - datatalksclub.json   Trello board export
@@ -23,15 +25,17 @@
  *   data/TODO list - done.csv            Completed tasks
  */
 
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient, startLocal } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { createTables, TABLE_TASKS } from '../src/db/setup';
 import { createTemplate, listTemplates } from '../src/db/templates';
 import { createBundle } from '../src/db/bundles';
 import { createTask } from '../src/db/tasks';
+import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
 
 // ---------------------------------------------------------------------------
 // CLI flags
@@ -47,6 +51,16 @@ const INCLUDE_DONE = args.includes('--include-done');
 // If no specific flag, import everything
 const IMPORT_ALL = !TEMPLATES_ONLY && !CSV_ONLY && !CARDS_ONLY;
 
+function readFlagValue(flag: string): string | null {
+  const index = args.indexOf(flag);
+  if (index === -1) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a local file path`);
+  }
+  return path.resolve(process.cwd(), value);
+}
+
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
@@ -55,6 +69,8 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const TRELLO_FILE = path.join(DATA_DIR, 'qVB6fAUG - datatalksclub.json');
 const CSV_TODO_FILE = path.join(DATA_DIR, 'TODO list - todo.csv');
 const CSV_DONE_FILE = path.join(DATA_DIR, 'TODO list - done.csv');
+const SOURCE_TODO_FILE = readFlagValue('--source-todo') || CSV_TODO_FILE;
+const SOURCE_DONE_FILE = readFlagValue('--source-done') || CSV_DONE_FILE;
 
 // ---------------------------------------------------------------------------
 // CSV parser (simple, handles quoted fields with newlines)
@@ -116,16 +132,52 @@ function parseDate(raw: string | undefined): string | null {
 
   // YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
   const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (isoMatch) return isoMatch[1];
+  if (isoMatch) return isValidDateOnly(isoMatch[1]) ? isoMatch[1] : null;
 
   // DD Mon YYYY or DD MMM YYYY
   const dmy = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/);
   if (dmy) {
     const mon = MONTHS[dmy[2].toLowerCase()];
-    if (mon) return `${dmy[3]}-${mon}-${dmy[1].padStart(2, '0')}`;
+    if (mon) {
+      const date = `${dmy[3]}-${mon}-${dmy[1].padStart(2, '0')}`;
+      return isValidDateOnly(date) ? date : null;
+    }
+  }
+
+  // Mon DD YYYY / Month DD, YYYY
+  const mdyText = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+  if (mdyText) {
+    const mon = MONTHS[mdyText[1].slice(0, 3).toLowerCase()];
+    if (mon) {
+      const date = `${mdyText[3]}-${mon}-${mdyText[2].padStart(2, '0')}`;
+      return isValidDateOnly(date) ? date : null;
+    }
+  }
+
+  // DD.MM.YYYY, DD/MM/YYYY, or MM/DD/YYYY. Prefer DMY unless first part > 12.
+  const numeric = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+  if (numeric) {
+    const first = Number(numeric[1]);
+    const second = Number(numeric[2]);
+    const day = first > 12 ? first : second;
+    const month = first > 12 ? second : first;
+    const date = `${numeric[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return isValidDateOnly(date) ? date : null;
   }
 
   return null;
+}
+
+function isValidDateOnly(value: string): boolean {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getUTCFullYear() === Number(match[1]) &&
+    date.getUTCMonth() + 1 === Number(match[2]) &&
+    date.getUTCDate() === Number(match[3])
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -481,38 +533,93 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
 }
 
 // ---------------------------------------------------------------------------
-// CSV -> Tasks mapping
+// CSV -> integrated work planning
 // ---------------------------------------------------------------------------
 
-function csvRowToTask(row: string[]): Record<string, unknown> | null {
-  const [dateRaw, task, notes, status] = row;
+type SpreadsheetRowStatus = 'open' | 'done' | 'blank' | 'unknown';
+type CsvFileRole = 'todo' | 'done';
 
-  const date = parseDate(dateRaw);
-  const description = (task || '').trim();
-
-  if (!date || !description) return null;
-
-  const normalizedStatus = (status || '').trim().toUpperCase();
-  const appStatus = (normalizedStatus === 'DONE' || normalizedStatus === 'DONEDONE')
-    ? 'done'
-    : 'todo';
-
-  const result: Record<string, unknown> = {
-    description,
-    date,
-    status: appStatus,
-    source: 'manual',
-  };
-
-  const comment = (notes || '').trim();
-  if (comment) result.comment = comment;
-
-  return result;
+interface CsvRowContext {
+  sourceFile: string;
+  sourceLabel: string;
+  fileRole: CsvFileRole;
+  rowNumber: number;
+  includeDone?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Recurring config detection from CSV patterns
-// ---------------------------------------------------------------------------
+interface CsvTaskPlan {
+  kind: 'task';
+  task: Record<string, unknown>;
+  sourceKey: string;
+  warnings: string[];
+}
+
+interface CsvRecurringPlan {
+  kind: 'recurring';
+  config: {
+    description: string;
+    cronExpression: string;
+  };
+  sourceKey: string;
+  warnings: string[];
+}
+
+interface CsvSkipPlan {
+  kind: 'skip';
+  reason: 'blank' | 'completed-history' | 'invalid-date' | 'missing-description' | 'missing-proof';
+  sourceKey?: string;
+  warnings: string[];
+}
+
+type CsvMigrationPlan = CsvTaskPlan | CsvRecurringPlan | CsvSkipPlan;
+
+interface CsvMigrationStats {
+  importedTasks: number;
+  recurringConfigsCreated: number;
+  recurringSuggestions: number;
+  workflowAttachmentCandidates: number;
+  completedRowsSkipped: number;
+  blankRowsSkipped: number;
+  unsafeRows: number;
+  unresolvedProcessDocs: number;
+  unresolvedWorkflowMatches: number;
+  proofRequirements: number;
+  waitingFollowUps: number;
+  validationErrors: number;
+  duplicateTasksSkipped: number;
+  duplicateRecurringSkipped: number;
+  createdTasks: number;
+  updatedTasks: number;
+}
+
+interface CsvMigrationReport {
+  stats: CsvMigrationStats;
+  unresolvedDocs: string[];
+  unresolvedWorkflows: string[];
+  unsafeFindings: string[];
+  validationErrors: string[];
+  recurringSuggestions: string[];
+  plans: CsvMigrationPlan[];
+}
+
+const DEFAULT_CSV_STATS: CsvMigrationStats = {
+  importedTasks: 0,
+  recurringConfigsCreated: 0,
+  recurringSuggestions: 0,
+  workflowAttachmentCandidates: 0,
+  completedRowsSkipped: 0,
+  blankRowsSkipped: 0,
+  unsafeRows: 0,
+  unresolvedProcessDocs: 0,
+  unresolvedWorkflowMatches: 0,
+  proofRequirements: 0,
+  waitingFollowUps: 0,
+  validationErrors: 0,
+  duplicateTasksSkipped: 0,
+  duplicateRecurringSkipped: 0,
+  createdTasks: 0,
+  updatedTasks: 0,
+};
 
 const RECURRING_PATTERNS = [
   {
@@ -520,6 +627,7 @@ const RECURRING_PATTERNS = [
     config: {
       description: 'Invite people to Slack from Airtable',
       schedule: 'daily',
+      cronExpression: '0 9 * * *',
     },
   },
   {
@@ -527,6 +635,7 @@ const RECURRING_PATTERNS = [
     config: {
       description: 'Create new Trello cards and review existing ones',
       schedule: 'daily',
+      cronExpression: '0 9 * * *',
     },
   },
   {
@@ -535,14 +644,16 @@ const RECURRING_PATTERNS = [
       description: 'Ensure newsletter for next week is prepared',
       schedule: 'weekly',
       dayOfWeek: 2,
+      cronExpression: '0 9 * * 2',
     },
   },
   {
-    pattern: /^Prepare a newsletter for the week after next/i,
+    pattern: /^Prepare (?:a )?newsletter for the week after next/i,
     config: {
       description: 'Prepare newsletter for the week after next',
       schedule: 'weekly',
       dayOfWeek: 3,
+      cronExpression: '0 9 * * 3',
     },
   },
   {
@@ -551,6 +662,7 @@ const RECURRING_PATTERNS = [
       description: 'Backup MailChimp mailing list to Google Drive',
       schedule: 'weekly',
       dayOfWeek: 4,
+      cronExpression: '0 9 * * 4',
     },
   },
   {
@@ -559,12 +671,411 @@ const RECURRING_PATTERNS = [
       description: 'Create Slack dump',
       schedule: 'monthly',
       dayOfMonth: 1,
+      cronExpression: '0 9 1 * *',
+    },
+  },
+  {
+    pattern: /(sponsor performance|follow.?up with sponsor)/i,
+    config: {
+      description: 'Review sponsor performance and follow up',
+      schedule: 'monthly',
+      dayOfMonth: 5,
+      cronExpression: '0 9 5 * *',
+    },
+  },
+  {
+    pattern: /(invoice|receipt|bookkeeping).*check|check.*(invoice|receipt|bookkeeping)/i,
+    config: {
+      description: 'Check bookkeeping, invoices, and receipts',
+      schedule: 'weekly',
+      dayOfWeek: 1,
+      cronExpression: '0 9 * * 1',
     },
   },
 ];
 
 function isRecurringTask(description: string): boolean {
   return RECURRING_PATTERNS.some((p) => p.pattern.test(description));
+}
+
+function findRecurringPattern(description: string): typeof RECURRING_PATTERNS[number] | null {
+  return RECURRING_PATTERNS.find((p) => p.pattern.test(description)) || null;
+}
+
+function normalizeSpreadsheetStatus(raw: string | undefined, fileRole: CsvFileRole, hasDescription: boolean): SpreadsheetRowStatus {
+  const normalized = (raw || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!hasDescription && !normalized) return 'blank';
+  if (normalized === 'DONE' || normalized === 'DONEDONE') return 'done';
+  if (normalized === 'NEW' || normalized === 'TODO' || normalized === 'OPEN' || normalized === '') {
+    return fileRole === 'done' ? 'done' : 'open';
+  }
+  return 'unknown';
+}
+
+function compactText(value: string, maxLength = 240): string {
+  return value.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function sourceRowHash(row: string[]): string {
+  return crypto
+    .createHash('sha256')
+    .update(row.map((cell) => compactText(cell || '', 500)).join('\u001f'))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function buildSourceKey(context: CsvRowContext, row: string[]): string {
+  return `spreadsheet-todo:${path.basename(context.sourceFile)}:${sourceRowHash(row)}`;
+}
+
+function redactUnsafeText(text: string): { text: string; unsafe: boolean } {
+  let unsafe = false;
+  let redacted = text;
+  const unsafeUrlPattern = /https?:\/\/\S*(?:X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|access_token=|token=|sig=|signature=|api[_-]?key=|password=|secret=|cookie=)\S*/gi;
+  redacted = redacted.replace(unsafeUrlPattern, () => {
+    unsafe = true;
+    return '[REDACTED_URL]';
+  });
+
+  const secretPattern = /\b(?:api[_-]?key|access[_-]?token|secret|password|cookie|authorization)\s*[:=]\s*\S+/gi;
+  redacted = redacted.replace(secretPattern, () => {
+    unsafe = true;
+    return '[REDACTED_SECRET]';
+  });
+
+  return { text: redacted, unsafe };
+}
+
+function extractSafeUrls(text: string): { safeUrls: string[]; unsafeUrls: string[] } {
+  const urls = text.match(/https?:\/\/[^\s)>,"]+/g) || [];
+  const safeUrls: string[] = [];
+  const unsafeUrls: string[] = [];
+  for (const url of urls) {
+    if (/(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|access_token=|token=|sig=|signature=|api[_-]?key=|password=|secret=|cookie=)/i.test(url)) {
+      unsafeUrls.push(url);
+    } else {
+      safeUrls.push(url);
+    }
+  }
+  return { safeUrls, unsafeUrls };
+}
+
+function inferProofRequirement(text: string, urls: string[]): Record<string, unknown> | null {
+  const lower = text.toLowerCase();
+  if (/(invoice|receipt)/.test(lower)) return { proofRequirement: { type: 'file', label: 'Invoice or receipt', required: true }, requiresFile: true };
+  if (/(backup|dump|export file)/.test(lower)) return { proofRequirement: { type: 'file', label: 'Backup/export file', required: true }, requiresFile: true };
+  if (/(google doc|document|report|spreadsheet|public link|link)/.test(lower)) {
+    return {
+      proofRequirement: { type: urls.length > 0 ? 'url' : 'comment', label: 'Completion proof', required: true },
+      requiredLinkName: 'Completion proof',
+    };
+  }
+  if (/(comment|status update|external status)/.test(lower)) {
+    return { proofRequirement: { type: 'comment', label: 'Completion note', required: true } };
+  }
+  return null;
+}
+
+function inferWaiting(text: string, date: string): { waitingFor: string; followUpAt: string; note: string } | null {
+  const lower = text.toLowerCase();
+  if (!/(waiting|wait for|follow.?up|blocked|reply|response)/.test(lower)) return null;
+  const person = text.match(/\b(guest|sponsor|author|speaker|publisher|freelancer|accountant|alexey|valeriia|valeria|grace)\b/i)?.[1];
+  if (!person) return null;
+  return {
+    waitingFor: person[0].toUpperCase() + person.slice(1),
+    followUpAt: date,
+    note: `Waiting/follow-up inferred from spreadsheet row for ${person}.`,
+  };
+}
+
+function mentionsReviewerButNotWaiting(text: string): boolean {
+  return /\b(guest|sponsor|author|speaker|publisher|freelancer|accountant|alexey|valeriia|valeria|grace)\b/i.test(text) &&
+    !/(waiting|wait for|follow.?up|blocked|reply|response)/i.test(text);
+}
+
+function inferWorkflowCandidate(text: string): string | null {
+  if (/\b(newsletter|podcast|tax report|webinar|workshop|course|invoice)\b/i.test(text)) {
+    return compactText(text, 120);
+  }
+  return null;
+}
+
+function resolveInstructionDoc(text: string): { instructionDocId?: string; instructionsUrl?: string; unresolvedUrl?: string } {
+  const explicit = text.match(/\b(?:instructionDocId|instruction_doc_id|doc):\s*([a-z0-9._-]+)/i);
+  if (explicit) return { instructionDocId: explicit[1] };
+  const { safeUrls } = extractSafeUrls(text);
+  const docUrl = safeUrls.find((url) => url.includes('docs.google.com') || url.includes('/content/'));
+  if (docUrl) return { instructionsUrl: docUrl, unresolvedUrl: docUrl };
+  return {};
+}
+
+function buildProvenanceComment(context: CsvRowContext, row: string[], sourceKey: string, notes: string, warnings: string[]): string {
+  const [dateRaw, taskText, , statusRaw] = row;
+  const provenance = [
+    `Migration provenance: source_file=${path.basename(context.sourceFile)}`,
+    `row=${context.rowNumber}`,
+    `source_status=${compactText(statusRaw || 'blank', 40) || 'blank'}`,
+    `source_date=${compactText(dateRaw || 'blank', 40) || 'blank'}`,
+    `source_key=${sourceKey}`,
+    `source_text="${compactText(taskText || '', 160)}"`,
+  ].join('; ');
+  const parts = [provenance];
+  if (notes.trim()) parts.push(`Spreadsheet notes: ${compactText(notes, 500)}`);
+  if (warnings.length > 0) parts.push(`Migration warnings: ${warnings.join('; ')}`);
+  return parts.join('\n');
+}
+
+function csvRowToTask(row: string[], context?: Partial<CsvRowContext>): Record<string, unknown> | null {
+  const effectiveContext: CsvRowContext = {
+    sourceFile: context?.sourceFile || CSV_TODO_FILE,
+    sourceLabel: context?.sourceLabel || 'TODO list - todo.csv',
+    fileRole: context?.fileRole || 'todo',
+    rowNumber: context?.rowNumber || 1,
+    includeDone: context?.includeDone || false,
+  };
+  const plan = planCsvRow(row, effectiveContext);
+  return plan.kind === 'task' ? plan.task : null;
+}
+
+function planCsvRow(row: string[], context: CsvRowContext): CsvMigrationPlan {
+  const [dateRaw = '', taskRaw = '', notesRaw = '', statusRaw = ''] = row;
+  const descriptionRaw = taskRaw.trim();
+  const notesRawText = notesRaw.trim();
+  const hasAnyContent = row.some((cell) => cell.trim().length > 0);
+  const warnings: string[] = [];
+
+  if (!hasAnyContent) return { kind: 'skip', reason: 'blank', warnings };
+
+  const sourceKey = buildSourceKey(context, row);
+  const status = normalizeSpreadsheetStatus(statusRaw, context.fileRole, descriptionRaw.length > 0);
+  if (status === 'blank') return { kind: 'skip', reason: 'blank', sourceKey, warnings };
+  if (!descriptionRaw) return { kind: 'skip', reason: 'missing-description', sourceKey, warnings: ['missing task text'] };
+
+  const date = parseDate(dateRaw);
+  if (!date) return { kind: 'skip', reason: 'invalid-date', sourceKey, warnings: [`invalid date: ${dateRaw || 'blank'}`] };
+
+  const { text: description, unsafe: unsafeDescription } = redactUnsafeText(descriptionRaw);
+  const { text: notes, unsafe: unsafeNotes } = redactUnsafeText(notesRawText);
+  const combined = `${description}\n${notes}`;
+  const { safeUrls, unsafeUrls } = extractSafeUrls(`${descriptionRaw}\n${notesRawText}`);
+  if (unsafeDescription || unsafeNotes || unsafeUrls.length > 0) warnings.push('unsafe URL/secret redacted');
+
+  const recurring = findRecurringPattern(description);
+  if (recurring) {
+    return {
+      kind: 'recurring',
+      sourceKey,
+      config: {
+        description: recurring.config.description,
+        cronExpression: recurring.config.cronExpression,
+      },
+      warnings,
+    };
+  }
+
+  if ((status === 'done' || context.fileRole === 'done') && !context.includeDone) {
+    return { kind: 'skip', reason: 'completed-history', sourceKey, warnings };
+  }
+
+  const proof = inferProofRequirement(combined, safeUrls);
+  const hasProofUrl = safeUrls.length > 0;
+  if ((status === 'done' || context.fileRole === 'done') && proof && !hasProofUrl && !(proof.proofRequirement as Record<string, unknown>)?.type?.toString().includes('comment')) {
+    return { kind: 'skip', reason: 'missing-proof', sourceKey, warnings: [...warnings, 'completed row requires proof but no safe proof was found'] };
+  }
+
+  const { description: noAssigneeDescription, assigneeId } = extractAssigneeHint(description);
+  const doc = resolveInstructionDoc(combined);
+  if (doc.unresolvedUrl) warnings.push(`unresolved process doc: ${doc.unresolvedUrl}`);
+  const workflowCandidate = inferWorkflowCandidate(description);
+  if (workflowCandidate) warnings.push(`unresolved workflow match: ${workflowCandidate}`);
+  if (mentionsReviewerButNotWaiting(combined)) warnings.push('unresolved waiting inference');
+
+  const waiting = inferWaiting(combined, date);
+  const task: Record<string, unknown> = {
+    description: noAssigneeDescription,
+    date,
+    status: waiting ? 'waiting' : status === 'done' ? 'done' : 'todo',
+    source: 'import',
+    comment: buildProvenanceComment(context, row, sourceKey, notes, waiting ? [...warnings, waiting.note] : warnings),
+    tags: ['spreadsheet-import'],
+  };
+  if (assigneeId) task.assigneeId = assigneeId;
+  if (safeUrls[0]) task.link = safeUrls[0];
+  if (doc.instructionsUrl) task.instructionsUrl = doc.instructionsUrl;
+  if (doc.instructionDocId) task.instructionDocId = doc.instructionDocId;
+  if (proof) Object.assign(task, proof);
+  if (waiting) {
+    task.waitingFor = waiting.waitingFor;
+    task.followUpAt = waiting.followUpAt;
+  }
+  if (status === 'done') {
+    task.completedAt = `${date}T00:00:00.000Z`;
+    task.externalStatus = 'spreadsheet-done';
+  }
+  return { kind: 'task', task, sourceKey, warnings };
+}
+
+function emptyCsvMigrationReport(): CsvMigrationReport {
+  return {
+    stats: { ...DEFAULT_CSV_STATS },
+    unresolvedDocs: [],
+    unresolvedWorkflows: [],
+    unsafeFindings: [],
+    validationErrors: [],
+    recurringSuggestions: [],
+    plans: [],
+  };
+}
+
+function collectPlanStats(report: CsvMigrationReport, plan: CsvMigrationPlan, context: CsvRowContext): void {
+  report.plans.push(plan);
+  const rowLabel = `${path.basename(context.sourceFile)}:${context.rowNumber}`;
+  const warningText = plan.warnings.join('\n');
+  if (warningText.includes('unsafe URL/secret redacted')) {
+    report.stats.unsafeRows++;
+    report.unsafeFindings.push(rowLabel);
+  }
+  for (const warning of plan.warnings) {
+    if (warning.startsWith('unresolved process doc:')) {
+      report.stats.unresolvedProcessDocs++;
+      report.unresolvedDocs.push(`${rowLabel} ${warning.replace('unresolved process doc: ', '')}`);
+    }
+    if (warning.startsWith('unresolved workflow match:')) {
+      report.stats.workflowAttachmentCandidates++;
+      report.stats.unresolvedWorkflowMatches++;
+      report.unresolvedWorkflows.push(`${rowLabel} ${warning.replace('unresolved workflow match: ', '')}`);
+    }
+    if (warning === 'unresolved waiting inference') {
+      report.validationErrors.push(`${rowLabel} unresolved waiting inference`);
+    }
+  }
+
+  if (plan.kind === 'skip') {
+    if (plan.reason === 'blank') report.stats.blankRowsSkipped++;
+    if (plan.reason === 'completed-history') report.stats.completedRowsSkipped++;
+    if (plan.reason === 'invalid-date' || plan.reason === 'missing-description' || plan.reason === 'missing-proof') {
+      report.stats.validationErrors++;
+      report.validationErrors.push(`${rowLabel} ${plan.reason}: ${plan.warnings.join('; ')}`);
+    }
+    return;
+  }
+
+  if (plan.kind === 'recurring') {
+    report.stats.recurringSuggestions++;
+    report.recurringSuggestions.push(`${plan.config.description} (${plan.config.cronExpression})`);
+    return;
+  }
+
+  report.stats.importedTasks++;
+  if (plan.task.proofRequirement) report.stats.proofRequirements++;
+  if (plan.task.status === 'waiting') report.stats.waitingFollowUps++;
+}
+
+async function taskExistsForSourceKey(client: DynamoDBDocumentClient, sourceKey: string): Promise<boolean> {
+  const result = await client.send(
+    new ScanCommand({
+      TableName: TABLE_TASKS,
+      Select: 'COUNT',
+      FilterExpression: 'begins_with(PK, :prefix) AND #source = :source AND contains(#comment, :sourceKey)',
+      ExpressionAttributeNames: {
+        '#source': 'source',
+        '#comment': 'comment',
+      },
+      ExpressionAttributeValues: {
+        ':prefix': 'TASK#',
+        ':source': 'import',
+        ':sourceKey': sourceKey,
+      },
+    })
+  );
+  return (result.Count || 0) > 0;
+}
+
+async function migrateCsvFile(
+  client: DynamoDBDocumentClient | null,
+  filePath: string,
+  fileRole: CsvFileRole,
+  report: CsvMigrationReport
+): Promise<void> {
+  const rows = parseCSVFile(filePath);
+  const dataRows = rows.slice(1);
+  let existingRecurring = new Set<string>();
+  if (client) {
+    const configs = await listRecurringConfigs(client);
+    existingRecurring = new Set(configs.map((config) => `${config.description}\u001f${config.cronExpression}`));
+  }
+
+  for (let index = 0; index < dataRows.length; index++) {
+    const row = dataRows[index];
+    const context: CsvRowContext = {
+      sourceFile: filePath,
+      sourceLabel: path.basename(filePath),
+      fileRole,
+      rowNumber: index + 2,
+      includeDone: INCLUDE_DONE,
+    };
+    const plan = planCsvRow(row, context);
+    collectPlanStats(report, plan, context);
+
+    if (!client) continue;
+
+    if (plan.kind === 'task') {
+      if (await taskExistsForSourceKey(client, plan.sourceKey)) {
+        report.stats.duplicateTasksSkipped++;
+        continue;
+      }
+      await createTask(client, plan.task);
+      report.stats.createdTasks++;
+      continue;
+    }
+
+    if (plan.kind === 'recurring') {
+      const recurringKey = `${plan.config.description}\u001f${plan.config.cronExpression}`;
+      if (existingRecurring.has(recurringKey)) {
+        report.stats.duplicateRecurringSkipped++;
+        continue;
+      }
+      await createRecurringConfig(client, {
+        description: plan.config.description,
+        cronExpression: plan.config.cronExpression,
+      });
+      existingRecurring.add(recurringKey);
+      report.stats.recurringConfigsCreated++;
+    }
+  }
+}
+
+function printCsvReport(report: CsvMigrationReport): void {
+  console.log('  CSV dry-run/import report:');
+  console.log(`    Imported task plans:              ${report.stats.importedTasks}`);
+  console.log(`    Created tasks:                    ${report.stats.createdTasks}`);
+  console.log(`    Duplicate tasks skipped:          ${report.stats.duplicateTasksSkipped}`);
+  console.log(`    Recurring configs created:        ${report.stats.recurringConfigsCreated}`);
+  console.log(`    Recurring suggestions:            ${report.stats.recurringSuggestions}`);
+  console.log(`    Duplicate recurring skipped:      ${report.stats.duplicateRecurringSkipped}`);
+  console.log(`    Workflow candidates:              ${report.stats.workflowAttachmentCandidates}`);
+  console.log(`    Completed rows skipped:           ${report.stats.completedRowsSkipped}`);
+  console.log(`    Blank rows skipped:               ${report.stats.blankRowsSkipped}`);
+  console.log(`    Unsafe rows redacted:             ${report.stats.unsafeRows}`);
+  console.log(`    Unresolved process docs:          ${report.stats.unresolvedProcessDocs}`);
+  console.log(`    Unresolved workflow matches:      ${report.stats.unresolvedWorkflowMatches}`);
+  console.log(`    Proof requirements:               ${report.stats.proofRequirements}`);
+  console.log(`    Waiting/follow-up tasks:          ${report.stats.waitingFollowUps}`);
+  console.log(`    Validation errors:                ${report.stats.validationErrors}`);
+  if (report.recurringSuggestions.length > 0) {
+    console.log('  Recurring suggestions/configs:');
+    for (const suggestion of [...new Set(report.recurringSuggestions)]) {
+      console.log(`    - ${suggestion}`);
+    }
+  }
+  if (report.unresolvedDocs.length > 0) {
+    console.log('  Unresolved process docs:');
+    for (const item of report.unresolvedDocs.slice(0, 20)) console.log(`    - ${item}`);
+  }
+  if (report.unresolvedWorkflows.length > 0) {
+    console.log('  Unresolved workflow matches:');
+    for (const item of report.unresolvedWorkflows.slice(0, 20)) console.log(`    - ${item}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -575,36 +1086,44 @@ async function main() {
   console.log('=== DataOps Work-Engine Migration Script ===');
   if (DRY_RUN) console.log('** DRY RUN - no data will be written **\n');
 
-  // Load Trello data
-  console.log('Loading Trello board export...');
-  const trello = JSON.parse(fs.readFileSync(TRELLO_FILE, 'utf-8'));
-  const allCards: TrelloCard[] = trello.cards || [];
-  const allChecklists: TrelloChecklist[] = trello.checklists || [];
-  const allLists: TrelloList[] = trello.lists || [];
-
-  console.log(`  Cards: ${allCards.length}`);
-  console.log(`  Checklists: ${allChecklists.length}`);
-  console.log(`  Lists: ${allLists.length}`);
-
-  // Identify lists
+  const needsTrello = IMPORT_ALL || TEMPLATES_ONLY || CARDS_ONLY;
+  let allCards: TrelloCard[] = [];
+  let allChecklists: TrelloChecklist[] = [];
+  let allLists: TrelloList[] = [];
+  let templateCards: TrelloCard[] = [];
+  let activeCards: TrelloCard[] = [];
   const listMap: Record<string, TrelloList> = {};
-  for (const list of allLists) {
-    listMap[list.id] = list;
+
+  if (needsTrello) {
+    console.log('Loading Trello board export...');
+    const trello = JSON.parse(fs.readFileSync(TRELLO_FILE, 'utf-8'));
+    allCards = trello.cards || [];
+    allChecklists = trello.checklists || [];
+    allLists = trello.lists || [];
+
+    console.log(`  Cards: ${allCards.length}`);
+    console.log(`  Checklists: ${allChecklists.length}`);
+    console.log(`  Lists: ${allLists.length}`);
+
+    // Identify lists
+    for (const list of allLists) {
+      listMap[list.id] = list;
+    }
+
+    // Separate template cards from regular cards
+    templateCards = allCards.filter((c) => c.isTemplate);
+    const activeListNames = ['Preparation', 'Announced', 'After event'];
+    const activeLists = allLists.filter(
+      (l) => activeListNames.some((n) => l.name.toLowerCase().includes(n.toLowerCase())) && !l.closed
+    );
+    const activeListIds = new Set(activeLists.map((l) => l.id));
+    activeCards = allCards.filter(
+      (c) => !c.isTemplate && !c.closed && activeListIds.has(c.idList)
+    );
+
+    console.log(`  Template cards: ${templateCards.length}`);
+    console.log(`  Active cards (Preparation/Announced/After event): ${activeCards.length}`);
   }
-
-  // Separate template cards from regular cards
-  const templateCards = allCards.filter((c) => c.isTemplate);
-  const activeListNames = ['Preparation', 'Announced', 'After event'];
-  const activeLists = allLists.filter(
-    (l) => activeListNames.some((n) => l.name.toLowerCase().includes(n.toLowerCase())) && !l.closed
-  );
-  const activeListIds = new Set(activeLists.map((l) => l.id));
-  const activeCards = allCards.filter(
-    (c) => !c.isTemplate && !c.closed && activeListIds.has(c.idList)
-  );
-
-  console.log(`  Template cards: ${templateCards.length}`);
-  console.log(`  Active cards (Preparation/Announced/After event): ${activeCards.length}`);
 
   // Connect to DB (persistent LevelDB in .data/)
   let client: DynamoDBDocumentClient | null = null;
@@ -726,57 +1245,24 @@ async function main() {
   if (IMPORT_ALL || CSV_ONLY) {
     console.log('\n--- Importing CSV Tasks ---');
 
-    console.log('  Processing: TODO list - todo.csv');
-    const todoRows = parseCSVFile(CSV_TODO_FILE);
-    for (let ri = 0; ri < todoRows.length; ri++) {
-      if (ri === 0) continue; // skip header
-      const row = todoRows[ri];
-      const task = csvRowToTask(row);
-      if (!task) {
-        stats.skippedBlankRows++;
-        continue;
-      }
+    const csvReport = emptyCsvMigrationReport();
+    console.log(`  Processing todo CSV: ${SOURCE_TODO_FILE}`);
+    await migrateCsvFile(client, SOURCE_TODO_FILE, 'todo', csvReport);
 
-      if (isRecurringTask(task.description as string)) {
-        stats.skippedRecurringTasks++;
-        continue;
-      }
-
-      if (DRY_RUN) {
-        console.log(`    [${task.status}] ${task.date} ${(task.description as string).substring(0, 60)}`);
-      } else {
-        await createTask(client!, task);
-      }
-      stats.tasks++;
-    }
-
-    if (INCLUDE_DONE) {
-      console.log('  Processing: TODO list - done.csv');
-      const doneRows = parseCSVFile(CSV_DONE_FILE);
-      for (let ri = 0; ri < doneRows.length; ri++) {
-        if (ri === 0) continue; // skip header
-        const row = doneRows[ri];
-        const task = csvRowToTask(row);
-        if (!task) {
-          stats.skippedBlankRows++;
-          continue;
-        }
-
-        if (isRecurringTask(task.description as string)) {
-          stats.skippedRecurringTasks++;
-          continue;
-        }
-
-        if (DRY_RUN) {
-          console.log(`    [${task.status}] ${task.date} ${(task.description as string).substring(0, 60)}`);
-        } else {
-          await createTask(client!, task);
-        }
-        stats.tasks++;
-      }
+    if (fs.existsSync(SOURCE_DONE_FILE)) {
+      console.log(`  Processing done CSV for history analysis: ${SOURCE_DONE_FILE}`);
+      await migrateCsvFile(client, SOURCE_DONE_FILE, 'done', csvReport);
+    } else if (readFlagValue('--source-done')) {
+      throw new Error(`--source-done file does not exist: ${SOURCE_DONE_FILE}`);
     } else {
-      console.log('  Skipping done.csv (use --include-done to import)');
+      console.log('  No done.csv found; history analysis skipped');
     }
+
+    printCsvReport(csvReport);
+    stats.tasks += csvReport.stats.createdTasks || (DRY_RUN ? csvReport.stats.importedTasks : 0);
+    stats.recurringConfigs += csvReport.stats.recurringConfigsCreated;
+    stats.skippedRecurringTasks += csvReport.stats.recurringSuggestions;
+    stats.skippedBlankRows += csvReport.stats.blankRowsSkipped;
   }
 
   // -----------------------------------------------------------------------
@@ -786,7 +1272,7 @@ async function main() {
   console.log('\n=== Migration Summary ===');
   console.log(`  Templates created:           ${stats.templates}`);
   console.log(`  Bundles created:             ${stats.bundles}`);
-  console.log(`  Tasks created:               ${stats.tasks}`);
+  console.log(`  ${DRY_RUN ? 'Tasks planned' : 'Tasks created'}:               ${stats.tasks}`);
   console.log(`  Skipped duplicate templates: ${stats.skippedDuplicateTemplates}`);
   console.log(`  Skipped recurring tasks:     ${stats.skippedRecurringTasks}`);
   console.log(`  Skipped blank rows:          ${stats.skippedBlankRows}`);
@@ -825,12 +1311,20 @@ export {
   parseDate,
   extractDateFromCardName,
   csvRowToTask,
+  planCsvRow,
+  migrateCsvFile,
+  emptyCsvMigrationReport,
+  normalizeSpreadsheetStatus,
+  redactUnsafeText,
+  extractSafeUrls,
   isRecurringTask,
+  findRecurringPattern,
   // Types
   type TrelloCard,
   type TrelloChecklist,
   type TrelloCheckItem,
   type TrelloList,
+  type CsvMigrationPlan,
 };
 
 // Only run main() when executed directly (not when imported for testing)
