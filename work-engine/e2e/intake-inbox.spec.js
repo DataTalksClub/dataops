@@ -381,4 +381,139 @@ test.describe('raw intake inbox workflow', () => {
     await expect(page.locator('[data-intake-row="' + convertWorkflowItem.id + '"]')).toBeVisible();
     await expect(page.locator('[data-intake-row="' + convertAdhocItem.id + '"]')).toBeVisible();
   });
+
+  test('shows mobile relationship actions for resolved attached intake detail', async ({ page, request }) => {
+    await page.setViewportSize({ width: 412, height: 915 });
+
+    const suffix = uid();
+    const bundleRes = await request.post('/api/bundles', {
+      data: { title: 'Mobile relationship workflow ' + suffix, anchorDate: '2026-07-15', tags: ['podcast'] },
+    });
+    expect(bundleRes.status()).toBe(201);
+    const bundle = (await bundleRes.json()).bundle;
+
+    const workflowTaskRes = await request.post('/api/tasks', {
+      data: {
+        description: 'Mobile workflow task ' + suffix,
+        date: '2026-07-15',
+        bundleId: bundle.id,
+        tags: ['podcast'],
+      },
+    });
+    expect(workflowTaskRes.status()).toBe(201);
+    const workflowTask = await workflowTaskRes.json();
+
+    const adhocTaskRes = await request.post('/api/tasks', {
+      data: {
+        description: 'Mobile ad-hoc task ' + suffix,
+        date: '2026-07-16',
+        tags: ['podcast'],
+      },
+    });
+    expect(adhocTaskRes.status()).toBe(201);
+    const adhocTask = await adhocTaskRes.json();
+
+    const attachTaskItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Mobile attached task intake ' + suffix,
+        note: 'Resolved detail should offer an Open task action.',
+        source: 'manual',
+      },
+    })).json()).item;
+    const attachWorkflowItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Mobile attached workflow intake ' + suffix,
+        note: 'Resolved detail should offer an Open workflow action.',
+        source: 'manual',
+      },
+    })).json()).item;
+    const attachBothItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Mobile attached task and workflow intake ' + suffix,
+        note: 'Resolved detail should keep both task and workflow destinations.',
+        source: 'manual',
+      },
+    })).json()).item;
+    const convertWorkflowItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Mobile converted workflow intake ' + suffix,
+        note: 'Converted detail should reopen the created workflow task.',
+        source: 'manual',
+      },
+    })).json()).item;
+
+    expect((await request.post('/api/intake/' + attachTaskItem.id + '/attach', {
+      data: { taskIds: [workflowTask.id] },
+    })).status()).toBe(200);
+    expect((await request.post('/api/intake/' + attachWorkflowItem.id + '/attach', {
+      data: { bundleIds: [bundle.id] },
+    })).status()).toBe(200);
+    expect((await request.post('/api/intake/' + attachBothItem.id + '/attach', {
+      data: { taskIds: [adhocTask.id], bundleIds: [bundle.id] },
+    })).status()).toBe(200);
+    const convertedRes = await request.post('/api/intake/' + convertWorkflowItem.id + '/convert-task', {
+      data: { date: '2026-07-15', bundleId: bundle.id },
+    });
+    expect(convertedRes.status()).toBe(201);
+    const converted = await convertedRes.json();
+    const convertedTask = converted.task;
+
+    const detail = page.locator('[data-testid="inbox-detail"]');
+    async function openResolvedIntake(itemId) {
+      await page.goto('/#/inbox');
+      await page.locator('[data-intake-filter="resolved"]').click();
+      await expect(page.locator('[data-intake-row="' + itemId + '"]')).toBeVisible();
+      await page.locator('[data-intake-row="' + itemId + '"] [data-intake-select]').click();
+      await expect(detail).toBeVisible();
+    }
+
+    await openResolvedIntake(attachTaskItem.id);
+    const attachedTaskLink = detail.locator('[data-intake-task-link="' + workflowTask.id + '"]');
+    await expect(detail.locator('[data-intake-task-ref="' + workflowTask.id + '"]')).toContainText('Mobile workflow task ' + suffix);
+    await expect(attachedTaskLink).toHaveText('Open task');
+    await expect(attachedTaskLink).toHaveAttribute('href', new RegExp('#/bundles\\?bundleId=' + bundle.id + '&taskId=' + workflowTask.id));
+    await screenshot(page, 'issue-66-mobile-attached-task-relationship-actions.png');
+    await attachedTaskLink.click();
+    await expect(page).toHaveURL(new RegExp('#/bundles\\?bundleId=' + bundle.id + '&taskId=' + workflowTask.id));
+    await expect(page.locator('[data-task-row="' + workflowTask.id + '"]')).toBeVisible();
+    await screenshot(page, 'issue-66-mobile-attached-task-destination.png');
+
+    await openResolvedIntake(attachWorkflowItem.id);
+    const workflowLink = detail.locator('[data-intake-workflow-link="' + bundle.id + '"]');
+    await expect(detail.locator('[data-intake-workflow-ref="' + bundle.id + '"]')).toContainText('Mobile relationship workflow ' + suffix);
+    await expect(workflowLink).toHaveText('Open workflow');
+    await expect(workflowLink).toHaveAttribute('href', new RegExp('#/bundles\\?bundleId=' + bundle.id + '$'));
+    await screenshot(page, 'issue-66-mobile-attached-workflow-relationship-actions.png');
+    await workflowLink.click();
+    await expect(page).toHaveURL(new RegExp('#/bundles\\?bundleId=' + bundle.id + '$'));
+    await expect(page.locator('#bundle-detail')).toContainText('Mobile relationship workflow ' + suffix);
+    await screenshot(page, 'issue-66-mobile-attached-workflow-destination.png');
+
+    await openResolvedIntake(attachBothItem.id);
+    const bothTaskLink = detail.locator('[data-intake-task-link="' + adhocTask.id + '"]');
+    const bothWorkflowLink = detail.locator('[data-intake-workflow-link="' + bundle.id + '"]');
+    await expect(detail.locator('[data-intake-task-ref="' + adhocTask.id + '"]')).toContainText('Mobile ad-hoc task ' + suffix);
+    await expect(bothTaskLink).toHaveText('Open task');
+    await expect(bothWorkflowLink).toHaveText('Open workflow');
+    await expect(bothTaskLink).toHaveAttribute('href', new RegExp('#/tasks\\?taskId=' + adhocTask.id + '&date=2026-07-16&contextBundleId=' + bundle.id));
+    await expect(bothWorkflowLink).toHaveAttribute('href', new RegExp('#/bundles\\?bundleId=' + bundle.id + '$'));
+    await screenshot(page, 'issue-66-mobile-attached-both-relationship-actions.png');
+    await bothTaskLink.click();
+    await expect(page).toHaveURL(new RegExp('#/tasks\\?taskId=' + adhocTask.id + '&date=2026-07-16&contextBundleId=' + bundle.id));
+    await expect(page.locator('[data-testid="task-workflow-context"]')).toContainText('Mobile relationship workflow ' + suffix);
+    await expect(page.locator('[data-task-row="' + adhocTask.id + '"]')).toBeVisible();
+    await screenshot(page, 'issue-66-mobile-attached-both-task-destination.png');
+
+    await openResolvedIntake(convertWorkflowItem.id);
+    const convertedTaskLink = detail.locator('[data-intake-task-link="' + convertedTask.id + '"]');
+    await expect(detail.locator('[data-intake-task-ref="' + convertedTask.id + '"]')).toContainText('Mobile converted workflow intake ' + suffix);
+    await expect(convertedTaskLink).toHaveText('Open task');
+    await expect(convertedTaskLink).toHaveAttribute('href', new RegExp('#/bundles\\?bundleId=' + bundle.id + '&taskId=' + convertedTask.id));
+    await expect(detail.locator('[data-intake-workflow-link="' + bundle.id + '"]')).toHaveText('Open workflow');
+    await screenshot(page, 'issue-66-mobile-converted-workflow-relationship-actions.png');
+    await convertedTaskLink.click();
+    await expect(page).toHaveURL(new RegExp('#/bundles\\?bundleId=' + bundle.id + '&taskId=' + convertedTask.id));
+    await expect(page.locator('[data-task-row="' + convertedTask.id + '"]')).toBeVisible();
+    await screenshot(page, 'issue-66-mobile-converted-workflow-task-destination.png');
+  });
 });
