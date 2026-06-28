@@ -613,7 +613,9 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     mark_done = page.locator("#task-panel-body .task-action-btn", has_text="Mark done").first
                     assert mark_done.is_disabled()
                     assert "Fill in Luma" in (mark_done.get_attribute("title") or "")
-                    assert page.locator("#task-panel-body").get_by_text("Process doc").is_visible()
+                    assert page.locator("#task-panel-body .task-history-label").get_by_text(
+                        "Process doc", exact=True
+                    ).is_visible()
                     assert page.locator("#task-panel-body .task-instruction-doc-link", has_text="Newsletter Task Template").inner_text() == "Newsletter Task Template"
                     assert page.locator("#task-panel-body").get_by_text("Workflow bundle-ops-smoke").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-task-panel-missing-proof.png"), full_page=True)
