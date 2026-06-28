@@ -3,6 +3,7 @@ import assert from 'node:assert';
 
 import { handler } from '../src/handler';
 import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { createNotification } from '../src/db/notifications';
 import { createSession } from '../src/db/sessions';
 
 describe('Portal broker authentication', () => {
@@ -190,6 +191,80 @@ describe('Portal broker authentication', () => {
 
     assert.strictEqual(response.statusCode, 200);
     assert.deepStrictEqual(JSON.parse(response.body), { user: { id: 'ops-manager', name: 'Portal user' } });
+  });
+
+  it('treats portal-admin notification requests as unscoped so operator-assigned notifications remain visible', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const client = await getClient();
+    const suffix = Date.now().toString(36);
+    const assignedNotification = await createNotification(client, {
+      type: 'operator-assigned-regression',
+      message: `Portal admin visible assigned notification ${suffix}`,
+      dueAt: '2028-10-05T09:00:00.000Z',
+      userId: 'operator-assignee',
+    });
+
+    const response = await handler(
+      {
+        httpMethod: 'GET',
+        path: '/api/notifications',
+        headers: {
+          'x-portal-auth': 'true',
+          'x-portal-secret': 'test-portal-secret',
+          'x-user-id': 'portal-admin',
+        },
+      },
+      {},
+    );
+
+    assert.strictEqual(response.statusCode, 200);
+    const body = JSON.parse(response.body);
+    assert.ok(
+      body.notifications.some((notification: { id?: string }) => notification.id === assignedNotification.id),
+      'portal-admin should receive the unscoped notifications list, including operator-assigned notifications',
+    );
+  });
+
+  it('keeps notification filtering scoped for real portal user ids', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const client = await getClient();
+    const suffix = Date.now().toString(36);
+    const otherUserNotification = await createNotification(client, {
+      type: 'real-user-filter-regression',
+      message: `Other operator hidden notification ${suffix}`,
+      dueAt: '2028-10-05T09:00:00.000Z',
+      userId: 'other-operator',
+    });
+    const globalNotification = await createNotification(client, {
+      type: 'real-user-filter-regression',
+      message: `Global visible notification ${suffix}`,
+      dueAt: '2028-10-05T09:00:00.000Z',
+    });
+
+    const response = await handler(
+      {
+        httpMethod: 'GET',
+        path: '/api/notifications',
+        headers: {
+          'x-portal-auth': 'true',
+          'x-portal-secret': 'test-portal-secret',
+          'x-user-id': 'ops-manager',
+        },
+      },
+      {},
+    );
+
+    assert.strictEqual(response.statusCode, 200);
+    const body = JSON.parse(response.body);
+    const ids = body.notifications.map((notification: { id: string }) => notification.id);
+    assert.ok(ids.includes(globalNotification.id), 'real users should still see global notifications');
+    assert.ok(!ids.includes(otherUserNotification.id), 'real users should not see notifications assigned to another user');
   });
 
   it('allows portal broker headers to perform Operations Home write actions', async () => {

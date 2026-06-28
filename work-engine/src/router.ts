@@ -1196,7 +1196,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Notification routes ─────────────────────────────────────
 
     if (reqPath.startsWith('/api/notifications')) {
-      const userId = event.headers?.['x-user-id'] || undefined;
+      const rawUserId = event.headers?.['x-user-id'] || undefined;
+      const userId = rawUserId === 'portal-admin' ? undefined : rawUserId;
       const result = await handleNotificationRoutes(reqPath, method, event.body || null, event.queryStringParameters || null, userId);
       if (result) return result;
     }
