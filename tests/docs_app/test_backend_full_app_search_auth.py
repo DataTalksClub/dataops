@@ -598,18 +598,17 @@ def test_search_handler_parses_raw_query_applies_filters_and_caps_limit(monkeypa
     assert captured["filter_dict"] == {"domain": "finance", "doc_type": "reference"}
     assert captured["num_results"] == search_handler.MAX_LIMIT
     payload = _json_body(response)
-    assert payload["results"] == [
-        {
-            "path": "content/finance/reference/invoices.md",
-            "id": "invoice-reference",
-            "title": "Invoices",
-            "domain": "finance",
-            "doc_type": "reference",
-            "summary": "Invoice summary",
-            "description": "Workflow-facing invoice description",
-            "purpose": "Find invoice steps",
-        }
-    ]
+    result = payload["results"][0]
+    assert result["path"] == "content/finance/reference/invoices.md"
+    assert result["id"] == "invoice-reference"
+    assert result["title"] == "Invoices"
+    assert result["domain"] == "finance"
+    assert result["doc_type"] == "reference"
+    assert result["summary"] == "Invoice summary"
+    assert result["description"] == "Workflow-facing invoice description"
+    assert result["purpose"] == "Find invoice steps"
+    assert result["type"] == "doc"
+    assert result["route"]["kind"] == "doc"
 
 
 def test_search_handler_reports_missing_query_and_bad_limit_without_index_lookup(monkeypatch):
@@ -625,6 +624,214 @@ def test_search_handler_reports_missing_query_and_bad_limit_without_index_lookup
     assert _json_body(missing) == {"error": "Missing required query parameter: q"}
     assert bad_limit["statusCode"] == 400
     assert _json_body(bad_limit) == {"error": "invalid literal for int() with base 10: 'not-a-number'"}
+
+
+def test_search_handler_metadata_filters_exclude_docs_without_requested_values(monkeypatch):
+    class FakeIndex:
+        def search(self, query, filter_dict, boost_dict, num_results):
+            assert query == "invoice"
+            return [
+                {
+                    "path": "content/finance/bookkeeping/sops/asking-for-invoice-information.md",
+                    "id": "finance.ask-invoice-info",
+                    "title": "Asking for Invoice Information",
+                    "domain": "finance",
+                    "doc_type": "sop",
+                    "summary": "Invoice intake without system metadata.",
+                    "tags": "",
+                    "systems": "",
+                },
+                {
+                    "path": "content/finance/bookkeeping/sops/creating-invoices-in-finom.md",
+                    "id": "finance.create-finom-invoices",
+                    "title": "Creating Invoices in Finom",
+                    "domain": "finance",
+                    "doc_type": "sop",
+                    "summary": "Create invoices in Finom.",
+                    "tags": "finance, bookkeeping",
+                    "systems": "finom, revolut",
+                },
+                {
+                    "path": "content/finance/bookkeeping/templates/invoice-commission.md",
+                    "id": "finance.invoice-commission-template",
+                    "title": "Invoice Commission Template",
+                    "domain": "finance",
+                    "doc_type": "template",
+                    "summary": "Template with no requested tag.",
+                    "tags": "sales",
+                    "systems": "finom",
+                },
+            ]
+
+    monkeypatch.setattr(search_handler, "get_index", lambda: FakeIndex())
+
+    system_response = search_handler.handler(
+        _event("/search", queryStringParameters={"q": "invoice", "source": "docs", "system": "finom"}),
+        None,
+    )
+    tag_response = search_handler.handler(
+        _event("/search", queryStringParameters={"q": "invoice", "source": "docs", "tag": "bookkeeping"}),
+        None,
+    )
+
+    assert system_response["statusCode"] == 200
+    system_payload = _json_body(system_response)
+    assert [result["path"] for result in system_payload["results"]] == [
+        "content/finance/bookkeeping/sops/creating-invoices-in-finom.md",
+        "content/finance/bookkeeping/templates/invoice-commission.md",
+    ]
+    assert {"source": "docs", "status": "ok", "count": 2} in system_payload["sources"]
+
+    assert tag_response["statusCode"] == 200
+    tag_payload = _json_body(tag_response)
+    assert [result["path"] for result in tag_payload["results"]] == [
+        "content/finance/bookkeeping/sops/creating-invoices-in-finom.md",
+    ]
+    assert {"source": "docs", "status": "ok", "count": 1} in tag_payload["sources"]
+
+
+def test_search_handler_returns_typed_docs_and_work_results_with_source_states(monkeypatch):
+    class FakeIndex:
+        def search(self, query, filter_dict, boost_dict, num_results):
+            assert query == "Mailchimp newsletter"
+            return [
+                {
+                    "path": "content/tasks/templates/newsletter.md",
+                    "id": "task-template.newsletter",
+                    "title": "Newsletter",
+                    "domain": "tasks",
+                    "doc_type": "template",
+                    "summary": "Mailchimp newsletter process.",
+                    "description": "Prepare the weekly newsletter in Mailchimp.",
+                    "tags": "newsletter",
+                    "systems": "mailchimp",
+                }
+            ]
+
+    def work_fetcher(path, params):
+        if path == "/api/tasks" and params == {"status": "todo"}:
+            return {
+                "tasks": [
+                    {
+                        "id": "task-newsletter",
+                        "description": "Prepare Mailchimp newsletter",
+                        "status": "todo",
+                        "date": "2026-06-29",
+                        "bundleId": "bundle-newsletter",
+                        "assigneeId": "operator",
+                        "instructionDocId": "task-template.newsletter",
+                        "instructionStepId": "publish",
+                        "systems": ["mailchimp"],
+                        "proofRequirement": {"type": "url", "required": True},
+                    }
+                ]
+            }
+        if path == "/api/tasks" and params == {"status": "waiting"}:
+            return {"tasks": []}
+        if path == "/api/bundles":
+            return {
+                "bundles": [
+                    {
+                        "id": "bundle-newsletter",
+                        "title": "Mailchimp newsletter run",
+                        "stage": "preparation",
+                        "status": "active",
+                        "templateId": "tmpl-newsletter",
+                    }
+                ]
+            }
+        if path == "/api/tasks" and params == {"bundleId": "bundle-newsletter"}:
+            return {
+                "tasks": [
+                    {
+                        "id": "task-newsletter",
+                        "description": "Prepare Mailchimp newsletter",
+                        "status": "todo",
+                        "date": "2026-06-29",
+                        "instructionDocId": "task-template.newsletter",
+                        "proofRequirement": {"type": "url", "required": True},
+                    }
+                ]
+            }
+        if path == "/api/templates":
+            return {"templates": [{"id": "tmpl-newsletter", "name": "Mailchimp Newsletter", "type": "newsletter", "sourceDocIds": ["task-template.newsletter"]}]}
+        if path == "/api/artifacts":
+            return {
+                "artifacts": [
+                    {
+                        "id": "artifact-newsletter-proof",
+                        "title": "Mailchimp newsletter proof",
+                        "type": "external-link",
+                        "status": "needs-review",
+                        "taskId": "task-newsletter",
+                        "storageUri": "https://example.test/private-proof",
+                    }
+                ]
+            }
+        if path == "/api/files":
+            return {"files": []}
+        if path == "/api/assistant-jobs":
+            return {"jobs": [{"id": "job-newsletter", "title": "Mailchimp newsletter assistant output", "assistantType": "copy", "status": "succeeded", "taskId": "task-newsletter"}]}
+        raise AssertionError((path, params))
+
+    monkeypatch.setattr(search_handler, "get_index", lambda: FakeIndex())
+
+    response = search_handler.handler(
+        _event("/search", queryStringParameters={"q": "Mailchimp newsletter", "system": "mailchimp", "limit": "20"}),
+        None,
+        work_fetcher=work_fetcher,
+    )
+
+    assert response["statusCode"] == 200
+    payload = _json_body(response)
+    result_types = {result["type"] for result in payload["results"]}
+    assert {"doc", "task", "workflow", "template", "artifact", "assistant-job"} <= result_types
+    task = next(result for result in payload["results"] if result["type"] == "task")
+    assert task["route"] == {
+        "kind": "task",
+        "taskId": "task-newsletter",
+        "bundleId": "bundle-newsletter",
+        "instructionDocId": "task-template.newsletter",
+        "instructionStepId": "publish",
+    }
+    assert task["fields"]["proof"] == "url proof required"
+    artifact = next(result for result in payload["results"] if result["type"] == "artifact")
+    assert artifact["action_label"] == "Open owner context"
+    assert "private-proof" not in artifact["summary"]
+    assert {"source": "docs", "status": "ok", "count": 1} in payload["sources"]
+    assert any(source["source"] == "work-engine:tasks" and source["status"] == "ok" for source in payload["sources"])
+
+
+def test_search_handler_keeps_docs_when_work_sources_are_unavailable(monkeypatch):
+    class FakeIndex:
+        def search(self, query, filter_dict, boost_dict, num_results):
+            return [
+                {
+                    "path": "content/overview/reference/schedule.md",
+                    "id": "overview.schedule",
+                    "title": "Schedule",
+                    "domain": "overview",
+                    "doc_type": "reference",
+                    "summary": "Luma schedule context.",
+                }
+            ]
+
+    def broken_work_fetcher(path, params):
+        raise RuntimeError("work down")
+
+    monkeypatch.setattr(search_handler, "get_index", lambda: FakeIndex())
+
+    response = search_handler.handler(
+        _event("/search", queryStringParameters={"q": "Luma"}),
+        None,
+        work_fetcher=broken_work_fetcher,
+    )
+
+    assert response["statusCode"] == 200
+    payload = _json_body(response)
+    assert payload["results"][0]["type"] == "doc"
+    assert payload["results"][0]["route"]["kind"] == "doc"
+    assert any(source["status"] == "unavailable" and "work down" in source["error"] for source in payload["sources"])
 
 
 def test_built_search_index_exposes_workflow_facing_fields(tmp_path, monkeypatch):
@@ -664,13 +871,17 @@ Use this reference when a workflow task needs invoice context.
 
     assert response["statusCode"] == 200
     result = _json_body(response)["results"][0]
-    assert result == {
+    assert result["path"] == "content/finance/reference/invoices.md"
+    assert result["id"] == "finance.invoices"
+    assert result["title"] == "Invoices"
+    assert result["domain"] == "finance"
+    assert result["doc_type"] == "reference"
+    assert result["summary"] == "Invoice summary"
+    assert result["description"] == "Workflow-facing invoice description"
+    assert result["purpose"] == "Help the operator find invoice steps."
+    assert result["type"] == "doc"
+    assert result["route"] == {
+        "kind": "doc",
         "path": "content/finance/reference/invoices.md",
-        "id": "finance.invoices",
-        "title": "Invoices",
-        "domain": "finance",
-        "doc_type": "reference",
-        "summary": "Invoice summary",
-        "description": "Workflow-facing invoice description",
-        "purpose": "Help the operator find invoice steps.",
+        "docId": "finance.invoices",
     }

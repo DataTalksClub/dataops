@@ -151,6 +151,7 @@ let currentWarnings = [];
 let lastSavedContent = "";
 let hasDraft = false;
 let searchController = null;
+let activeSearchSources = [];
 let operationsWorkSnapshot = emptyOperationsWorkSnapshot();
 let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
 let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
@@ -208,6 +209,7 @@ editor.addEventListener("input", () => {
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   refreshDocuments();
+  closeSidebar();
 });
 
 searchInput.addEventListener("input", debounce(refreshDocuments, 250));
@@ -578,22 +580,21 @@ async function refreshDocuments() {
       url.searchParams.set("limit", "80");
       if (domainFilter.value) url.searchParams.set("domain", domainFilter.value);
       if (typeFilter.value) url.searchParams.set("doc_type", typeFilter.value);
+      if (systemFilter.value) url.searchParams.set("system", systemFilter.value);
+      if (tagFilter.value) url.searchParams.set("tag", tagFilter.value);
 
       const payload = await request(url, { signal: controller.signal });
       if (searchController !== controller) return;
       searchController = null;
 
-      let results = payload.results || [];
-      // Tag/system filters aren't server-side; intersect with the local list.
-      if (systemFilter.value || tagFilter.value) {
-        const allowed = new Set(localFiltered.map((d) => d.path));
-        results = results.filter((r) => allowed.has(r.path));
-      }
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      activeSearchSources = Array.isArray(payload.sources) ? payload.sources : [];
       visibleDocuments = results;
       selectedFolder = "";
       renderTree(localFiltered);
-      renderDocuments(visibleDocuments, "Search results");
-      setStatus(resultCount(visibleDocuments, "matching document"));
+      renderUnifiedSearchResults(results, activeSearchSources, query);
+      const unavailable = activeSearchSources.filter((source) => source.status === "unavailable").length;
+      setStatus(`${results.length} search results${unavailable ? ` · ${unavailable} source issues` : ""}.`);
       syncLibraryPageTitle();
       return;
     }
@@ -674,6 +675,7 @@ function renderOperationsHome(documents) {
     recurringSnapshot: operationsRecurringSnapshot,
   });
   documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = "Operations Home";
   setPageTitle("Operations Home", "Home");
   clearSelectionButton.hidden = true;
@@ -796,11 +798,12 @@ function renderOperationsSurface(documents, view) {
     assistants: "Assistants",
     artifacts: "Artifacts",
     processes: "Processes / Docs",
-    search: "Search / Docs-only",
+    search: "Search",
     admin: "Admin",
   };
   const title = titles[view] || "Operations Home";
   documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = title;
   setPageTitle(title, title);
   clearSelectionButton.hidden = true;
@@ -818,7 +821,7 @@ function renderOperationsSurface(documents, view) {
   else if (view === "assistants") wrap.append(renderAssistantsSurface());
   else if (view === "artifacts") wrap.append(renderArtifactsSurface());
   else if (view === "processes") wrap.append(renderProcessesSurface(documents));
-  else if (view === "search") wrap.append(renderDocsOnlySearchSurface(documents));
+  else if (view === "search") wrap.append(renderUnifiedSearchSurface(documents));
   else if (view === "admin") wrap.append(renderAdminSurface(model));
   else renderOperationsHome(documents);
 
@@ -833,7 +836,7 @@ function surfaceDescription(view) {
     assistants: "Workflow support jobs appear here only when the assistant job lifecycle is connected.",
     artifacts: "Review proof and operational outputs linked to workflows and tasks.",
     processes: "SOPs, templates, and references are contextual support for work.",
-    search: "Current search is docs-only until unified work/docs/artifact search ships.",
+    search: "Find live work, workflows, artifacts, assistant jobs, templates, and process docs from one operator search.",
     admin: "Maintainer tools for process docs, content publishing, diagnostics, and configuration.",
   };
   return descriptions[view] || "";
@@ -845,7 +848,7 @@ function surfaceStatusText(view, model) {
   if (view === "templates") return `${model.templates.length} workflow templates · ${model.recurring.configs.length} recurring configs.`;
   if (view === "assistants") return operationsAssistantSnapshot.loaded ? `${operationsAssistantSnapshot.jobs.length} assistant jobs.` : "Assistant jobs not connected.";
   if (view === "artifacts") return operationsArtifactSnapshot.loaded ? `${operationsArtifactSnapshot.artifacts.length} artifacts indexed.` : "Artifact index not connected.";
-  if (view === "search") return "Docs-only search.";
+  if (view === "search") return "Unified operator search.";
   return "Workflow-first workspace.";
 }
 
@@ -1082,14 +1085,17 @@ function renderProcessesSurface(documents) {
   return section;
 }
 
-function renderDocsOnlySearchSurface(documents) {
+function renderUnifiedSearchSurface(documents) {
   const section = document.createElement("section");
   section.className = "ops-state-list";
-  section.append(renderHonestState("Docs-only search", "Unified task, workflow, artifact, and document search belongs to #32. The sidebar search field currently searches indexed process docs only."));
+  const searchState = activeSearchSources.some((source) => source.status === "unavailable")
+    ? "Search is showing partial source availability from the latest query."
+    : "Use the sidebar search to find executable work and process context together.";
+  section.append(renderHonestState("Operator search", searchState));
   const action = document.createElement("button");
   action.type = "button";
   action.className = "ops-quick-btn";
-  action.textContent = "Focus docs search";
+  action.textContent = "Focus search";
   action.addEventListener("click", () => {
     searchInput.focus();
     searchInput.select();
@@ -3535,7 +3541,7 @@ function renderOperationalSurfaceStates() {
       ? ["Artifacts", `${operationsArtifactSnapshot.artifacts.length} artifact rows loaded from /work/api/artifacts.`]
       : ["Artifacts", "Cross-workflow artifact index not connected; task/workflow artifacts still appear in context."],
     ["Inbox", "Not connected; #31 raw Telegram/email/manual intake is not represented with fake rows."],
-    ["Search", "Docs-only; unified task/workflow/artifact search belongs to #32."],
+    ["Search", "Connected through /search with partial-source states when work APIs are unavailable."],
   ];
   for (const [stateTitle, stateBody] of states) {
     const card = document.createElement("article");
@@ -3810,8 +3816,170 @@ function renderOperationsReference(ref) {
   return el;
 }
 
+function renderUnifiedSearchResults(results, sources, query) {
+  documentList.classList.remove("is-operations-home");
+  documentList.classList.add("is-unified-search");
+  libraryTitle.textContent = "Search results";
+  clearSelectionButton.hidden = false;
+
+  const wrap = document.createElement("div");
+  wrap.className = "unified-search-results";
+  const sourceState = renderSearchSourceState(sources);
+  if (sourceState) wrap.append(sourceState);
+
+  const safeResults = Array.isArray(results) ? results : [];
+  if (safeResults.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = query ? "No work or process context matches this search." : "Search for work, workflows, artifacts, assistant jobs, templates, or process docs.";
+    wrap.append(empty);
+    documentList.replaceChildren(wrap);
+    return;
+  }
+
+  for (const group of groupSearchResults(safeResults)) {
+    const section = document.createElement("section");
+    section.className = "unified-search-group";
+    const header = document.createElement("div");
+    header.className = "unified-search-group-header";
+    const title = document.createElement("h3");
+    title.textContent = group.label;
+    const count = document.createElement("span");
+    count.textContent = String(group.items.length);
+    header.append(title, count);
+    section.append(header);
+    for (const result of group.items) section.append(renderUnifiedSearchRow(result, query));
+    wrap.append(section);
+  }
+  documentList.replaceChildren(wrap);
+}
+
+function renderSearchSourceState(sources) {
+  const unavailable = (sources || []).filter((source) => source && source.status === "unavailable");
+  if (unavailable.length === 0) return null;
+  const section = document.createElement("section");
+  section.className = "ops-runtime-state search-source-state";
+  const title = document.createElement("strong");
+  title.textContent = "Partial search results";
+  const body = document.createElement("span");
+  body.textContent = "Some work sources could not load. Document results and any loaded work sources remain visible.";
+  section.append(title, body);
+  const list = document.createElement("ul");
+  for (const source of unavailable.slice(0, 5)) {
+    const item = document.createElement("li");
+    item.textContent = `${source.source || "source"}: ${source.error || "unavailable"}`;
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function groupSearchResults(results) {
+  const labels = {
+    task: "Tasks",
+    workflow: "Workflows",
+    template: "Runtime Templates",
+    doc: "Process Docs",
+    artifact: "Artifacts",
+    file: "Files",
+    "assistant-job": "Assistant Jobs",
+  };
+  const order = ["task", "workflow", "template", "doc", "artifact", "file", "assistant-job"];
+  const groups = new Map();
+  for (const result of results) {
+    const type = result?.type || "doc";
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(result);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => {
+      const ai = order.indexOf(a[0]);
+      const bi = order.indexOf(b[0]);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    })
+    .map(([type, items]) => ({ type, label: labels[type] || labelizeWorkValue(type), items }));
+}
+
+function renderUnifiedSearchRow(result, query) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = `unified-search-row result-${String(result.type || "doc").replace(/[^a-z0-9-]/gi, "-")}`;
+  row.addEventListener("click", () => openUnifiedSearchResult(result));
+
+  const main = document.createElement("div");
+  main.className = "unified-search-main";
+  const title = document.createElement("h3");
+  setHighlightedText(title, result.title || result.id || result.path || "Untitled result", query);
+  const summary = document.createElement("p");
+  setHighlightedText(summary, result.context || result.description || result.summary || "", query);
+  main.append(title, summary);
+
+  const meta = document.createElement("div");
+  meta.className = "unified-search-meta";
+  const chips = [
+    result.source_label || result.source || "",
+    result.doc_type || result.fields?.status || result.fields?.stage || "",
+    result.fields?.due_date ? `due ${result.fields.due_date}` : "",
+    result.fields?.assignee ? `owner ${result.fields.assignee}` : "",
+    result.fields?.proof || "",
+    result.path || "",
+  ].filter(Boolean);
+  for (const chipText of chips.slice(0, 5)) {
+    const chip = document.createElement("span");
+    chip.textContent = chipText;
+    meta.append(chip);
+  }
+
+  const action = document.createElement("span");
+  action.className = "unified-search-action";
+  action.textContent = result.action_label || "Open";
+  row.append(main, meta, action);
+  return row;
+}
+
+function openUnifiedSearchResult(result) {
+  const route = result?.route || {};
+  const kind = route.kind || result?.type;
+  if (kind === "doc" && (route.path || result.path)) {
+    openDocument(route.path || result.path);
+    return;
+  }
+  if (kind === "task" && route.taskId) {
+    openTaskPanel(route.taskId);
+    return;
+  }
+  if ((kind === "workflow" || kind === "bundle") && route.bundleId) {
+    openBundlePanel(route.bundleId);
+    return;
+  }
+  if (kind === "template") {
+    openQuickWorkflowForm({
+      template: {
+        templateId: route.templateId || result.id,
+        type: route.templateType || result.fields?.template_type,
+        title: result.title,
+      },
+    });
+    return;
+  }
+  if ((kind === "artifact" || kind === "file" || kind === "assistant-job") && route.taskId) {
+    openTaskPanel(route.taskId);
+    return;
+  }
+  if ((kind === "artifact" || kind === "file" || kind === "assistant-job") && route.bundleId) {
+    openBundlePanel(route.bundleId);
+    return;
+  }
+  if (kind === "assistant-job") {
+    showWorkspaceSurface("assistants");
+    return;
+  }
+  if (kind === "artifact" || kind === "file") showWorkspaceSurface("artifacts");
+}
+
 function renderDocuments(documents, title) {
   documentList.classList.remove("is-operations-home");
+  documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = title;
   const hasFilter = !!(selectedFolder || searchInput.value.trim());
   clearSelectionButton.hidden = !hasFilter;

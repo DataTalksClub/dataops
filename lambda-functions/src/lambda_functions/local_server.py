@@ -37,7 +37,7 @@ class LocalLambdaHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/search":
-            self.respond(search_handler(lambda_event("GET", parsed.query, parsed.path), None))
+            self.respond(search_handler(lambda_event("GET", parsed.query, parsed.path), None, work_fetcher=self.fetch_work_search_payload))
             return
 
         self.respond(api_handler(lambda_event("GET", parsed.query, parsed.path), None))
@@ -127,6 +127,33 @@ class LocalLambdaHandler(BaseHTTPRequestHandler):
         self.send_header("content-type", content_type)
         self.end_headers()
         self.wfile.write(body)
+
+    def fetch_work_search_payload(self, work_path: str, params: dict[str, str]) -> dict[str, Any]:
+        base_url = os.environ.get("WORK_ENGINE_DEV_URL", "")
+        if not base_url:
+            raise RuntimeError("Work engine dev server is not configured")
+        query = urllib.parse.urlencode(params) if params else ""
+        target = f"{base_url.rstrip('/')}{work_path}"
+        if query:
+            target += f"?{query}"
+        try:
+            with urllib.request.urlopen(target, timeout=15) as upstream:
+                raw = upstream.read()
+                payload = json.loads(raw.decode("utf-8") or "{}")
+        except urllib.error.HTTPError as exc:
+            try:
+                payload = json.loads(exc.read().decode("utf-8") or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            detail = payload.get("error") if isinstance(payload, dict) else ""
+            raise RuntimeError(detail or f"{work_path} returned HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Work engine dev server unreachable: {exc.reason}") from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"{work_path} returned invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"{work_path} returned an unsupported payload")
+        return payload
 
     def read_body(self) -> str:
         content_length = int(self.headers.get("content-length") or "0")
