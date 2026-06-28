@@ -52,6 +52,10 @@ TASK_TEMPLATE_SECTIONS = [
     "task-definitions",
 ]
 TASK_TEMPLATE_SYSTEMS = {"dataops", "datatasks"}
+TASK_DEFINITIONS_TABLE_HEADERS = {
+    "| # | Ref ID | Offset | Task | Requirements | Instructions |",
+    "| # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |",
+}
 PROCESS_CONTROLS = {
     "orchestrator intake with needs grooming": [
         "orchestrator files",
@@ -305,7 +309,7 @@ def validate_task_templates(repo_root: Path) -> list[str]:
         for section in TASK_TEMPLATE_SECTIONS:
             if f"<!-- sop-section-start: {section} -->" not in body:
                 violations.append(f"{repo_path}: missing task-template section {section}")
-        if "| # | Ref ID | Offset | Task | Requirements | Instructions |" not in body:
+        if not any(header in body for header in TASK_DEFINITIONS_TABLE_HEADERS):
             violations.append(f"{repo_path}: task definitions table header is missing or changed")
     return violations
 
