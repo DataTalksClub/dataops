@@ -12,6 +12,10 @@ import type { IntakeItem } from '../types';
 
 export interface IntakeFilters {
   status?: string;
+  dueFollowUpAt?: string;
+  followUpFrom?: string;
+  followUpTo?: string;
+  standaloneOnly?: string;
   source?: string;
   ownerId?: string;
   assigneeId?: string;
@@ -92,7 +96,13 @@ function matchesFilters(item: IntakeItem, filters: IntakeFilters): boolean {
     else if (key === 'duplicateState' && value === 'not-duplicates' && item.duplicateOfIntakeItemId) return false;
     else if (key === 'from' && String(item.sourceReceivedAt || '') < String(value)) return false;
     else if (key === 'to' && String(item.sourceReceivedAt || '') > String(value)) return false;
-    else if (!['tag', 'taskId', 'bundleId', 'assistantReadinessStatus', 'duplicateState', 'from', 'to'].includes(key)) {
+    else if (key === 'dueFollowUpAt') {
+      if (!item.followUpAt || String(item.followUpAt).slice(0, 10) > String(value).slice(0, 10)) return false;
+    }
+    else if (key === 'followUpFrom' && String(item.followUpAt || '') < String(value)) return false;
+    else if (key === 'followUpTo' && String(item.followUpAt || '').slice(0, 10) > String(value).slice(0, 10)) return false;
+    else if (key === 'standaloneOnly' && String(value) === 'true' && (item.taskIds || []).length > 0) return false;
+    else if (!['tag', 'taskId', 'bundleId', 'assistantReadinessStatus', 'duplicateState', 'from', 'to', 'dueFollowUpAt', 'followUpFrom', 'followUpTo', 'standaloneOnly'].includes(key)) {
       if ((item as unknown as Record<string, unknown>)[key] !== value) return false;
     }
   }
@@ -165,25 +175,33 @@ async function updateIntakeItem(
   });
 
   const expressionParts: string[] = [];
+  const removeParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
   const expressionAttrValues: Record<string, unknown> = {};
 
   let i = 0;
   for (const [key, value] of Object.entries(fields)) {
     const nameToken = `#f${i}`;
-    const valueToken = `:v${i}`;
-    expressionParts.push(`${nameToken} = ${valueToken}`);
     expressionAttrNames[nameToken] = key;
-    expressionAttrValues[valueToken] = value;
+    if (value === null) {
+      removeParts.push(nameToken);
+    } else {
+      const valueToken = `:v${i}`;
+      expressionParts.push(`${nameToken} = ${valueToken}`);
+      expressionAttrValues[valueToken] = value;
+    }
     i++;
   }
+  const updateExpressions = [];
+  if (expressionParts.length) updateExpressions.push(`SET ${expressionParts.join(', ')}`);
+  if (removeParts.length) updateExpressions.push(`REMOVE ${removeParts.join(', ')}`);
 
   const result = await client.send(new UpdateCommand({
     TableName: TABLE_INTAKE,
     Key: { PK: `INTAKE#${id}`, SK: `INTAKE#${id}` },
-    UpdateExpression: `SET ${expressionParts.join(', ')}`,
+    UpdateExpression: updateExpressions.join(' '),
     ExpressionAttributeNames: expressionAttrNames,
-    ExpressionAttributeValues: expressionAttrValues,
+    ExpressionAttributeValues: Object.keys(expressionAttrValues).length > 0 ? expressionAttrValues : undefined,
     ReturnValues: 'ALL_NEW',
   }));
 
@@ -298,6 +316,28 @@ async function listIntakeItems(
     if (key === 'to') {
       filterExpressions.push('sourceReceivedAt <= :to');
       expressionAttrValues[':to'] = value;
+      continue;
+    }
+    if (key === 'dueFollowUpAt') {
+      filterExpressions.push('attribute_exists(followUpAt) AND followUpAt <= :dueFollowUpAt');
+      expressionAttrValues[':dueFollowUpAt'] = value;
+      continue;
+    }
+    if (key === 'followUpFrom') {
+      filterExpressions.push('attribute_exists(followUpAt) AND followUpAt >= :followUpFrom');
+      expressionAttrValues[':followUpFrom'] = value;
+      continue;
+    }
+    if (key === 'followUpTo') {
+      filterExpressions.push('attribute_exists(followUpAt) AND followUpAt <= :followUpTo');
+      expressionAttrValues[':followUpTo'] = value;
+      continue;
+    }
+    if (key === 'standaloneOnly') {
+      if (String(value) === 'true') {
+        filterExpressions.push('size(taskIds) = :standaloneTaskCount');
+        expressionAttrValues[':standaloneTaskCount'] = 0;
+      }
       continue;
     }
     const nameToken = `#${key}`;

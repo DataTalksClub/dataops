@@ -6,6 +6,21 @@ function uid() {
   return Math.random().toString(36).slice(2, 8);
 }
 
+function todayString() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function offsetDateString(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
 const screenshotDir = path.resolve(__dirname, '..', '..', '.tmp', 'screenshots');
 
 async function screenshot(page, name) {
@@ -14,6 +29,149 @@ async function screenshot(page, name) {
 }
 
 test.describe('raw intake inbox workflow', () => {
+  test('routes blocked intake follow-ups through daily queue and waiting tasks', async ({ page, request }) => {
+    const suffix = uid();
+    const today = todayString();
+    const future = offsetDateString(7);
+
+    const dueItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Due intake follow-up ' + suffix,
+        note: 'Needs a guest reply today.',
+        source: 'manual',
+      },
+    })).json()).item;
+    const futureItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Future intake follow-up ' + suffix,
+        note: 'Needs a sponsor reply later.',
+        source: 'manual',
+      },
+    })).json()).item;
+
+    await request.post('/api/intake/' + dueItem.id + '/block', {
+      data: { reason: 'Waiting for guest reply', waitingFor: 'Guest', followUpAt: today },
+    });
+    await request.post('/api/intake/' + futureItem.id + '/block', {
+      data: { reason: 'Waiting for sponsor reply', waitingFor: 'Sponsor', followUpAt: future },
+    });
+
+    await page.goto('/#/');
+    await page.waitForSelector('#dashboard-tasks table', { timeout: 15000 });
+    await expect(page.locator('[data-intake-follow-up-row="' + dueItem.id + '"]')).toContainText('Intake follow-up due');
+    await expect(page.locator('#dashboard-tasks')).not.toContainText('Future intake follow-up ' + suffix);
+    await screenshot(page, 'issue-64-dashboard-due-intake-follow-up.png');
+
+    await page.locator('[data-intake-follow-up-row="' + dueItem.id + '"] a', { hasText: 'Open intake' }).click();
+    await expect(page).toHaveURL(new RegExp('#/inbox\\?intakeId=' + dueItem.id));
+    await expect(page.locator('[data-testid="inbox-detail"]')).toContainText('Due intake follow-up ' + suffix);
+    await screenshot(page, 'issue-64-intake-detail-follow-up-actions.png');
+
+    await page.locator('#intake-follow-up-note').fill('Sent guest reminder');
+    await page.locator('#intake-next-follow-up-at').fill(offsetDateString(3));
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.url().includes('/api/intake/' + dueItem.id + '/follow-up-sent')
+        && response.request().method() === 'POST'
+        && response.status() === 200
+      )),
+      page.locator('#intake-follow-up-sent-btn').click(),
+    ]);
+    await page.goto('/#/');
+    await page.waitForSelector('#dashboard-tasks', { timeout: 15000 });
+    await expect(page.locator('[data-intake-follow-up-row="' + dueItem.id + '"]')).toHaveCount(0);
+    await screenshot(page, 'issue-64-dashboard-after-intake-reschedule.png');
+
+    await page.goto('/#/inbox?intakeId=' + dueItem.id);
+    await expect(page.locator('[data-testid="inbox-detail"]')).toContainText('Due intake follow-up ' + suffix);
+    await page.locator('#intake-follow-up-note').fill('Guest replied with context');
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.url().includes('/api/intake/' + dueItem.id + '/response-received')
+        && response.request().method() === 'POST'
+        && response.status() === 200
+      )),
+      page.locator('#intake-response-btn').click(),
+    ]);
+    await expect(page.locator('[data-testid="inbox-detail"]')).toContainText('triaged');
+    await screenshot(page, 'issue-64-intake-response-unblocked.png');
+
+    await page.locator('[data-intake-filter="future"]').click();
+    await expect(page.locator('[data-intake-row="' + futureItem.id + '"]')).toBeVisible();
+    await expect(page.locator('[data-intake-row="' + dueItem.id + '"]')).toHaveCount(0);
+    await screenshot(page, 'issue-64-inbox-future-filter.png');
+
+    const convertItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Convert blocked intake ' + suffix,
+        note: 'Repeated sponsor follow-up belongs in tasks.',
+        source: 'manual',
+      },
+    })).json()).item;
+    await request.post('/api/intake/' + convertItem.id + '/block', {
+      data: { reason: 'Waiting for sponsor assets', waitingFor: 'Sponsor', followUpAt: today },
+    });
+    await page.goto('/#/inbox?intakeId=' + convertItem.id);
+    await page.locator('#intake-follow-up-note').fill('Move sponsor follow-up to task');
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.url().includes('/api/intake/' + convertItem.id + '/convert-task')
+        && response.request().method() === 'POST'
+        && response.status() === 201
+      )),
+      page.locator('#intake-convert-btn').click(),
+    ]);
+    await expect(page).toHaveURL(/#\/tasks\?taskId=/);
+    await screenshot(page, 'issue-64-create-waiting-task-from-intake.png');
+    const convertedDetail = await (await request.get('/api/intake/' + convertItem.id)).json();
+    const convertedTaskId = convertedDetail.item.taskIds[0];
+    const convertedTask = await (await request.get('/api/tasks/' + convertedTaskId)).json();
+    expect(convertedTask.status).toBe('waiting');
+    expect(convertedTask.waitingFor).toBe('Sponsor');
+    expect(convertedTask.intakeRefs.some((ref) => ref.intakeItemId === convertItem.id)).toBeTruthy();
+    await page.goto('/#/');
+    await expect(page.locator('[data-intake-follow-up-row="' + convertItem.id + '"]')).toHaveCount(0);
+
+    const waitingTaskRes = await request.post('/api/tasks', {
+      data: {
+        description: 'Existing waiting task ' + suffix,
+        date: today,
+        status: 'waiting',
+        waitingFor: 'Sponsor',
+        followUpAt: today,
+        comment: 'Waiting for sponsor reply',
+        assigneeId: '00000000-0000-0000-0000-000000000001',
+      },
+    });
+    const waitingTask = await waitingTaskRes.json();
+    const attachItem = (await (await request.post('/api/intake', {
+      data: {
+        title: 'Attach blocked intake ' + suffix,
+        note: 'Same sponsor reply.',
+        source: 'manual',
+      },
+    })).json()).item;
+    await request.post('/api/intake/' + attachItem.id + '/block', {
+      data: { reason: 'Waiting for sponsor', waitingFor: 'Sponsor', followUpAt: today },
+    });
+
+    await page.goto('/#/inbox?intakeId=' + attachItem.id);
+    await page.locator('#intake-task-id').fill(waitingTask.id);
+    await page.locator('#intake-follow-up-note').fill('Attach source to existing wait');
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.url().includes('/api/intake/' + attachItem.id + '/attach')
+        && response.request().method() === 'POST'
+        && response.status() === 200
+      )),
+      page.locator('[data-testid="inbox-detail"]').getByRole('button', { name: 'Attach' }).click(),
+    ]);
+    await screenshot(page, 'issue-64-attach-intake-to-waiting-task.png');
+    await page.goto('/#/');
+    await expect(page.locator('[data-intake-follow-up-row="' + attachItem.id + '"]')).toHaveCount(0);
+    await expect(page.locator('[data-task-row="' + waitingTask.id + '"]')).toContainText('Follow-up due');
+  });
+
   test('captures and triages intake into workflow context', async ({ page, request }) => {
     const suffix = uid();
     const bundleRes = await request.post('/api/bundles', {
