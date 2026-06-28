@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.newsletter
+aliases: []
 title: "Newsletter Task Template"
 summary: "Git-backed DataTasks template for the Newsletter operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Newsletter"
   - "task-template"
   - "newsletter"
+related_docs: []
 ---
 
 # Newsletter Task Template

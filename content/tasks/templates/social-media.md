@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.social-media
+aliases: []
 title: "Social Media Weekly Task Template"
 summary: "Git-backed DataTasks template for the Social Media Weekly operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Social media"
   - "task-template"
   - "social-media"
+related_docs: []
 ---
 
 # Social Media Weekly Task Template

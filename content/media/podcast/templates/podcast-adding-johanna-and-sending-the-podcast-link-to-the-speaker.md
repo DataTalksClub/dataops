@@ -1,4 +1,6 @@
 ---
+id: template.media.podcast.podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker
+aliases: []
 title: "Podcast - Adding Johanna and Sending the podcast link to the speaker"
 summary: "Reusable template for Podcast - Adding Johanna and Sending the podcast link to the speaker, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

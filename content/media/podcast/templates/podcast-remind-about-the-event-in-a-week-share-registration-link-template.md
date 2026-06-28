@@ -1,4 +1,6 @@
 ---
+id: template.media.podcast.podcast-remind-about-the-event-in-a-week-share-registration-link-template
+aliases: []
 title: "Podcast - Remind about the event in a week, share registration link - Template"
 summary: "Reusable template for Podcast - Remind about the event in a week, share registration link - Template, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

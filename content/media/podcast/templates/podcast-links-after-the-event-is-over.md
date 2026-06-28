@@ -1,4 +1,6 @@
 ---
+id: template.media.podcast.podcast-links-after-the-event-is-over
+aliases: []
 title: "Podcast - Links after the event is over"
 summary: "Reusable template for Podcast - Links after the event is over, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

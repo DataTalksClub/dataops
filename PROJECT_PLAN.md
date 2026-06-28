@@ -131,8 +131,10 @@ Minimum metadata exposed to the task app:
 
 ### Template
 
-DataTasks templates should reference DTC Operations docs by stable document ID
-or repo path.
+DataTasks templates should reference DTC Operations docs by stable document ID.
+Repo paths are transitional lookup aids only; they are not the workflow
+identity once a task, template, reminder, or completion flow depends on the
+document.
 
 Additional fields to support the integration:
 
@@ -467,6 +469,8 @@ Tasks:
 Risk: docs move often, and path-based links will break.
 
 Decision: use stable frontmatter IDs for docs referenced by tasks/templates.
+Aliases preserve intentionally migrated old IDs or paths. `source` remains
+provenance, and `instructionsUrl` remains only a legacy or external fallback.
 
 ### Source of Truth
 

@@ -1,4 +1,6 @@
 ---
+id: template.media.podcast.podcast-remind-the-guest-about-the-event-a-day-before-template
+aliases: []
 title: "Podcast - Remind the guest about the event (A day before) - Template"
 summary: "Reusable template for Podcast - Remind the guest about the event (A day before) - Template, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

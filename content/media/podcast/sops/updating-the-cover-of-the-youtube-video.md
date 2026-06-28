@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.updating-the-cover-of-the-youtube-video
+aliases: []
 title: "Updating the cover of the YouTube video"
 summary: "Steps for updating cover for a YouTube video, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.move-podcast-documents-to-archive-in-google-drive
+aliases: []
 title: "Move podcast documents to archive in Google drive"
 summary: "Steps for moving the podcast document to the Archive folder, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

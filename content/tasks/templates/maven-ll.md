@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.maven-ll
+aliases: []
 title: "Maven Lightning Lesson Task Template"
 summary: "Git-backed DataTasks template for the Maven Lightning Lesson operational workflow."
 doc_type: task-template
@@ -12,6 +14,7 @@ tags:
   - "Maven Lightning Lesson"
   - "task-template"
   - "maven-ll"
+related_docs: []
 ---
 
 # Maven Lightning Lesson Task Template

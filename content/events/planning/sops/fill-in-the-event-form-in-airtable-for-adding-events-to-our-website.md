@@ -1,4 +1,6 @@
 ---
+id: sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website
+aliases: []
 title: "Fill in the “event” form in Airtable for adding events to our website"
 summary: "Steps to fill out the event form for speaker details and event information, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

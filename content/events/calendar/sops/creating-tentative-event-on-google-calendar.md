@@ -1,4 +1,6 @@
 ---
+id: sop.events.calendar.creating-tentative-event-on-google-calendar
+aliases: []
 title: "Creating Tentative Event on Google Calendar"
 summary: "Steps to create a proposed event block on Google Calendar, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

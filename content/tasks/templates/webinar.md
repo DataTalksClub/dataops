@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.webinar
+aliases: []
 title: "Webinar Task Template"
 summary: "Git-backed DataTasks template for the Webinar operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Webinar"
   - "task-template"
   - "webinar"
+related_docs: []
 ---
 
 # Webinar Task Template

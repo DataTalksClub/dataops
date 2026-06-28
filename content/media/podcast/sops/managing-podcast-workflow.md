@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.managing-podcast-workflow
+aliases: []
 title: "Managing Podcast Workflow"
 summary: "Manage the podcast production workflow from guest coordination through recording, publishing, transcripts, and follow-up tasks."
 doc_type: sop

@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.add-links-to-youtube-after-the-stream-is-over
+aliases: []
 title: "Add links to YouTube after the stream is over"
 summary: "Steps to collect guest links and add them to the YouTube video description after the stream, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

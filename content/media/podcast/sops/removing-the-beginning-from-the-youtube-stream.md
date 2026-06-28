@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.removing-the-beginning-from-the-youtube-stream
+aliases: []
 title: "Removing the beginning from the YouTube stream"
 summary: "Steps to trim small talk or setup time from the beginning of a YouTube stream, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

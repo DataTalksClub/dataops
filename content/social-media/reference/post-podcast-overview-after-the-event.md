@@ -1,4 +1,6 @@
 ---
+id: reference.social-media.post-podcast-overview-after-the-event
+aliases: []
 title: "✅ Post. Podcast. Overview after the event"
 summary: "Reference guide for Post. Podcast. Overview after the event, covering copy, assets, examples, or workflow notes for related DataTalks.Club operations."
 doc_type: reference

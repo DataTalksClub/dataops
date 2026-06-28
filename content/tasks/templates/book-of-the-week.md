@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.book-of-the-week
+aliases: []
 title: "Book of the Week Task Template"
 summary: "Git-backed DataTasks template for the Book of the Week operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Book of the Week"
   - "task-template"
   - "book-of-the-week"
+related_docs: []
 ---
 
 # Book of the Week Task Template

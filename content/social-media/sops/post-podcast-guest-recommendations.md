@@ -1,4 +1,6 @@
 ---
+id: sop.social-media.post-podcast-guest-recommendations
+aliases: []
 title: "✅ Post. Podcast. Guest recommendations"
 summary: "Steps to share podcast guest recommendations on LinkedIn and Twitter/X, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

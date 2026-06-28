@@ -50,8 +50,19 @@ const PODCAST_SOURCE_DOC_IDS = [
   'sop.media.podcast.add-a-podcast-episode-via-airtable-form',
   'sop.media.podcast.move-podcast-documents-to-archive-in-google-drive',
   'sop.social-media.post-podcast-guest-recommendations',
-  'template.media.podcast.podcast-guest-intake',
-  'assistant.podcast.process.podcast',
+];
+
+const PODCAST_EXTERNAL_SOURCE_DOC_IDS = [
+  {
+    id: 'template.media.podcast.podcast-guest-intake',
+    path: 'assistants/podcast/templates/podcast_guest_intake.md',
+    reason: 'assistant-local intake template, not indexed by the content registry yet',
+  },
+  {
+    id: 'assistant.podcast.process.podcast',
+    path: 'assistants/podcast/process/podcast.md',
+    reason: 'assistant-local process guide, not indexed by the content registry yet',
+  },
 ];
 
 const PODCAST_PHASE_BY_REF: Record<string, string> = {
@@ -702,7 +713,10 @@ const DEFAULT_TEMPLATES = [
     emoji: '\u{1F399}\u{FE0F}',
     tags: ['Podcast'],
     phases: PODCAST_PHASES,
-    sourceDocIds: PODCAST_SOURCE_DOC_IDS,
+    sourceDocIds: [
+      ...PODCAST_SOURCE_DOC_IDS,
+      ...PODCAST_EXTERNAL_SOURCE_DOC_IDS.map((doc) => doc.id),
+    ],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [
@@ -1928,4 +1942,4 @@ if (require.main === module) {
     });
 }
 
-export { seed, DEFAULT_TEMPLATES };
+export { seed, DEFAULT_TEMPLATES, PODCAST_SOURCE_DOC_IDS, PODCAST_EXTERNAL_SOURCE_DOC_IDS };

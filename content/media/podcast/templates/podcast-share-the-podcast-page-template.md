@@ -1,4 +1,6 @@
 ---
+id: template.media.podcast.podcast-share-the-podcast-page-template
+aliases: []
 title: "Podcast - Share the podcast page - Template"
 summary: "Reusable template for Podcast - Share the podcast page - Template, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

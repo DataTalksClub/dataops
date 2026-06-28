@@ -1,4 +1,6 @@
 ---
+id: sop.events.luma.downloading-the-csv-file-on-luma
+aliases: []
 title: "Downloading the CSV File on Luma"
 summary: "Download attendee CSV exports from Luma for event follow-up, reporting, or importing registration data into other tools."
 doc_type: sop

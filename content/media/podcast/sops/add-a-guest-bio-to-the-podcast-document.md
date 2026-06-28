@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.add-a-guest-bio-to-the-podcast-document
+aliases: []
 title: "Add a guest bio to the podcast document"
 summary: "Steps to add the guest bio to the podcast document, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

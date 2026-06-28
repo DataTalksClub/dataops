@@ -223,6 +223,8 @@ Tasks:
 - Add stable IDs to priority podcast SOPs and templates.
 - Define the Podcast workflow from the DataTasks/Trello template.
 - Link each workflow task to a process doc or template.
+- Preserve operator-flow links through stable IDs, with external assistant
+  process references called out until the content registry supports them.
 - Add required artifacts: podcast doc, Luma link, Meetup link, YouTube link,
   transcript, Spotify link, Apple link, DTC webpage link.
 - Add stages: prep, announced, live, post-production, published, follow-up, done.
@@ -288,4 +290,3 @@ write issue specs manually.
 
 Use Podcast as the first real workflow because it touches all three source
 systems.
-

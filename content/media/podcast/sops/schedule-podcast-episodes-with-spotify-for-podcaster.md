@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster
+aliases: []
 title: "Schedule podcast episodes with Spotify for podcaster"
 summary: "Steps to schedule a podcast episode in Spotify for Podcasters, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

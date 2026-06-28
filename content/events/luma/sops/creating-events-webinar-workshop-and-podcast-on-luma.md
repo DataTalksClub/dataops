@@ -1,4 +1,6 @@
 ---
+id: sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma
+aliases: []
 title: "Creating events (Webinar, Workshop and Podcast) on Luma"
 summary: "Create Luma event pages for DataTalks.Club webinars, workshops, and podcasts with the correct description, timing, and registration details."
 doc_type: sop

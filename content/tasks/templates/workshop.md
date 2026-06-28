@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.workshop
+aliases: []
 title: "Workshop Task Template"
 summary: "Git-backed DataTasks template for the Workshop operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Workshop"
   - "task-template"
   - "workshop"
+related_docs: []
 ---
 
 # Workshop Task Template

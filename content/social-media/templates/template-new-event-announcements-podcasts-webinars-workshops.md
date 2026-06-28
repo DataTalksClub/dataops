@@ -1,4 +1,6 @@
 ---
+id: template.social-media.template-new-event-announcements-podcasts-webinars-workshops
+aliases: []
 title: "Template. New event announcements (podcasts, webinars, workshops)"
 summary: "Reusable template for Template. New event announcements (podcasts, webinars, workshops), with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

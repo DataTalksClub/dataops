@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.select-and-propose-a-date-for-events
+aliases: []
 title: "Select and propose a date for events"
 summary: "Steps to select and propose event dates using the DataTalks.Club schedule spreadsheet and Google Calendar."
 doc_type: sop

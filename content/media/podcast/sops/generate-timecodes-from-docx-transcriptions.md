@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.generate-timecodes-from-docx-transcriptions
+aliases: []
 title: "Generate Timecodes from docx Transcriptions"
 summary: "Steps for generating timecodes from a document with transcriptions, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.oss
+aliases: []
 title: "Open-Source Spotlight Task Template"
 summary: "Git-backed DataTasks template for the Open-Source Spotlight operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Open-Source Spotlight"
   - "task-template"
   - "oss"
+related_docs: []
 ---
 
 # Open-Source Spotlight Task Template
