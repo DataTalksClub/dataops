@@ -22,10 +22,16 @@ function offsetDateString(days) {
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
 const ISSUE_67_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-67');
+const ISSUE_69_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-69');
 
 async function screenshotIssue67(page, name) {
   fs.mkdirSync(ISSUE_67_SCREENSHOT_DIR, { recursive: true });
   await page.screenshot({ path: path.join(ISSUE_67_SCREENSHOT_DIR, name + '.png'), fullPage: true });
+}
+
+async function screenshotIssue69(page, name) {
+  fs.mkdirSync(ISSUE_69_SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(ISSUE_69_SCREENSHOT_DIR, name + '.png'), fullPage: true });
 }
 
 async function cleanupTask(request, task) {
@@ -375,30 +381,186 @@ test.describe('Home dashboard (issue #26)', () => {
   // ──────────────────────────────────────────────────────────────────
 
   test.describe('Scenario: Dashboard shows empty states gracefully', () => {
-    test('empty dashboard states provide clear next actions', async ({ page }) => {
-      await page.route('**/api/tasks?date=*', async (route) => {
+    const seededTemplates = [
+      {
+        id: 'tpl-first-run-podcast',
+        name: 'Podcast',
+        type: 'podcast',
+        emoji: '🎙️',
+        triggerType: 'manual',
+        tags: ['podcast'],
+        sourceDocIds: ['task-template.tasks.podcast'],
+        taskDefinitions: [
+          { refId: 'brief', description: 'Prepare podcast brief', offsetDays: -14 },
+          { refId: 'live', description: 'Run podcast live stream', offsetDays: 0 },
+        ],
+      },
+      {
+        id: 'tpl-first-run-newsletter',
+        name: 'Newsletter',
+        type: 'newsletter',
+        emoji: '📰',
+        triggerType: 'automatic',
+        tags: ['newsletter'],
+        sourceDocIds: ['task-template.tasks.newsletter'],
+        taskDefinitions: [
+          { refId: 'draft', description: 'Draft newsletter', offsetDays: -7 },
+          { refId: 'publish', description: 'Publish newsletter', offsetDays: 0 },
+        ],
+      },
+    ];
+
+    async function mockCleanSeededRuntime(page, createdState) {
+      await page.route('**/api/users', async (route) => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ tasks: [] }),
+          body: JSON.stringify({ users: [{ id: GRACE_ID, name: 'Grace', email: 'grace@datatalks.club' }] }),
         });
       });
-      await page.route('**/api/bundles', async (route) => {
+      await page.route('**/api/templates', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ templates: seededTemplates }),
+        });
+      });
+      await page.route('**/api/tasks**', async (route) => {
         if (route.request().method() === 'GET') {
           await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ bundles: [] }),
+            body: JSON.stringify({ tasks: [] }),
           });
           return;
         }
         await route.continue();
       });
+      await page.route('**/api/intake**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [] }),
+        });
+      });
+      await page.route('**/api/assistant-jobs**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ jobs: [] }),
+        });
+      });
+      await page.route('**/api/artifacts**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ artifacts: [] }),
+        });
+      });
+      await page.route('**/api/files**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ files: [] }),
+        });
+      });
+      await page.route('**/api/notifications**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ notifications: [] }),
+        });
+      });
+      await page.route('**/api/bundles**', async (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        const pathname = url.pathname;
+
+        if (request.method() === 'GET' && pathname === '/api/bundles') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ bundles: createdState.bundle ? [createdState.bundle] : [] }),
+          });
+          return;
+        }
+
+        if (request.method() === 'POST' && pathname === '/api/bundles') {
+          const payload = JSON.parse(request.postData() || '{}');
+          const template = seededTemplates.find((item) => item.id === payload.templateId) || seededTemplates[0];
+          const workflowType = template.type || 'workflow';
+          const bundleId = 'bundle-first-run-' + workflowType;
+          const linkName = workflowType === 'newsletter' ? 'Mailchimp newsletter' : 'Podcast document';
+          const taskDescription = workflowType === 'newsletter' ? 'Draft newsletter' : 'Prepare podcast brief';
+          const templateTaskRef = workflowType === 'newsletter' ? 'draft' : 'brief';
+          createdState.bundle = {
+            id: bundleId,
+            title: payload.title,
+            anchorDate: payload.anchorDate,
+            templateId: payload.templateId,
+            status: 'active',
+            stage: 'preparation',
+            emoji: template.emoji,
+            tags: [workflowType],
+            bundleLinks: [{ name: linkName, url: '' }],
+          };
+          createdState.tasks = [
+            {
+              id: 'task-first-run-' + templateTaskRef,
+              bundleId: createdState.bundle.id,
+              templateId: payload.templateId,
+              templateTaskRef,
+              source: 'template',
+              status: 'todo',
+              date: payload.anchorDate,
+              description: taskDescription,
+              instructionDocId: workflowType === 'newsletter'
+                ? 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp'
+                : 'sop.media.podcast.create-podcast-document',
+              proofRequirement: { type: 'comment', label: workflowType === 'newsletter' ? 'Draft reviewed' : 'Podcast brief reviewed', required: true },
+            },
+          ];
+          await route.fulfill({
+            status: 201,
+            contentType: 'application/json',
+            body: JSON.stringify({ bundle: createdState.bundle, tasks: createdState.tasks }),
+          });
+          return;
+        }
+
+        if (request.method() === 'GET' && createdState.bundle && pathname === '/api/bundles/' + createdState.bundle.id) {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ bundle: createdState.bundle }),
+          });
+          return;
+        }
+
+        if (request.method() === 'GET' && createdState.bundle && pathname === '/api/bundles/' + createdState.bundle.id + '/tasks') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ tasks: createdState.tasks || [] }),
+          });
+          return;
+        }
+
+        await route.continue();
+      });
+    }
+
+    test('empty dashboard surfaces seeded first-run workflow actions', async ({ page }) => {
+      await mockCleanSeededRuntime(page, {});
 
       await page.goto('/#/');
-      await expect(page.locator('#dashboard-bundles .empty-state-title')).toHaveText('No active bundles');
-      await expect(page.locator('#dashboard-bundles .empty-state-body')).toContainText('Create a bundle');
-      await expect(page.locator('#dashboard-bundles .empty-state-action', { hasText: 'New bundle' })).toHaveAttribute('href', '#/bundles');
+      await expect(page.locator('[data-testid="first-run-workflows"]')).toBeVisible();
+      await expect(page.locator('#dashboard-bundles')).toContainText('No active production work yet');
+      await expect(page.locator('[data-testid="first-run-template-podcast"]')).toContainText('Podcast');
+      await expect(page.locator('[data-testid="first-run-template-newsletter"]')).toContainText('Newsletter');
+      await expect(page.locator('[data-testid="first-run-start-podcast"]')).toBeVisible();
+      await expect(page.locator('[data-testid="first-run-start-newsletter"]')).toBeVisible();
+      await screenshotIssue69(page, 'first-run-dashboard');
 
       const queueEmpty = page.locator('#dashboard-tasks .empty-state-title');
       await page.locator('#dashboard-tasks .empty-state-title, #dashboard-tasks table').first().waitFor({ state: 'visible' });
@@ -409,6 +571,61 @@ test.describe('Home dashboard (issue #26)', () => {
       } else {
         await expect(page.locator('#dashboard-tasks table')).toBeVisible();
       }
+    });
+
+    test('starting newsletter from first-run creates a real workflow and opens it', async ({ page }) => {
+      const createdState = {};
+      await mockCleanSeededRuntime(page, createdState);
+
+      await page.goto('/#/');
+      await expect(page.locator('[data-testid="first-run-template-newsletter"]')).toBeVisible();
+      await page.locator('[data-testid="first-run-title-newsletter"]').fill('First-run Newsletter 2026-07-13');
+      await page.locator('[data-testid="first-run-anchor-newsletter"]').fill('2026-07-13');
+
+      await Promise.all([
+        page.waitForResponse((response) => (
+          response.url().endsWith('/api/bundles')
+          && response.request().method() === 'POST'
+          && response.status() === 201
+        )),
+        page.locator('[data-testid="first-run-start-newsletter"]').click(),
+      ]);
+
+      await expect(page).toHaveURL(/\/#\/bundles\?bundleId=bundle-first-run-newsletter/);
+      await expect(page.locator('#bundle-detail')).toContainText('First-run Newsletter 2026-07-13');
+      await expect(page.locator('#bundle-detail')).toContainText('Draft newsletter');
+      await expect(page.locator('#bundle-detail')).toContainText('Mailchimp newsletter');
+      expect(createdState.bundle.templateId).toBe('tpl-first-run-newsletter');
+      expect(createdState.tasks[0].source).toBe('template');
+      expect(createdState.tasks[0].proofRequirement.label).toBe('Draft reviewed');
+      await screenshotIssue69(page, 'after-start-newsletter-workflow');
+    });
+
+    test('starting podcast from first-run creates a real workflow and opens it', async ({ page }) => {
+      const createdState = {};
+      await mockCleanSeededRuntime(page, createdState);
+
+      await page.goto('/#/');
+      await expect(page.locator('[data-testid="first-run-template-podcast"]')).toBeVisible();
+      await page.locator('[data-testid="first-run-title-podcast"]').fill('First-run Podcast 2026-08-20');
+      await page.locator('[data-testid="first-run-anchor-podcast"]').fill('2026-08-20');
+
+      await Promise.all([
+        page.waitForResponse((response) => (
+          response.url().endsWith('/api/bundles')
+          && response.request().method() === 'POST'
+          && response.status() === 201
+        )),
+        page.locator('[data-testid="first-run-start-podcast"]').click(),
+      ]);
+
+      await expect(page).toHaveURL(/\/#\/bundles\?bundleId=bundle-first-run-podcast/);
+      await expect(page.locator('#bundle-detail')).toContainText('First-run Podcast 2026-08-20');
+      await expect(page.locator('#bundle-detail')).toContainText('Prepare podcast brief');
+      await expect(page.locator('#bundle-detail')).toContainText('Podcast document');
+      expect(createdState.bundle.templateId).toBe('tpl-first-run-podcast');
+      expect(createdState.tasks[0].source).toBe('template');
+      expect(createdState.tasks[0].proofRequirement.label).toBe('Podcast brief reviewed');
     });
   });
 

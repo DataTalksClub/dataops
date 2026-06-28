@@ -1804,6 +1804,210 @@
     });
   }
 
+  function templateTaskCount(template) {
+    return (template && template.taskDefinitions && template.taskDefinitions.length) || 0;
+  }
+
+  function templateHasTag(template, tag) {
+    return Array.isArray(template && template.tags) && template.tags.indexOf(tag) !== -1;
+  }
+
+  function templateHasSource(template, sourceDocId) {
+    return Array.isArray(template && template.sourceDocIds) && template.sourceDocIds.indexOf(sourceDocId) !== -1;
+  }
+
+  function templateDisplayName(template, fallback) {
+    return (template && template.name) || fallback || 'Workflow';
+  }
+
+  function findNewsletterTemplate(templates) {
+    return templates.find(function (template) {
+      return template.type === 'newsletter' && templateTaskCount(template) > 0;
+    }) || templates.find(function (template) {
+      return templateHasSource(template, 'task-template.tasks.newsletter');
+    }) || templates.find(function (template) {
+      return templateHasTag(template, 'newsletter') && templateTaskCount(template) > 0;
+    }) || templates.find(function (template) {
+      return String(template.name || '').trim().toLowerCase() === 'newsletter';
+    }) || null;
+  }
+
+  function firstRunTemplateSpecs() {
+    return [
+      {
+        type: 'podcast',
+        label: 'Podcast',
+        anchorLabel: 'Live stream date',
+        titlePlaceholder: 'Podcast episode title',
+        findTemplate: findPodcastTemplate,
+      },
+      {
+        type: 'newsletter',
+        label: 'Newsletter',
+        anchorLabel: 'Publication date',
+        titlePlaceholder: 'Newsletter issue or sponsor',
+        findTemplate: findNewsletterTemplate,
+      },
+    ];
+  }
+
+  function defaultFirstRunWorkflowTitle(template, spec, anchorDate) {
+    var label = (spec && spec.label) || templateDisplayName(template, 'Workflow');
+    return label + ': ' + anchorDate;
+  }
+
+  function renderFirstRunWorkflowCard(template, spec) {
+    var type = (spec && spec.type) || (template.type || 'workflow');
+    var label = (spec && spec.label) || templateDisplayName(template, 'Workflow');
+    var anchorLabel = (spec && spec.anchorLabel) || 'Anchor date';
+    var anchorDate = todayString();
+    var taskCount = templateTaskCount(template);
+    var card = document.createElement('div');
+    card.className = 'first-run-workflow-card';
+    card.setAttribute('data-testid', 'first-run-template-' + type);
+    card.setAttribute('data-template-id', template.id);
+
+    var title = document.createElement('div');
+    title.className = 'first-run-workflow-title';
+    title.textContent = (template.emoji ? template.emoji + ' ' : '') + label;
+    card.appendChild(title);
+
+    var meta = document.createElement('div');
+    meta.className = 'first-run-workflow-meta';
+    meta.innerHTML =
+      '<span class="badge-type">' + escapeHtml(template.type || type) + '</span>' +
+      '<span class="badge-trigger ' + escapeHtml(template.triggerType || 'manual') + '">' + escapeHtml(template.triggerType || 'manual') + '</span>' +
+      '<span class="template-card-tasks">' + taskCount + ' task' + (taskCount !== 1 ? 's' : '') + '</span>';
+    card.appendChild(meta);
+
+    var form = document.createElement('div');
+    form.className = 'first-run-workflow-form';
+
+    var titleLabel = document.createElement('label');
+    titleLabel.className = 'form-group';
+    titleLabel.textContent = 'Workflow title';
+    var titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.value = defaultFirstRunWorkflowTitle(template, spec, anchorDate);
+    titleInput.placeholder = (spec && spec.titlePlaceholder) || 'Workflow title';
+    titleInput.setAttribute('data-testid', 'first-run-title-' + type);
+    titleLabel.appendChild(titleInput);
+    form.appendChild(titleLabel);
+
+    var dateLabel = document.createElement('label');
+    dateLabel.className = 'form-group';
+    dateLabel.textContent = anchorLabel;
+    var dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.value = anchorDate;
+    dateInput.setAttribute('data-testid', 'first-run-anchor-' + type);
+    dateInput.addEventListener('change', function () {
+      if (!titleInput.value.trim() || titleInput.value === defaultFirstRunWorkflowTitle(template, spec, anchorDate)) {
+        anchorDate = dateInput.value || todayString();
+        titleInput.value = defaultFirstRunWorkflowTitle(template, spec, anchorDate);
+      }
+    });
+    dateLabel.appendChild(dateInput);
+    form.appendChild(dateLabel);
+
+    var startBtn = document.createElement('button');
+    startBtn.className = 'btn-primary first-run-start-btn';
+    startBtn.type = 'button';
+    startBtn.textContent = 'Start ' + label;
+    startBtn.setAttribute('data-testid', 'first-run-start-' + type);
+    startBtn.addEventListener('click', function () {
+      var workflowTitle = titleInput.value.trim();
+      var workflowAnchorDate = dateInput.value;
+      if (!workflowTitle || !workflowAnchorDate) {
+        showError('Workflow title and anchor date are required.');
+        return;
+      }
+      setButtonBusy(startBtn, true, 'Start ' + label, 'Starting...');
+      api.bundles.create({
+        title: workflowTitle,
+        anchorDate: workflowAnchorDate,
+        templateId: template.id,
+      }).then(function (created) {
+        bundlesCache = null;
+        currentBundleId = created.bundle.id;
+        queueNotice(label + ' workflow started.');
+        location.hash = bundleHash(currentBundleId);
+      }).catch(function (err) {
+        showError('Failed to start ' + label + ' workflow: ' + err.message);
+      }).finally(function () {
+        setButtonBusy(startBtn, false, 'Start ' + label);
+      });
+    });
+    form.appendChild(startBtn);
+    card.appendChild(form);
+
+    return card;
+  }
+
+  function renderDashboardFirstRunState(container, templates) {
+    container.innerHTML = '';
+    if (!templates.length) {
+      container.innerHTML = renderEmptyState(
+        'No workflow templates available',
+        'Seed workflow templates before starting production work, then return here to start the first real workflow.',
+        [{ href: '#/templates', label: 'Open templates' }]
+      );
+      container.querySelector('.empty-state').setAttribute('data-testid', 'first-run-no-templates');
+      return;
+    }
+
+    var shell = document.createElement('div');
+    shell.className = 'first-run-workflows';
+    shell.setAttribute('data-testid', 'first-run-workflows');
+
+    var intro = document.createElement('div');
+    intro.className = 'first-run-workflows-intro';
+    intro.innerHTML =
+      '<div class="empty-state-title">No active production work yet</div>' +
+      '<div class="empty-state-body">Seeded workflow templates are ready. Start a real workflow from a template; no demo bundles or placeholder queue rows will be created.</div>';
+    shell.appendChild(intro);
+
+    var cards = document.createElement('div');
+    cards.className = 'first-run-workflow-grid';
+
+    var seenTemplateIds = {};
+    firstRunTemplateSpecs().forEach(function (spec) {
+      var template = spec.findTemplate(templates);
+      if (!template || seenTemplateIds[template.id]) return;
+      seenTemplateIds[template.id] = true;
+      cards.appendChild(renderFirstRunWorkflowCard(template, spec));
+    });
+
+    var fallbackTemplates = templates.filter(function (template) {
+      return template.id && !seenTemplateIds[template.id] && templateTaskCount(template) > 0;
+    }).sort(function (a, b) {
+      return templateDisplayName(a).localeCompare(templateDisplayName(b));
+    }).slice(0, cards.children.length ? 4 : 6);
+
+    fallbackTemplates.forEach(function (template) {
+      seenTemplateIds[template.id] = true;
+      cards.appendChild(renderFirstRunWorkflowCard(template, {
+        type: template.type || 'workflow',
+        label: templateDisplayName(template, 'Workflow'),
+        anchorLabel: 'Anchor date',
+        titlePlaceholder: 'Workflow title',
+      }));
+    });
+
+    if (!cards.children.length) {
+      shell.appendChild(document.createRange().createContextualFragment(renderEmptyState(
+        'No startable workflow templates',
+        'Templates are present, but none have task definitions to instantiate into real workflow work.',
+        [{ href: '#/templates', label: 'Review templates' }]
+      )));
+      container.appendChild(shell);
+      return;
+    }
+
+    shell.appendChild(cards);
+    container.appendChild(shell);
+  }
+
   function loadDashboardBundles() {
     var container = document.getElementById('dashboard-bundles');
     if (!container) return;
@@ -1821,11 +2025,7 @@
       });
 
       if (bundles.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No active bundles',
-          'Create a bundle to group upcoming work and track progress from this dashboard.',
-          [{ href: '#/bundles', label: 'New bundle' }]
-        );
+        renderDashboardFirstRunState(container, templates);
         return;
       }
 

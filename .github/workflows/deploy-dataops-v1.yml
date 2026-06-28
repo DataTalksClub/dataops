@@ -229,9 +229,13 @@ jobs:
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
               "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"
 
-      - name: Seed runtime users and workflow templates
+      - name: Seed runtime users, workflow templates, and recurring configs
         working-directory: ${{ github.workspace }}/work-engine
         run: |
+          export DATAOPS_TASKS_TABLE="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='DataOpsTasksTableName'].OutputValue" \
+            --output text)"
           export DATAOPS_USERS_TABLE="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
             --query "Stacks[0].Outputs[?OutputKey=='DataOpsUsersTableName'].OutputValue" \
@@ -242,6 +246,7 @@ jobs:
             --output text)"
           npm exec -- tsx scripts/seed-users.ts
           npm exec -- tsx scripts/seed-templates.ts
+          npm exec -- tsx scripts/seed-recurring.ts
 
       - name: Smoke test deployed docs full app
         run: |

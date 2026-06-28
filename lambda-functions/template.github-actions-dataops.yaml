@@ -170,6 +170,14 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-users
                   - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-templates
+              - Sid: DynamoDbDataOpsRecurringSeed
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-tasks
               - Sid: IamDataOpsFunctionRole
                 Effect: Allow
                 Action:
