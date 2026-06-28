@@ -597,6 +597,162 @@ const TAX_REPORT_AT_RISK_BY_REF: Record<string, string[]> = {
   'organize-invoices-folders': ['required proof missing', 'waiting follow-up still due', 'processed folders not organized'],
 };
 
+const OSS_PHASES: WorkflowPhase[] = [
+  { id: 'lead-outreach', name: 'Lead selection and author outreach', stage: 'preparation' },
+  { id: 'recording-scheduling', name: 'Recording date coordination', stage: 'preparation' },
+  { id: 'recording-intake', name: 'Recording intake and YouTube draft', stage: 'preparation' },
+  { id: 'video-production', name: 'Video edit, timecodes, and author review', stage: 'preparation' },
+  { id: 'publication', name: 'YouTube schedule, playlist, and author publication notice', stage: 'after-event' },
+  { id: 'promotion-follow-up', name: 'Guest sharing, recommendations, and social announcement', stage: 'after-event' },
+];
+
+const OSS_REQUIRED_BUNDLE_LINKS = [
+  'Guest email',
+  'Tool GitHub',
+  'Recording source',
+  'YouTube',
+  'Author review',
+  'OSS playlist',
+  'Social announcement',
+];
+
+const OSS_SOURCE_DOC_IDS = [
+  'task-template.tasks.oss',
+  'reference.overview.events',
+  'reference.overview.events-pre-recorded-open-source-spotlight',
+  'sop.media.open-source-spotlight.reach-out-to-open-source-spotlight-guests',
+  'sop.media.open-source-spotlight.joining-open-source-project-communities-and-asking-for-oss-demos',
+  'sop.media.open-source-spotlight.filling-in-the-open-source-spotlight-airtable-database',
+  'sop.media.open-source-spotlight.find-timestamps-for-editing',
+  'sop.media.open-source-spotlight.adding-links-from-the-zoom-chat',
+  'sop.media.open-source-spotlight.adding-timecodes-for-open-source-spotlight-videos',
+  'sop.media.open-source-spotlight.schedule-open-source-spotlight-youtube-videos',
+  'template.media.open-source-spotlight.oss-reaching-out-to-authors-about-their-tool',
+  'template.media.open-source-spotlight.oss-asking-for-revisions-and-links',
+  'template.media.open-source-spotlight.oss-ask-the-guests-to-share-the-videos-with-their-networks',
+  'reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube',
+  'reference.social-media.post-oss',
+  'sop.media.video-youtube.add-timecodes-to-youtube-videos',
+  'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist',
+];
+
+const OSS_PHASE_BY_REF: Record<string, string> = {
+  'reach-out-github-authors': 'lead-outreach',
+  'reach-out-tool-author': 'lead-outreach',
+  'find-time-calendly': 'recording-scheduling',
+  'schedule-recording': 'recording-scheduling',
+  'record-demo': 'recording-intake',
+  'download-upload-youtube': 'recording-intake',
+  'editing-video': 'video-production',
+  'add-timecodes-youtube': 'video-production',
+  'ask-authors-review-codes': 'video-production',
+  'schedule-youtube-video': 'publication',
+  'tell-author-publish-date': 'publication',
+  'add-to-oss-playlist': 'publication',
+  'ask-guest-share-recording': 'promotion-follow-up',
+  'schedule-social-media': 'promotion-follow-up',
+};
+
+const OSS_PHASE_SYSTEMS: Record<string, string[]> = {
+  'lead-outreach': ['github', 'linkedin', 'email', 'airtable', 'slack'],
+  'recording-scheduling': ['calendly', 'google-calendar', 'email', 'zoom'],
+  'recording-intake': ['zoom', 'youtube', 'google-drive'],
+  'video-production': ['zoom', 'youtube', 'google-docs', 'email'],
+  publication: ['youtube', 'email'],
+  'promotion-follow-up': ['email', 'linkedin', 'twitter', 'hootsuite', 'youtube'],
+};
+
+const OSS_DOC_CONTEXT: Record<string, Pick<TaskDefinition, 'instructionDocId' | 'instructionStepId' | 'systems'>> = {
+  'reach-out-github-authors': {
+    instructionDocId: 'sop.media.open-source-spotlight.reach-out-to-open-source-spotlight-guests',
+    instructionStepId: '1',
+    systems: ['github', 'linkedin', 'airtable'],
+  },
+  'reach-out-tool-author': {
+    instructionDocId: 'template.media.open-source-spotlight.oss-reaching-out-to-authors-about-their-tool',
+    systems: ['email', 'github', 'linkedin'],
+  },
+  'find-time-calendly': {
+    instructionDocId: 'reference.overview.events-pre-recorded-open-source-spotlight',
+    systems: ['calendly', 'google-calendar', 'email'],
+  },
+  'schedule-recording': {
+    instructionDocId: 'reference.overview.events-pre-recorded-open-source-spotlight',
+    systems: ['google-calendar', 'zoom', 'email'],
+  },
+  'record-demo': {
+    instructionDocId: 'reference.overview.events-pre-recorded-open-source-spotlight',
+    systems: ['zoom', 'youtube'],
+  },
+  'download-upload-youtube': {
+    instructionDocId: 'reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube',
+    systems: ['zoom', 'youtube', 'google-drive'],
+  },
+  'editing-video': {
+    instructionDocId: 'sop.media.open-source-spotlight.find-timestamps-for-editing',
+    instructionStepId: '1',
+    systems: ['zoom', 'youtube', 'google-sheets'],
+  },
+  'add-timecodes-youtube': {
+    instructionDocId: 'sop.media.open-source-spotlight.adding-timecodes-for-open-source-spotlight-videos',
+    instructionStepId: '1',
+    systems: ['youtube', 'google-docs'],
+  },
+  'ask-authors-review-codes': {
+    instructionDocId: 'template.media.open-source-spotlight.oss-asking-for-revisions-and-links',
+    systems: ['email', 'youtube', 'github'],
+  },
+  'schedule-youtube-video': {
+    instructionDocId: 'sop.media.open-source-spotlight.schedule-open-source-spotlight-youtube-videos',
+    instructionStepId: '1',
+    systems: ['youtube'],
+  },
+  'tell-author-publish-date': {
+    instructionDocId: 'template.media.open-source-spotlight.oss-asking-for-revisions-and-links',
+    systems: ['email', 'youtube'],
+  },
+  'add-to-oss-playlist': {
+    instructionDocId: 'sop.media.open-source-spotlight.schedule-open-source-spotlight-youtube-videos',
+    instructionStepId: '2',
+    systems: ['youtube'],
+  },
+  'ask-guest-share-recording': {
+    instructionDocId: 'template.media.open-source-spotlight.oss-ask-the-guests-to-share-the-videos-with-their-networks',
+    systems: ['email', 'linkedin', 'twitter'],
+  },
+  'schedule-social-media': {
+    instructionDocId: 'reference.social-media.post-oss',
+    systems: ['linkedin', 'twitter', 'hootsuite', 'youtube'],
+  },
+};
+
+const OSS_WAITING_TASKS: Record<string, string> = {
+  'reach-out-github-authors': 'author, maintainer, or project community reply',
+  'reach-out-tool-author': 'author reply or working contact path',
+  'find-time-calendly': 'author date confirmation',
+  'schedule-recording': 'recording/calendar confirmation',
+  'record-demo': 'Alexey or author recording handoff',
+  'ask-authors-review-codes': 'author review, cut requests, or missing project links',
+  'ask-guest-share-recording': 'guest share confirmation or OSS author recommendations',
+};
+
+const OSS_AT_RISK_BY_REF: Record<string, string[]> = {
+  'reach-out-github-authors': ['missing Tool GitHub link', 'no maintainer contact path', 'no outreach note'],
+  'reach-out-tool-author': ['missing Guest email/contact link', 'author reply not captured'],
+  'find-time-calendly': ['no confirmed or proposed recording time'],
+  'schedule-recording': ['missing recording/calendar status'],
+  'record-demo': ['missing recording source or owner handoff note'],
+  'download-upload-youtube': ['missing Recording source link', 'missing YouTube draft link'],
+  'editing-video': ['edit not reviewed or no edit status'],
+  'add-timecodes-youtube': ['timecodes or description links not confirmed'],
+  'ask-authors-review-codes': ['author review pending', 'author links missing'],
+  'schedule-youtube-video': ['missing YouTube link', 'video not scheduled for anchor date/time'],
+  'tell-author-publish-date': ['author publication notice not sent'],
+  'add-to-oss-playlist': ['playlist status not confirmed'],
+  'ask-guest-share-recording': ['guest share/recommendation follow-up still pending'],
+  'schedule-social-media': ['missing social announcement proof', 'waiting follow-up still open'],
+};
+
 function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
   return tasks.map((task) => {
     const phase = PODCAST_PHASE_BY_REF[task.refId];
@@ -918,6 +1074,119 @@ function newsletterRequiredBundleLinks(task: TaskDefinition): string[] {
   }
   if (task.refId === 'add-newsletter-performance' || task.refId === 'send-performance-to-sponsor') {
     return ['Mailchimp newsletter', 'LinkedIn', 'X'];
+  }
+  return [];
+}
+
+function withOssTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
+  return tasks.map((task) => {
+    const phase = OSS_PHASE_BY_REF[task.refId];
+    const docContext = OSS_DOC_CONTEXT[task.refId] || {};
+    const proofRequirement = ossProofRequirement(task);
+    const waitingFor = OSS_WAITING_TASKS[task.refId];
+    const validation: Record<string, unknown> = {
+      operatorAction: task.description,
+      completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
+      requiredBundleLinks: ossRequiredBundleLinks(task),
+      reminderSemantics: {
+        due: true,
+        overdue: true,
+        missingEvidence: proofRequirement.required !== false,
+        waitingFollowUp: Boolean(waitingFor),
+        publicationAnchor: task.offsetDays === 0,
+        postPublicationFollowUp: task.offsetDays > 0,
+      },
+      waitingAllowed: Boolean(waitingFor),
+      atRiskWhen: OSS_AT_RISK_BY_REF[task.refId] || [],
+      dashboardStates: ['today', 'overdue', 'waiting', 'follow-up-due', 'missing-evidence', 'at-risk'],
+      ...(typeof task.validation === 'object' && task.validation !== null ? task.validation : {}),
+    };
+    if (waitingFor) {
+      validation.waitingSemantics = {
+        waitingFor,
+        requires: ['waitingFor', 'followUpAt', 'comment'],
+        followUpDefaultDays: task.offsetDays < 0 ? 2 : 1,
+      };
+    }
+    if (task.refId === 'schedule-social-media') {
+      validation.closureSemantics = {
+        stageOnComplete: 'done',
+        requiresNoOpenWaitingFollowUp: true,
+        requiredProof: ['Social announcement'],
+      };
+    }
+
+    return {
+      ...task,
+      ...docContext,
+      phase,
+      systems: docContext.systems || task.systems || OSS_PHASE_SYSTEMS[phase] || ['dataops'],
+      proofRequirement,
+      validation,
+    };
+  });
+}
+
+function ossProofRequirement(task: TaskDefinition): ProofRequirement {
+  if (task.requiredLinkName) {
+    return { type: 'url', label: task.requiredLinkName, required: true };
+  }
+  if (task.refId === 'schedule-recording') {
+    return { type: 'external-status', label: 'Recording/calendar details confirmed', required: true };
+  }
+  if (task.refId === 'record-demo') {
+    return { type: 'external-status', label: 'Recording source captured or owner handoff noted', required: true };
+  }
+  if (task.refId === 'editing-video') {
+    return { type: 'external-status', label: 'Video edit reviewed and ready for timecodes', required: true };
+  }
+  if (task.refId === 'add-timecodes-youtube') {
+    return { type: 'external-status', label: 'YouTube timecodes and description links updated', required: true };
+  }
+  if (task.refId === 'add-to-oss-playlist') {
+    return { type: 'external-status', label: 'Open-Source Spotlight playlist status confirmed', required: true };
+  }
+  if (task.refId === 'ask-authors-review-codes') {
+    return { type: 'comment', label: 'Author review request, timecodes, and link request sent', required: true };
+  }
+  if (task.refId === 'schedule-social-media') {
+    return { type: 'url', label: 'Social announcement', required: true };
+  }
+  if (
+    task.refId === 'reach-out-github-authors'
+    || task.refId === 'find-time-calendly'
+    || task.refId === 'tell-author-publish-date'
+    || task.refId === 'ask-guest-share-recording'
+    || task.isMilestone
+    || task.stageOnComplete
+  ) {
+    return { type: 'comment', label: `${task.description} confirmed`, required: true };
+  }
+  return { type: 'comment', label: 'Manual completion confirmation', required: false };
+}
+
+function ossRequiredBundleLinks(task: TaskDefinition): string[] {
+  const refs: Record<string, string[]> = {
+    'reach-out-github-authors': ['Tool GitHub'],
+    'reach-out-tool-author': ['Guest email', 'Tool GitHub'],
+    'find-time-calendly': ['Guest email'],
+    'schedule-recording': ['Guest email'],
+    'record-demo': ['Recording source'],
+    'download-upload-youtube': ['Recording source', 'YouTube'],
+    'editing-video': ['YouTube'],
+    'add-timecodes-youtube': ['YouTube'],
+    'ask-authors-review-codes': ['YouTube', 'Author review'],
+    'schedule-youtube-video': ['YouTube'],
+    'tell-author-publish-date': ['YouTube'],
+    'add-to-oss-playlist': ['YouTube', 'OSS playlist'],
+    'ask-guest-share-recording': ['YouTube'],
+    'schedule-social-media': ['YouTube', 'Social announcement'],
+  };
+  if (refs[task.refId]) {
+    return refs[task.refId];
+  }
+  if (task.requiredLinkName) {
+    return [task.requiredLinkName];
   }
   return [];
 }
@@ -1976,6 +2245,8 @@ const DEFAULT_TEMPLATES = [
     type: 'oss',
     emoji: '\u{2699}\u{FE0F}',
     tags: ['Open-Source Spotlight'],
+    phases: OSS_PHASES,
+    sourceDocIds: OSS_SOURCE_DOC_IDS,
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [
@@ -1983,50 +2254,46 @@ const DEFAULT_TEMPLATES = [
       { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
       { name: 'Events (pre-recorded) - Open-Source Spotlight', url: 'https://docs.google.com/document/d/1foX7pya-Ywi153LkZWFWBw2nI6HYvcQKS-QQBEUmGZc/edit' },
     ],
-    bundleLinkDefinitions: [
-      { name: 'Guest email' },
-      { name: 'Tool GitHub' },
-      { name: 'Youtube' },
-    ],
-    taskDefinitions: [
+    bundleLinkDefinitions: OSS_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    taskDefinitions: withOssTaskSemantics([
       {
         refId: 'reach-out-github-authors',
-        description: 'Reach out to github authors',
+        description: 'Identify likely maintainers/contributors and start outreach from GitHub or community context',
         offsetDays: -21,
       },
       {
         refId: 'reach-out-tool-author',
-        description: 'Reach out to tool author(s)',
+        description: 'Send the OSS invitation to the tool author(s)',
         offsetDays: -20,
         instructionsUrl: 'https://docs.google.com/document/d/1FSJQoMOAZOpiA7EGR2t-xYcu_nEEd2hQSZCC3t5vdq8/edit',
         requiredLinkName: 'Guest email',
       },
       {
         refId: 'find-time-calendly',
-        description: "Find time if they can't find anything in calendly",
+        description: "Help the author find a time if Calendly does not work",
         offsetDays: -19,
       },
       {
         refId: 'schedule-recording',
-        description: 'Schedule the recording',
+        description: 'Schedule the recording and capture the calendar or recording details',
         offsetDays: -18,
         instructionsUrl: 'https://docs.google.com/document/d/1GsM_Vlit2bB5MCRUH3AQHZWk3xI96ZZEtEvgzb_CMyY/edit',
       },
       {
         refId: 'record-demo',
-        description: 'Record the demo',
+        description: 'Record the OSS demo',
         offsetDays: -14,
       },
       {
         refId: 'download-upload-youtube',
-        description: 'Download the video from zoom and upload to YouTube',
+        description: 'Download the Zoom recording and upload or create the YouTube draft',
         offsetDays: -13,
         instructionsUrl: 'https://docs.google.com/document/d/1LU0G3jlcCf19hYIp-TNfz94tDUrjEBvyPJ3_QuJQNvg/edit',
-        requiredLinkName: 'Youtube',
+        requiredLinkName: 'YouTube',
       },
       {
         refId: 'editing-video',
-        description: 'Editing the video',
+        description: 'Edit/review the video and prepare it for publication',
         offsetDays: -12,
         instructionsUrl: 'https://docs.google.com/document/d/1hN5STE669QiqwL5oWCIEDP-jbe7W2Aa93UKSQ3iUHEU/edit',
       },
@@ -2038,17 +2305,18 @@ const DEFAULT_TEMPLATES = [
       },
       {
         refId: 'ask-authors-review-codes',
-        description: 'Ask the authors to review the generated codes',
+        description: 'Ask the authors to review the generated timecodes/cuts and send required links',
         offsetDays: -10,
         instructionsUrl: 'https://docs.google.com/document/d/1csT9bIvr8WNz3anuS-fO_WrIHvln2P3Hcsh7P0t-lOc/edit',
       },
       {
         refId: 'schedule-youtube-video',
-        description: 'Schedule Youtube video',
+        description: 'Schedule YouTube video for the anchor date/time and verify playlist/schedule state',
         offsetDays: 0,
         isMilestone: true,
         stageOnComplete: 'after-event',
         instructionsUrl: 'https://docs.google.com/document/d/1GsM_Vlit2bB5MCRUH3AQHZWk3xI96ZZEtEvgzb_CMyY/edit',
+        requiredLinkName: 'YouTube',
       },
       {
         refId: 'tell-author-publish-date',
@@ -2063,18 +2331,19 @@ const DEFAULT_TEMPLATES = [
       },
       {
         refId: 'ask-guest-share-recording',
-        description: 'Ask the guest to share the recording with their network',
+        description: 'Ask the guest to share the recording and recommend other OSS authors',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1JJxAnhoVslGXmjc9Fw3JZrUDD6-srJQcMiHP8rPjMsw/edit',
       },
       {
         refId: 'schedule-social-media',
-        description: 'Schedule for Social Media Announcement',
+        description: 'Schedule or publish social announcement for the OSS video',
         offsetDays: 2,
         stageOnComplete: 'done',
         instructionsUrl: 'https://docs.google.com/document/d/1BleKsd44Uhhj24D-D5qup0Gf3GcM6cwdAjbZD2jGGuA/edit',
+        requiredLinkName: 'Social announcement',
       },
-    ],
+    ]),
   },
 
   // 7. Course
@@ -2449,4 +2718,5 @@ export {
   PODCAST_SOURCE_DOC_IDS,
   PODCAST_EXTERNAL_SOURCE_DOC_IDS,
   TAX_REPORT_SOURCE_DOC_IDS,
+  OSS_SOURCE_DOC_IDS,
 };
