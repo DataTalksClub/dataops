@@ -529,7 +529,7 @@ def test_local_docs_portal_search_edit_save_and_asset_flow(tmp_path):
                     page.wait_for_selector("#search-input")
                     page.fill("#search-input", "Playwright sentinel")
                     page.press("#search-input", "Enter")
-                    row = page.locator(".document-row", has_text="Playwright Local Doc").first
+                    row = page.locator(".unified-search-row.result-doc", has_text="Playwright Local Doc").first
                     row.wait_for(state="visible")
                     row.click()
 
@@ -583,7 +583,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
 
                     for label in ["Overdue", "Follow-Ups Due", "Today", "Waiting", "At-Risk Workflows"]:
                         assert page.locator(".ops-lanes").get_by_text(label).first.is_visible()
-                    for label in ["Operations Home", "Work Queue", "Workflows", "Templates / Recurring", "Assistants", "Artifacts", "Processes / Docs", "Search / Docs-only", "Admin"]:
+                    for label in ["Operations Home", "Work Queue", "Workflows", "Templates / Recurring", "Assistants", "Artifacts", "Processes / Docs", "Search", "Admin"]:
                         assert page.locator("#sidebar").get_by_text(label).first.is_visible()
                     for label in ["New task", "Start workflow", "New recurring", "Recurring Operations", "Workflow Templates"]:
                         assert page.get_by_text(label).first.is_visible()
@@ -695,7 +695,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                         "Assistants",
                         "Artifacts",
                         "Processes / Docs",
-                        "Search / Docs-only",
+                        "Search",
                         "Admin",
                     ]
                     page.keyboard.press("Escape")
