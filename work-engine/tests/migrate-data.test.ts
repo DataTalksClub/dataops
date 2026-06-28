@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
 import {
   extractEmoji,
@@ -13,9 +16,21 @@ import {
   trelloChecklistItemsToTasks,
   trelloTemplateToAppTemplate,
   mapTriggerType,
+  parseCSVFile,
+  parseDate,
+  planCsvRow,
+  normalizeSpreadsheetStatus,
+  redactUnsafeText,
+  migrateCsvFile,
+  emptyCsvMigrationReport,
   type TrelloCard,
   type TrelloChecklist,
 } from '../scripts/migrate-data';
+import { startLocal, stopLocal, getClient } from '../src/db/client';
+import { createTables } from '../src/db/setup';
+import { listRecurringConfigs } from '../src/db/recurring';
+import { listTasksByStatus } from '../src/db/tasks';
+import { dryRunImport, validatePortableExport, writePortableExport } from '../src/export/portable';
 
 // ---------------------------------------------------------------------------
 // extractEmoji
@@ -505,5 +520,160 @@ describe('trelloTemplateToAppTemplate', () => {
     const template = trelloTemplateToAppTemplate(card, checklists);
     const td = (template.taskDefinitions as { instructionsUrl?: string }[])[0];
     assert.strictEqual(td.instructionsUrl, 'https://docs.google.com/doc123');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spreadsheet TODO CSV migration planning
+// ---------------------------------------------------------------------------
+
+describe('spreadsheet TODO migration planning', () => {
+  const fixtureTodo = path.join(__dirname, 'fixtures', 'spreadsheet-todo.csv');
+  const fixtureDone = path.join(__dirname, 'fixtures', 'spreadsheet-done.csv');
+
+  it('parses known spreadsheet date and status formats', () => {
+    assert.strictEqual(parseDate('2026-06-20 12:00:00'), '2026-06-20');
+    assert.strictEqual(parseDate('21 Jun 2026'), '2026-06-21');
+    assert.strictEqual(parseDate('June 22, 2026'), '2026-06-22');
+    assert.strictEqual(parseDate('06/23/2026'), '2026-06-23');
+    assert.strictEqual(parseDate('2026-99-99'), null);
+
+    assert.strictEqual(normalizeSpreadsheetStatus('NEW', 'todo', true), 'open');
+    assert.strictEqual(normalizeSpreadsheetStatus('doneDone', 'todo', true), 'done');
+    assert.strictEqual(normalizeSpreadsheetStatus('', 'done', true), 'done');
+    assert.strictEqual(normalizeSpreadsheetStatus('', 'todo', false), 'blank');
+  });
+
+  it('plans pending rows as normal tasks with provenance, waiting, proof, and redaction', async () => {
+    const rows = parseCSVFile(fixtureTodo).slice(1);
+    const waitingPlan = planCsvRow(rows[0], {
+      sourceFile: fixtureTodo,
+      sourceLabel: 'spreadsheet-todo.csv',
+      fileRole: 'todo',
+      rowNumber: 2,
+    });
+    assert.strictEqual(waitingPlan.kind, 'task');
+    if (waitingPlan.kind === 'task') {
+      assert.strictEqual(waitingPlan.task.source, 'import');
+      assert.strictEqual(waitingPlan.task.status, 'waiting');
+      assert.strictEqual(waitingPlan.task.waitingFor, 'Sponsor');
+      assert.strictEqual(waitingPlan.task.followUpAt, '2026-06-20');
+      assert.match(String(waitingPlan.task.comment), /source_key=spreadsheet-todo:/);
+    }
+
+    const docPlan = planCsvRow(rows[1], {
+      sourceFile: fixtureTodo,
+      sourceLabel: 'spreadsheet-todo.csv',
+      fileRole: 'todo',
+      rowNumber: 3,
+    });
+    assert.strictEqual(docPlan.kind, 'task');
+    if (docPlan.kind === 'task') {
+      assert.strictEqual(docPlan.task.instructionsUrl, 'https://docs.google.com/document/d/doc-safe/edit');
+      assert.deepStrictEqual(docPlan.task.proofRequirement, { type: 'url', label: 'Completion proof', required: true });
+      assert.ok(docPlan.warnings.some((warning) => warning.startsWith('unresolved process doc:')));
+    }
+
+    const recurringPlan = planCsvRow(rows[2], {
+      sourceFile: fixtureTodo,
+      sourceLabel: 'spreadsheet-todo.csv',
+      fileRole: 'todo',
+      rowNumber: 4,
+    });
+    assert.strictEqual(recurringPlan.kind, 'recurring');
+    if (recurringPlan.kind === 'recurring') {
+      assert.strictEqual(recurringPlan.config.description, 'Backup MailChimp mailing list to Google Drive');
+      assert.strictEqual(recurringPlan.config.cronExpression, '0 9 * * 4');
+    }
+
+    const invalidDatePlan = planCsvRow(rows[4], {
+      sourceFile: fixtureTodo,
+      sourceLabel: 'spreadsheet-todo.csv',
+      fileRole: 'todo',
+      rowNumber: 6,
+    });
+    assert.deepStrictEqual(invalidDatePlan, {
+      kind: 'skip',
+      reason: 'invalid-date',
+      sourceKey: invalidDatePlan.sourceKey,
+      warnings: ['invalid date: 2026-99-99'],
+    });
+
+    const secret = redactUnsafeText('password=abc https://example.com/?access_token=abc');
+    assert.strictEqual(secret.unsafe, true);
+    assert.match(secret.text, /\[REDACTED_SECRET\]/);
+    assert.match(secret.text, /\[REDACTED_URL\]/);
+  });
+
+  it('skips done history by default while still analyzing recurring patterns', () => {
+    const rows = parseCSVFile(fixtureDone).slice(1);
+    const recurringPlan = planCsvRow(rows[0], {
+      sourceFile: fixtureDone,
+      sourceLabel: 'spreadsheet-done.csv',
+      fileRole: 'done',
+      rowNumber: 2,
+    });
+    assert.strictEqual(recurringPlan.kind, 'recurring');
+
+    const historyPlan = planCsvRow(rows[1], {
+      sourceFile: fixtureDone,
+      sourceLabel: 'spreadsheet-done.csv',
+      fileRole: 'done',
+      rowNumber: 3,
+    });
+    assert.strictEqual(historyPlan.kind, 'skip');
+    if (historyPlan.kind === 'skip') {
+      assert.strictEqual(historyPlan.reason, 'completed-history');
+    }
+  });
+
+  it('imports fixture rows idempotently and keeps portable export valid', async () => {
+    const port = await startLocal();
+    const client = await getClient(port);
+    const exportDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-spreadsheet-export-'));
+    try {
+      await createTables(client);
+
+      const firstReport = emptyCsvMigrationReport();
+      await migrateCsvFile(client, fixtureTodo, 'todo', firstReport);
+      await migrateCsvFile(client, fixtureDone, 'done', firstReport);
+      assert.strictEqual(firstReport.stats.createdTasks, 5);
+      assert.strictEqual(firstReport.stats.recurringConfigsCreated, 3);
+      assert.strictEqual(firstReport.stats.completedRowsSkipped, 3);
+      assert.strictEqual(firstReport.stats.validationErrors, 1);
+
+      const secondReport = emptyCsvMigrationReport();
+      await migrateCsvFile(client, fixtureTodo, 'todo', secondReport);
+      await migrateCsvFile(client, fixtureDone, 'done', secondReport);
+      assert.strictEqual(secondReport.stats.createdTasks, 0);
+      assert.strictEqual(secondReport.stats.duplicateTasksSkipped, 5);
+      assert.strictEqual(secondReport.stats.duplicateRecurringSkipped, 3);
+
+      const todoTasks = await listTasksByStatus(client, 'todo');
+      const waitingTasks = await listTasksByStatus(client, 'waiting');
+      const recurringConfigs = await listRecurringConfigs(client);
+      assert.strictEqual(todoTasks.length, 4);
+      assert.strictEqual(waitingTasks.length, 1);
+      assert.strictEqual(recurringConfigs.length, 3);
+      assert.ok(todoTasks.some((task) => task.source === 'import' && task.comment?.includes('source_key=spreadsheet-todo:')));
+      assert.ok(todoTasks.some((task) => task.comment?.includes('[REDACTED_SECRET]')));
+
+      await writePortableExport(client, exportDir, {
+        generatedAt: '2026-06-28T00:00:00.000Z',
+        sourceEnvironment: 'test',
+        sourceStack: 'test-stack',
+        sourceRegion: 'eu-west-1',
+        appGitSha: 'test-sha',
+      });
+      const validation = await validatePortableExport(exportDir);
+      assert.strictEqual(validation.valid, true);
+      const dryRun = await dryRunImport(exportDir);
+      assert.strictEqual(dryRun.valid, true);
+      assert.strictEqual(dryRun.wouldWrite.tasks, 5);
+      assert.strictEqual(dryRun.wouldWrite.recurring_configs, 3);
+    } finally {
+      await fs.rm(exportDir, { recursive: true, force: true });
+      await stopLocal();
+    }
   });
 });
