@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DataTalksClub/dataops-knowledge/schemas/workflow-template.schema.json",
+  "title": "DataOps Workflow Template",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "name",
+    "schema_version",
+    "trigger",
+    "bundle_links",
+    "phases",
+    "tasks",
+    "default_assignee",
+    "source_document_ids"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^task-template\\.tasks\\.[a-z0-9][a-z0-9-]*$"
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "anchor"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "scheduled",
+            "event"
+          ]
+        },
+        "anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "kind"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "date",
+                "datetime"
+              ]
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "bundle_links": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/bundle_link"
+      },
+      "uniqueItems": true
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/phase"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "default_assignee": {
+      "$ref": "#/$defs/assignee_ref"
+    },
+    "source_document_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/doc_id"
+      },
+      "uniqueItems": true
+    },
+    "migration_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_path",
+        "source_doc_id"
+      ],
+      "properties": {
+        "source_path": {
+          "type": "string",
+          "pattern": "^content/tasks/templates/[a-z0-9][a-z0-9-]*\\.md$"
+        },
+        "source_doc_id": {
+          "$ref": "#/$defs/doc_id"
+        },
+        "source_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "doc_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "assignee_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "role",
+            "user"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]*$"
+        }
+      }
+    },
+    "bundle_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "required"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "stage"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "preparation",
+            "announced",
+            "active",
+            "done",
+            "blocked",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "phase_id",
+        "stage",
+        "schedule",
+        "default_assignee",
+        "required_proofs",
+        "required_links",
+        "instruction_doc_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "preparation",
+            "announced",
+            "active",
+            "done",
+            "blocked",
+            "cancelled"
+          ]
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "offset_days"
+              ]
+            },
+            {
+              "required": [
+                "rule"
+              ]
+            }
+          ],
+          "properties": {
+            "offset_days": {
+              "type": "integer"
+            },
+            "rule": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "default_assignee": {
+          "$ref": "#/$defs/assignee_ref"
+        },
+        "required_proofs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/proof"
+          }
+        },
+        "required_links": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
+        },
+        "instruction_doc_id": {
+          "$ref": "#/$defs/doc_id"
+        },
+        "source_document_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/doc_id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "link",
+            "file",
+            "text",
+            "checkbox"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
