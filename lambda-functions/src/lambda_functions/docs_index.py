@@ -5,7 +5,7 @@ from typing import Any
 import frontmatter
 from minsearch import Index
 
-from lambda_functions.doc_registry import build_registry
+from lambda_functions.doc_registry import DocumentRegistry, build_registry
 from lambda_functions import sop_parse
 
 
@@ -42,8 +42,8 @@ def create_empty_index() -> Index:
 
 
 def build_index(docs_dir: Path, index_path: Path) -> int:
-    build_registry(docs_dir)
-    docs = list(iter_docs(docs_dir))
+    registry = build_registry(docs_dir)
+    docs = list(iter_docs(docs_dir, registry=registry))
     index_path.parent.mkdir(parents=True, exist_ok=True)
     if index_path.exists():
         index_path.unlink()
@@ -54,10 +54,11 @@ def build_index(docs_dir: Path, index_path: Path) -> int:
     return len(docs)
 
 
-def iter_docs(docs_dir: Path) -> list[dict[str, Any]]:
+def iter_docs(docs_dir: Path, registry: DocumentRegistry | None = None) -> list[dict[str, Any]]:
     documents = []
     docs_root = docs_dir.resolve()
     repo_root = docs_root.parent
+    registry = registry or build_registry(docs_root)
     for path in sorted(docs_root.rglob("*.md")):
         raw_text = path.read_text(encoding="utf-8", errors="replace")
         post = frontmatter.loads(raw_text)
@@ -66,6 +67,7 @@ def iter_docs(docs_dir: Path) -> list[dict[str, Any]]:
         title = str(post.metadata.get("title") or (headings[0] if headings else path.stem.replace("-", " ").title()))
         relative_path = path.relative_to(repo_root).as_posix()
         doc_path = Path(relative_path)
+        record = registry.by_path[relative_path]
 
         search_body = doc_to_search_text(raw_text, body)
 
@@ -75,7 +77,7 @@ def iter_docs(docs_dir: Path) -> list[dict[str, Any]]:
         documents.append(
             {
                 "path": relative_path,
-                "id": scalar_frontmatter_value(post.metadata.get("id")),
+                "id": record.id,
                 "title": title,
                 "domain": infer_domain(doc_path),
                 "doc_type": scalar_frontmatter_value(post.metadata.get("doc_type")) or infer_doc_type(doc_path),
