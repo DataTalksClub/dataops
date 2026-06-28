@@ -431,6 +431,18 @@ For work-engine changes:
 
 For process-doc and content changes:
 
+- Run docs link validation:
+
+  ```bash
+  uv run --project lambda-functions --extra search python -m lambda_functions.validate_docs_links \
+    --repo-root . \
+    --content-root content
+  ```
+
+  This check validates `related_docs`, wiki refs, `doc:` refs, local Markdown
+  links/images, task-template docs, and work-engine seed document IDs. Anchor
+  validation is currently deferred; the target file or document ID must still
+  exist.
 - Inspect process-doc changes against the source process when an issue names a
   source process, such as `../ai-shipping-labs/_docs/PROCESS.md`, and confirm
   lifecycle controls are preserved at equal strength.
@@ -438,7 +450,10 @@ For process-doc and content changes:
 - Run docs metadata tests when frontmatter, document IDs, archive rules,
   templates, registry behavior, or content shape changes.
 - Run content validation workflow after push when content changes reach `main`.
-- Process Curator reviews document structure and operational usefulness.
+- Process Curator reviews document structure and operational usefulness. When a
+  change updates SOP/template/reference quality rules or reports broken process
+  knowledge, Process Curator should also confirm the validator messages and
+  remediation path are useful for future agents.
 - Do not invoke user-facing prose/stylint tooling for internal process docs
   unless the user explicitly asks for prose linting.
 
