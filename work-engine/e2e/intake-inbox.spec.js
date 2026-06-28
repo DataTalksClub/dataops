@@ -344,7 +344,7 @@ test.describe('raw intake inbox workflow', () => {
 
     await page.locator('[data-intake-row="' + assistantItem.id + '"] [data-intake-select]').click();
     await page.locator('#intake-assistant-type').fill('podcast');
-    await page.locator('[data-testid="inbox-detail"]').getByRole('button', { name: 'Assistant ready' }).click();
+    await page.locator('[data-testid="inbox-detail"]').getByRole('button', { name: 'Prepare DataOps Assistant' }).click();
     await expect(page.locator('[data-testid="inbox-detail"]')).toContainText('assistant ready');
     await screenshot(page, 'issue-31-assistant-ready.png');
 

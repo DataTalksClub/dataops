@@ -648,7 +648,7 @@
 
   function renderPodcastAssistantButton(task, bundle) {
     if (!supportsPodcastAssistant(task, bundle)) return '';
-    return '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(task.id) + '" data-request-assistant-bundle="' + escapeHtml(task.bundleId || '') + '">Ask DataOps Assistant</button>';
+    return '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(task.id) + '" data-request-assistant-bundle="' + escapeHtml(task.bundleId || '') + '">Ask DataOps Assistant for task</button>';
   }
 
   function validationArray(task, field) {
@@ -4140,7 +4140,7 @@
         var askWorkflowBtn = document.createElement('button');
         askWorkflowBtn.className = 'btn-primary assistant-workflow-request';
         askWorkflowBtn.type = 'button';
-        askWorkflowBtn.textContent = 'Ask DataOps Assistant';
+        askWorkflowBtn.textContent = 'Ask DataOps Assistant for workflow';
         askWorkflowBtn.addEventListener('click', function () {
           showPodcastAssistantRequest({
             bundleId: bundle.id,
@@ -4507,7 +4507,7 @@
         var requestAssistantBtn = document.createElement('button');
         requestAssistantBtn.className = 'assistant-mini-btn';
         requestAssistantBtn.type = 'button';
-        requestAssistantBtn.textContent = 'Ask DataOps Assistant';
+        requestAssistantBtn.textContent = 'Ask DataOps Assistant for task';
         requestAssistantBtn.addEventListener('click', function () {
           showPodcastAssistantRequest({
             taskId: t.id,

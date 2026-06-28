@@ -106,7 +106,7 @@ test.describe('Podcast operator workflow slice (#9)', () => {
     await expect(page.locator('#assistant-request-overlay')).toContainText('Create a podcast document with the questions');
     await page.locator('#assistant-request-urls').fill('https://example.com/podcast-doc-source-' + suffix);
     await page.locator('#assistant-request-notes').fill('Podcast document source notes for ' + guest);
-    await page.getByRole('button', { name: 'Queue podcast job' }).click();
+    await page.getByRole('button', { name: 'Queue DataOps Assistant job' }).click();
     await expect(page.locator('[data-testid="assistants-panel"]')).toContainText('queued', { timeout: 15000 });
     await page.locator('[data-testid="assistants-panel"] [data-assistant-action="run-dry"]').last().click();
     await expect(page.locator('[data-testid="assistants-panel"]')).toContainText('waiting approval', { timeout: 15000 });

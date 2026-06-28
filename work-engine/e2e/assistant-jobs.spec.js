@@ -36,11 +36,11 @@ test.describe('Assistant job workflow context', () => {
       await bundleLink.click();
 
       await expect(page.locator('#bundle-detail')).toContainText('Podcast Request Flow ' + suffix);
-      await page.getByRole('button', { name: 'Ask podcast assistant' }).click();
+      await page.getByRole('button', { name: 'Ask DataOps Assistant for workflow' }).click();
       await expect(page.locator('#assistant-request-overlay')).toContainText('Workflow: Podcast Request Flow ' + suffix);
       await page.locator('#assistant-request-urls').fill('https://example.com/guest-' + suffix);
       await page.locator('#assistant-request-notes').fill('Guest topic and anchor date context for ' + suffix);
-      await page.getByRole('button', { name: 'Queue podcast job' }).click();
+      await page.getByRole('button', { name: 'Queue DataOps Assistant job' }).click();
 
       await expect(page.locator('#bundle-assistant-jobs')).toContainText('Podcast Request Flow ' + suffix, { timeout: 10000 });
       await expect(page.locator('#bundle-assistant-jobs')).toContainText('queued');
