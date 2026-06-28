@@ -115,10 +115,11 @@ path.
 The GitHub Actions OIDC deploy role for the sandbox account is owned in the
 shared infrastructure source at
 `../aws-infra/sandbox/dataops/template.github-actions.yaml`. Update that infra
-source and apply it through the infra CI/CD/OIDC path or a credentialed infra
-operator. Keep `lambda-functions/template.github-actions-dataops.yaml` aligned
-with the infra template as the app-repo copy used by tests and architecture
-docs.
+source when deploy-role permissions change. The `aws-infra` repo does not
+currently deploy itself through CI/CD, so a credentialed AWS operator must apply
+the `dataops-github-actions` CloudFormation stack after the template is changed.
+Keep `lambda-functions/template.github-actions-dataops.yaml` aligned with the
+infra template as the app-repo copy used by tests and architecture docs.
 
 ```bash
 aws cloudformation deploy \

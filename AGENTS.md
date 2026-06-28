@@ -21,6 +21,19 @@ Current planning docs:
 - `PORTAL_ANALYSIS.md`
 - `PROJECT_PLAN.md`
 
+AWS infrastructure source:
+
+- Shared sandbox AWS infrastructure lives one level up in `../aws-infra/`.
+- DataOps-specific sandbox infra is in `../aws-infra/sandbox/dataops/`.
+- The GitHub Actions OIDC deploy role template is
+  `../aws-infra/sandbox/dataops/template.github-actions.yaml`.
+- `aws-infra` does not currently deploy itself through CI/CD. If that template
+  changes, committing/pushing it is not enough; a credentialed AWS operator must
+  apply the `dataops-github-actions` CloudFormation stack.
+- The DataOps app itself deploys through this repo's GitHub Actions CI/CD using
+  OIDC after `main` is pushed. Do not replace that with a normal manual app
+  deploy.
+
 Initial source systems:
 
 - `../dtc-operations`

@@ -239,7 +239,9 @@ from GitHub.
 
 1. Update the shared infra source for the GitHub Actions OIDC deploy role:
    `../aws-infra/sandbox/dataops/template.github-actions.yaml`.
-   Apply it through the infra CI/CD/OIDC path or a credentialed infra operator.
+   The `aws-infra` repo does not currently deploy itself through CI/CD, so a
+   credentialed AWS operator must apply the `dataops-github-actions`
+   CloudFormation stack after this template changes.
 
 2. Deploy `lambda-functions/template.runtime-secrets.yaml`.
    Provide the GitHub token and basic-auth password as parameters.
