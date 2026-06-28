@@ -77,9 +77,10 @@ describe('POST /api/webhook/email', () => {
     } else {
       delete process.env.WEBHOOK_EMAIL_SECRET;
     }
+    delete process.env.EMAIL_DIRECT_TASKS_COMPAT;
   });
 
-  it('creates a task from email with subject and body', async () => {
+  it('creates an intake item from email with subject and body by default', async () => {
     const event = {
       httpMethod: 'POST',
       path: '/api/webhook/email',
@@ -94,18 +95,19 @@ describe('POST /api/webhook/email', () => {
     const res = await handler(event, {});
     assert.strictEqual(res.statusCode, 201);
 
-    const task = JSON.parse(res.body);
-    assert.ok(task.id);
-    assert.strictEqual(task.description, 'Review newsletter draft');
-    assert.strictEqual(task.date, '2026-03-15');
-    assert.strictEqual(task.comment, 'Please review by 2026-03-15.\nhttps://example.com/draft');
-    assert.strictEqual(task.source, 'email');
-    assert.strictEqual(task.status, 'todo');
-    assert.ok(task.createdAt);
-    assert.ok(task.updatedAt);
+    const item = JSON.parse(res.body).item;
+    assert.ok(item.id);
+    assert.strictEqual(item.title, 'Review newsletter draft');
+    assert.strictEqual(item.summary, 'Please review by 2026-03-15.\nhttps://example.com/draft');
+    assert.strictEqual(item.source, 'email');
+    assert.strictEqual(item.status, 'new');
+    assert.strictEqual(item.linkRefs[0].normalizedUrl, 'https://example.com/draft');
+    assert.ok(item.createdAt);
+    assert.ok(item.updatedAt);
   });
 
-  it('extracts the first date from body when multiple dates present', async () => {
+  it('creates a direct task only when email compatibility mode is enabled', async () => {
+    process.env.EMAIL_DIRECT_TASKS_COMPAT = 'true';
     const event = {
       httpMethod: 'POST',
       path: '/api/webhook/email',
@@ -122,9 +124,12 @@ describe('POST /api/webhook/email', () => {
 
     const task = JSON.parse(res.body);
     assert.strictEqual(task.date, '2026-04-01');
+    assert.strictEqual(task.description, 'Plan meetings');
+    assert.strictEqual(task.source, 'email');
   });
 
   it('defaults to today when no date in body', async () => {
+    process.env.EMAIL_DIRECT_TASKS_COMPAT = 'true';
     const today = new Date().toISOString().slice(0, 10);
 
     const event = {
@@ -149,6 +154,7 @@ describe('POST /api/webhook/email', () => {
   });
 
   it('stores null comment and defaults date when body is missing', async () => {
+    process.env.EMAIL_DIRECT_TASKS_COMPAT = 'true';
     const today = new Date().toISOString().slice(0, 10);
 
     const event = {
@@ -172,6 +178,7 @@ describe('POST /api/webhook/email', () => {
   });
 
   it('stores null comment and defaults date when body is empty string', async () => {
+    process.env.EMAIL_DIRECT_TASKS_COMPAT = 'true';
     const today = new Date().toISOString().slice(0, 10);
 
     const event = {

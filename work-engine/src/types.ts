@@ -82,6 +82,105 @@ export interface AssistantJobRef {
   status?: string;
 }
 
+export interface IntakeRef {
+  intakeItemId: string;
+  source?: IntakeSource;
+  title?: string;
+  status?: IntakeStatus;
+}
+
+export type IntakeSource = 'telegram' | 'email' | 'manual' | 'file' | 'link' | 'import' | 'assistant' | 'unknown';
+export type IntakeStatus = 'new' | 'triaged' | 'attached' | 'converted' | 'ignored' | 'duplicate' | 'blocked' | 'archived';
+export type IntakePriority = 'low' | 'normal' | 'high' | 'urgent';
+export type IntakeDataClass = 'public' | 'internal' | 'private' | 'sensitive';
+export type IntakeAssistantReadinessStatus = 'not-applicable' | 'candidate' | 'ready' | 'submitted' | 'blocked';
+
+export interface IntakeSourceActor {
+  name?: string;
+  handle?: string;
+  email?: string;
+  chatId?: string;
+  userId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface IntakeLinkRef {
+  url: string;
+  title?: string;
+  normalizedUrl?: string;
+  type?: string;
+  safetyStatus?: 'unchecked' | 'safe' | 'blocked' | 'redacted' | string;
+}
+
+export interface IntakeFileRef {
+  fileId?: string;
+  filename?: string;
+  storageUri?: string;
+  storageProvider?: string;
+  contentType?: string;
+  checksum?: string;
+  sizeBytes?: number;
+  title?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface IntakeAssistantReadiness {
+  assistantType?: string;
+  status: IntakeAssistantReadinessStatus;
+  inputRefs: AssistantJobInputRef[];
+  missingFields: string[];
+}
+
+export interface IntakeHistoryEvent {
+  id: string;
+  action: string;
+  actorId?: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface IntakeItem {
+  id: string;
+  source: IntakeSource;
+  sourceMessageId?: string;
+  sourceThreadId?: string;
+  sourceReceivedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  triagedAt?: string;
+  archivedAt?: string;
+  createdBy?: string;
+  triagedBy?: string;
+  ownerId?: string;
+  assigneeId?: string;
+  status: IntakeStatus;
+  title: string;
+  summary: string;
+  bodyRef?: string;
+  sourceActor?: IntakeSourceActor;
+  receivedChannels: string[];
+  linkRefs: IntakeLinkRef[];
+  fileRefs: IntakeFileRef[];
+  artifactRefs: ArtifactRef[];
+  taskIds: string[];
+  bundleIds: string[];
+  assistantJobIds: string[];
+  assistantReadiness?: IntakeAssistantReadiness;
+  duplicateOfIntakeItemId?: string;
+  relatedIntakeItemIds: string[];
+  tags: string[];
+  priority: IntakePriority;
+  dataClass: IntakeDataClass;
+  metadata?: Record<string, unknown>;
+  resolutionReason?: string;
+  blockedReason?: string;
+  waitingFor?: string;
+  followUpAt?: string;
+  lastFollowUpAt?: string;
+  history: IntakeHistoryEvent[];
+}
+
 export type AssistantJobStatus =
   | 'draft'
   | 'queued'
@@ -230,6 +329,7 @@ export interface Task {
   recurringConfigId?: string;
   artifactRefs?: ArtifactRef[];
   assistantJobRefs?: AssistantJobRef[];
+  intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
   taskHistory?: TaskHistoryEvent[];
   createdAt: string;
@@ -275,6 +375,7 @@ export interface Bundle {
   status?: string;
   artifactRefs?: ArtifactRef[];
   assistantJobRefs?: AssistantJobRef[];
+  intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
   createdAt: string;
   updatedAt: string;
@@ -309,6 +410,7 @@ export interface TaskDefinition {
   proofRequirement?: ProofRequirement;
   artifactRefs?: ArtifactRef[];
   assistantJobRefs?: AssistantJobRef[];
+  intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
 }
 
