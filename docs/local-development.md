@@ -45,6 +45,31 @@ The DataOps workspace has two runtime components in production:
 For local development you run both together so the Operations Home dashboard
 reads real data.
 
+## Python Project Boundaries
+
+The root `pyproject.toml` is the repository coordination project. It owns
+dependencies for checked-in root scripts under `scripts/` and root developer
+checks such as `tests/test_import_sources.py`.
+
+```bash
+uv lock --check
+uv run python -c "import httpx, openpyxl, PIL, slugify, uvicorn"
+uv run python -m pytest tests/test_import_sources.py
+```
+
+It does not package the Lambda or assistant modules and it does not manage Node
+dependencies. Keep package-local commands package-local:
+
+- Lambda/docs portal: `uv run --project lambda-functions ...`
+- Podcast assistant: `uv run --project assistants/podcast ...`
+- Work-engine: `npm --prefix work-engine ...`
+
+External command-line tools used by some scripts remain external prerequisites:
+`pandoc` for process conversion, `git` for import and migration scripts,
+`aws`/`make` for local deploy helpers, and SAM/Docker/npm where those workflows
+call them. Do not add production credentials or external service secrets to
+Python metadata.
+
 ## Quick Start
 
 ### 1. Start the work-engine dev server
@@ -133,6 +158,7 @@ trusted headers and the shared portal secret.
 | `assistants/podcast/**` | DataOps podcast assistant module pytest command. | `[HUMAN]` or opt-in integration checks for Telegram, Groq, live Heru, Codex, or Claude. |
 | `.github/workflows/**` | Inspect changed workflow paths and commands; run the nearest local equivalent. | For deployment workflow changes, SAM validation and a clear On-Call follow-up after push. |
 | `lambda-functions/template*.yaml` or `samconfig.toml` | SAM template validation. | `sam build --config-env full-sandbox` when package/build behavior changes. Production deploy remains CI/OIDC after `main` is pushed. |
+| root `pyproject.toml` or `uv.lock` | `uv lock --check`; root import smoke check; relevant root pytest command. | Package-local lock checks and canonical Lambda/assistant/work-engine commands when proving boundaries for deployment-relevant metadata changes. |
 | root `package.json` | Affected root wrapper command and underlying package-local command. | Work-engine tests/typecheck/build when wrappers target work-engine. |
 
 ## Canonical Commands
