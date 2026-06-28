@@ -9,6 +9,7 @@ import {
   seed,
   DEFAULT_TEMPLATES,
   NEWSLETTER_SOURCE_DOC_IDS,
+  BOOK_OF_THE_WEEK_SOURCE_DOC_IDS,
   PODCAST_SOURCE_DOC_IDS,
   PODCAST_EXTERNAL_SOURCE_DOC_IDS,
 } from '../scripts/seed-templates';
@@ -701,6 +702,171 @@ describe('Seed script', () => {
     assert.strictEqual(botw.taskDefinitions!.length, 21);
     assert.strictEqual(botw.emoji, '\u{1F4DA}');
     assert.deepStrictEqual(botw.tags, ['Book of the Week']);
+    assert.strictEqual(botw.triggerType, 'manual');
+    assert.deepStrictEqual(botw.phases!.map((phase) => [phase.id, phase.stage]), [
+      ['author-outreach', 'preparation'],
+      ['book-and-page-setup', 'preparation'],
+      ['pre-event-promotion', 'preparation'],
+      ['event-week', 'announced'],
+      ['giveaway-closeout', 'after-event'],
+    ]);
+    for (const docId of BOOK_OF_THE_WEEK_SOURCE_DOC_IDS) {
+      assert.ok(botw.sourceDocIds!.includes(docId), `Book of the Week sourceDocIds should include ${docId}`);
+    }
+
+    const linkNames = botw.bundleLinkDefinitions!.map((link) => link.name);
+    for (const requiredLink of [
+      'Author email',
+      'Publisher or sponsor contact',
+      'Book or publisher source link',
+      'Website link',
+      'LinkedIn announcement',
+      'X announcement',
+      'Slack announcement',
+      'Author share proof',
+      'Winner announcement',
+      'Winner email handoff',
+    ]) {
+      assert.ok(linkNames.includes(requiredLink), `Book of the Week bundle should include ${requiredLink}`);
+    }
+
+    const newsletter = botw.taskDefinitions!.find((td) => td.refId === 'fill-newsletter-announcement');
+    assert.ok(newsletter);
+    assert.strictEqual(newsletter.offsetDays, -8);
+    assert.strictEqual(newsletter.assigneeId, VALERIIA_ID);
+    assert.strictEqual(newsletter.phase, 'pre-event-promotion');
+    assert.strictEqual(newsletter.instructionDocId, 'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block');
+
+    for (const td of botw.taskDefinitions!) {
+      assert.ok(td.phase, `${td.refId} should declare a phase`);
+      assert.ok(td.systems && td.systems.length > 0, `${td.refId} should declare systems`);
+      assert.ok(td.proofRequirement, `${td.refId} should declare completion proof semantics`);
+      assert.ok(td.validation && typeof td.validation === 'object', `${td.refId} should declare validation semantics`);
+      assert.ok((td.validation as any).operatorAction, `${td.refId} should declare operator action`);
+      assert.ok((td.validation as any).reminderSemantics, `${td.refId} should declare reminder semantics`);
+      assert.ok((td.validation as any).dashboardStates, `${td.refId} should declare dashboard states`);
+      assert.ok(td.instructionsUrl || td.instructionDocId, `${td.refId} should link operator instructions`);
+    }
+
+    const waitingRefs = [
+      'reach-out-to-book-authors',
+      'agree-on-a-date',
+      'remind-author-about-event',
+      'ask-authors-share-event',
+      'invite-author-to-slack',
+      'authors-answer-questions',
+      'collect-emails-from-winners',
+      'contact-publisher-give-emails',
+    ];
+    for (const refId of waitingRefs) {
+      const task = botw.taskDefinitions!.find((td) => td.refId === refId);
+      assert.ok(task, `${refId} should exist`);
+      assert.ok((task.validation as any).waitingSemantics, `${refId} should describe waiting semantics`);
+      assert.deepStrictEqual((task.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
+    }
+
+    const proofExpectations: Record<string, string> = {
+      'create-web-page': 'Website link',
+      'announce-event-linkedin': 'LinkedIn announcement',
+      'announce-book-event-linkedin': 'LinkedIn announcement',
+      'announce-book-event-twitter': 'X announcement',
+      'announce-book-slack-channels': 'Slack announcement',
+      'announce-winners-slack': 'Winner announcement',
+      'contact-publisher-give-emails': 'Winner email handoff',
+    };
+    for (const [refId, requiredLinkName] of Object.entries(proofExpectations)) {
+      const task = botw.taskDefinitions!.find((td) => td.refId === refId);
+      assert.ok(task, `${refId} should exist`);
+      assert.strictEqual(task.requiredLinkName, requiredLinkName);
+      assert.deepStrictEqual(task.proofRequirement, {
+        type: 'url',
+        label: requiredLinkName,
+        required: true,
+      });
+      assert.deepStrictEqual((task.validation as any).requiredBundleLinks, [requiredLinkName]);
+    }
+
+    const humanAcceptanceExpectations: Record<string, string> = {
+      'fill-airtable-form-author': 'Airtable submission',
+      'fill-airtable-form-book': 'Airtable submission',
+      'create-web-page': 'Website publication',
+      'announce-event-linkedin': 'LinkedIn',
+      'announce-book-event-linkedin': 'LinkedIn',
+      'comment-from-alexey-linkedin': "Alexey's LinkedIn account",
+      'schedule-announcement-slack': 'Slack scheduling',
+      'announce-book-slack-channels': 'Slack posting',
+      'announce-winners-slack': 'Slack posting',
+      'contact-publisher-give-emails': 'Publisher or author email handoff',
+    };
+    for (const [refId, expectedText] of Object.entries(humanAcceptanceExpectations)) {
+      const task = botw.taskDefinitions!.find((td) => td.refId === refId);
+      assert.ok(task, `${refId} should exist`);
+      const acceptanceNote = (task.validation as any).acceptanceNote;
+      assert.match(acceptanceNote, /\[HUMAN\]/, `${refId} should declare a human acceptance note`);
+      assert.ok(acceptanceNote.includes(expectedText), `${refId} should mention ${expectedText}`);
+    }
+
+    const scheduleConfirmed = botw.taskDefinitions!.find((td) => td.refId === 'change-status-confirmed');
+    assert.ok(scheduleConfirmed);
+    assert.strictEqual(scheduleConfirmed.instructionDocId, 'sop.community.book-of-the-week.change-the-status-to-confirmed');
+    assert.deepStrictEqual(scheduleConfirmed.proofRequirement, {
+      type: 'external-status',
+      label: 'Schedule spreadsheet status is confirmed',
+      required: true,
+    });
+
+    const announced = botw.taskDefinitions!.find((td) => td.refId === 'announce-book-event-linkedin');
+    assert.ok(announced);
+    assert.strictEqual(announced.stageOnComplete, 'announced');
+
+    const afterEvent = botw.taskDefinitions!.find((td) => td.refId === 'select-winners');
+    assert.ok(afterEvent);
+    assert.strictEqual(afterEvent.stageOnComplete, 'after-event');
+
+    const done = botw.taskDefinitions!.find((td) => td.refId === 'contact-publisher-give-emails');
+    assert.ok(done);
+    assert.strictEqual(done.stageOnComplete, 'done');
+  });
+
+  it('Book of the Week template instantiates Monday anchor schedule with operator metadata', async () => {
+    const templates = await listTemplates(client);
+    const botw = templates.find((t) => t.type === 'book-of-the-week');
+    assert.ok(botw);
+
+    const tasks = await instantiateTemplate(client, botw.id, 'bundle-book-of-the-week-sample', '2026-07-06');
+    assert.strictEqual(tasks.length, 21);
+
+    const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));
+    assert.strictEqual(byRef.get('reach-out-to-book-authors')!.date, '2026-06-15');
+    assert.strictEqual(byRef.get('agree-on-a-date')!.date, '2026-06-16');
+    assert.strictEqual(byRef.get('change-status-confirmed')!.date, '2026-06-17');
+    assert.strictEqual(byRef.get('fill-airtable-form-author')!.date, '2026-06-18');
+    assert.strictEqual(byRef.get('fill-airtable-form-book')!.date, '2026-06-19');
+    assert.strictEqual(byRef.get('create-web-page')!.date, '2026-06-20');
+    assert.strictEqual(byRef.get('fill-newsletter-announcement')!.date, '2026-06-28');
+    assert.strictEqual(byRef.get('announce-book-event-linkedin')!.date, '2026-07-06');
+    assert.strictEqual(byRef.get('select-winners')!.date, '2026-07-10');
+    assert.strictEqual(byRef.get('collect-emails-from-winners')!.date, '2026-07-11');
+    assert.strictEqual(byRef.get('announce-winners-slack')!.date, '2026-07-12');
+    assert.strictEqual(byRef.get('contact-publisher-give-emails')!.date, '2026-07-13');
+
+    assert.strictEqual(byRef.get('reach-out-to-book-authors')!.assigneeId, GRACE_ID);
+    assert.strictEqual(byRef.get('fill-newsletter-announcement')!.assigneeId, VALERIIA_ID);
+    assert.strictEqual(byRef.get('create-web-page')!.requiredLinkName, 'Website link');
+    assert.match((byRef.get('create-web-page')!.validation as any).acceptanceNote, /\[HUMAN\].*Website publication/);
+    assert.match((byRef.get('fill-airtable-form-book')!.validation as any).acceptanceNote, /\[HUMAN\].*Airtable submission/);
+    assert.deepStrictEqual(byRef.get('announce-book-slack-channels')!.proofRequirement, {
+      type: 'url',
+      label: 'Slack announcement',
+      required: true,
+    });
+    assert.match((byRef.get('announce-book-slack-channels')!.validation as any).acceptanceNote, /\[HUMAN\].*Slack posting/);
+    assert.strictEqual(byRef.get('announce-book-event-linkedin')!.stageOnComplete, 'announced');
+    assert.strictEqual(byRef.get('select-winners')!.stageOnComplete, 'after-event');
+    assert.strictEqual(byRef.get('contact-publisher-give-emails')!.stageOnComplete, 'done');
+    assert.match((byRef.get('contact-publisher-give-emails')!.validation as any).acceptanceNote, /\[HUMAN\].*Publisher or author email handoff/);
+    assert.strictEqual(byRef.get('invite-author-to-slack')!.instructionDocId, 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form');
+    assert.deepStrictEqual((byRef.get('collect-emails-from-winners')!.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
   });
 
   it('Open-Source Spotlight template has 14 task definitions', async () => {

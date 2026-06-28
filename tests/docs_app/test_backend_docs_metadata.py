@@ -403,7 +403,12 @@ def test_exported_task_templates_are_git_backed_process_documents():
     assert "title: \"Podcast Task Template\"" in text
     assert "doc_type: task-template" in text
     assert "source: \"work-engine/scripts/seed-templates.ts\"" in text
-    assert "| 4 | `create-podcast-document` | -25 | Create a podcast document with the questions" in text
+    assert "| # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |" in text
+    assert (
+        "| 4 | `create-podcast-document` | prep-document | -25 |  | "
+        "Create a podcast document with the questions | "
+        "sop.media.podcast.create-podcast-document<br>step 1 | url: Podcast document |  |"
+    ) in text
 
     indexed = {doc["path"]: doc for doc in iter_docs(REPO_ROOT / "content")}
     assert indexed["content/tasks/templates/podcast.md"]["domain"] == "tasks"

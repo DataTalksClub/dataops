@@ -485,6 +485,379 @@ const PODCAST_AT_RISK_BY_REF: Record<string, string[]> = {
   'create-podcast-page': ['missing DTC podcast page'],
 };
 
+const BOOK_OF_THE_WEEK_PHASES: WorkflowPhase[] = [
+  { id: 'author-outreach', name: 'Author outreach and date confirmation', stage: 'preparation' },
+  { id: 'book-and-page-setup', name: 'Book, author, and public page setup', stage: 'preparation' },
+  { id: 'pre-event-promotion', name: 'Newsletter and pre-event promotion', stage: 'preparation' },
+  { id: 'event-week', name: 'Event week announcements and Q&A', stage: 'announced' },
+  { id: 'giveaway-closeout', name: 'Winner selection and publisher handoff', stage: 'after-event' },
+];
+
+const BOOK_OF_THE_WEEK_REQUIRED_BUNDLE_LINKS = [
+  'Author email',
+  'Publisher or sponsor contact',
+  'Book or publisher source link',
+  'Website link',
+  'LinkedIn announcement',
+  'X announcement',
+  'Slack announcement',
+  'Author share proof',
+  'Winner announcement',
+  'Winner email handoff',
+];
+
+const BOOK_OF_THE_WEEK_SOURCE_DOC_IDS = [
+  'task-template.tasks.book-of-the-week',
+  'reference.overview.events-slack-book-of-the-week',
+  'reference.social-media.posts-book-of-the-week',
+  'sop.community.book-of-the-week.reach-out-to-book-authors',
+  'sop.community.book-of-the-week.have-a-first-contact-with-the-author',
+  'sop.community.book-of-the-week.change-the-status-to-confirmed',
+  'sop.community.book-of-the-week.add-books-to-the-airtable-form',
+  'sop.community.book-of-the-week.adding-an-author-to-book-of-the-week-pages',
+  'sop.community.book-of-the-week.determining-the-publisher-of-a-book',
+  'sop.community.book-of-the-week.add-links-and-edit-description',
+  'sop.community.book-of-the-week.adding-book-covers',
+  'sop.community.book-of-the-week.announce-book-of-the-week-announcement-on-linkedin',
+  'sop.community.book-of-the-week.ask-book-authors-to-share-their-the-event-page',
+  'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form',
+  'sop.community.book-of-the-week.schedule-the-announcement-in-slack',
+  'sop.community.book-of-the-week.announce-the-book-of-the-week-event',
+  'sop.community.book-of-the-week.select-book-of-the-week-winners',
+  'sop.community.book-of-the-week.send-winners-emails',
+  'template.community.book-of-the-week.book-of-the-week-reaching-out-to-authors',
+  'template.community.book-of-the-week.book-of-the-week-remind-the-guest-about-the-event-template',
+  'template.community.book-of-the-week.asking-books-authors-to-share-their-event-page',
+  'template.community.book-of-the-week.book-of-the-week-linkedin-announcement-a-week-before-the-event',
+  'template.community.book-of-the-week.book-of-the-week-linkedin-announcement',
+  'template.community.book-of-the-week.book-of-the-week-announcement-template',
+  'template.community.book-of-the-week.announce-the-book-of-the-week-winners-in-slack',
+  'template.community.book-of-the-week.selecting-book-of-the-week-winners-template',
+  'template.community.book-of-the-week.sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent',
+  'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block',
+];
+
+const BOOK_OF_THE_WEEK_PHASE_BY_REF: Record<string, string> = {
+  'reach-out-to-book-authors': 'author-outreach',
+  'agree-on-a-date': 'author-outreach',
+  'change-status-confirmed': 'author-outreach',
+  'fill-airtable-form-author': 'book-and-page-setup',
+  'fill-airtable-form-book': 'book-and-page-setup',
+  'create-web-page': 'book-and-page-setup',
+  'fill-newsletter-announcement': 'pre-event-promotion',
+  'announce-event-linkedin': 'pre-event-promotion',
+  'remind-author-about-event': 'pre-event-promotion',
+  'ask-authors-share-event': 'pre-event-promotion',
+  'announce-book-event-linkedin': 'event-week',
+  'comment-from-alexey-linkedin': 'event-week',
+  'announce-book-event-twitter': 'event-week',
+  'invite-author-to-slack': 'event-week',
+  'schedule-announcement-slack': 'event-week',
+  'announce-book-slack-channels': 'event-week',
+  'authors-answer-questions': 'event-week',
+  'select-winners': 'giveaway-closeout',
+  'collect-emails-from-winners': 'giveaway-closeout',
+  'announce-winners-slack': 'giveaway-closeout',
+  'contact-publisher-give-emails': 'giveaway-closeout',
+};
+
+const BOOK_OF_THE_WEEK_PHASE_SYSTEMS: Record<string, string[]> = {
+  'author-outreach': ['email', 'linkedin', 'google-sheets'],
+  'book-and-page-setup': ['airtable', 'website', 'github', 'google-sheets'],
+  'pre-event-promotion': ['mailchimp', 'linkedin', 'email', 'website'],
+  'event-week': ['linkedin', 'twitter', 'slack', 'airtable', 'website'],
+  'giveaway-closeout': ['slack', 'email', 'google-sheets', 'random.org'],
+};
+
+const BOOK_OF_THE_WEEK_DOC_CONTEXT: Record<string, Pick<TaskDefinition, 'instructionDocId' | 'instructionStepId' | 'systems'>> = {
+  'reach-out-to-book-authors': {
+    instructionDocId: 'template.community.book-of-the-week.book-of-the-week-reaching-out-to-authors',
+    systems: ['email', 'linkedin'],
+  },
+  'agree-on-a-date': {
+    instructionDocId: 'sop.community.book-of-the-week.have-a-first-contact-with-the-author',
+    instructionStepId: '1',
+    systems: ['email', 'google-sheets'],
+  },
+  'change-status-confirmed': {
+    instructionDocId: 'sop.community.book-of-the-week.change-the-status-to-confirmed',
+    instructionStepId: '1',
+    systems: ['google-sheets'],
+  },
+  'fill-airtable-form-author': {
+    instructionDocId: 'sop.community.book-of-the-week.adding-an-author-to-book-of-the-week-pages',
+    instructionStepId: '1',
+    systems: ['airtable', 'website'],
+  },
+  'fill-airtable-form-book': {
+    instructionDocId: 'sop.community.book-of-the-week.add-books-to-the-airtable-form',
+    instructionStepId: '1',
+    systems: ['airtable', 'website', 'google-sheets'],
+  },
+  'create-web-page': {
+    instructionDocId: 'sop.community.book-of-the-week.add-links-and-edit-description',
+    instructionStepId: '1',
+    systems: ['website', 'github', 'airtable'],
+  },
+  'fill-newsletter-announcement': {
+    instructionDocId: 'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block',
+    systems: ['mailchimp', 'website'],
+  },
+  'announce-event-linkedin': {
+    instructionDocId: 'template.community.book-of-the-week.book-of-the-week-linkedin-announcement-a-week-before-the-event',
+    systems: ['linkedin', 'hootsuite', 'website'],
+  },
+  'remind-author-about-event': {
+    instructionDocId: 'template.community.book-of-the-week.book-of-the-week-remind-the-guest-about-the-event-template',
+    systems: ['email', 'slack', 'website'],
+  },
+  'ask-authors-share-event': {
+    instructionDocId: 'template.community.book-of-the-week.asking-books-authors-to-share-their-event-page',
+    systems: ['email', 'linkedin', 'twitter', 'website'],
+  },
+  'announce-book-event-linkedin': {
+    instructionDocId: 'template.community.book-of-the-week.book-of-the-week-linkedin-announcement',
+    systems: ['linkedin', 'website'],
+  },
+  'comment-from-alexey-linkedin': {
+    instructionDocId: 'template.community.book-of-the-week.book-of-the-week-linkedin-announcement',
+    systems: ['linkedin'],
+  },
+  'announce-book-event-twitter': {
+    instructionDocId: 'reference.social-media.posts-book-of-the-week',
+    systems: ['twitter', 'website'],
+  },
+  'invite-author-to-slack': {
+    instructionDocId: 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form',
+    instructionStepId: '1',
+    systems: ['slack', 'airtable', 'email'],
+  },
+  'schedule-announcement-slack': {
+    instructionDocId: 'sop.community.book-of-the-week.schedule-the-announcement-in-slack',
+    instructionStepId: '1',
+    systems: ['slack', 'website'],
+  },
+  'announce-book-slack-channels': {
+    instructionDocId: 'sop.community.book-of-the-week.announce-the-book-of-the-week-event',
+    instructionStepId: '1',
+    systems: ['slack'],
+  },
+  'authors-answer-questions': {
+    instructionDocId: 'reference.overview.events-slack-book-of-the-week',
+    systems: ['slack'],
+  },
+  'select-winners': {
+    instructionDocId: 'sop.community.book-of-the-week.select-book-of-the-week-winners',
+    instructionStepId: '1',
+    systems: ['slack', 'random.org', 'google-sheets'],
+  },
+  'collect-emails-from-winners': {
+    instructionDocId: 'sop.community.book-of-the-week.select-book-of-the-week-winners',
+    instructionStepId: '6',
+    systems: ['slack', 'google-sheets', 'email'],
+  },
+  'announce-winners-slack': {
+    instructionDocId: 'template.community.book-of-the-week.announce-the-book-of-the-week-winners-in-slack',
+    systems: ['slack'],
+  },
+  'contact-publisher-give-emails': {
+    instructionDocId: 'template.community.book-of-the-week.sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent',
+    systems: ['email', 'google-sheets'],
+  },
+};
+
+const BOOK_OF_THE_WEEK_WAITING_TASKS: Record<string, { waitingFor: string; followUpDefaultDays: number; note: string }> = {
+  'reach-out-to-book-authors': {
+    waitingFor: 'author reply',
+    followUpDefaultDays: 3,
+    note: 'If no reply, mark waiting for the author and set followUpAt three business days after outreach.',
+  },
+  'agree-on-a-date': {
+    waitingFor: 'author date confirmation',
+    followUpDefaultDays: 1,
+    note: 'If the Monday-Friday event week is not confirmed, keep the task waiting for the author and follow up the next business day.',
+  },
+  'remind-author-about-event': {
+    waitingFor: 'author Slack invite acceptance',
+    followUpDefaultDays: 1,
+    note: 'If the author has not accepted the Slack invite, wait on the author and follow up before event week starts.',
+  },
+  'ask-authors-share-event': {
+    waitingFor: 'author share confirmation or public share link',
+    followUpDefaultDays: 2,
+    note: 'If the author does not share the page, record the ask, mark waiting, and follow up before Monday announcement.',
+  },
+  'invite-author-to-slack': {
+    waitingFor: 'author Slack join confirmation',
+    followUpDefaultDays: 1,
+    note: 'If the author has not joined Slack, keep waiting for author acceptance and follow up the same or next business day.',
+  },
+  'authors-answer-questions': {
+    waitingFor: 'author Q&A activity in Slack',
+    followUpDefaultDays: 1,
+    note: 'If the author is inactive during Q&A, mark waiting for author activity and follow up in Slack or email.',
+  },
+  'collect-emails-from-winners': {
+    waitingFor: 'winner email replies',
+    followUpDefaultDays: 1,
+    note: 'If emails are missing, wait on the winners and follow up Tuesday or Wednesday before handoff.',
+  },
+  'contact-publisher-give-emails': {
+    waitingFor: 'publisher or author fulfillment confirmation',
+    followUpDefaultDays: 2,
+    note: 'If handoff is not acknowledged, wait on the fulfillment contact and follow up with the sent email thread.',
+  },
+};
+
+const BOOK_OF_THE_WEEK_HUMAN_ACCEPTANCE_NOTES: Record<string, string> = {
+  'fill-airtable-form-author': '[HUMAN] Airtable submission uses an external account; accept with Airtable submission confirmation and captured author email.',
+  'fill-airtable-form-book': '[HUMAN] Airtable submission uses an external account; accept with Airtable submission confirmation and book/publisher source captured.',
+  'create-web-page': '[HUMAN] Website publication uses the production website; accept only after the public page URL is captured.',
+  'announce-event-linkedin': '[HUMAN] LinkedIn publication or scheduling uses a DTC external account; accept with scheduled-post or public post proof.',
+  'announce-book-event-linkedin': '[HUMAN] LinkedIn publication uses a DTC external account; accept with the public announcement URL.',
+  'comment-from-alexey-linkedin': "[HUMAN] Alexey's LinkedIn account action must be performed by Alexey; accept with a comment note or public proof.",
+  'schedule-announcement-slack': '[HUMAN] Slack scheduling uses a community workspace account; accept with scheduling confirmation.',
+  'announce-book-slack-channels': '[HUMAN] Slack posting uses the community workspace; accept with the Slack announcement proof link.',
+  'announce-winners-slack': '[HUMAN] Slack posting uses the community workspace; accept with the winner announcement proof link.',
+  'contact-publisher-give-emails': '[HUMAN] Publisher or author email handoff uses external email; accept with the sent thread or handoff URL.',
+};
+
+const BOOK_OF_THE_WEEK_AT_RISK_BY_REF: Record<string, string[]> = {
+  'reach-out-to-book-authors': ['no author contact path', 'no book source link'],
+  'agree-on-a-date': ['event week not confirmed', 'anchor Monday unclear'],
+  'change-status-confirmed': ['schedule spreadsheet status not confirmed'],
+  'fill-airtable-form-author': ['missing author email'],
+  'fill-airtable-form-book': ['missing book or publisher source link', 'missing book cover or description source'],
+  'create-web-page': ['missing website link', 'website page not public'],
+  'fill-newsletter-announcement': ['missing website link', 'newsletter block not prepared'],
+  'announce-event-linkedin': ['missing LinkedIn announcement proof'],
+  'ask-authors-share-event': ['author share proof missing or waiting'],
+  'announce-book-event-linkedin': ['missing LinkedIn announcement proof'],
+  'announce-book-event-twitter': ['missing X announcement proof'],
+  'invite-author-to-slack': ['author not in Slack'],
+  'schedule-announcement-slack': ['Slack announcement not scheduled'],
+  'announce-book-slack-channels': ['missing Slack announcement proof'],
+  'authors-answer-questions': ['author inactive in Slack Q&A'],
+  'select-winners': ['winners not selected'],
+  'collect-emails-from-winners': ['winner emails missing'],
+  'announce-winners-slack': ['missing winner announcement proof'],
+  'contact-publisher-give-emails': ['missing winner email handoff proof', 'publisher or author contact missing'],
+};
+
+function withBookOfTheWeekTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
+  return tasks.map((task) => {
+    const phase = BOOK_OF_THE_WEEK_PHASE_BY_REF[task.refId];
+    const docContext = BOOK_OF_THE_WEEK_DOC_CONTEXT[task.refId] || {};
+    const proofRequirement = bookOfTheWeekProofRequirement(task);
+    const waiting = BOOK_OF_THE_WEEK_WAITING_TASKS[task.refId];
+    const requiredBundleLinks = bookOfTheWeekRequiredBundleLinks(task);
+    const validation: Record<string, unknown> = {
+      operatorAction: task.description,
+      completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
+      requiredBundleLinks,
+      reminderSemantics: {
+        due: true,
+        overdue: true,
+        missingEvidence: proofRequirement.required !== false,
+        waitingFollowUp: Boolean(waiting),
+        eventWeek: phase === 'event-week',
+        postEventFollowUp: phase === 'giveaway-closeout',
+      },
+      contextRequired: ['book title', 'book author', 'publisher or sponsor fulfillment contact', 'Monday event-week anchor date'],
+      atRiskWhen: BOOK_OF_THE_WEEK_AT_RISK_BY_REF[task.refId] || [],
+      dashboardStates: ['today', 'overdue', 'waiting', 'follow-up-due', 'missing-evidence', 'at-risk'],
+      ...(typeof task.validation === 'object' && task.validation !== null ? task.validation : {}),
+    };
+
+    if (waiting) {
+      validation.waitingSemantics = {
+        waitingFor: waiting.waitingFor,
+        requires: ['waitingFor', 'followUpAt', 'comment'],
+        followUpDefaultDays: waiting.followUpDefaultDays,
+        guidance: waiting.note,
+      };
+    }
+    const humanAcceptanceNote = BOOK_OF_THE_WEEK_HUMAN_ACCEPTANCE_NOTES[task.refId];
+    if (humanAcceptanceNote) {
+      validation.acceptanceNote = humanAcceptanceNote;
+    }
+
+    return {
+      ...task,
+      ...docContext,
+      phase,
+      systems: docContext.systems || task.systems || BOOK_OF_THE_WEEK_PHASE_SYSTEMS[phase] || ['dataops'],
+      proofRequirement,
+      validation,
+    };
+  });
+}
+
+function bookOfTheWeekProofRequirement(task: TaskDefinition): ProofRequirement {
+  if (task.requiredLinkName) {
+    return { type: 'url', label: task.requiredLinkName, required: true };
+  }
+  if (task.refId === 'change-status-confirmed') {
+    return { type: 'external-status', label: 'Schedule spreadsheet status is confirmed', required: true };
+  }
+  if (task.refId === 'fill-airtable-form-author') {
+    return { type: 'external-status', label: 'Author/person Airtable form submitted and author email captured', required: true };
+  }
+  if (task.refId === 'fill-airtable-form-book') {
+    return { type: 'external-status', label: 'Book Airtable form submitted with book, publisher, cover, and description source', required: true };
+  }
+  if (task.refId === 'schedule-announcement-slack') {
+    return { type: 'external-status', label: 'Slack announcement scheduled with cover and copied template', required: true };
+  }
+  if (task.refId === 'authors-answer-questions') {
+    return { type: 'external-status', label: 'Author Q&A activity monitored in Slack', required: true };
+  }
+  if (task.refId === 'select-winners') {
+    return { type: 'external-status', label: 'Winners selected by author or randomizer', required: true };
+  }
+  if (task.refId === 'collect-emails-from-winners') {
+    return { type: 'external-status', label: 'Winner emails collected or waiting follow-up recorded', required: true };
+  }
+  if (
+    task.refId === 'reach-out-to-book-authors'
+    || task.refId === 'agree-on-a-date'
+    || task.refId === 'remind-author-about-event'
+    || task.refId === 'ask-authors-share-event'
+    || task.refId === 'comment-from-alexey-linkedin'
+    || task.refId === 'invite-author-to-slack'
+    || task.refId === 'fill-newsletter-announcement'
+  ) {
+    return { type: 'comment', label: `${task.description} confirmed`, required: true };
+  }
+  if (task.isMilestone || task.stageOnComplete) {
+    return { type: 'comment', label: `${task.description} confirmed`, required: true };
+  }
+  return { type: 'comment', label: 'Manual completion confirmation', required: false };
+}
+
+function bookOfTheWeekRequiredBundleLinks(task: TaskDefinition): string[] {
+  if (task.requiredLinkName) {
+    return [task.requiredLinkName];
+  }
+  const requiredLinksByRef: Record<string, string[]> = {
+    'reach-out-to-book-authors': ['Author email', 'Book or publisher source link'],
+    'agree-on-a-date': ['Author email'],
+    'change-status-confirmed': ['Author email', 'Book or publisher source link'],
+    'fill-airtable-form-author': ['Author email'],
+    'fill-airtable-form-book': ['Book or publisher source link'],
+    'fill-newsletter-announcement': ['Website link'],
+    'remind-author-about-event': ['Author email', 'Website link'],
+    'ask-authors-share-event': ['Website link'],
+    'invite-author-to-slack': ['Author email'],
+    'schedule-announcement-slack': ['Website link'],
+    'authors-answer-questions': ['Slack announcement'],
+    'select-winners': ['Slack announcement'],
+    'collect-emails-from-winners': ['Winner announcement'],
+    'contact-publisher-give-emails': ['Publisher or sponsor contact', 'Winner email handoff'],
+  };
+  return requiredLinksByRef[task.refId] || [];
+}
+
 function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
   return tasks.map((task) => {
     const phase = PODCAST_PHASE_BY_REF[task.refId];
@@ -837,6 +1210,8 @@ const DEFAULT_TEMPLATES = [
     type: 'book-of-the-week',
     emoji: '\u{1F4DA}',
     tags: ['Book of the Week'],
+    phases: BOOK_OF_THE_WEEK_PHASES,
+    sourceDocIds: BOOK_OF_THE_WEEK_SOURCE_DOC_IDS,
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [
@@ -844,12 +1219,8 @@ const DEFAULT_TEMPLATES = [
       { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
       { name: 'Events (slack) - book of the week', url: 'https://docs.google.com/document/d/1RdxwuKVGRI69phmPbmJbgoO3o8il52LFZhiUu3qaDME/edit' },
     ],
-    bundleLinkDefinitions: [
-      { name: 'Guest email' },
-      { name: 'Publisher link' },
-      { name: 'Website link' },
-    ],
-    taskDefinitions: [
+    bundleLinkDefinitions: BOOK_OF_THE_WEEK_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    taskDefinitions: withBookOfTheWeekTaskSemantics([
       {
         refId: 'reach-out-to-book-authors',
         description: 'Reach out to book authors',
@@ -891,6 +1262,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Announce the event on DTC LinkedIn',
         offsetDays: -7,
         isMilestone: true,
+        requiredLinkName: 'LinkedIn announcement',
       },
       {
         refId: 'remind-author-about-event',
@@ -912,6 +1284,7 @@ const DEFAULT_TEMPLATES = [
         isMilestone: true,
         stageOnComplete: 'announced',
         instructionsUrl: 'https://docs.google.com/document/d/1HeorFgnMhVt2olNGYJNpoeht_-av-G-nFEf7NLKL8Ek/edit',
+        requiredLinkName: 'LinkedIn announcement',
       },
       {
         refId: 'comment-from-alexey-linkedin',
@@ -923,6 +1296,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Announce the book of the week event on DTC Twitter',
         offsetDays: 0,
         instructionsUrl: 'https://docs.google.com/document/d/1VCRVVhI7Lo4OOAg7Blkab94gyoJrjNRgBVKw3tjbxW4/edit',
+        requiredLinkName: 'X announcement',
       },
       {
         refId: 'invite-author-to-slack',
@@ -941,6 +1315,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Announce the book in the #book-of-the-week and #announcements channel',
         offsetDays: 0,
         isMilestone: true,
+        requiredLinkName: 'Slack announcement',
       },
       {
         refId: 'authors-answer-questions',
@@ -966,6 +1341,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Announce the book-of-the-week winners in the Slack community',
         offsetDays: 6,
         instructionsUrl: 'https://docs.google.com/document/d/1JxtqGk1UamUGp3PxtD3-YCJJagJdJK00CGBEPVd4VH8/edit',
+        requiredLinkName: 'Winner announcement',
       },
       {
         refId: 'contact-publisher-give-emails',
@@ -973,6 +1349,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: 7,
         stageOnComplete: 'done',
         instructionsUrl: 'https://docs.google.com/document/d/1szidymIamDfTI0LpkmwlRz7AX0qsRcPEVrcKtaFz_hs/edit',
+        requiredLinkName: 'Winner email handoff',
       },
       {
         refId: 'fill-newsletter-announcement',
@@ -981,7 +1358,7 @@ const DEFAULT_TEMPLATES = [
         assigneeId: VALERIIA_ID,
         instructionsUrl: 'https://docs.google.com/document/d/10y0CCq8ApFbH1Mx7wlh_b_ZudnPib9qk_tDysA99xNg/edit',
       },
-    ],
+    ]),
   },
 
   // 3. Podcast
@@ -2220,4 +2597,11 @@ if (require.main === module) {
     });
 }
 
-export { seed, DEFAULT_TEMPLATES, NEWSLETTER_SOURCE_DOC_IDS, PODCAST_SOURCE_DOC_IDS, PODCAST_EXTERNAL_SOURCE_DOC_IDS };
+export {
+  seed,
+  DEFAULT_TEMPLATES,
+  NEWSLETTER_SOURCE_DOC_IDS,
+  BOOK_OF_THE_WEEK_SOURCE_DOC_IDS,
+  PODCAST_SOURCE_DOC_IDS,
+  PODCAST_EXTERNAL_SOURCE_DOC_IDS,
+};
