@@ -99,6 +99,21 @@ def _assert_mobile_operations_home_settled(page) -> None:
     assert layout["bodyScrollWidth"] <= layout["documentClientWidth"] + 1, layout
 
 
+def _assert_mobile_drawer_open(page) -> None:
+    page.wait_for_function(
+        """() => {
+            const sidebar = document.querySelector('#sidebar');
+            const scrim = document.querySelector('#sidebar-scrim');
+            if (!sidebar || !scrim) return false;
+            const rect = sidebar.getBoundingClientRect();
+            return document.body.classList.contains('sidebar-open')
+                && rect.left >= -0.5
+                && rect.right > 300
+                && getComputedStyle(scrim).display !== 'none';
+        }"""
+    )
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -581,7 +596,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert page.locator("#library-title").inner_text() == "Operations Home"
 
                     page.locator(".ops-lane-bundles .ops-lane-item", has_text="Newsletter smoke workflow").click()
-                    page.locator("#bundle-panel-title").wait_for(state="visible")
+                    page.locator("#bundle-panel-title", has_text="Newsletter smoke workflow").wait_for(state="visible")
                     assert page.locator("#bundle-panel-title").inner_text() == "Newsletter smoke workflow"
                     assert page.locator("#bundle-panel-body").get_by_text("Links & Artifacts").is_visible()
                     assert page.locator("#bundle-panel-body").get_by_text("Newsletter draft output").is_visible()
@@ -613,8 +628,23 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     _assert_mobile_operations_home_settled(page)
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-operations-home-mobile.png"), full_page=True)
                     page.locator("#mobile-menu-button").click()
+                    _assert_mobile_drawer_open(page)
                     assert page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
+                    assert page.locator("#mobile-menu-button").get_attribute("aria-expanded") == "true"
+                    assert page.locator("#sidebar-scrim").is_visible()
+                    assert page.evaluate("document.activeElement && document.querySelector('#sidebar').contains(document.activeElement)")
+                    page.keyboard.press("Shift+Tab")
+                    assert page.evaluate("document.activeElement && document.querySelector('#sidebar').contains(document.activeElement)")
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-workspace-drawer-mobile.png"))
                     page.keyboard.press("Escape")
+                    assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
+                    assert page.locator("#mobile-menu-button").get_attribute("aria-expanded") == "false"
+                    assert page.evaluate("document.activeElement === document.querySelector('#mobile-menu-button')")
+                    _assert_mobile_operations_home_settled(page)
+
+                    page.locator("#mobile-menu-button").click()
+                    _assert_mobile_drawer_open(page)
+                    page.locator("#sidebar-scrim").click(position={"x": 380, "y": 20})
                     assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
                     _assert_mobile_operations_home_settled(page)
 
@@ -622,6 +652,19 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.locator("#task-panel-title").wait_for(state="visible")
                     assert page.locator("#task-panel-title").inner_text() == "Approve newsletter draft artifact"
                     assert page.evaluate("document.body.scrollWidth <= document.documentElement.clientWidth + 1")
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-task-panel-mobile.png"))
+                    page.locator("#task-panel-close").click()
+                    assert page.locator("#task-panel").is_hidden()
+
+                    page.locator("#mobile-menu-button").click()
+                    _assert_mobile_drawer_open(page)
+                    page.locator("summary", has_text="Tools").click()
+                    page.locator("#theme-toggle-button").click()
+                    assert page.locator("body").evaluate("el => el.classList.contains('dark')")
+                    assert page.locator("#sidebar-scrim").is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-mobile-drawer-dark.png"))
+                    page.locator("#sidebar-close-button").click()
+                    assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
                 finally:
                     browser.close()
 

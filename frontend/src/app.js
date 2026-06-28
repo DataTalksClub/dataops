@@ -13,6 +13,7 @@ function resolveApiBase() {
 
 const body = document.body;
 const sidebar = document.querySelector("#sidebar");
+const sidebarScrim = document.querySelector("#sidebar-scrim");
 const sidebarResize = document.querySelector("#sidebar-resize");
 const mobileMenuButton = document.querySelector("#mobile-menu-button");
 const sidebarCloseButton = document.querySelector("#sidebar-close-button");
@@ -72,6 +73,7 @@ const helpClose = document.querySelector("#help-close");
 helpBackdrop.addEventListener("click", () => { helpModal.hidden = true; });
 helpClose.addEventListener("click", () => { helpModal.hidden = true; });
 const documentList = document.querySelector("#document-list");
+const pageShell = document.querySelector(".page-shell");
 const documentRowTemplate = document.querySelector("#document-row-template");
 const breadcrumb = document.querySelector("#breadcrumb");
 const toolbarTitle = document.querySelector("#toolbar-title");
@@ -134,6 +136,7 @@ let activeTaskPanelTask = null;
 let activeTaskPanelArtifacts = [];
 let activeBundlePanelId = null;
 let activeBundlePanelData = null;
+let lastSidebarOpener = null;
 
 let allDocuments = [];
 let visibleDocuments = [];
@@ -154,6 +157,7 @@ const LIST_LIMIT = 120;
 
 mobileMenuButton.addEventListener("click", openSidebar);
 sidebarCloseButton.addEventListener("click", closeSidebar);
+sidebarScrim?.addEventListener("click", closeSidebar);
 sidebarCollapseButton.addEventListener("click", () => setSidebarCollapsed(true));
 sidebarExpandButton.addEventListener("click", () => setSidebarCollapsed(false));
 themeToggleButton.addEventListener("click", () => setDarkMode(!body.classList.contains("dark")));
@@ -186,6 +190,7 @@ documentTitle.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("resize", resizeDocumentTitle);
+window.addEventListener("resize", syncSidebarShellState);
 editor.addEventListener("input", () => {
   if (!currentDoc) return;
   storeDraft();
@@ -286,6 +291,7 @@ restoreDarkMode();
 restoreSidebarCollapsed();
 restoreSidebarWidth();
 attachSidebarResize();
+syncSidebarShellState();
 
 function setDarkMode(on) {
   body.classList.toggle("dark", on);
@@ -447,8 +453,9 @@ function updatePinButton() {
   }
   docPinButton.hidden = false;
   const pinned = readPins().has(currentDoc.path);
-  docPinButton.textContent = pinned ? "★" : "☆";
+  docPinButton.textContent = pinned ? "Pinned" : "Pin";
   docPinButton.title = pinned ? "Unpin from sidebar" : "Pin to sidebar";
+  docPinButton.setAttribute("aria-label", pinned ? "Unpin from sidebar" : "Pin to sidebar");
   docPinButton.classList.toggle("is-pinned", pinned);
 }
 
@@ -471,7 +478,7 @@ function renderPinned() {
     label.textContent = doc.title || basename(path);
     const star = document.createElement("span");
     star.className = "recent-row-when";
-    star.textContent = "★";
+    star.textContent = "Pinned";
     btn.append(label, star);
     btn.addEventListener("click", () => openDocument(path));
     return btn;
@@ -3824,8 +3831,45 @@ function setView(view) {
 
 const FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+function isMobileShell() {
+  return window.matchMedia("(max-width: 820px)").matches;
+}
+
+function syncSidebarShellState() {
+  const open = body.classList.contains("sidebar-open");
+  if (!isMobileShell()) {
+    body.classList.remove("sidebar-open");
+    sidebarScrim.hidden = true;
+    mobileMenuButton.setAttribute("aria-expanded", "false");
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
+    sidebar.removeAttribute("aria-hidden");
+    pageShell.inert = false;
+    if (mobileWorkBellButton) mobileWorkBellButton.inert = false;
+    mobileNewButton.inert = false;
+    document.removeEventListener("keydown", handleSidebarKeydown);
+    return;
+  }
+  sidebarScrim.hidden = !open;
+  mobileMenuButton.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    sidebar.setAttribute("role", "dialog");
+    sidebar.setAttribute("aria-modal", "true");
+    sidebar.removeAttribute("aria-hidden");
+  } else {
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
+    sidebar.setAttribute("aria-hidden", "true");
+  }
+  pageShell.inert = open;
+  if (mobileWorkBellButton) mobileWorkBellButton.inert = open;
+  mobileNewButton.inert = open;
+}
+
 function openSidebar() {
+  lastSidebarOpener = document.activeElement instanceof HTMLElement ? document.activeElement : mobileMenuButton;
   body.classList.add("sidebar-open");
+  syncSidebarShellState();
   document.addEventListener("keydown", handleSidebarKeydown);
   const first = sidebar.querySelector(FOCUSABLE_SELECTOR);
   first?.focus();
@@ -3834,10 +3878,11 @@ function openSidebar() {
 function closeSidebar() {
   if (!body.classList.contains("sidebar-open")) return;
   body.classList.remove("sidebar-open");
+  syncSidebarShellState();
   document.removeEventListener("keydown", handleSidebarKeydown);
-  if (sidebar.contains(document.activeElement)) {
-    mobileMenuButton.focus();
-  }
+  const focusTarget = lastSidebarOpener?.isConnected ? lastSidebarOpener : mobileMenuButton;
+  if (focusTarget instanceof HTMLElement) focusTarget.focus();
+  lastSidebarOpener = null;
 }
 
 function handleSidebarKeydown(event) {
