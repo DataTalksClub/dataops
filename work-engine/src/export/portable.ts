@@ -463,6 +463,7 @@ function mapNotification(item: Record<string, unknown>): JsonRecord {
     message: optionalString(item.message),
     user_id: optionalString(item.userId),
     task_id: optionalString(item.taskId),
+    intake_item_id: optionalString(item.intakeItemId),
     bundle_id: optionalString(item.bundleId),
     template_id: optionalString(item.templateId),
     recurring_config_id: optionalString(item.recurringConfigId),
@@ -1368,6 +1369,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     }
     if (status === 'blocked') {
       requireString(item, 'blocked_reason', errors, context);
+      requireString(item, 'waiting_for', errors, context);
+      validateDateOrTimestampField(item, 'follow_up_at', errors, context, true);
     }
     if (typeof item.source === 'string' && typeof item.source_message_id === 'string') {
       const sourceKey = `${item.source}#${item.source_message_id}`;
@@ -1416,19 +1419,30 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateNoSecretPayload(item, errors, context);
   }
 
+  const reminderKeys = new Set<string>();
   for (const [index, notification] of (recordsByEntity.notifications || []).entries()) {
     const context = `notifications[${index}]`;
     const notificationType = optionalEnum(notification, 'notification_type', VALID_NOTIFICATION_TYPES, errors, context);
     requireString(notification, 'message', errors, context);
     if (notificationType === 'follow-up-due') {
-      requireString(notification, 'task_id', errors, context);
+      const taskId = optionalStringField(notification, 'task_id', errors, context);
+      const intakeItemId = optionalStringField(notification, 'intake_item_id', errors, context);
+      if (!taskId && !intakeItemId) {
+        errors.push(`${context} follow-up-due requires task_id or intake_item_id`);
+      }
       validateDateOrTimestampField(notification, 'due_at', errors, context, true);
+      if ((taskId || intakeItemId) && typeof notification.due_at === 'string') {
+        const key = `${taskId ? `task:${taskId}` : `intake:${intakeItemId}`}#${notification.due_at}`;
+        if (reminderKeys.has(key)) errors.push(`${context} duplicates follow-up reminder key: ${key}`);
+        reminderKeys.add(key);
+      }
     } else {
       validateDateOrTimestampField(notification, 'due_at', errors, context);
     }
     validateDateOrTimestampField(notification, 'created_at', errors, context);
     optionalReference(notification, 'user_id', userIds, errors, context);
     optionalReference(notification, 'task_id', taskIds, errors, context);
+    optionalReference(notification, 'intake_item_id', intakeItemIds, errors, context);
     optionalReference(notification, 'bundle_id', bundleIds, errors, context);
     optionalReference(notification, 'template_id', templateIds, errors, context);
     optionalReference(notification, 'recurring_config_id', recurringConfigIds, errors, context);
@@ -1463,6 +1477,12 @@ interface DryRunImportResult {
   totalRecords: number;
   wouldWrite: Record<string, number>;
   skipped: Record<string, number>;
+  followUpSummary: {
+    blockedIntakeItems: number;
+    standaloneBlockedIntakeItems: number;
+    linkedWaitingTasks: number;
+    intakeFollowUpNotifications: number;
+  };
 }
 
 /**
@@ -1474,6 +1494,7 @@ async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
   const validation = await validatePortableExport(exportDir);
   const wouldWrite: Record<string, number> = {};
   const skipped: Record<string, number> = {};
+  const recordsByEntity: Partial<Record<ExportEntityName, JsonRecord[]>> = {};
   let totalRecords = 0;
 
   const manifest = JSON.parse(await fs.readFile(path.join(exportDir, 'manifest.json'), 'utf8')) as Manifest;
@@ -1491,9 +1512,33 @@ async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
     } catch {
       records = [];
     }
+    recordsByEntity[spec.name] = records;
     wouldWrite[spec.name] = records.length;
     totalRecords += records.length;
   }
+
+  const intakeRecords = recordsByEntity.intake_items || [];
+  const taskRecords = recordsByEntity.tasks || [];
+  const notificationRecords = recordsByEntity.notifications || [];
+  const blockedIntakeItems = intakeRecords.filter((item) => item.status === 'blocked').length;
+  const standaloneBlockedIntakeItems = intakeRecords.filter((item) => (
+    item.status === 'blocked'
+    && (!Array.isArray(item.task_ids) || item.task_ids.length === 0)
+  )).length;
+  const linkedWaitingTaskIds = new Set(
+    intakeRecords.flatMap((item) => (
+      Array.isArray(item.task_ids) ? item.task_ids.filter((taskId): taskId is string => typeof taskId === 'string') : []
+    ))
+  );
+  const linkedWaitingTasks = taskRecords.filter((task) => (
+    task.status === 'waiting'
+    && typeof task.task_id === 'string'
+    && linkedWaitingTaskIds.has(task.task_id)
+  )).length;
+  const intakeFollowUpNotifications = notificationRecords.filter((notification) => (
+    notification.notification_type === 'follow-up-due'
+    && typeof notification.intake_item_id === 'string'
+  )).length;
 
   return {
     valid: validation.valid,
@@ -1501,6 +1546,12 @@ async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
     totalRecords,
     wouldWrite,
     skipped,
+    followUpSummary: {
+      blockedIntakeItems,
+      standaloneBlockedIntakeItems,
+      linkedWaitingTasks,
+      intakeFollowUpNotifications,
+    },
   };
 }
 

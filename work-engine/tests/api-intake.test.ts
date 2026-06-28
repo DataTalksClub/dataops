@@ -192,4 +192,126 @@ describe('intake API', () => {
     const persisted = await getIntakeItem(await getClient(), first.id);
     assert.ok(persisted?.history.some((event) => event.action === 'archived'));
   });
+
+  it('requires a concrete follow-up path when blocking intake and exposes due standalone lookup', async () => {
+    const due = JSON.parse((await request('POST', '/api/intake', {
+      title: 'Due blocked intake',
+      note: 'Needs a reply today',
+    })).body).item;
+    const future = JSON.parse((await request('POST', '/api/intake', {
+      title: 'Future blocked intake',
+      note: 'Needs a reply later',
+    })).body).item;
+
+    const missingPath = await request('POST', `/api/intake/${due.id}/block`, {
+      reason: 'Waiting for guest',
+    });
+    assert.strictEqual(missingPath.statusCode, 400);
+    assert.match(JSON.parse(missingPath.body).error, /waitingFor is required/);
+
+    assert.strictEqual((await request('POST', `/api/intake/${due.id}/block`, {
+      reason: 'Waiting for guest',
+      waitingFor: 'Guest',
+      followUpAt: '2026-06-28',
+    })).statusCode, 200);
+    assert.strictEqual((await request('POST', `/api/intake/${future.id}/block`, {
+      reason: 'Waiting for sponsor',
+      waitingFor: 'Sponsor',
+      followUpAt: '2026-07-05',
+    })).statusCode, 200);
+
+    const dueList = await request('GET', '/api/intake', undefined, {
+      status: 'blocked',
+      standaloneOnly: 'true',
+      dueFollowUpAt: '2026-06-28',
+    });
+    assert.strictEqual(dueList.statusCode, 200);
+    const titles = JSON.parse(dueList.body).items.map((item: any) => item.title);
+    assert.ok(titles.includes('Due blocked intake'));
+    assert.ok(!titles.includes('Future blocked intake'));
+  });
+
+  it('converts and attaches blocked intake to waiting task follow-up flow', async () => {
+    const client = await getClient();
+    const blocked = JSON.parse((await request('POST', '/api/intake', {
+      title: 'Long-lived sponsor reply',
+      note: 'Sponsor needs repeated follow-up',
+      tags: ['sponsor'],
+    })).body).item;
+    await request('POST', `/api/intake/${blocked.id}/block`, {
+      reason: 'Waiting for sponsor assets',
+      waitingFor: 'Sponsor',
+      followUpAt: '2026-07-10',
+    });
+
+    const converted = await request('POST', `/api/intake/${blocked.id}/convert-task`, {
+      date: '2026-07-08',
+      note: 'Move repeated follow-up to task path',
+    });
+    assert.strictEqual(converted.statusCode, 201, converted.body);
+    const convertedBody = JSON.parse(converted.body);
+    const waitingTask = await getTask(client, convertedBody.task.id);
+    assert.strictEqual(waitingTask?.status, 'waiting');
+    assert.strictEqual(waitingTask?.waitingFor, 'Sponsor');
+    assert.strictEqual(waitingTask?.followUpAt, '2026-07-10');
+    assert.ok(waitingTask?.comment?.includes('Move repeated follow-up'));
+    assert.ok(waitingTask?.intakeRefs?.some((ref) => ref.intakeItemId === blocked.id));
+    assert.ok(waitingTask?.taskHistory?.some((event) => event.action === 'waiting-started'));
+
+    const attachSource = JSON.parse((await request('POST', '/api/intake', {
+      title: 'Attach blocked intake to task',
+      note: 'Same sponsor follow-up',
+    })).body).item;
+    await request('POST', `/api/intake/${attachSource.id}/block`, {
+      reason: 'Waiting for sponsor',
+      waitingFor: 'Sponsor',
+      followUpAt: '2026-07-11',
+    });
+    const task = await createTask(client, {
+      description: 'Existing sponsor waiting task',
+      date: '2026-07-08',
+      status: 'waiting',
+      waitingFor: 'Sponsor',
+      followUpAt: '2026-07-11',
+      comment: 'Existing wait',
+    });
+    const attach = await request('POST', `/api/intake/${attachSource.id}/attach`, {
+      taskIds: [task.id],
+      note: 'Attach source context',
+    });
+    assert.strictEqual(attach.statusCode, 200, attach.body);
+    const attachedTask = await getTask(client, task.id);
+    assert.ok(attachedTask?.intakeRefs?.some((ref) => ref.intakeItemId === attachSource.id));
+    assert.ok(attachedTask?.comment?.includes('Attach source context'));
+  });
+
+  it('records standalone blocked intake follow-up outcomes', async () => {
+    const created = JSON.parse((await request('POST', '/api/intake', {
+      title: 'Standalone blocked intake',
+      note: 'Needs a reply',
+    })).body).item;
+    await request('POST', `/api/intake/${created.id}/block`, {
+      reason: 'Waiting for guest',
+      waitingFor: 'Guest',
+      followUpAt: '2026-06-28',
+    });
+
+    const sent = await request('POST', `/api/intake/${created.id}/follow-up-sent`, {
+      note: 'Sent reminder',
+      nextFollowUpAt: '2026-07-01',
+      channel: 'email',
+    });
+    assert.strictEqual(sent.statusCode, 200, sent.body);
+    assert.strictEqual(JSON.parse(sent.body).item.followUpAt, '2026-07-01');
+
+    const response = await request('POST', `/api/intake/${created.id}/response-received`, {
+      note: 'Guest replied',
+    });
+    assert.strictEqual(response.statusCode, 200, response.body);
+    const item = JSON.parse(response.body).item;
+    assert.strictEqual(item.status, 'triaged');
+    assert.strictEqual(item.followUpAt, undefined);
+    assert.ok(item.history.some((event: any) => event.action === 'follow-up-sent'));
+    assert.ok(item.history.some((event: any) => event.action === 'response-received'));
+  });
 });
