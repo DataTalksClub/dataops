@@ -42,6 +42,14 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('.dashboard-bundle-card'), 'should have dashboard-bundle-card CSS');
     });
 
+    it('index.html contains first-run workflow launcher CSS', async () => {
+      const event = { httpMethod: 'GET', path: '/' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('.first-run-workflows'), 'should have first-run launcher shell CSS');
+      assert.ok(result.body.includes('.first-run-workflow-card'), 'should have first-run workflow card CSS');
+      assert.ok(result.body.includes('.first-run-start-btn'), 'should have first-run start button CSS');
+    });
+
     it('index.html contains badge-anchor-date CSS', async () => {
       const event = { httpMethod: 'GET', path: '/' };
       const result = await handler(event, {});
@@ -184,6 +192,27 @@ describe('Home dashboard (issue #26)', () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
       assert.ok(result.body.includes("b.status === 'active'"), 'should filter bundles by active status');
+    });
+
+    it('app.js renders first-run workflow actions when templates exist but active bundles do not', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('renderDashboardFirstRunState'), 'should render dashboard first-run state');
+      assert.ok(result.body.includes('No active production work yet'), 'should distinguish clean production runtime copy');
+      assert.ok(result.body.includes("type: 'podcast'"), 'should include podcast first-run template spec');
+      assert.ok(result.body.includes("type: 'newsletter'"), 'should include newsletter first-run template spec');
+      assert.ok(result.body.includes("'first-run-template-' + type"), 'should expose template action hooks');
+      assert.ok(result.body.includes("'first-run-start-' + type"), 'should expose start button hooks');
+      assert.ok(result.body.includes('api.bundles.create({'), 'should use existing bundle creation semantics');
+      assert.ok(result.body.includes('templateId: template.id'), 'should start workflows from selected template');
+      assert.ok(result.body.includes('location.hash = bundleHash(currentBundleId)'), 'should navigate to created workflow');
+    });
+
+    it('app.js renders useful copy when no workflow templates are available', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('No workflow templates available'), 'should distinguish missing templates');
+      assert.ok(result.body.includes('first-run-no-templates'), 'should expose missing-template empty state hook');
     });
 
     it('app.js groups bundles by templateId', async () => {

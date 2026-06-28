@@ -181,25 +181,49 @@ def test_github_deploy_role_can_manage_dataops_execution_tables():
 
 def test_github_deploy_role_can_seed_runtime_users_and_templates():
     template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+    runtime_seed = template[
+        template.index("Sid: DynamoDbDataOpsRuntimeSeed") : template.index("Sid: DynamoDbDataOpsRecurringSeed")
+    ]
 
-    assert "Sid: DynamoDbDataOpsRuntimeSeed" in template
-    assert "dynamodb:GetItem" in template
-    assert "dynamodb:PutItem" in template
-    assert "dynamodb:Scan" in template
-    assert "dynamodb:UpdateItem" not in template
-    assert "dynamodb:BatchWriteItem" not in template
-    assert "table/${FullDocsStackName}-users" in template
-    assert "table/${FullDocsStackName}-templates" in template
+    assert "Sid: DynamoDbDataOpsRuntimeSeed" in runtime_seed
+    assert "dynamodb:GetItem" in runtime_seed
+    assert "dynamodb:PutItem" in runtime_seed
+    assert "dynamodb:Scan" in runtime_seed
+    assert "dynamodb:UpdateItem" not in runtime_seed
+    assert "dynamodb:BatchWriteItem" not in runtime_seed
+    assert "table/${FullDocsStackName}-users" in runtime_seed
+    assert "table/${FullDocsStackName}-templates" in runtime_seed
+
+
+def test_github_deploy_role_can_seed_recurring_configs_in_tasks_table():
+    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+    recurring_seed = template[
+        template.index("Sid: DynamoDbDataOpsRecurringSeed") : template.index("Sid: IamDataOpsFunctionRole")
+    ]
+
+    assert "Sid: DynamoDbDataOpsRecurringSeed" in recurring_seed
+    assert "dynamodb:PutItem" in recurring_seed
+    assert "dynamodb:Scan" in recurring_seed
+    assert "dynamodb:UpdateItem" in recurring_seed
+    assert "dynamodb:BatchWriteItem" not in recurring_seed
+    assert "dynamodb:DeleteItem" not in recurring_seed
+    assert "table/${FullDocsStackName}-tasks" in recurring_seed
+    assert "table/${FullDocsStackName}-users" not in recurring_seed
+    assert "table/${FullDocsStackName}-templates" not in recurring_seed
 
 
 def test_deploy_workflow_seeds_and_verifies_runtime_templates():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "Seed runtime users and workflow templates" in workflow
+    assert "Seed runtime users, workflow templates, and recurring configs" in workflow
+    assert "DataOpsTasksTableName" in workflow
     assert "DataOpsUsersTableName" in workflow
     assert "DataOpsTemplatesTableName" in workflow
     assert "scripts/seed-users.ts" in workflow
     assert "scripts/seed-templates.ts" in workflow
+    assert "scripts/seed-recurring.ts" in workflow
+    assert workflow.index("scripts/seed-users.ts") < workflow.index("scripts/seed-templates.ts")
+    assert workflow.index("scripts/seed-templates.ts") < workflow.index("scripts/seed-recurring.ts")
     assert "Smoke test deployed workflow templates" in workflow
     assert "WorkEnginePortalSecretName" in workflow
     assert "/api/templates" in workflow

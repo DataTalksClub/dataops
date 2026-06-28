@@ -15,6 +15,7 @@
     "start": "IS_LOCAL=true tsx scripts/dev-server.ts",
     "seed": "IS_LOCAL=true tsx scripts/seed-templates.ts",
     "seed:users": "IS_LOCAL=true tsx scripts/seed-users.ts",
+    "seed:recurring": "IS_LOCAL=true tsx scripts/seed-recurring.ts",
     "export:data": "IS_LOCAL=true DATAOPS_AUTO_CREATE_TABLES=true tsx scripts/export-execution-data.ts",
     "export:templates": "tsx scripts/export-templates-to-content.ts",
     "validate:export": "tsx scripts/validate-execution-export.ts",
