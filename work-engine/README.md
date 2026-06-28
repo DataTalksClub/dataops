@@ -66,6 +66,7 @@ Use these from the DataOps repo root after `npm ci`:
 | `npm run export:templates:work-engine` | Export seed templates to content files |
 | `npm run validate:export:work-engine -- <export-dir>` | Validate a portable execution export |
 | `npm run dry-run:import:work-engine -- <export-dir>` | Validate an import without writing data |
+| `npm run restore:drill:work-engine -- --archive <file-or-s3-uri>` | Generate restore evidence without writing production data |
 | `npm run clean:work-engine` | Remove `work-engine/dist/` |
 
 ## Scripts
@@ -87,6 +88,7 @@ root workspace install:
 | `npm run export:templates` | Export seed templates to content files |
 | `npm run validate:export -- <export-dir>` | Validate a portable execution export |
 | `npm run dry-run:import -- <export-dir>` | Validate an import without writing data |
+| `npm run restore:drill -- --archive <file-or-s3-uri>` | Extract an archive, validate it, dry-run import it, and write restore evidence |
 | `npm run clean` | Remove `dist/` directory |
 
 ## Testing
