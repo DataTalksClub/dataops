@@ -229,11 +229,11 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('badge-template-source'), 'should label template-generated tasks');
     });
 
-    it('app.js dashboard bundle cards navigate to #/bundles on click', async () => {
+    it('app.js dashboard bundle cards navigate to exact bundle context on click', async () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
       // In loadDashboardBundles, clicking sets currentBundleId and navigates
-      assert.ok(result.body.includes("location.hash = '#/bundles'"), 'should navigate to #/bundles on card click');
+      assert.ok(result.body.includes('location.hash = bundleHash(currentBundleId)'), 'should navigate to exact bundle context on card click');
     });
 
     it('app.js dashboard tasks has checkbox disabled for required link', async () => {
