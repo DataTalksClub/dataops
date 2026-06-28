@@ -58,7 +58,7 @@ async function handleTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse
   // /start command
   if (text === '/start') {
     await sendTelegramReply(chatId,
-      'DataTasks Bot\n\nSend me a message to create a task.\nFormat: Task description [YYYY-MM-DD]\n\nExamples:\n- Buy groceries\n- Submit report 2026-03-15',
+      'DataOps operations intake\n\nSend me a message to create an operations task.\nFormat: Task description [YYYY-MM-DD]\n\nExamples:\n- Follow up with podcast guest\n- Submit report 2026-03-15',
       botToken
     );
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };

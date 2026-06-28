@@ -36,9 +36,10 @@ Current state:
   `ops.dtcdev.click`.
 - `content/` is the transitional Git home for imported SOPs, references,
   images, prompts, indexes, and task templates.
-- `content/tasks/templates/` contains DataTasks workflow templates that encode
+- `content/tasks/templates/` contains DataOps workflow templates that encode
   repeatable operational process.
-- `assistants/podcast/` is the canonical in-repo Podcast Assistant module.
+- `assistants/podcast/` is the canonical in-repo DataOps podcast assistant
+  module.
 - Runtime workflow state is stored in DynamoDB execution tables managed by the
   deployed stack.
 - Private or bulky files must remain outside public process documentation.
@@ -162,9 +163,9 @@ Rules:
 - Curated examples may move only after data review confirms they are safe,
   useful, and intentionally public.
 
-## DataTasks Template Decision
+## DataOps Workflow Template Decision
 
-DataTasks templates are canonical process knowledge, not runtime state.
+DataOps workflow templates are canonical process knowledge, not runtime state.
 
 Canonical Git location after migration:
 
@@ -209,7 +210,7 @@ Runtime behavior:
 ## Assistant Boundary
 
 `assistants/podcast/` remains the canonical product-code location for the
-Podcast Assistant in `dataops`.
+DataOps podcast assistant module in `dataops`.
 
 Keep in `dataops`:
 
@@ -417,9 +418,9 @@ Create these after ADR acceptance:
    validation, authoring, and revert behavior.
 9. Wire knowledge-repo CI to refresh the deployed portal cache/search index
    without app redeploy.
-10. Classify and migrate reusable Podcast Assistant process knowledge,
+10. Classify and migrate reusable DataOps podcast assistant process knowledge,
     templates, prompts, and safe knowledge-base summaries.
-11. Move Podcast Assistant generated/private outputs to private artifact
+11. Move DataOps podcast assistant generated/private outputs to private artifact
     storage and attach artifact metadata to workflow records.
 12. Add admin/status visibility for loaded knowledge repo branch, commit SHA,
     index build time, and template sync version.
@@ -430,7 +431,7 @@ Positive:
 
 - App code, process knowledge, runtime state, and private artifacts have clear
   ownership.
-- DataTasks templates remain reviewable and recoverable in Git.
+- DataOps workflow templates remain reviewable and recoverable in Git.
 - Docs and template changes can eventually ship without app redeploys.
 - The portal can keep a unified operator experience while the internals stay
   separated.

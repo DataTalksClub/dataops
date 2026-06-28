@@ -158,9 +158,9 @@ describe('Seed script', () => {
     });
     assert.deepStrictEqual(createPodcastDocument.artifactRefs, [
       {
-        artifactId: 'artifact.podcast-assistant-draft',
+        artifactId: 'artifact.dataops-podcast-draft',
         type: 'podcast-prep-draft',
-        title: 'Podcast Assistant draft',
+        title: 'DataOps podcast assistant draft',
         status: 'planned',
       },
     ]);
@@ -249,9 +249,9 @@ describe('Seed script', () => {
     });
     assert.deepStrictEqual(createPodcastDocument.artifactRefs, [
       {
-        artifactId: 'artifact.podcast-assistant-draft',
+        artifactId: 'artifact.dataops-podcast-draft',
         type: 'podcast-prep-draft',
-        title: 'Podcast Assistant draft',
+        title: 'DataOps podcast assistant draft',
         status: 'planned',
       },
     ]);

@@ -757,7 +757,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({ httpMethod: 'GET', path: '/' }, {});
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.headers!['Content-Type'], 'text/html');
-      assert.ok(res.body.includes('<title>DataTasks</title>'));
+      assert.ok(res.body.includes('<title>DataOps</title>'));
     });
 
     it('GET /api/health returns 200', async () => {

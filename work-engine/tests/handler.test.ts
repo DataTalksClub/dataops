@@ -14,7 +14,7 @@ describe('handler', () => {
 
     assert.strictEqual(result.statusCode, 200);
     assert.strictEqual(result.headers!['Content-Type'], 'text/html');
-    assert.ok(result.body.includes('<title>DataTasks</title>'));
+    assert.ok(result.body.includes('<title>DataOps</title>'));
     assert.ok(result.body.includes('id="app"'));
     assert.ok(result.body.includes('href="#/tasks"'));
     assert.ok(result.body.includes('href="#/bundles"'));

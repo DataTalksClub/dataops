@@ -1,7 +1,7 @@
 {
-  "name": "datatasks",
+  "name": "dataops-work-engine",
   "version": "0.1.0",
-  "description": "DataTasks — lightweight task management backed by DynamoDB",
+  "description": "DataOps work engine for operations tasks and workflows backed by DynamoDB",
   "main": "dist/handler.js",
   "engines": {
     "node": ">=18"

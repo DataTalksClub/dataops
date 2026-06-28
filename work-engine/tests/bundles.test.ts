@@ -28,14 +28,14 @@ describe('Bundles data layer', () => {
 
   it('createBundle returns a bundle with id, createdAt, updatedAt', async () => {
     const bundle = await createBundle(client, {
-      title: 'DataTasks v2',
+      title: 'DataOps v2',
       description: 'Next version of the app',
     });
 
     assert.ok(bundle.id);
     assert.ok(bundle.createdAt);
     assert.ok(bundle.updatedAt);
-    assert.strictEqual(bundle.title, 'DataTasks v2');
+    assert.strictEqual(bundle.title, 'DataOps v2');
     assert.strictEqual(bundle.description, 'Next version of the app');
     assert.strictEqual((bundle as Record<string, unknown>).PK, undefined);
     assert.strictEqual((bundle as Record<string, unknown>).SK, undefined);

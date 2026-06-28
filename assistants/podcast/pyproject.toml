@@ -1,7 +1,7 @@
 [project]
-name = "podcast-assistant"
+name = "dataops-podcast-module"
 version = "0.1.0"
-description = "Telegram assistant for collecting podcast prep notes and generating guest question documents."
+description = "DataOps podcast assistant module for collecting prep notes and generating guest question documents."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

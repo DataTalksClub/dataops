@@ -113,7 +113,7 @@ test.describe('Podcast operator workflow slice (#9)', () => {
     await expect(docRowAfter.locator('.artifact-chip--approved')).toBeVisible();
     await expect(docRowAfter.locator('.task-status-checkbox')).toBeEnabled();
     await docRowAfter.locator('.task-status-checkbox').check();
-    await screenshot(page, `podcast-assistant-output-${suffix}`);
+    await screenshot(page, `dataops-podcast-output-${suffix}`);
 
     const waitRow = await podcastRow(page, 'Agree on a date');
     await waitRow.locator('.waiting-for-input').fill(guest);
