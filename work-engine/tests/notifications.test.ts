@@ -219,6 +219,45 @@ describe('Notifications data layer', () => {
     assert.strictEqual(afterNewFollowUp[0].dueAt, '2098-02-17T09:00:00.000Z');
   });
 
+  it('does not recreate follow-up reminders after a wait is resolved until a new waiting cycle exists', async () => {
+    const task = await createTask(client, {
+      description: 'Resolve reminder cycle',
+      date: '2098-03-20',
+      status: 'waiting',
+      waitingFor: 'Sponsor',
+      followUpAt: '2098-03-15T09:00:00.000Z',
+    });
+
+    const first = await createDueFollowUpNotifications(client, {
+      now: '2098-03-16T10:00:00.000Z',
+    });
+    assert.strictEqual(first.length, 1);
+    assert.strictEqual(first[0].taskId, task.id);
+
+    await updateTask(client, task.id, {
+      status: 'todo',
+      waitingFor: null,
+      followUpAt: null,
+      followUpChannel: null,
+    });
+    const afterResolved = await createDueFollowUpNotifications(client, {
+      now: '2098-03-18T10:00:00.000Z',
+    });
+    assert.strictEqual(afterResolved.length, 0);
+
+    await updateTask(client, task.id, {
+      status: 'waiting',
+      waitingFor: 'Sponsor',
+      followUpAt: '2098-03-19T09:00:00.000Z',
+    });
+    const afterNewCycle = await createDueFollowUpNotifications(client, {
+      now: '2098-03-20T10:00:00.000Z',
+    });
+    assert.strictEqual(afterNewCycle.length, 1);
+    assert.strictEqual(afterNewCycle[0].taskId, task.id);
+    assert.strictEqual(afterNewCycle[0].dueAt, '2098-03-19T09:00:00.000Z');
+  });
+
   it('dismissAllNotifications dismisses all undismissed and returns count', async () => {
     // Create 2 fresh undismissed notifications
     const na = await createNotification(client, { message: 'DismissAll test A' });

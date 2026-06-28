@@ -150,7 +150,11 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('renderDashboardTaskActions'), 'should render dashboard task actions');
       assert.ok(result.body.includes('response-received'), 'should support marking response received');
       assert.ok(result.body.includes('follow-up-sent'), 'should support recording sent follow-up');
+      assert.ok(result.body.includes('resolve-done'), 'should support resolving waiting tasks as done');
+      assert.ok(result.body.includes('follow-up-channel'), 'should include follow-up channel control');
+      assert.ok(result.body.includes('follow-up-note'), 'should include follow-up note control');
       assert.ok(result.body.includes('follow-up-next-date'), 'should include next follow-up date input');
+      assert.ok(result.body.includes('taskHistory'), 'should render structured task history');
     });
 
     it('app.js contains refreshBellBadge function (replaces loadNotifications)', async () => {

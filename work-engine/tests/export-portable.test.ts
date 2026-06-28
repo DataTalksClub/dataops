@@ -93,9 +93,37 @@ describe('portable execution data export', () => {
       artifactRefs: [{ artifactId: 'artifact-task-ref', type: 'document' }],
       assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-task-ref', action: 'completed' }],
+      taskHistory: [
+        {
+          id: 'history-waiting-started',
+          taskId: 'task-export-stable',
+          bundleId: bundle.id,
+          action: 'waiting-started',
+          actorId: user.id,
+          channel: 'email',
+          waitingFor: 'Sponsor assets',
+          followUpAt: '2026-06-21',
+          note: 'Asked sponsor for assets',
+          createdAt: '2026-06-20T09:00:00.000Z',
+        },
+        {
+          id: 'history-follow-up-sent',
+          taskId: 'task-export-stable',
+          bundleId: bundle.id,
+          action: 'follow-up-sent',
+          actorId: user.id,
+          channel: 'email',
+          waitingFor: 'Sponsor assets',
+          previousFollowUpAt: '2026-06-21',
+          followUpAt: '2026-06-22',
+          note: 'Sent reminder',
+          createdAt: '2026-06-21T09:00:00.000Z',
+        },
+      ],
       completedBy: user.id,
       completedAt: '2026-06-20T12:00:00.000Z',
       status: 'done',
+      id: 'task-export-stable',
     });
     const recurringConfig = await createRecurringConfig(client, {
       description: 'Weekly community backup',
@@ -229,6 +257,9 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"artifact_refs":\[\{"artifactId":"artifact-task-ref","type":"document"\}\]/);
     assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(tasksJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-task-ref","action":"completed"\}\]/);
+    assert.match(tasksJsonl, /"task_history":\[\{"id":"history-waiting-started"/);
+    assert.match(tasksJsonl, /"action":"follow-up-sent"/);
+    assert.match(tasksJsonl, /"previousFollowUpAt":"2026-06-21"/);
     assert.match(tasksJsonl, /"completed_by"/);
     assert.match(tasksJsonl, /"completed_at":"2026-06-20T12:00:00.000Z"/);
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
@@ -363,6 +394,16 @@ describe('portable execution data export', () => {
           systems: ['github', 42],
           validation: ['not-valid'],
           proof_requirement: { type: 'url' },
+          task_history: [
+            {
+              id: 'broken-history',
+              taskId: 'other-task',
+              action: 'unknown-action',
+              actorId: 'missing-user',
+              followUpAt: 'bad-follow-up-date',
+              createdAt: 'not-a-timestamp',
+            },
+          ],
           created_at: 123,
           updated_at: 'not-a-timestamp',
         }) + '\n',
@@ -452,6 +493,11 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field instruction_doc_id must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field validation must be a string or object when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] taskId must match parent task_id')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field action has unknown value: unknown-action')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] references missing actorId: missing-user')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field followUpAt must be a parseable date or timestamp')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field createdAt must be a parseable date or timestamp')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] cannot be done without required url proof')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field created_at must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field updated_at must be a parseable date or timestamp')));

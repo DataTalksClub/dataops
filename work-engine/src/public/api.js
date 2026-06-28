@@ -120,6 +120,41 @@
           body: JSON.stringify(data),
         }).then(handleResponse);
       },
+      markWaiting: function (id, data) {
+        return fetch('/api/tasks/' + id + '/actions/mark-waiting', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      followUpSent: function (id, data) {
+        return fetch('/api/tasks/' + id + '/actions/follow-up-sent', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      responseReceived: function (id, data) {
+        return fetch('/api/tasks/' + id + '/actions/response-received', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      unblocked: function (id, data) {
+        return fetch('/api/tasks/' + id + '/actions/unblocked', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      resolveDone: function (id, data) {
+        return fetch('/api/tasks/' + id + '/actions/resolve-done', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
       delete: function (id) {
         return fetch('/api/tasks/' + id, {
           method: 'DELETE',
