@@ -267,6 +267,13 @@ async function handleCollection(method: string, rawBody: string | null, client: 
         body: JSON.stringify({ error: docContextError }),
       };
     }
+    if (body.triggerEnabled !== undefined && typeof body.triggerEnabled !== 'boolean') {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'triggerEnabled must be a boolean' }),
+      };
+    }
 
     const templateData: Record<string, unknown> = {
       name: body.name,
@@ -278,6 +285,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
     const optionalFields = [
       'emoji', 'tags', 'defaultAssigneeId', 'phases', 'sourceDocIds', 'references',
       'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
+      'triggerEnabled',
     ];
     for (const field of optionalFields) {
       if (body[field] !== undefined) {
@@ -357,6 +365,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
       'name', 'type', 'taskDefinitions',
       'emoji', 'tags', 'defaultAssigneeId', 'phases', 'sourceDocIds', 'references',
       'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
+      'triggerEnabled',
     ];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
@@ -390,6 +399,13 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         statusCode: 400,
         headers: JSON_HEADERS,
         body: JSON.stringify({ error: docContextError }),
+      };
+    }
+    if (updates.triggerEnabled !== undefined && typeof updates.triggerEnabled !== 'boolean') {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'triggerEnabled must be a boolean' }),
       };
     }
 

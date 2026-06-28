@@ -4,9 +4,11 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
-import { createTemplate, listTemplates } from '../src/db/templates';
+import { createTemplate, listTemplates, updateTemplate } from '../src/db/templates';
 import { listBundles } from '../src/db/bundles';
 import { listUndismissedNotifications } from '../src/db/notifications';
+import { createRecurringConfig, updateRecurringConfig } from '../src/db/recurring';
+import { deleteTask, listTasksByBundle, listTasksByDate } from '../src/db/tasks';
 import { runCron, formatAnchorDate } from '../src/cron/runner';
 
 describe('Cron runner', () => {
@@ -57,6 +59,9 @@ describe('Cron runner', () => {
 
     assert.strictEqual(result.created.length, 1);
     assert.strictEqual(result.skipped, 0);
+    assert.strictEqual(result.templates.created.length, 1);
+    assert.strictEqual(result.templates.skipped, 0);
+    assert.strictEqual(result.recurring.generated.length, 0);
 
     // Verify the bundle was created
     const bundles = await listBundles(client);
@@ -67,6 +72,163 @@ describe('Cron runner', () => {
     // Anchor date should be March 2 + 14 days = March 16
     assert.strictEqual(createdBundle.anchorDate, '2026-03-16');
     assert.ok(createdBundle.title!.includes('Weekly Newsletter'));
+  });
+
+  it('runs standalone recurring tasks and automatic template workflows in one cron pass', async () => {
+    const recurring = await createRecurringConfig(client, {
+      description: 'Handle Slack invite intake',
+      cronExpression: '0 9 * * 2',
+      assigneeId: 'user-grace',
+    });
+    const template = await createTemplate(client, {
+      name: 'Issue 40 Newsletter',
+      type: 'newsletter',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 * * 2',
+      triggerLeadDays: 7,
+      taskDefinitions: [
+        {
+          refId: 'draft',
+          description: 'Draft newsletter',
+          offsetDays: -2,
+          proofRequirement: { type: 'comment', label: 'Draft reviewed' },
+          instructionDocId: 'sop.newsletter.draft',
+        },
+      ],
+    });
+
+    const tuesday = new Date('2029-01-02T09:00:00Z');
+    const result = await runCron(client, tuesday);
+
+    assert.strictEqual(result.recurring.generated.length, 1);
+    assert.strictEqual(result.recurring.skipped, 0);
+    assert.strictEqual(result.templates.created.length, 1);
+    assert.strictEqual(result.templates.skipped, 0);
+    assert.strictEqual(result.failures, 0);
+
+    const tasksForDate = await listTasksByDate(client, '2029-01-02');
+    const recurringTask = tasksForDate.find((task) => task.recurringConfigId === recurring.id);
+    assert.ok(recurringTask);
+    assert.strictEqual(recurringTask.source, 'recurring');
+    assert.strictEqual(recurringTask.assigneeId, 'user-grace');
+
+    const bundles = await listBundles(client);
+    const bundle = bundles.find((item) => item.templateId === template.id && item.anchorDate === '2029-01-09');
+    assert.ok(bundle);
+    const bundleTasks = await listTasksByBundle(client, bundle.id);
+    assert.strictEqual(bundleTasks.length, 1);
+    assert.strictEqual(bundleTasks[0].source, 'template');
+    assert.strictEqual(bundleTasks[0].templateTaskRef, 'draft');
+    assert.deepStrictEqual(bundleTasks[0].proofRequirement, { type: 'comment', label: 'Draft reviewed' });
+    assert.strictEqual(bundleTasks[0].instructionDocId, 'sop.newsletter.draft');
+
+    await updateRecurringConfig(client, recurring.id, { enabled: false });
+  });
+
+  it('reports recurring and template skips without creating duplicates on rerun', async () => {
+    const recurring = await createRecurringConfig(client, {
+      description: 'Daily intake review idempotent',
+      cronExpression: '0 9 * * 4',
+    });
+    const template = await createTemplate(client, {
+      name: 'Idempotent automatic workflow',
+      type: 'workflow',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 * * 4',
+      triggerLeadDays: 0,
+      taskDefinitions: [
+        { refId: 'one', description: 'One task', offsetDays: 0 },
+      ],
+    });
+
+    const thursday = new Date('2029-01-04T09:00:00Z');
+    await runCron(client, thursday);
+    const second = await runCron(client, thursday);
+
+    assert.strictEqual(second.recurring.generated.length, 0);
+    assert.strictEqual(second.recurring.skipped, 1);
+    assert.strictEqual(second.templates.created.length, 0);
+    assert.strictEqual(second.templates.skipped, 1);
+    assert.ok(second.skipped >= 2);
+
+    const recurringTasks = (await listTasksByDate(client, '2029-01-04')).filter((task) => task.recurringConfigId === recurring.id);
+    assert.strictEqual(recurringTasks.length, 1);
+    const bundles = (await listBundles(client)).filter((bundle) => bundle.templateId === template.id && bundle.anchorDate === '2029-01-04');
+    assert.strictEqual(bundles.length, 1);
+    assert.strictEqual((await listTasksByBundle(client, bundles[0].id)).length, 1);
+
+    await updateRecurringConfig(client, recurring.id, { enabled: false });
+  });
+
+  it('does not generate paused recurring configs or paused automatic template triggers', async () => {
+    const recurring = await createRecurringConfig(client, {
+      description: 'Paused weekly backup',
+      cronExpression: '0 9 * * 6',
+      enabled: false,
+    });
+    const template = await createTemplate(client, {
+      name: 'Paused automatic workflow',
+      type: 'workflow',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 * * 6',
+      triggerLeadDays: 0,
+      triggerEnabled: false,
+      taskDefinitions: [
+        { refId: 'paused-task', description: 'Should not generate', offsetDays: 0 },
+      ],
+    });
+
+    const saturday = new Date('2029-01-06T09:00:00Z');
+    const paused = await runCron(client, saturday);
+    assert.strictEqual(paused.recurring.generated.length, 0);
+    assert.strictEqual(paused.templates.created.length, 0);
+
+    await updateRecurringConfig(client, recurring.id, { enabled: true });
+    await updateTemplate(client, template.id, { triggerEnabled: true });
+    const resumed = await runCron(client, saturday);
+    assert.strictEqual(resumed.recurring.generated.length, 1);
+    assert.strictEqual(resumed.templates.created.length, 1);
+
+    const second = await runCron(client, saturday);
+    assert.strictEqual(second.recurring.skipped, 1);
+    assert.strictEqual(second.templates.skipped, 1);
+
+    await updateRecurringConfig(client, recurring.id, { enabled: false });
+  });
+
+  it('recovers missing template tasks for an existing automatic bundle instead of duplicating the bundle', async () => {
+    const template = await createTemplate(client, {
+      name: 'Recover partial workflow',
+      type: 'workflow',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 * * 3',
+      triggerLeadDays: 0,
+      taskDefinitions: [
+        { refId: 'first', description: 'First generated task', offsetDays: 0 },
+        { refId: 'second', description: 'Second generated task', offsetDays: 1 },
+      ],
+    });
+
+    const wednesday = new Date('2029-01-10T09:00:00Z');
+    await runCron(client, wednesday);
+    const bundle = (await listBundles(client)).find((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
+    assert.ok(bundle);
+    const originalTasks = await listTasksByBundle(client, bundle.id);
+    assert.strictEqual(originalTasks.length, 2);
+    await deleteTask(client, originalTasks[0].id);
+
+    const recovered = await runCron(client, wednesday);
+    assert.strictEqual(recovered.templates.created.length, 0);
+    assert.strictEqual(recovered.templates.skipped, 1);
+    assert.strictEqual(recovered.templates.recovered, 1);
+
+    const bundles = (await listBundles(client)).filter((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
+    assert.strictEqual(bundles.length, 1);
+    const recoveredTasks = await listTasksByBundle(client, bundle.id);
+    assert.strictEqual(recoveredTasks.length, 2);
+
+    const notifications = await listUndismissedNotifications(client);
+    assert.ok(notifications.some((notification) => notification.type === 'automation-failure' && notification.bundleId === bundle.id));
   });
 
   it('is idempotent -- no duplicates on second call', async () => {

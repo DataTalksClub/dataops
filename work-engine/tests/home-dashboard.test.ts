@@ -94,6 +94,14 @@ describe('Home dashboard (issue #26)', () => {
       const result = await handler(event, {});
       assert.ok(result.body.includes('#app.dashboard-wide'), 'should have dashboard-wide CSS');
     });
+
+    it('index.html constrains dashboard queue overflow', async () => {
+      const event = { httpMethod: 'GET', path: '/' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('#dashboard-tasks'), 'should target dashboard task queue');
+      assert.ok(result.body.includes('overflow-x: auto'), 'should contain wide queue controls inside the dashboard');
+      assert.ok(result.body.includes('table-layout: fixed'), 'should prevent queue table content from expanding the page');
+    });
   });
 
   describe('app.js dashboard route and logic', () => {
@@ -195,6 +203,24 @@ describe('Home dashboard (issue #26)', () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
       assert.ok(result.body.includes('progress-badge'), 'should render progress badge');
+    });
+
+    it('app.js renders workflow risk context on dashboard bundle cards', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('bundleRiskSummary'), 'should calculate bundle risk summary');
+      assert.ok(result.body.includes('dashboard-bundle-risk'), 'should render bundle risk badges');
+      assert.ok(result.body.includes('Missing evidence'), 'should surface missing evidence context');
+    });
+
+    it('app.js groups daily queue tasks and labels generated work sources', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('taskPrimaryQueueGroup'), 'should assign queue groups');
+      assert.ok(result.body.includes('dashboard-queue-group'), 'should render queue group rows');
+      assert.ok(result.body.includes('hasOwnProperty.call(queueGroupOrder'), 'should preserve zero-priority follow-up sorting');
+      assert.ok(result.body.includes('badge-recurring'), 'should label recurring tasks');
+      assert.ok(result.body.includes('badge-template-source'), 'should label template-generated tasks');
     });
 
     it('app.js dashboard bundle cards navigate to #/bundles on click', async () => {

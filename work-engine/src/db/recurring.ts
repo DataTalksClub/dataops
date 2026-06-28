@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_TASKS } from './setup';
+import { TABLE_NOTIFICATIONS, TABLE_TASKS } from './setup';
 import { createTask } from './tasks';
 import type { RecurringConfig, Task } from '../types';
 
@@ -158,6 +158,40 @@ async function deleteRecurringConfig(client: DynamoDBDocumentClient, id: string)
   );
 }
 
+async function countRecurringConfigReferences(client: DynamoDBDocumentClient, id: string): Promise<{ tasks: number; notifications: number; total: number }> {
+  const taskResult = await client.send(
+    new ScanCommand({
+      TableName: TABLE_TASKS,
+      Select: 'COUNT',
+      FilterExpression: 'begins_with(PK, :taskPrefix) AND recurringConfigId = :configId',
+      ExpressionAttributeValues: {
+        ':taskPrefix': 'TASK#',
+        ':configId': id,
+      },
+    })
+  );
+
+  const notificationResult = await client.send(
+    new ScanCommand({
+      TableName: TABLE_NOTIFICATIONS,
+      Select: 'COUNT',
+      FilterExpression:
+        'begins_with(PK, :notificationPrefix) AND (recurringConfigId = :configId OR #metadata.recurringConfigId = :configId)',
+      ExpressionAttributeNames: {
+        '#metadata': 'metadata',
+      },
+      ExpressionAttributeValues: {
+        ':notificationPrefix': 'NOTIFICATION#',
+        ':configId': id,
+      },
+    })
+  );
+
+  const tasks = taskResult.Count || 0;
+  const notifications = notificationResult.Count || 0;
+  return { tasks, notifications, total: tasks + notifications };
+}
+
 /**
  * List all recurring configs by scanning for items where PK begins with "RECURRING#".
  */
@@ -278,6 +312,7 @@ export {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
+  countRecurringConfigReferences,
   listRecurringConfigs,
   listEnabledRecurringConfigs,
   generateRecurringTasks,

@@ -325,6 +325,33 @@ describe('API -- Recurring', () => {
       assert.strictEqual(getRes.statusCode, 404);
     });
 
+    it('returns 409 and keeps the config when generated tasks reference it', async () => {
+      await disableAllConfigs(client);
+      const created = await createRecurringConfig(client, {
+        description: 'Delete blocked by generated history',
+        cronExpression: '0 9 * * *',
+      });
+
+      const generateRes = await invoke('POST', '/api/recurring/generate', {
+        startDate: '2031-04-10',
+        endDate: '2031-04-10',
+      });
+      assert.strictEqual(generateRes.statusCode, 200);
+
+      const res = await invoke('DELETE', `/api/recurring/${created.id}`);
+      assert.strictEqual(res.statusCode, 409);
+
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.code, 'recurring_config_has_generated_history');
+      assert.strictEqual(body.recurringConfigId, created.id);
+      assert.strictEqual(body.references.tasks, 1);
+      assert.ok(body.error.includes('Pause or disable'));
+
+      const getRes = await invoke('GET', `/api/recurring/${created.id}`);
+      assert.strictEqual(getRes.statusCode, 200);
+      await updateRecurringConfig(client, created.id, { enabled: false });
+    });
+
     it('returns 404 when deleting a non-existent config', async () => {
       const res = await invoke('DELETE', '/api/recurring/does-not-exist');
       assert.strictEqual(res.statusCode, 404);

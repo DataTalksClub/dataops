@@ -479,6 +479,13 @@ Resources:
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
+      Events:
+        DailyWorkEngineCron:
+          Type: Schedule
+          Properties:
+            Description: Run DataOps recurring task and automatic template generation once per day.
+            Schedule: cron(0 8 * * ? *)
+            Enabled: true
 
 Outputs:
   DocsFullAppUrl:
