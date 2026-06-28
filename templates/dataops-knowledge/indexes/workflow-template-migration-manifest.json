@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "status": "migration-scaffold-only",
+  "source_root": "content/tasks/templates",
+  "target_root": "workflow-templates",
+  "notes": [
+    "Current Markdown task templates remain canonical until a later migration issue converts production YAML.",
+    "Stable IDs are the migration boundary; future file paths may change."
+  ],
+  "templates": [
+    {
+      "stable_id": "task-template.tasks.book-of-the-week",
+      "runtime_type": "book-of-the-week",
+      "source_path": "content/tasks/templates/book-of-the-week.md",
+      "target_path": "workflow-templates/book-of-the-week.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.course",
+      "runtime_type": "course",
+      "source_path": "content/tasks/templates/course.md",
+      "target_path": "workflow-templates/course.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.maven-ll",
+      "runtime_type": "maven-ll",
+      "source_path": "content/tasks/templates/maven-ll.md",
+      "target_path": "workflow-templates/maven-ll.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.newsletter",
+      "runtime_type": "newsletter",
+      "source_path": "content/tasks/templates/newsletter.md",
+      "target_path": "workflow-templates/newsletter.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.office-hours",
+      "runtime_type": "office-hours",
+      "source_path": "content/tasks/templates/office-hours.md",
+      "target_path": "workflow-templates/office-hours.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.oss",
+      "runtime_type": "oss",
+      "source_path": "content/tasks/templates/oss.md",
+      "target_path": "workflow-templates/oss.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.podcast",
+      "runtime_type": "podcast",
+      "source_path": "content/tasks/templates/podcast.md",
+      "target_path": "workflow-templates/podcast.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.social-media",
+      "runtime_type": "social-media",
+      "source_path": "content/tasks/templates/social-media.md",
+      "target_path": "workflow-templates/social-media.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.tax-report",
+      "runtime_type": "tax-report",
+      "source_path": "content/tasks/templates/tax-report.md",
+      "target_path": "workflow-templates/tax-report.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.webinar",
+      "runtime_type": "webinar",
+      "source_path": "content/tasks/templates/webinar.md",
+      "target_path": "workflow-templates/webinar.yaml"
+    },
+    {
+      "stable_id": "task-template.tasks.workshop",
+      "runtime_type": "workshop",
+      "source_path": "content/tasks/templates/workshop.md",
+      "target_path": "workflow-templates/workshop.yaml"
+    }
+  ]
+}

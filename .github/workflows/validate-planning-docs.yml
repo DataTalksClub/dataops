@@ -21,6 +21,7 @@ on:
       - "lambda-functions/src/lambda_functions/build_search_index.py"
       - "lambda-functions/src/lambda_functions/docs_index.py"
       - "lambda-functions/src/lambda_functions/sop_parse.py"
+      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
       - "Makefile"
   pull_request:
     paths:
@@ -40,6 +41,7 @@ on:
       - "lambda-functions/src/lambda_functions/build_search_index.py"
       - "lambda-functions/src/lambda_functions/docs_index.py"
       - "lambda-functions/src/lambda_functions/sop_parse.py"
+      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
       - "Makefile"
   workflow_dispatch:
 
@@ -66,6 +68,9 @@ jobs:
 
       - name: Run docs metadata and registry tests
         run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
+
+      - name: Validate dataops-knowledge migration scaffold
+        run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
 
       - name: Build content search index
         working-directory: lambda-functions
