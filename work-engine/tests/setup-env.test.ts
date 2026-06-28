@@ -17,6 +17,7 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         artifacts: mod.TABLE_ARTIFACTS,
         assistantJobs: mod.TABLE_ASSISTANT_JOBS,
         auditEvents: mod.TABLE_AUDIT_EVENTS,
+        intake: mod.TABLE_INTAKE,
         notifications: mod.TABLE_NOTIFICATIONS,
         sessions: mod.TABLE_SESSIONS,
         autoCreate: mod.shouldAutoCreateTables(),
@@ -50,6 +51,7 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.artifacts, 'Artifacts');
     assert.strictEqual(setup.assistantJobs, 'AssistantJobs');
     assert.strictEqual(setup.auditEvents, 'AuditEvents');
+    assert.strictEqual(setup.intake, 'IntakeItems');
     assert.strictEqual(setup.notifications, 'Notifications');
     assert.strictEqual(setup.sessions, 'Sessions');
     assert.strictEqual(setup.autoCreate, false);
@@ -65,6 +67,7 @@ describe('DynamoDB table setup environment', () => {
       DATAOPS_ARTIFACTS_TABLE: 'prod-artifacts',
       DATAOPS_ASSISTANT_JOBS_TABLE: 'prod-assistant-jobs',
       DATAOPS_AUDIT_EVENTS_TABLE: 'prod-audit-events',
+      DATAOPS_INTAKE_TABLE: 'prod-intake',
       DATAOPS_NOTIFICATIONS_TABLE: 'prod-notifications',
       DATAOPS_SESSIONS_TABLE: 'prod-sessions',
     });
@@ -77,6 +80,7 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.artifacts, 'prod-artifacts');
     assert.strictEqual(setup.assistantJobs, 'prod-assistant-jobs');
     assert.strictEqual(setup.auditEvents, 'prod-audit-events');
+    assert.strictEqual(setup.intake, 'prod-intake');
     assert.strictEqual(setup.notifications, 'prod-notifications');
     assert.strictEqual(setup.sessions, 'prod-sessions');
     assert.strictEqual(setup.autoCreate, false);

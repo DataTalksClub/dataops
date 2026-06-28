@@ -8,6 +8,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createBundle } from '../src/db/bundles';
+import { createIntakeItem } from '../src/db/intake';
 import { createTask } from '../src/db/tasks';
 import { createTemplate } from '../src/db/templates';
 import { createUser } from '../src/db/users';
@@ -33,7 +34,7 @@ describe('dry-run import', () => {
     const user = await createUser(client, { name: 'Ops', email: 'ops@test', passwordHash: 'x' });
     const template = await createTemplate(client, { name: 'Podcast', type: 'podcast' });
     const bundle = await createBundle(client, { title: 'Episode 1', anchorDate: '2026-06-27', templateId: template.id, status: 'active' });
-    await createTask(client, {
+    const task = await createTask(client, {
       description: 'Send follow-up',
       date: '2026-06-20',
       assigneeId: user.id,
@@ -43,6 +44,20 @@ describe('dry-run import', () => {
       followUpAt: '2026-06-27',
       completedBy: user.id,
       completedAt: '2026-06-20T12:00:00.000Z',
+    });
+    await createIntakeItem(client, {
+      id: 'dry-run-intake',
+      source: 'manual',
+      sourceReceivedAt: '2026-06-20T09:00:00.000Z',
+      status: 'attached',
+      title: 'Dry-run intake',
+      summary: 'Safe intake context',
+      receivedChannels: ['manual'],
+      taskIds: [task.id],
+      bundleIds: [bundle.id],
+      tags: ['restore'],
+      priority: 'normal',
+      dataClass: 'internal',
     });
 
     await writePortableExport(client, exportDir, {
@@ -59,6 +74,7 @@ describe('dry-run import', () => {
     assert.deepStrictEqual(result.errors, []);
     assert.strictEqual(result.wouldWrite.users, 1);
     assert.strictEqual(result.wouldWrite.tasks, 1);
+    assert.strictEqual(result.wouldWrite.intake_items, 1);
     assert.strictEqual(result.wouldWrite.bundles, 1);
     assert.strictEqual(result.wouldWrite.templates, 1);
     assert.ok(result.totalRecords >= 4, `expected >= 4 records, got ${result.totalRecords}`);
@@ -80,12 +96,30 @@ describe('dry-run import', () => {
         }) + '\n',
         'utf8'
       );
+      await fs.writeFile(
+        path.join(brokenDir, 'intake_items.jsonl'),
+        JSON.stringify({
+          intake_item_id: 'intake-broken',
+          source: 'manual',
+          source_received_at: '2026-06-27T00:00:00.000Z',
+          status: 'attached',
+          title: 'Broken intake',
+          summary: 'References a missing task',
+          task_ids: ['missing-task'],
+          created_at: '2026-06-27T00:00:00.000Z',
+          updated_at: '2026-06-27T00:00:00.000Z',
+          priority: 'normal',
+          data_class: 'internal',
+        }) + '\n',
+        'utf8'
+      );
 
       const result = await dryRunImport(brokenDir);
 
       assert.strictEqual(result.valid, false);
       assert.ok(result.errors.some((e) => e.includes('checksum mismatch')));
       assert.ok(result.errors.some((e) => e.includes('missing task_id: missing-task')));
+      assert.ok(result.errors.some((e) => e.includes('intake_items[0].task_ids[0] references missing task_id: missing-task')));
     } finally {
       await fs.rm(brokenDir, { recursive: true, force: true });
     }

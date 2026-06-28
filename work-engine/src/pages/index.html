@@ -3448,12 +3448,171 @@
       min-width: 0;
     }
 
+    .intake-panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .intake-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .intake-create-grid,
+    .intake-action-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .intake-create-grid textarea,
+    .intake-action-grid textarea {
+      width: 100%;
+      min-height: 80px;
+    }
+
+    .intake-create-grid .wide,
+    .intake-action-grid .wide {
+      grid-column: 1 / -1;
+    }
+
+    .intake-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .intake-filter-bar button,
+    .intake-action-btn {
+      background: #eef2f7;
+      color: #243447;
+      border: 1px solid #d7dee8;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+
+    .intake-filter-bar button.active,
+    .intake-action-btn:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
+
+    .intake-row {
+      border-top: 1px solid #edf0f3;
+      padding: 12px 0;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+    }
+
+    .intake-row:first-of-type {
+      border-top: none;
+    }
+
+    .intake-row-title {
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .intake-row-meta,
+    .intake-detail-meta,
+    .intake-next {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 3px;
+    }
+
+    .intake-status {
+      display: inline-block;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #e5e7eb;
+      color: #374151;
+      white-space: nowrap;
+    }
+
+    .intake-status.blocked,
+    .intake-status.duplicate {
+      background: #fff7ed;
+      color: #9a3412;
+    }
+
+    .intake-status.ready {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .intake-ref-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .intake-ref-pill {
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      background: #f9fafb;
+    }
+
+    .intake-detail-section {
+      border-top: 1px solid #edf0f3;
+      padding-top: 12px;
+      margin-top: 12px;
+    }
+
+    .intake-dashboard-risk {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .intake-dashboard-risk a {
+      display: block;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px;
+      color: #243447;
+      text-decoration: none;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .intake-dashboard-risk span {
+      display: block;
+      color: #6b7280;
+      font-size: 12px;
+    }
+
+    .intake-dashboard-risk strong {
+      display: block;
+      font-size: 22px;
+      margin-top: 2px;
+    }
+
     @media (max-width: 760px) {
       .assistant-job-row,
       .assistant-detail-header,
       .assistant-event-row,
       .assistant-request-grid,
-      .assistant-create-grid {
+      .assistant-create-grid,
+      .intake-layout,
+      .intake-create-grid,
+      .intake-action-grid,
+      .intake-dashboard-risk {
         grid-template-columns: 1fr;
       }
 
@@ -3475,6 +3634,7 @@
     <button class="nav-menu-toggle" id="nav-menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded="false" aria-controls="nav-menu" style="display:none;">&#9776;</button>
     <div class="nav-menu" id="nav-menu">
       <a href="#/" class="nav-link" style="display:none;">Home</a>
+      <a href="#/inbox" class="nav-link" style="display:none;">Inbox</a>
       <a href="#/tasks" class="nav-link" style="display:none;">Tasks</a>
       <a href="#/bundles" class="nav-link" style="display:none;">Bundles</a>
       <a href="#/assistants" class="nav-link" style="display:none;">Assistants</a>

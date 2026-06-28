@@ -11,6 +11,7 @@ import { handleUserRoutes } from './routes/users';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleAssistantJobRoutes } from './routes/assistantJobs';
+import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
 import { handleNotificationRoutes } from './routes/notifications';
@@ -154,6 +155,7 @@ const ALLOWED_UPDATE_FIELDS = [
   'templateId',
   'artifactRefs',
   'assistantJobRefs',
+  'intakeRefs',
   'auditEventRefs',
 ];
 const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
@@ -312,6 +314,9 @@ function validateTaskRefs(fields: Record<string, unknown>): string | null {
   }
   if (fields.assistantJobRefs !== undefined && !isRecordArrayWithStringId(fields.assistantJobRefs, 'assistantJobId')) {
     return 'assistantJobRefs must be an array of objects with assistantJobId';
+  }
+  if (fields.intakeRefs !== undefined && !isRecordArrayWithStringId(fields.intakeRefs, 'intakeItemId')) {
+    return 'intakeRefs must be an array of objects with intakeItemId';
   }
   if (fields.auditEventRefs !== undefined && !isRecordArrayWithStringId(fields.auditEventRefs, 'auditEventId')) {
     return 'auditEventRefs must be an array of objects with auditEventId';
@@ -1139,6 +1144,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Assistant, artifact, and file routes ──────────────────────
+
+    if (reqPath.startsWith('/api/intake')) {
+      const result = await handleIntakeRoutes(event, client);
+      if (result) return result;
+    }
 
     if (reqPath.startsWith('/api/assistant-jobs')) {
       const result = await handleAssistantJobRoutes(event, client);
