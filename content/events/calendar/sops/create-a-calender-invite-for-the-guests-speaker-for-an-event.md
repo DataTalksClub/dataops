@@ -1,4 +1,6 @@
 ---
+id: sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event
+aliases: []
 title: "Create a calender invite for the guests speaker for an event"
 summary: "Steps to create Google Calendar invites for event guests or speakers with the correct event details."
 doc_type: sop

@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.sending-a-podcast-scheduled-email-to-pavel-after-the-event
+aliases: []
 title: "Sending a podcast scheduled email to Pavel (after the event)"
 summary: "Send Pavel the podcast scheduling and recording details after an episode so post-production work can start."
 doc_type: sop

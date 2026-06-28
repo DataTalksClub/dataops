@@ -1,4 +1,6 @@
 ---
+id: sop.events.planning.create-speaker-profiles-via-airtable-form
+aliases: []
 title: "Create speaker profiles via Airtable form"
 summary: "Steps for adding a new speaker to the website that we previously didn't take part in our events, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

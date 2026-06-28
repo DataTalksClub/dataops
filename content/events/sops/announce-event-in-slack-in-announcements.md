@@ -1,4 +1,6 @@
 ---
+id: sop.events.announce-event-in-slack-in-announcements
+aliases: []
 title: "Announce event in Slack in #announcements"
 summary: "Steps to announce upcoming events in \\#announcements channel to inform the community, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

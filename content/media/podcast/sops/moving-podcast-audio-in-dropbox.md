@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.moving-podcast-audio-in-dropbox
+aliases: []
 title: "Moving Podcast Audio in Dropbox"
 summary: "Steps to organize podcast audio in Dropbox so published and unpublished Spotify episodes are easy to track."
 doc_type: sop

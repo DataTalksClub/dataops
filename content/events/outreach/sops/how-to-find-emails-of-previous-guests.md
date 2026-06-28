@@ -1,4 +1,6 @@
 ---
+id: sop.events.outreach.how-to-find-emails-of-previous-guests
+aliases: []
 title: "How to find emails of previous guests"
 summary: "Steps to find previous guest email addresses in Airtable for DataTalks.Club outreach and event coordination follow-up."
 doc_type: sop

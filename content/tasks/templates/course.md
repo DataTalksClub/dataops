@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.course
+aliases: []
 title: "Course Task Template"
 summary: "Git-backed DataTasks template for the Course operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Course"
   - "task-template"
   - "course"
+related_docs: []
 ---
 
 # Course Task Template

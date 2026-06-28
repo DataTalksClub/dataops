@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.creating-podcast-transcription-document
+aliases: []
 title: "Creating podcast transcription document"
 summary: "Steps to use an automated tool to transcribe podcast episodes, generate transcripts, and edit them using ChatGPT, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

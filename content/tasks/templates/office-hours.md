@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.office-hours
+aliases: []
 title: "Office Hours Task Template"
 summary: "Git-backed DataTasks template for the Office Hours operational workflow."
 doc_type: task-template
@@ -11,6 +13,7 @@ tags:
   - "Office Hours"
   - "task-template"
   - "office-hours"
+related_docs: []
 ---
 
 # Office Hours Task Template

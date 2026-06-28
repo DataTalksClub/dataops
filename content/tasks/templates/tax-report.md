@@ -1,4 +1,6 @@
 ---
+id: task-template.tasks.tax-report
+aliases: []
 title: "Tax Report Task Template"
 summary: "Git-backed DataTasks template for the Tax Report operational workflow."
 doc_type: task-template
@@ -12,6 +14,7 @@ tags:
   - "Finance"
   - "task-template"
   - "tax-report"
+related_docs: []
 ---
 
 # Tax Report Task Template

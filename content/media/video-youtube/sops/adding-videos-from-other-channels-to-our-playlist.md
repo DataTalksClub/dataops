@@ -1,4 +1,6 @@
 ---
+id: sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist
+aliases: []
 title: "Adding videos from other channels to our playlist"
 summary: "Steps to add videos from other channels to DataTalks.Club YouTube playlists without reuploading them to the channel."
 doc_type: sop

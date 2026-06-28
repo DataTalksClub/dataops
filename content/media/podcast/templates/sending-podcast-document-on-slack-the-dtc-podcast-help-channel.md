@@ -1,4 +1,6 @@
 ---
+id: template.media.podcast.sending-podcast-document-on-slack-the-dtc-podcast-help-channel
+aliases: []
 title: "Sending Podcast Document on Slack the Dtc-podcast-help channel"
 summary: "Reusable template for Sending Podcast Document on Slack the DTC podcast help channel, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template

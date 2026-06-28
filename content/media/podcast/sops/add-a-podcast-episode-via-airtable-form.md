@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.add-a-podcast-episode-via-airtable-form
+aliases: []
 title: "Add a podcast episode via Airtable form"
 summary: "Steps for submitting a form for creating a dedicated page for a podcast episode on the DataTalks website, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

@@ -1,4 +1,6 @@
 ---
+id: sop.events.luma.creating-events-on-google-calendar
+aliases: []
 title: "Creating Events on Google Calendar"
 summary: "Steps to create a Google Calendar entry for a DataTalks.Club event, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

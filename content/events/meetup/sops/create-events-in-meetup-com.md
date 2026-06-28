@@ -1,4 +1,6 @@
 ---
+id: sop.events.meetup.create-events-in-meetup-com
+aliases: []
 title: "Create events in Meetup.com"
 summary: "Steps to copy the announcement from Luma to Meetup, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.making-event-announcements-when-topic-bio-or-outline-is-missing
+aliases: []
 title: "Making event announcements when topic, bio, or outline is missing"
 summary: "Steps to announce a podcast event even when the topic, bio, or outline is incomplete, with guidance for the related DataTalks.Club workflow."
 doc_type: sop

@@ -14,6 +14,66 @@ from lambda_functions import api_handler, doc_registry, full_app_handler, github
 from lambda_functions.docs_index import iter_docs  # noqa: E402
 
 
+TASK_TEMPLATE_DOC_IDS = {
+    "content/tasks/templates/book-of-the-week.md": "task-template.tasks.book-of-the-week",
+    "content/tasks/templates/course.md": "task-template.tasks.course",
+    "content/tasks/templates/maven-ll.md": "task-template.tasks.maven-ll",
+    "content/tasks/templates/newsletter.md": "task-template.tasks.newsletter",
+    "content/tasks/templates/office-hours.md": "task-template.tasks.office-hours",
+    "content/tasks/templates/oss.md": "task-template.tasks.oss",
+    "content/tasks/templates/podcast.md": "task-template.tasks.podcast",
+    "content/tasks/templates/social-media.md": "task-template.tasks.social-media",
+    "content/tasks/templates/tax-report.md": "task-template.tasks.tax-report",
+    "content/tasks/templates/webinar.md": "task-template.tasks.webinar",
+    "content/tasks/templates/workshop.md": "task-template.tasks.workshop",
+}
+
+PODCAST_WORKFLOW_CONTENT_DOC_IDS = {
+    "reference.social-media.post-podcast-overview-after-the-event",
+    "sop.events.announce-event-in-slack-in-announcements",
+    "sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event",
+    "sop.events.calendar.creating-tentative-event-on-google-calendar",
+    "sop.events.luma.creating-events-on-google-calendar",
+    "sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma",
+    "sop.events.luma.downloading-the-csv-file-on-luma",
+    "sop.events.meetup.create-events-in-meetup-com",
+    "sop.events.outreach.how-to-find-emails-of-previous-guests",
+    "sop.events.planning.create-speaker-profiles-via-airtable-form",
+    "sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website",
+    "sop.media.podcast.add-a-guest-bio-to-the-podcast-document",
+    "sop.media.podcast.add-a-podcast-episode-via-airtable-form",
+    "sop.media.podcast.add-links-to-youtube-after-the-stream-is-over",
+    "sop.media.podcast.create-podcast-document",
+    "sop.media.podcast.creating-podcast-transcription-document",
+    "sop.media.podcast.generate-timecodes-from-docx-transcriptions",
+    "sop.media.podcast.making-event-announcements-when-topic-bio-or-outline-is-missing",
+    "sop.media.podcast.managing-podcast-workflow",
+    "sop.media.podcast.move-podcast-documents-to-archive-in-google-drive",
+    "sop.media.podcast.moving-podcast-audio-in-dropbox",
+    "sop.media.podcast.reach-out-to-guests-and-propose-a-date-on-linkedin",
+    "sop.media.podcast.removing-the-beginning-from-the-youtube-stream",
+    "sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster",
+    "sop.media.podcast.select-and-propose-a-date-for-events",
+    "sop.media.podcast.sending-a-podcast-scheduled-email-to-pavel-after-the-event",
+    "sop.media.podcast.update-the-website-with-the-information-from-forms",
+    "sop.media.podcast.updating-the-cover-of-the-youtube-video",
+    "sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist",
+    "sop.social-media.post-podcast-guest-recommendations",
+    "template.media.podcast.podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker",
+    "template.media.podcast.podcast-links-after-the-event-is-over",
+    "template.media.podcast.podcast-remind-about-the-event-in-a-week-share-registration-link-template",
+    "template.media.podcast.podcast-remind-the-guest-about-the-event-a-day-before-template",
+    "template.media.podcast.podcast-share-the-podcast-page-template",
+    "template.media.podcast.sending-podcast-document-on-slack-the-dtc-podcast-help-channel",
+    "template.social-media.template-new-event-announcements-podcasts-webinars-workshops",
+}
+
+PODCAST_EXTERNAL_SOURCE_DOC_IDS = {
+    "assistant.podcast.process.podcast",
+    "template.media.podcast.podcast-guest-intake",
+}
+
+
 def _write_doc(content_root: Path, relative_path: str, markdown: str) -> Path:
     path = content_root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -328,6 +388,45 @@ def test_exported_task_templates_are_git_backed_process_documents():
     assert indexed["content/tasks/templates/podcast.md"]["domain"] == "tasks"
     assert indexed["content/tasks/templates/podcast.md"]["doc_type"] == "task-template"
     assert indexed["content/tasks/templates/podcast.md"]["title"] == "Podcast Task Template"
+
+
+def test_workflow_critical_docs_use_explicit_stable_frontmatter_ids():
+    registry = doc_registry.build_registry(REPO_ROOT / "content")
+    docs_by_path = {doc.path: doc for doc in registry.documents}
+
+    assert set(TASK_TEMPLATE_DOC_IDS) == {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in sorted((REPO_ROOT / "content" / "tasks" / "templates").glob("*.md"))
+    }
+
+    for path, stable_id in TASK_TEMPLATE_DOC_IDS.items():
+        record = docs_by_path[path]
+        assert record.id == stable_id
+        assert record.doc_type == "task-template"
+        assert record.id_source == "frontmatter"
+        assert record.to_dict()["stable_id"] is True
+        assert doc_registry.resolve_reference(registry, stable_id).path == path
+
+    for stable_id in PODCAST_WORKFLOW_CONTENT_DOC_IDS:
+        record = doc_registry.resolve_reference(registry, stable_id)
+        assert record.id == stable_id
+        assert record.id_source == "frontmatter"
+        assert record.to_dict()["stable_id"] is True
+
+    assert doc_registry.resolve_reference(registry, "sop.media.podcast.create-a-podcast-document").id == (
+        "sop.media.podcast.create-podcast-document"
+    )
+
+
+def test_workflow_critical_search_docs_index_stable_id_keywords():
+    indexed = {doc["id"]: doc for doc in iter_docs(REPO_ROOT / "content")}
+
+    for stable_id in set(TASK_TEMPLATE_DOC_IDS.values()) | PODCAST_WORKFLOW_CONTENT_DOC_IDS:
+        assert stable_id in indexed
+        assert indexed[stable_id]["id"] == stable_id
+
+    for external_id in PODCAST_EXTERNAL_SOURCE_DOC_IDS:
+        assert external_id not in indexed
 
 
 def test_doc_and_folder_path_normalization_accepts_visible_urls(tmp_path, monkeypatch):

@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.reach-out-to-guests-and-propose-a-date-on-linkedin
+aliases: []
 title: "Reach out to guests and propose a date on LinkedIn"
 summary: "Contact prospective podcast guests on LinkedIn and propose available recording dates for a DataTalks.Club episode."
 doc_type: sop

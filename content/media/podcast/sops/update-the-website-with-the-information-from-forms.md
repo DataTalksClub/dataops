@@ -1,4 +1,6 @@
 ---
+id: sop.media.podcast.update-the-website-with-the-information-from-forms
+aliases: []
 title: "Update the website with the information from forms"
 summary: "Steps to run GitHub Actions that publish Airtable event, speaker, and podcast form data to the website."
 doc_type: sop
