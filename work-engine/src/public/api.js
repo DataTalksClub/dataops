@@ -375,6 +375,27 @@
           body: JSON.stringify(data),
         }).then(handleResponse);
       },
+      followUpSent: function (id, data) {
+        return fetch('/api/intake/' + id + '/follow-up-sent', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      responseReceived: function (id, data) {
+        return fetch('/api/intake/' + id + '/response-received', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      unblocked: function (id, data) {
+        return fetch('/api/intake/' + id + '/unblocked', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
       prepareAssistant: function (id, data) {
         return fetch('/api/intake/' + id + '/prepare-assistant', {
           method: 'POST',

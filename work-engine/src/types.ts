@@ -471,6 +471,7 @@ export interface Notification {
   message: string;
   type?: NotificationType | string;
   taskId?: string;
+  intakeItemId?: string;
   bundleId?: string;
   templateId?: string;
   recurringConfigId?: string;

@@ -9,6 +9,7 @@ import {
   listIntakeItems,
   updateIntakeItem,
 } from '../db/intake';
+import { dismissIntakeFollowUpNotifications } from '../db/notifications';
 import { createTask, getTask, updateTask } from '../db/tasks';
 import type {
   AssistantJobInputRef,
@@ -28,6 +29,7 @@ import type {
   LambdaEvent,
   LambdaResponse,
   Task,
+  TaskHistoryEvent,
 } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -265,6 +267,39 @@ function validateTimestamp(value: unknown, fieldName: string, required = false):
   return value;
 }
 
+function taskHistory(task: Task): TaskHistoryEvent[] {
+  return Array.isArray(task.taskHistory) ? task.taskHistory : [];
+}
+
+function makeTaskHistoryEvent(task: Task, action: TaskHistoryEvent['action'], data: {
+  actorId?: string;
+  channel?: string;
+  waitingFor?: string;
+  followUpAt?: string;
+  previousFollowUpAt?: string;
+  note?: string;
+}): TaskHistoryEvent {
+  const event: TaskHistoryEvent = {
+    id: crypto.randomUUID(),
+    taskId: task.id,
+    action,
+    createdAt: new Date().toISOString(),
+  };
+  if (task.bundleId) event.bundleId = task.bundleId;
+  if (data.actorId) event.actorId = data.actorId;
+  if (data.channel) event.channel = data.channel;
+  if (data.waitingFor) event.waitingFor = data.waitingFor;
+  if (data.followUpAt) event.followUpAt = data.followUpAt;
+  if (data.previousFollowUpAt) event.previousFollowUpAt = data.previousFollowUpAt;
+  if (data.note) event.note = data.note;
+  return event;
+}
+
+function appendTaskNote(existing: unknown, addition: string): string {
+  const current = typeof existing === 'string' ? existing.trim() : '';
+  return current ? `${current}\n${addition}` : addition;
+}
+
 function sanitizeBasePayload(body: Record<string, unknown>, actorId?: string): Record<string, unknown> {
   const note = typeof body.note === 'string' ? body.note : '';
   const title = redactText(body.title || body.subject || note.split(/\r?\n/)[0] || 'Untitled intake', 160);
@@ -386,7 +421,29 @@ async function attachItem(client: DynamoDBDocumentClient, item: IntakeItem, body
   const bundleIds = mergeStrings(item.bundleIds, stringArray(body.bundleIds || (body.bundleId ? [body.bundleId] : []), 'bundleIds', 120));
   if (taskIds.length === item.taskIds.length && bundleIds.length === item.bundleIds.length) throw new Error('taskIds or bundleIds are required');
   for (const taskId of taskIds) {
-    if (!await getTask(client, taskId)) throw new Error(`Task not found: ${taskId}`);
+    const task = await getTask(client, taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (item.status === 'blocked' && item.waitingFor && item.followUpAt) {
+      const channel = isNonEmptyString(body.channel) ? boundedString(body.channel, 60) : task.followUpChannel || item.receivedChannels[0] || 'intake';
+      const note = redactText(body.note || `Attached blocked Intake ${item.id}: ${item.title}`, 500);
+      const waitingFor = task.waitingFor || item.waitingFor;
+      const followUpAt = task.followUpAt || item.followUpAt;
+      await updateTask(client, taskId, {
+        status: 'waiting',
+        waitingFor,
+        followUpAt,
+        followUpChannel: channel,
+        comment: appendTaskNote(task.comment, note),
+        intakeRefs: mergeIntakeRefs(task.intakeRefs, intakeRef(item)),
+        taskHistory: taskHistory(task).concat(makeTaskHistoryEvent(task, 'waiting-started', {
+          actorId,
+          channel,
+          waitingFor,
+          followUpAt,
+          note,
+        })),
+      });
+    }
   }
   for (const bundleId of bundleIds) {
     if (!await getBundle(client, bundleId)) throw new Error(`Bundle not found: ${bundleId}`);
@@ -399,6 +456,7 @@ async function attachItem(client: DynamoDBDocumentClient, item: IntakeItem, body
     triagedBy: actorId || item.triagedBy,
     history: appendHistory(item, 'attached', { actorId, metadata: { taskIds, bundleIds } }),
   }) as IntakeItem;
+  await dismissIntakeFollowUpNotifications(client, item.id);
   await mirrorIntakeRef(client, updated);
   return updated;
 }
@@ -419,6 +477,9 @@ async function detachItem(client: DynamoDBDocumentClient, item: IntakeItem, body
 async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, body: Record<string, unknown>, actorId?: string): Promise<{ item: IntakeItem; task: Task }> {
   const date = isNonEmptyString(body.date) ? body.date : new Date().toISOString().slice(0, 10);
   if (Number.isNaN(Date.parse(date))) throw new Error('date must be a valid date');
+  const waitingFor = isNonEmptyString(body.waitingFor) ? redactText(body.waitingFor, 160) : item.waitingFor;
+  const followUpAt = body.followUpAt !== undefined ? validateTimestamp(body.followUpAt, 'followUpAt') : item.followUpAt;
+  const note = redactText(body.note || item.blockedReason || `Created from Intake ${item.id}: ${item.title}`, 500);
   const taskData: Record<string, unknown> = {
     description: redactText(body.description || item.title, 240),
     date,
@@ -428,11 +489,31 @@ async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, b
     bundleId: isNonEmptyString(body.bundleId) ? body.bundleId : item.bundleIds[0],
     intakeRefs: [intakeRef(item)],
   };
+  if (waitingFor || followUpAt) {
+    if (!waitingFor) throw new Error('waitingFor is required to create a waiting task');
+    if (!followUpAt) throw new Error('followUpAt is required to create a waiting task');
+    taskData.status = 'waiting';
+    taskData.waitingFor = waitingFor;
+    taskData.followUpAt = followUpAt;
+    taskData.followUpChannel = isNonEmptyString(body.channel) ? boundedString(body.channel, 60) : item.receivedChannels[0] || 'intake';
+    taskData.comment = note;
+  }
   if (body.proofRequirement !== undefined) taskData.proofRequirement = body.proofRequirement;
   if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
   if (body.link !== undefined) taskData.link = sanitizeUrl(body.link, 'link');
   if (item.artifactRefs.length > 0) taskData.artifactRefs = item.artifactRefs;
-  const task = await createTask(client, taskData);
+  let task = await createTask(client, taskData);
+  if (task.status === 'waiting') {
+    task = await updateTask(client, task.id, {
+      taskHistory: [makeTaskHistoryEvent(task, 'waiting-started', {
+        actorId,
+        channel: task.followUpChannel,
+        waitingFor: task.waitingFor,
+        followUpAt: task.followUpAt,
+        note: task.comment || undefined,
+      })],
+    }) as Task;
+  }
   const updated = await updateIntakeItem(client, item.id, {
     taskIds: mergeStrings(item.taskIds, [task.id]),
     bundleIds: task.bundleId ? mergeStrings(item.bundleIds, [task.bundleId]) : item.bundleIds,
@@ -441,6 +522,7 @@ async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, b
     triagedBy: actorId || item.triagedBy,
     history: appendHistory(item, 'converted-to-task', { actorId, metadata: { taskId: task.id, bundleId: task.bundleId } }),
   }) as IntakeItem;
+  await dismissIntakeFollowUpNotifications(client, item.id);
   await mirrorIntakeRef(client, updated);
   return { item: updated, task };
 }
@@ -509,6 +591,10 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       bundleId: params.bundleId,
       assistantReadinessStatus: params.assistantReadinessStatus || params.assistantStatus,
       duplicateState: params.duplicateState,
+      dueFollowUpAt: params.dueFollowUpAt,
+      followUpFrom: params.followUpFrom,
+      followUpTo: params.followUpTo,
+      standaloneOnly: params.standaloneOnly,
       from: params.from,
       to: params.to,
     });
@@ -623,6 +709,8 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       if (!reason) return jsonResponse(400, { error: 'reason is required' });
       const waitingFor = body.waitingFor === undefined ? item.waitingFor : redactText(body.waitingFor, 160);
       const followUpAt = body.followUpAt === undefined ? item.followUpAt : validateTimestamp(body.followUpAt, 'followUpAt');
+      if (!waitingFor) return jsonResponse(400, { error: 'waitingFor is required for blocked intake' });
+      if (!followUpAt) return jsonResponse(400, { error: 'followUpAt is required for blocked intake' });
       const updated = await writeItem(item, {
         status: 'blocked',
         blockedReason: reason,
@@ -633,6 +721,53 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
         triagedBy: actorId || item.triagedBy,
         history: appendHistory(item, 'blocked', { actorId, reason, metadata: { waitingFor, followUpAt } }),
       });
+      return jsonResponse(200, { item: updated });
+    }
+
+    if (method === 'POST' && action === 'follow-up-sent') {
+      if (item.status !== 'blocked') return jsonResponse(400, { error: 'Intake item must be blocked before recording a follow-up' });
+      const note = redactText(body.note, 500);
+      if (!note) return jsonResponse(400, { error: 'note is required' });
+      const nextFollowUpAt = validateTimestamp(body.nextFollowUpAt || body.followUpAt, 'nextFollowUpAt', true);
+      const previousFollowUpAt = item.followUpAt;
+      const updated = await writeItem(item, {
+        followUpAt: nextFollowUpAt,
+        lastFollowUpAt: previousFollowUpAt,
+        history: appendHistory(item, 'follow-up-sent', {
+          actorId,
+          reason: note,
+          metadata: {
+            waitingFor: item.waitingFor,
+            previousFollowUpAt,
+            followUpAt: nextFollowUpAt,
+            channel: isNonEmptyString(body.channel) ? boundedString(body.channel, 60) : item.receivedChannels[0],
+          },
+        }),
+      });
+      await dismissIntakeFollowUpNotifications(client, item.id, previousFollowUpAt);
+      return jsonResponse(200, { item: updated });
+    }
+
+    if (method === 'POST' && (action === 'response-received' || action === 'unblocked')) {
+      if (item.status !== 'blocked') return jsonResponse(400, { error: 'Intake item must be blocked before it can be unblocked' });
+      const note = redactText(body.note || body.reason, 500);
+      if (!note) return jsonResponse(400, { error: 'note is required' });
+      const previousFollowUpAt = item.followUpAt;
+      const updated = await writeItem(item, {
+        status: 'triaged',
+        blockedReason: null,
+        waitingFor: null,
+        followUpAt: null,
+        lastFollowUpAt: previousFollowUpAt,
+        triagedAt: item.triagedAt || new Date().toISOString(),
+        triagedBy: actorId || item.triagedBy,
+        history: appendHistory(item, action === 'unblocked' ? 'unblocked' : 'response-received', {
+          actorId,
+          reason: note,
+          metadata: { previousFollowUpAt },
+        }),
+      });
+      await dismissIntakeFollowUpNotifications(client, item.id, previousFollowUpAt);
       return jsonResponse(200, { item: updated });
     }
 

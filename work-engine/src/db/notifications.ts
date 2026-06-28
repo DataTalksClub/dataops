@@ -7,8 +7,9 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_NOTIFICATIONS } from './setup';
+import { listIntakeItems } from './intake';
 import { listTasksByStatus } from './tasks';
-import type { Notification, Task } from '../types';
+import type { IntakeItem, Notification, Task } from '../types';
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
@@ -59,10 +60,26 @@ function followUpMessage(task: Task): string {
   return `Follow up: ${task.description}${waitingFor}`;
 }
 
+function isDueBlockedIntake(item: IntakeItem, nowIso: string): boolean {
+  return (
+    item.status === 'blocked'
+    && (!item.taskIds || item.taskIds.length === 0)
+    && typeof item.followUpAt === 'string'
+    && item.followUpAt.trim().length > 0
+    && item.followUpAt <= nowIso
+  );
+}
+
+function intakeFollowUpMessage(item: IntakeItem): string {
+  const waitingFor = item.waitingFor ? ` — waiting for ${item.waitingFor}` : '';
+  return `Intake follow-up due: ${item.title}${waitingFor}`;
+}
+
 /**
- * Create one follow-up notification for each due waiting task and followUpAt value.
+ * Create one follow-up notification for each due waiting task or standalone blocked
+ * Intake item and followUpAt value.
  * Dismissed reminders are still considered generated, so dismissing a reminder does
- * not recreate it until the task gets a new followUpAt value.
+ * not recreate it until the task/Intake gets a new followUpAt value.
  */
 async function createDueFollowUpNotifications(
   client: DynamoDBDocumentClient,
@@ -70,17 +87,18 @@ async function createDueFollowUpNotifications(
 ): Promise<Notification[]> {
   const now = options.now || new Date().toISOString();
   const waitingTasks = await listTasksByStatus(client, 'waiting');
+  const blockedIntake = await listIntakeItems(client, { status: 'blocked', standaloneOnly: 'true', dueFollowUpAt: now });
   const existing = await listAllNotifications(client);
   const existingKeys = new Set(
     existing
-      .filter((notification) => notification.type === 'follow-up-due' && notification.taskId && notification.dueAt)
-      .map((notification) => `${notification.taskId}#${notification.dueAt}`)
+      .filter((notification) => notification.type === 'follow-up-due' && (notification.taskId || notification.intakeItemId) && notification.dueAt)
+      .map((notification) => `${notification.taskId ? `task#${notification.taskId}` : `intake#${notification.intakeItemId}`}#${notification.dueAt}`)
   );
 
   const created: Notification[] = [];
   for (const task of waitingTasks) {
     if (!isDueWaitingTask(task, now)) continue;
-    const key = `${task.id}#${task.followUpAt}`;
+    const key = `task#${task.id}#${task.followUpAt}`;
     if (existingKeys.has(key)) continue;
 
     const notification = await createNotification(client, {
@@ -94,7 +112,53 @@ async function createDueFollowUpNotifications(
     created.push(notification);
   }
 
+  for (const item of blockedIntake) {
+    if (!isDueBlockedIntake(item, now)) continue;
+    const key = `intake#${item.id}#${item.followUpAt}`;
+    if (existingKeys.has(key)) continue;
+
+    const notification = await createNotification(client, {
+      type: 'follow-up-due',
+      message: intakeFollowUpMessage(item),
+      intakeItemId: item.id,
+      dueAt: item.followUpAt,
+      metadata: {
+        kind: 'intake-follow-up-due',
+        source: item.source,
+        title: item.title,
+        waitingFor: item.waitingFor,
+      },
+    });
+    existingKeys.add(key);
+    created.push(notification);
+  }
+
   return created;
+}
+
+async function dismissIntakeFollowUpNotifications(
+  client: DynamoDBDocumentClient,
+  intakeItemId: string,
+  dueAt?: string
+): Promise<number> {
+  const notifications = await listAllNotifications(client);
+  const matches = notifications.filter((notification) => (
+    notification.type === 'follow-up-due'
+    && notification.intakeItemId === intakeItemId
+    && notification.dismissed === false
+    && (!dueAt || notification.dueAt === dueAt)
+  ));
+
+  await Promise.all(matches.map((notification) => (
+    client.send(new UpdateCommand({
+      TableName: TABLE_NOTIFICATIONS,
+      Key: { PK: `NOTIFICATION#${notification.id}`, SK: `NOTIFICATION#${notification.id}` },
+      UpdateExpression: 'SET dismissed = :dismissed',
+      ExpressionAttributeValues: { ':dismissed': true },
+    }))
+  )));
+
+  return matches.length;
 }
 
 /**
@@ -229,6 +293,7 @@ async function dismissAllNotifications(client: DynamoDBDocumentClient): Promise<
 export {
   createNotification,
   createDueFollowUpNotifications,
+  dismissIntakeFollowUpNotifications,
   getNotification,
   dismissNotification,
   listUndismissedNotifications,
