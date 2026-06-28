@@ -30,7 +30,7 @@ import {
 import { getBundle, updateBundle } from './db/bundles';
 import { getArtifact, listArtifacts } from './db/artifacts';
 import { listFilesByTask } from './db/files';
-import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskStatus } from './types';
+import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from './types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
@@ -122,6 +122,12 @@ function extractTaskId(reqPath: string): string | null {
   return null;
 }
 
+function extractTaskAction(reqPath: string): { taskId: string; action: string } | null {
+  const match = reqPath.match(/^\/api\/tasks\/([^/]+)\/actions\/([^/]+)$/);
+  if (!match) return null;
+  return { taskId: decodeURIComponent(match[1]), action: match[2] };
+}
+
 const ALLOWED_UPDATE_FIELDS = [
   'description',
   'date',
@@ -131,6 +137,7 @@ const ALLOWED_UPDATE_FIELDS = [
   'source',
   'waitingFor',
   'followUpAt',
+  'followUpChannel',
   'proofRequirement',
   'externalStatus',
   'instructionsUrl',
@@ -152,6 +159,9 @@ const ALLOWED_UPDATE_FIELDS = [
 const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
 const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
 const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor, followUpAt, and comment';
+const WAITING_COMPLETION_ERROR = 'Waiting tasks must be resolved with the follow-up resolve action before completion';
+const WAITING_TODO_ERROR = 'Waiting tasks must use the response received or unblocked action before returning to todo';
+const UNSAFE_NOTE_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=|api[_-]?key=|authorization:|bearer\s+\S+)/i;
 
 function isTaskStatus(value: unknown): value is TaskStatus {
   return typeof value === 'string' && VALID_TASK_STATUSES.has(value as TaskStatus);
@@ -159,6 +169,83 @@ function isTaskStatus(value: unknown): value is TaskStatus {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function trimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function validateDateOrTimestampValue(value: unknown, fieldName: string): string | null {
+  if (!isNonEmptyString(value)) return `${fieldName} is required`;
+  const text = value.trim();
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (isoDate) {
+    const year = Number(isoDate[1]);
+    const month = Number(isoDate[2]);
+    const day = Number(isoDate[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() === year
+      && date.getUTCMonth() === month - 1
+      && date.getUTCDate() === day
+    ) {
+      return null;
+    }
+  }
+  return Number.isNaN(Date.parse(text)) ? `${fieldName} must be a valid date or timestamp` : null;
+}
+
+function validateActionNote(value: unknown, fieldName = 'note'): string | null {
+  const note = trimmedString(value);
+  if (!note) return `${fieldName} is required`;
+  if (note.length > 500) return `${fieldName} must be 500 characters or fewer`;
+  if (UNSAFE_NOTE_PATTERN.test(note)) return `${fieldName} must not contain tokens, credentials, or signed URLs`;
+  return null;
+}
+
+function validateActionChannel(value: unknown): string | null {
+  const channel = trimmedString(value);
+  if (!channel) return 'channel is required';
+  if (channel.length > 60) return 'channel must be 60 characters or fewer';
+  if (UNSAFE_NOTE_PATTERN.test(channel)) return 'channel must not contain tokens, credentials, or signed URLs';
+  return null;
+}
+
+function taskHistory(task: Task): TaskHistoryEvent[] {
+  return Array.isArray(task.taskHistory) ? task.taskHistory : [];
+}
+
+function makeTaskHistoryEvent(
+  action: TaskHistoryAction,
+  task: Task,
+  data: {
+    actorId?: string;
+    channel?: string;
+    waitingFor?: string;
+    followUpAt?: string;
+    previousFollowUpAt?: string;
+    note?: string;
+    createdAt?: string;
+  } = {}
+): TaskHistoryEvent {
+  const event: TaskHistoryEvent = {
+    id: crypto.randomUUID(),
+    taskId: task.id,
+    action,
+    createdAt: data.createdAt || new Date().toISOString(),
+  };
+  if (task.bundleId) event.bundleId = task.bundleId;
+  if (data.actorId) event.actorId = data.actorId;
+  if (data.channel) event.channel = data.channel;
+  if (data.waitingFor) event.waitingFor = data.waitingFor;
+  if (data.followUpAt) event.followUpAt = data.followUpAt;
+  if (data.previousFollowUpAt) event.previousFollowUpAt = data.previousFollowUpAt;
+  if (data.note) event.note = data.note;
+  return event;
+}
+
+function appendHistory(task: Task, event: TaskHistoryEvent): TaskHistoryEvent[] {
+  return [...taskHistory(task), event];
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -606,6 +693,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.bundleId !== undefined) taskData.bundleId = body.bundleId;
       if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
       if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
+      if (body.followUpChannel !== undefined) taskData.followUpChannel = body.followUpChannel;
       if (body.proofRequirement !== undefined) taskData.proofRequirement = body.proofRequirement;
       if (body.externalStatus !== undefined) taskData.externalStatus = body.externalStatus;
       if (body.instructionsUrl !== undefined) taskData.instructionsUrl = body.instructionsUrl;
@@ -707,6 +795,193 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
     }
 
+    // POST /api/tasks/:id/actions/:action — Atomic task follow-up actions
+    if (method === 'POST' && reqPath.startsWith('/api/tasks/')) {
+      const taskAction = extractTaskAction(reqPath);
+      if (!taskAction) {
+        return jsonResponse(404, { error: 'Not found' });
+      }
+
+      const existing = await getTask(client, taskAction.taskId);
+      if (!existing) {
+        return jsonResponse(404, { error: 'Task not found' });
+      }
+
+      const body = parseBody(event);
+      if (!body) {
+        return jsonResponse(400, { error: 'Request body is required' });
+      }
+
+      const actorId = headerValue(event.headers, 'x-user-id') || undefined;
+      const now = new Date().toISOString();
+
+      if (taskAction.action === 'mark-waiting') {
+        if (existing.status === 'done') {
+          return jsonResponse(400, { error: 'Completed tasks must be reopened before marking waiting' });
+        }
+        const waitingFor = trimmedString(body.waitingFor);
+        const followUpAt = trimmedString(body.followUpAt);
+        const channel = trimmedString(body.channel);
+        const note = trimmedString(body.note);
+        const noteError = validateActionNote(note);
+        const channelError = validateActionChannel(channel);
+        const dateError = validateDateOrTimestampValue(followUpAt, 'followUpAt');
+        if (!waitingFor) return jsonResponse(400, { error: 'waitingFor is required' });
+        if (waitingFor.length > 160) return jsonResponse(400, { error: 'waitingFor must be 160 characters or fewer' });
+        if (dateError) return jsonResponse(400, { error: dateError });
+        if (channelError) return jsonResponse(400, { error: channelError });
+        if (noteError) return jsonResponse(400, { error: noteError });
+
+        const historyEvent = makeTaskHistoryEvent('waiting-started', existing, {
+          actorId,
+          channel,
+          waitingFor,
+          followUpAt,
+          note,
+          createdAt: now,
+        });
+        const updated = await updateTask(client, existing.id, {
+          status: 'waiting',
+          waitingFor,
+          followUpAt,
+          followUpChannel: channel,
+          taskHistory: appendHistory(existing, historyEvent),
+        });
+        return jsonResponse(200, updated);
+      }
+
+      if (taskAction.action === 'follow-up-sent') {
+        if (existing.status !== 'waiting') {
+          return jsonResponse(400, { error: 'Task must be waiting before recording a follow-up' });
+        }
+        const channel = trimmedString(body.channel);
+        const note = trimmedString(body.note);
+        const nextFollowUpAt = trimmedString(body.nextFollowUpAt || body.followUpAt);
+        const noteError = validateActionNote(note);
+        const channelError = validateActionChannel(channel);
+        const dateError = validateDateOrTimestampValue(nextFollowUpAt, 'nextFollowUpAt');
+        if (channelError) return jsonResponse(400, { error: channelError });
+        if (noteError) return jsonResponse(400, { error: noteError });
+        if (dateError) return jsonResponse(400, { error: dateError });
+
+        const historyEvent = makeTaskHistoryEvent('follow-up-sent', existing, {
+          actorId,
+          channel,
+          waitingFor: existing.waitingFor,
+          previousFollowUpAt: existing.followUpAt,
+          followUpAt: nextFollowUpAt,
+          note,
+          createdAt: now,
+        });
+        const updated = await updateTask(client, existing.id, {
+          status: 'waiting',
+          followUpAt: nextFollowUpAt,
+          followUpChannel: channel,
+          taskHistory: appendHistory(existing, historyEvent),
+        });
+        return jsonResponse(200, updated);
+      }
+
+      if (taskAction.action === 'response-received' || taskAction.action === 'unblocked') {
+        if (existing.status !== 'waiting') {
+          return jsonResponse(400, { error: 'Task must be waiting before it can be unblocked' });
+        }
+        const note = trimmedString(body.note);
+        const noteError = validateActionNote(note);
+        if (noteError) return jsonResponse(400, { error: noteError });
+
+        const action = taskAction.action === 'unblocked' ? 'unblocked' : 'response-received';
+        const historyEvent = makeTaskHistoryEvent(action, existing, {
+          actorId,
+          channel: trimmedString(body.channel) || existing.followUpChannel,
+          waitingFor: existing.waitingFor,
+          previousFollowUpAt: existing.followUpAt,
+          note,
+          createdAt: now,
+        });
+        const updated = await updateTask(client, existing.id, {
+          status: 'todo',
+          waitingFor: null,
+          followUpAt: null,
+          followUpChannel: null,
+          taskHistory: appendHistory(existing, historyEvent),
+        });
+        return jsonResponse(200, updated);
+      }
+
+      if (taskAction.action === 'resolve-done') {
+        if (existing.status !== 'waiting') {
+          return jsonResponse(400, { error: 'Task must be waiting before resolving the wait' });
+        }
+        const note = trimmedString(body.note);
+        const noteError = validateActionNote(note);
+        if (noteError) return jsonResponse(400, { error: noteError });
+
+        const updates: Record<string, unknown> = {
+          status: 'done',
+          waitingFor: null,
+          followUpAt: null,
+          followUpChannel: null,
+        };
+        for (const field of ['comment', 'link', 'externalStatus', 'artifactRefs', 'assistantJobRefs', 'auditEventRefs']) {
+          if (body[field] !== undefined) updates[field] = body[field];
+        }
+
+        const taskData = { ...existing, ...updates };
+        const effectiveRequiredLinkName = (updates.requiredLinkName !== undefined ? updates.requiredLinkName : existing.requiredLinkName) as string | undefined;
+        const effectiveLink = (updates.link !== undefined ? updates.link : existing.link) as string | undefined;
+        if (
+          effectiveRequiredLinkName
+          && !effectiveLink
+          && !skipClosureSuppresses(taskData, 'requiredLink', effectiveRequiredLinkName)
+        ) {
+          return jsonResponse(400, { error: `Cannot mark task as done: required link '${effectiveRequiredLinkName}' is not filled` });
+        }
+
+        const effectiveRequiresFile = existing.requiresFile as boolean | undefined;
+        if (effectiveRequiresFile && !skipClosureSuppresses(taskData, 'file')) {
+          const files = await listFilesByTask(client, existing.id);
+          if (files.length === 0) {
+            return jsonResponse(400, { error: 'Cannot mark task as done: required file has not been uploaded' });
+          }
+        }
+
+        const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
+        if (bundleLinkError) return jsonResponse(400, { error: bundleLinkError });
+
+        const proofError = await validateDoneProof(client, existing.id, existing, updates);
+        if (proofError) return jsonResponse(400, { error: proofError });
+
+        updates.completedAt = now;
+        if (actorId) updates.completedBy = actorId;
+        const resolvedEvent = makeTaskHistoryEvent('wait-resolved', existing, {
+          actorId,
+          channel: trimmedString(body.channel) || existing.followUpChannel,
+          waitingFor: existing.waitingFor,
+          previousFollowUpAt: existing.followUpAt,
+          note,
+          createdAt: now,
+        });
+        const completedEvent = makeTaskHistoryEvent('completed', existing, {
+          actorId,
+          note,
+          createdAt: now,
+        });
+        updates.taskHistory = [...taskHistory(existing), resolvedEvent, completedEvent];
+
+        const updated = await updateTask(client, existing.id, updates);
+        if (updated) {
+          const task = updated as Task;
+          if (task.stageOnComplete && task.bundleId && task.source === 'template') {
+            await updateBundle(client, task.bundleId, { stage: task.stageOnComplete });
+          }
+        }
+        return jsonResponse(200, updated);
+      }
+
+      return jsonResponse(404, { error: 'Not found' });
+    }
+
     // GET /api/tasks/:id — Get a single task
     if (method === 'GET' && reqPath.startsWith('/api/tasks/')) {
       const id = extractTaskId(reqPath);
@@ -766,6 +1041,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
 
       const effectiveStatus = updates.status !== undefined ? updates.status : existing.status;
+      if (existing.status === 'waiting' && updates.status === 'done') {
+        return jsonResponse(400, { error: WAITING_COMPLETION_ERROR });
+      }
+      if (existing.status === 'waiting' && updates.status === 'todo') {
+        return jsonResponse(400, { error: WAITING_TODO_ERROR });
+      }
       if (effectiveStatus === 'waiting') {
         const effectiveWaitingFor = updates.waitingFor !== undefined ? updates.waitingFor : existing.waitingFor;
         const effectiveFollowUpAt = updates.followUpAt !== undefined ? updates.followUpAt : existing.followUpAt;
@@ -781,6 +1062,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
       // requiredLinkName validation: cannot mark done if requiredLinkName is set but link is empty
       if (updates.status === 'done') {
+        const completedAt = new Date().toISOString();
         const taskData = { ...existing, ...updates };
         const effectiveRequiredLinkName = (updates.requiredLinkName !== undefined ? updates.requiredLinkName : existing.requiredLinkName) as string | undefined;
         const effectiveLink = (updates.link !== undefined ? updates.link : existing.link) as string | undefined;
@@ -811,9 +1093,21 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           return jsonResponse(400, { error: proofError });
         }
 
-        updates.completedAt = new Date().toISOString();
+        updates.completedAt = completedAt;
         const actorId = headerValue(event.headers, 'x-user-id');
         if (actorId) updates.completedBy = actorId;
+        if (existing.status !== 'done') {
+          updates.taskHistory = appendHistory(existing, makeTaskHistoryEvent('completed', existing, {
+            actorId: actorId || undefined,
+            note: isNonEmptyString(updates.comment) ? String(updates.comment) : undefined,
+            createdAt: completedAt,
+          }));
+        }
+      } else if (existing.status === 'done' && updates.status === 'todo') {
+        const actorId = headerValue(event.headers, 'x-user-id');
+        updates.taskHistory = appendHistory(existing, makeTaskHistoryEvent('reopened', existing, {
+          actorId: actorId || undefined,
+        }));
       }
 
       const updated = await updateTask(client, id, updates);
