@@ -24,8 +24,13 @@ separate task product.
 ### Setup
 
 ```bash
-npm install
+# from the DataOps repository root
+npm ci
 ```
+
+Run installs from the repository root. DataOps uses a top-level npm workspace
+with `work-engine/` as the current Node package, and the root `package-lock.json`
+is the only committed npm lockfile.
 
 ### Run the dev server
 
@@ -39,10 +44,34 @@ DynamoDB (dynalite). No Docker or external database is needed.
 ### Seed default templates
 
 ```bash
+npm run seed:users
 npm run seed
 ```
 
+From the repository root, `npm run seed:work-engine` runs both default user and
+template seeders.
+
+## Repository-root commands
+
+Use these from the DataOps repo root after `npm ci`:
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev:work-engine` | Start work-engine dev server with hot reload |
+| `npm run test:work-engine` | Run work-engine unit tests |
+| `npm run test:e2e:work-engine` | Run Playwright E2E tests |
+| `npm run typecheck:work-engine` | Type-check source, tests, and scripts |
+| `npm run build:work-engine` | Compile TypeScript and copy static assets |
+| `npm run seed:work-engine` | Seed default local users and templates |
+| `npm run export:templates:work-engine` | Export seed templates to content files |
+| `npm run validate:export:work-engine -- <export-dir>` | Validate a portable execution export |
+| `npm run dry-run:import:work-engine -- <export-dir>` | Validate an import without writing data |
+| `npm run clean:work-engine` | Remove `work-engine/dist/` |
+
 ## Scripts
+
+These package-local commands still work from inside `work-engine/` after the
+root workspace install:
 
 | Command | Description |
 |---------|-------------|
@@ -54,6 +83,10 @@ npm run seed
 | `npm run build` | Compile TypeScript to `dist/` and copy static assets |
 | `npm run typecheck` | Type-check source, tests, and scripts |
 | `npm run seed` | Seed default templates |
+| `npm run seed:users` | Seed default local users |
+| `npm run export:templates` | Export seed templates to content files |
+| `npm run validate:export -- <export-dir>` | Validate a portable execution export |
+| `npm run dry-run:import -- <export-dir>` | Validate an import without writing data |
 | `npm run clean` | Remove `dist/` directory |
 
 ## Testing

@@ -1,13 +1,18 @@
-FROM node:18 AS builder
+FROM node:20 AS builder
 WORKDIR /build
 COPY package.json package-lock.json ./
+RUN mkdir -p work-engine
+COPY work-engine/package.json ./work-engine/package.json
 RUN npm ci
-COPY tsconfig.json ./
-COPY src/ ./src/
+COPY work-engine/tsconfig.json ./work-engine/tsconfig.json
+COPY work-engine/src/ ./work-engine/src/
+WORKDIR /build/work-engine
 RUN npm run build
 
-FROM public.ecr.aws/lambda/nodejs:18
-COPY --from=builder /build/dist/ ${LAMBDA_TASK_ROOT}/dist/
+FROM public.ecr.aws/lambda/nodejs:20
+COPY --from=builder /build/work-engine/dist/ ${LAMBDA_TASK_ROOT}/dist/
 COPY package.json package-lock.json ${LAMBDA_TASK_ROOT}/
-RUN npm ci --omit=dev
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/work-engine
+COPY work-engine/package.json ${LAMBDA_TASK_ROOT}/work-engine/package.json
+RUN npm ci --omit=dev --workspace dataops-work-engine
 CMD ["dist/handler.handler"]

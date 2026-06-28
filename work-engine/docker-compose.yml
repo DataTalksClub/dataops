@@ -8,8 +8,8 @@ services:
 
   lambda:
     build:
-      context: .
-      dockerfile: Dockerfile.lambda
+      context: ..
+      dockerfile: work-engine/Dockerfile.lambda
     ports:
       - "9000:8080"
     environment:
