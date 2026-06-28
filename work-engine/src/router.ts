@@ -237,6 +237,118 @@ function proofMissingError(type: string, label?: string): string {
   return `Cannot mark task as done: required ${type} proof${suffix} is missing`;
 }
 
+function normalizedStatusText(value: unknown): string | null {
+  if (!isNonEmptyString(value)) return null;
+  return value.trim().toLowerCase();
+}
+
+function skipClosureConfig(validation: unknown): Record<string, unknown> | null {
+  if (!validation || typeof validation !== 'object' || Array.isArray(validation)) return null;
+  const skipClosure = (validation as Record<string, unknown>).skipClosure;
+  if (!skipClosure || typeof skipClosure !== 'object' || Array.isArray(skipClosure)) return null;
+  return skipClosure as Record<string, unknown>;
+}
+
+function allowedSkipStatuses(validation: unknown): string[] {
+  const config = skipClosureConfig(validation);
+  if (!config || !Array.isArray(config.allowedStatuses)) return [];
+  return config.allowedStatuses.filter((status): status is string => isNonEmptyString(status));
+}
+
+function skipClosureRequires(validation: unknown): string[] {
+  const config = skipClosureConfig(validation);
+  if (!config || !Array.isArray(config.requires)) return [];
+  return config.requires.filter((field): field is string => isNonEmptyString(field));
+}
+
+function matchesAllowedSkipStatus(value: unknown, statuses: string[]): boolean {
+  const normalizedValue = normalizedStatusText(value);
+  if (!normalizedValue) return false;
+  const normalizedStatuses = statuses
+    .map((status) => normalizedStatusText(status))
+    .filter((status): status is string => status !== null);
+  if (normalizedStatuses.includes(normalizedValue)) return true;
+
+  const commentLines = normalizedValue
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\[[^\]]+\]\s*/, '').trim())
+    .filter((line) => line.length > 0);
+  return commentLines.some((line) => normalizedStatuses.includes(line));
+}
+
+function hasAllowedSkipClosure(taskData: Record<string, unknown>): boolean {
+  return allowedSkipClosureStatus(taskData) !== null;
+}
+
+function allowedSkipClosureStatus(taskData: Record<string, unknown>): string | null {
+  const statuses = allowedSkipStatuses(taskData.validation);
+  if (statuses.length === 0) return null;
+
+  const commentMatches = matchesAllowedSkipStatus(taskData.comment, statuses);
+  const externalStatusMatches = matchesAllowedSkipStatus(taskData.externalStatus, statuses);
+  if (!commentMatches && !externalStatusMatches) return null;
+
+  const requiredFields = skipClosureRequires(taskData.validation);
+  if (requiredFields.includes('comment') && !commentMatches) return null;
+  if (requiredFields.includes('externalStatus') && !externalStatusMatches) return null;
+
+  return statuses.find((status) => (
+    matchesAllowedSkipStatus(taskData.comment, [status])
+    || matchesAllowedSkipStatus(taskData.externalStatus, [status])
+  )) || null;
+}
+
+function skipClosureScope(validation: unknown, status: string): Record<string, unknown> | null {
+  const config = skipClosureConfig(validation);
+  if (!config) return null;
+  const suppresses = config.suppresses;
+  if (!suppresses || typeof suppresses !== 'object' || Array.isArray(suppresses)) return null;
+  const scope = (suppresses as Record<string, unknown>)[status];
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope)) return null;
+  return scope as Record<string, unknown>;
+}
+
+function hasScopedSkipClosure(validation: unknown): boolean {
+  const config = skipClosureConfig(validation);
+  if (!config) return false;
+  return Boolean(config.suppresses && typeof config.suppresses === 'object' && !Array.isArray(config.suppresses));
+}
+
+function skipClosureSuppresses(taskData: Record<string, unknown>, gate: 'bundleLink' | 'requiredLink' | 'file' | 'proof', name?: string): boolean {
+  const status = allowedSkipClosureStatus(taskData);
+  if (!status) return false;
+  if (!hasScopedSkipClosure(taskData.validation)) return true;
+
+  const scope = skipClosureScope(taskData.validation, status);
+  if (!scope) return false;
+  if (gate === 'bundleLink') {
+    const bundleLinks = scope.bundleLinks;
+    if (!Array.isArray(bundleLinks)) return false;
+    return bundleLinks.some((linkName) => linkName === '*' || (isNonEmptyString(linkName) && linkName === name));
+  }
+  if (gate === 'requiredLink') return scope.requiredLink === true;
+  if (gate === 'file') return scope.file === true;
+  if (gate === 'proof') return scope.proof === true;
+  return false;
+}
+
+function requiredBundleLinkNames(validation: unknown): string[] {
+  if (!validation || typeof validation !== 'object' || Array.isArray(validation)) return [];
+  const requiredBundleLinks = (validation as Record<string, unknown>).requiredBundleLinks;
+  if (!Array.isArray(requiredBundleLinks)) return [];
+  return requiredBundleLinks.filter((name): name is string => isNonEmptyString(name));
+}
+
+function bundleHasLink(bundleLinks: unknown, name: string): boolean {
+  if (!Array.isArray(bundleLinks)) return false;
+  return bundleLinks.some((link) => (
+    link
+    && typeof link === 'object'
+    && (link as Record<string, unknown>).name === name
+    && isNonEmptyString((link as Record<string, unknown>).url)
+  ));
+}
+
 function artifactRefIds(refs: unknown): string[] {
   if (!Array.isArray(refs)) return [];
   return refs
@@ -273,12 +385,40 @@ async function hasApprovedArtifactProof(
   return false;
 }
 
+async function validateRequiredBundleLinks(
+  client: DynamoDBDocumentClient,
+  taskData: Record<string, unknown>
+): Promise<string | null> {
+  const requiredNames = requiredBundleLinkNames(taskData.validation);
+  if (requiredNames.length === 0) return null;
+
+  const bundleId = isNonEmptyString(taskData.bundleId) ? taskData.bundleId : null;
+  if (!bundleId) {
+    return `Cannot mark task as done: required shared bundle link '${requiredNames[0]}' needs a workflow bundle`;
+  }
+
+  const bundle = await getBundle(client, bundleId);
+  for (const name of requiredNames) {
+    if (skipClosureSuppresses(taskData, 'bundleLink', name)) continue;
+    if (!bundleHasLink(bundle?.bundleLinks, name)) {
+      return `Cannot mark task as done: required bundle link '${name}' is not filled`;
+    }
+  }
+
+  return null;
+}
+
 async function validateDoneProof(
   client: DynamoDBDocumentClient,
   id: string,
   existing: Task,
   updates: Record<string, unknown>
 ): Promise<string | null> {
+  const taskData = { ...existing, ...updates };
+  if (skipClosureSuppresses(taskData, 'proof')) {
+    return null;
+  }
+
   const proofRequirement = (updates.proofRequirement !== undefined
     ? updates.proofRequirement
     : existing.proofRequirement) as Record<string, unknown> | undefined;
@@ -302,7 +442,6 @@ async function validateDoneProof(
     return isNonEmptyString(externalStatus) ? null : proofMissingError('external-status', proofLabel);
   }
   if (proofType === 'artifact') {
-    const taskData = { ...existing, ...updates };
     return await hasApprovedArtifactProof(client, id, taskData) ? null : proofMissingError('approved artifact', proofLabel);
   }
   if (proofType === 'file') {
@@ -315,12 +454,14 @@ async function validateDoneProof(
 
 async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, taskData: Record<string, unknown>): Promise<string | null> {
   const requiredLinkName = taskData.requiredLinkName as string | undefined;
-  if (requiredLinkName && !isNonEmptyString(taskData.link)) {
+  if (requiredLinkName && !isNonEmptyString(taskData.link) && !skipClosureSuppresses(taskData, 'requiredLink', requiredLinkName)) {
     return `Cannot mark task as done: required link '${requiredLinkName}' is not filled`;
   }
-  if (taskData.requiresFile === true) {
+  if (taskData.requiresFile === true && !skipClosureSuppresses(taskData, 'file')) {
     return 'Cannot mark task as done: required file has not been uploaded';
   }
+
+  if (skipClosureSuppresses(taskData, 'proof')) return null;
 
   const proofRequirement = taskData.proofRequirement as Record<string, unknown> | undefined;
   if (!proofRequirement || proofRequirement.required === false) return null;
@@ -509,6 +650,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         return jsonResponse(400, { error: refsError });
       }
       if (taskData.status === 'done') {
+        const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
+        if (bundleLinkError) {
+          return jsonResponse(400, { error: bundleLinkError });
+        }
         const proofError = await validateDoneProofOnCreate(client, taskData);
         if (proofError) {
           return jsonResponse(400, { error: proofError });
@@ -636,19 +781,29 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
       // requiredLinkName validation: cannot mark done if requiredLinkName is set but link is empty
       if (updates.status === 'done') {
+        const taskData = { ...existing, ...updates };
         const effectiveRequiredLinkName = (updates.requiredLinkName !== undefined ? updates.requiredLinkName : existing.requiredLinkName) as string | undefined;
         const effectiveLink = (updates.link !== undefined ? updates.link : existing.link) as string | undefined;
-        if (effectiveRequiredLinkName && !effectiveLink) {
+        if (
+          effectiveRequiredLinkName
+          && !effectiveLink
+          && !skipClosureSuppresses(taskData, 'requiredLink', effectiveRequiredLinkName)
+        ) {
           return jsonResponse(400, { error: `Cannot mark task as done: required link '${effectiveRequiredLinkName}' is not filled` });
         }
 
         // requiresFile validation: cannot mark done if requiresFile is true and no files uploaded
         const effectiveRequiresFile = (updates.requiresFile !== undefined ? updates.requiresFile : existing.requiresFile) as boolean | undefined;
-        if (effectiveRequiresFile) {
+        if (effectiveRequiresFile && !skipClosureSuppresses(taskData, 'file')) {
           const files = await listFilesByTask(client, id);
           if (files.length === 0) {
             return jsonResponse(400, { error: 'Cannot mark task as done: required file has not been uploaded' });
           }
+        }
+
+        const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
+        if (bundleLinkError) {
+          return jsonResponse(400, { error: bundleLinkError });
         }
 
         const proofError = await validateDoneProof(client, id, existing, updates);

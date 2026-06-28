@@ -865,6 +865,66 @@ assert.equal(missing.children[1].textContent, "Document unavailable: missing.doc
     assert result["ok"] is True
 
 
+def test_task_instruction_doc_panel_resolves_newsletter_doc_ids():
+    result = _run_app_js_functions(
+        """
+documentIdMap = new Map([
+  ["sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter", {
+    id: "sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter",
+    title: "Fill in the sponsored block in the newsletter",
+    doc_type: "sop",
+    path: "content/newsletter/sponsorship/sops/fill-in-the-sponsored-block-in-the-newsletter.md",
+    summary: "Fill the newsletter sponsored block in Mailchimp.",
+  }],
+  ["template.newsletter.create-newsletter-draft-from-template-in-mailchimp", {
+    id: "template.newsletter.create-newsletter-draft-from-template-in-mailchimp",
+    title: "Create a newsletter draft from a template in Mailchimp",
+    doc_type: "template",
+    path: "content/internal-admin/templates/create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update.md",
+    summary: "Create a Mailchimp newsletter draft from an existing template.",
+  }],
+]);
+
+const sponsorPanel = renderTaskInstructionDoc({
+  instructionDocId: "sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter",
+  phase: "draft-assembly",
+  systems: ["mailchimp", "google-docs"],
+  validation: { requiredEvidence: "Sponsored block filled or not sponsored this week" },
+});
+
+assert.equal(sponsorPanel.className, "task-instruction-doc");
+assert.equal(sponsorPanel.children[1].textContent, "Fill in the sponsored block in the newsletter");
+sponsorPanel.children[1].click();
+assert.deepEqual(actionCalls.at(-1), {
+  type: "doc",
+  path: "content/newsletter/sponsorship/sops/fill-in-the-sponsored-block-in-the-newsletter.md",
+});
+assert.equal(sponsorPanel.querySelector(".ops-card-chips").children.length, 2);
+
+const draftPanel = renderTaskInstructionDoc({
+  instructionDocId: "template.newsletter.create-newsletter-draft-from-template-in-mailchimp",
+  phase: "draft-assembly",
+  systems: ["mailchimp"],
+});
+assert.equal(draftPanel.children[1].textContent, "Create a newsletter draft from a template in Mailchimp");
+draftPanel.children[1].click();
+assert.deepEqual(actionCalls.at(-1), {
+  type: "doc",
+  path: "content/internal-admin/templates/create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update.md",
+});
+""",
+        [
+            "resolveDocReference",
+            "formatMetaText",
+            "formatValidationInstruction",
+            "renderTaskInstructionDoc",
+            "workTaskTitle",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
 def test_operations_lane_items_open_task_and_bundle_panels():
     result = _run_app_js_functions(
         """
