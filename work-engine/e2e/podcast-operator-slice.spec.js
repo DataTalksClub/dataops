@@ -121,6 +121,7 @@ test.describe('Podcast operator workflow slice (#9)', () => {
 
     const waitRow = await podcastRow(page, 'Agree on a date');
     await waitRow.locator('.waiting-for-input').fill(guest);
+    await waitRow.locator('.waiting-channel-input').selectOption('email');
     await waitRow.locator('.waiting-followup-input').fill('2000-01-01');
     await waitRow.locator('.waiting-note-input').fill('Waiting for date confirmation');
     await waitRow.locator('[data-mark-waiting-task]').click();
@@ -129,7 +130,11 @@ test.describe('Podcast operator workflow slice (#9)', () => {
 
     await page.goto('/#/');
     await expect(page.locator('#dashboard-tasks')).toContainText('Agree on a date', { timeout: 15000 });
-    await page.locator('[data-follow-up-action="response-received"]').first().click();
+    const dashboardWaitRow = page.locator('[data-task-row]', { hasText: 'Agree on a date' });
+    const dashboardWaitTaskId = await dashboardWaitRow.getAttribute('data-task-row');
+    const dashboardWaitActions = page.locator('[data-task-actions-row="' + dashboardWaitTaskId + '"]');
+    await dashboardWaitActions.locator('.follow-up-note').fill('Guest replied with dates');
+    await dashboardWaitActions.locator('[data-follow-up-action="response-received"]').click();
     await expect(page.locator('#dashboard-tasks')).not.toContainText('Agree on a date', { timeout: 15000 });
 
     await page.goto('/#/bundles');

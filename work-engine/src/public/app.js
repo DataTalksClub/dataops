@@ -522,6 +522,63 @@
     return '<div class="task-completion-evidence" data-task-completion-evidence="' + escapeHtml(task.id || '') + '">' + items.join('') + '</div>';
   }
 
+  function historyActionLabel(action) {
+    var labels = {
+      'waiting-started': 'Waiting started',
+      'follow-up-sent': 'Follow-up sent',
+      'response-received': 'Response received',
+      'unblocked': 'Unblocked',
+      'wait-resolved': 'Wait resolved',
+      'completed': 'Completed',
+      'reopened': 'Reopened'
+    };
+    return labels[action] || sentenceCaseStatus(String(action || '').replace(/-/g, ' '));
+  }
+
+  function taskHistoryEvents(task) {
+    return Array.isArray(task && task.taskHistory) ? task.taskHistory.slice() : [];
+  }
+
+  function renderTaskHistory(task, compact) {
+    var events = taskHistoryEvents(task).sort(function (a, b) {
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    });
+    if (!events.length) return '';
+    var shown = compact ? events.slice(0, 3) : events;
+    var html = '<div class="task-history' + (compact ? ' task-history--compact' : '') + '" data-task-history="' + escapeHtml(task.id || '') + '">' +
+      '<div class="task-history-title">Follow-up history</div>';
+    shown.forEach(function (event) {
+      var meta = [];
+      if (event.createdAt) meta.push(formatDateLabel(event.createdAt));
+      if (event.actorId) meta.push('by ' + event.actorId);
+      if (event.channel) meta.push(event.channel);
+      if (event.followUpAt) meta.push('next ' + formatDateLabel(event.followUpAt));
+      if (event.previousFollowUpAt && !event.followUpAt) meta.push('was ' + formatDateLabel(event.previousFollowUpAt));
+      html += '<div class="task-history-item">' +
+        '<span class="task-history-action">' + escapeHtml(historyActionLabel(event.action)) + '</span>' +
+        (meta.length ? '<span class="task-history-meta">' + escapeHtml(meta.join(' | ')) + '</span>' : '') +
+        (event.waitingFor ? '<span class="task-history-meta">Waiting for ' + escapeHtml(event.waitingFor) + '</span>' : '') +
+        (event.note ? '<span class="task-history-note">' + escapeHtml(event.note) + '</span>' : '') +
+        '</div>';
+    });
+    if (compact && events.length > shown.length) {
+      html += '<div class="task-history-more">' + (events.length - shown.length) + ' older events</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderChannelOptions(selected) {
+    var channels = ['email', 'telegram', 'slack', 'phone', 'linkedin', 'github', 'other'];
+    return channels.map(function (channel) {
+      return '<option value="' + escapeHtml(channel) + '"' + (channel === selected ? ' selected' : '') + '>' + escapeHtml(channel) + '</option>';
+    }).join('');
+  }
+
+  function waitingCompletionBlockTitle(task) {
+    return task && task.status === 'waiting' ? 'Resolve the wait before completing this task' : '';
+  }
+
   function hasPodcastSignal(entity) {
     if (!entity || typeof entity !== 'object') return false;
     if (String(entity.type || '').toLowerCase() === 'podcast') return true;
@@ -1871,8 +1928,9 @@
 
       var checkboxDisabled = '';
       var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
-      if (missingProofTitle) {
-        checkboxDisabled = ' disabled title="' + escapeHtml(missingProofTitle) + '"';
+      var waitingBlockTitle = waitingCompletionBlockTitle(t);
+      if (waitingBlockTitle || missingProofTitle) {
+        checkboxDisabled = ' disabled title="' + escapeHtml(waitingBlockTitle || missingProofTitle) + '"';
       }
 
       // Bundle badge
@@ -1916,6 +1974,7 @@
         renderAssistantRefs(t.assistantJobRefs) +
         renderPodcastAssistantButton(t) +
         '</div>';
+      instructionsHtml += renderTaskHistory(t, true);
 
       // Assignee name
       var assigneeHtml = '';
@@ -1979,6 +2038,8 @@
         }
         actionsHtml += '</div>';
       }
+      var fullWidthActionsHtml = t.status === 'waiting' ? actionsHtml : '';
+      var actionsCellHtml = fullWidthActionsHtml ? '<span class="task-action-empty">Follow-up controls</span>' : actionsHtml;
 
       html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
         '<td class="task-status"><input type="checkbox" class="task-status-checkbox" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></td>' +
@@ -1988,8 +2049,13 @@
         '<td data-label="Info">' + instructionsHtml + '</td>' +
         '<td data-label="Assignee">' + assigneeHtml + '</td>' +
         '<td data-label="Required Link">' + requiredLinkHtml + '</td>' +
-        '<td data-label="Actions">' + actionsHtml + '</td>' +
+        '<td data-label="Actions">' + actionsCellHtml + '</td>' +
         '</tr>';
+      if (fullWidthActionsHtml) {
+        html += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' +
+          '<td colspan="8">' + fullWidthActionsHtml + '</td>' +
+          '</tr>';
+      }
     });
     html += '</tbody></table>';
     container.innerHTML = html;
@@ -2178,9 +2244,11 @@
         var action = btn.getAttribute('data-follow-up-action');
         var taskId = btn.getAttribute('data-task-id');
         if (action === 'response-received') {
-          recordResponseReceived(taskId, btn);
+          recordResponseReceived(taskId, btn, container, loadDashboardTasks);
         } else if (action === 'follow-up-sent') {
-          recordFollowUpSent(taskId, btn, container);
+          recordFollowUpSent(taskId, btn, container, loadDashboardTasks);
+        } else if (action === 'resolve-done') {
+          resolveWaitingDone(taskId, btn, container, loadDashboardTasks);
         }
       });
     });
@@ -2188,50 +2256,99 @@
 
   function renderDashboardTaskActions(task) {
     if (!task || task.status !== 'waiting') return '<span class="task-action-empty">-</span>';
-    var taskComment = escapeHtml(task.comment || '');
+    var selectedChannel = task.followUpChannel || 'email';
     return '<div class="task-action-group">' +
-      '<button type="button" class="task-action-btn" data-follow-up-action="response-received" data-task-id="' + task.id + '" data-existing-note="' + taskComment + '">Response received</button>' +
+      '<label class="follow-up-next-label">Channel <select class="follow-up-channel" data-follow-up-channel-task="' + escapeHtml(task.id) + '">' + renderChannelOptions(selectedChannel) + '</select></label>' +
+      '<label class="follow-up-note-label">Note <input type="text" class="follow-up-note" data-follow-up-note-task="' + escapeHtml(task.id) + '" placeholder="Short operational note" /></label>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="response-received" data-task-id="' + task.id + '">Response received</button>' +
       '<label class="follow-up-next-label">Next <input type="date" class="follow-up-next-date" data-task-id="' + task.id + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" /></label>' +
-      '<button type="button" class="task-action-btn" data-follow-up-action="follow-up-sent" data-task-id="' + task.id + '" data-existing-note="' + taskComment + '">Follow-up sent</button>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="follow-up-sent" data-task-id="' + task.id + '">Follow-up sent</button>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="resolve-done" data-task-id="' + task.id + '">Resolve done</button>' +
       '</div>';
   }
 
-  function recordResponseReceived(taskId, btn) {
+  function actionNote(container, taskId) {
+    var input = container.querySelector('.follow-up-note[data-follow-up-note-task="' + taskId + '"]');
+    return input ? input.value.trim() : '';
+  }
+
+  function actionChannel(container, taskId) {
+    var input = container.querySelector('.follow-up-channel[data-follow-up-channel-task="' + taskId + '"]');
+    return input ? input.value.trim() : '';
+  }
+
+  function requireActionNote(container, taskId) {
+    var note = actionNote(container, taskId);
+    if (!note) {
+      showError('Add a short note before recording the follow-up action.');
+      return '';
+    }
+    return note;
+  }
+
+  function recordResponseReceived(taskId, btn, container, onDone) {
     if (!taskId) return;
+    var note = requireActionNote(container, taskId);
+    if (!note) return;
     setButtonBusy(btn, true, 'Response received', 'Saving...');
-    api.tasks.update(taskId, {
-      status: 'todo',
-      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Response received')
+    api.tasks.responseReceived(taskId, {
+      note: note,
+      channel: actionChannel(container, taskId)
     }).then(function () {
       showSuccess('Task moved back to todo.');
       refreshBellBadge();
-      loadDashboardTasks();
+      if (onDone) onDone();
     }).catch(function (err) {
       showError('Failed to update task: ' + err.message);
       setButtonBusy(btn, false, 'Response received');
     });
   }
 
-  function recordFollowUpSent(taskId, btn, container) {
+  function recordFollowUpSent(taskId, btn, container, onDone) {
     if (!taskId) return;
     var input = container.querySelector('.follow-up-next-date[data-task-id="' + taskId + '"]');
     var nextDate = input ? input.value : '';
+    var note = requireActionNote(container, taskId);
+    var channel = actionChannel(container, taskId);
+    if (!note) return;
+    if (!channel) {
+      showError('Choose a channel before recording follow-up.');
+      return;
+    }
     if (!nextDate) {
       showError('Choose the next follow-up date.');
       return;
     }
     setButtonBusy(btn, true, 'Follow-up sent', 'Saving...');
-    api.tasks.update(taskId, {
-      status: 'waiting',
-      followUpAt: nextDate,
-      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Follow-up sent; next follow-up ' + nextDate)
+    api.tasks.followUpSent(taskId, {
+      channel: channel,
+      note: note,
+      nextFollowUpAt: nextDate
     }).then(function () {
       showSuccess('Follow-up recorded.');
       refreshBellBadge();
-      loadDashboardTasks();
+      if (onDone) onDone();
     }).catch(function (err) {
       showError('Failed to record follow-up: ' + err.message);
       setButtonBusy(btn, false, 'Follow-up sent');
+    });
+  }
+
+  function resolveWaitingDone(taskId, btn, container, onDone) {
+    if (!taskId) return;
+    var note = requireActionNote(container, taskId);
+    if (!note) return;
+    setButtonBusy(btn, true, 'Resolve done', 'Saving...');
+    api.tasks.resolveDone(taskId, {
+      note: note,
+      channel: actionChannel(container, taskId)
+    }).then(function () {
+      showSuccess('Waiting task resolved and completed.');
+      refreshBellBadge();
+      if (onDone) onDone();
+    }).catch(function (err) {
+      showError('Failed to resolve task: ' + err.message);
+      setButtonBusy(btn, false, 'Resolve done');
     });
   }
 
@@ -2636,8 +2753,9 @@
 
         var checkboxDisabled = '';
         var missingProofTitle = taskMissingProofTitle(t, [], bundle);
-        if (missingProofTitle) {
-          checkboxDisabled = ' disabled title="' + escapeHtml(missingProofTitle) + '"';
+        var waitingBlockTitle = waitingCompletionBlockTitle(t);
+        if (waitingBlockTitle || missingProofTitle) {
+          checkboxDisabled = ' disabled title="' + escapeHtml(waitingBlockTitle || missingProofTitle) + '"';
         }
 
         // Bundle badge
@@ -2717,7 +2835,7 @@
           '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
           '<td class="task-description editable" data-label="Description" data-field="description" data-task-id="' + t.id + '">' + renderMarkdownLinks(t.description) + '</td>' +
           '<td data-label="Bundle">' + bundleBadge + '</td>' +
-          '<td data-label="Info">' + instructionsHtml + assistantHtml + '</td>' +
+          '<td data-label="Info">' + instructionsHtml + assistantHtml + renderTaskHistory(t, true) + '</td>' +
           '<td data-label="Assignee">' + assigneeHtml + '</td>' +
           '<td data-label="Required Link">' + requiredLinkHtml + '</td>' +
           '</tr>';
@@ -3757,7 +3875,8 @@
       var hasRequiredLink = !!t.requiredLinkName;
       var taskFiles = filesByTask[t.id] || [];
       var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
-      var checkboxDisabled = !!missingProofTitle;
+      var waitingBlockTitle = waitingCompletionBlockTitle(t);
+      var checkboxDisabled = !!(waitingBlockTitle || missingProofTitle);
       // A task is a milestone if it has stageOnComplete set
       var isMilestone = !!t.stageOnComplete;
 
@@ -3779,7 +3898,7 @@
       checkbox.className = 'task-status-checkbox';
       checkbox.checked = isDone;
       checkbox.disabled = checkboxDisabled;
-      if (missingProofTitle) checkbox.title = missingProofTitle;
+      if (waitingBlockTitle || missingProofTitle) checkbox.title = waitingBlockTitle || missingProofTitle;
       checkbox.setAttribute('data-task-checkbox', t.id);
       checkbox.addEventListener('change', function () {
         var newStatus = checkbox.checked ? 'done' : 'todo';
@@ -3835,6 +3954,7 @@
 
       body.insertAdjacentHTML('beforeend', renderInstructionContext(t));
       body.insertAdjacentHTML('beforeend', renderTaskCompletionEvidence(t));
+      body.insertAdjacentHTML('beforeend', renderTaskHistory(t, false));
 
       // Required link input inline under description
       if (hasRequiredLink) {
@@ -3987,6 +4107,7 @@
         waitForm.className = 'waiting-form';
         waitForm.innerHTML =
           '<input type="text" class="waiting-for-input" data-waiting-for-task="' + escapeHtml(t.id) + '" placeholder="Waiting for" />' +
+          '<select class="waiting-channel-input" data-waiting-channel-task="' + escapeHtml(t.id) + '">' + renderChannelOptions('email') + '</select>' +
           '<input type="date" class="waiting-followup-input" data-waiting-followup-task="' + escapeHtml(t.id) + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" />' +
           '<input type="text" class="waiting-note-input" data-waiting-note-task="' + escapeHtml(t.id) + '" placeholder="Note" />' +
           '<button type="button" class="task-action-btn" data-mark-waiting-task="' + escapeHtml(t.id) + '">Mark waiting</button>';
@@ -4113,20 +4234,22 @@
       btn.addEventListener('click', function () {
         var taskId = btn.getAttribute('data-mark-waiting-task');
         var waitingFor = (container.querySelector('[data-waiting-for-task="' + taskId + '"]') || {}).value || '';
+        var channel = (container.querySelector('[data-waiting-channel-task="' + taskId + '"]') || {}).value || '';
         var followUpAt = (container.querySelector('[data-waiting-followup-task="' + taskId + '"]') || {}).value || '';
         var note = (container.querySelector('[data-waiting-note-task="' + taskId + '"]') || {}).value || '';
         waitingFor = waitingFor.trim();
+        channel = channel.trim();
         note = note.trim();
-        if (!waitingFor || !followUpAt || !note) {
-          showError('Waiting tasks need who, follow-up date, and a note.');
+        if (!waitingFor || !channel || !followUpAt || !note) {
+          showError('Waiting tasks need who, channel, follow-up date, and a note.');
           return;
         }
         setButtonBusy(btn, true, 'Mark waiting', 'Saving...');
-        api.tasks.update(taskId, {
-          status: 'waiting',
+        api.tasks.markWaiting(taskId, {
           waitingFor: waitingFor,
+          channel: channel,
           followUpAt: followUpAt,
-          comment: appendTaskEventComment('', 'Waiting for ' + waitingFor + ': ' + note)
+          note: note
         }).then(function () {
           showSuccess('Task marked waiting.');
           refreshBellBadge();
@@ -4143,9 +4266,11 @@
         var action = btn.getAttribute('data-follow-up-action');
         var taskId = btn.getAttribute('data-task-id');
         if (action === 'response-received') {
-          recordResponseReceivedFromWorkflow(taskId, btn, bundleId);
+          recordResponseReceived(taskId, btn, container, function () { loadBundleDetail(bundleId); });
         } else if (action === 'follow-up-sent') {
-          recordFollowUpSentFromWorkflow(taskId, btn, container, bundleId);
+          recordFollowUpSent(taskId, btn, container, function () { loadBundleDetail(bundleId); });
+        } else if (action === 'resolve-done') {
+          resolveWaitingDone(taskId, btn, container, function () { loadBundleDetail(bundleId); });
         }
       });
     });
