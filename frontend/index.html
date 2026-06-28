@@ -27,21 +27,33 @@
           <div class="workspace-mark" aria-hidden="true">D</div>
           <div class="workspace-title">
             <h1>DataOps</h1>
-            <p>Operations docs and tasks</p>
+            <p>Daily operations workspace</p>
           </div>
           <button id="sidebar-collapse-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Hide sidebar" title="Hide sidebar">Hide</button>
         </header>
 
-        <button id="operations-home-button" class="new-page-button operations-home-button" type="button">Operations home</button>
-        <button id="new-document-button" class="new-page-button" type="button">+ New page</button>
+        <nav class="workspace-nav" aria-label="DataOps workspace">
+          <div class="section-label">Daily work</div>
+          <button id="operations-home-button" class="workspace-nav-button is-active" type="button" data-workspace-view="home">Operations Home</button>
+          <button id="work-queue-button" class="workspace-nav-button" type="button" data-workspace-view="queue">Work Queue</button>
+          <button id="workflows-button" class="workspace-nav-button" type="button" data-workspace-view="workflows">Workflows</button>
+          <button id="templates-recurring-button" class="workspace-nav-button" type="button" data-workspace-view="templates">Templates / Recurring</button>
+          <button id="assistants-button" class="workspace-nav-button" type="button" data-workspace-view="assistants">Assistants</button>
+          <button id="artifacts-button" class="workspace-nav-button" type="button" data-workspace-view="artifacts">Artifacts</button>
+          <button id="processes-button" class="workspace-nav-button" type="button" data-workspace-view="processes">Processes / Docs</button>
+          <button id="search-docs-button" class="workspace-nav-button" type="button" data-workspace-view="search">Search / Docs-only</button>
+          <button id="admin-button" class="workspace-nav-button" type="button" data-workspace-view="admin">Admin</button>
+        </nav>
+
+        <button id="new-document-button" class="new-page-button admin-create-button" type="button">+ New process doc</button>
 
         <form id="search-form" class="search-form">
-          <input id="search-input" type="search" autocomplete="off" placeholder="Search docs">
+          <input id="search-input" type="search" autocomplete="off" placeholder="Search process docs">
         </form>
 
         <details id="filters-section" class="sidebar-details filters-section">
           <summary>
-            <span>Filters</span>
+            <span>Process filters</span>
             <span id="filter-count" class="filter-count" hidden></span>
           </summary>
           <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" hidden>Filters</button>
@@ -78,7 +90,7 @@
 
         <section class="tree-section" aria-label="Document tree">
           <div class="section-label tree-label-row">
-            <span>Pages</span>
+            <span>Processes</span>
           </div>
           <div id="tree-skeleton" class="tree-skeleton">
             <div class="tree-skeleton-row"></div>
@@ -147,7 +159,7 @@
             <button id="sidebar-expand-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Show sidebar" title="Show sidebar" hidden>Show</button>
             <button id="back-button" class="quiet-button" type="button">← All docs</button>
             <span id="breadcrumb">All documents</span>
-            <strong id="toolbar-title">Documents</strong>
+            <strong id="toolbar-title">Operations Home</strong>
           </div>
           <div class="toolbar-actions">
             <span id="save-state" class="save-state"></span>
@@ -189,6 +201,7 @@
         </section>
 
         <section id="editor-view" class="view editor-view" data-mode="rendered">
+          <div id="doc-context-return" class="doc-context-return" hidden></div>
           <textarea id="document-title" class="document-title" rows="1" disabled aria-label="Document title"></textarea>
           <div id="document-path" class="document-path">No document selected</div>
           <textarea id="editor" class="markdown-editor" spellcheck="true" disabled placeholder="Open a document from the sidebar or create a new page."></textarea>
