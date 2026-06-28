@@ -113,23 +113,41 @@ describe('Telegram integration', () => {
       assert.strictEqual(task!.source, 'telegram');
     });
 
-    it('/start command returns instructions and does not create a task', async () => {
-      const event = {
-        headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
-        body: JSON.stringify({
-          message: {
-            message_id: 3,
-            chat: { id: 12345 },
-            text: '/start'
-          }
-        })
-      };
+    it('/start command returns DataOps intake instructions and does not create a task', async () => {
+      const originalFetch = globalThis.fetch;
+      const replies: Array<{ chat_id: number; text: string }> = [];
+      process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        replies.push(JSON.parse(String(init?.body || '{}')));
+        return new Response('{}', { status: 200 });
+      }) as typeof fetch;
 
-      const res = await handleTelegramWebhook(event as any);
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.ok, true);
-      assert.strictEqual(body.taskId, undefined);
+      try {
+        const event = {
+          headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+          body: JSON.stringify({
+            message: {
+              message_id: 3,
+              chat: { id: 12345 },
+              text: '/start'
+            }
+          })
+        };
+
+        const res = await handleTelegramWebhook(event as any);
+        assert.strictEqual(res.statusCode, 200);
+        const body = JSON.parse(res.body);
+        assert.strictEqual(body.ok, true);
+        assert.strictEqual(body.taskId, undefined);
+        assert.strictEqual(replies.length, 1);
+        assert.strictEqual(replies[0].chat_id, 12345);
+        assert.ok(replies[0].text.includes('DataOps operations intake'));
+        assert.ok(replies[0].text.includes('create an operations task'));
+        assert.ok(!replies[0].text.includes('DataTasks Bot'));
+      } finally {
+        globalThis.fetch = originalFetch;
+        delete process.env.TELEGRAM_BOT_TOKEN;
+      }
     });
 
     it('returns 401 when secret token is missing', async () => {

@@ -502,6 +502,8 @@ def handle_git_compat(event: dict[str, Any], path: str, method: str) -> dict[str
 
 
 def is_internal_refresh_event(event: dict[str, Any]) -> bool:
+    # Keep the old source name as a read-only event-source compatibility alias
+    # while GitHub Actions emits dataops.github-actions as the preferred source.
     return event.get("source") in {"dataops.github-actions", "dtc-operations.github-actions"}
 
 

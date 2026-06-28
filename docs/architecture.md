@@ -152,19 +152,19 @@ flowchart LR
 
 Current workflows:
 
-- `.github/workflows/validate-docs-content.yml`
+- `.github/workflows/validate-dataops-content.yml`
   - Runs for `content/**` changes.
   - Builds the search index from `content/`.
   - Smoke-tests search against the generated index.
   - On pushes with changed content files, assumes the AWS OIDC deploy role and
     directly invokes the deployed Lambda refresh endpoint.
   - Does not deploy Lambda code.
-- `.github/workflows/deploy-full-docs-lambda.yml`
+- `.github/workflows/deploy-dataops-v1.yml`
   - Runs for frontend, Lambda, infra, package, deploy script, and docs-app test
     changes.
   - Runs tests and deploys the full app Lambda stack if checks pass.
-- `.github/workflows/deploy-api-lambda.yml`
-  - Legacy or separate API Lambda deploy path.
+- `lambda-functions/template.api.yaml`
+  - Legacy or separate API Lambda deploy path retained for compatibility.
 
 ## Credentials and CloudFormation
 
@@ -173,8 +173,8 @@ long-lived AWS keys in GitHub.
 
 ```mermaid
 flowchart TB
-  CFN[template.github-actions.yaml] --> OIDCProvider[GitHub OIDC provider]
-  CFN --> Role[dtc-operations-github-actions-deploy role]
+  CFN[template.github-actions-dataops.yaml] --> OIDCProvider[GitHub OIDC provider]
+  CFN --> Role[dataops-v1 GitHub Actions deploy role]
   GitHubActions[GitHub Actions] -->|OIDC token| Role
   Role -->|limited deploy permissions| SAM[SAM deploy]
 ```
@@ -190,8 +190,8 @@ Runtime secrets are also managed through CloudFormation:
 
 The main runtime secrets are:
 
-- `dtc-operations/full-app/github-token`
-- `dtc-operations/full-app/basic-auth-password`
+- `dataops-v1/full-app/github-token`
+- `dataops-v1/full-app/basic-auth-password`
 
 ## Why Not EFS Right Now
 

@@ -8,8 +8,8 @@
 
 const { test: base, expect } = require('@playwright/test');
 
-const TOKEN_KEY = 'datatasks_token';
-const USER_KEY = 'datatasks_user';
+const TOKEN_KEY = 'dataops_token';
+const USER_KEY = 'dataops_user';
 const GRACE_EMAIL = 'grace@datatalks.club';
 const GRACE_PASSWORD = '111';
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';

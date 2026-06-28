@@ -108,8 +108,8 @@ module.exports = async function globalSetup() {
         localStorage.setItem(args.tokenKey, args.token);
         localStorage.setItem(args.userKey, JSON.stringify(args.user));
       }, {
-        tokenKey: 'datatasks_token',
-        userKey: 'datatasks_user',
+        tokenKey: 'dataops_token',
+        userKey: 'dataops_user',
         token,
         user,
       });
