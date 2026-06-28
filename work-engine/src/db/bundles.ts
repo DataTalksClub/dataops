@@ -23,7 +23,7 @@ function cleanItem(item: Record<string, unknown> | undefined): Bundle | null {
  * Create a new bundle. Generates a UUID, sets createdAt/updatedAt.
  */
 async function createBundle(client: DynamoDBDocumentClient, data: Record<string, unknown>): Promise<Bundle> {
-  const id = crypto.randomUUID();
+  const id = typeof data.id === 'string' && data.id.trim().length > 0 ? data.id : crypto.randomUUID();
   const now = new Date().toISOString();
 
   const item = {

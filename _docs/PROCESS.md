@@ -443,6 +443,20 @@ For process-doc and content changes:
   links/images, task-template docs, and work-engine seed document IDs. Anchor
   validation is currently deferred; the target file or document ID must still
   exist.
+- Generate the process-quality report when workflow-template, registry,
+  validation, proof/closure, or process-quality dashboard behavior changes:
+
+  ```bash
+  uv run --project lambda-functions --extra search python -m lambda_functions.process_quality \
+    --repo-root . \
+    --content-root content \
+    --output .tmp/process-quality-report.json
+  ```
+
+  This report must stay deterministic and workflow-first: findings should
+  describe runnable workflow/task risk, proof or validation gaps, broken
+  process-doc references, and maintainer remediation steps rather than vanity
+  documentation analytics.
 - Inspect process-doc changes against the source process when an issue names a
   source process, such as `../ai-shipping-labs/_docs/PROCESS.md`, and confirm
   lifecycle controls are preserved at equal strength.
