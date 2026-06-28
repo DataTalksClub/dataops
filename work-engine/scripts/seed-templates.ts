@@ -3,6 +3,16 @@ import { createTables } from '../src/db/setup';
 import { listTemplates, createTemplate, deleteTemplate } from '../src/db/templates';
 import type { ProofRequirement, TaskDefinition, Template, WorkflowPhase } from '../src/types';
 
+function shouldUseLocalDynamo(): boolean {
+  return (
+    process.env.IS_LOCAL === 'true' ||
+    process.env.IS_LOCAL === '1' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.NODE_ENV === 'local' ||
+    Boolean(process.env.DYNAMODB_ENDPOINT)
+  );
+}
+
 // User IDs from seed-users.ts
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
@@ -3041,12 +3051,15 @@ const DEFAULT_TEMPLATES = [
 ];
 
 async function seed(force = false): Promise<void> {
-  // Start local DynamoDB and get client
-  const port = await startLocal();
+  const useLocalDynamo = shouldUseLocalDynamo();
+  const port = useLocalDynamo && !process.env.DYNAMODB_ENDPOINT
+    ? await startLocal()
+    : undefined;
   const client = await getClient(port);
 
-  // Create tables if they don't exist
-  await createTables(client);
+  if (useLocalDynamo) {
+    await createTables(client);
+  }
 
   // Check if the specific seeded templates already exist (by Grace's defaultAssigneeId and known types)
   const existing = await listTemplates(client);

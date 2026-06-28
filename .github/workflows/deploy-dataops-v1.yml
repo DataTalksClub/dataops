@@ -199,6 +199,10 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Install Node workspace dependencies
+        run: npm ci
+        working-directory: ${{ github.workspace }}
+
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
         with:
@@ -224,6 +228,20 @@ jobs:
               "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
               "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"
+
+      - name: Seed runtime users and workflow templates
+        working-directory: ${{ github.workspace }}/work-engine
+        run: |
+          export DATAOPS_USERS_TABLE="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='DataOpsUsersTableName'].OutputValue" \
+            --output text)"
+          export DATAOPS_TEMPLATES_TABLE="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='DataOpsTemplatesTableName'].OutputValue" \
+            --output text)"
+          npm exec -- tsx scripts/seed-users.ts
+          npm exec -- tsx scripts/seed-templates.ts
 
       - name: Smoke test deployed docs full app
         run: |
@@ -255,16 +273,61 @@ jobs:
               raise AssertionError("Protected root did not redirect to /login")
           PY
 
+      - name: Smoke test deployed workflow templates
+        run: |
+          function_name="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='WorkEngineFunctionName'].OutputValue" \
+            --output text)"
+          portal_secret_name="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='WorkEnginePortalSecretName'].OutputValue" \
+            --output text)"
+          portal_secret="$(aws secretsmanager get-secret-value \
+            --secret-id "$portal_secret_name" \
+            --query SecretString \
+            --output text)"
+          python - "$portal_secret" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          Path("/tmp/work-engine-templates-payload.json").write_text(json.dumps({
+              "httpMethod": "GET",
+              "path": "/api/templates",
+              "headers": {
+                  "x-portal-auth": "true",
+                  "x-portal-secret": sys.argv[1],
+              },
+          }))
+          PY
+          aws lambda invoke \
+            --function-name "$function_name" \
+            --payload fileb:///tmp/work-engine-templates-payload.json \
+            /tmp/work-engine-templates.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          response = json.loads(Path("/tmp/work-engine-templates.json").read_text())
+          assert response["statusCode"] == 200, response
+          payload = json.loads(response["body"])
+          templates = payload.get("templates") or []
+          assert len(templates) >= 11, payload
+          assert any(template.get("type") == "podcast" for template in templates), payload
+          assert any(template.get("type") == "newsletter" for template in templates), payload
+          PY
+
       - name: Smoke test private work engine Lambda
         run: |
           function_name="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
             --query "Stacks[0].Outputs[?OutputKey=='WorkEngineFunctionName'].OutputValue" \
             --output text)"
+          printf '%s' '{"httpMethod":"GET","path":"/api/health"}' > /tmp/work-engine-health-payload.json
           aws lambda invoke \
             --function-name "$function_name" \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"httpMethod":"GET","path":"/api/health"}' \
+            --payload fileb:///tmp/work-engine-health-payload.json \
             /tmp/work-engine-health.json
           python - <<'PY'
           import json
