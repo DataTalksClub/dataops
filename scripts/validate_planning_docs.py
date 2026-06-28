@@ -43,6 +43,7 @@ REQUIRED_WORKFLOW_PATHS = [
     "tests/docs_app/**",
     "lambda-functions/src/lambda_functions/doc_registry.py",
     "lambda-functions/src/lambda_functions/build_search_index.py",
+    "lambda-functions/src/lambda_functions/validate_knowledge_repo.py",
 ]
 TASK_TEMPLATE_SECTIONS = [
     "summary",
