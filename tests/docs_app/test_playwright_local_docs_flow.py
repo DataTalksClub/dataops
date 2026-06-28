@@ -114,6 +114,17 @@ def _assert_mobile_drawer_open(page) -> None:
     )
 
 
+def _assert_mobile_drawer_closed(page) -> None:
+    page.wait_for_function(
+        """() => {
+            const sidebar = document.querySelector('#sidebar');
+            if (!sidebar) return false;
+            const rect = sidebar.getBoundingClientRect();
+            return !document.body.classList.contains('sidebar-open') && rect.right <= 0.5;
+        }"""
+    )
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -570,9 +581,11 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert page.locator("#library-title").inner_text() == "Operations Home"
                     page.locator(".operations-home").wait_for(state="visible")
 
-                    for label in ["Today", "Overdue", "Waiting / Follow-Ups", "Active Workflows"]:
+                    for label in ["Overdue", "Follow-Ups Due", "Today", "Waiting", "At-Risk Workflows"]:
                         assert page.locator(".ops-lanes").get_by_text(label).first.is_visible()
-                    for label in ["+ Task", "+ Workflow", "+ Recurring", "Recurring Operations", "Workflow Templates"]:
+                    for label in ["Operations Home", "Work Queue", "Workflows", "Templates / Recurring", "Assistants", "Artifacts", "Processes / Docs", "Search / Docs-only", "Admin"]:
+                        assert page.locator("#sidebar").get_by_text(label).first.is_visible()
+                    for label in ["New task", "Start workflow", "New recurring", "Recurring Operations", "Workflow Templates"]:
                         assert page.get_by_text(label).first.is_visible()
                     assert page.get_by_text("Incoming And Quality Signals").is_visible()
                     assert page.get_by_text("Assistant Jobs").is_visible()
@@ -581,6 +594,18 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert page.locator(".ops-lane-overdue .ops-next-action", has_text="Add Luma").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-operations-home-desktop.png"), full_page=True)
 
+                    page.locator("#work-queue-button").click()
+                    page.locator("#library-title", has_text="Work Queue").wait_for(state="visible")
+                    assert page.get_by_role("heading", name="Overdue").is_visible()
+                    assert page.get_by_role("heading", name="Follow-ups due").is_visible()
+                    assert page.get_by_role("heading", name="Missing proof").is_visible()
+                    assert page.locator(".ops-queue-row", has_text="Add Luma event page").first.is_visible()
+                    assert page.locator(".ops-queue-row", has_text="Missing proof: Luma").first.is_visible()
+                    assert page.locator(".ops-queue-row", has_text="Workflow-linked").first.is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-work-queue-desktop.png"), full_page=True)
+
+                    page.locator("#operations-home-button").click()
+                    page.locator("#library-title", has_text="Operations Home").wait_for(state="visible")
                     page.locator(".ops-lane-overdue .ops-lane-item", has_text="Add Luma event page").click()
                     page.locator("#task-panel-title").wait_for(state="visible")
                     assert page.locator("#task-panel-title").inner_text() == "Add Luma event page"
@@ -589,7 +614,8 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert mark_done.is_disabled()
                     assert "Fill in Luma" in (mark_done.get_attribute("title") or "")
                     assert page.locator("#task-panel-body").get_by_text("Process doc").is_visible()
-                    assert page.locator("#task-panel-body .task-instruction-doc-link").inner_text() == "Newsletter Task Template"
+                    assert page.locator("#task-panel-body .task-instruction-doc-link", has_text="Newsletter Task Template").inner_text() == "Newsletter Task Template"
+                    assert page.locator("#task-panel-body").get_by_text("Workflow bundle-ops-smoke").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-task-panel-missing-proof.png"), full_page=True)
                     page.locator("#task-panel-close").click()
                     assert page.locator("#task-panel").is_hidden()
@@ -598,9 +624,14 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.locator(".ops-lane-bundles .ops-lane-item", has_text="Newsletter smoke workflow").click()
                     page.locator("#bundle-panel-title", has_text="Newsletter smoke workflow").wait_for(state="visible")
                     assert page.locator("#bundle-panel-title").inner_text() == "Newsletter smoke workflow"
-                    assert page.locator("#bundle-panel-body").get_by_text("Links & Artifacts").is_visible()
+                    assert page.locator("#bundle-panel-body").get_by_text("Process references").is_visible()
+                    assert page.locator("#bundle-panel-body").get_by_text("Workflow tasks").is_visible()
+                    assert page.locator("#bundle-panel-body").get_by_text("Active").is_visible()
+                    assert page.locator("#bundle-panel-body").get_by_text("Waiting / follow-up").is_visible()
+                    assert page.locator("#bundle-panel-body").get_by_text("Done / history").is_visible()
                     assert page.locator("#bundle-panel-body").get_by_text("Newsletter draft output").is_visible()
                     assert page.locator("#bundle-panel-body").get_by_text("artifact review missing").is_visible()
+                    assert page.locator("#bundle-panel-body").get_by_text("Assistant jobs not connected").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-workflow-panel-context.png"), full_page=True)
                     page.locator("#bundle-panel-close").click()
                     assert page.locator("#bundle-panel").is_hidden()
@@ -614,10 +645,25 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     artifact_done = page.locator("#task-panel-body .task-action-btn", has_text="Mark done").first
                     assert artifact_done.is_disabled()
                     assert "Approve an attached artifact" in (artifact_done.get_attribute("title") or "")
-                    page.locator("#task-panel-body .task-instruction-doc-link").click()
+                    page.locator("#task-panel-body .task-instruction-doc-link", has_text="Newsletter Task Template").click()
                     page.locator("#rendered-view").get_by_text("Use this process doc when preparing").wait_for()
                     assert page.locator("#document-path").inner_text() == OPS_PROCESS_DOC_PATH
+                    assert page.locator("#doc-context-return").get_by_text("Opened from task: Approve newsletter draft artifact").is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-process-context-desktop.png"), full_page=True)
+                    page.locator("#doc-context-return").get_by_text("Back to task").click()
+                    page.locator("#task-panel-title", has_text="Approve newsletter draft artifact").wait_for(state="visible")
+                    page.locator("#task-panel-close").click()
                     assert page.locator("#sidebar").is_visible()
+
+                    page.locator("#assistants-button").click()
+                    page.locator("#library-title", has_text="Assistants").wait_for(state="visible")
+                    assert page.locator(".ops-state-list").get_by_text("Assistant jobs not connected").is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-assistants-empty-desktop.png"), full_page=True)
+
+                    page.locator("#artifacts-button").click()
+                    page.locator("#library-title", has_text="Artifacts").wait_for(state="visible")
+                    assert page.get_by_text("No artifacts registered").is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-artifacts-empty-desktop.png"), full_page=True)
 
                     page.locator("#operations-home-button").click()
                     page.locator("#library-title").wait_for(state="visible")
@@ -636,6 +682,20 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.keyboard.press("Shift+Tab")
                     assert page.evaluate("document.activeElement && document.querySelector('#sidebar').contains(document.activeElement)")
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-workspace-drawer-mobile.png"))
+                    drawer_labels = page.locator("#sidebar .workspace-nav-button").evaluate_all(
+                        "buttons => buttons.map((button) => button.textContent.trim())"
+                    )
+                    assert drawer_labels[:9] == [
+                        "Operations Home",
+                        "Work Queue",
+                        "Workflows",
+                        "Templates / Recurring",
+                        "Assistants",
+                        "Artifacts",
+                        "Processes / Docs",
+                        "Search / Docs-only",
+                        "Admin",
+                    ]
                     page.keyboard.press("Escape")
                     assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
                     assert page.locator("#mobile-menu-button").get_attribute("aria-expanded") == "false"
@@ -655,6 +715,21 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-task-panel-mobile.png"))
                     page.locator("#task-panel-close").click()
                     assert page.locator("#task-panel").is_hidden()
+
+                    page.locator("#mobile-menu-button").click()
+                    _assert_mobile_drawer_open(page)
+                    page.locator("#assistants-button").click()
+                    page.locator("#library-title", has_text="Assistants").wait_for(state="visible")
+                    _assert_mobile_drawer_closed(page)
+                    assert page.locator(".ops-state-list").get_by_text("Assistant jobs not connected").is_visible()
+                    assert page.evaluate("document.body.scrollWidth <= document.documentElement.clientWidth + 1")
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-assistants-empty-mobile.png"), full_page=True)
+
+                    page.locator("#mobile-menu-button").click()
+                    _assert_mobile_drawer_open(page)
+                    page.locator("#operations-home-button").click()
+                    page.locator("#library-title", has_text="Operations Home").wait_for(state="visible")
+                    _assert_mobile_operations_home_settled(page)
 
                     page.locator("#mobile-menu-button").click()
                     _assert_mobile_drawer_open(page)

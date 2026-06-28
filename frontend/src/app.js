@@ -101,6 +101,8 @@ const newDocPath = document.querySelector("#new-doc-path");
 const newDocTitle = document.querySelector("#new-doc-title");
 const newDocType = document.querySelector("#new-doc-type");
 const newDocSummary = document.querySelector("#new-doc-summary");
+const workspaceNavButtons = [...document.querySelectorAll("[data-workspace-view]")];
+const docContextReturn = document.querySelector("#doc-context-return");
 
 const taskPanel = document.querySelector("#task-panel");
 const taskPanelTitle = document.querySelector("#task-panel-title");
@@ -151,6 +153,10 @@ let hasDraft = false;
 let searchController = null;
 let operationsWorkSnapshot = emptyOperationsWorkSnapshot();
 let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
+let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
+let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
+let activeWorkspaceView = "home";
+let docReturnContext = null;
 const DRAFT_PREFIX = "dtc-doc-draft:";
 const customSelects = [];
 const LIST_LIMIT = 120;
@@ -172,7 +178,9 @@ gitCommitCancel.addEventListener("click", closeCommitForm);
 gitCommitBackdrop.addEventListener("click", closeCommitForm);
 document.querySelector("[data-action='cancel-commit']").addEventListener("click", closeCommitForm);
 gitCommitForm.addEventListener("submit", submitCommitForm);
-operationsHomeButton.addEventListener("click", showOperationsHome);
+for (const button of workspaceNavButtons) {
+  button.addEventListener("click", () => showWorkspaceSurface(button.dataset.workspaceView || "home"));
+}
 newDocumentButton.addEventListener("click", showCreate);
 mobileNewButton.addEventListener("click", showCreate);
 backButton.addEventListener("click", showLibrary);
@@ -389,6 +397,8 @@ async function loadDocuments() {
     renderPinned();
     refreshOperationsWorkSnapshot({ rerender: true });
     refreshOperationsRecurringSnapshot({ rerender: true });
+    refreshOperationsArtifactSnapshot({ rerender: true });
+    refreshOperationsAssistantSnapshot({ rerender: true });
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -591,10 +601,10 @@ async function refreshDocuments() {
     renderTree(localFiltered);
 
     if (!selectedFolder) {
-      // No folder or search: show the daily operations home and skip
+      // No folder or search: show the daily operations workspace and skip
       // rendering the (potentially huge) document list.
       visibleDocuments = [];
-      renderOperationsHome(localFiltered);
+      renderOperationsWorkspace(localFiltered);
       syncLibraryPageTitle();
       return;
     }
@@ -648,6 +658,15 @@ function restoreFiltersExpanded() {
   setFiltersExpanded(expanded || activeFilterCount() > 0);
 }
 
+function renderOperationsWorkspace(documents) {
+  syncWorkspaceNav();
+  if (activeWorkspaceView === "home") {
+    renderOperationsHome(documents);
+    return;
+  }
+  renderOperationsSurface(documents, activeWorkspaceView);
+}
+
 function renderOperationsHome(documents) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
@@ -671,10 +690,12 @@ function renderOperationsHome(documents) {
   summary.className = "ops-summary";
   summary.setAttribute("aria-label", "Operations summary");
   for (const stat of [
-    ["Today", model.lanes.find((lane) => lane.id === "today")?.items.length || 0],
     ["Overdue", model.lanes.find((lane) => lane.id === "overdue")?.items.length || 0],
+    ["Follow-ups due", model.lanes.find((lane) => lane.id === "followups")?.items.length || 0],
+    ["Today", model.lanes.find((lane) => lane.id === "today")?.items.length || 0],
     ["Waiting", model.lanes.find((lane) => lane.id === "waiting")?.items.length || 0],
-    ["Workflows", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
+    ["Missing proof", model.stats.missingProofTasks],
+    ["At-risk workflows", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
   ]) {
     const box = document.createElement("div");
     box.className = "ops-stat";
@@ -696,22 +717,20 @@ function renderOperationsHome(documents) {
   const quickTask = document.createElement("button");
   quickTask.type = "button";
   quickTask.className = "ops-quick-btn";
-  quickTask.textContent = "+ Task";
+  quickTask.textContent = "New task";
   quickTask.addEventListener("click", () => openQuickTaskForm());
   const quickWorkflow = document.createElement("button");
   quickWorkflow.type = "button";
   quickWorkflow.className = "ops-quick-btn";
-  quickWorkflow.textContent = "+ Workflow";
+  quickWorkflow.textContent = "Start workflow";
   quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
   const quickRecurring = document.createElement("button");
   quickRecurring.type = "button";
   quickRecurring.className = "ops-quick-btn";
-  quickRecurring.textContent = "+ Recurring";
+  quickRecurring.textContent = "New recurring";
   quickRecurring.addEventListener("click", () => openQuickRecurringForm());
   quickBar.append(quickTask, quickWorkflow, quickRecurring);
   wrap.append(quickBar);
-
-  wrap.append(renderRecurringOperationsSection(model.recurring));
 
   const lanes = document.createElement("section");
   lanes.className = "ops-lanes";
@@ -720,6 +739,8 @@ function renderOperationsHome(documents) {
   wrap.append(lanes);
 
   wrap.append(renderOperationsFutureSections(model.futureSections));
+  wrap.append(renderOperationalSurfaceStates(model));
+  wrap.append(renderRecurringOperationsSection(model.recurring));
 
   const templates = document.createElement("section");
   templates.className = "ops-section";
@@ -762,6 +783,360 @@ function renderOperationsHome(documents) {
   documentList.replaceChildren(wrap);
 }
 
+function renderOperationsSurface(documents, view) {
+  const model = buildOperationsHomeModel(documents, {
+    draftPaths: listDraftPaths(),
+    workSnapshot: operationsWorkSnapshot,
+    recurringSnapshot: operationsRecurringSnapshot,
+  });
+  const titles = {
+    queue: "Work Queue",
+    workflows: "Workflows",
+    templates: "Templates / Recurring",
+    assistants: "Assistants",
+    artifacts: "Artifacts",
+    processes: "Processes / Docs",
+    search: "Search / Docs-only",
+    admin: "Admin",
+  };
+  const title = titles[view] || "Operations Home";
+  documentList.classList.add("is-operations-home");
+  libraryTitle.textContent = title;
+  setPageTitle(title, title);
+  clearSelectionButton.hidden = true;
+  setStatus(surfaceStatusText(view, model));
+
+  const wrap = document.createElement("div");
+  wrap.className = `operations-home ops-surface ops-surface-${view}`;
+  wrap.append(renderSurfaceHeader(title, surfaceDescription(view)));
+  const runtimeState = renderOperationsRuntimeState(model.runtime);
+  if (runtimeState && ["queue", "workflows"].includes(view)) wrap.append(runtimeState);
+
+  if (view === "queue") wrap.append(renderWorkQueueSurface(model));
+  else if (view === "workflows") wrap.append(renderWorkflowsSurface(model));
+  else if (view === "templates") wrap.append(renderTemplatesRecurringSurface(model));
+  else if (view === "assistants") wrap.append(renderAssistantsSurface());
+  else if (view === "artifacts") wrap.append(renderArtifactsSurface());
+  else if (view === "processes") wrap.append(renderProcessesSurface(documents));
+  else if (view === "search") wrap.append(renderDocsOnlySearchSurface(documents));
+  else if (view === "admin") wrap.append(renderAdminSurface(model));
+  else renderOperationsHome(documents);
+
+  documentList.replaceChildren(wrap);
+}
+
+function surfaceDescription(view) {
+  const descriptions = {
+    queue: "Inspect work across workflows by overdue, follow-up, waiting, missing proof, owner, source, and next action.",
+    workflows: "Open concrete operating runs with stage, proof, waiting, artifacts, assistants, and process context.",
+    templates: "Start known workflows and maintain recurring operation configuration below active work.",
+    assistants: "Workflow support jobs appear here only when the assistant job lifecycle is connected.",
+    artifacts: "Review proof and operational outputs linked to workflows and tasks.",
+    processes: "SOPs, templates, and references are contextual support for work.",
+    search: "Current search is docs-only until unified work/docs/artifact search ships.",
+    admin: "Maintainer tools for process docs, content publishing, diagnostics, and configuration.",
+  };
+  return descriptions[view] || "";
+}
+
+function surfaceStatusText(view, model) {
+  if (view === "queue") return `${allWorkTasks(operationsWorkSnapshot).length} known work items · ${model.stats.followUpTasks} follow-ups due · ${model.stats.missingProofTasks} missing proof.`;
+  if (view === "workflows") return `${model.stats.activeBundles} active workflows · at-risk first.`;
+  if (view === "templates") return `${model.templates.length} workflow templates · ${model.recurring.configs.length} recurring configs.`;
+  if (view === "assistants") return operationsAssistantSnapshot.loaded ? `${operationsAssistantSnapshot.jobs.length} assistant jobs.` : "Assistant jobs not connected.";
+  if (view === "artifacts") return operationsArtifactSnapshot.loaded ? `${operationsArtifactSnapshot.artifacts.length} artifacts indexed.` : "Artifact index not connected.";
+  if (view === "search") return "Docs-only search.";
+  return "Workflow-first workspace.";
+}
+
+function renderSurfaceHeader(titleText, descriptionText) {
+  const header = document.createElement("section");
+  header.className = "ops-surface-header";
+  const title = document.createElement("h3");
+  title.textContent = titleText;
+  const description = document.createElement("p");
+  description.textContent = descriptionText;
+  header.append(title, description);
+  return header;
+}
+
+function renderWorkQueueSurface(model) {
+  const today = todayIsoDate();
+  const tasks = allWorkTasks(operationsWorkSnapshot);
+  const groups = [
+    ["Overdue", tasks.filter((task) => isTaskOverdue(task, today))],
+    ["Follow-ups due", tasks.filter((task) => isFollowUpDueTask(task, today))],
+    ["Missing proof", tasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok)],
+    ["Waiting", tasks.filter((task) => isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today))],
+    ["Today", tasks.filter((task) => isTaskDueToday(task, today))],
+    ["Done / history", tasks.filter((task) => String(task.status || "").toLowerCase() === "done")],
+  ];
+
+  const section = document.createElement("section");
+  section.className = "ops-work-queue";
+  section.setAttribute("aria-label", "Work queue");
+  for (const [label, list] of groups) {
+    const group = document.createElement("article");
+    group.className = "ops-queue-group";
+    const header = document.createElement("header");
+    const title = document.createElement("h3");
+    title.textContent = label;
+    const count = document.createElement("span");
+    count.textContent = String(list.length);
+    header.append(title, count);
+    group.append(header);
+    const rows = document.createElement("div");
+    rows.className = "ops-queue-rows";
+    if (list.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "ops-empty";
+      empty.textContent = operationsWorkSnapshot.loaded ? `No ${label.toLowerCase()} work.` : "Live work data unavailable.";
+      rows.append(empty);
+    } else {
+      const visible = label === "Done / history"
+        ? list.slice().sort((a, b) => compareIsoDate(taskDate(b) || "", taskDate(a) || "")).slice(0, 12)
+        : sortWorkTasks(list, label === "Overdue" ? "overdue" : "today", today);
+      for (const task of visible) rows.append(renderWorkQueueRow(task, today));
+    }
+    group.append(rows);
+    section.append(group);
+  }
+  return section;
+}
+
+function renderWorkQueueRow(task, today) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ops-queue-row";
+  button.addEventListener("click", () => openTaskPanel(task.id));
+  const title = document.createElement("strong");
+  title.textContent = workTaskTitle(task);
+  const meta = document.createElement("div");
+  meta.className = "ops-queue-meta";
+  const status = String(task.status || "todo").toLowerCase();
+  for (const value of [
+    status,
+    task.date ? `Due ${formatTaskDateMeta(task.date, today)}` : "",
+    task.assigneeId ? `Owner ${task.assigneeId}` : "Unassigned",
+    task.bundleId ? "Workflow-linked" : "Ad hoc",
+    taskSourceLabel(task),
+    taskProofState(task).label,
+  ].filter(Boolean)) {
+    const chip = document.createElement("span");
+    chip.textContent = value;
+    meta.append(chip);
+  }
+  const summary = document.createElement("small");
+  summary.textContent = task.waitingFor
+    ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${formatTaskDateMeta(task.followUpAt, today)}` : ""}`
+    : `Next: ${taskNextActionLabel(task, today)}`;
+  button.append(title, meta, summary);
+  return button;
+}
+
+function renderWorkflowsSurface(model) {
+  const section = document.createElement("section");
+  section.className = "ops-workflows-grid";
+  section.setAttribute("aria-label", "Workflow list");
+  const bundles = operationsWorkSnapshot.activeBundles || [];
+  if (bundles.length === 0) {
+    section.append(renderHonestState("No active workflows", operationsWorkSnapshot.loaded ? "Start a workflow from Templates / Recurring when new work arrives." : "Live workflow data is unavailable from /work/api/bundles."));
+    return section;
+  }
+  const today = todayIsoDate();
+  for (const bundle of bundles) {
+    const tasks = operationsWorkSnapshot.bundleTasks[bundle.id] || [];
+    const item = operationItemFromBundle(bundle, tasks, { today });
+    section.append(renderWorkflowSurfaceCard(item));
+  }
+  return section;
+}
+
+function renderWorkflowSurfaceCard(item) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = `ops-workflow-card ops-risk-${item.risk || "low"}`;
+  card.addEventListener("click", () => openBundlePanel(item.bundleId));
+  const title = document.createElement("strong");
+  title.textContent = item.title;
+  const summary = document.createElement("span");
+  summary.textContent = item.summary || "Workflow context";
+  const meta = document.createElement("small");
+  meta.textContent = item.meta || "";
+  card.append(title, summary);
+  if (item.progress) {
+    const progress = document.createElement("div");
+    progress.className = "ops-progress";
+    const fill = document.createElement("i");
+    fill.style.width = `${item.progress.percent || 0}%`;
+    progress.append(fill);
+    card.append(progress);
+  }
+  card.append(meta);
+  return card;
+}
+
+function renderTemplatesRecurringSurface(model) {
+  const section = document.createElement("section");
+  section.className = "ops-split-surface";
+  const templates = document.createElement("div");
+  templates.className = "ops-section";
+  const templateHeader = document.createElement("div");
+  templateHeader.className = "ops-section-header";
+  const templateTitle = document.createElement("h3");
+  templateTitle.textContent = "Manual workflow templates";
+  const templateMeta = document.createElement("span");
+  templateMeta.textContent = `${model.templates.length} available`;
+  templateHeader.append(templateTitle, templateMeta);
+  templates.append(templateHeader);
+  const grid = document.createElement("div");
+  grid.className = "ops-template-grid";
+  for (const template of model.templates.filter((template) => !template.recurring)) grid.append(renderWorkflowTemplateCard(template));
+  if (!grid.children.length) grid.append(renderHonestState("No manual templates indexed", "Process docs remain available under Processes."));
+  templates.append(grid);
+  section.append(templates, renderRecurringOperationsSection(model.recurring));
+  return section;
+}
+
+function renderAssistantsSurface() {
+  const section = document.createElement("section");
+  section.className = "ops-state-list";
+  section.setAttribute("aria-label", "Assistant jobs");
+  if (!operationsAssistantSnapshot.loaded) {
+    section.append(renderHonestState("Assistant jobs not connected", "No fake queue is shown. Assistant run status, approvals, retries, logs, and workflow-linked outputs belong to #30 and #44."));
+    return section;
+  }
+  if (operationsAssistantSnapshot.jobs.length === 0) {
+    section.append(renderHonestState("No assistant jobs", "Connected assistant job API returned no queued, running, failed, review-needed, or completed jobs."));
+    return section;
+  }
+  for (const job of operationsAssistantSnapshot.jobs) section.append(renderAssistantJobRow(job));
+  return section;
+}
+
+function renderAssistantJobRow(job) {
+  const row = document.createElement("article");
+  row.className = "ops-data-row";
+  const title = document.createElement("strong");
+  title.textContent = job.title || job.name || job.id || "Assistant job";
+  const meta = document.createElement("span");
+  meta.textContent = [
+    job.status || "unknown",
+    job.bundleId ? `workflow ${job.bundleId}` : "",
+    job.taskId ? `task ${job.taskId}` : "",
+  ].filter(Boolean).join(" · ");
+  row.append(title, meta);
+  return row;
+}
+
+function renderArtifactsSurface() {
+  const section = document.createElement("section");
+  section.className = "ops-state-list";
+  section.setAttribute("aria-label", "Artifacts");
+  if (!operationsArtifactSnapshot.loaded) {
+    section.append(renderHonestState("Artifact review index not connected", "Task and workflow panels still show artifacts that are loaded in context. This surface will list cross-workflow proof/output rows when the artifact index is available."));
+    return section;
+  }
+  if (operationsArtifactSnapshot.artifacts.length === 0) {
+    section.append(renderHonestState("No artifacts registered", "There are no artifact rows to review. No generated assistant outputs or proof links are being invented."));
+    return section;
+  }
+  for (const artifact of operationsArtifactSnapshot.artifacts) section.append(renderArtifactSurfaceRow(artifact));
+  return section;
+}
+
+function renderArtifactSurfaceRow(artifact) {
+  const row = document.createElement("article");
+  row.className = "ops-data-row";
+  const title = document.createElement("strong");
+  title.textContent = artifact.title || artifact.storageUri || artifact.id || "Artifact";
+  const meta = document.createElement("span");
+  meta.textContent = [
+    artifact.status || "draft",
+    artifact.type || artifact.sourceType || "",
+    artifact.bundleId ? `workflow ${artifact.bundleId}` : "",
+    artifact.taskId ? `task ${artifact.taskId}` : "",
+    artifact.storageUri ? "storage linked" : "storage missing",
+  ].filter(Boolean).join(" · ");
+  row.append(title, meta);
+  if (artifact.storageUri) {
+    const link = document.createElement("a");
+    link.href = artifact.storageUri;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Open";
+    row.append(link);
+  }
+  return row;
+}
+
+function renderProcessesSurface(documents) {
+  const section = document.createElement("section");
+  section.className = "ops-processes-surface";
+  const note = renderHonestState("Processes support work", "Use SOPs, templates, and references from task or workflow context first. Browse unmapped process docs here when needed.");
+  section.append(note);
+  const grid = document.createElement("div");
+  grid.className = "ops-reference-grid";
+  for (const ref of buildOperationsReferenceLinks(documents)) grid.append(renderOperationsReference(ref));
+  section.append(grid);
+  return section;
+}
+
+function renderDocsOnlySearchSurface(documents) {
+  const section = document.createElement("section");
+  section.className = "ops-state-list";
+  section.append(renderHonestState("Docs-only search", "Unified task, workflow, artifact, and document search belongs to #32. The sidebar search field currently searches indexed process docs only."));
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "ops-quick-btn";
+  action.textContent = "Focus docs search";
+  action.addEventListener("click", () => {
+    searchInput.focus();
+    searchInput.select();
+  });
+  section.append(action);
+  const refs = document.createElement("div");
+  refs.className = "ops-reference-grid";
+  for (const ref of buildOperationsReferenceLinks(documents).slice(0, 4)) refs.append(renderOperationsReference(ref));
+  section.append(refs);
+  return section;
+}
+
+function renderAdminSurface(model) {
+  const section = document.createElement("section");
+  section.className = "ops-admin-grid";
+  const cards = [
+    ["New process doc", "Create SOPs, templates, references, and playbooks in the git-backed content tree.", showCreate],
+    ["Recurring config", `${model.recurring.configs.length} configs loaded. Generated tasks appear in Home and Work Queue.`, () => showWorkspaceSurface("templates")],
+    ["Git/content tools", "Review, lint, pull, and publish controls remain maintainer paths in the sidebar Tools section.", () => gitCommitButton.focus()],
+    ["Diagnostics", "Runtime unavailable states are shown in-place. Production diagnostics stay out of the daily loop.", () => workBellButton.focus()],
+  ];
+  for (const [title, body, action] of cards) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "ops-admin-card";
+    const strong = document.createElement("strong");
+    strong.textContent = title;
+    const span = document.createElement("span");
+    span.textContent = body;
+    card.append(strong, span);
+    card.addEventListener("click", action);
+    section.append(card);
+  }
+  return section;
+}
+
+function renderHonestState(titleText, bodyText) {
+  const state = document.createElement("div");
+  state.className = "ops-honest-state";
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const body = document.createElement("span");
+  body.textContent = bodyText;
+  state.append(title, body);
+  return state;
+}
+
 function buildOperationsHomeModel(documents, options) {
   options = options || {};
   const docs = Array.isArray(documents) ? documents : [];
@@ -793,14 +1168,32 @@ function buildOperationsHomeModel(documents, options) {
   const overdueItems = hasLiveWork
     ? work.overdueTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
     : [];
+  const followUpTasks = work.waitingTasks.filter((task) => isFollowUpDueTask(task, today));
+  const followUpItems = hasLiveWork
+    ? followUpTasks.map((task) => operationItemFromTask(task, { today, followUp: true }))
+    : [];
   const waitingItems = hasLiveWork
-    ? work.waitingTasks.map((task) => operationItemFromTask(task, { today, waiting: true }))
+    ? work.waitingTasks.filter((task) => !isFollowUpDueTask(task, today)).map((task) => operationItemFromTask(task, { today, waiting: true }))
     : [];
   const bundleItems = hasLiveWork
     ? work.activeBundles.map((bundle) => operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], { today }))
     : [];
+  const allKnownTasks = allWorkTasks(work);
+  const missingProofTasks = allKnownTasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok);
 
   const lanes = [
+    {
+      id: "overdue",
+      title: "Overdue",
+      empty: hasLiveWork ? "No live overdue tasks." : "Live work data unavailable; overdue work cannot be confirmed.",
+      items: overdueItems,
+    },
+    {
+      id: "followups",
+      title: "Follow-Ups Due",
+      empty: hasLiveWork ? "No follow-ups due right now." : "Live work data unavailable; follow-ups cannot be confirmed.",
+      items: followUpItems,
+    },
     {
       id: "today",
       title: "Today",
@@ -810,20 +1203,14 @@ function buildOperationsHomeModel(documents, options) {
       items: todayItems,
     },
     {
-      id: "overdue",
-      title: "Overdue",
-      empty: hasLiveWork ? "No live overdue tasks." : "Live work data unavailable; overdue work cannot be confirmed.",
-      items: overdueItems,
-    },
-    {
       id: "waiting",
-      title: "Waiting / Follow-Ups",
-      empty: hasLiveWork ? "No live waiting or follow-up tasks." : "Live work data unavailable; follow-ups cannot be confirmed.",
+      title: "Waiting",
+      empty: hasLiveWork ? "No live waiting tasks." : "Live work data unavailable; waiting work cannot be confirmed.",
       items: waitingItems,
     },
     {
       id: "bundles",
-      title: "Active Workflows",
+      title: "At-Risk Workflows",
       empty: hasLiveWork ? "No active workflows." : "No live workflow data loaded.",
       items: bundleItems,
     },
@@ -852,6 +1239,8 @@ function buildOperationsHomeModel(documents, options) {
       todayTasks: todayWorkTasks.length,
       overdueTasks: work.overdueTasks.length,
       waitingTasks: work.waitingTasks.length,
+      followUpTasks: followUpTasks.length,
+      missingProofTasks: missingProofTasks.length,
       activeBundles: work.activeBundles.length,
       recurringConfigs: recurring.configs.length,
       enabledRecurringConfigs: recurring.enabled.length,
@@ -882,6 +1271,22 @@ function emptyOperationsRecurringSnapshot() {
   };
 }
 
+function emptyOperationsArtifactSnapshot() {
+  return {
+    loaded: false,
+    artifacts: [],
+    errors: [],
+  };
+}
+
+function emptyOperationsAssistantSnapshot() {
+  return {
+    loaded: false,
+    jobs: [],
+    errors: [],
+  };
+}
+
 async function refreshOperationsRecurringSnapshot(options = {}) {
   const snapshot = emptyOperationsRecurringSnapshot();
   try {
@@ -892,6 +1297,46 @@ async function refreshOperationsRecurringSnapshot(options = {}) {
     snapshot.errors = [err?.message || "Recurring API request failed"];
   }
   operationsRecurringSnapshot = normalizeOperationsRecurringSnapshot(snapshot);
+  if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+}
+
+async function refreshOperationsArtifactSnapshot(options = {}) {
+  const snapshot = emptyOperationsArtifactSnapshot();
+  try {
+    const payload = await request(workApiUrl("/api/artifacts"));
+    const artifacts = Array.isArray(payload) ? payload : payload?.artifacts;
+    if (Array.isArray(artifacts)) {
+      snapshot.loaded = true;
+      snapshot.artifacts = artifacts;
+    } else {
+      snapshot.errors = ["Artifact review index is not connected in this environment."];
+    }
+  } catch (err) {
+    snapshot.errors = [err?.message || "Artifacts API request failed"];
+  }
+  operationsArtifactSnapshot = {
+    loaded: snapshot.loaded,
+    artifacts: dedupeArtifacts(snapshot.artifacts),
+    errors: snapshot.errors,
+  };
+  if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+}
+
+async function refreshOperationsAssistantSnapshot(options = {}) {
+  const snapshot = emptyOperationsAssistantSnapshot();
+  try {
+    const payload = await request(workApiUrl("/api/assistant-jobs"));
+    const jobs = assistantJobsFromPayload(payload);
+    if (jobs.length > 0 || Array.isArray(payload?.jobs) || Array.isArray(payload?.assistantJobs) || Array.isArray(payload?.items) || Array.isArray(payload)) {
+      snapshot.loaded = true;
+      snapshot.jobs = jobs;
+    } else {
+      snapshot.errors = ["Assistant job lifecycle is not connected in this environment."];
+    }
+  } catch (err) {
+    snapshot.errors = [err?.message || "Assistant jobs API request failed"];
+  }
+  operationsAssistantSnapshot = snapshot;
   if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
 }
 
@@ -948,6 +1393,15 @@ function workApiUrl(path, params = {}) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
   }
   return url;
+}
+
+function allWorkTasks(work = operationsWorkSnapshot) {
+  return dedupeWorkTasks([
+    ...tasksFromWorkPayload(work.todayTasks || []),
+    ...tasksFromWorkPayload(work.overdueTasks || []),
+    ...tasksFromWorkPayload(work.waitingTasks || []),
+    ...Object.values(work.bundleTasks || {}).flatMap((tasks) => tasksFromWorkPayload(tasks)),
+  ]);
 }
 
 // ---------- Task action panel ----------
@@ -1029,9 +1483,12 @@ function renderTaskPanel() {
   }
   if (task.bundleId) {
     const bundleRow = document.createElement("div");
-    bundleRow.append(document.createTextNode("Bundle "));
-    const link = document.createElement("strong");
+    bundleRow.append(document.createTextNode("Workflow "));
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "task-instruction-doc-link";
     link.textContent = String(task.bundleId);
+    link.addEventListener("click", () => openBundlePanel(task.bundleId));
     bundleRow.append(link);
     meta.append(bundleRow);
   }
@@ -1180,7 +1637,13 @@ function renderTaskInstructionDoc(task) {
     title.type = "button";
     title.className = "task-instruction-doc-link";
     title.textContent = doc.title || doc.id || doc.path;
-    title.addEventListener("click", () => openDocument(doc.path));
+    title.addEventListener("click", () => openDocument(doc.path, {
+      returnContext: {
+        type: "task",
+        id: task.id,
+        title: typeof workTaskTitle === "function" ? workTaskTitle(task) : (task.description || task.title || task.id || "Task"),
+      },
+    }));
     instruction.append(title);
 
     const meta = document.createElement("div");
@@ -1609,6 +2072,20 @@ function renderBundlePanel() {
   const progressRow = document.createElement("div");
   progressRow.textContent = progress.label;
   meta.append(progressRow);
+  const riskRow = document.createElement("div");
+  riskRow.className = "ops-card-chips";
+  for (const chipText of [
+    `Risk ${progress.risk}`,
+    progress.nextDueTask ? `Next: ${workTaskTitle(progress.nextDueTask)}` : "",
+    `${progress.overdue} overdue`,
+    `${progress.waiting} waiting/follow-up`,
+    `${progress.missingProof || 0} missing proof`,
+  ].filter(Boolean)) {
+    const chip = document.createElement("small");
+    chip.textContent = chipText;
+    riskRow.append(chip);
+  }
+  meta.append(riskRow);
   if (bundle.description) {
     const descRow = document.createElement("div");
     descRow.textContent = bundle.description;
@@ -1660,12 +2137,24 @@ function renderBundlePanel() {
     checklistSection.className = "task-history";
     const checklistLabel = document.createElement("div");
     checklistLabel.className = "task-history-label";
-    checklistLabel.textContent = "Tasks";
+    checklistLabel.textContent = "Workflow tasks";
     checklistSection.append(checklistLabel);
     const list = document.createElement("div");
     list.className = "task-history-list";
-    const sorted = sortBundleChecklistTasks(tasks, today);
-    for (const task of sorted) list.append(renderBundleChecklistItem(task, bundle.id, today));
+    for (const group of workflowTaskGroups(tasks, today)) {
+      const groupTitle = document.createElement("div");
+      groupTitle.className = "bundle-task-group-title";
+      groupTitle.textContent = `${group.title} (${group.tasks.length})`;
+      list.append(groupTitle);
+      if (group.tasks.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "task-history-event";
+        empty.textContent = group.empty;
+        list.append(empty);
+      } else {
+        for (const task of group.tasks) list.append(renderBundleChecklistItem(task, bundle.id, today));
+      }
+    }
     checklistSection.append(list);
     bundlePanelBody.append(checklistSection);
   }
@@ -1675,7 +2164,7 @@ function renderBundlePanel() {
   refsSection.className = "task-history";
   const refsLabel = document.createElement("div");
   refsLabel.className = "task-history-label";
-  refsLabel.textContent = "Links & Artifacts";
+  refsLabel.textContent = "Process references";
   refsSection.append(refsLabel);
   const refsList = document.createElement("div");
   refsList.className = "task-history-list";
@@ -1686,15 +2175,40 @@ function renderBundlePanel() {
     if (!refUrl) continue;
     const item = document.createElement("div");
     item.className = "task-history-event";
-    const link = document.createElement("a");
-    link.href = String(refUrl);
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = String(refName);
-    item.append(link);
+    const docPath = localDocPathFromHref(refUrl);
+    if (docPath) {
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "task-instruction-doc-link";
+      link.textContent = String(refName);
+      link.addEventListener("click", () => openDocument(docPath, {
+        returnContext: { type: "workflow", id: bundle.id, title: workBundleTitle(bundle) },
+      }));
+      item.append(link);
+    } else {
+      const link = document.createElement("a");
+      link.href = String(refUrl);
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = String(refName);
+      item.append(link);
+    }
     refsList.append(item);
   }
   refsSection.append(refsList);
+  if (!refsList.children.length) {
+    const empty = document.createElement("div");
+    empty.className = "task-history-event";
+    empty.textContent = "No process references linked to this workflow.";
+    refsList.append(empty);
+  }
+
+  const assistantState = document.createElement("div");
+  assistantState.className = "task-history-event";
+  assistantState.textContent = operationsAssistantSnapshot.loaded
+    ? "Assistant jobs are available from the Assistants surface when linked to this workflow."
+    : "Assistant jobs not connected for this workflow; no fake assistant output is shown.";
+  refsSection.append(assistantState);
 
   // Add artifact/reference link form
   const addRow = document.createElement("div");
@@ -1736,6 +2250,27 @@ function sortBundleChecklistTasks(tasks, today) {
     return compareIsoDate(taskDate(a) || today, taskDate(b) || today);
   });
   return sorted;
+}
+
+function workflowTaskGroups(tasks, today) {
+  const sorted = sortBundleChecklistTasks(tasks, today);
+  return [
+    {
+      title: "Active",
+      empty: "No active tasks.",
+      tasks: sorted.filter((task) => isOpenWorkTask(task) && !isWaitingOrFollowUpTask(task)),
+    },
+    {
+      title: "Waiting / follow-up",
+      empty: "No waiting tasks.",
+      tasks: sorted.filter((task) => isWaitingOrFollowUpTask(task)),
+    },
+    {
+      title: "Done / history",
+      empty: "No completed tasks yet.",
+      tasks: sorted.filter((task) => String(task.status || "").toLowerCase() === "done"),
+    },
+  ];
 }
 
 function renderBundleChecklistItem(task, bundleId, today) {
@@ -2409,6 +2944,15 @@ function recurringConfigsFromPayload(payload) {
   return [];
 }
 
+function assistantJobsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.assistantJobs)) return payload.assistantJobs;
+  if (Array.isArray(payload.jobs)) return payload.jobs;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
 function currentOperatorIdFromPayload(payload) {
   if (!payload || typeof payload !== "object") return "";
   if (payload.user && typeof payload.user === "object" && payload.user.id) return String(payload.user.id);
@@ -2542,6 +3086,12 @@ function isWaitingOrFollowUpTask(task) {
   return status === "waiting" || !!task.waitingFor || !!task.followUpAt;
 }
 
+function isFollowUpDueTask(task, today = todayIsoDate()) {
+  if (!isWaitingOrFollowUpTask(task)) return false;
+  const followUpAt = String(task.followUpAt || "").slice(0, 10);
+  return !!followUpAt && !isBeforeIsoDate(today, followUpAt);
+}
+
 function taskDate(task) {
   if (!task || !task.date) return "";
   return String(task.date).slice(0, 10);
@@ -2579,17 +3129,19 @@ function summarizeBundleProgress(bundle, tasks, today) {
   const missingLinks = taskList.filter((task) => isOpenWorkTask(task) && task.requiredLinkName && !task.link).length
     + missingBundleLinks(bundle).length;
   const missingFiles = taskList.filter((task) => isOpenWorkTask(task) && task.requiresFile && !hasTaskFileEvidence(task)).length;
+  const missingProof = taskList.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok).length + missingBundleLinks(bundle).length;
   const nextDueTask = nextDueOpenTask(taskList, today);
   let risk = "low";
   if (overdue > 0) risk = "high";
-  else if (waiting > 0 || missingLinks > 0 || missingFiles > 0 || (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))) risk = "medium";
+  else if (waiting > 0 || missingProof > 0 || (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))) risk = "medium";
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
   const parts = total > 0 ? [`${done}/${total} tasks`] : ["No tasks loaded"];
   if (overdue > 0) parts.push(`${overdue} overdue`);
   if (waiting > 0) parts.push(`${waiting} waiting`);
   if (missingLinks > 0) parts.push(`${missingLinks} missing link${missingLinks === 1 ? "" : "s"}`);
   if (missingFiles > 0) parts.push(`${missingFiles} missing file${missingFiles === 1 ? "" : "s"}`);
-  return { total, done, open, overdue, waiting, missingLinks, missingFiles, nextDueTask, percent, risk, label: parts.join(" - ") };
+  if (missingProof > 0) parts.push(`${missingProof} missing proof`);
+  return { total, done, open, overdue, waiting, missingLinks, missingFiles, missingProof, nextDueTask, percent, risk, label: parts.join(" - ") };
 }
 
 function nextDueOpenTask(tasks, today) {
@@ -2954,6 +3506,47 @@ function renderOperationsFutureSections(sections) {
     const body = document.createElement("span");
     body.textContent = section.body;
     card.append(cardTitle, status, body);
+    grid.append(card);
+  }
+  wrap.append(grid);
+  return wrap;
+}
+
+function renderOperationalSurfaceStates() {
+  const wrap = document.createElement("section");
+  wrap.className = "ops-section ops-future-section";
+  wrap.setAttribute("aria-label", "Operational surface states");
+  const header = document.createElement("div");
+  header.className = "ops-section-header";
+  const title = document.createElement("h3");
+  title.textContent = "Assistant, Artifact, Inbox, And Search States";
+  const meta = document.createElement("span");
+  meta.textContent = "Honest availability";
+  header.append(title, meta);
+  wrap.append(header);
+
+  const grid = document.createElement("div");
+  grid.className = "ops-future-grid";
+  const states = [
+    operationsAssistantSnapshot.loaded
+      ? ["Assistants", `${operationsAssistantSnapshot.jobs.length} real job rows loaded.`]
+      : ["Assistants", "Not connected; #30/#44 job lifecycle is not represented with fake rows."],
+    operationsArtifactSnapshot.loaded
+      ? ["Artifacts", `${operationsArtifactSnapshot.artifacts.length} artifact rows loaded from /work/api/artifacts.`]
+      : ["Artifacts", "Cross-workflow artifact index not connected; task/workflow artifacts still appear in context."],
+    ["Inbox", "Not connected; #31 raw Telegram/email/manual intake is not represented with fake rows."],
+    ["Search", "Docs-only; unified task/workflow/artifact search belongs to #32."],
+  ];
+  for (const [stateTitle, stateBody] of states) {
+    const card = document.createElement("article");
+    card.className = "ops-future-card";
+    const strong = document.createElement("strong");
+    strong.textContent = stateTitle;
+    const status = document.createElement("small");
+    status.textContent = stateBody.startsWith("Not connected") || stateBody.startsWith("Docs-only") ? "Not connected yet" : "Connected";
+    const body = document.createElement("span");
+    body.textContent = stateBody;
+    card.append(strong, status, body);
     grid.append(card);
   }
   wrap.append(grid);
@@ -3481,6 +4074,8 @@ async function openDocument(path, options = {}) {
   closeTaskPanel();
   closeBundlePanel();
   captureScrollPosition();
+  docReturnContext = options.returnContext || null;
+  renderDocReturnContext();
 
   documentTitle.disabled = true;
   editor.disabled = true;
@@ -3522,6 +4117,7 @@ async function openDocument(path, options = {}) {
 
     updateSaveState();
     setPageTitle(documentTitle.value, payload.path);
+    renderDocReturnContext();
     updateViewToggleAvailability();
     // Default to the block view when the doc has parseable sections, so
     // SOPs read as structured content rather than raw markdown.
@@ -3538,6 +4134,48 @@ async function openDocument(path, options = {}) {
     documentTitle.disabled = !currentDoc;
     editor.disabled = !currentDoc;
   }
+}
+
+function renderDocReturnContext() {
+  if (!docContextReturn) return;
+  docContextReturn.replaceChildren();
+  if (!docReturnContext) {
+    docContextReturn.hidden = true;
+    return;
+  }
+  docContextReturn.hidden = false;
+  const text = document.createElement("span");
+  text.textContent = docReturnContext.type === "workflow"
+    ? `Opened from workflow: ${docReturnContext.title || docReturnContext.id || "Workflow"}`
+    : `Opened from task: ${docReturnContext.title || docReturnContext.id || "Task"}`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "quiet-button";
+  button.textContent = docReturnContext.type === "workflow" ? "Back to workflow" : "Back to task";
+  button.addEventListener("click", () => {
+    const context = docReturnContext;
+    docReturnContext = null;
+    renderDocReturnContext();
+    showOperationsHome().then(() => {
+      if (context?.type === "workflow" && context.id) openBundlePanel(context.id);
+      else if (context?.type === "task" && context.id) openTaskPanel(context.id);
+    });
+  });
+  docContextReturn.append(text, button);
+}
+
+function localDocPathFromHref(href) {
+  const value = String(href || "").trim();
+  if (!value) return "";
+  if (value.startsWith("content/") && value.endsWith(".md")) return value;
+  if (value.startsWith("/content/") && value.endsWith(".md")) return value.replace(/^\/+/, "");
+  try {
+    const url = new URL(value, window.location.origin);
+    const path = decodeURIComponent(url.pathname || "").replace(/^\/+/, "");
+    if (path.startsWith("content/") && path.endsWith(".md")) return path;
+    if (path.endsWith(".md")) return `content/${path}`;
+  } catch {}
+  return "";
 }
 
 function docPathFromLocation() {
@@ -3774,13 +4412,26 @@ function showLibrary(options = {}) {
 function syncLibraryPageTitle() {
   if (body.dataset.view !== "library") return;
   if (!selectedFolder && !searchInput.value.trim()) {
-    setPageTitle("Operations Home", "Home");
+    const titles = {
+      home: "Operations Home",
+      queue: "Work Queue",
+      workflows: "Workflows",
+      templates: "Templates / Recurring",
+      assistants: "Assistants",
+      artifacts: "Artifacts",
+      processes: "Processes / Docs",
+      search: "Search / Docs-only",
+      admin: "Admin",
+    };
+    setPageTitle(titles[activeWorkspaceView] || "Operations Home", activeWorkspaceView === "home" ? "Home" : "Workspace");
     return;
   }
   setPageTitle("", "");
 }
 
 async function showOperationsHome() {
+  activeWorkspaceView = "home";
+  syncWorkspaceNav();
   if (!(await canLeaveCurrentDocument())) return;
   selectedFolder = "";
   searchInput.value = "";
@@ -3792,6 +4443,36 @@ async function showOperationsHome() {
   setView("library");
   refreshDocuments();
   closeSidebar();
+}
+
+async function showWorkspaceSurface(view) {
+  const nextView = view || "home";
+  if (nextView === "home") {
+    await showOperationsHome();
+    return;
+  }
+  if (!(await canLeaveCurrentDocument())) return;
+  activeWorkspaceView = nextView;
+  syncWorkspaceNav();
+  selectedFolder = "";
+  searchInput.value = "";
+  clearDocumentFilters();
+  setFolderUrl("");
+  closeTaskPanel();
+  closeBundlePanel();
+  closeWorkBellPanel();
+  setView("library");
+  refreshDocuments();
+  closeSidebar();
+}
+
+function syncWorkspaceNav() {
+  for (const button of workspaceNavButtons) {
+    const active = (button.dataset.workspaceView || "home") === activeWorkspaceView;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
 }
 
 async function showCreate() {

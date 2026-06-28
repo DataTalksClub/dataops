@@ -555,6 +555,45 @@ body:not(.sidebar-collapsed) #sidebar-expand-button {
   background: var(--do-color-control-hover);
 }
 
+.workspace-nav {
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 12px;
+}
+
+.workspace-nav .section-label {
+  margin: 0 6px 4px;
+}
+
+.workspace-nav-button {
+  display: flex;
+  align-items: center;
+  min-height: 31px;
+  width: 100%;
+  border-radius: var(--do-radius-sm);
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 8px;
+  text-align: left;
+  font-size: var(--do-text-md);
+  font-weight: 650;
+}
+
+.workspace-nav-button:hover {
+  background: var(--do-color-control-hover);
+  color: var(--text);
+}
+
+.workspace-nav-button.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.admin-create-button {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
 .search-form {
   margin-bottom: 10px;
 }
@@ -1118,7 +1157,7 @@ body[data-view="create"] .editor-view {
 
 .ops-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--do-space-2);
 }
 
@@ -1146,7 +1185,7 @@ body[data-view="create"] .editor-view {
 
 .ops-lanes {
   display: grid;
-  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
   gap: var(--do-space-2);
 }
 
@@ -1289,6 +1328,149 @@ body[data-view="create"] .editor-view {
 .ops-section {
   display: grid;
   gap: 10px;
+}
+
+.ops-surface-header {
+  display: grid;
+  gap: 4px;
+  border: var(--do-border);
+  border-radius: var(--do-radius-md);
+  background: var(--do-color-surface);
+  padding: var(--do-space-3);
+}
+
+.ops-surface-header h3,
+.ops-surface-header p {
+  margin: 0;
+}
+
+.ops-surface-header h3 {
+  font-size: var(--do-text-lg);
+}
+
+.ops-surface-header p {
+  color: var(--muted);
+  font-size: var(--do-text-md);
+  line-height: 1.45;
+}
+
+.ops-work-queue {
+  display: grid;
+  gap: var(--do-space-3);
+}
+
+.ops-queue-group {
+  display: grid;
+  gap: var(--do-space-2);
+  border: var(--do-border);
+  border-radius: var(--do-radius-md);
+  background: var(--do-color-surface);
+  padding: var(--do-space-3);
+}
+
+.ops-queue-group header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--do-space-2);
+}
+
+.ops-queue-group h3 {
+  margin: 0;
+  font-size: var(--do-text-body);
+}
+
+.ops-queue-group header span {
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+  font-weight: 700;
+}
+
+.ops-queue-rows,
+.ops-state-list {
+  display: grid;
+  gap: var(--do-space-2);
+}
+
+.ops-queue-row,
+.ops-data-row,
+.ops-honest-state,
+.ops-admin-card,
+.ops-workflow-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--do-color-control);
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+}
+
+.ops-queue-row:hover,
+.ops-admin-card:hover,
+.ops-workflow-card:hover {
+  background: var(--do-color-control-hover);
+}
+
+.ops-queue-row strong,
+.ops-data-row strong,
+.ops-honest-state strong,
+.ops-admin-card strong,
+.ops-workflow-card strong {
+  font-size: var(--do-text-md);
+  line-height: 1.3;
+}
+
+.ops-queue-row small,
+.ops-data-row span,
+.ops-honest-state span,
+.ops-admin-card span,
+.ops-workflow-card span,
+.ops-workflow-card small {
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+  line-height: 1.4;
+}
+
+.ops-queue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ops-queue-meta span {
+  border-radius: var(--do-radius-xs);
+  background: var(--do-color-surface);
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: var(--do-text-xs);
+  font-weight: 650;
+}
+
+.ops-workflows-grid,
+.ops-admin-grid,
+.ops-split-surface {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--do-space-3);
+}
+
+.ops-processes-surface {
+  display: grid;
+  gap: var(--do-space-3);
+}
+
+.ops-data-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.ops-data-row a {
+  color: var(--accent);
+  font-size: var(--do-text-sm);
+  font-weight: 650;
 }
 
 .ops-runtime-state {
@@ -1722,6 +1904,14 @@ body[data-view="create"] .editor-view {
   border-bottom: none;
 }
 
+.bundle-task-group-title {
+  margin-top: 8px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
 .bundle-checklist-item input[type="checkbox"] {
   width: 16px;
   height: 16px;
@@ -2066,6 +2256,24 @@ body.dark .task-status-badge.waiting {
   resize: none;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.doc-context-return {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--do-space-2);
+  margin-bottom: 16px;
+  border: var(--do-border);
+  border-radius: var(--do-radius-md);
+  background: var(--do-color-surface);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+}
+
+.doc-context-return[hidden] {
+  display: none;
 }
 
 .document-title:disabled {
@@ -2863,7 +3071,10 @@ body.dark .task-status-badge.waiting {
   .ops-template-grid,
   .ops-recurring-list,
   .ops-future-grid,
-  .ops-reference-grid {
+  .ops-reference-grid,
+  .ops-workflows-grid,
+  .ops-admin-grid,
+  .ops-split-surface {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4299,7 +4510,10 @@ body[data-view="create"] #back-button {
   .ops-template-grid,
   .ops-recurring-list,
   .ops-future-grid,
-  .ops-reference-grid {
+  .ops-reference-grid,
+  .ops-workflows-grid,
+  .ops-admin-grid,
+  .ops-split-surface {
     grid-template-columns: 1fr;
   }
 

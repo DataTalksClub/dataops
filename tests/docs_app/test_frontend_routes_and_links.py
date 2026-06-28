@@ -416,6 +416,8 @@ assert.equal(model.stats.liveLoaded, true);
 assert.equal(model.stats.todayTasks, 2);
 assert.equal(model.stats.overdueTasks, 1);
 assert.equal(model.stats.waitingTasks, 1);
+assert.equal(model.stats.followUpTasks, 1);
+assert.equal(model.stats.missingProofTasks, 1);
 assert.equal(model.stats.activeBundles, 1);
 assert.equal(model.stats.recurringConfigs, 2);
 assert.equal(model.stats.enabledRecurringConfigs, 1);
@@ -428,7 +430,7 @@ assert.equal(model.templates[0].recurring, true);
 assert.equal(model.templates[1].atRisk, true);
 
 const lanes = Object.fromEntries(model.lanes.map((lane) => [lane.id, lane]));
-assert.deepEqual(model.lanes.map((lane) => lane.id), ["today", "overdue", "waiting", "bundles"]);
+assert.deepEqual(model.lanes.map((lane) => lane.id), ["overdue", "followups", "today", "waiting", "bundles"]);
 assert.deepEqual(lanes.today.items.map((item) => item.title), ["Publish newsletter", "Unassigned urgent work"]);
 assert.deepEqual(lanes.today.items.map((item) => item.taskId), ["task-today", "task-unassigned"]);
 assert.equal(lanes.today.items[0].nextAction, "Mark done");
@@ -437,8 +439,9 @@ assert.equal(model.stats.currentOperatorId, "ops");
 assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Upload podcast recording"]);
 assert.equal(lanes.overdue.items[0].nextAction, "Add Recording link");
 assert.equal(lanes.overdue.items[0].proof.label, "Missing proof: Recording link");
-assert.equal(lanes.waiting.items[0].summary, "Waiting for guest; follow up Today");
-assert.equal(lanes.waiting.items[0].nextAction, "Follow up");
+assert.equal(lanes.followups.items[0].summary, "Waiting for guest; follow up Today");
+assert.equal(lanes.followups.items[0].nextAction, "Follow up");
+assert.deepEqual(lanes.waiting.items.map((item) => item.title), []);
 assert.equal(lanes.bundles.items[0].title, "Podcast episode: streaming systems");
 assert.equal(lanes.bundles.items[0].bundleId, "bundle-podcast");
 assert.equal(lanes.bundles.items[0].progress.done, 1);
@@ -446,6 +449,7 @@ assert.equal(lanes.bundles.items[0].progress.total, 3);
 assert.equal(lanes.bundles.items[0].progress.overdue, 1);
 assert.equal(lanes.bundles.items[0].progress.waiting, 1);
 assert.equal(lanes.bundles.items[0].progress.missingLinks, 2);
+assert.equal(lanes.bundles.items[0].progress.missingProof, 2);
 assert.equal(lanes.bundles.items[0].progress.nextDueTask.id, "task-overdue");
 assert.match(lanes.bundles.items[0].summary, /Next: Upload podcast recording/);
 assert.equal(lanes.bundles.items[0].risk, "high");
@@ -462,6 +466,7 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "recurringConfigsFromPayload",
             "currentOperatorIdFromPayload",
             "normalizeOperationsRecurringSnapshot",
+            "allWorkTasks",
             "dedupeWorkTasks",
             "sortWorkTasks",
             "taskSortDate",
@@ -470,6 +475,7 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "isCurrentOperatorTodayTask",
             "isTaskOverdue",
             "isWaitingOrFollowUpTask",
+            "isFollowUpDueTask",
             "taskDate",
             "isActiveWorkBundle",
             "sortActiveWorkBundles",
@@ -561,6 +567,7 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "recurringConfigsFromPayload",
             "currentOperatorIdFromPayload",
             "normalizeOperationsRecurringSnapshot",
+            "allWorkTasks",
             "dedupeWorkTasks",
             "sortWorkTasks",
             "taskSortDate",
@@ -569,6 +576,7 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "isCurrentOperatorTodayTask",
             "isTaskOverdue",
             "isWaitingOrFollowUpTask",
+            "isFollowUpDueTask",
             "taskDate",
             "isActiveWorkBundle",
             "sortActiveWorkBundles",
@@ -850,6 +858,7 @@ assert.equal(missing.children[1].textContent, "Document unavailable: missing.doc
             "formatMetaText",
             "formatValidationInstruction",
             "renderTaskInstructionDoc",
+            "workTaskTitle",
         ],
     )
 
