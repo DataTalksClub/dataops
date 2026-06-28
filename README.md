@@ -50,6 +50,38 @@ The frontend container proxies `/docs`, `/search`, `/health`, `/images`,
 `/git/status` and `/git/commit` so the UI can commit + push using the host's
 SSH key (mounted read-only).
 
+## Node workspace
+
+DataOps uses npm workspaces from the repository root for Node tooling. The
+current workspace is `work-engine/`; `frontend/` remains the static vanilla-JS
+portal shell served by the Python Lambda app and does not have a separate Node
+package or build pipeline in this milestone.
+
+Install Node dependencies from the repo root:
+
+```bash
+npm ci
+```
+
+Common work-engine lifecycle commands are available from the root:
+
+```bash
+npm run dev:work-engine
+npm run test:work-engine
+npm run test:e2e:work-engine
+npm run typecheck:work-engine
+npm run build:work-engine
+npm run seed:work-engine
+npm run export:templates:work-engine
+npm run validate:export:work-engine -- <export-dir>
+npm run dry-run:import:work-engine -- <export-dir>
+npm run clean:work-engine
+```
+
+`package-lock.json` at the repo root is the npm lockfile for the workspace. The
+work-engine Lambda packaging, CI cache, and Docker Lambda image all use that
+root lockfile; there is no nested `work-engine/package-lock.json`.
+
 ## Architecture Review
 
 The deployed v1 app is a single protected Lambda app. It serves the frontend,

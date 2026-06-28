@@ -1,10 +1,21 @@
 {
   "name": "dataops",
+  "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "work-engine"
+  ],
   "scripts": {
-    "build:work-engine": "npm --prefix work-engine run build",
-    "dev:work-engine": "npm --prefix work-engine run dev",
-    "test:work-engine": "npm --prefix work-engine test",
-    "typecheck:work-engine": "npm --prefix work-engine run typecheck"
+    "build:work-engine": "npm run build --workspace dataops-work-engine",
+    "clean:work-engine": "npm run clean --workspace dataops-work-engine",
+    "dev:work-engine": "npm run dev --workspace dataops-work-engine",
+    "dry-run:import:work-engine": "npm run dry-run:import --workspace dataops-work-engine --",
+    "export:data:work-engine": "npm run export:data --workspace dataops-work-engine --",
+    "export:templates:work-engine": "npm run export:templates --workspace dataops-work-engine",
+    "seed:work-engine": "npm run seed:users --workspace dataops-work-engine && npm run seed --workspace dataops-work-engine",
+    "test:e2e:work-engine": "npm run test:e2e --workspace dataops-work-engine",
+    "test:work-engine": "npm test --workspace dataops-work-engine",
+    "typecheck:work-engine": "npm run typecheck --workspace dataops-work-engine",
+    "validate:export:work-engine": "npm run validate:export --workspace dataops-work-engine --"
   }
 }
