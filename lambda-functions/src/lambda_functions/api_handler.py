@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from lambda_functions import doc_registry, sop_lint, sop_parse
+from lambda_functions import doc_registry, process_quality, sop_lint, sop_parse
 from lambda_functions.http import response
 
 
@@ -31,6 +31,9 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         if path == "/docs/resolve" and method == "GET":
             return resolve_doc(query_param(event, "ref"))
+
+        if path == "/docs/process-quality" and method == "GET":
+            return get_process_quality()
 
         if path == "/docs" and method == "GET":
             doc_path = query_param(event, "path")
@@ -89,6 +92,11 @@ def list_docs() -> dict[str, Any]:
 def get_doc_registry() -> dict[str, Any]:
     registry = doc_registry.build_registry(CONTENT_ROOT)
     return response(200, registry.to_dict())
+
+
+def get_process_quality() -> dict[str, Any]:
+    report = process_quality.build_report(CONTENT_ROOT.parent, CONTENT_ROOT)
+    return response(200, report)
 
 
 def resolve_doc(ref: str | None) -> dict[str, Any]:

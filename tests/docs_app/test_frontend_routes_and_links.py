@@ -70,6 +70,7 @@ async function request(url, options = {{}}) {{
   return mockRequestHandler(url, options);
 }}
 function workApiUrl(path) {{ return `/work${{path}}`; }}
+function refreshDocuments() {{ refreshCalls.push({{ type: "refreshDocuments" }}); }}
 async function refreshOperationsWorkSnapshot(options = {{}}) {{ refreshCalls.push(options); }}
 function todayIsoDate() {{ return "2026-06-27"; }}
 function reportError(message) {{ actionCalls.push({{ type: "error", message }}); }}
@@ -100,6 +101,10 @@ function makeElement(tag) {{
       for (const item of items) {{
         if (item && typeof item === "object") item.parentNode = this;
         this.children.push(item);
+        if (this.tagName === "SELECT") {{
+          const options = this.children.filter((child) => child && child.tagName === "OPTION");
+          if (this.value && !options.some((option) => option.value === this.value)) this.value = "";
+        }}
       }}
     }},
     replaceChildren(...items) {{
@@ -204,6 +209,168 @@ assert.deepEqual(pushed.at(-1).state, { folder: "systems/airtable/sops" });
             "folderExists",
             "setDocumentUrl",
             "setFolderUrl",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_process_quality_model_prioritizes_active_task_risk_over_maintainer_cleanup():
+    result = _run_app_js_functions(
+        """
+documentIdMap = new Map([
+  ["task.template.newsletter", { id: "task.template.newsletter", path: "content/tasks/templates/newsletter.md", title: "Newsletter Template" }],
+  ["sop.newsletter.clean", { id: "sop.newsletter.clean", path: "content/newsletter/sops/clean.md", title: "Clean SOP" }],
+]);
+const report = {
+  loaded: true,
+  ok: true,
+  findings: [
+    {
+      id: "todo-cleanup",
+      category: "todo-or-placeholder",
+      severity: "warning",
+      title: "Unrelated cleanup",
+      summary: "Maintainer cleanup only.",
+      source: "lint/TODO scan",
+      nextAction: "open doc",
+      docId: "sop.newsletter.clean",
+      docPath: "content/newsletter/sops/clean.md",
+      workflowSlug: "newsletter",
+    }
+  ],
+  summary: { total: 1, blocking: 0, warning: 1, info: 0 },
+};
+const work = {
+  loaded: true,
+  todayTasks: [
+    {
+      id: "task-due",
+      description: "Publish newsletter",
+      status: "todo",
+      date: "2026-06-27",
+      instructionDocId: "missing.process.doc",
+      requiredLinkName: "Published URL",
+    }
+  ],
+  overdueTasks: [],
+  waitingTasks: [],
+  bundles: [],
+  bundleTasks: {},
+  errors: [],
+};
+const model = buildProcessQualityModel(report, normalizeOperationsWorkSnapshot(work, { today: "2026-06-27" }));
+assert.equal(model.activeBlockingCount, 1);
+assert.equal(model.visibleHomeFindings[0].category, "broken-doc-reference");
+assert.equal(model.visibleHomeFindings[0].taskId, "task-due");
+assert.equal(model.maintainerFindings.length, 1);
+""",
+        [
+            "buildProcessQualityModel",
+            "normalizeOperationsQualitySnapshot",
+            "normalizeQualityFinding",
+            "normalizeQualitySeverity",
+            "activeProcessQualityFindings",
+            "runtimeTaskQualityFindings",
+            "taskNeedsProofInstruction",
+            "taskHasClearProofInstruction",
+            "findingMatchesDoc",
+            "findingMatchesBundle",
+            "dedupeQualityFindings",
+            "compareQualityFindings",
+            "normalizeOperationsWorkSnapshot",
+            "normalizeBundleTaskMap",
+            "sortWorkTasks",
+            "dedupeWorkTasks",
+            "tasksFromWorkPayload",
+            "bundlesFromWorkPayload",
+            "isOpenWorkTask",
+            "isTaskDueToday",
+            "isTaskOverdue",
+            "isWaitingOrFollowUpTask",
+            "isActiveWorkBundle",
+            "sortActiveWorkBundles",
+            "summarizeBundleProgress",
+            "nextDueOpenTask",
+            "missingBundleLinks",
+            "hasTaskFileEvidence",
+            "taskProofState",
+            "taskRequiresApprovedArtifact",
+            "hasApprovedArtifactEvidence",
+            "allWorkTasks",
+            "resolveDocReference",
+            "workTaskTitle",
+            "workBundleTitle",
+            "normalizeTemplateMatchValue",
+            "taskDate",
+            "compareIsoDate",
+            "isBeforeIsoDate",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_process_quality_filters_by_severity_workflow_and_document():
+    result = _run_app_js_functions(
+        """
+const findings = [
+  { id: "a", severity: "blocking", category: "broken-doc-reference", workflowSlug: "podcast", docPath: "content/podcast.md" },
+  { id: "b", severity: "warning", category: "missing-validation", workflowSlug: "newsletter", docPath: "content/newsletter.md" },
+  { id: "c", severity: "blocking", category: "template-doc-gap", workflowSlug: "newsletter", instructionDocId: "missing.doc" },
+].map(normalizeQualityFinding);
+assert.deepEqual(filterQualityFindings(findings, { severity: "blocking", category: "", workflow: "podcast", document: "" }).map((f) => f.id), ["a"]);
+assert.deepEqual(filterQualityFindings(findings, { severity: "", category: "", workflow: "newsletter", document: "missing.doc" }).map((f) => f.id), ["c"]);
+assert.deepEqual(uniqueSorted(["b", "a", "b"]), ["a", "b"]);
+""",
+        [
+            "filterQualityFindings",
+            "uniqueSorted",
+            "normalizeQualityFinding",
+            "normalizeQualitySeverity",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_process_quality_drilldown_preserves_and_clears_selected_filter():
+    result = _run_app_js_functions(
+        """
+operationsQualityFilters = { severity: "blocking", category: "", workflow: "", document: "" };
+const quality = {
+  loaded: true,
+  activeWorkLoaded: true,
+  totalFindings: 2,
+  summary: { blocking: 1 },
+  maintainerFindings: [
+    { id: "a", severity: "blocking", category: "broken-doc-reference", title: "Blocker row", summary: "Needs action", workflowSlug: "podcast", docPath: "content/podcast.md" },
+    { id: "b", severity: "warning", category: "missing-validation", title: "Warning row", summary: "Later", workflowSlug: "newsletter", docPath: "content/newsletter.md" },
+  ].map(normalizeQualityFinding),
+  errors: [],
+};
+const drilldown = renderProcessQualityDrilldown(quality);
+const filters = drilldown.querySelector(".ops-quality-filters");
+const severitySelect = filters.children[0].children.find((child) => child.tagName === "SELECT");
+assert.equal(severitySelect.value, "blocking");
+assert.deepEqual(
+  drilldown.querySelector(".ops-quality-list").children.map((child) => child.children[0].children[0].textContent),
+  ["Blocker row"],
+);
+
+severitySelect.value = "";
+severitySelect.listeners.change();
+assert.equal(operationsQualityFilters.severity, "");
+assert.deepEqual(refreshCalls.at(-1), { type: "refreshDocuments" });
+""",
+        [
+            "renderProcessQualityDrilldown",
+            "filterQualityFindings",
+            "uniqueSorted",
+            "renderQualityFindingRow",
+            "labelizeWorkValue",
+            "normalizeQualityFinding",
+            "normalizeQualitySeverity",
         ],
     )
 
@@ -453,7 +620,7 @@ assert.equal(lanes.bundles.items[0].progress.missingProof, 2);
 assert.equal(lanes.bundles.items[0].progress.nextDueTask.id, "task-overdue");
 assert.match(lanes.bundles.items[0].summary, /Next: Upload podcast recording/);
 assert.equal(lanes.bundles.items[0].risk, "high");
-assert.equal(model.futureSections.map((section) => section.title).join(", "), "Inbox, Assistant Jobs, Process Quality");
+assert.equal(model.futureSections.map((section) => section.title).join(", "), "Inbox, Assistant Jobs");
 assert.equal(model.references.some((ref) => ref.title === "DataOps V1 Goal" && ref.href.includes(".goal-v1.md")), true);
 assert.equal(model.references.some((ref) => ref.path === "content/finance/reference/invoices-receipts-and-statements.md"), true);
 """,
@@ -466,6 +633,18 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "recurringConfigsFromPayload",
             "currentOperatorIdFromPayload",
             "normalizeOperationsRecurringSnapshot",
+            "buildProcessQualityModel",
+            "normalizeOperationsQualitySnapshot",
+            "normalizeQualityFinding",
+            "normalizeQualitySeverity",
+            "activeProcessQualityFindings",
+            "runtimeTaskQualityFindings",
+            "taskNeedsProofInstruction",
+            "taskHasClearProofInstruction",
+            "findingMatchesDoc",
+            "findingMatchesBundle",
+            "dedupeQualityFindings",
+            "compareQualityFindings",
             "allWorkTasks",
             "dedupeWorkTasks",
             "sortWorkTasks",
@@ -567,6 +746,18 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "recurringConfigsFromPayload",
             "currentOperatorIdFromPayload",
             "normalizeOperationsRecurringSnapshot",
+            "buildProcessQualityModel",
+            "normalizeOperationsQualitySnapshot",
+            "normalizeQualityFinding",
+            "normalizeQualitySeverity",
+            "activeProcessQualityFindings",
+            "runtimeTaskQualityFindings",
+            "taskNeedsProofInstruction",
+            "taskHasClearProofInstruction",
+            "findingMatchesDoc",
+            "findingMatchesBundle",
+            "dedupeQualityFindings",
+            "compareQualityFindings",
             "allWorkTasks",
             "dedupeWorkTasks",
             "sortWorkTasks",
@@ -641,14 +832,12 @@ const future = renderOperationsFutureSections(buildOperationsFutureSections());
 assert.equal(future.className, "ops-section ops-future-section");
 assert.equal(future.children[0].children[0].textContent, "Incoming And Quality Signals");
 const cards = future.children[1].children;
-assert.equal(cards.length, 3);
+assert.equal(cards.length, 2);
 assert.equal(cards[0].children[0].textContent, "Inbox");
 assert.equal(cards[0].children[1].textContent, "Not connected yet");
 assert.match(cards[0].children[2].textContent, /#31/);
 assert.equal(cards[1].children[0].textContent, "Assistant Jobs");
 assert.match(cards[1].children[2].textContent, /#30/);
-assert.equal(cards[2].children[0].textContent, "Process Quality");
-assert.match(cards[2].children[2].textContent, /#35/);
 """,
         [
             "buildOperationsFutureSections",
