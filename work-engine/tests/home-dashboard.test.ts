@@ -341,6 +341,7 @@ describe('Home dashboard (issue #26)', () => {
           status: 'waiting',
           waitingFor: 'Venue team',
           followUpAt: '2001-01-01T09:00:00.000Z',
+          comment: 'Waiting for venue team',
         }),
       }, {});
       assert.strictEqual(createResult.statusCode, 201);

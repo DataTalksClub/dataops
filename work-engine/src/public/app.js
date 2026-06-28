@@ -383,6 +383,130 @@
     return '<a class="instructions-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="Instructions" aria-label="' + escapeHtml(instructionLabel(description)) + '"><span aria-hidden="true">\u{1F4CB}</span></a>';
   }
 
+  function processDocUrl(docId) {
+    return '/docs/resolve?ref=' + encodeURIComponent(docId);
+  }
+
+  var PROCESS_DOC_REGISTRY = {
+    'reference.social-media.post-podcast-overview-after-the-event': { title: 'Post. Podcast. Overview after the event', docType: 'reference', path: 'content/social-media/reference/post-podcast-overview-after-the-event.md', summary: 'Reference guide for post-event podcast overview copy, assets, examples, and workflow notes.' },
+    'sop.events.announce-event-in-slack-in-announcements': { title: 'Announce event in Slack in #announcements', docType: 'sop', path: 'content/events/sops/announce-event-in-slack-in-announcements.md', summary: 'Announce upcoming events in #announcements so the community has the event context and registration link.' },
+    'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event': { title: 'Create a calendar invite for event guests or speakers', docType: 'sop', path: 'content/events/calendar/sops/create-a-calender-invite-for-the-guests-speaker-for-an-event.md', summary: 'Create Google Calendar invites for event guests or speakers with the correct event details.' },
+    'sop.events.calendar.creating-tentative-event-on-google-calendar': { title: 'Creating Tentative Event on Google Calendar', docType: 'sop', path: 'content/events/calendar/sops/creating-tentative-event-on-google-calendar.md', summary: 'Create a proposed event block on Google Calendar before the date is fully confirmed.' },
+    'sop.events.luma.creating-events-on-google-calendar': { title: 'Creating Events on Google Calendar', docType: 'sop', path: 'content/events/luma/sops/creating-events-on-google-calendar.md', summary: 'Create a Google Calendar entry for a DataTalks.Club event.' },
+    'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma': { title: 'Creating events (Webinar, Workshop and Podcast) on Luma', docType: 'sop', path: 'content/events/luma/sops/creating-events-webinar-workshop-and-podcast-on-luma.md', summary: 'Create Luma event pages with the correct description, timing, and registration details.' },
+    'sop.events.luma.downloading-the-csv-file-on-luma': { title: 'Downloading the CSV File on Luma', docType: 'sop', path: 'content/events/luma/sops/downloading-the-csv-file-on-luma.md', summary: 'Download attendee CSV exports from Luma for follow-up, reporting, or registration imports.' },
+    'sop.events.meetup.create-events-in-meetup-com': { title: 'Create events in Meetup.com', docType: 'sop', path: 'content/events/meetup/sops/create-events-in-meetup-com.md', summary: 'Copy event announcements from Luma to Meetup with the needed public event details.' },
+    'sop.events.outreach.how-to-find-emails-of-previous-guests': { title: 'How to find emails of previous guests', docType: 'sop', path: 'content/events/outreach/sops/how-to-find-emails-of-previous-guests.md', summary: 'Find previous guest email addresses for outreach and event coordination follow-up.' },
+    'sop.events.planning.create-speaker-profiles-via-airtable-form': { title: 'Create speaker profiles via Airtable form', docType: 'sop', path: 'content/events/planning/sops/create-speaker-profiles-via-airtable-form.md', summary: 'Add a new speaker profile to the website through the Airtable form.' },
+    'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website': { title: 'Fill in the event form in Airtable for adding events to our website', docType: 'sop', path: 'content/events/planning/sops/fill-in-the-event-form-in-airtable-for-adding-events-to-our-website.md', summary: 'Fill out event, speaker, and publishing fields for the website event listing.' },
+    'sop.media.podcast.add-a-guest-bio-to-the-podcast-document': { title: 'Add a guest bio to the podcast document', docType: 'sop', path: 'content/media/podcast/sops/add-a-guest-bio-to-the-podcast-document.md', summary: 'Add the guest bio and links to the podcast planning document.' },
+    'sop.media.podcast.add-a-podcast-episode-via-airtable-form': { title: 'Add a podcast episode via Airtable form', docType: 'sop', path: 'content/media/podcast/sops/add-a-podcast-episode-via-airtable-form.md', summary: 'Submit the podcast episode form used to create the DataTalks.Club podcast page.' },
+    'sop.media.podcast.add-links-to-youtube-after-the-stream-is-over': { title: 'Add links to YouTube after the stream is over', docType: 'sop', path: 'content/media/podcast/sops/add-links-to-youtube-after-the-stream-is-over.md', summary: 'Collect guest links and add them to the YouTube video description after the stream.' },
+    'sop.media.podcast.create-podcast-document': { title: 'Create a podcast document', docType: 'sop', path: 'content/media/podcast/sops/create-a-podcast-document.md', summary: 'Create a podcast planning document with event information, guest questions, and announcement details.' },
+    'sop.media.podcast.creating-podcast-transcription-document': { title: 'Creating podcast transcription document', docType: 'sop', path: 'content/media/podcast/sops/creating-podcast-transcription-document.md', summary: 'Transcribe podcast episodes, generate transcripts, and edit them for publishing.' },
+    'sop.media.podcast.generate-timecodes-from-docx-transcriptions': { title: 'Generate Timecodes from docx Transcriptions', docType: 'sop', path: 'content/media/podcast/sops/generate-timecodes-from-docx-transcriptions.md', summary: 'Generate YouTube timecodes from a podcast transcription document.' },
+    'sop.media.podcast.making-event-announcements-when-topic-bio-or-outline-is-missing': { title: 'Making event announcements when topic, bio, or outline is missing', docType: 'sop', path: 'content/media/podcast/sops/making-event-announcements-when-topic-bio-or-outline-is-missing.md', summary: 'Announce a podcast event even when topic, bio, or outline details are incomplete.' },
+    'sop.media.podcast.managing-podcast-workflow': { title: 'Managing Podcast Workflow', docType: 'sop', path: 'content/media/podcast/sops/managing-podcast-workflow.md', summary: 'Manage podcast production from guest coordination through recording, publishing, transcripts, and follow-up.' },
+    'sop.media.podcast.move-podcast-documents-to-archive-in-google-drive': { title: 'Move podcast documents to archive in Google drive', docType: 'sop', path: 'content/media/podcast/sops/move-podcast-documents-to-archive-in-google-drive.md', summary: 'Move podcast documents to the archive folder after production is complete.' },
+    'sop.media.podcast.moving-podcast-audio-in-dropbox': { title: 'Moving Podcast Audio in Dropbox', docType: 'sop', path: 'content/media/podcast/sops/moving-podcast-audio-in-dropbox.md', summary: 'Organize podcast audio in Dropbox so published and unpublished episodes are easy to track.' },
+    'sop.media.podcast.removing-the-beginning-from-the-youtube-stream': { title: 'Removing the beginning from the YouTube stream', docType: 'sop', path: 'content/media/podcast/sops/removing-the-beginning-from-the-youtube-stream.md', summary: 'Trim small talk or setup time from the beginning of a YouTube stream.' },
+    'sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster': { title: 'Schedule podcast episodes with Spotify for podcaster', docType: 'sop', path: 'content/media/podcast/sops/schedule-podcast-episodes-with-spotify-for-podcaster.md', summary: 'Schedule a podcast episode in Spotify for Podcasters.' },
+    'sop.media.podcast.select-and-propose-a-date-for-events': { title: 'Select and propose a date for events', docType: 'sop', path: 'content/media/podcast/sops/select-and-propose-a-date-for-events.md', summary: 'Select and propose event dates using the schedule spreadsheet and Google Calendar.' },
+    'sop.media.podcast.sending-a-podcast-scheduled-email-to-pavel-after-the-event': { title: 'Sending a podcast scheduled email to Pavel (after the event)', docType: 'sop', path: 'content/media/podcast/sops/sending-a-podcast-scheduled-email-to-pavel-after-the-event.md', summary: 'Send Pavel the podcast scheduling and recording details after an episode.' },
+    'sop.media.podcast.update-the-website-with-the-information-from-forms': { title: 'Update the website with the information from forms', docType: 'sop', path: 'content/media/podcast/sops/update-the-website-with-the-information-from-forms.md', summary: 'Publish Airtable event, speaker, and podcast form data to the website.' },
+    'sop.media.podcast.updating-the-cover-of-the-youtube-video': { title: 'Updating the cover of the YouTube video', docType: 'sop', path: 'content/media/podcast/sops/updating-the-cover-of-the-youtube-video.md', summary: 'Update the cover image for a YouTube video.' },
+    'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist': { title: 'Adding videos from other channels to our playlist', docType: 'sop', path: 'content/media/video-youtube/sops/adding-videos-from-other-channels-to-our-playlist.md', summary: 'Add external videos to DataTalks.Club YouTube playlists without reuploading them.' },
+    'sop.social-media.post-podcast-guest-recommendations': { title: 'Post. Podcast. Guest recommendations', docType: 'sop', path: 'content/social-media/sops/post-podcast-guest-recommendations.md', summary: 'Share podcast guest recommendations on LinkedIn and Twitter/X.' },
+    'template.media.podcast.podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker': { title: 'Podcast - Adding Johanna and Sending the podcast link to the speaker', docType: 'template', path: 'content/media/podcast/templates/podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker.md', summary: 'Reusable guest outreach wording for adding Johanna and sending the podcast document link.' },
+    'template.media.podcast.podcast-links-after-the-event-is-over': { title: 'Podcast - Links after the event is over', docType: 'template', path: 'content/media/podcast/templates/podcast-links-after-the-event-is-over.md', summary: 'Reusable wording for collecting links from the guest after the podcast event.' },
+    'template.media.podcast.podcast-remind-about-the-event-in-a-week-share-registration-link-template': { title: 'Podcast - Remind about the event in a week, share registration link - Template', docType: 'template', path: 'content/media/podcast/templates/podcast-remind-about-the-event-in-a-week-share-registration-link-template.md', summary: 'Reusable reminder wording for one week before the podcast event.' },
+    'template.media.podcast.podcast-remind-the-guest-about-the-event-a-day-before-template': { title: 'Podcast - Remind the guest about the event a day before - Template', docType: 'template', path: 'content/media/podcast/templates/podcast-remind-the-guest-about-the-event-a-day-before-template.md', summary: 'Reusable reminder wording for the day before the podcast event.' },
+    'template.media.podcast.podcast-share-the-podcast-page-template': { title: 'Podcast - Share the podcast page - Template', docType: 'template', path: 'content/media/podcast/templates/podcast-share-the-podcast-page-template.md', summary: 'Reusable wording for asking the guest to share the published podcast page.' },
+    'template.media.podcast.sending-podcast-document-on-slack-the-dtc-podcast-help-channel': { title: 'Sending Podcast Document on Slack the DTC podcast help channel', docType: 'template', path: 'content/media/podcast/templates/sending-podcast-document-on-slack-the-dtc-podcast-help-channel.md', summary: 'Reusable Slack message for sharing the podcast document with the DTC podcast help channel.' },
+    'template.social-media.template-new-event-announcements-podcasts-webinars-workshops': { title: 'Template. New event announcements (podcasts, webinars, workshops)', docType: 'template', path: 'content/social-media/templates/template-new-event-announcements-podcasts-webinars-workshops.md', summary: 'Reusable social announcement copy for new podcasts, webinars, and workshops.' }
+  };
+
+  function resolveProcessDocContext(docId) {
+    return PROCESS_DOC_REGISTRY[String(docId || '')] || null;
+  }
+
+  function processDocActionLabel(doc) {
+    if (!doc || !doc.docType) return 'Open doc';
+    if (doc.docType === 'sop') return 'Open SOP';
+    if (doc.docType === 'template') return 'Open template';
+    if (doc.docType === 'reference') return 'Open reference';
+    return 'Open ' + doc.docType;
+  }
+
+  function renderInstructionContext(task) {
+    if (task.instructionDocId) {
+      var docId = String(task.instructionDocId);
+      var doc = resolveProcessDocContext(docId);
+      var detail = [];
+      if (task.phase) detail.push('Phase: ' + task.phase);
+      if (task.instructionStepId) detail.push('Step: ' + task.instructionStepId);
+      if (Array.isArray(task.systems) && task.systems.length) detail.push(task.systems.join(', '));
+      if (doc) {
+        return '<div class="process-doc-context" data-process-doc-context="' + escapeHtml(docId) + '">' +
+          '<span class="process-doc-label">' + escapeHtml(doc.docType || 'doc') + '</span>' +
+          '<a class="process-doc-link" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener" aria-label="Open process doc ' + escapeHtml(doc.title) + '">' + escapeHtml(doc.title) + '</a>' +
+          '<span class="process-doc-summary">' + escapeHtml(doc.summary || doc.path || docId) + '</span>' +
+          (detail.length ? '<span class="process-doc-meta">' + escapeHtml(detail.join(' | ')) + '</span>' : '') +
+          '<a class="process-doc-action" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener">' + escapeHtml(processDocActionLabel(doc)) + '</a>' +
+          '</div>';
+      }
+      return '<div class="process-doc-context process-doc-context--unresolved" data-process-doc-context="' + escapeHtml(docId) + '">' +
+        '<span class="process-doc-label">Process doc</span>' +
+        '<span class="process-doc-link">Unresolved document</span>' +
+        '<span class="process-doc-meta">' + escapeHtml(docId + (detail.length ? ' | ' + detail.join(' | ') : '')) + '</span>' +
+        '<a class="process-doc-action" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener">Try docs resolver</a>' +
+        '</div>';
+    }
+    if (task.instructionsUrl) {
+      return '<div class="process-doc-context process-doc-context--legacy">' +
+        '<span class="process-doc-label">Instructions</span>' +
+        '<a class="process-doc-link" href="' + escapeHtml(task.instructionsUrl) + '" target="_blank" rel="noopener" aria-label="' + escapeHtml(instructionLabel(task.description)) + '">legacy instructions</a>' +
+        '<span class="process-doc-meta">legacy URL</span>' +
+        '</div>';
+    }
+    return '<div class="process-doc-context process-doc-context--missing">' +
+      '<span class="process-doc-label">Process doc</span>' +
+      '<span class="process-doc-meta">No process document mapped</span>' +
+      '</div>';
+  }
+
+  function renderArtifactRefs(refs) {
+    if (!Array.isArray(refs) || refs.length === 0) return '';
+    return '<div class="artifact-ref-list">' + refs.map(function (ref) {
+      var status = ref.status || 'draft';
+      var href = ref.storageUri || '#';
+      var linked = href && href !== '#';
+      return '<a class="artifact-chip artifact-chip--' + escapeHtml(status) + '" href="' + escapeHtml(href) + '"' + (linked ? ' target="_blank" rel="noopener"' : '') + ' data-artifact-ref="' + escapeHtml(ref.artifactId || '') + '">' +
+        escapeHtml(ref.title || ref.type || ref.artifactId || 'Artifact') +
+        '<span>' + escapeHtml(status) + '</span>' +
+        '</a>';
+    }).join('') + '</div>';
+  }
+
+  function renderArtifactPanel(artifacts) {
+    var html = '<div class="artifact-panel" data-testid="workflow-artifacts"><h3>Proof and assistant outputs</h3>';
+    if (!artifacts || artifacts.length === 0) {
+      html += '<div class="empty-state">No proof or assistant outputs attached.</div></div>';
+      return html;
+    }
+    artifacts.forEach(function (artifact) {
+      html += '<div class="artifact-row" data-artifact-row="' + escapeHtml(artifact.id) + '">' +
+        '<div>' +
+          '<div class="artifact-title">' + escapeHtml(artifact.title || artifact.type || 'Artifact') + '</div>' +
+          '<div class="artifact-meta">' + escapeHtml(artifact.type || 'artifact') + ' · ' + escapeHtml(artifact.status || 'draft') + ' · ' + escapeHtml(artifact.storageProvider || 'unknown') + '</div>' +
+        '</div>' +
+        '<a class="card-action-link" href="' + escapeHtml(artifact.storageUri || '#') + '" target="_blank" rel="noopener">Open output</a>' +
+      '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
   function renderEmptyState(title, body, actions) {
     var html = '<div class="empty-state empty-state-rich">' +
       '<div class="empty-state-title">' + escapeHtml(title) + '</div>';
@@ -1171,7 +1295,9 @@
 
       // Instructions link icon
       var instructionsHtml = '';
-      if (t.instructionsUrl) {
+      if (t.instructionDocId) {
+        instructionsHtml = renderInstructionLink(processDocUrl(t.instructionDocId), t.description);
+      } else if (t.instructionsUrl) {
         instructionsHtml = renderInstructionLink(t.instructionsUrl, t.description);
       }
       if (t.status === 'waiting') {
@@ -1762,7 +1888,9 @@
 
         // Instructions link icon
         var instructionsHtml = '';
-        if (t.instructionsUrl) {
+        if (t.instructionDocId) {
+          instructionsHtml = renderInstructionLink(processDocUrl(t.instructionDocId), t.description);
+        } else if (t.instructionsUrl) {
           instructionsHtml = renderInstructionLink(t.instructionsUrl, t.description);
         }
         var assistantHtml = '<div class="assistant-context-row">' +
@@ -1974,6 +2102,39 @@
     });
 
     // Create form
+    var podcastForm = document.createElement('div');
+    podcastForm.className = 'podcast-start-section';
+    podcastForm.innerHTML =
+      '<h3>Start Podcast Workflow</h3>' +
+      '<div class="form-row">' +
+        '<div class="form-group">' +
+          '<label for="podcast-topic">Topic or title</label>' +
+          '<input type="text" id="podcast-topic" placeholder="Episode topic" style="width:220px;" />' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="podcast-guest">Guest</label>' +
+          '<input type="text" id="podcast-guest" placeholder="Guest name" style="width:180px;" />' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="podcast-anchor">Live stream date</label>' +
+          '<input type="date" id="podcast-anchor" value="' + todayString() + '" />' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="podcast-email">Guest email</label>' +
+          '<input type="text" id="podcast-email" placeholder="Optional" style="width:180px;" />' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label for="podcast-source-note">Source note</label>' +
+          '<input type="text" id="podcast-source-note" placeholder="Optional context" style="width:220px;" />' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label>&nbsp;</label>' +
+          '<button class="btn-primary" id="podcast-start-btn" disabled aria-busy="true">Loading Podcast...</button>' +
+        '</div>' +
+      '</div>';
+    app.appendChild(podcastForm);
+    bindPodcastStartForm();
+
     var form = document.createElement('div');
     form.className = 'form-section';
     form.innerHTML =
@@ -2019,10 +2180,15 @@
       if (description) data.description = description;
       if (templateId) data.templateId = templateId;
       setButtonBusy(btn, true, 'Create', 'Creating...');
+      var cardsContainer = document.getElementById('bundles-table');
+      if (cardsContainer) cardsContainer.innerHTML = '<p>Creating bundle...</p>';
       api.bundles.create(data).then(function () {
         document.getElementById('bundle-title').value = '';
         document.getElementById('bundle-desc').value = '';
         document.getElementById('bundle-template').value = '';
+        bundleState.search = title.toLowerCase();
+        var search = document.getElementById('bundle-search');
+        if (search) search.value = bundleState.search;
         showSuccess('Bundle created.');
         loadBundles();
       }).catch(function (err) {
@@ -2037,6 +2203,136 @@
     app.appendChild(cardsContainer);
 
     loadBundles();
+  }
+
+  function bindPodcastStartForm() {
+    var btn = document.getElementById('podcast-start-btn');
+    if (!btn) return;
+    var podcastTemplate = null;
+    var templateReady = false;
+    function setPodcastStartUnavailable(label) {
+      templateReady = false;
+      btn.disabled = true;
+      btn.textContent = label;
+      btn.removeAttribute('aria-busy');
+    }
+    function setPodcastStartReady(template) {
+      podcastTemplate = template;
+      templateReady = true;
+      btn.disabled = false;
+      btn.textContent = 'Start Podcast';
+      btn.removeAttribute('aria-busy');
+    }
+    api.templates.list().then(function (data) {
+      var templates = data.templates || [];
+      podcastTemplate = findPodcastTemplate(templates);
+      if (!podcastTemplate) {
+        setPodcastStartUnavailable('Podcast template missing');
+      } else {
+        setPodcastStartReady(podcastTemplate);
+      }
+    }).catch(function () {
+      setPodcastStartUnavailable('Podcast template unavailable');
+    });
+
+    btn.addEventListener('click', function () {
+      var topic = document.getElementById('podcast-topic').value.trim();
+      var guest = document.getElementById('podcast-guest').value.trim();
+      var anchorDate = document.getElementById('podcast-anchor').value;
+      var guestEmail = document.getElementById('podcast-email').value.trim();
+      var sourceNote = document.getElementById('podcast-source-note').value.trim();
+      if (!templateReady || !podcastTemplate) {
+        showError('Podcast template is not available.');
+        return;
+      }
+      if (!topic || !guest || !anchorDate) {
+        showError('Topic, guest, and live stream date are required.');
+        return;
+      }
+      var title = 'Podcast: ' + anchorDate + ' - ' + topic + ' - ' + guest;
+      var descriptionParts = ['Guest: ' + guest, 'Topic: ' + topic];
+      if (guestEmail) descriptionParts.push('Guest email: ' + guestEmail);
+      if (sourceNote) descriptionParts.push('Source note: ' + sourceNote);
+
+      setButtonBusy(btn, true, 'Start Podcast', 'Starting...');
+      api.bundles.create({
+        title: title,
+        anchorDate: anchorDate,
+        description: descriptionParts.join('\n'),
+        templateId: podcastTemplate.id,
+      }).then(function (created) {
+        var bundle = created.bundle;
+        var tasks = created.tasks || [];
+        if (!guestEmail) return { bundle: bundle, tasks: tasks };
+        return seedRequiredLinkFromLaunch(bundle, tasks, 'Guest email', guestEmail).then(function () {
+          return { bundle: bundle, tasks: tasks };
+        });
+      }).then(function (created) {
+        bundlesCache = null;
+        currentBundleId = created.bundle.id;
+        showSuccess('Podcast workflow started.');
+        renderBundles();
+      }).catch(function (err) {
+        showError('Failed to start Podcast workflow: ' + err.message);
+      }).finally(function () {
+        if (templateReady && podcastTemplate) {
+          setButtonBusy(btn, false, 'Start Podcast');
+        } else {
+          setPodcastStartUnavailable('Podcast template unavailable');
+        }
+      });
+    });
+  }
+
+  function findPodcastTemplate(templates) {
+    function taskCount(template) {
+      return (template.taskDefinitions && template.taskDefinitions.length) || 0;
+    }
+    function hasPodcastTag(template) {
+      return Array.isArray(template.tags) && template.tags.indexOf('podcast') !== -1;
+    }
+    function hasPodcastSource(template) {
+      return Array.isArray(template.sourceDocIds) && template.sourceDocIds.indexOf('task-template.tasks.podcast') !== -1;
+    }
+    function nameIsPodcast(template) {
+      return String(template.name || '').trim().toLowerCase() === 'podcast';
+    }
+    return templates.find(function (template) {
+      return template.type === 'podcast' && taskCount(template) >= 40;
+    }) || templates.find(hasPodcastSource) || templates.find(function (template) {
+      return nameIsPodcast(template) && taskCount(template) >= 40;
+    }) || templates.find(function (template) {
+      return hasPodcastTag(template) && taskCount(template) >= 40;
+    }) || templates.find(function (template) {
+      return template.type === 'podcast';
+    }) || null;
+  }
+
+  function seedRequiredLinkFromLaunch(bundle, tasks, linkName, url) {
+    var updates = [];
+    var existingLinks = bundle.bundleLinks || [];
+    var nextLinks = updateBundleLinksByName(existingLinks, linkName, url);
+    updates.push(api.bundles.update(bundle.id, { bundleLinks: nextLinks }));
+    var task = (tasks || []).find(function (item) {
+      return item.requiredLinkName === linkName;
+    });
+    if (task) {
+      updates.push(api.tasks.update(task.id, { link: url }));
+    }
+    return Promise.all(updates);
+  }
+
+  function updateBundleLinksByName(links, name, url) {
+    var matched = false;
+    var next = (links || []).map(function (link) {
+      if (link.name === name) {
+        matched = true;
+        return { name: link.name, url: url };
+      }
+      return { name: link.name, url: link.url };
+    });
+    if (!matched) next.push({ name: name, url: url });
+    return next;
   }
 
   function loadTemplateDropdown() {
@@ -2234,12 +2530,14 @@
       api.bundles.get(bundleId),
       api.bundles.tasks(bundleId),
       loadUsersOnce(),
-      api.assistantJobs.list({ bundleId: bundleId })
+      api.assistantJobs.list({ bundleId: bundleId }),
+      api.artifacts.list({ bundleId: bundleId })
     ]).then(function (results) {
       var bundle = results[0].bundle;
       var tasks = results[1].tasks || [];
       var usersMap = results[2];
       var assistantJobs = results[3].jobs || [];
+      var artifacts = results[4].artifacts || [];
 
       // Sort tasks by date ascending
       tasks.sort(function (a, b) {
@@ -2248,6 +2546,38 @@
 
       var doneCount = tasks.filter(function (t) { return t.status === 'done'; }).length;
       var totalCount = tasks.length;
+      var fileTasks = tasks.filter(function (task) { return task.requiresFile; });
+      return Promise.all(fileTasks.map(function (task) {
+        return api.files.list({ taskId: task.id }).then(function (data) {
+          return { taskId: task.id, files: data.files || [] };
+        }).catch(function () {
+          return { taskId: task.id, files: [] };
+        });
+      })).then(function (fileResults) {
+        var filesByTask = {};
+        fileResults.forEach(function (result) {
+          filesByTask[result.taskId] = result.files;
+        });
+        return {
+          bundle: bundle,
+          tasks: tasks,
+          usersMap: usersMap,
+          assistantJobs: assistantJobs,
+          artifacts: artifacts,
+          doneCount: doneCount,
+          totalCount: totalCount,
+          filesByTask: filesByTask,
+        };
+      });
+    }).then(function (detail) {
+      var bundle = detail.bundle;
+      var tasks = detail.tasks;
+      var usersMap = detail.usersMap;
+      var assistantJobs = detail.assistantJobs;
+      var artifacts = detail.artifacts;
+      var doneCount = detail.doneCount;
+      var totalCount = detail.totalCount;
+      var filesByTask = detail.filesByTask;
 
       container.innerHTML = '';
 
@@ -2316,6 +2646,12 @@
         descDiv.innerHTML = renderMarkdownLinks(bundle.description);
         container.appendChild(descDiv);
       }
+
+      var contextSection = document.createElement('div');
+      contextSection.className = 'workflow-context-panel';
+      contextSection.setAttribute('data-testid', 'workflow-context');
+      contextSection.innerHTML = renderWorkflowContext(bundle, tasks, filesByTask);
+      container.appendChild(contextSection);
 
       // ── References section (read-only) ──
       var refs = bundle.references || [];
@@ -2407,6 +2743,10 @@
         onDone: function () { loadBundleDetail(bundleId); },
       });
 
+      var artifactsContainer = document.createElement('div');
+      artifactsContainer.innerHTML = renderArtifactPanel(artifacts);
+      container.appendChild(artifactsContainer);
+
       // Add link handler
       setTimeout(function () {
         var addBtn = document.getElementById('add-bl-btn');
@@ -2441,14 +2781,37 @@
       tasksContainer.id = 'bundle-tasks-table';
       container.appendChild(tasksContainer);
 
-      renderBundleTasksTable(bundleId, tasks, usersMap, bundle);
+      renderBundleTasksTable(bundleId, tasks, usersMap, bundle, filesByTask);
     }).catch(function (err) {
       container.innerHTML = '';
       showError('Failed to load bundle: ' + err.message);
     });
   }
 
-  function renderBundleTasksTable(bundleId, tasks, usersMap, bundle) {
+  function renderWorkflowContext(bundle, tasks, filesByTask) {
+    var today = todayString();
+    var active = tasks.filter(function (task) { return task.status !== 'done'; });
+    var overdue = active.filter(function (task) { return task.date && task.date < today; });
+    var waiting = active.filter(function (task) { return task.status === 'waiting'; });
+    var followUps = waiting.filter(isDueFollowUpTask);
+    var missingLinks = (bundle.bundleLinks || []).filter(function (link) { return !link.url; });
+    var missingFiles = active.filter(function (task) {
+      return task.requiresFile && (!filesByTask[task.id] || filesByTask[task.id].length === 0);
+    });
+    var nextTasks = active.slice().sort(function (a, b) {
+      return (a.date || '').localeCompare(b.date || '');
+    }).slice(0, 3);
+    return '<div class="workflow-context-grid">' +
+      '<div class="workflow-context-metric"><span>Next due</span><strong>' + escapeHtml(nextTasks.map(function (task) { return task.date + ' · ' + task.description; }).join(' | ') || 'None') + '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Overdue</span><strong>' + overdue.length + '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Waiting</span><strong>' + waiting.length + '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Follow-ups due</span><strong>' + followUps.length + '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Missing links</span><strong>' + missingLinks.length + '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Missing files</span><strong>' + missingFiles.length + '</strong></div>' +
+    '</div>';
+  }
+
+  function renderBundleTasksTable(bundleId, tasks, usersMap, bundle, filesByTask) {
     var container = document.getElementById('bundle-tasks-table');
     if (!container) return;
 
@@ -2470,8 +2833,10 @@
       var isDone = t.status === 'done';
       var hasRequiredLink = !!t.requiredLinkName;
       var linkFilled = !!(t.link && t.link.trim());
+      var taskFiles = filesByTask[t.id] || [];
+      var fileProofMissing = !!t.requiresFile && taskFiles.length === 0;
       var artifactBlockTitle = taskArtifactBlockTitle(t);
-      var checkboxDisabled = (hasRequiredLink && !linkFilled) || !!artifactBlockTitle;
+      var checkboxDisabled = (hasRequiredLink && !linkFilled) || fileProofMissing || !!artifactBlockTitle;
       // A task is a milestone if it has stageOnComplete set
       var isMilestone = !!t.stageOnComplete;
 
@@ -2494,6 +2859,7 @@
       checkbox.checked = isDone;
       checkbox.disabled = checkboxDisabled;
       if (artifactBlockTitle) checkbox.title = artifactBlockTitle;
+      if (fileProofMissing) checkbox.title = 'Attach required file first';
       checkbox.setAttribute('data-task-checkbox', t.id);
       checkbox.addEventListener('change', function () {
         var newStatus = checkbox.checked ? 'done' : 'todo';
@@ -2520,17 +2886,8 @@
       descSpan.innerHTML = renderMarkdownLinks(t.description || '');
       mainLine.appendChild(descSpan);
 
-      if (t.instructionsUrl) {
-        var instrLink = document.createElement('a');
-        instrLink.className = 'instructions-link';
-        instrLink.href = t.instructionsUrl;
-        instrLink.target = '_blank';
-        instrLink.rel = 'noopener';
-        instrLink.title = 'Instructions';
-        instrLink.setAttribute('aria-label', instructionLabel(t.description));
-        instrLink.innerHTML = '&#x1F4CB;';
-        mainLine.appendChild(instrLink);
-      }
+      if (t.instructionDocId) mainLine.insertAdjacentHTML('beforeend', renderInstructionLink(processDocUrl(t.instructionDocId), t.description));
+      else if (t.instructionsUrl) mainLine.insertAdjacentHTML('beforeend', renderInstructionLink(t.instructionsUrl, t.description));
 
       body.appendChild(mainLine);
 
@@ -2555,6 +2912,8 @@
       if (metaLine.hasChildNodes()) {
         body.appendChild(metaLine);
       }
+
+      body.insertAdjacentHTML('beforeend', renderInstructionContext(t));
 
       // Required link input inline under description
       if (hasRequiredLink) {
@@ -2610,6 +2969,40 @@
         body.appendChild(wrapper);
       }
 
+      if (t.requiresFile) {
+        var fileWrapper = document.createElement('div');
+        fileWrapper.className = 'required-file-wrapper';
+        fileWrapper.setAttribute('data-required-file-wrapper', t.id);
+        fileWrapper.innerHTML =
+          '<span class="required-link-label">Required file:</span>' +
+          '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' +
+          '<button class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' +
+          (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>');
+        body.appendChild(fileWrapper);
+      }
+
+      if (t.status === 'waiting') {
+        var waitingRow = document.createElement('div');
+        waitingRow.className = 'waiting-task-row';
+        waitingRow.innerHTML =
+          '<span class="badge-waiting">Waiting: ' + escapeHtml(t.waitingFor || 'external reply') + (t.followUpAt ? ' · follow up ' + escapeHtml(formatDateLabel(t.followUpAt)) : '') + '</span>' +
+          renderDashboardTaskActions(t);
+        body.appendChild(waitingRow);
+      } else if (!isDone) {
+        var waitForm = document.createElement('div');
+        waitForm.className = 'waiting-form';
+        waitForm.innerHTML =
+          '<input type="text" class="waiting-for-input" data-waiting-for-task="' + escapeHtml(t.id) + '" placeholder="Waiting for" />' +
+          '<input type="date" class="waiting-followup-input" data-waiting-followup-task="' + escapeHtml(t.id) + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" />' +
+          '<input type="text" class="waiting-note-input" data-waiting-note-task="' + escapeHtml(t.id) + '" placeholder="Note" />' +
+          '<button type="button" class="task-action-btn" data-mark-waiting-task="' + escapeHtml(t.id) + '">Mark waiting</button>';
+        body.appendChild(waitForm);
+      }
+
+      if (t.artifactRefs && t.artifactRefs.length) {
+        body.insertAdjacentHTML('beforeend', renderArtifactRefs(t.artifactRefs));
+      }
+
       var assistantRow = document.createElement('div');
       assistantRow.className = 'assistant-context-row';
       assistantRow.innerHTML = renderAssistantRefs(t.assistantJobRefs);
@@ -2650,6 +3043,109 @@
         container.appendChild(buildTaskRow(t));
       });
     }
+
+    container.querySelectorAll('[data-upload-required-file]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-upload-required-file');
+        var input = container.querySelector('[data-required-file-task="' + taskId + '"]');
+        if (!input || !input.files || !input.files[0]) {
+          showError('Choose a file to attach.');
+          return;
+        }
+        var formData = new FormData();
+        formData.append('taskId', taskId);
+        formData.append('category', 'document');
+        formData.append('file', input.files[0]);
+        setButtonBusy(btn, true, 'Attach', 'Attaching...');
+        api.files.upload(formData).then(function () {
+          showSuccess('File attached.');
+          loadBundleDetail(bundleId);
+        }).catch(function (err) {
+          showError('Failed to attach file: ' + err.message);
+          setButtonBusy(btn, false, 'Attach');
+        });
+      });
+    });
+
+    container.querySelectorAll('[data-mark-waiting-task]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-mark-waiting-task');
+        var waitingFor = (container.querySelector('[data-waiting-for-task="' + taskId + '"]') || {}).value || '';
+        var followUpAt = (container.querySelector('[data-waiting-followup-task="' + taskId + '"]') || {}).value || '';
+        var note = (container.querySelector('[data-waiting-note-task="' + taskId + '"]') || {}).value || '';
+        waitingFor = waitingFor.trim();
+        note = note.trim();
+        if (!waitingFor || !followUpAt || !note) {
+          showError('Waiting tasks need who, follow-up date, and a note.');
+          return;
+        }
+        setButtonBusy(btn, true, 'Mark waiting', 'Saving...');
+        api.tasks.update(taskId, {
+          status: 'waiting',
+          waitingFor: waitingFor,
+          followUpAt: followUpAt,
+          comment: appendTaskEventComment('', 'Waiting for ' + waitingFor + ': ' + note)
+        }).then(function () {
+          showSuccess('Task marked waiting.');
+          refreshBellBadge();
+          loadBundleDetail(bundleId);
+        }).catch(function (err) {
+          showError('Failed to mark waiting: ' + err.message);
+          setButtonBusy(btn, false, 'Mark waiting');
+        });
+      });
+    });
+
+    container.querySelectorAll('[data-follow-up-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-follow-up-action');
+        var taskId = btn.getAttribute('data-task-id');
+        if (action === 'response-received') {
+          recordResponseReceivedFromWorkflow(taskId, btn, bundleId);
+        } else if (action === 'follow-up-sent') {
+          recordFollowUpSentFromWorkflow(taskId, btn, container, bundleId);
+        }
+      });
+    });
+  }
+
+  function recordResponseReceivedFromWorkflow(taskId, btn, bundleId) {
+    if (!taskId) return;
+    setButtonBusy(btn, true, 'Response received', 'Saving...');
+    api.tasks.update(taskId, {
+      status: 'todo',
+      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Response received')
+    }).then(function () {
+      showSuccess('Task moved back to todo.');
+      refreshBellBadge();
+      loadBundleDetail(bundleId);
+    }).catch(function (err) {
+      showError('Failed to update task: ' + err.message);
+      setButtonBusy(btn, false, 'Response received');
+    });
+  }
+
+  function recordFollowUpSentFromWorkflow(taskId, btn, container, bundleId) {
+    if (!taskId) return;
+    var input = container.querySelector('.follow-up-next-date[data-task-id="' + taskId + '"]');
+    var nextDate = input ? input.value : '';
+    if (!nextDate) {
+      showError('Choose the next follow-up date.');
+      return;
+    }
+    setButtonBusy(btn, true, 'Follow-up sent', 'Saving...');
+    api.tasks.update(taskId, {
+      status: 'waiting',
+      followUpAt: nextDate,
+      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Follow-up sent; next follow-up ' + nextDate)
+    }).then(function () {
+      showSuccess('Follow-up recorded.');
+      refreshBellBadge();
+      loadBundleDetail(bundleId);
+    }).catch(function (err) {
+      showError('Failed to record follow-up: ' + err.message);
+      setButtonBusy(btn, false, 'Follow-up sent');
+    });
   }
 
   function renderAssistantJobsList(container, jobs, options) {

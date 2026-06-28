@@ -191,6 +191,24 @@ function mergeArtifactRef(refs: ArtifactRef[] | undefined, ref: ArtifactRef): Ar
   return existing.filter((item) => item.artifactId !== ref.artifactId).concat(ref);
 }
 
+function mergeBundleLink(
+  links: Array<{ name: string; url: string }> | undefined,
+  name: string,
+  url: string
+): Array<{ name: string; url: string }> {
+  const existing = Array.isArray(links) ? links : [];
+  let matched = false;
+  const next = existing.map((link) => {
+    if (link.name === name) {
+      matched = true;
+      return { name: link.name, url };
+    }
+    return { name: link.name, url: link.url };
+  });
+  if (!matched) next.push({ name, url });
+  return next;
+}
+
 async function mirrorJobRef(client: DynamoDBDocumentClient, job: AssistantJobRecord): Promise<void> {
   const ref = assistantJobRef(job);
   if (job.taskId) {
@@ -213,6 +231,31 @@ async function mirrorArtifactRef(client: DynamoDBDocumentClient, job: AssistantJ
     const bundle = await getBundle(client, job.bundleId);
     if (bundle) await updateBundle(client, job.bundleId, { artifactRefs: mergeArtifactRef(bundle.artifactRefs, ref) });
   }
+}
+
+async function mirrorApprovedArtifactProof(
+  client: DynamoDBDocumentClient,
+  job: AssistantJobRecord,
+  artifact: ArtifactRecord
+): Promise<void> {
+  await mirrorArtifactRef(client, job, artifact);
+
+  if (!job.taskId || !artifact.storageUri) return;
+  const task = await getTask(client, job.taskId);
+  if (!task || !task.requiredLinkName || task.link) return;
+
+  await updateTask(client, job.taskId, {
+    link: artifact.storageUri,
+    artifactRefs: mergeArtifactRef(task.artifactRefs, artifactRef(artifact)),
+  });
+
+  const bundleId = job.bundleId || task.bundleId;
+  if (!bundleId) return;
+  const bundle = await getBundle(client, bundleId);
+  if (!bundle) return;
+  await updateBundle(client, bundleId, {
+    bundleLinks: mergeBundleLink(bundle.bundleLinks, task.requiredLinkName, artifact.storageUri),
+  });
 }
 
 async function appendEvent(
@@ -448,6 +491,18 @@ async function handleApprove(id: string, event: LambdaEvent, client: DynamoDBDoc
   const decidedAt = new Date().toISOString();
   const approval: Record<string, unknown> = { status: 'approved', decidedAt };
   if (actorId) approval.decidedBy = actorId;
+  const approvedArtifacts: ArtifactRecord[] = [];
+  for (const artifactId of Array.from(new Set(job.outputArtifactIds))) {
+    const artifact = await getArtifact(client, artifactId);
+    if (!artifact) continue;
+    const artifactUpdates: Record<string, unknown> = {
+      status: 'approved',
+      reviewedAt: decidedAt,
+    };
+    if (actorId) artifactUpdates.reviewedBy = actorId;
+    const approvedArtifact = await updateArtifact(client, artifact.id, artifactUpdates);
+    if (approvedArtifact) approvedArtifacts.push(approvedArtifact);
+  }
   const updated = await updateAssistantJob(client, id, {
     status: 'approved',
     approval,
@@ -455,6 +510,9 @@ async function handleApprove(id: string, event: LambdaEvent, client: DynamoDBDoc
   });
   if (updated) {
     await mirrorJobRef(client, updated);
+    for (const artifact of approvedArtifacts) {
+      await mirrorApprovedArtifactProof(client, updated, artifact);
+    }
     await appendEvent(client, id, 'approved', 'Assistant job output approved', actorId, { outputArtifactIds: updated.outputArtifactIds });
   }
   return jsonResponse(200, { job: updated });
