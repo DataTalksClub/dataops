@@ -875,11 +875,23 @@ const row = renderUnifiedSearchRow({
   title: "Prepare Mailchimp newsletter",
   context: "Process doc task-template.newsletter",
   route: { kind: "task", taskId: "task-newsletter" },
-  fields: { status: "todo", due_date: "2026-06-29", assignee: "operator", proof: "url proof required" },
+  fields: {
+    status: "todo",
+    due_date: "2026-06-29",
+    assignee: "Grace",
+    assignee_id: "00000000-0000-0000-0000-000000000001",
+    workflow_title: "Issue 57 podcast workflow acceptance",
+    bundle_id: "11111111-1111-1111-1111-111111111111",
+    proof: "url proof required",
+  },
 }, "Mailchimp");
 assert.equal(row.className, "unified-search-row result-task");
 assert.match(row.children[0].children[0].innerHTML, /Prepare <mark>Mailchimp<\\/mark> newsletter/);
 assert.equal(row.children[1].children[0].textContent, "Live task");
+assert.equal(row.children[1].children[3].textContent, "owner Grace");
+assert.equal(row.children[1].children[4].textContent, "workflow Issue 57 podcast workflow acceptance");
+assert.equal(row.textContent.includes("00000000-0000-0000-0000-000000000001"), false);
+assert.equal(row.textContent.includes("11111111-1111-1111-1111-111111111111"), false);
 row.click();
 assert.deepEqual(actionCalls.at(-1), { type: "task", taskId: "task-newsletter" });
 
