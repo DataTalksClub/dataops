@@ -22,6 +22,7 @@ work.
 
 The commands here are source-of-truth wrappers or package-local commands from:
 
+- root `Makefile`
 - `_docs/PROCESS.md`
 - root `package.json`
 - `work-engine/package.json`
@@ -32,6 +33,15 @@ The commands here are source-of-truth wrappers or package-local commands from:
 
 Internal process docs do not require user-facing prose tooling or stylint-style
 review unless Alexey explicitly asks for prose polish.
+
+The root Makefile is the preferred discoverable entry point:
+
+```bash
+make help
+```
+
+The package-local commands in this document remain canonical for debugging when
+a Make target fails or an issue asks for the underlying command explicitly.
 
 ## Runtime Shape
 
@@ -72,10 +82,16 @@ Python metadata.
 
 ## Quick Start
 
+Install local dependencies:
+
+```bash
+make setup
+```
+
 ### 1. Start the work-engine dev server
 
 ```bash
-npm --prefix work-engine run dev
+make dev-work-engine
 ```
 
 This starts the work-engine on `http://127.0.0.1:3000` with an in-memory
@@ -85,17 +101,18 @@ dashboard UI and all `/api/*` endpoints.
 ### 2. Start the portal local server
 
 ```bash
-cd lambda-functions
-uv run --extra search python -m lambda_functions.local_server --port 8787
+make dev-docs
 ```
 
 Set `WORK_ENGINE_DEV_URL` so the portal proxies `/work/api/*` to the
 work-engine dev server:
 
 ```bash
-WORK_ENGINE_DEV_URL=http://127.0.0.1:3000 \
-  uv run --extra search python -m lambda_functions.local_server --port 8787
+WORK_ENGINE_DEV_URL=http://127.0.0.1:3000 make dev-docs
 ```
+
+Run `make dev-work-engine` and the proxied `make dev-docs` command in separate
+terminals. Both targets run in the foreground and stop with Ctrl-C.
 
 ### 3. Open the portal frontend
 
@@ -103,8 +120,7 @@ The portal local server serves the API at `http://127.0.0.1:8787`. For the
 frontend with hot reload, use any static server pointing at `frontend/`:
 
 ```bash
-cd frontend
-python3 -m http.server 5173
+make dev-frontend
 ```
 
 Then open `http://127.0.0.1:5173/` and click **Operations home**.
@@ -168,6 +184,12 @@ trusted headers and the shared portal secret.
 Run docs app tests from the repo root:
 
 ```bash
+make test-docs
+```
+
+Underlying command:
+
+```bash
 uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
 ```
 
@@ -176,6 +198,12 @@ behavior, docs/search handlers, auth behavior, and portal routing.
 
 Build the search index when `content/**`, content metadata, document IDs,
 registry/search behavior, templates, archive rules, or search routing changes:
+
+```bash
+make search-index
+```
+
+Underlying command:
 
 ```bash
 cd lambda-functions
@@ -193,6 +221,14 @@ behavior, point `SEARCH_INDEX_PATH` at the file under `.tmp/`.
 Run work-engine commands from the repo root:
 
 ```bash
+make test-work-engine
+make typecheck-work-engine
+make build-work-engine
+```
+
+Underlying package-local commands:
+
+```bash
 npm --prefix work-engine test
 npm --prefix work-engine run typecheck
 npm --prefix work-engine run build
@@ -201,6 +237,12 @@ npm --prefix work-engine run build
 Run E2E tests when the change affects operator flows, browser UI, route
 behavior, task lifecycle behavior, bundle behavior, exports, recurring tasks, or
 end-to-end workflow behavior:
+
+```bash
+make test-work-engine-e2e
+```
+
+Underlying package-local command:
 
 ```bash
 npm --prefix work-engine run test:e2e
@@ -213,14 +255,27 @@ npm run test:work-engine
 npm run typecheck:work-engine
 npm run build:work-engine
 npm run dev:work-engine
+npm run seed:work-engine
 ```
 
 The package-local commands remain canonical because CI and role-agent issue
 specs usually name them directly.
 
+The Makefile also exposes the local seed wrapper:
+
+```bash
+make seed-work-engine
+```
+
 ### DataOps Podcast Assistant Module
 
 Run safe local DataOps podcast assistant module tests from the repo root:
+
+```bash
+make test-assistant
+```
+
+Underlying command:
 
 ```bash
 uv run --project assistants/podcast pytest
@@ -242,16 +297,36 @@ is added.
 Validate the SAM/CloudFormation template from `lambda-functions/`:
 
 ```bash
-cd lambda-functions
-sam validate --template-file template.full.yaml
+make sam-validate
+```
+
+This target is local validation only. It prepares empty AWS config and
+credentials files under `.tmp/aws-empty/`, disables EC2 metadata lookup, defaults
+`AWS_DEFAULT_REGION` to `eu-west-1`, and does not require live AWS credentials
+or run `sam deploy`.
+
+Underlying command shape:
+
+```bash
+cd lambda-functions && \
+  AWS_CONFIG_FILE=../.tmp/aws-empty/config \
+  AWS_SHARED_CREDENTIALS_FILE=../.tmp/aws-empty/credentials \
+  AWS_EC2_METADATA_DISABLED=true \
+  AWS_DEFAULT_REGION=eu-west-1 \
+  sam validate --template-file template.full.yaml
 ```
 
 When packaging or dependency behavior changes, also run the SAM build used by
 the deployment workflow:
 
 ```bash
-cd lambda-functions
-sam build --config-env full-sandbox
+make sam-build
+```
+
+Underlying command:
+
+```bash
+cd lambda-functions && sam build --config-env full-sandbox
 ```
 
 Production deployment is not a normal local developer command. After approved

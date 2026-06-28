@@ -39,8 +39,26 @@ workflow.
 
 ## Running locally
 
+Use the root Makefile as the preferred command surface:
+
 ```bash
-docker compose up --build
+make help
+make setup
+```
+
+For the full local Operations Home path, run the long-lived servers in separate
+terminals:
+
+```bash
+make dev-work-engine
+WORK_ENGINE_DEV_URL=http://127.0.0.1:3000 make dev-docs
+make dev-frontend
+```
+
+The Docker Compose stack remains available through the Makefile:
+
+```bash
+make dev-compose
 # Frontend:           http://127.0.0.1:5173
 # Lambda upstream:    http://127.0.0.1:8787
 ```
@@ -49,6 +67,35 @@ The frontend container proxies `/docs`, `/search`, `/health`, `/images`,
 `/folders`, and `/lint` to the lambda container, and exposes its own
 `/git/status` and `/git/commit` so the UI can commit + push using the host's
 SSH key (mounted read-only).
+
+## Development commands
+
+`make help` lists the current setup, dev, search, SOP lint, test, SAM
+validation/build, and CI-parity targets. These targets are thin wrappers around
+the package-local commands documented below so failures stay visible and package
+commands remain useful for troubleshooting.
+
+Common verification targets:
+
+```bash
+make search-index
+make test-docs
+make seed-work-engine
+make test-work-engine
+make typecheck-work-engine
+make build-work-engine
+make test-work-engine-e2e
+make test-assistant
+make smoke-docs
+make sam-validate
+make sam-build
+make ci
+```
+
+Run `make sop-lint FILES="content/path/to/sop.md"` for marked SOP files.
+`make sam-validate` is local template validation only: it uses empty AWS config
+and credentials files under `.tmp/aws-empty/`, disables EC2 metadata lookup, and
+does not require live AWS credentials or run `sam deploy`.
 
 ## Node workspace
 
@@ -77,6 +124,11 @@ npm run validate:export:work-engine -- <export-dir>
 npm run dry-run:import:work-engine -- <export-dir>
 npm run clean:work-engine
 ```
+
+The Makefile uses these root workspace scripts where they are the daily entry
+point, while work-engine test, typecheck, build, and E2E targets continue to
+preserve the package-local `npm --prefix work-engine ...` commands required for
+debugging and CI parity.
 
 `package-lock.json` at the repo root is the npm lockfile for the workspace. The
 work-engine Lambda packaging, CI cache, and Docker Lambda image all use that
