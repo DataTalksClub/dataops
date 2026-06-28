@@ -79,6 +79,7 @@ function openDocument(path) {{ actionCalls.push({{ type: "doc", path }}); }}
 function openTaskPanel(taskId) {{ actionCalls.push({{ type: "task", taskId }}); }}
 function openBundlePanel(bundleId) {{ actionCalls.push({{ type: "bundle", bundleId }}); }}
 function openQuickWorkflowForm(options) {{ actionCalls.push({{ type: "startWorkflow", options }}); }}
+function showWorkspaceSurface(view) {{ actionCalls.push({{ type: "surface", view }}); }}
 function makeElement(tag) {{
   const element = {{
     tagName: tag.toUpperCase(),
@@ -843,6 +844,63 @@ assert.match(cards[1].children[2].textContent, /#30/);
             "buildOperationsFutureSections",
             "renderOperationsRuntimeState",
             "renderOperationsFutureSections",
+        ],
+    )
+
+    assert result["ok"] is True
+
+
+def test_unified_search_groups_source_states_and_routes_actions():
+    result = _run_app_js_functions(
+        """
+const sourceState = renderSearchSourceState([
+  { source: "docs", status: "ok", count: 1 },
+  { source: "work-engine:tasks", status: "unavailable", error: "work down" },
+]);
+assert.equal(sourceState.className, "ops-runtime-state search-source-state");
+assert.equal(sourceState.children[0].textContent, "Partial search results");
+assert.match(sourceState.children[2].children[0].textContent, /work-engine:tasks/);
+
+const groups = groupSearchResults([
+  { type: "doc", title: "Newsletter SOP" },
+  { type: "task", title: "Prepare newsletter" },
+  { type: "workflow", title: "Newsletter run" },
+]);
+assert.deepEqual(groups.map((group) => group.type), ["task", "workflow", "doc"]);
+
+const row = renderUnifiedSearchRow({
+  type: "task",
+  source_label: "Live task",
+  action_label: "Open task",
+  title: "Prepare Mailchimp newsletter",
+  context: "Process doc task-template.newsletter",
+  route: { kind: "task", taskId: "task-newsletter" },
+  fields: { status: "todo", due_date: "2026-06-29", assignee: "operator", proof: "url proof required" },
+}, "Mailchimp");
+assert.equal(row.className, "unified-search-row result-task");
+assert.match(row.children[0].children[0].innerHTML, /Prepare <mark>Mailchimp<\\/mark> newsletter/);
+assert.equal(row.children[1].children[0].textContent, "Live task");
+row.click();
+assert.deepEqual(actionCalls.at(-1), { type: "task", taskId: "task-newsletter" });
+
+openUnifiedSearchResult({ type: "doc", path: "content/tasks/templates/newsletter.md", route: { kind: "doc", path: "content/tasks/templates/newsletter.md" } });
+assert.deepEqual(actionCalls.at(-1), { type: "doc", path: "content/tasks/templates/newsletter.md" });
+openUnifiedSearchResult({ type: "workflow", route: { kind: "workflow", bundleId: "bundle-newsletter" } });
+assert.deepEqual(actionCalls.at(-1), { type: "bundle", bundleId: "bundle-newsletter" });
+openUnifiedSearchResult({ type: "template", title: "Newsletter", route: { kind: "template", templateId: "tmpl-newsletter", templateType: "newsletter" } });
+assert.equal(actionCalls.at(-1).type, "startWorkflow");
+assert.equal(actionCalls.at(-1).options.template.templateId, "tmpl-newsletter");
+openUnifiedSearchResult({ type: "assistant-job", route: { kind: "assistant-job", assistantJobId: "job-1" } });
+assert.deepEqual(actionCalls.at(-1), { type: "surface", view: "assistants" });
+""",
+        [
+            "renderSearchSourceState",
+            "groupSearchResults",
+            "renderUnifiedSearchRow",
+            "openUnifiedSearchResult",
+            "setHighlightedText",
+            "escapeRegex",
+            "labelizeWorkValue",
         ],
     )
 
