@@ -4886,6 +4886,90 @@
     return '<div class="intake-next"><strong>' + escapeHtml(label) + ':</strong> ' + refPills(items, prefix) + '</div>';
   }
 
+  function intakeTaskRelationshipHref(task, taskId, fallbackBundleId) {
+    if (task && task.bundleId) return bundleHash(task.bundleId, task.id || taskId);
+    return taskHash((task && task.id) || taskId, task && task.date, fallbackBundleId);
+  }
+
+  function intakeRelationshipLabel(title, fallbackId) {
+    return title || fallbackId || 'Unknown relationship';
+  }
+
+  function taskRelationshipHtml(taskId, fallbackBundleId) {
+    var fallbackLabel = intakeRelationshipLabel('', taskId);
+    return '<div class="intake-relationship-card" data-intake-task-ref="' + escapeHtml(taskId) + '" data-fallback-bundle-id="' + escapeHtml(fallbackBundleId || '') + '">' +
+      '<div class="intake-relationship-copy">' +
+        '<strong data-intake-task-title="' + escapeHtml(taskId) + '">' + escapeHtml(fallbackLabel) + '</strong>' +
+        '<span data-intake-task-meta="' + escapeHtml(taskId) + '">Task ID ' + escapeHtml(taskId) + '</span>' +
+      '</div>' +
+      '<a class="intake-relationship-action" data-intake-task-link="' + escapeHtml(taskId) + '" href="' + escapeHtml(intakeTaskRelationshipHref(null, taskId, fallbackBundleId)) + '">Open task</a>' +
+    '</div>';
+  }
+
+  function workflowRelationshipHtml(bundleId) {
+    var bundle = intakeState.bundleMap[bundleId] || {};
+    var label = intakeRelationshipLabel(bundle.title, bundleId);
+    return '<div class="intake-relationship-card" data-intake-workflow-ref="' + escapeHtml(bundleId) + '">' +
+      '<div class="intake-relationship-copy">' +
+        '<strong>' + escapeHtml(label) + '</strong>' +
+        '<span>Workflow ID ' + escapeHtml(bundleId) + '</span>' +
+      '</div>' +
+      '<a class="intake-relationship-action" data-intake-workflow-link="' + escapeHtml(bundleId) + '" href="' + escapeHtml(bundleHash(bundleId)) + '">Open workflow</a>' +
+    '</div>';
+  }
+
+  function relationshipGroup(label, html) {
+    return '<div class="intake-relationship-group"><strong>' + escapeHtml(label) + '</strong>' +
+      (html ? '<div class="intake-relationship-list">' + html + '</div>' : '<span class="intake-next">None</span>') +
+    '</div>';
+  }
+
+  function renderIntakeRelationships(item) {
+    var bundleIds = item.bundleIds || [];
+    var fallbackBundleId = bundleIds.length === 1 ? bundleIds[0] : '';
+    var taskHtml = (item.taskIds || []).map(function (taskId) {
+      return taskRelationshipHtml(taskId, fallbackBundleId);
+    }).join('');
+    var workflowHtml = bundleIds.map(function (bundleId) {
+      return workflowRelationshipHtml(bundleId);
+    }).join('');
+    return relationshipGroup('Tasks', taskHtml) +
+      relationshipGroup('Workflows', workflowHtml) +
+      refGroup('Assistant jobs', item.assistantJobIds || [], 'assistant');
+  }
+
+  function hydrateIntakeTaskRelationships(container, item) {
+    var taskIds = item.taskIds || [];
+    var bundleIds = item.bundleIds || [];
+    var fallbackBundleId = bundleIds.length === 1 ? bundleIds[0] : '';
+    taskIds.forEach(function (taskId) {
+      api.tasks.get(taskId).then(function (task) {
+        var card = container.querySelector('[data-intake-task-ref="' + CSS.escape(taskId) + '"]');
+        if (!card) return;
+        var title = card.querySelector('[data-intake-task-title]');
+        var meta = card.querySelector('[data-intake-task-meta]');
+        var link = card.querySelector('[data-intake-task-link]');
+        if (title) title.textContent = intakeRelationshipLabel(task.description, task.id || taskId);
+        if (meta) {
+          var metaParts = ['Task ID ' + (task.id || taskId)];
+          if (task.date) metaParts.push(formatDateLabel(task.date));
+          if (task.bundleId) {
+            var bundle = intakeState.bundleMap[task.bundleId] || {};
+            metaParts.push('Workflow ' + (bundle.title || task.bundleId));
+          } else if (fallbackBundleId) {
+            var fallbackBundle = intakeState.bundleMap[fallbackBundleId] || {};
+            metaParts.push('Context ' + (fallbackBundle.title || fallbackBundleId));
+          }
+          meta.textContent = metaParts.join(' | ');
+        }
+        if (link) link.setAttribute('href', intakeTaskRelationshipHref(task, taskId, fallbackBundleId));
+      }).catch(function () {
+        var card = container.querySelector('[data-intake-task-ref="' + CSS.escape(taskId) + '"]');
+        if (card) card.classList.add('intake-relationship-card--fallback');
+      });
+    });
+  }
+
   function renderIntakeDetail(container, item, options) {
     if (!item) {
       container.innerHTML = '<div class="intake-panel"><h3>Intake detail</h3><div class="empty-state">Select an intake item to triage it into workflow context.</div></div>';
@@ -4910,7 +4994,7 @@
         '</div>' +
         '<div class="intake-detail-section"><h4>Raw intake excerpt</h4><p>' + escapeHtml(item.summary || '') + '</p><div class="intake-next">Raw bodies and binaries stay behind storage refs; this item is not task proof.</div></div>' +
         '<div class="intake-detail-section"><h4>Relationships</h4>' +
-          refGroup('Tasks', item.taskIds || [], 'task') + refGroup('Workflows', item.bundleIds || [], 'workflow') + refGroup('Assistant jobs', item.assistantJobIds || [], 'assistant') +
+          renderIntakeRelationships(item) +
         '</div>' +
         '<div class="intake-detail-section"><h4>Links, files, and artifacts</h4>' +
           refGroup('Links', linkLabels, '') + refGroup('Files', fileLabels, '') + refGroup('Artifacts', artifactLabels, '') +
@@ -4943,6 +5027,8 @@
         '</div>' +
         '<div class="intake-detail-section"><h4>History</h4><div class="assistant-timeline">' + (history || '<div class="intake-next">No triage history recorded.</div>') + '</div></div>' +
       '</div>';
+
+    hydrateIntakeTaskRelationships(container, item);
 
     function reason() {
       return document.getElementById('intake-reason').value.trim();
