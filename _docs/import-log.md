@@ -220,3 +220,72 @@ with the reusable fields required by the policy above.
   - #7 completed the canonical path move. Local `inbox/`, `documents/`, and
     Heru logs remain transitional development storage until later assistant
     job/artifact work attaches outputs to DataOps workflow records.
+
+## 2026-06-28 Issue #20 DTC Operations Backend Reconciliation
+
+Selective reconciliation for #20 confirmed that the DataOps
+`lambda-functions/` backend already carries the DTC Operations docs backend
+capabilities plus V1-specific workflow integration. No whole source files were
+copied from `../dtc-operations`; this update strengthened missing evidence and
+adapted weaker DataOps-local defaults without replacing the authoritative
+Lambda runtime.
+
+### DTC Operations
+
+- Source system: DTC Operations.
+- Source path: `../dtc-operations`
+- Source repository URL: `git@github.com:DataTalksClub/dtc-operations.git`
+- Source state: Git-backed source commit
+  `e6f7b43f641389fa58a8e027485f5aac18e8ace5`.
+- Source-state commands:
+  - `git -C ../dtc-operations rev-parse HEAD`
+    - Status: passed on 2026-06-28 during #20 verification.
+    - Output: `e6f7b43f641389fa58a8e027485f5aac18e8ace5`
+  - `git -C ../dtc-operations status --short`
+    - Status: passed on 2026-06-28 during #20 verification.
+    - Output: no output; source worktree clean.
+- Destination paths reconciled in this repo:
+  - `lambda-functions/src/lambda_functions/docs_index.py`
+  - `lambda-functions/src/lambda_functions/search_handler.py`
+  - `lambda-functions/template.github-actions.yaml`
+  - `scripts/audit_doc_structure.py`
+  - `scripts/convert_processes.py`
+  - `scripts/optimize_images.py`
+  - `tests/docs_app/`
+- Reconciled behavior:
+  - Search index documents now carry a workflow-facing `description` field in
+    addition to `id`, `path`, `title`, `summary`, `domain`, `doc_type`, and
+    `purpose`.
+  - Maintenance scripts that still had docs-era defaults now operate on
+    `content/` and `content/images/`; generated conversion/image reports go
+    under `.tmp/`.
+  - The legacy GitHub Actions OIDC template no longer defaults to
+    `dtc-operations` repository or stack names. The active deploy template
+    remains `template.github-actions-dataops.yaml`.
+  - Tests now prove image upload commits, folder rename/delete commits,
+    supported `/docs/resolve` refs, built search index fields, script defaults,
+    and DataOps OIDC defaults without live GitHub writes.
+- Deliberate exclusions confirmed during #20:
+  - No files were copied from `.venv`, `.aws-sam`, `.tmp`, `__pycache__`,
+    caches, secrets, generated indexes, runtime outputs, or source-repo private
+    artifacts.
+  - `backend/` was not populated; `lambda-functions/` remains the authoritative
+    Python backend.
+  - Source repositories outside DataOps were read only and not modified.
+- Validation:
+  - `uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app`:
+    passed on 2026-06-28 during #20 verification; 84 passed, 1 skipped.
+  - `cd lambda-functions && uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output ../.tmp/dataops-content-search.index`:
+    passed on 2026-06-28 during #20 verification; indexed 357 documents.
+  - `cd lambda-functions && sam validate --template-file template.full.yaml`:
+    skipped on 2026-06-28 during #20 verification because `sam` was not
+    installed in the local environment (`sam: command not found`).
+  - `python3 scripts/sop_lint.py content/systems/airtable/sops/access-and-update-the-data-on-airtable.md`:
+    passed on 2026-06-28 during #20 verification.
+  - `python3 scripts/sop_parse.py content/systems/airtable/sops/access-and-update-the-data-on-airtable.md >/dev/null`:
+    passed on 2026-06-28 during #20 verification.
+  - `git diff --check`: passed on 2026-06-28 during #20 verification.
+- Follow-up context:
+  - #21 remains the broader backend/script path and branding cleanup issue.
+  - #32 and #33 remain the workflow search design and stable-ID content
+    migration follow-ups. #20 intentionally did not bulk-edit process docs.

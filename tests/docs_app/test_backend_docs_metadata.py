@@ -285,22 +285,30 @@ related_docs: []
         {"rawPath": "/docs/registry", "requestContext": {"http": {"method": "GET"}}},
         None,
     )
-    resolve_response = api_handler.handler(
-        {
-            "rawPath": "/docs/resolve",
-            "requestContext": {"http": {"method": "GET"}},
-            "queryStringParameters": {"ref": "[[podcast-create-document]]"},
-        },
-        None,
-    )
-
     assert registry_response["statusCode"] == 200
     registry_payload = json.loads(registry_response["body"])
     assert registry_payload["documents"][0]["id"] == "media.podcast.create-document"
 
-    assert resolve_response["statusCode"] == 200
-    resolve_payload = json.loads(resolve_response["body"])
-    assert resolve_payload["document"]["path"] == "content/media/podcast/sops/create-document.md"
+    refs = [
+        "media.podcast.create-document",
+        "podcast-create-document",
+        "content/media/podcast/sops/create-document.md",
+        "/media/podcast/sops/create-document.md",
+        "[[podcast-create-document]]",
+        "doc:media.podcast.create-document",
+    ]
+    for ref in refs:
+        resolve_response = api_handler.handler(
+            {
+                "rawPath": "/docs/resolve",
+                "requestContext": {"http": {"method": "GET"}},
+                "queryStringParameters": {"ref": ref},
+            },
+            None,
+        )
+        assert resolve_response["statusCode"] == 200
+        resolve_payload = json.loads(resolve_response["body"])
+        assert resolve_payload["document"]["path"] == "content/media/podcast/sops/create-document.md"
 
 
 def test_exported_task_templates_are_git_backed_process_documents():

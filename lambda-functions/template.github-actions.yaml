@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: GitHub Actions OIDC deploy identity for DTC operations docs
+Description: Legacy GitHub Actions OIDC deploy identity for DataOps docs/API stacks
 
 Parameters:
   GitHubOwner:
@@ -7,22 +7,22 @@ Parameters:
     Default: DataTalksClub
   GitHubRepo:
     Type: String
-    Default: dtc-operations
+    Default: dataops
   GitHubBranch:
     Type: String
     Default: main
   DeployRoleName:
     Type: String
-    Default: dtc-operations-github-actions-deploy
+    Default: dataops-github-actions-deploy
   FullDocsStackName:
     Type: String
-    Default: dtc-operations-full-sandbox
+    Default: dataops-v1
   FullDocsRegion:
     Type: String
     Default: eu-west-1
   ApiStackName:
     Type: String
-    Default: dtc-operations-api
+    Default: dataops-api
   ApiRegion:
     Type: String
     Default: eu-central-1
@@ -64,7 +64,7 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}
       Policies:
-        - PolicyName: dtc-operations-full-docs-deploy
+        - PolicyName: dataops-docs-deploy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
