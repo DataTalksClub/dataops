@@ -1,0 +1,11 @@
+Date,Task,Notes,Status,Extra
+2026-06-20,"Send follow-up to sponsor","Waiting for sponsor reply; follow up with sponsor",NEW,
+21 Jun 2026,"Create process document for speaker handoff","See https://docs.google.com/document/d/doc-safe/edit",new,
+06/22/2026,"Backup the mailing list from mailchimp","weekly backup",NEW,
+2026-06-23,"Prepare newsletter for the week after next","newsletter workflow candidate",NEW,
+2026-99-99,"Malformed date task","should be reported",NEW,
+2026-06-24,"Upload invoice receipt","password=super-secret https://example.com/proof.pdf?access_token=secret",NEW,
+,"",,,
+2026-06-25,"Review guest materials with Alexey","person mentioned only",NEW,
+2026-06-26,"Write multiline task
+with second line","requires report link",NEW,
