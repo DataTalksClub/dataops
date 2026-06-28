@@ -1060,7 +1060,7 @@
 
     /* Dashboard: wider container */
     #app.dashboard-wide {
-      max-width: 1200px;
+      max-width: 1360px;
     }
 
     /* ── Notification bar ─────────────────────────────────── */
@@ -2318,18 +2318,62 @@
 
     #dashboard-tasks {
       max-width: 100%;
-      overflow-x: auto;
+      overflow-x: visible;
     }
 
     #dashboard-tasks .task-table-compact {
       width: 100%;
-      table-layout: fixed;
+      table-layout: auto;
+    }
+
+    #dashboard-tasks .task-table-compact thead,
+    #dashboard-tasks .task-table-compact tbody {
+      display: block;
+      width: 100%;
+    }
+
+    #dashboard-tasks .task-table-compact thead tr,
+    #dashboard-tasks .task-table-compact tbody tr[data-task-row] {
+      display: grid;
+      grid-template-columns: 34px minmax(92px, 0.6fr) minmax(160px, 1.2fr) minmax(190px, 1.45fr) minmax(86px, 0.6fr) minmax(180px, 1.2fr) minmax(118px, 0.9fr);
+      align-items: start;
+    }
+
+    #dashboard-tasks .dashboard-queue-group,
+    #dashboard-tasks .dashboard-task-actions-row {
+      display: grid;
+      grid-template-columns: 1fr;
     }
 
     #dashboard-tasks .task-table-compact th,
     #dashboard-tasks .task-table-compact td {
       overflow-wrap: anywhere;
+      min-width: 0;
       vertical-align: top;
+    }
+
+    #dashboard-tasks .task-table-compact th {
+      white-space: normal;
+      word-break: normal;
+    }
+
+    #dashboard-tasks .dashboard-queue-group td,
+    #dashboard-tasks .dashboard-task-actions-row td {
+      display: block;
+      grid-column: 1 / -1;
+      width: 100%;
+    }
+
+    #dashboard-tasks .dashboard-task-main,
+    #dashboard-tasks .dashboard-task-workflow {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    #dashboard-tasks .dashboard-task-description {
+      line-height: 1.45;
     }
 
     #dashboard-tasks .task-action-group {
@@ -2347,13 +2391,24 @@
       border: 1px solid #e5e7eb;
       border-radius: 4px;
       background: #fff;
+      display: grid;
+      grid-template-columns: minmax(92px, 0.7fr) minmax(190px, 1.5fr) auto minmax(148px, 1fr) auto auto;
+      align-items: end;
     }
 
     #dashboard-tasks .required-link-wrapper,
     #dashboard-tasks .required-file-wrapper,
     #dashboard-tasks .completion-proof-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 5px;
       max-width: 100%;
       width: 100%;
+    }
+
+    #dashboard-tasks .required-link-label {
+      white-space: normal;
     }
 
     #dashboard-tasks .required-link-input,
@@ -2367,6 +2422,20 @@
       max-width: 100%;
       min-width: 0;
       width: 100%;
+    }
+
+    #dashboard-tasks .task-action-btn,
+    #dashboard-tasks .btn-save-link {
+      min-height: 32px;
+      white-space: nowrap;
+    }
+
+    #dashboard-tasks .badge-bundle,
+    #dashboard-tasks .badge-assignee {
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.45;
     }
 
     #dashboard-tasks .badge-recurring,
@@ -2440,7 +2509,7 @@
 
     .dashboard-layout {
       display: grid;
-      grid-template-columns: minmax(300px, 0.78fr) minmax(420px, 1.22fr);
+      grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
       gap: 22px;
     }
 
@@ -2789,6 +2858,18 @@
         width: 100%;
       }
 
+      #dashboard-tasks .task-table-compact thead {
+        display: none;
+      }
+
+      #dashboard-tasks .task-table-compact tbody,
+      #dashboard-tasks .task-table-compact tbody tr[data-task-row],
+      #dashboard-tasks .dashboard-queue-group,
+      #dashboard-tasks .dashboard-task-actions-row {
+        display: block;
+        width: 100%;
+      }
+
       .task-table-compact tr,
       .responsive-table tr {
         background: var(--surface);
@@ -2833,6 +2914,11 @@
 
       .required-link-input {
         width: 100%;
+      }
+
+      #dashboard-tasks .dashboard-task-actions-row .task-action-group {
+        display: flex;
+        align-items: stretch;
       }
     }
 
