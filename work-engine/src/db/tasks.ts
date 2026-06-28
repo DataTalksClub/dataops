@@ -25,7 +25,7 @@ function cleanItem(item: Record<string, unknown> | undefined): Task | null {
  * Returns the clean task object (without PK/SK).
  */
 async function createTask(client: DynamoDBDocumentClient, taskData: Record<string, unknown>): Promise<Task> {
-  const id = crypto.randomUUID();
+  const id = typeof taskData.id === 'string' && taskData.id.trim().length > 0 ? taskData.id : crypto.randomUUID();
   const now = new Date().toISOString();
 
   const item = {
