@@ -12,7 +12,9 @@ on:
       - "scripts/**"
       - "tests/docs_app/**"
       - "work-engine/**"
+      - "Makefile"
       - "package.json"
+      - "package-lock.json"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:
@@ -53,23 +55,23 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: work-engine/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Run docs app tests
         working-directory: .
         run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
 
-      - name: Install work-engine dependencies
-        working-directory: work-engine
+      - name: Install Node workspace dependencies
+        working-directory: .
         run: npm ci
 
       - name: Run work-engine tests
-        working-directory: work-engine
-        run: npm test
+        working-directory: .
+        run: npm run test:work-engine
 
       - name: Typecheck work-engine
-        working-directory: work-engine
-        run: npm run typecheck
+        working-directory: .
+        run: npm run typecheck:work-engine
 
       - name: Build search index
         run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-search.index
@@ -137,7 +139,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: work-engine/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3

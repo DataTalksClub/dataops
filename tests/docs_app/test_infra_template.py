@@ -106,7 +106,7 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "UpdateReplacePolicy: Retain" in portal_secret
     assert "Type: AWS::Serverless::Function" in work_engine
     assert "BuildMethod: makefile" in work_engine
-    assert "CodeUri: ../work-engine" in work_engine
+    assert "CodeUri: .." in work_engine
     assert "Runtime: nodejs20.x" in work_engine
     assert "Handler: dist/handler.handler" in work_engine
     assert "FunctionUrlConfig" not in work_engine
