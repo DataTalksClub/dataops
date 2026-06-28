@@ -1750,6 +1750,15 @@ body[data-view="create"] .editor-view {
   display: inline-block;
 }
 
+.work-bell-count.is-error {
+  background: var(--danger);
+}
+
+.mobile-work-bell-button {
+  min-width: 36px;
+  justify-content: center;
+}
+
 .work-bell-panel {
   position: fixed;
   top: 52px;
@@ -1813,6 +1822,11 @@ body[data-view="create"] .editor-view {
   font-size: 12px;
   padding: 16px;
   text-align: center;
+}
+
+.work-bell-empty.is-error {
+  color: var(--danger);
+  text-align: left;
 }
 
 body.dark .task-panel {
@@ -1922,10 +1936,14 @@ body.dark .task-status-badge.waiting {
   padding: 0;
   width: 100%;
   min-width: 0;
+  field-sizing: content;
   font-size: clamp(28px, 4.5vw, 46px);
   font-weight: 750;
   line-height: 1.12;
+  overflow: hidden;
+  resize: none;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .document-title:disabled {
@@ -3980,7 +3998,7 @@ body[data-view="create"] #back-button {
 
   .mobile-topbar {
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto;
     gap: 8px;
     align-items: center;
     height: 48px;
