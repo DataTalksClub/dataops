@@ -6,6 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO_ROOT / "lambda-functions" / "template.full.yaml"
 DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "lambda-functions" / "template.github-actions-dataops.yaml"
+LEGACY_DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "lambda-functions" / "template.github-actions.yaml"
 
 
 def _resource_block(template: str, resource_name: str) -> str:
@@ -162,3 +163,32 @@ def test_github_deploy_role_can_manage_work_engine_lambda():
     assert "Sid: SecretsManagerDataOpsPortalSecret" in template
     assert "secretsmanager:CreateSecret" in template
     assert "secretsmanager:GetRandomPassword" in template
+
+
+def test_active_and_legacy_oidc_templates_default_to_dataops_repo_and_stack():
+    active = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+    legacy = LEGACY_DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+
+    for template in (active, legacy):
+        assert "Default: DataTalksClub" in template
+        assert "Default: dataops" in template
+        assert "Default: dataops-v1" in template
+        assert "Default: dtc-operations" not in template
+        assert "Default: dtc-operations-full-sandbox" not in template
+
+
+def test_maintenance_scripts_default_to_dataops_content_and_tmp_outputs():
+    audit = (REPO_ROOT / "scripts" / "audit_doc_structure.py").read_text(encoding="utf-8")
+    standardize = (REPO_ROOT / "scripts" / "standardize_doc_structure.py").read_text(encoding="utf-8")
+    optimize = (REPO_ROOT / "scripts" / "optimize_images.py").read_text(encoding="utf-8")
+    convert = (REPO_ROOT / "scripts" / "convert_processes.py").read_text(encoding="utf-8")
+
+    assert 'DOCS_DIR = ROOT / "content"' in audit
+    assert "from audit_doc_structure import DOCS_DIR" in standardize
+    assert 'DOCS_DIR = ROOT / "content"' in optimize
+    assert 'IMAGES_DIR = ROOT / "content" / "images"' in optimize
+    assert 'REPORT = ROOT / ".tmp" / "image-optimization-report.csv"' in optimize
+    assert 'DOCS_DIR = ROOT / "content"' in convert
+    assert 'IMAGES_DIR = ROOT / "content" / "images"' in convert
+    assert 'MANIFEST = ROOT / ".tmp" / "conversion-manifest.csv"' in convert
+    assert "TemporaryDirectory(prefix=\"processes-\", dir=temp_root)" in convert

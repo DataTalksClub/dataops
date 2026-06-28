@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS_DIR = ROOT / "docs"
+DOCS_DIR = ROOT / "content"
 REPORT = ROOT / "reports" / "structure-audit.csv"
 
 REQUIRED_FRONTMATTER = [

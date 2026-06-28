@@ -9,11 +9,12 @@ from lambda_functions.doc_registry import build_registry
 from lambda_functions import sop_parse
 
 
-TEXT_FIELDS = ["title", "summary", "purpose", "headings", "body"]
+TEXT_FIELDS = ["title", "summary", "description", "purpose", "headings", "body"]
 KEYWORD_FIELDS = ["path", "id", "domain", "doc_type"]
 BOOSTS = {
     "title": 4.0,
     "summary": 3.0,
+    "description": 3.0,
     "purpose": 3.0,
     "headings": 2.0,
     "body": 1.0,
@@ -68,6 +69,9 @@ def iter_docs(docs_dir: Path) -> list[dict[str, Any]]:
 
         search_body = doc_to_search_text(raw_text, body)
 
+        summary = scalar_frontmatter_value(post.metadata.get("summary"))
+        description = scalar_frontmatter_value(post.metadata.get("description")) or summary
+
         documents.append(
             {
                 "path": relative_path,
@@ -75,7 +79,8 @@ def iter_docs(docs_dir: Path) -> list[dict[str, Any]]:
                 "title": title,
                 "domain": infer_domain(doc_path),
                 "doc_type": scalar_frontmatter_value(post.metadata.get("doc_type")) or infer_doc_type(doc_path),
-                "summary": scalar_frontmatter_value(post.metadata.get("summary")),
+                "summary": summary,
+                "description": description,
                 "purpose": scalar_frontmatter_value(post.metadata.get("purpose")),
                 "headings": "\n".join(headings),
                 "body": search_body,
