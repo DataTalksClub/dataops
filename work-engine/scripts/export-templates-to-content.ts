@@ -47,7 +47,7 @@ console.log(`Exported ${DEFAULT_TEMPLATES.length} task templates to ${outputDir}
 
 function renderTemplate(template: TaskTemplate): string {
   const title = `${template.name} Task Template`;
-  const summary = `Git-backed DataTasks template for the ${template.name} operational workflow.`;
+  const summary = `Git-backed DataOps workflow template for the ${template.name} operational workflow.`;
   const tags = unique([...(template.tags || []), 'task-template', template.type]);
 
   const parts = [
@@ -59,7 +59,7 @@ function renderTemplate(template: TaskTemplate): string {
     'source: "work-engine/scripts/seed-templates.ts"',
     'systems:',
     '  - dataops',
-    '  - datatasks',
+    '  - work-engine',
     'tags:',
     ...tags.map((tag) => `  - ${quoteYaml(tag)}`),
     '---',

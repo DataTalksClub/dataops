@@ -119,7 +119,7 @@ Short term:
   token
 - browser work calls use same-origin `/work/api/*`; the frontend does not use a
   separate work-engine URL, localStorage bearer token, CORS flow, or standalone
-  DataTasks sign-in
+  work-engine sign-in
 - initial actor can be `portal-admin` until real portal users are implemented
 - in production portal mode, work-engine hides `/api/auth/*` and `/api/me`
   returns the portal actor from trusted headers.
@@ -299,8 +299,8 @@ This matters for:
 
 ## Frontend Direction
 
-Extend the existing vanilla frontend rather than mounting the old standalone
-DataTasks app as a second product.
+Extend the existing vanilla frontend rather than mounting the imported
+work-engine UI as a second product.
 
 The frontend should evolve toward:
 

@@ -53,7 +53,7 @@ Use one of these `doc_type` values in frontmatter:
 - `sop` - step-by-step instructions for doing operational work.
 - `checklist` - ordered checklist that links to SOPs or summarizes a multi-step workflow.
 - `template` - reusable text, email, contract, announcement, or prompt template.
-- `task-template` - Git-backed DataTasks workflow template.
+- `task-template` - Git-backed DataOps workflow template.
 - `reference` - overview, index, FAQ, guide, spreadsheet export, or troubleshooting reference.
 - `playbook` - campaign or strategy plan, usually with multiple activities and references.
 - `prompt` - maintained AI prompt.

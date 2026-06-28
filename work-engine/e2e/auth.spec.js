@@ -257,7 +257,7 @@ test.describe('Frontend sign-in flow', () => {
     await page.goto('about:blank');
     // Clear localStorage for the origin
     await page.evaluate(() => {
-      // We can't access datatasks localStorage from about:blank
+      // We can't access DataOps localStorage from about:blank
       // Instead, we'll use addInitScript-like approach via evaluate on the page
     });
     // Go to app and immediately clear the token before DOMContentLoaded runs
@@ -390,6 +390,39 @@ test.describe('Frontend sign-in flow', () => {
     // Should NOT show sign-in form (session restored from localStorage)
     await expect(page.locator('#signin-email')).not.toBeVisible({ timeout: 5000 });
     await expect(page.locator('#signout-btn')).toBeVisible();
+
+    await context.close();
+  });
+
+  test('legacy browser session keys migrate to DataOps keys', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: undefined });
+    const page = await context.newPage();
+    const legacyUser = {
+      id: '00000000-0000-0000-0000-000000000001',
+      name: 'Grace',
+      email: 'grace@datatalks.club',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    await page.addInitScript((user) => {
+      localStorage.setItem('datatasks_token', 'e2e-bypass-token');
+      localStorage.setItem('datatasks_user', JSON.stringify(user));
+    }, legacyUser);
+
+    await page.goto('/');
+    await expect(page.locator('#signout-btn')).toBeVisible({ timeout: 5000 });
+
+    const storage = await page.evaluate(() => ({
+      token: localStorage.getItem('dataops_token'),
+      user: localStorage.getItem('dataops_user'),
+      legacyToken: localStorage.getItem('datatasks_token'),
+      legacyUser: localStorage.getItem('datatasks_user'),
+    }));
+
+    expect(storage.token).toBe('e2e-bypass-token');
+    expect(JSON.parse(storage.user).email).toBe('grace@datatalks.club');
+    expect(storage.legacyToken).toBe('e2e-bypass-token');
+    expect(JSON.parse(storage.legacyUser).email).toBe('grace@datatalks.club');
 
     await context.close();
   });

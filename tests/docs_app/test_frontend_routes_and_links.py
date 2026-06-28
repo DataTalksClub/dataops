@@ -292,21 +292,21 @@ const docs = [
   {
     path: "content/tasks/templates/newsletter.md",
     title: "Newsletter Task Template",
-    summary: "Git-backed DataTasks template for the Newsletter operational workflow.",
+    summary: "Git-backed DataOps workflow template for the Newsletter operational workflow.",
     doc_type: "task-template",
     tags: ["Newsletter", "task-template", "newsletter"],
   },
   {
     path: "content/tasks/templates/podcast.md",
     title: "Podcast Task Template",
-    summary: "Git-backed DataTasks template for the Podcast operational workflow.",
+    summary: "Git-backed DataOps workflow template for the Podcast operational workflow.",
     doc_type: "task-template",
     tags: ["Podcast", "task-template", "podcast"],
   },
   {
     path: "content/tasks/templates/social-media.md",
     title: "Social Media Weekly Task Template",
-    summary: "Git-backed DataTasks template for the Social Media Weekly operational workflow.",
+    summary: "Git-backed DataOps workflow template for the Social Media Weekly operational workflow.",
     doc_type: "task-template",
     tags: ["Social media", "task-template", "social-media"],
   },
@@ -522,7 +522,7 @@ const docs = [
   {
     path: "content/tasks/templates/newsletter.md",
     title: "Newsletter Task Template",
-    summary: "Git-backed DataTasks template for the Newsletter operational workflow.",
+    summary: "Git-backed DataOps workflow template for the Newsletter operational workflow.",
     doc_type: "task-template",
     tags: ["task-template"],
   },

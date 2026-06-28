@@ -101,8 +101,8 @@ For the current repository, this maps to:
 dataops/
   frontend/             # existing docs portal frontend
   lambda-functions/     # existing docs portal backend/lambda
-  work-engine/          # existing DataTasks engine, to be folded into app/
-  podcast-assistant/    # existing assistant, to be folded into assistants/
+  work-engine/          # DataOps work-engine module, to be folded into app/
+  assistants/podcast/   # DataOps podcast assistant module
   content/              # existing process docs and templates
   docs/                 # product/architecture/recommendation docs
   tests/                # docs portal tests
@@ -572,7 +572,8 @@ Current-to-target migration:
   and `app/backend/src/services/docs`, or remains as Python until a later
   consolidation decision.
 - `frontend/` becomes the shared portal frontend shell or docs frontend module.
-- `podcast-assistant/` becomes `assistants/podcast/` plus app API integration.
+- the old source `podcast-assistant/` import has become `assistants/podcast/`
+  plus app API integration.
 - `content/` either remains here short-term or moves to `dataops-knowledge`
   when the sync/import boundary is implemented.
 
@@ -631,8 +632,8 @@ Add documentation and metadata that says:
 - `content/` is operational knowledge.
 - `content/tasks/templates/` is canonical imported task-template documentation
   for now.
-- `work-engine/` is execution engine.
-- `podcast-assistant/` is assistant prototype.
+- `work-engine/` is the DataOps execution engine.
+- `assistants/podcast/` is the DataOps podcast assistant module.
 - `lambda-functions/` and `frontend/` are current deployed portal app.
 
 No large moves yet.
@@ -682,7 +683,8 @@ Until then, keeping `content/` in `dataops` is simpler and safer.
 After unified UX decisions are implemented:
 
 - fold `work-engine` into `app`;
-- fold `podcast-assistant` into `assistants/podcast`;
+- keep the old source `podcast-assistant` import folded into
+  `assistants/podcast`;
 - consolidate shared types and schemas;
 - keep old folder moves in separate commits to avoid mixing refactors with
   product behavior changes.
@@ -721,8 +723,8 @@ dataops/
     ...existing deployed docs/backend until folded in...
   frontend/
     ...existing docs frontend until folded in...
-  podcast-assistant/
-    ...prototype until folded into assistants/podcast...
+  assistants/podcast/
+    ...DataOps podcast assistant module...
   docs/
     product and architecture docs
 ```

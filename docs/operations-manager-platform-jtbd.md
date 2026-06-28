@@ -17,7 +17,7 @@ artifacts are part of one flow.
 
 The analysis is grounded in:
 
-- `work-engine/docs/specs.md`: DataTasks product problem, data model, task
+- `work-engine/docs/specs.md`: imported source product problem, data model, task
   types, templates, bundles, recurring configs, required links, required files,
   stages, and dashboard goals.
 - `work-engine/docs/data.md`: Trello board and spreadsheet analysis, including
@@ -36,15 +36,15 @@ The analysis is grounded in:
   reference material.
 - `content/**/sops/*.md` and `content/**/templates/*.md`: process documents
   used as contextual instructions.
-- `podcast-assistant/README.md`, `podcast-assistant/process/podcast.md`, and
-  `podcast-assistant/templates/podcast_guest_intake.md`: assistant pattern for
+- `assistants/podcast/README.md`, `assistants/podcast/process/podcast.md`, and
+  `assistants/podcast/templates/podcast_guest_intake.md`: assistant pattern for
   turning raw inputs into prepared operating documents.
 
 ## The User
 
 The primary user is the DataTalksClub operations manager. The existing
-DataTasks specification names this person as Grace, but the product should not
-be built around one hard-coded person. The role is:
+The imported work-engine specification names this person as Grace, but the
+product should not be built around one hard-coded person. The role is:
 
 - Keeps weekly community operations moving.
 - Coordinates guests, speakers, sponsors, authors, publishers, assistants, and
@@ -1114,7 +1114,7 @@ The first meaningful version should not be "docs plus search". It should be:
 ## Non-Goals For V1
 
 - Do not make the docs tree the primary homepage.
-- Do not present DataTasks as a separate disconnected tool.
+- Do not present the imported work-engine as a separate disconnected tool.
 - Do not hide waiting work in generic todo status.
 - Do not allow tasks with required proof to be completed without proof.
 - Do not build a heavy project-management system with unnecessary complexity.

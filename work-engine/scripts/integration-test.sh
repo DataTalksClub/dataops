@@ -91,7 +91,7 @@ test_endpoint "Create recurring config" \
 # SPA shell
 test_endpoint "SPA shell serves HTML" \
   '{"httpMethod":"GET","path":"/"}' \
-  'DataTasks'
+  'DataOps'
 
 echo ""
 echo "================================"

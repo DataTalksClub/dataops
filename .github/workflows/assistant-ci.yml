@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 jobs:
-  podcast-assistant:
-    name: Podcast Assistant tests
+  dataops-podcast-module:
+    name: DataOps podcast assistant tests
     runs-on: ubuntu-latest
 
     steps:
@@ -31,7 +31,7 @@ jobs:
       - name: Install Python
         run: uv python install 3.13
 
-      - name: Run Podcast Assistant unit tests
+      - name: Run DataOps podcast assistant unit tests
         run: uv run --project assistants/podcast pytest
 
       - name: Verify real-engine tests are opt-in
