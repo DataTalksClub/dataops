@@ -18,9 +18,9 @@ from slugify import slugify
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE = ROOT / "Processes-20260519T133611Z-3-001.zip"
-DOCS_DIR = ROOT / "docs"
-IMAGES_DIR = ROOT / "assets" / "images"
-MANIFEST = ROOT / "docs" / "_conversion-manifest.csv"
+DOCS_DIR = ROOT / "content"
+IMAGES_DIR = ROOT / "content" / "images"
+MANIFEST = ROOT / ".tmp" / "conversion-manifest.csv"
 
 
 @dataclass(frozen=True)
@@ -198,7 +198,9 @@ def main() -> None:
         raise SystemExit(f"Archive not found: {ARCHIVE}")
 
     converted: list[ConvertedPath] = []
-    with tempfile.TemporaryDirectory(prefix="processes-") as tmp:
+    temp_root = ROOT / ".tmp"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="processes-", dir=temp_root) as tmp:
         tmp_path = Path(tmp)
         with zipfile.ZipFile(ARCHIVE) as zf:
             file_names = [name for name in zf.namelist() if not name.endswith("/")]

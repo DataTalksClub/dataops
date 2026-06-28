@@ -9,9 +9,9 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCS_DIR = ROOT / "docs"
-IMAGES_DIR = ROOT / "assets" / "images"
-REPORT = ROOT / "docs" / "_image-optimization-report.csv"
+DOCS_DIR = ROOT / "content"
+IMAGES_DIR = ROOT / "content" / "images"
+REPORT = ROOT / ".tmp" / "image-optimization-report.csv"
 
 JPEG_QUALITY = 85
 MIN_SAVINGS_RATIO = 0.15

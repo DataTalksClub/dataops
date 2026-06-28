@@ -76,6 +76,7 @@ def query_params(event: dict[str, Any]) -> dict[str, str]:
 
 def format_result(match: dict[str, Any]) -> dict[str, Any]:
     summary = match.get("summary") or ""
+    description = match.get("description") or summary
     return {
         "path": match.get("path"),
         "id": match.get("id"),
@@ -83,6 +84,6 @@ def format_result(match: dict[str, Any]) -> dict[str, Any]:
         "domain": match.get("domain"),
         "doc_type": match.get("doc_type"),
         "summary": summary,
-        "description": summary,
+        "description": description,
         "purpose": match.get("purpose") or "",
     }
