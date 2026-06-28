@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter
+aliases: []
 title: "Add just published podcast page to the newsletter"
 summary: "Procedure for adding a newly published podcast page link to the podcast block in a Mailchimp newsletter."
 doc_type: sop
@@ -11,7 +13,9 @@ systems:
   - mailchimp
 loom:
   - https://www.loom.com/share/d1a4502c2d8d412aa76b741c4fb5ca06
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - template.newsletter.create-newsletter-draft-from-template-in-mailchimp
 ---
 
 # Add just published podcast page to the newsletter

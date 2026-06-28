@@ -1,4 +1,6 @@
 ---
+id: template.newsletter.newsletter-performance
+aliases: []
 title: "Newsletter Performance"
 summary: "Email template for sending sponsors newsletter performance results after their campaign runs."
 doc_type: template
@@ -8,7 +10,10 @@ tags:
 systems:
   - linkedin
   - twitter
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - sop.newsletter.mailchimp.filling-newsletter-statistics
+  - sop.newsletter.mailchimp.getting-campaign-performance-stats
 ---
 
 # Newsletter Performance

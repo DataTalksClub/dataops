@@ -3,10 +3,33 @@ const path = require('path');
 const fs = require('fs');
 
 const AUTH_STATE_PATH = path.join(__dirname, 'e2e', '.auth-state.json');
+const DEFAULT_AUTH_STATE = {
+  cookies: [],
+  origins: [
+    {
+      origin: 'http://localhost:3001',
+      localStorage: [
+        {
+          name: 'dataops_token',
+          value: 'e2e-bypass-token',
+        },
+        {
+          name: 'dataops_user',
+          value: JSON.stringify({
+            id: '00000000-0000-0000-0000-000000000001',
+            name: 'Grace',
+            email: 'grace@datatalks.club',
+            createdAt: '2026-01-01T00:00:00.000Z',
+          }),
+        },
+      ],
+    },
+  ],
+};
 
-// Create an empty auth state file if it doesn't exist (first run)
+// Create a usable auth state file if it doesn't exist (first run).
 if (!fs.existsSync(AUTH_STATE_PATH)) {
-  fs.writeFileSync(AUTH_STATE_PATH, JSON.stringify({ cookies: [], origins: [] }));
+  fs.writeFileSync(AUTH_STATE_PATH, JSON.stringify(DEFAULT_AUTH_STATE, null, 2));
 }
 
 module.exports = defineConfig({

@@ -1184,6 +1184,345 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(statusDoneBody.externalStatus, 'approved');
     });
 
+    it('allows an explicit skip closure to complete URL/file proof tasks without weakening normal proof gates', async () => {
+      const validation = {
+        skipClosure: {
+          allowedStatuses: ['not sponsored this week'],
+          requires: ['comment'],
+        },
+      };
+
+      const sponsorDocTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Create sponsorship document',
+          date: '2026-04-01',
+          requiredLinkName: 'Sponsorship document',
+          proofRequirement: { type: 'url', label: 'Sponsorship document', required: true },
+          validation,
+        }),
+      }, {});
+      const sponsorDocTask = JSON.parse(sponsorDocTaskRes.body);
+
+      const sponsorDocWrongSkip = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${sponsorDocTask.id}`,
+        body: JSON.stringify({ status: 'done', comment: 'no sponsor' }),
+      }, {});
+      assert.strictEqual(sponsorDocWrongSkip.statusCode, 400);
+      assert.strictEqual(JSON.parse(sponsorDocWrongSkip.body).error, "Cannot mark task as done: required link 'Sponsorship document' is not filled");
+
+      const skippedSponsorDoc = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${sponsorDocTask.id}`,
+        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week' }),
+      }, {});
+      assert.strictEqual(skippedSponsorDoc.statusCode, 200);
+      const skippedSponsorDocBody = JSON.parse(skippedSponsorDoc.body);
+      assert.strictEqual(skippedSponsorDocBody.status, 'done');
+      assert.strictEqual(skippedSponsorDocBody.link, undefined);
+      assert.strictEqual(skippedSponsorDocBody.comment, 'not sponsored this week');
+
+      const linkTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Newsletter sponsored LinkedIn post',
+          date: '2026-04-01',
+          requiredLinkName: 'LinkedIn',
+          proofRequirement: { type: 'url', label: 'LinkedIn', required: true },
+          validation,
+        }),
+      }, {});
+      const linkTask = JSON.parse(linkTaskRes.body);
+
+      const missingSkip = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${linkTask.id}`,
+        body: JSON.stringify({ status: 'done', comment: 'no sponsor' }),
+      }, {});
+      assert.strictEqual(missingSkip.statusCode, 400);
+      assert.strictEqual(JSON.parse(missingSkip.body).error, "Cannot mark task as done: required link 'LinkedIn' is not filled");
+
+      const skippedLink = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${linkTask.id}`,
+        body: JSON.stringify({ status: 'done', comment: '[2026-04-01T09:00:00.000Z] not sponsored this week' }),
+      }, {});
+      assert.strictEqual(skippedLink.statusCode, 200);
+      const skippedLinkBody = JSON.parse(skippedLink.body);
+      assert.strictEqual(skippedLinkBody.status, 'done');
+      assert.strictEqual(skippedLinkBody.link, undefined);
+      assert.match(skippedLinkBody.comment, /not sponsored this week/);
+
+      const fileTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Newsletter sponsor invoice',
+          date: '2026-04-01',
+          requiresFile: true,
+          proofRequirement: { type: 'file', label: 'Invoice PDF or invoice proof', required: true },
+          validation,
+        }),
+      }, {});
+      const fileTask = JSON.parse(fileTaskRes.body);
+
+      const skippedFile = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${fileTask.id}`,
+        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week' }),
+      }, {});
+      assert.strictEqual(skippedFile.statusCode, 200);
+      const skippedFileBody = JSON.parse(skippedFile.body);
+      assert.strictEqual(skippedFileBody.status, 'done');
+      assert.strictEqual(skippedFileBody.requiresFile, true);
+      assert.strictEqual(skippedFileBody.comment, 'not sponsored this week');
+
+      const normalFileTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Normal invoice',
+          date: '2026-04-01',
+          requiresFile: true,
+          proofRequirement: { type: 'file', label: 'Invoice PDF', required: true },
+        }),
+      }, {});
+      const normalFileTask = JSON.parse(normalFileTaskRes.body);
+
+      const normalFileDone = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${normalFileTask.id}`,
+        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week' }),
+      }, {});
+      assert.strictEqual(normalFileDone.statusCode, 400);
+      assert.strictEqual(JSON.parse(normalFileDone.body).error, 'Cannot mark task as done: required file has not been uploaded');
+    });
+
+    it('blocks schedule-email-newsletter from announcing until the Mailchimp shared bundle link is filled', async () => {
+      const templateRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/templates',
+        body: JSON.stringify({
+          name: 'Newsletter shared-link gate',
+          type: 'newsletter',
+          bundleLinkDefinitions: [{ name: 'Mailchimp newsletter' }],
+          taskDefinitions: [{
+            refId: 'schedule-email-newsletter',
+            description: 'Schedule Email Newsletter',
+            offsetDays: 0,
+            stageOnComplete: 'announced',
+            proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
+            validation: { requiredBundleLinks: ['Mailchimp newsletter'] },
+          }],
+        }),
+      }, {});
+      assert.strictEqual(templateRes.statusCode, 201, templateRes.body);
+      const template = JSON.parse(templateRes.body).template;
+
+      const bundleRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/bundles',
+        body: JSON.stringify({
+          title: 'Newsletter required bundle links',
+          anchorDate: '2026-07-20',
+          templateId: template.id,
+          stage: 'preparation',
+          status: 'active',
+          bundleLinks: [{ name: 'Mailchimp newsletter', url: '' }],
+        }),
+      }, {});
+      assert.strictEqual(bundleRes.statusCode, 201, bundleRes.body);
+      const bundleBody = JSON.parse(bundleRes.body);
+      const bundle = bundleBody.bundle;
+      const task = bundleBody.tasks[0];
+      assert.strictEqual(task.stageOnComplete, 'announced');
+
+      const blockedDone = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${task.id}`,
+        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
+      }, {});
+      assert.strictEqual(blockedDone.statusCode, 400);
+      assert.strictEqual(JSON.parse(blockedDone.body).error, "Cannot mark task as done: required bundle link 'Mailchimp newsletter' is not filled");
+
+      const blockedBundleRes = await handler({ httpMethod: 'GET', path: `/api/bundles/${bundle.id}` }, {});
+      assert.strictEqual(JSON.parse(blockedBundleRes.body).bundle.stage, 'preparation');
+
+      const bundleUpdateRes = await handler({
+        httpMethod: 'PUT',
+        path: `/api/bundles/${bundle.id}`,
+        body: JSON.stringify({
+          bundleLinks: [{ name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' }],
+        }),
+      }, {});
+      assert.strictEqual(bundleUpdateRes.statusCode, 200);
+
+      const doneRes = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${task.id}`,
+        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
+      }, {});
+      assert.strictEqual(doneRes.statusCode, 200);
+      assert.strictEqual(JSON.parse(doneRes.body).status, 'done');
+
+      const announcedBundleRes = await handler({ httpMethod: 'GET', path: `/api/bundles/${bundle.id}` }, {});
+      assert.strictEqual(JSON.parse(announcedBundleRes.body).bundle.stage, 'announced');
+    });
+
+    it('allows non-done tasks with required shared links without a bundle but blocks done', async () => {
+      const validation = { requiredBundleLinks: ['Mailchimp newsletter'] };
+      const todoRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Ad hoc shared-link task',
+          date: '2026-07-20',
+          validation,
+          proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
+        }),
+      }, {});
+      assert.strictEqual(todoRes.statusCode, 201, todoRes.body);
+      const task = JSON.parse(todoRes.body);
+      assert.strictEqual(task.status, 'todo');
+
+      const updateDone = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${task.id}`,
+        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
+      }, {});
+      assert.strictEqual(updateDone.statusCode, 400);
+      assert.strictEqual(JSON.parse(updateDone.body).error, "Cannot mark task as done: required shared bundle link 'Mailchimp newsletter' needs a workflow bundle");
+
+      const createDone = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Ad hoc done shared-link task',
+          date: '2026-07-20',
+          status: 'done',
+          validation,
+          externalStatus: 'Mailchimp campaign scheduled',
+          proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
+        }),
+      }, {});
+      assert.strictEqual(createDone.statusCode, 400);
+      assert.strictEqual(JSON.parse(createDone.body).error, "Cannot mark task as done: required shared bundle link 'Mailchimp newsletter' needs a workflow bundle");
+    });
+
+    it('blocks missing performance shared links unless an audited sponsor-only skip closure is present', async () => {
+      const bundleRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/bundles',
+        body: JSON.stringify({
+          title: 'Newsletter sponsor-only shared links',
+          anchorDate: '2026-07-20',
+          status: 'active',
+          bundleLinks: [
+            { name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' },
+            { name: 'LinkedIn', url: '' },
+            { name: 'X', url: '' },
+          ],
+        }),
+      }, {});
+      assert.strictEqual(bundleRes.statusCode, 201);
+      const bundle = JSON.parse(bundleRes.body).bundle;
+
+      const validation = {
+        requiredBundleLinks: ['Mailchimp newsletter', 'LinkedIn', 'X'],
+        skipClosure: {
+          allowedStatuses: ['not sponsored this week', 'no social stats available'],
+          requires: ['comment'],
+          suppresses: {
+            'not sponsored this week': { bundleLinks: ['LinkedIn', 'X'], proof: true },
+            'no social stats available': { bundleLinks: ['LinkedIn', 'X'], proof: true },
+          },
+        },
+      };
+
+      const statsTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Add newsletter performance',
+          date: '2026-07-27',
+          bundleId: bundle.id,
+          source: 'template',
+          proofRequirement: { type: 'external-status', label: 'Newsletter, LinkedIn, and X performance stats recorded', required: true },
+          validation,
+        }),
+      }, {});
+      assert.strictEqual(statsTaskRes.statusCode, 201);
+      const statsTask = JSON.parse(statsTaskRes.body);
+
+      const blockedStats = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${statsTask.id}`,
+        body: JSON.stringify({
+          status: 'done',
+          externalStatus: 'Performance stats recorded',
+        }),
+      }, {});
+      assert.strictEqual(blockedStats.statusCode, 400);
+      assert.strictEqual(JSON.parse(blockedStats.body).error, "Cannot mark task as done: required bundle link 'LinkedIn' is not filled");
+
+      const skippedStats = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${statsTask.id}`,
+        body: JSON.stringify({
+          status: 'done',
+          comment: 'not sponsored this week',
+        }),
+      }, {});
+      assert.strictEqual(skippedStats.statusCode, 200);
+      assert.strictEqual(JSON.parse(skippedStats.body).status, 'done');
+      assert.strictEqual(JSON.parse(skippedStats.body).comment, 'not sponsored this week');
+
+      const missingMailchimpBundleRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/bundles',
+        body: JSON.stringify({
+          title: 'Newsletter social-only skip still needs Mailchimp',
+          anchorDate: '2026-07-20',
+          status: 'active',
+          bundleLinks: [
+            { name: 'Mailchimp newsletter', url: '' },
+            { name: 'LinkedIn', url: '' },
+            { name: 'X', url: '' },
+          ],
+        }),
+      }, {});
+      assert.strictEqual(missingMailchimpBundleRes.statusCode, 201);
+      const missingMailchimpBundle = JSON.parse(missingMailchimpBundleRes.body).bundle;
+      const missingMailchimpTaskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Add newsletter performance missing Mailchimp',
+          date: '2026-07-27',
+          bundleId: missingMailchimpBundle.id,
+          source: 'template',
+          proofRequirement: { type: 'external-status', label: 'Newsletter, LinkedIn, and X performance stats recorded', required: true },
+          validation,
+        }),
+      }, {});
+      assert.strictEqual(missingMailchimpTaskRes.statusCode, 201);
+      const missingMailchimpTask = JSON.parse(missingMailchimpTaskRes.body);
+
+      const socialOnlySkip = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${missingMailchimpTask.id}`,
+        body: JSON.stringify({
+          status: 'done',
+          comment: 'no social stats available',
+        }),
+      }, {});
+      assert.strictEqual(socialOnlySkip.statusCode, 400);
+      assert.strictEqual(JSON.parse(socialOnlySkip.body).error, "Cannot mark task as done: required bundle link 'Mailchimp newsletter' is not filled");
+    });
+
     it('rejects malformed proof requirements and metadata refs', async () => {
       const badProof = await handler({
         httpMethod: 'POST',

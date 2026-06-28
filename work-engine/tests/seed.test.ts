@@ -8,6 +8,7 @@ import { listTemplates, instantiateTemplate } from '../src/db/templates';
 import {
   seed,
   DEFAULT_TEMPLATES,
+  NEWSLETTER_SOURCE_DOC_IDS,
   PODCAST_SOURCE_DOC_IDS,
   PODCAST_EXTERNAL_SOURCE_DOC_IDS,
 } from '../scripts/seed-templates';
@@ -92,6 +93,17 @@ describe('Seed script', () => {
     assert.strictEqual(newsletter.triggerLeadDays, 14);
     assert.strictEqual(newsletter.defaultAssigneeId, GRACE_ID);
     assert.strictEqual(newsletter.taskDefinitions!.length, 15);
+    assert.deepStrictEqual(newsletter.phases!.map((phase) => phase.id), [
+      'sponsor-intake',
+      'draft-assembly',
+      'send-prep',
+      'publication',
+      'promotion',
+      'performance',
+    ]);
+    for (const docId of NEWSLETTER_SOURCE_DOC_IDS) {
+      assert.ok(newsletter.sourceDocIds!.includes(docId), `Newsletter sourceDocIds should include ${docId}`);
+    }
 
     // Check references
     assert.ok(newsletter.references!.length >= 2, 'Should have at least 2 references');
@@ -110,7 +122,213 @@ describe('Seed script', () => {
     assert.ok(createSponsorship, 'create-sponsorship-document task should exist');
     assert.ok(createSponsorship.instructionsUrl, 'Should have instructionsUrl');
     assert.ok(createSponsorship.instructionsUrl!.includes('docs.google.com'));
+    assert.strictEqual(createSponsorship.instructionDocId, 'sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter');
+    assert.strictEqual(createSponsorship.instructionStepId, undefined);
     assert.strictEqual(createSponsorship.requiredLinkName, 'Sponsorship document');
+    assert.strictEqual(createSponsorship.phase, 'sponsor-intake');
+    assert.deepStrictEqual(createSponsorship.proofRequirement, {
+      type: 'url',
+      label: 'Sponsorship document',
+      required: true,
+    });
+    assert.deepStrictEqual((createSponsorship.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
+
+    const mailchimp = newsletter.taskDefinitions!.find((td) => td.refId === 'create-mailchimp-campaign');
+    assert.ok(mailchimp);
+    assert.strictEqual(mailchimp.instructionDocId, 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp');
+    assert.strictEqual(mailchimp.instructionStepId, undefined);
+    assert.strictEqual(mailchimp.requiredLinkName, 'Mailchimp newsletter');
+    assert.deepStrictEqual(mailchimp.proofRequirement, {
+      type: 'url',
+      label: 'Mailchimp newsletter',
+      required: true,
+    });
+    assert.strictEqual((mailchimp.validation as any).skipClosure, undefined);
+
+    const sponsorEmail = newsletter.taskDefinitions!.find((td) => td.refId === 'email-sponsor');
+    assert.ok(sponsorEmail);
+    assert.strictEqual(sponsorEmail.instructionDocId, 'template.newsletter.send-sponsorship-document-2-weeks-before');
+    assert.deepStrictEqual(sponsorEmail.proofRequirement, {
+      type: 'comment',
+      label: 'Email the sponsor with the sponsorship document - add Valeriia in communication confirmed',
+      required: true,
+    });
+    assert.strictEqual((sponsorEmail.validation as any).waitingSemantics.waitingFor, 'sponsor content, graphics, or Valeriia review');
+    assert.deepStrictEqual((sponsorEmail.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
+    assert.deepStrictEqual((sponsorEmail.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
+    assert.deepStrictEqual((sponsorEmail.validation as any).requiredBundleLinks, ['Sponsorship document']);
+
+    const sponsoredBlock = newsletter.taskDefinitions!.find((td) => td.refId === 'fill-sponsored-block');
+    assert.ok(sponsoredBlock);
+    assert.strictEqual(sponsoredBlock.instructionDocId, 'sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter');
+    assert.deepStrictEqual(sponsoredBlock.proofRequirement, {
+      type: 'external-status',
+      label: 'Sponsored block filled or issue confirmed unsponsored',
+      required: true,
+    });
+    assert.strictEqual((sponsoredBlock.validation as any).waitingSemantics.waitingFor, 'approved sponsor copy, visual, and CTA');
+    assert.deepStrictEqual((sponsoredBlock.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
+    assert.deepStrictEqual((sponsoredBlock.validation as any).requiredBundleLinks, ['Sponsorship document']);
+
+    const bookBlock = newsletter.taskDefinitions!.find((td) => td.refId === 'fill-book-of-the-week-block');
+    assert.ok(bookBlock);
+    assert.strictEqual(bookBlock.instructionDocId, 'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block');
+    assert.deepStrictEqual((bookBlock.validation as any).skipClosure.allowedStatuses, ['no book this week']);
+
+    const eventBlock = newsletter.taskDefinitions!.find((td) => td.refId === 'fill-event-block');
+    assert.ok(eventBlock);
+    assert.strictEqual(eventBlock.instructionDocId, 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp');
+    assert.deepStrictEqual((eventBlock.validation as any).skipClosure.allowedStatuses, ['no event block this week']);
+
+    const articleBlock = newsletter.taskDefinitions!.find((td) => td.refId === 'fill-article-block');
+    assert.ok(articleBlock);
+    assert.strictEqual(articleBlock.instructionDocId, 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp');
+    assert.deepStrictEqual((articleBlock.validation as any).skipClosure.allowedStatuses, ['no article block this week']);
+
+    const scheduleNewsletter = newsletter.taskDefinitions!.find((td) => td.refId === 'schedule-email-newsletter');
+    assert.ok(scheduleNewsletter);
+    assert.strictEqual(scheduleNewsletter.instructionDocId, 'sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp');
+    assert.strictEqual(scheduleNewsletter.stageOnComplete, 'announced');
+    assert.deepStrictEqual(scheduleNewsletter.proofRequirement, {
+      type: 'external-status',
+      label: 'Mailchimp campaign scheduled',
+      required: true,
+    });
+    assert.deepStrictEqual((scheduleNewsletter.validation as any).requiredBundleLinks, ['Mailchimp newsletter']);
+    assert.strictEqual((scheduleNewsletter.validation as any).skipClosure, undefined);
+
+    const invoice = newsletter.taskDefinitions!.find((td) => td.refId === 'create-invoice');
+    assert.ok(invoice);
+    assert.strictEqual(invoice.instructionDocId, 'sop.finance.bookkeeping.creating-invoices-in-finom');
+    assert.strictEqual(invoice.requiresFile, true);
+    assert.deepStrictEqual(invoice.proofRequirement, {
+      type: 'file',
+      label: 'Invoice PDF or invoice proof',
+      required: true,
+    });
+
+    const linkedin = newsletter.taskDefinitions!.find((td) => td.refId === 'schedule-sponsorship-linkedin');
+    assert.ok(linkedin);
+    assert.strictEqual(linkedin.instructionDocId, 'sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content');
+    assert.deepStrictEqual(linkedin.proofRequirement, { type: 'url', label: 'LinkedIn', required: true });
+    assert.deepStrictEqual((linkedin.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
+
+    const twitter = newsletter.taskDefinitions!.find((td) => td.refId === 'schedule-sponsorship-twitter');
+    assert.ok(twitter);
+    assert.strictEqual(twitter.instructionDocId, 'sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content');
+    assert.deepStrictEqual(twitter.proofRequirement, { type: 'url', label: 'X', required: true });
+
+    const performance = newsletter.taskDefinitions!.find((td) => td.refId === 'add-newsletter-performance');
+    assert.ok(performance);
+    assert.strictEqual(performance.instructionDocId, 'sop.newsletter.mailchimp.filling-newsletter-statistics');
+    assert.deepStrictEqual(performance.proofRequirement, {
+      type: 'external-status',
+      label: 'Newsletter, LinkedIn, and X performance stats recorded',
+      required: true,
+    });
+    assert.deepStrictEqual((performance.validation as any).requiredBundleLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
+    assert.deepStrictEqual((performance.validation as any).skipClosure.suppresses['no social stats available'].bundleLinks, ['LinkedIn', 'X']);
+    assert.strictEqual((performance.validation as any).skipClosure.suppresses['no social stats available'].proof, true);
+
+    const done = newsletter.taskDefinitions!.find((td) => td.refId === 'send-performance-to-sponsor');
+    assert.ok(done);
+    assert.strictEqual(done.instructionDocId, 'template.newsletter.newsletter-performance');
+    assert.strictEqual(done.stageOnComplete, 'done');
+    assert.deepStrictEqual(done.proofRequirement, {
+      type: 'comment',
+      label: 'Send the performance of the newsletter to the sponsor confirmed',
+      required: true,
+    });
+    assert.deepStrictEqual((done.validation as any).requiredBundleLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
+    assert.deepStrictEqual((done.validation as any).skipClosure.suppresses['not sponsored this week'].bundleLinks, ['*']);
+
+    for (const td of newsletter.taskDefinitions!) {
+      assert.ok(td.phase, `${td.refId} should declare a phase`);
+      assert.ok(td.systems && td.systems.length > 0, `${td.refId} should declare systems`);
+      assert.ok(td.proofRequirement, `${td.refId} should declare completion proof semantics`);
+      assert.ok(td.validation && typeof td.validation === 'object', `${td.refId} should declare validation semantics`);
+      assert.ok((td.validation as any).operatorAction, `${td.refId} should declare operator action`);
+      assert.ok((td.validation as any).reminderSemantics, `${td.refId} should declare reminder semantics`);
+      assert.ok((td.validation as any).dashboardStates, `${td.refId} should declare dashboard states`);
+      assert.ok(td.instructionsUrl || td.instructionDocId, `${td.refId} should link operator instructions`);
+    }
+  });
+
+  it('Newsletter template instantiates sample workflow tasks with V1 semantics', async () => {
+    const templates = await listTemplates(client);
+    const newsletter = templates.find((t) => t.type === 'newsletter');
+    assert.ok(newsletter, 'Newsletter template should exist');
+
+    const tasks = await instantiateTemplate(client, newsletter.id, 'bundle-newsletter-sample', '2026-07-20');
+    assert.strictEqual(tasks.length, 15);
+
+    const createSponsorship = tasks.find((task) => task.templateTaskRef === 'create-sponsorship-document');
+    assert.ok(createSponsorship);
+    assert.strictEqual(createSponsorship.date, '2026-07-06');
+    assert.strictEqual(createSponsorship.phase, 'sponsor-intake');
+    assert.strictEqual(createSponsorship.requiredLinkName, 'Sponsorship document');
+    assert.deepStrictEqual(createSponsorship.proofRequirement, {
+      type: 'url',
+      label: 'Sponsorship document',
+      required: true,
+    });
+    assert.deepStrictEqual((createSponsorship.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
+
+    const mailchimp = tasks.find((task) => task.templateTaskRef === 'create-mailchimp-campaign');
+    assert.ok(mailchimp);
+    assert.strictEqual(mailchimp.date, '2026-07-07');
+    assert.strictEqual(mailchimp.instructionDocId, 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp');
+    assert.strictEqual(mailchimp.requiredLinkName, 'Mailchimp newsletter');
+
+    const bookBlock = tasks.find((task) => task.templateTaskRef === 'fill-book-of-the-week-block');
+    assert.ok(bookBlock);
+    assert.strictEqual(bookBlock.date, '2026-07-09');
+    assert.deepStrictEqual((bookBlock.validation as any).skipClosure.allowedStatuses, ['no book this week']);
+
+    const schedule = tasks.find((task) => task.templateTaskRef === 'schedule-email-newsletter');
+    assert.ok(schedule);
+    assert.strictEqual(schedule.date, '2026-07-19');
+    assert.strictEqual(schedule.stageOnComplete, 'announced');
+    assert.deepStrictEqual(schedule.proofRequirement, {
+      type: 'external-status',
+      label: 'Mailchimp campaign scheduled',
+      required: true,
+    });
+
+    const invoice = tasks.find((task) => task.templateTaskRef === 'create-invoice');
+    assert.ok(invoice);
+    assert.strictEqual(invoice.date, '2026-07-20');
+    assert.strictEqual(invoice.requiresFile, true);
+    assert.deepStrictEqual(invoice.proofRequirement, {
+      type: 'file',
+      label: 'Invoice PDF or invoice proof',
+      required: true,
+    });
+
+    const sponsorLiveEmail = tasks.find((task) => task.templateTaskRef === 'send-email-sponsor-publication-live');
+    assert.ok(sponsorLiveEmail);
+    assert.strictEqual(sponsorLiveEmail.date, '2026-07-21');
+    assert.deepStrictEqual((sponsorLiveEmail.validation as any).requiredBundleLinks, ['Mailchimp newsletter']);
+
+    const linkedin = tasks.find((task) => task.templateTaskRef === 'schedule-sponsorship-linkedin');
+    assert.ok(linkedin);
+    assert.strictEqual(linkedin.date, '2026-07-22');
+    assert.strictEqual(linkedin.requiredLinkName, 'LinkedIn');
+
+    const twitter = tasks.find((task) => task.templateTaskRef === 'schedule-sponsorship-twitter');
+    assert.ok(twitter);
+    assert.strictEqual(twitter.date, '2026-07-23');
+    assert.strictEqual(twitter.requiredLinkName, 'X');
+
+    const performance = tasks.find((task) => task.templateTaskRef === 'add-newsletter-performance');
+    assert.ok(performance);
+    assert.strictEqual(performance.date, '2026-07-27');
+    assert.deepStrictEqual((performance.validation as any).requiredBundleLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
+
+    const done = tasks.find((task) => task.templateTaskRef === 'send-performance-to-sponsor');
+    assert.ok(done);
+    assert.strictEqual(done.date, '2026-07-27');
+    assert.strictEqual(done.stageOnComplete, 'done');
   });
 
   it('Podcast template has correct tasks with milestones', async () => {

@@ -1,4 +1,6 @@
 ---
+id: template.newsletter.sending-email-on-the-day-of-publication
+aliases: []
 title: "Sending Email on the day of Publication"
 summary: "Email template for notifying sponsors that their promotion is live and sharing publication links."
 doc_type: template
@@ -7,7 +9,10 @@ tags:
   - templates
 systems:
   - mailchimp
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp
+  - reference.newsletter.newsletter-sponsorship
 ---
 
 # Sending Email on the day of Publication

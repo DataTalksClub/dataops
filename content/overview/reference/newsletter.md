@@ -1,4 +1,6 @@
 ---
+id: reference.overview.newsletter
+aliases: []
 title: "Newsletter"
 summary: Overview of the DataTalks.Club newsletter workflow, including Trello tracking, draft preparation, sponsored content, and send-out steps.
 doc_type: reference
@@ -6,7 +8,11 @@ source: "Processes/Newsletter.docx"
 systems:
   - mailchimp
   - trello
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.newsletter.newsletter-sponsorship
+  - sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter
+  - template.newsletter.create-newsletter-draft-from-template-in-mailchimp
 ---
 
 # Newsletter

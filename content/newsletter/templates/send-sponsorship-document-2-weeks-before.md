@@ -1,4 +1,6 @@
 ---
+id: template.newsletter.send-sponsorship-document-2-weeks-before
+aliases: []
 title: "Send sponsorship document 2 weeks before"
 summary: "Email template for sending sponsors the content document and requirements two weeks before publication."
 doc_type: template
@@ -7,7 +9,11 @@ tags:
   - templates
 systems:
   - google-calendar
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.newsletter.newsletter-sponsorship
+  - template.newsletter.communication-with-sponsors
+  - sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter
 ---
 
 # Send sponsorship document 2 weeks before

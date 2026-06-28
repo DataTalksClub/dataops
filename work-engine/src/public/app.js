@@ -280,6 +280,299 @@
     return 'Approve an attached artifact first';
   }
 
+  function nonEmptyValue(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+  }
+
+  function normalizedProofText(value) {
+    if (!nonEmptyValue(value)) return '';
+    return value.trim().toLowerCase();
+  }
+
+  function skipClosureConfig(task) {
+    var validation = task && task.validation;
+    if (!validation || typeof validation !== 'object' || Array.isArray(validation)) return null;
+    var skipClosure = validation.skipClosure;
+    if (!skipClosure || typeof skipClosure !== 'object' || Array.isArray(skipClosure)) return null;
+    return skipClosure;
+  }
+
+  function taskAllowedSkipStatuses(task) {
+    var config = skipClosureConfig(task);
+    if (!config || !Array.isArray(config.allowedStatuses)) return [];
+    return config.allowedStatuses.filter(function (status) { return nonEmptyValue(status); });
+  }
+
+  function taskSkipClosureRequires(task) {
+    var config = skipClosureConfig(task);
+    if (!config || !Array.isArray(config.requires)) return [];
+    return config.requires.filter(function (field) { return nonEmptyValue(field); });
+  }
+
+  function valueMatchesAllowedSkipStatus(value, statuses) {
+    var normalizedValue = normalizedProofText(value);
+    if (!normalizedValue) return false;
+    var normalizedStatuses = statuses.map(normalizedProofText).filter(Boolean);
+    if (normalizedStatuses.indexOf(normalizedValue) !== -1) return true;
+    return normalizedValue.split(/\r?\n/).some(function (line) {
+      var normalizedLine = line.replace(/^\[[^\]]+\]\s*/, '').trim();
+      return normalizedStatuses.indexOf(normalizedLine) !== -1;
+    });
+  }
+
+  function taskHasAllowedSkipClosure(task) {
+    return taskAllowedSkipClosureStatus(task) !== '';
+  }
+
+  function taskAllowedSkipClosureStatus(task) {
+    var statuses = taskAllowedSkipStatuses(task);
+    if (!statuses.length) return '';
+    var commentMatches = valueMatchesAllowedSkipStatus(task.comment, statuses);
+    var externalStatusMatches = valueMatchesAllowedSkipStatus(task.externalStatus, statuses);
+    if (!commentMatches && !externalStatusMatches) return '';
+    var requiredFields = taskSkipClosureRequires(task);
+    if (requiredFields.indexOf('comment') !== -1 && !commentMatches) return '';
+    if (requiredFields.indexOf('externalStatus') !== -1 && !externalStatusMatches) return '';
+    return statuses.find(function (status) {
+      return valueMatchesAllowedSkipStatus(task.comment, [status]) || valueMatchesAllowedSkipStatus(task.externalStatus, [status]);
+    }) || '';
+  }
+
+  function taskHasScopedSkipClosure(task) {
+    var config = skipClosureConfig(task);
+    return !!(config && config.suppresses && typeof config.suppresses === 'object' && !Array.isArray(config.suppresses));
+  }
+
+  function taskSkipClosureScope(task, status) {
+    var config = skipClosureConfig(task);
+    if (!config || !config.suppresses || typeof config.suppresses !== 'object' || Array.isArray(config.suppresses)) return null;
+    var scope = config.suppresses[status];
+    return scope && typeof scope === 'object' && !Array.isArray(scope) ? scope : null;
+  }
+
+  function taskSkipClosureSuppresses(task, gate, name) {
+    var status = taskAllowedSkipClosureStatus(task);
+    if (!status) return false;
+    if (!taskHasScopedSkipClosure(task)) return true;
+    var scope = taskSkipClosureScope(task, status);
+    if (!scope) return false;
+    if (gate === 'bundleLink') {
+      var bundleLinks = Array.isArray(scope.bundleLinks) ? scope.bundleLinks : [];
+      return bundleLinks.some(function (linkName) {
+        return linkName === '*' || (nonEmptyValue(linkName) && linkName === name);
+      });
+    }
+    return scope[gate] === true;
+  }
+
+  function taskProofRequirement(task) {
+    var proof = task && task.proofRequirement;
+    if (!proof || proof.required === false) return null;
+    return proof;
+  }
+
+  function taskRequiredBundleLinkNames(task) {
+    var validation = task && task.validation;
+    var requiredBundleLinks = validation && typeof validation === 'object' && !Array.isArray(validation)
+      ? validation.requiredBundleLinks
+      : null;
+    return Array.isArray(requiredBundleLinks) ? requiredBundleLinks.filter(nonEmptyValue) : [];
+  }
+
+  function bundleLinkUrl(bundle, linkName) {
+    if (!bundle || !Array.isArray(bundle.bundleLinks) || !nonEmptyValue(linkName)) return '';
+    var match = bundle.bundleLinks.find(function (link) {
+      return link && link.name === linkName;
+    });
+    return match && nonEmptyValue(match.url) ? match.url.trim() : '';
+  }
+
+  function taskMissingRequiredBundleLinkName(task, bundle) {
+    var requiredLinks = taskRequiredBundleLinkNames(task);
+    for (var i = 0; i < requiredLinks.length; i += 1) {
+      if (taskSkipClosureSuppresses(task, 'bundleLink', requiredLinks[i])) continue;
+      if (!bundleLinkUrl(bundle, requiredLinks[i])) return requiredLinks[i];
+    }
+    return '';
+  }
+
+  function taskMissingProofTitle(task, taskFiles, bundle) {
+    if (!task || task.status === 'done') return '';
+    var proof = taskProofRequirement(task);
+    var proofLabel = proof && proof.label ? String(proof.label) : '';
+    if (task.requiredLinkName && !nonEmptyValue(task.link) && !taskSkipClosureSuppresses(task, 'requiredLink', task.requiredLinkName)) {
+      return 'Add ' + task.requiredLinkName + ' link to complete';
+    }
+    if (task.requiresFile && (!taskFiles || taskFiles.length === 0) && !taskSkipClosureSuppresses(task, 'file')) {
+      return 'Attach ' + (proofLabel || 'required file') + ' to complete';
+    }
+    var artifactBlockTitle = taskArtifactBlockTitle(task);
+    if (artifactBlockTitle) return artifactBlockTitle;
+    if (taskRequiredBundleLinkNames(task).length && !task.bundleId) {
+      return 'Open this task in a workflow bundle to save shared links';
+    }
+    var missingBundleLink = taskMissingRequiredBundleLinkName(task, bundle);
+    if (missingBundleLink) {
+      return 'Add ' + missingBundleLink + ' shared link to complete';
+    }
+
+    if (taskSkipClosureSuppresses(task, 'proof')) return '';
+    if (!proof) return '';
+    if (proof.type === 'comment' && !nonEmptyValue(task.comment)) {
+      return 'Add completion note' + (proofLabel ? ': ' + proofLabel : '');
+    }
+    if (proof.type === 'external-status' && !nonEmptyValue(task.externalStatus)) {
+      return 'Add completion status' + (proofLabel ? ': ' + proofLabel : '');
+    }
+    if (proof.type === 'url' && !nonEmptyValue(task.link)) {
+      return 'Add ' + (proofLabel || 'required URL') + ' link to complete';
+    }
+    if (proof.type === 'file' && (!taskFiles || taskFiles.length === 0)) {
+      return 'Attach ' + (proofLabel || 'required file') + ' to complete';
+    }
+    return '';
+  }
+
+  function taskNeedsCompletionProofControls(task) {
+    var proof = taskProofRequirement(task);
+    return !!(proof && (proof.type === 'comment' || proof.type === 'external-status')) || taskAllowedSkipStatuses(task).length > 0;
+  }
+
+  function taskBundleLinkNames(task) {
+    var names = [];
+    if (task && task.requiredLinkName) names.push(task.requiredLinkName);
+    var validation = task && task.validation;
+    var requiredBundleLinks = validation && typeof validation === 'object' && !Array.isArray(validation)
+      ? validation.requiredBundleLinks
+      : null;
+    if (Array.isArray(requiredBundleLinks)) {
+      requiredBundleLinks.forEach(function (name) {
+        if (nonEmptyValue(name) && names.indexOf(name) === -1) names.push(name);
+      });
+    }
+    return names;
+  }
+
+  function taskRequiresBundleLink(task, linkName) {
+    if (!nonEmptyValue(linkName)) return false;
+    return taskBundleLinkNames(task).indexOf(linkName) !== -1;
+  }
+
+  function emptyBundleLinkCoveredBySkip(linkName, tasks) {
+    var requiringTasks = (tasks || []).filter(function (task) {
+      return taskRequiresBundleLink(task, linkName);
+    });
+    if (!requiringTasks.length) return false;
+    return requiringTasks.every(function (task) {
+      return task.status === 'done' && taskSkipClosureSuppresses(task, 'bundleLink', linkName);
+    });
+  }
+
+  function isBundleLinkMissing(link, tasks) {
+    if (!link || nonEmptyValue(link.url)) return false;
+    return !emptyBundleLinkCoveredBySkip(link.name, tasks);
+  }
+
+  function evidenceText(value) {
+    if (!nonEmptyValue(value)) return '';
+    var text = value.trim();
+    return text.length > 240 ? text.slice(0, 237) + '...' : text;
+  }
+
+  function sentenceCaseStatus(value) {
+    if (!nonEmptyValue(value)) return '';
+    var text = value.trim();
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function taskSkipClosureEvidence(task) {
+    var statuses = taskAllowedSkipStatuses(task);
+    if (!statuses.length) return '';
+    for (var i = 0; i < statuses.length; i += 1) {
+      if (valueMatchesAllowedSkipStatus(task.comment, [statuses[i]]) || valueMatchesAllowedSkipStatus(task.externalStatus, [statuses[i]])) {
+        return statuses[i];
+      }
+    }
+    return '';
+  }
+
+  function commentOnlyContainsSkipEvidence(comment, skipEvidence) {
+    if (!nonEmptyValue(comment) || !nonEmptyValue(skipEvidence)) return false;
+    var normalizedSkip = normalizedProofText(skipEvidence);
+    var lines = comment.trim().split(/\r?\n/).map(function (line) {
+      return normalizedProofText(line.replace(/^\[[^\]]+\]\s*/, ''));
+    }).filter(Boolean);
+    return lines.length > 0 && lines.every(function (line) { return line === normalizedSkip; });
+  }
+
+  function renderTaskCompletionEvidence(task) {
+    if (!task || task.status !== 'done') return '';
+    var items = [];
+    var skipEvidence = taskSkipClosureEvidence(task);
+    if (skipEvidence) {
+      items.push('<span class="task-evidence-item"><strong>Closed as:</strong> ' + escapeHtml(sentenceCaseStatus(skipEvidence)) + '</span>');
+    }
+    if (nonEmptyValue(task.externalStatus) && !(skipEvidence && valueMatchesAllowedSkipStatus(task.externalStatus, [skipEvidence]))) {
+      items.push('<span class="task-evidence-item"><strong>Status:</strong> ' + escapeHtml(evidenceText(task.externalStatus)) + '</span>');
+    }
+    if (nonEmptyValue(task.comment) && !commentOnlyContainsSkipEvidence(task.comment, skipEvidence)) {
+      items.push('<span class="task-evidence-item"><strong>Note:</strong> ' + escapeHtml(evidenceText(task.comment)) + '</span>');
+    }
+    if (!items.length) return '';
+    return '<div class="task-completion-evidence" data-task-completion-evidence="' + escapeHtml(task.id || '') + '">' + items.join('') + '</div>';
+  }
+
+  function hasPodcastSignal(entity) {
+    if (!entity || typeof entity !== 'object') return false;
+    if (String(entity.type || '').toLowerCase() === 'podcast') return true;
+    var tags = Array.isArray(entity.tags) ? entity.tags : [];
+    if (tags.some(function (tag) { return String(tag || '').toLowerCase() === 'podcast'; })) return true;
+    var sourceDocIds = Array.isArray(entity.sourceDocIds) ? entity.sourceDocIds : [];
+    return sourceDocIds.indexOf('task-template.tasks.podcast') !== -1;
+  }
+
+  function supportsPodcastAssistant(task, bundle) {
+    return hasPodcastSignal(task) || hasPodcastSignal(bundle);
+  }
+
+  function renderPodcastAssistantButton(task, bundle) {
+    if (!supportsPodcastAssistant(task, bundle)) return '';
+    return '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(task.id) + '" data-request-assistant-bundle="' + escapeHtml(task.bundleId || '') + '">Podcast help</button>';
+  }
+
+  function validationArray(task, field) {
+    var validation = task && task.validation;
+    var value = validation && typeof validation === 'object' && !Array.isArray(validation)
+      ? validation[field]
+      : null;
+    return Array.isArray(value) ? value : [];
+  }
+
+  function dashboardStates(task) {
+    var states = validationArray(task, 'dashboardStates').filter(nonEmptyValue);
+    return states.length ? states : ['today', 'overdue', 'waiting', 'follow-up-due'];
+  }
+
+  function dashboardQueueLabels(task, taskFiles, today, bundle) {
+    var states = dashboardStates(task);
+    var labels = [];
+    function add(state, label) {
+      if (states.indexOf(state) !== -1 && labels.indexOf(label) === -1) labels.push(label);
+    }
+    var missing = taskMissingProofTitle(task, taskFiles, bundle);
+    var waiting = task.status === 'waiting';
+    var dueOrOverdue = task.status !== 'done' && task.date && task.date <= today;
+    if (waiting && isDueFollowUpTask(task)) add('follow-up-due', 'Follow-up due');
+    else if (waiting) add('waiting', 'Waiting');
+    if (task.status !== 'done' && task.date && task.date < today) add('overdue', 'Overdue');
+    if (task.status !== 'done' && task.date === today) add('today', 'Today');
+    if (missing && (dueOrOverdue || states.indexOf('missing-evidence') !== -1) && labels.indexOf('Missing evidence') === -1) {
+      labels.push('Missing evidence');
+    }
+    if (validationArray(task, 'atRiskWhen').length > 0 && (missing || waiting)) add('at-risk', 'At risk');
+    return labels;
+  }
+
   function assistantStatusLabel(status) {
     return String(status || 'draft').replace(/_/g, ' ');
   }
@@ -405,6 +698,20 @@
   }
 
   var PROCESS_DOC_REGISTRY = {
+    'reference.overview.newsletter': { title: 'Newsletter', docType: 'reference', path: 'content/overview/reference/newsletter.md', summary: 'Overview of the newsletter cadence, sponsored content state, draft preparation, and send-out workflow.' },
+    'sop.finance.bookkeeping.creating-invoices-in-finom': { title: 'Creating Invoices in Finom', docType: 'sop', path: 'content/finance/bookkeeping/sops/creating-invoices-in-finom.md', summary: 'Create and send sponsor invoices in Finom with the correct billing details and tax handling.' },
+    'sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter': { title: 'Add just published podcast page to the newsletter', docType: 'sop', path: 'content/newsletter/mailchimp/sops/add-just-published-podcast-page-to-the-newsletter.md', summary: 'Add a newly published podcast page link to the podcast block in a Mailchimp newsletter.' },
+    'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block': { title: 'Entering information in the book of the week block', docType: 'sop', path: 'content/newsletter/mailchimp/sops/entering-information-in-the-book-of-the-week-block.md', summary: 'Update or remove the newsletter Book of the Week block.' },
+    'sop.newsletter.mailchimp.filling-newsletter-statistics': { title: 'Filling Newsletter Statistics', docType: 'sop', path: 'content/newsletter/mailchimp/sops/filling-newsletter-statistics.md', summary: 'Collect weekly sponsored newsletter performance statistics from Mailchimp, LinkedIn, and X.' },
+    'sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp': { title: 'Schedule a newsletter on Mailchimp', docType: 'sop', path: 'content/newsletter/mailchimp/sops/schedule-a-newsletter-on-mailchimp.md', summary: 'Schedule a reviewed newsletter campaign in Mailchimp for the intended send time.' },
+    'sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter': { title: 'Creating a document for sponsored content for a newsletter', docType: 'sop', path: 'content/newsletter/sponsorship/sops/creating-a-document-for-sponsored-content-for-a-newsletter.md', summary: 'Create a sponsor content document for newsletter copy, visuals, and links.' },
+    'sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter': { title: 'Fill in the sponsored block in the newsletter', docType: 'sop', path: 'content/newsletter/sponsorship/sops/fill-in-the-sponsored-block-in-the-newsletter.md', summary: 'Fill the newsletter sponsored block in Mailchimp with approved sponsor copy, image, and CTA link.' },
+    'sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content': { title: 'Schedule social media posts with Hootsuite and post about newsletter promotional content', docType: 'sop', path: 'content/social-media/linkedin/sops/schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content.md', summary: 'Schedule sponsored newsletter promotional posts for LinkedIn in Hootsuite.' },
+    'sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content': { title: 'Schedule posts with Twitter and post about newsletter promotional content', docType: 'sop', path: 'content/social-media/twitter/sops/schedule-posts-with-twitter-and-post-about-newsletter-promotional-content.md', summary: 'Schedule newsletter promotional content on Twitter/X and capture the post link.' },
+    'template.newsletter.create-newsletter-draft-from-template-in-mailchimp': { title: 'Create a newsletter draft from a template in Mailchimp', docType: 'template', path: 'content/internal-admin/templates/create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update.md', summary: 'Create a Mailchimp newsletter draft by replicating the existing template and preparing recurring content blocks.' },
+    'template.newsletter.newsletter-performance': { title: 'Newsletter Performance', docType: 'template', path: 'content/newsletter/templates/newsletter-performance.md', summary: 'Email template for sending sponsors newsletter performance results after their campaign runs.' },
+    'template.newsletter.send-sponsorship-document-2-weeks-before': { title: 'Send sponsorship document 2 weeks before', docType: 'template', path: 'content/newsletter/templates/send-sponsorship-document-2-weeks-before.md', summary: 'Email template for sending sponsors the content document and requirements two weeks before publication.' },
+    'template.newsletter.sending-email-on-the-day-of-publication': { title: 'Sending Email on the day of Publication', docType: 'template', path: 'content/newsletter/templates/sending-email-on-the-day-of-publication.md', summary: 'Email template for notifying sponsors that their promotion is live and sharing publication links.' },
     'reference.social-media.post-podcast-overview-after-the-event': { title: 'Post. Podcast. Overview after the event', docType: 'reference', path: 'content/social-media/reference/post-podcast-overview-after-the-event.md', summary: 'Reference guide for post-event podcast overview copy, assets, examples, and workflow notes.' },
     'sop.events.announce-event-in-slack-in-announcements': { title: 'Announce event in Slack in #announcements', docType: 'sop', path: 'content/events/sops/announce-event-in-slack-in-announcements.md', summary: 'Announce upcoming events in #announcements so the community has the event context and registration link.' },
     'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event': { title: 'Create a calendar invite for event guests or speakers', docType: 'sop', path: 'content/events/calendar/sops/create-a-calender-invite-for-the-guests-speaker-for-an-event.md', summary: 'Create Google Calendar invites for event guests or speakers with the correct event details.' },
@@ -843,7 +1150,7 @@
       ? '<option value="' + escapeHtml(dashboardState.currentUserId) + '" selected>Loading user...</option>'
       : '';
     rightHeader.innerHTML =
-      '<h3>Today\'s Tasks</h3>' +
+      '<h3>Daily Queue</h3>' +
       '<select id="dashboard-user-picker" class="user-picker">' + currentUserOption + '</select>' +
       '<label class="assigned-toggle">' +
         '<input type="checkbox" id="assigned-to-me" ' + (dashboardState.assignedToMe ? 'checked' : '') + ' />' +
@@ -1218,33 +1525,22 @@
     var today = todayString();
 
     Promise.all([
-      api.tasks.list({ date: today }),
+      api.tasks.list({ status: 'todo' }),
       api.tasks.list({ status: 'waiting' }),
       loadUsersOnce()
     ]).then(function (results) {
-      var data = results[0];
+      var todoData = results[0];
       var waitingData = results[1];
       var usersMap = results[2];
-      var todayTasks = data.tasks || [];
-      var dueWaitingTasks = (waitingData.tasks || []).filter(function (task) {
-        return isDueFollowUpTask(task);
-      });
-      var tasks = dedupeTasksById(todayTasks.concat(dueWaitingTasks));
+      var todoTasks = todoData.tasks || [];
+      var waitingTasks = waitingData.tasks || [];
+      var tasks = dedupeTasksById(todoTasks.concat(waitingTasks));
 
       // Apply assigned-to-me filter
       if (dashboardState.assignedToMe && dashboardState.currentUserId) {
         tasks = tasks.filter(function (t) {
           return t.assigneeId === dashboardState.currentUserId;
         });
-      }
-
-      if (tasks.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No tasks for today',
-          'Use the task list to review upcoming dates or create an ad-hoc task.',
-          [{ href: '#/tasks', label: 'Open tasks' }]
-        );
-        return;
       }
 
       // Sort by date ascending
@@ -1254,29 +1550,59 @@
         return 0;
       });
 
-      // Collect unique bundleIds
-      var bundleIds = [];
-      tasks.forEach(function (t) {
-        if (t.bundleId && bundleIds.indexOf(t.bundleId) === -1) {
-          bundleIds.push(t.bundleId);
-        }
+      var fileTasks = tasks.filter(function (task) {
+        var proof = taskProofRequirement(task);
+        return task.requiresFile || (proof && proof.type === 'file');
       });
-
-      var bundlePromises = bundleIds.map(function (bid) {
-        return api.bundles.get(bid).then(function (d) {
-          return { id: bid, title: d.bundle.title || 'Untitled' };
+      var filePromises = fileTasks.map(function (task) {
+        return api.files.list({ taskId: task.id }).then(function (fileData) {
+          return { taskId: task.id, files: fileData.files || [] };
         }).catch(function () {
-          return { id: bid, title: 'Unknown' };
+          return { taskId: task.id, files: [] };
         });
       });
 
-      Promise.all(bundlePromises).then(function (bundleResults) {
-        var bundleMap = {};
-        bundleResults.forEach(function (b) {
-          bundleMap[b.id] = b.title;
+      Promise.all(filePromises).then(function (fileResults) {
+        var filesByTask = {};
+        fileResults.forEach(function (result) {
+          filesByTask[result.taskId] = result.files;
+        });
+        // Collect unique bundleIds
+        var bundleIds = [];
+        tasks.forEach(function (t) {
+          if (t.bundleId && bundleIds.indexOf(t.bundleId) === -1) {
+            bundleIds.push(t.bundleId);
+          }
         });
 
-        renderDashboardTaskTable(tasks, bundleMap, usersMap, container);
+        var bundlePromises = bundleIds.map(function (bid) {
+          return api.bundles.get(bid).then(function (d) {
+            return d.bundle || { id: bid, title: 'Untitled' };
+          }).catch(function () {
+            return { id: bid, title: 'Unknown' };
+          });
+        });
+
+        return Promise.all(bundlePromises).then(function (bundleResults) {
+          var bundleMap = {};
+          bundleResults.forEach(function (b) {
+            bundleMap[b.id] = b;
+          });
+          tasks = tasks.filter(function (task) {
+            return dashboardQueueLabels(task, filesByTask[task.id] || [], today, bundleMap[task.bundleId]).length > 0;
+          });
+
+          if (tasks.length === 0) {
+            container.innerHTML = renderEmptyState(
+              'No queue tasks',
+              'Use the task list to review upcoming dates or create an ad-hoc task.',
+              [{ href: '#/tasks', label: 'Open tasks' }]
+            );
+            return null;
+          }
+
+          renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask);
+        });
       });
     }).catch(function (err) {
       container.innerHTML = '';
@@ -1284,7 +1610,7 @@
     });
   }
 
-  function renderDashboardTaskTable(tasks, bundleMap, usersMap, container) {
+  function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask) {
     var html = '<table class="task-table-compact"><thead><tr>' +
       '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th><th>Actions</th>' +
       '</tr></thead><tbody>';
@@ -1292,20 +1618,19 @@
       var isDone = t.status === 'done';
       var rowClass = isDone ? ' class="task-done"' : '';
       var checked = isDone ? ' checked' : '';
+      var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
+      var taskFiles = (filesByTask || {})[t.id] || [];
 
-      // Checkbox disabled if requiredLinkName is set and link is empty
       var checkboxDisabled = '';
-      var artifactBlockTitle = taskArtifactBlockTitle(t);
-      if (t.requiredLinkName && !t.link) {
-        checkboxDisabled = ' disabled title="Fill in ' + escapeHtml(t.requiredLinkName) + ' link first"';
-      } else if (artifactBlockTitle) {
-        checkboxDisabled = ' disabled title="' + escapeHtml(artifactBlockTitle) + '"';
+      var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
+      if (missingProofTitle) {
+        checkboxDisabled = ' disabled title="' + escapeHtml(missingProofTitle) + '"';
       }
 
       // Bundle badge
       var bundleBadge;
-      if (t.bundleId && bundleMap[t.bundleId]) {
-        bundleBadge = renderBundleBadgeLink(t.bundleId, bundleMap[t.bundleId]);
+      if (t.bundleId && bundle) {
+        bundleBadge = renderBundleBadgeLink(t.bundleId, bundle.title || 'Untitled');
       } else {
         bundleBadge = '<span class="badge-adhoc">ad hoc</span>';
       }
@@ -1323,9 +1648,18 @@
         if (t.followUpAt) waitingText += ' · follow up ' + formatDateLabel(t.followUpAt);
         instructionsHtml += '<span class="badge-waiting">' + escapeHtml(waitingText) + '</span>';
       }
+      if (missingProofTitle) {
+        instructionsHtml += '<div class="task-missing-proof">' + escapeHtml(missingProofTitle) + '</div>';
+      }
+      var queueLabels = dashboardQueueLabels(t, taskFiles, todayString(), bundle);
+      if (queueLabels.length) {
+        instructionsHtml += '<div class="task-queue-labels">' + queueLabels.map(function (label) {
+          return '<span class="task-queue-label">' + escapeHtml(label) + '</span>';
+        }).join('') + '</div>';
+      }
       instructionsHtml += '<div class="assistant-context-row">' +
         renderAssistantRefs(t.assistantJobRefs) +
-        '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(t.id) + '" data-request-assistant-bundle="' + escapeHtml(t.bundleId || '') + '">Podcast help</button>' +
+        renderPodcastAssistantButton(t) +
         '</div>';
 
       // Assignee name
@@ -1339,10 +1673,57 @@
       if (t.requiredLinkName) {
         requiredLinkHtml = '<span class="required-link-wrapper">' +
           '<span class="required-link-label">' + escapeHtml(t.requiredLinkName) + ':</span>' +
-          '<input type="text" class="required-link-input" data-task-id="' + t.id + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
+          '<input type="text" class="required-link-input" data-task-id="' + t.id + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(t.requiredLinkName) + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
+          '</span>';
+      }
+      taskRequiredBundleLinkNames(t).forEach(function (linkName) {
+        if (linkName === t.requiredLinkName) return;
+        if (!t.bundleId || !bundle) {
+          requiredLinkHtml += '<span class="proof-missing">Open a workflow bundle to save ' + escapeHtml(linkName) + ' shared link</span>';
+          return;
+        }
+        requiredLinkHtml += '<span class="required-link-wrapper">' +
+          '<span class="required-link-label">' + escapeHtml(linkName) + ':</span>' +
+          '<input type="text" class="required-bundle-link-input" data-task-id="' + escapeHtml(t.id) + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(linkName) + '" value="' + escapeHtml(bundleLinkUrl(bundle, linkName)) + '" placeholder="URL" />' +
+          '</span>';
+      });
+      if ((t.requiresFile || (taskProofRequirement(t) && taskProofRequirement(t).type === 'file')) && !isDone) {
+        var fileProof = taskProofRequirement(t);
+        var fileLabel = fileProof && fileProof.label ? fileProof.label : 'File evidence';
+        requiredLinkHtml += '<span class="required-file-wrapper" data-required-file-wrapper="' + escapeHtml(t.id) + '">' +
+          '<span class="required-link-label">' + escapeHtml(fileLabel) + ':</span>' +
+          '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' +
+          '<button type="button" class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' +
+          (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>') +
           '</span>';
       }
       var actionsHtml = renderDashboardTaskActions(t);
+      if (taskNeedsCompletionProofControls(t) && !isDone) {
+        var proof = taskProofRequirement(t);
+        var skipStatuses = taskAllowedSkipStatuses(t);
+        actionsHtml += '<div class="completion-proof-wrapper" data-completion-proof-wrapper="' + escapeHtml(t.id) + '">';
+        if (proof && (proof.type === 'comment' || proof.type === 'external-status')) {
+          actionsHtml += '<label class="required-link-label" for="dashboard-completion-proof-' + escapeHtml(t.id) + '">' +
+            escapeHtml((proof.type === 'comment' ? 'Completion note: ' : 'Completion status: ') + (proof.label || 'Completion evidence')) +
+            '</label>' +
+            '<input type="text" id="dashboard-completion-proof-' + escapeHtml(t.id) + '" class="completion-proof-input" data-completion-proof-task="' + escapeHtml(t.id) + '" data-completion-proof-type="' + escapeHtml(proof.type) + '" value="' + escapeHtml(proof.type === 'comment' ? (t.comment || '') : (t.externalStatus || '')) + '" placeholder="' + escapeHtml(proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system or sponsor email') + '" />';
+        }
+        if (skipStatuses.length) {
+          actionsHtml += '<label class="required-link-label" for="dashboard-skip-closure-' + escapeHtml(t.id) + '">Close as:</label>' +
+            '<select id="dashboard-skip-closure-' + escapeHtml(t.id) + '" class="skip-closure-select" data-skip-closure-task="' + escapeHtml(t.id) + '">' +
+            '<option value="">Choose reason</option>' +
+            skipStatuses.map(function (status) {
+              var selected = valueMatchesAllowedSkipStatus(t.comment, [status]) || valueMatchesAllowedSkipStatus(t.externalStatus, [status]) ? ' selected' : '';
+              return '<option value="' + escapeHtml(status) + '"' + selected + '>' + escapeHtml(sentenceCaseStatus(status)) + '</option>';
+            }).join('') +
+            '</select>';
+        }
+        actionsHtml += '<button type="button" class="btn-save-link" data-save-completion-proof="' + escapeHtml(t.id) + '">Save evidence</button>';
+        if (missingProofTitle) {
+          actionsHtml += '<span class="proof-missing">' + escapeHtml(missingProofTitle) + '</span>';
+        }
+        actionsHtml += '</div>';
+      }
 
       html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
         '<td class="task-status"><input type="checkbox" class="task-status-checkbox" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></td>' +
@@ -1405,7 +1786,16 @@
         saving = true;
         var taskId = inp.getAttribute('data-task-id');
         var linkValue = inp.value.trim();
-        api.tasks.update(taskId, { link: linkValue }).then(function () {
+        var linkName = inp.getAttribute('data-link-name');
+        var task = tasks.find(function (item) { return item.id === taskId; }) || {};
+        var bundle = task.bundleId ? bundleMap[task.bundleId] : null;
+        var updates = [api.tasks.update(taskId, { link: linkValue })];
+        if (bundle && linkName) {
+          updates.push(api.bundles.update(bundle.id, {
+            bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, linkValue)
+          }));
+        }
+        Promise.all(updates).then(function () {
           loadDashboardTasks();
         }).catch(function (err) {
           showError('Failed to save link: ' + err.message);
@@ -1423,6 +1813,107 @@
       });
       inp.addEventListener('click', function (e) {
         e.stopPropagation();
+      });
+    });
+
+    container.querySelectorAll('.required-bundle-link-input').forEach(function (inp) {
+      var saving = false;
+      function saveBundleLink() {
+        if (saving) return;
+        saving = true;
+        var bundleId = inp.getAttribute('data-bundle-id');
+        var linkName = inp.getAttribute('data-link-name');
+        if (!bundleId || !linkName) {
+          saving = false;
+          showError('Cannot save shared link without a bundle.');
+          return;
+        }
+        var bundle = bundleMap[bundleId] || {};
+        api.bundles.update(bundleId, {
+          bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, inp.value.trim())
+        }).then(function () {
+          loadDashboardTasks();
+        }).catch(function (err) {
+          showError('Failed to save shared link: ' + err.message);
+          saving = false;
+        });
+      }
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveBundleLink();
+        }
+      });
+      inp.addEventListener('blur', function () {
+        saveBundleLink();
+      });
+      inp.addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+    });
+
+    container.querySelectorAll('[data-upload-required-file]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-upload-required-file');
+        var input = container.querySelector('[data-required-file-task="' + taskId + '"]');
+        if (!input || !input.files || !input.files[0]) {
+          showError('Choose a file to attach.');
+          return;
+        }
+        var formData = new FormData();
+        formData.append('taskId', taskId);
+        formData.append('category', 'document');
+        formData.append('file', input.files[0]);
+        setButtonBusy(btn, true, 'Attach', 'Attaching...');
+        api.files.upload(formData).then(function () {
+          showSuccess('File attached.');
+          loadDashboardTasks();
+        }).catch(function (err) {
+          showError('Failed to attach file: ' + err.message);
+          setButtonBusy(btn, false, 'Attach');
+        });
+      });
+    });
+
+    container.querySelectorAll('[data-save-completion-proof]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-save-completion-proof');
+        var wrapper = container.querySelector('[data-completion-proof-wrapper="' + taskId + '"]');
+        if (!wrapper) return;
+
+        var updateData = {};
+        var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
+        var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
+        if (selectedSkipStatus) {
+          var task = tasks.find(function (item) { return item.id === taskId; }) || {};
+          updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
+        } else {
+          var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
+          if (!proofInput || !proofInput.value.trim()) {
+            showError('Add the required evidence before marking done.');
+            return;
+          }
+          var proofType = proofInput.getAttribute('data-completion-proof-type');
+          if (proofType === 'comment') {
+            updateData.comment = proofInput.value.trim();
+          } else if (proofType === 'external-status') {
+            updateData.externalStatus = proofInput.value.trim();
+          }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+          showError('Add the required evidence before marking done.');
+          return;
+        }
+
+        setButtonBusy(btn, true, 'Save evidence', 'Saving...');
+        api.tasks.update(taskId, updateData).then(function () {
+          showSuccess('Evidence saved.');
+          loadDashboardTasks();
+        }).catch(function (err) {
+          showError('Failed to save evidence: ' + err.message);
+          setButtonBusy(btn, false, 'Save evidence');
+        });
       });
     });
 
@@ -1857,7 +2348,7 @@
 
       var bundlePromises = bundleIds.map(function (bid) {
         return api.bundles.get(bid).then(function (data) {
-          return { id: bid, title: data.bundle.title || 'Untitled' };
+          return data.bundle || { id: bid, title: 'Untitled' };
         }).catch(function () {
           return { id: bid, title: 'Unknown' };
         });
@@ -1866,7 +2357,7 @@
       Promise.all(bundlePromises).then(function (bundleResults) {
         var bundleMap = {};
         bundleResults.forEach(function (b) {
-          bundleMap[b.id] = b.title;
+          bundleMap[b.id] = b;
         });
 
         renderTaskTable(tasks, bundleMap, usersMap, container, params);
@@ -1885,20 +2376,18 @@
         var isDone = t.status === 'done';
         var rowClass = isDone ? ' class="task-done"' : '';
         var checked = isDone ? ' checked' : '';
+        var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
 
-        // Checkbox disabled if requiredLinkName is set and link is empty
         var checkboxDisabled = '';
-        var artifactBlockTitle = taskArtifactBlockTitle(t);
-        if (t.requiredLinkName && !t.link) {
-          checkboxDisabled = ' disabled title="Fill in ' + escapeHtml(t.requiredLinkName) + ' link first"';
-        } else if (artifactBlockTitle) {
-          checkboxDisabled = ' disabled title="' + escapeHtml(artifactBlockTitle) + '"';
+        var missingProofTitle = taskMissingProofTitle(t, [], bundle);
+        if (missingProofTitle) {
+          checkboxDisabled = ' disabled title="' + escapeHtml(missingProofTitle) + '"';
         }
 
         // Bundle badge
         var bundleBadge;
-        if (t.bundleId && bundleMap[t.bundleId]) {
-          bundleBadge = renderBundleBadgeLink(t.bundleId, bundleMap[t.bundleId]);
+        if (t.bundleId && bundle) {
+          bundleBadge = renderBundleBadgeLink(t.bundleId, bundle.title || 'Untitled');
         } else {
           bundleBadge = '<span class="badge-adhoc">ad hoc</span>';
         }
@@ -1912,7 +2401,7 @@
         }
         var assistantHtml = '<div class="assistant-context-row">' +
           renderAssistantRefs(t.assistantJobRefs) +
-          '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(t.id) + '" data-request-assistant-bundle="' + escapeHtml(t.bundleId || '') + '">Podcast help</button>' +
+          renderPodcastAssistantButton(t) +
           '</div>';
 
         // Assignee name
@@ -1926,8 +2415,45 @@
         if (t.requiredLinkName) {
           requiredLinkHtml = '<span class="required-link-wrapper">' +
             '<span class="required-link-label">' + escapeHtml(t.requiredLinkName) + ':</span>' +
-            '<input type="text" class="required-link-input" data-task-id="' + t.id + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
+            '<input type="text" class="required-link-input" data-task-id="' + t.id + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(t.requiredLinkName) + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
             '</span>';
+        }
+        taskRequiredBundleLinkNames(t).forEach(function (linkName) {
+          if (linkName === t.requiredLinkName) return;
+          if (!t.bundleId || !bundle) {
+            requiredLinkHtml += '<span class="proof-missing">Open a workflow bundle to save ' + escapeHtml(linkName) + ' shared link</span>';
+            return;
+          }
+          requiredLinkHtml += '<span class="required-link-wrapper">' +
+            '<span class="required-link-label">' + escapeHtml(linkName) + ':</span>' +
+            '<input type="text" class="required-bundle-link-input" data-task-id="' + escapeHtml(t.id) + '" data-bundle-id="' + escapeHtml(t.bundleId) + '" data-link-name="' + escapeHtml(linkName) + '" value="' + escapeHtml(bundleLinkUrl(bundle, linkName)) + '" placeholder="URL" />' +
+            '</span>';
+        });
+        if (taskNeedsCompletionProofControls(t) && !isDone) {
+          var proof = taskProofRequirement(t);
+          var skipStatuses = taskAllowedSkipStatuses(t);
+          requiredLinkHtml += '<span class="completion-proof-wrapper" data-completion-proof-wrapper="' + escapeHtml(t.id) + '">';
+          if (proof && (proof.type === 'comment' || proof.type === 'external-status')) {
+            requiredLinkHtml += '<label class="required-link-label" for="task-list-completion-proof-' + escapeHtml(t.id) + '">' +
+              escapeHtml((proof.type === 'comment' ? 'Completion note: ' : 'Completion status: ') + (proof.label || 'Completion evidence')) +
+              '</label>' +
+              '<input type="text" id="task-list-completion-proof-' + escapeHtml(t.id) + '" class="completion-proof-input" data-completion-proof-task="' + escapeHtml(t.id) + '" data-completion-proof-type="' + escapeHtml(proof.type) + '" value="' + escapeHtml(proof.type === 'comment' ? (t.comment || '') : (t.externalStatus || '')) + '" placeholder="' + escapeHtml(proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system') + '" />';
+          }
+          if (skipStatuses.length) {
+            requiredLinkHtml += '<label class="required-link-label" for="task-list-skip-closure-' + escapeHtml(t.id) + '">Close as:</label>' +
+              '<select id="task-list-skip-closure-' + escapeHtml(t.id) + '" class="skip-closure-select" data-skip-closure-task="' + escapeHtml(t.id) + '">' +
+              '<option value="">Choose reason</option>' +
+              skipStatuses.map(function (status) {
+                var selected = valueMatchesAllowedSkipStatus(t.comment, [status]) || valueMatchesAllowedSkipStatus(t.externalStatus, [status]) ? ' selected' : '';
+                return '<option value="' + escapeHtml(status) + '"' + selected + '>' + escapeHtml(sentenceCaseStatus(status)) + '</option>';
+              }).join('') +
+              '</select>';
+          }
+          requiredLinkHtml += '<button type="button" class="btn-save-link" data-save-completion-proof="' + escapeHtml(t.id) + '">Save evidence</button>';
+          if (missingProofTitle) {
+            requiredLinkHtml += '<span class="proof-missing">' + escapeHtml(missingProofTitle) + '</span>';
+          }
+          requiredLinkHtml += '</span>';
         }
 
         html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
@@ -1992,7 +2518,16 @@
           saving = true;
           var taskId = inp.getAttribute('data-task-id');
           var linkValue = inp.value.trim();
-          api.tasks.update(taskId, { link: linkValue }).then(function () {
+          var linkName = inp.getAttribute('data-link-name');
+          var task = tasks.find(function (item) { return item.id === taskId; }) || {};
+          var bundle = task.bundleId ? bundleMap[task.bundleId] : null;
+          var updates = [api.tasks.update(taskId, { link: linkValue })];
+          if (bundle && linkName) {
+            updates.push(api.bundles.update(bundle.id, {
+              bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, linkValue)
+            }));
+          }
+          Promise.all(updates).then(function () {
             loadTasks(params);
           }).catch(function (err) {
             showError('Failed to save link: ' + err.message);
@@ -2011,6 +2546,84 @@
         // Prevent click from triggering row editable behavior
         inp.addEventListener('click', function (e) {
           e.stopPropagation();
+        });
+      });
+
+      container.querySelectorAll('.required-bundle-link-input').forEach(function (inp) {
+        var saving = false;
+        function saveBundleLink() {
+          if (saving) return;
+          saving = true;
+          var bundleId = inp.getAttribute('data-bundle-id');
+          var linkName = inp.getAttribute('data-link-name');
+          if (!bundleId || !linkName) {
+            saving = false;
+            showError('Open the workflow bundle before saving shared links.');
+            return;
+          }
+          var bundle = bundleMap[bundleId] || {};
+          api.bundles.update(bundleId, {
+            bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, inp.value.trim())
+          }).then(function () {
+            loadTasks(params);
+          }).catch(function (err) {
+            showError('Failed to save shared link: ' + err.message);
+            saving = false;
+          });
+        }
+        inp.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            saveBundleLink();
+          }
+        });
+        inp.addEventListener('blur', function () {
+          saveBundleLink();
+        });
+        inp.addEventListener('click', function (e) {
+          e.stopPropagation();
+        });
+      });
+
+      container.querySelectorAll('[data-save-completion-proof]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var taskId = btn.getAttribute('data-save-completion-proof');
+          var wrapper = container.querySelector('[data-completion-proof-wrapper="' + taskId + '"]');
+          if (!wrapper) return;
+
+          var updateData = {};
+          var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
+          var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
+          if (selectedSkipStatus) {
+            var task = tasks.find(function (item) { return item.id === taskId; }) || {};
+            updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
+          } else {
+            var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
+            if (!proofInput || !proofInput.value.trim()) {
+              showError('Add the required evidence before marking done.');
+              return;
+            }
+            var proofType = proofInput.getAttribute('data-completion-proof-type');
+            if (proofType === 'comment') {
+              updateData.comment = proofInput.value.trim();
+            } else if (proofType === 'external-status') {
+              updateData.externalStatus = proofInput.value.trim();
+            }
+          }
+
+          if (Object.keys(updateData).length === 0) {
+            showError('Add the required evidence before marking done.');
+            return;
+          }
+
+          setButtonBusy(btn, true, 'Save evidence', 'Saving...');
+          api.tasks.update(taskId, updateData).then(function () {
+            showSuccess('Evidence saved.');
+            loadTasks(params);
+          }).catch(function (err) {
+            showError('Failed to save evidence: ' + err.message);
+            setButtonBusy(btn, false, 'Save evidence');
+          });
         });
       });
 
@@ -2703,7 +3316,7 @@
 
       currentBundleLinks.forEach(function (bl, idx) {
         var row = document.createElement('div');
-        var isEmpty = !bl.url || !bl.url.trim();
+        var isEmpty = isBundleLinkMissing(bl, tasks);
         row.className = 'bundle-link-row' + (isEmpty ? ' bundle-link-row--empty' : '');
 
         var label = document.createElement('span');
@@ -2811,7 +3424,7 @@
     var overdue = active.filter(function (task) { return task.date && task.date < today; });
     var waiting = active.filter(function (task) { return task.status === 'waiting'; });
     var followUps = waiting.filter(isDueFollowUpTask);
-    var missingLinks = (bundle.bundleLinks || []).filter(function (link) { return !link.url; });
+    var missingLinks = (bundle.bundleLinks || []).filter(function (link) { return isBundleLinkMissing(link, tasks); });
     var missingFiles = active.filter(function (task) {
       return task.requiresFile && (!filesByTask[task.id] || filesByTask[task.id].length === 0);
     });
@@ -2849,11 +3462,9 @@
     function buildTaskRow(t) {
       var isDone = t.status === 'done';
       var hasRequiredLink = !!t.requiredLinkName;
-      var linkFilled = !!(t.link && t.link.trim());
       var taskFiles = filesByTask[t.id] || [];
-      var fileProofMissing = !!t.requiresFile && taskFiles.length === 0;
-      var artifactBlockTitle = taskArtifactBlockTitle(t);
-      var checkboxDisabled = (hasRequiredLink && !linkFilled) || fileProofMissing || !!artifactBlockTitle;
+      var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
+      var checkboxDisabled = !!missingProofTitle;
       // A task is a milestone if it has stageOnComplete set
       var isMilestone = !!t.stageOnComplete;
 
@@ -2875,8 +3486,7 @@
       checkbox.className = 'task-status-checkbox';
       checkbox.checked = isDone;
       checkbox.disabled = checkboxDisabled;
-      if (artifactBlockTitle) checkbox.title = artifactBlockTitle;
-      if (fileProofMissing) checkbox.title = 'Attach required file first';
+      if (missingProofTitle) checkbox.title = missingProofTitle;
       checkbox.setAttribute('data-task-checkbox', t.id);
       checkbox.addEventListener('change', function () {
         var newStatus = checkbox.checked ? 'done' : 'todo';
@@ -2931,6 +3541,7 @@
       }
 
       body.insertAdjacentHTML('beforeend', renderInstructionContext(t));
+      body.insertAdjacentHTML('beforeend', renderTaskCompletionEvidence(t));
 
       // Required link input inline under description
       if (hasRequiredLink) {
@@ -2990,12 +3601,85 @@
         var fileWrapper = document.createElement('div');
         fileWrapper.className = 'required-file-wrapper';
         fileWrapper.setAttribute('data-required-file-wrapper', t.id);
+        var fileProof = taskProofRequirement(t);
+        var fileLabel = fileProof && fileProof.label ? fileProof.label : 'File evidence';
         fileWrapper.innerHTML =
-          '<span class="required-link-label">Required file:</span>' +
+          '<span class="required-link-label">' + escapeHtml(fileLabel) + ':</span>' +
           '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' +
           '<button class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' +
           (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>');
         body.appendChild(fileWrapper);
+      }
+
+      if (taskNeedsCompletionProofControls(t) && !isDone) {
+        var proof = taskProofRequirement(t);
+        var skipStatuses = taskAllowedSkipStatuses(t);
+        var proofWrapper = document.createElement('div');
+        proofWrapper.className = 'completion-proof-wrapper';
+        proofWrapper.setAttribute('data-completion-proof-wrapper', t.id);
+
+        if (proof && (proof.type === 'comment' || proof.type === 'external-status')) {
+          var proofLabel = document.createElement('label');
+          proofLabel.className = 'required-link-label';
+          proofLabel.setAttribute('for', 'completion-proof-' + t.id);
+          proofLabel.textContent = (proof.type === 'comment' ? 'Completion note: ' : 'Completion status: ') + (proof.label || 'Completion evidence');
+          proofWrapper.appendChild(proofLabel);
+
+          var proofInput = document.createElement('input');
+          proofInput.type = 'text';
+          proofInput.id = 'completion-proof-' + t.id;
+          proofInput.className = 'completion-proof-input';
+          proofInput.placeholder = proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system or sponsor email';
+          proofInput.value = proof.type === 'comment' ? (t.comment || '') : (t.externalStatus || '');
+          proofInput.setAttribute('data-completion-proof-task', t.id);
+          proofInput.setAttribute('data-completion-proof-type', proof.type);
+          proofWrapper.appendChild(proofInput);
+        }
+
+        if (skipStatuses.length) {
+          var skipLabel = document.createElement('label');
+          skipLabel.className = 'required-link-label';
+          skipLabel.setAttribute('for', 'skip-closure-' + t.id);
+          skipLabel.textContent = 'Close as:';
+          proofWrapper.appendChild(skipLabel);
+
+          var skipSelect = document.createElement('select');
+          skipSelect.id = 'skip-closure-' + t.id;
+          skipSelect.className = 'skip-closure-select';
+          skipSelect.setAttribute('data-skip-closure-task', t.id);
+          var emptyOption = document.createElement('option');
+          emptyOption.value = '';
+          emptyOption.textContent = 'Choose reason';
+          skipSelect.appendChild(emptyOption);
+          skipStatuses.forEach(function (status) {
+            var option = document.createElement('option');
+            option.value = status;
+            option.textContent = sentenceCaseStatus(status);
+            if (valueMatchesAllowedSkipStatus(t.comment, [status]) || valueMatchesAllowedSkipStatus(t.externalStatus, [status])) {
+              option.selected = true;
+            }
+            skipSelect.appendChild(option);
+          });
+          proofWrapper.appendChild(skipSelect);
+        }
+
+        var saveProofBtn = document.createElement('button');
+        saveProofBtn.type = 'button';
+        saveProofBtn.className = 'btn-save-link';
+        saveProofBtn.textContent = 'Save evidence';
+        saveProofBtn.style.fontSize = '11px';
+        saveProofBtn.style.padding = '2px 8px';
+        saveProofBtn.setAttribute('data-save-completion-proof', t.id);
+        proofWrapper.appendChild(saveProofBtn);
+
+        if (missingProofTitle) {
+          var missingProof = document.createElement('span');
+          missingProof.className = 'proof-missing';
+          missingProof.textContent = missingProofTitle;
+          proofWrapper.appendChild(missingProof);
+        }
+
+        body.appendChild(proofWrapper);
       }
 
       if (t.status === 'waiting') {
@@ -3023,20 +3707,22 @@
       var assistantRow = document.createElement('div');
       assistantRow.className = 'assistant-context-row';
       assistantRow.innerHTML = renderAssistantRefs(t.assistantJobRefs);
-      var requestAssistantBtn = document.createElement('button');
-      requestAssistantBtn.className = 'assistant-mini-btn';
-      requestAssistantBtn.type = 'button';
-      requestAssistantBtn.textContent = 'Podcast help';
-      requestAssistantBtn.addEventListener('click', function () {
-        requestPodcastAssistantForContext({
-          taskId: t.id,
-          bundleId: bundleId,
-          title: t.description || bundle.title || 'Podcast assistant',
-        }, function () {
-          loadBundleDetail(bundleId);
+      if (supportsPodcastAssistant(t, bundle)) {
+        var requestAssistantBtn = document.createElement('button');
+        requestAssistantBtn.className = 'assistant-mini-btn';
+        requestAssistantBtn.type = 'button';
+        requestAssistantBtn.textContent = 'Podcast help';
+        requestAssistantBtn.addEventListener('click', function () {
+          requestPodcastAssistantForContext({
+            taskId: t.id,
+            bundleId: bundleId,
+            title: t.description || bundle.title || 'Podcast assistant',
+          }, function () {
+            loadBundleDetail(bundleId);
+          });
         });
-      });
-      assistantRow.appendChild(requestAssistantBtn);
+        assistantRow.appendChild(requestAssistantBtn);
+      }
       body.appendChild(assistantRow);
       bindAssistantLinks(body);
 
@@ -3080,6 +3766,48 @@
         }).catch(function (err) {
           showError('Failed to attach file: ' + err.message);
           setButtonBusy(btn, false, 'Attach');
+        });
+      });
+    });
+
+    container.querySelectorAll('[data-save-completion-proof]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-save-completion-proof');
+        var wrapper = container.querySelector('[data-completion-proof-wrapper="' + taskId + '"]');
+        if (!wrapper) return;
+
+        var updateData = {};
+        var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
+        var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
+        if (selectedSkipStatus) {
+          var task = tasks.find(function (item) { return item.id === taskId; }) || {};
+          updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
+        } else {
+          var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
+          if (!proofInput || !proofInput.value.trim()) {
+            showError('Add the required evidence before marking done.');
+            return;
+          }
+          var proofType = proofInput.getAttribute('data-completion-proof-type');
+          if (proofType === 'comment') {
+            updateData.comment = proofInput.value.trim();
+          } else if (proofType === 'external-status') {
+            updateData.externalStatus = proofInput.value.trim();
+          }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+          showError('Add the required evidence before marking done.');
+          return;
+        }
+
+        setButtonBusy(btn, true, 'Save evidence', 'Saving...');
+        api.tasks.update(taskId, updateData).then(function () {
+          showSuccess('Evidence saved.');
+          loadBundleDetail(bundleId);
+        }).catch(function (err) {
+          showError('Failed to save evidence: ' + err.message);
+          setButtonBusy(btn, false, 'Save evidence');
         });
       });
     });

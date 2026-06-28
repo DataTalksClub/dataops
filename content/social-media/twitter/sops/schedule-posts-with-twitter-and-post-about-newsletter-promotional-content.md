@@ -1,4 +1,6 @@
 ---
+id: sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content
+aliases: []
 title: "Schedule posts with Twitter and post about newsletter promotional content"
 summary: "Steps to schedule newsletter promotional content on Twitter/X, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -12,7 +14,10 @@ systems:
   - twitter
 loom:
   - https://www.loom.com/share/e882dc9f9d614320b58ef1f206aa0141
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.overview.newsletter
+  - reference.newsletter.newsletter-sponsorship
 ---
 
 # Schedule posts with Twitter and post about newsletter promotional content

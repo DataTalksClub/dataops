@@ -1,4 +1,6 @@
 ---
+id: reference.newsletter.newsletter-sponsorship
+aliases: []
 title: "Newsletter Sponsorship"
 summary: "Reference table of newsletter sponsors, contacts, emails, and sponsorship communication status."
 doc_type: reference
@@ -7,7 +9,11 @@ tags:
   - mailchimp-newsletter
 systems:
   - mailchimp
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.overview.newsletter
+  - template.newsletter.communication-with-sponsors
+  - template.newsletter.send-sponsorship-document-2-weeks-before
 ---
 
 # Newsletter Sponsorship

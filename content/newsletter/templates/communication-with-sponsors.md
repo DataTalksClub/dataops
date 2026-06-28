@@ -1,4 +1,6 @@
 ---
+id: template.newsletter.communication-with-sponsors
+aliases: []
 title: "Communication with Sponsors"
 summary: "Email template for confirming newsletter sponsorship bookings and sharing the sponsor content document."
 doc_type: template
@@ -6,7 +8,10 @@ source: "Processes/Templates/Newsletter Templates/Communication with Sponsors.do
 tags:
   - templates
 systems: []
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.newsletter.newsletter-sponsorship
+  - sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter
 ---
 
 # Communication with Sponsors

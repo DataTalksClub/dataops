@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter
+aliases: []
 title: "Creating a document for sponsored content for a newsletter"
 summary: "Procedure for creating a sponsor content document used to collect newsletter copy, visuals, and links."
 doc_type: sop
@@ -8,7 +10,10 @@ tags:
   - mailchimp-newsletter
 systems:
   - mailchimp
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.newsletter.newsletter-sponsorship
+  - template.newsletter.send-sponsorship-document-2-weeks-before
 ---
 
 # Creating a document for sponsored content for a newsletter

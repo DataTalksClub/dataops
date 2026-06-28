@@ -8,6 +8,153 @@ const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
 const ALEXEY_ID = '00000000-0000-0000-0000-000000000003';
 
+const NEWSLETTER_PHASES: WorkflowPhase[] = [
+  { id: 'sponsor-intake', name: 'Sponsor document, email, and follow-up', stage: 'preparation' },
+  { id: 'draft-assembly', name: 'Mailchimp draft and content blocks', stage: 'preparation' },
+  { id: 'send-prep', name: 'Final review and scheduling', stage: 'preparation' },
+  { id: 'publication', name: 'Invoice and sponsor live notification', stage: 'announced' },
+  { id: 'promotion', name: 'Sponsored social promotion', stage: 'after-event' },
+  { id: 'performance', name: 'Performance stats and sponsor report', stage: 'after-event' },
+];
+
+const NEWSLETTER_REQUIRED_BUNDLE_LINKS = [
+  'Sponsorship document',
+  'Mailchimp newsletter',
+  'LinkedIn',
+  'X',
+];
+
+const NEWSLETTER_SOURCE_DOC_IDS = [
+  'task-template.tasks.newsletter',
+  'reference.overview.newsletter',
+  'reference.newsletter.newsletter-sponsorship',
+  'template.newsletter.create-newsletter-draft-from-template-in-mailchimp',
+  'sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter',
+  'sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter',
+  'template.newsletter.communication-with-sponsors',
+  'template.newsletter.send-sponsorship-document-2-weeks-before',
+  'template.newsletter.sending-email-on-the-day-of-publication',
+  'template.newsletter.newsletter-performance',
+  'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block',
+  'sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter',
+  'sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp',
+  'sop.newsletter.mailchimp.getting-campaign-performance-stats',
+  'sop.newsletter.mailchimp.filling-newsletter-statistics',
+  'sop.finance.bookkeeping.creating-invoices-in-finom',
+  'sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content',
+  'sop.social-media.linkedin.creating-sponsored-content-for-linkedin-post',
+  'sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content',
+];
+
+const NEWSLETTER_PHASE_BY_REF: Record<string, string> = {
+  'create-sponsorship-document': 'sponsor-intake',
+  'email-sponsor': 'sponsor-intake',
+  'create-mailchimp-campaign': 'draft-assembly',
+  'fill-sponsored-block': 'draft-assembly',
+  'fill-book-of-the-week-block': 'draft-assembly',
+  'fill-event-block': 'draft-assembly',
+  'fill-podcast-block': 'draft-assembly',
+  'fill-article-block': 'draft-assembly',
+  'schedule-email-newsletter': 'send-prep',
+  'create-invoice': 'publication',
+  'send-email-sponsor-publication-live': 'publication',
+  'schedule-sponsorship-linkedin': 'promotion',
+  'schedule-sponsorship-twitter': 'promotion',
+  'add-newsletter-performance': 'performance',
+  'send-performance-to-sponsor': 'performance',
+};
+
+const NEWSLETTER_PHASE_SYSTEMS: Record<string, string[]> = {
+  'sponsor-intake': ['email', 'google-docs', 'google-drive', 'google-sheets'],
+  'draft-assembly': ['mailchimp', 'google-docs', 'website'],
+  'send-prep': ['mailchimp'],
+  publication: ['finom', 'email', 'mailchimp'],
+  promotion: ['linkedin', 'twitter', 'hootsuite', 'google-sheets'],
+  performance: ['mailchimp', 'linkedin', 'twitter', 'google-sheets', 'email'],
+};
+
+const NEWSLETTER_DOC_CONTEXT: Record<string, Pick<TaskDefinition, 'instructionDocId' | 'instructionStepId' | 'systems'>> = {
+  'create-sponsorship-document': {
+    instructionDocId: 'sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter',
+    systems: ['google-drive', 'google-docs', 'mailchimp', 'google-sheets'],
+  },
+  'email-sponsor': {
+    instructionDocId: 'template.newsletter.send-sponsorship-document-2-weeks-before',
+    systems: ['email', 'google-docs'],
+  },
+  'create-mailchimp-campaign': {
+    instructionDocId: 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp',
+    systems: ['mailchimp', 'google-sheets'],
+  },
+  'fill-sponsored-block': {
+    instructionDocId: 'sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter',
+    systems: ['mailchimp', 'google-docs'],
+  },
+  'fill-book-of-the-week-block': {
+    instructionDocId: 'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block',
+    systems: ['mailchimp', 'website'],
+  },
+  'fill-event-block': {
+    instructionDocId: 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp',
+    systems: ['mailchimp', 'website', 'luma', 'meetup'],
+  },
+  'fill-podcast-block': {
+    instructionDocId: 'sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter',
+    systems: ['mailchimp', 'website'],
+  },
+  'fill-article-block': {
+    instructionDocId: 'template.newsletter.create-newsletter-draft-from-template-in-mailchimp',
+    systems: ['mailchimp', 'website'],
+  },
+  'schedule-email-newsletter': {
+    instructionDocId: 'sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp',
+    systems: ['mailchimp'],
+  },
+  'create-invoice': {
+    instructionDocId: 'sop.finance.bookkeeping.creating-invoices-in-finom',
+    systems: ['finom', 'email'],
+  },
+  'send-email-sponsor-publication-live': {
+    instructionDocId: 'template.newsletter.sending-email-on-the-day-of-publication',
+    systems: ['email', 'mailchimp'],
+  },
+  'schedule-sponsorship-linkedin': {
+    instructionDocId: 'sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content',
+    systems: ['linkedin', 'hootsuite', 'google-sheets'],
+  },
+  'schedule-sponsorship-twitter': {
+    instructionDocId: 'sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content',
+    systems: ['twitter', 'google-sheets'],
+  },
+  'add-newsletter-performance': {
+    instructionDocId: 'sop.newsletter.mailchimp.filling-newsletter-statistics',
+    systems: ['mailchimp', 'linkedin', 'twitter', 'google-sheets'],
+  },
+  'send-performance-to-sponsor': {
+    instructionDocId: 'template.newsletter.newsletter-performance',
+    systems: ['email', 'mailchimp', 'linkedin', 'twitter'],
+  },
+};
+
+const NEWSLETTER_WAITING_TASKS: Record<string, string> = {
+  'email-sponsor': 'sponsor content, graphics, or Valeriia review',
+  'fill-sponsored-block': 'approved sponsor copy, visual, and CTA',
+  'send-email-sponsor-publication-live': 'sponsor contact confirmation or corrected publication link',
+  'send-performance-to-sponsor': 'complete Mailchimp, LinkedIn, and X performance stats',
+};
+
+const NEWSLETTER_AT_RISK_BY_REF: Record<string, string[]> = {
+  'email-sponsor': ['missing sponsorship document link', 'sponsor content deadline not communicated'],
+  'fill-sponsored-block': ['missing sponsorship document link', 'sponsor content still waiting', 'approved sponsor copy not available'],
+  'schedule-email-newsletter': ['missing Mailchimp newsletter link', 'campaign not scheduled'],
+  'create-invoice': ['missing invoice file or link'],
+  'send-email-sponsor-publication-live': ['missing Mailchimp newsletter link'],
+  'schedule-sponsorship-linkedin': ['missing LinkedIn post link'],
+  'schedule-sponsorship-twitter': ['missing X post link'],
+  'add-newsletter-performance': ['missing Mailchimp, LinkedIn, or X performance stats'],
+  'send-performance-to-sponsor': ['performance stats not collected', 'sponsor performance email not sent'],
+};
+
 const PODCAST_PHASES: WorkflowPhase[] = [
   { id: 'guest-intake', name: 'Guest intake and date confirmation', stage: 'preparation' },
   { id: 'prep-document', name: 'Podcast prep document and guest collaboration', stage: 'preparation' },
@@ -365,6 +512,10 @@ function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
       dashboardStates: ['today', 'overdue', 'waiting', 'follow-up-due', 'missing-evidence', 'at-risk'],
       ...(typeof task.validation === 'object' && task.validation !== null ? task.validation : {}),
     };
+    const skipClosure = newsletterSkipClosure(task.refId);
+    if (skipClosure) {
+      validation.skipClosure = skipClosure;
+    }
     if (waitingFor) {
       validation.waitingSemantics = {
         waitingFor,
@@ -425,6 +576,135 @@ function podcastProofRequirement(task: TaskDefinition): ProofRequirement {
   return { type: 'comment', label: 'Manual completion confirmation', required: false };
 }
 
+function withNewsletterTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
+  return tasks.map((task) => {
+    const phase = NEWSLETTER_PHASE_BY_REF[task.refId];
+    const docContext = NEWSLETTER_DOC_CONTEXT[task.refId] || {};
+    const proofRequirement = newsletterProofRequirement(task);
+    const waitingFor = NEWSLETTER_WAITING_TASKS[task.refId];
+    const requiredBundleLinks = newsletterRequiredBundleLinks(task);
+    const validation: Record<string, unknown> = {
+      operatorAction: task.description,
+      completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
+      requiredBundleLinks,
+      reminderSemantics: {
+        due: true,
+        overdue: true,
+        missingEvidence: proofRequirement.required !== false,
+        waitingFollowUp: Boolean(waitingFor),
+        sponsorFollowUp: task.refId === 'email-sponsor' || task.refId === 'fill-sponsored-block',
+        postPublicationFollowUp: task.offsetDays > 0,
+      },
+      atRiskWhen: NEWSLETTER_AT_RISK_BY_REF[task.refId] || [],
+      dashboardStates: ['today', 'overdue', 'waiting', 'follow-up-due', 'missing-evidence', 'at-risk'],
+      ...(typeof task.validation === 'object' && task.validation !== null ? task.validation : {}),
+    };
+    const skipClosure = newsletterSkipClosure(task.refId);
+    if (skipClosure) {
+      validation.skipClosure = skipClosure;
+    }
+    if (waitingFor) {
+      validation.waitingSemantics = {
+        waitingFor,
+        requires: ['waitingFor', 'followUpAt', 'comment'],
+        followUpDefaultDays: task.offsetDays < 0 ? 2 : 1,
+      };
+    }
+
+    return {
+      ...task,
+      ...docContext,
+      phase,
+      systems: docContext.systems || task.systems || NEWSLETTER_PHASE_SYSTEMS[phase] || ['dataops'],
+      proofRequirement,
+      validation,
+    };
+  });
+}
+
+function newsletterSkipClosure(refId: string): Record<string, unknown> | undefined {
+  const skipStatuses: Record<string, string[]> = {
+    'create-sponsorship-document': ['not sponsored this week'],
+    'email-sponsor': ['not sponsored this week'],
+    'fill-sponsored-block': ['not sponsored this week'],
+    'fill-book-of-the-week-block': ['no book this week'],
+    'fill-event-block': ['no event block this week'],
+    'fill-podcast-block': ['no podcast this week'],
+    'fill-article-block': ['no article block this week'],
+    'create-invoice': ['not sponsored this week'],
+    'send-email-sponsor-publication-live': ['not sponsored this week'],
+    'schedule-sponsorship-linkedin': ['not sponsored this week'],
+    'schedule-sponsorship-twitter': ['not sponsored this week'],
+    'add-newsletter-performance': ['not sponsored this week', 'no social stats available'],
+    'send-performance-to-sponsor': ['not sponsored this week'],
+  };
+  const statuses = skipStatuses[refId];
+  if (!statuses) return undefined;
+  const skipClosure: Record<string, unknown> = {
+    allowedStatuses: statuses,
+    requires: ['comment'],
+    auditNote: 'Use one of these exact notes when the weekly issue has no sponsor or the content block is intentionally skipped.',
+  };
+  if (refId === 'add-newsletter-performance') {
+    skipClosure.suppresses = {
+      'not sponsored this week': { bundleLinks: ['LinkedIn', 'X'], proof: true },
+      'no social stats available': { bundleLinks: ['LinkedIn', 'X'], proof: true },
+    };
+  }
+  if (refId === 'send-performance-to-sponsor') {
+    skipClosure.suppresses = {
+      'not sponsored this week': { bundleLinks: ['*'], proof: true },
+    };
+  }
+  return skipClosure;
+}
+
+function newsletterProofRequirement(task: TaskDefinition): ProofRequirement {
+  if (task.requiredLinkName) {
+    return { type: 'url', label: task.requiredLinkName, required: true };
+  }
+  if (task.requiresFile) {
+    return { type: 'file', label: 'Invoice PDF or invoice proof', required: true };
+  }
+  if (task.refId === 'schedule-email-newsletter') {
+    return { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true };
+  }
+  if (task.refId === 'add-newsletter-performance') {
+    return { type: 'external-status', label: 'Newsletter, LinkedIn, and X performance stats recorded', required: true };
+  }
+  if (task.refId === 'fill-sponsored-block') {
+    return { type: 'external-status', label: 'Sponsored block filled or issue confirmed unsponsored', required: true };
+  }
+  if (
+    task.refId === 'email-sponsor'
+    || task.refId === 'fill-book-of-the-week-block'
+    || task.refId === 'fill-event-block'
+    || task.refId === 'fill-podcast-block'
+    || task.refId === 'fill-article-block'
+    || task.refId === 'send-email-sponsor-publication-live'
+    || task.refId === 'send-performance-to-sponsor'
+  ) {
+    return { type: 'comment', label: `${task.description} confirmed`, required: true };
+  }
+  return { type: 'comment', label: 'Manual completion confirmation', required: false };
+}
+
+function newsletterRequiredBundleLinks(task: TaskDefinition): string[] {
+  if (task.requiredLinkName) {
+    return [task.requiredLinkName];
+  }
+  if (task.refId === 'schedule-email-newsletter' || task.refId === 'send-email-sponsor-publication-live') {
+    return ['Mailchimp newsletter'];
+  }
+  if (task.refId === 'fill-sponsored-block' || task.refId === 'email-sponsor') {
+    return ['Sponsorship document'];
+  }
+  if (task.refId === 'add-newsletter-performance' || task.refId === 'send-performance-to-sponsor') {
+    return ['Mailchimp newsletter', 'LinkedIn', 'X'];
+  }
+  return [];
+}
+
 const DEFAULT_TEMPLATES = [
   // 1. Newsletter
   {
@@ -432,6 +712,8 @@ const DEFAULT_TEMPLATES = [
     type: 'newsletter',
     emoji: '\u{1F4F0}',
     tags: ['Newsletter'],
+    phases: NEWSLETTER_PHASES,
+    sourceDocIds: NEWSLETTER_SOURCE_DOC_IDS,
     defaultAssigneeId: GRACE_ID,
     triggerType: 'automatic',
     triggerSchedule: '0 9 * * 1',
@@ -440,13 +722,8 @@ const DEFAULT_TEMPLATES = [
       { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
       { name: 'Newsletter', url: 'https://docs.google.com/document/d/10sqvW0RqHJ2xQaoJQB0Ce0E21QPPAef5UwWrx0aT2XA/edit' },
     ],
-    bundleLinkDefinitions: [
-      { name: 'Sponsorship document' },
-      { name: 'Mailchimp newsletter' },
-      { name: 'LinkedIn' },
-      { name: 'X' },
-    ],
-    taskDefinitions: [
+    bundleLinkDefinitions: NEWSLETTER_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    taskDefinitions: withNewsletterTaskSemantics([
       {
         refId: 'create-sponsorship-document',
         description: 'Create sponsorship document',
@@ -506,6 +783,7 @@ const DEFAULT_TEMPLATES = [
         refId: 'schedule-email-newsletter',
         description: 'Schedule Email Newsletter',
         offsetDays: -1,
+        stageOnComplete: 'announced',
         instructionsUrl: 'https://docs.google.com/document/d/1hY7nMMRqooMpmCV0gl0aNfAePUajYLyylW0JUTdiwEM/edit',
       },
       {
@@ -550,7 +828,7 @@ const DEFAULT_TEMPLATES = [
         stageOnComplete: 'done',
         instructionsUrl: 'https://docs.google.com/document/d/1oXpq9SlHHcSe5JjDrScPT2yVb4n980uTJX_-F6NNqkU/edit',
       },
-    ],
+    ]),
   },
 
   // 2. Book of the Week
@@ -1942,4 +2220,4 @@ if (require.main === module) {
     });
 }
 
-export { seed, DEFAULT_TEMPLATES, PODCAST_SOURCE_DOC_IDS, PODCAST_EXTERNAL_SOURCE_DOC_IDS };
+export { seed, DEFAULT_TEMPLATES, NEWSLETTER_SOURCE_DOC_IDS, PODCAST_SOURCE_DOC_IDS, PODCAST_EXTERNAL_SOURCE_DOC_IDS };

@@ -1,4 +1,6 @@
 ---
+id: sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content
+aliases: []
 title: "Schedule social media posts with Hootsuite and post about newsletter promotional content"
 summary: "Steps to schedule sponsored newsletter promotional posts for LinkedIn in Hootsuite, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -8,11 +10,16 @@ tags:
   - social-media
 systems:
   - google-calendar
+  - hootsuite
   - linkedin
   - loom
 loom:
   - https://www.loom.com/share/20e990beff794a15a7c4da8f292f69fb
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.overview.newsletter
+  - reference.newsletter.newsletter-sponsorship
+  - sop.social-media.linkedin.creating-sponsored-content-for-linkedin-post
 ---
 
 # Schedule social media posts with Hootsuite and post about newsletter promotional content

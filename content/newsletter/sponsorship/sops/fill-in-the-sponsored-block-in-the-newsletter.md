@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter
+aliases: []
 title: "Fill in the sponsored block in the newsletter"
 summary: "Procedure for filling a newsletter sponsored block in Mailchimp with approved sponsor copy, image, and CTA link."
 doc_type: sop
@@ -12,7 +14,10 @@ systems:
   - mailchimp
 loom:
   - https://www.loom.com/share/f729b48c56f14c4180f5389e8b1666f1
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter
+  - template.newsletter.create-newsletter-draft-from-template-in-mailchimp
 ---
 
 # Fill in the sponsored block in the newsletter

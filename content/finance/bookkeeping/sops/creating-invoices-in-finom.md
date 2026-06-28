@@ -1,4 +1,6 @@
 ---
+id: sop.finance.bookkeeping.creating-invoices-in-finom
+aliases: []
 title: "Creating Invoices in Finom"
 summary: "Create and send sponsor invoices in Finom, including company details, VAT handling, invoice items, payment links, and bookkeeping follow-up."
 doc_type: sop
@@ -13,7 +15,9 @@ loom:
   - https://www.loom.com/share/e82c2abde50c47c899f2db2b6be5ee45
   - https://www.loom.com/share/bf3dcd630e4b47ff94f2268fe4dc2e24
   - https://www.loom.com/share/8caa787b0e554ea39bc354de4d29cef8
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.newsletter.newsletter-sponsorship
 ---
 
 # Creating Invoices in Finom

@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block
+aliases: []
 title: "Entering information in the book of the week block"
 summary: "Procedure for updating a newsletter Book of the Week block with the correct title, cover, and link."
 doc_type: sop
@@ -11,7 +13,9 @@ systems:
   - mailchimp
 loom:
   - https://www.loom.com/share/42f39d56562f4ff686542adae4c4e55b
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - template.newsletter.create-newsletter-draft-from-template-in-mailchimp
 ---
 
 # Entering information in the book of the week block

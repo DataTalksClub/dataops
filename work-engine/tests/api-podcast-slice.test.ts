@@ -175,6 +175,12 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const streamUrl = 'https://youtube.com/watch?v=vector';
     const streamReady = await invoke('PUT', `/api/tasks/${actualStream.id}`, { link: streamUrl });
     assert.strictEqual(streamReady.statusCode, 200, streamReady.body);
+    const bundleBeforeStreamDone = parse(await invoke('GET', `/api/bundles/${bundle.id}`)).bundle;
+    const streamBundleLinks = bundleBeforeStreamDone.bundleLinks.map((link: any) => (
+      link.name === 'YouTube stream/video' ? { name: link.name, url: streamUrl } : link
+    ));
+    const streamBundleLinkReady = await invoke('PUT', `/api/bundles/${bundle.id}`, { bundleLinks: streamBundleLinks });
+    assert.strictEqual(streamBundleLinkReady.statusCode, 200, streamBundleLinkReady.body);
     const streamDone = await invoke('PUT', `/api/tasks/${actualStream.id}`, { status: 'done' });
     assert.strictEqual(streamDone.statusCode, 200, streamDone.body);
     const advancedBundle = parse(await invoke('GET', `/api/bundles/${bundle.id}`)).bundle;
