@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "content/**"
+      - "templates/dataops-knowledge/**"
       - "_docs/**"
       - "docs/**"
       - ".goal-v1.md"
@@ -15,11 +16,13 @@ on:
       - "work-engine/scripts/seed-templates.ts"
       - "lambda-functions/src/lambda_functions/doc_registry.py"
       - "lambda-functions/src/lambda_functions/validate_docs_links.py"
+      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
       - "tests/docs_app/**"
       - ".github/workflows/validate-dataops-content.yml"
   pull_request:
     paths:
       - "content/**"
+      - "templates/dataops-knowledge/**"
       - "_docs/**"
       - "docs/**"
       - ".goal-v1.md"
@@ -29,6 +32,7 @@ on:
       - "work-engine/scripts/seed-templates.ts"
       - "lambda-functions/src/lambda_functions/doc_registry.py"
       - "lambda-functions/src/lambda_functions/validate_docs_links.py"
+      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
       - "tests/docs_app/**"
       - ".github/workflows/validate-dataops-content.yml"
   workflow_dispatch:
@@ -66,6 +70,10 @@ jobs:
       - name: Validate docs links and workflow doc IDs
         working-directory: .
         run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_docs_links --repo-root . --content-root content
+
+      - name: Validate dataops-knowledge migration scaffold
+        working-directory: .
+        run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
 
       - name: Build search index
         run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-content-search.index
