@@ -5,7 +5,12 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { listTemplates, instantiateTemplate } from '../src/db/templates';
-import { seed, DEFAULT_TEMPLATES } from '../scripts/seed-templates';
+import {
+  seed,
+  DEFAULT_TEMPLATES,
+  PODCAST_SOURCE_DOC_IDS,
+  PODCAST_EXTERNAL_SOURCE_DOC_IDS,
+} from '../scripts/seed-templates';
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
@@ -116,6 +121,17 @@ describe('Seed script', () => {
     assert.ok(podcast.sourceDocIds!.includes('task-template.tasks.podcast'));
     assert.ok(podcast.sourceDocIds!.includes('sop.media.podcast.create-podcast-document'));
     assert.ok(podcast.sourceDocIds!.includes('assistant.podcast.process.podcast'));
+    for (const docId of PODCAST_SOURCE_DOC_IDS) {
+      assert.ok(podcast.sourceDocIds!.includes(docId), `Podcast sourceDocIds should include ${docId}`);
+    }
+    for (const externalDoc of PODCAST_EXTERNAL_SOURCE_DOC_IDS) {
+      assert.ok(
+        podcast.sourceDocIds!.includes(externalDoc.id),
+        `Podcast sourceDocIds should preserve external assistant reference ${externalDoc.id}`
+      );
+      assert.ok(externalDoc.path.startsWith('assistants/podcast/'));
+      assert.match(externalDoc.reason, /not indexed by the content registry/);
+    }
     assert.strictEqual(podcast.triggerType, 'manual');
     assert.deepStrictEqual(podcast.phases!.map((phase) => phase.id), [
       'guest-intake',

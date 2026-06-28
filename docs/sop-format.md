@@ -108,10 +108,11 @@ documented in `docs/STRUCTURE.md`.
 
 ### Stable document IDs and internal links
 
-Every document may have a stable frontmatter `id`. The `id` is the document's
-cross-link identity and should not change when the file is renamed or moved.
-Use lowercase letters, numbers, dots, dashes, and underscores only. Prefer a
-namespace that starts with the document type and domain:
+Every workflow-critical document must have a stable frontmatter `id`. Other
+legacy docs may still rely on generated IDs during migration. The `id` is the
+document's cross-link identity and should not change when the file is renamed
+or moved. Use lowercase letters, numbers, dots, dashes, and underscores only.
+Prefer a namespace that starts with the document type and domain:
 
 ```yaml
 ---
@@ -143,6 +144,11 @@ Rules:
 - `aliases` are optional old IDs or old paths that should still resolve.
 - Existing relative Markdown links may remain, but new internal links should
   prefer `[[id]]` so links survive path and title changes.
+- Task-template `sourceDocIds`, task `instructionDocId`, and process-document
+  `related_docs` should use stable IDs when the target is in `content/`.
+- `source` records where the document came from; it is not the runtime identity.
+- `instructionsUrl` is a legacy or external fallback when no registered content
+  document exists.
 
 ### Procedure: groups and steps
 

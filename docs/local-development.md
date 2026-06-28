@@ -370,6 +370,12 @@ uv run --extra search python -m lambda_functions.build_search_index \
 Add docs app tests when metadata, routing, search behavior, document IDs,
 templates, archive behavior, or content shape changes.
 
+When workflow-critical frontmatter changes, add or run checks that prove the
+migrated docs report `stable_id: true`, `id_source: frontmatter`, and resolve by
+stable ID through the document registry. If a workflow source reference is
+assistant-local or external, keep that exception explicit in code or docs rather
+than letting it appear as an accidental missing registry record.
+
 For docs portal backend/frontend changes:
 
 ```bash

@@ -619,6 +619,11 @@ Content changes should preserve:
 - a clear boundary between app code, runtime state, and canonical operational
   knowledge
 
+Workflow-critical process docs must use explicit frontmatter IDs. Task-template
+`sourceDocIds`, task `instructionDocId`, and process-doc `related_docs` should
+resolve through the document registry by stable ID whenever the target lives in
+`content/`. Assistant-local or external references must be documented as such.
+
 If we later split canonical knowledge into a separate repository, the DataOps
 app must keep the same workflow: issues first, PM grooming, implementation,
 tester verification, PM acceptance, merge, push, and On-Call CI/CD monitoring.

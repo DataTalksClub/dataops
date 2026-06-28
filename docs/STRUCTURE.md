@@ -86,12 +86,27 @@ Field meanings:
 - `aliases`: old IDs or old paths that should still resolve to this document
   after a rename or migration.
 - `title`: displayed title.
-- `doc_type`: one of `sop`, `checklist`, `template`, `reference`, or `playbook`.
+- `doc_type`: one of the document types listed above.
 - `source`: optional original import source, usually the original `.docx` path from the Processes export.
 - `tags`: topical tags.
 - `systems`: tools/services touched by the doc, such as `airtable`, `mailchimp`, `luma`, `github`, `slack`.
 - `related_docs`: stable document IDs, wiki references such as `[[doc-id]]`,
   or repo-relative Markdown paths for related docs. New links should use IDs.
+
+Stable IDs are required, not optional, for workflow-critical documents:
+
+- every file in `content/tasks/templates/`
+- every SOP, template, reference, playbook, or prompt named by a workflow
+  template `sourceDocIds` value
+- every document named by a task definition `instructionDocId`
+- every document listed in `related_docs` by a workflow-critical document
+
+`source` is import provenance only. Runtime code, search, task rows, workflow
+cards, reminders, and completion flows must use `id`, `related_docs`,
+`sourceDocIds`, and `instructionDocId` instead of file paths or Google Docs URLs
+when an in-repo process document exists. `instructionsUrl` may remain as a
+legacy fallback for external Google Docs or assistant-local documents that are
+not indexed by the content registry yet.
 
 Stable ID examples:
 
@@ -100,6 +115,9 @@ Stable ID examples:
 - `task-template.tasks.podcast`
 - `reference.finance.invoices-receipts-and-statements`
 - `playbook.courses.launch-cohort`
+
+When an explicit ID differs from an older generated ID or moved path, preserve
+that old value in `aliases`. Do not add aliases for unrelated Google Docs URLs.
 
 ### SOP Body
 
