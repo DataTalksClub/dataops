@@ -671,7 +671,7 @@ test.describe('Frontend bundles page', () => {
     });
     await expect(card).toBeVisible();
     await expect(card.locator('.card-action-link')).toHaveText('Open bundle');
-    await expect(card.locator('.card-action-link')).toHaveAttribute('href', '#/bundles');
+    await expect(card.locator('.card-action-link')).toHaveAttribute('href', /^#\/bundles\?bundleId=.+$/);
   });
 });
 

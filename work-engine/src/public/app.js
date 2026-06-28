@@ -1179,6 +1179,10 @@
   };
 
   function navigate() {
+    if (!location.hash) {
+      location.hash = '#/';
+      return;
+    }
     var parsed = parseHash();
     var hash = parsed.path;
     var handler = routes[hash];

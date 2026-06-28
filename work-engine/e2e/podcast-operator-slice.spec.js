@@ -81,9 +81,8 @@ test.describe('Podcast operator workflow slice (#9)', () => {
       instructionDocId: 'sop.media.podcast.unmapped-legacy-doc',
     }), lumaTaskId);
     await page.reload();
-    await page.waitForSelector('.bundle-card');
-    await page.locator('.bundle-card', { hasText: topic }).locator('.bundle-card-title').click();
     await page.waitForSelector('[data-testid="workflow-context"]');
+    await expect(page.locator('.bundle-detail-header h2')).toContainText(topic);
     const unresolvedDocRow = await podcastRow(page, 'Create an event in Luma');
     await expect(unresolvedDocRow.locator('.process-doc-context--unresolved')).toContainText('Unresolved document');
     await expect(unresolvedDocRow.locator('.process-doc-action')).toHaveText('Try docs resolver');
