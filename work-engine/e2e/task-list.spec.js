@@ -138,6 +138,87 @@ test.describe('Task list view redesign', () => {
     });
   });
 
+  test.describe('Scenario: Grace fills in required shared bundle links', () => {
+    let bundle;
+    let task;
+    const today = todayString();
+
+    test.beforeAll(async ({ request }) => {
+      const bundleRes = await request.post('/api/bundles', {
+        data: {
+          title: 'Task list shared links bundle',
+          anchorDate: today,
+          status: 'active',
+          bundleLinks: [
+            { name: 'Mailchimp newsletter', url: '' },
+            { name: 'LinkedIn', url: '' },
+          ],
+        },
+      });
+      bundle = (await bundleRes.json()).bundle;
+
+      const taskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Task list shared bundle link E2E',
+          date: today,
+          bundleId: bundle.id,
+          source: 'template',
+          proofRequirement: { type: 'external-status', label: 'Performance stats recorded', required: true },
+          validation: { requiredBundleLinks: ['Mailchimp newsletter', 'LinkedIn'] },
+        },
+      });
+      task = await taskRes.json();
+    });
+
+    test.afterAll(async ({ request }) => {
+      if (task) await request.delete('/api/tasks/' + task.id);
+      if (bundle) {
+        await request.put('/api/bundles/' + bundle.id + '/archive');
+        await request.delete('/api/bundles/' + bundle.id);
+      }
+    });
+
+    test('typing shared links saves them to the workflow bundle', async ({ page, request }) => {
+      await page.goto('/#/tasks');
+      await page.waitForSelector('[data-task-row="' + task.id + '"]');
+
+      const row = page.locator('[data-task-row="' + task.id + '"]');
+      await expect(row).toContainText('Add Mailchimp newsletter shared link to complete');
+      await expect(row.locator('.task-status-checkbox')).toBeDisabled();
+
+      await row.locator('.required-bundle-link-input').nth(0).fill('https://mailchimp.example/task-list');
+      await row.locator('.required-bundle-link-input').nth(0).press('Enter');
+      await expect.poll(async () => {
+        const refreshedBundle = (await (await request.get('/api/bundles/' + bundle.id)).json()).bundle;
+        const mailchimp = refreshedBundle.bundleLinks.find((link) => link.name === 'Mailchimp newsletter');
+        return mailchimp.url;
+      }).toBe('https://mailchimp.example/task-list');
+      await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeDisabled();
+
+      await page.locator('[data-task-row="' + task.id + '"] .required-bundle-link-input').nth(1).fill('https://linkedin.example/task-list');
+      await page.locator('[data-task-row="' + task.id + '"] .required-bundle-link-input').nth(1).press('Enter');
+      await expect.poll(async () => {
+        const refreshedBundle = (await (await request.get('/api/bundles/' + bundle.id)).json()).bundle;
+        const linkedin = refreshedBundle.bundleLinks.find((link) => link.name === 'LinkedIn');
+        return linkedin.url;
+      }).toBe('https://linkedin.example/task-list');
+
+      await page.locator('[data-task-row="' + task.id + '"] [data-completion-proof-task="' + task.id + '"]').fill('Performance stats recorded from task list');
+      await page.locator('[data-task-row="' + task.id + '"] [data-save-completion-proof="' + task.id + '"]').click();
+      await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
+      await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+
+      const refreshedBundle = (await (await request.get('/api/bundles/' + bundle.id)).json()).bundle;
+      const mailchimp = refreshedBundle.bundleLinks.find((link) => link.name === 'Mailchimp newsletter');
+      const linkedin = refreshedBundle.bundleLinks.find((link) => link.name === 'LinkedIn');
+      const refreshedTask = await (await request.get('/api/tasks/' + task.id)).json();
+      expect(mailchimp.url).toBe('https://mailchimp.example/task-list');
+      expect(linkedin.url).toBe('https://linkedin.example/task-list');
+      expect(refreshedTask.externalStatus).toBe('Performance stats recorded from task list');
+      expect(refreshedTask.status).toBe('done');
+    });
+  });
+
   test.describe('Scenario: Grace filters tasks by assignee', () => {
     let taskGrace;
     let taskValeriia;

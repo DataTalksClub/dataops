@@ -73,6 +73,27 @@ PODCAST_EXTERNAL_SOURCE_DOC_IDS = {
     "template.media.podcast.podcast-guest-intake",
 }
 
+NEWSLETTER_WORKFLOW_CONTENT_DOC_IDS = {
+    "reference.newsletter.newsletter-sponsorship",
+    "reference.overview.newsletter",
+    "sop.finance.bookkeeping.creating-invoices-in-finom",
+    "sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter",
+    "sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block",
+    "sop.newsletter.mailchimp.filling-newsletter-statistics",
+    "sop.newsletter.mailchimp.getting-campaign-performance-stats",
+    "sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp",
+    "sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter",
+    "sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter",
+    "sop.social-media.linkedin.creating-sponsored-content-for-linkedin-post",
+    "sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content",
+    "sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content",
+    "template.newsletter.communication-with-sponsors",
+    "template.newsletter.create-newsletter-draft-from-template-in-mailchimp",
+    "template.newsletter.newsletter-performance",
+    "template.newsletter.send-sponsorship-document-2-weeks-before",
+    "template.newsletter.sending-email-on-the-day-of-publication",
+}
+
 
 def _write_doc(content_root: Path, relative_path: str, markdown: str) -> Path:
     path = content_root / relative_path
@@ -413,15 +434,25 @@ def test_workflow_critical_docs_use_explicit_stable_frontmatter_ids():
         assert record.id_source == "frontmatter"
         assert record.to_dict()["stable_id"] is True
 
+    for stable_id in NEWSLETTER_WORKFLOW_CONTENT_DOC_IDS:
+        record = doc_registry.resolve_reference(registry, stable_id)
+        assert record.id == stable_id
+        assert record.id_source == "frontmatter"
+        assert record.to_dict()["stable_id"] is True
+
     assert doc_registry.resolve_reference(registry, "sop.media.podcast.create-a-podcast-document").id == (
         "sop.media.podcast.create-podcast-document"
     )
+    assert doc_registry.resolve_reference(
+        registry,
+        "template.internal-admin.create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update",
+    ).id == "template.newsletter.create-newsletter-draft-from-template-in-mailchimp"
 
 
 def test_workflow_critical_search_docs_index_stable_id_keywords():
     indexed = {doc["id"]: doc for doc in iter_docs(REPO_ROOT / "content")}
 
-    for stable_id in set(TASK_TEMPLATE_DOC_IDS.values()) | PODCAST_WORKFLOW_CONTENT_DOC_IDS:
+    for stable_id in set(TASK_TEMPLATE_DOC_IDS.values()) | PODCAST_WORKFLOW_CONTENT_DOC_IDS | NEWSLETTER_WORKFLOW_CONTENT_DOC_IDS:
         assert stable_id in indexed
         assert indexed[stable_id]["id"] == stable_id
 

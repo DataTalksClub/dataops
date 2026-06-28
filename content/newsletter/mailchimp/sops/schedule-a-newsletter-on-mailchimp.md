@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp
+aliases: []
 title: "Schedule a newsletter on Mailchimp"
 summary: "Procedure for scheduling a reviewed newsletter campaign in Mailchimp for the intended send time."
 doc_type: sop
@@ -11,7 +13,10 @@ systems:
   - mailchimp
 loom:
   - https://www.loom.com/share/42f39d56562f4ff686542adae4c4e55b
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - template.newsletter.create-newsletter-draft-from-template-in-mailchimp
+  - template.newsletter.sending-email-on-the-day-of-publication
 ---
 
 # Schedule a newsletter on Mailchimp

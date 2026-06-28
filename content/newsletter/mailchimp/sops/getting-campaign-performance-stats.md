@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.mailchimp.getting-campaign-performance-stats
+aliases: []
 title: "Getting campaign performance stats"
 summary: "Procedure for gathering sponsor campaign performance metrics across Mailchimp, X, LinkedIn, and the schedule spreadsheet."
 doc_type: sop
@@ -15,7 +17,10 @@ loom:
   - https://www.loom.com/share/6afdaa7b58154317b7955261968c1885
   - https://www.loom.com/share/f526a8702b6a405db818d6310f128fa5
   - https://www.loom.com/share/522e765136b24071b9d84ffa33a9e770
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - sop.newsletter.mailchimp.filling-newsletter-statistics
+  - template.newsletter.newsletter-performance
 ---
 
 # Getting campaign performance stats

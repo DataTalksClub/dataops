@@ -1,4 +1,6 @@
 ---
+id: sop.newsletter.mailchimp.filling-newsletter-statistics
+aliases: []
 title: "Filling Newsletter Statistics"
 summary: "Procedure for collecting weekly sponsored newsletter performance statistics from Mailchimp, LinkedIn, and X."
 doc_type: sop
@@ -11,7 +13,10 @@ systems:
   - mailchimp
 loom:
   - https://www.loom.com/share/827580f567b14f1fbd613a68d9efad93
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - sop.newsletter.mailchimp.getting-campaign-performance-stats
+  - template.newsletter.newsletter-performance
 ---
 
 # Filling Newsletter Statistics

@@ -588,6 +588,252 @@ test.describe('Bundle detail view (issue #27)', () => {
     });
   });
 
+  // ── Scenario: Newsletter proof and skip closure are operator-fillable ──
+  test.describe('Scenario: Newsletter proof and skip closure can be filled before completion', () => {
+    let bundleId;
+    let sponsorTask;
+    let sponsorEmailTask;
+    let sponsoredBlockTask;
+    let externalStatusTask;
+    let commentTask;
+    let skipTask;
+    const suffix = uid();
+
+    test.beforeAll(async ({ request }) => {
+      const bundleRes = await request.post('/api/bundles', {
+        data: {
+          title: 'NewsletterProof ' + suffix,
+          anchorDate: '2026-07-20',
+          bundleLinks: [
+            { name: 'Sponsorship document', url: '' },
+            { name: 'Mailchimp newsletter', url: '' },
+            { name: 'LinkedIn', url: '' },
+          ],
+        },
+      });
+      expect(bundleRes.status()).toBe(201);
+      bundleId = (await bundleRes.json()).bundle.id;
+
+      const sponsorTaskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Create sponsorship document ' + suffix,
+          date: '2026-07-06',
+          bundleId: bundleId,
+          source: 'template',
+          requiredLinkName: 'Sponsorship document',
+          proofRequirement: { type: 'url', label: 'Sponsorship document', required: true },
+          validation: {
+            skipClosure: {
+              allowedStatuses: ['not sponsored this week'],
+              requires: ['comment'],
+            },
+          },
+        },
+      });
+      expect(sponsorTaskRes.status()).toBe(201);
+      sponsorTask = await sponsorTaskRes.json();
+
+      const sponsorEmailTaskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Email sponsor for newsletter ' + suffix,
+          date: '2026-07-06',
+          bundleId: bundleId,
+          source: 'template',
+          proofRequirement: { type: 'comment', label: 'Sponsor email sent', required: true },
+          validation: {
+            requiredBundleLinks: ['Sponsorship document'],
+            skipClosure: {
+              allowedStatuses: ['not sponsored this week'],
+              requires: ['comment'],
+            },
+          },
+        },
+      });
+      expect(sponsorEmailTaskRes.status()).toBe(201);
+      sponsorEmailTask = await sponsorEmailTaskRes.json();
+
+      const sponsoredBlockTaskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Fill sponsored block ' + suffix,
+          date: '2026-07-08',
+          bundleId: bundleId,
+          source: 'template',
+          proofRequirement: { type: 'external-status', label: 'Sponsored block filled or issue confirmed unsponsored', required: true },
+          validation: {
+            requiredBundleLinks: ['Sponsorship document'],
+            skipClosure: {
+              allowedStatuses: ['not sponsored this week'],
+              requires: ['comment'],
+            },
+          },
+        },
+      });
+      expect(sponsoredBlockTaskRes.status()).toBe(201);
+      sponsoredBlockTask = await sponsoredBlockTaskRes.json();
+
+      const externalStatusTaskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Schedule Email Newsletter ' + suffix,
+          date: '2026-07-19',
+          bundleId: bundleId,
+          source: 'template',
+          proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
+          validation: {
+            requiredBundleLinks: ['Mailchimp newsletter'],
+          },
+        },
+      });
+      expect(externalStatusTaskRes.status()).toBe(201);
+      externalStatusTask = await externalStatusTaskRes.json();
+
+      const commentTaskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Fill up Book of the week block ' + suffix,
+          date: '2026-07-09',
+          bundleId: bundleId,
+          source: 'template',
+          proofRequirement: { type: 'comment', label: 'Book block updated or removed', required: true },
+          validation: {
+            skipClosure: {
+              allowedStatuses: ['no book this week'],
+              requires: ['comment'],
+            },
+          },
+        },
+      });
+      expect(commentTaskRes.status()).toBe(201);
+      commentTask = await commentTaskRes.json();
+
+      const skipTaskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Schedule Sponsorship content on LinkedIn ' + suffix,
+          date: '2026-07-22',
+          bundleId: bundleId,
+          source: 'template',
+          requiredLinkName: 'LinkedIn',
+          proofRequirement: { type: 'url', label: 'LinkedIn', required: true },
+          validation: {
+            skipClosure: {
+              allowedStatuses: ['not sponsored this week'],
+              requires: ['comment'],
+            },
+          },
+        },
+      });
+      expect(skipTaskRes.status()).toBe(201);
+      skipTask = await skipTaskRes.json();
+    });
+
+    test.afterAll(async ({ request }) => {
+      if (sponsorTask) await request.delete('/api/tasks/' + sponsorTask.id);
+      if (sponsorEmailTask) await request.delete('/api/tasks/' + sponsorEmailTask.id);
+      if (sponsoredBlockTask) await request.delete('/api/tasks/' + sponsoredBlockTask.id);
+      if (externalStatusTask) await request.delete('/api/tasks/' + externalStatusTask.id);
+      if (commentTask) await request.delete('/api/tasks/' + commentTask.id);
+      if (skipTask) await request.delete('/api/tasks/' + skipTask.id);
+      if (bundleId) await archiveAndDelete(request, bundleId);
+    });
+
+    test('shows missing proof controls and completes after operator enters proof or skip status', async ({ page, request }) => {
+      await page.goto('/#/bundles');
+      await page.waitForSelector('.bundle-card');
+
+      const card = page.locator('.bundle-card', { hasText: 'NewsletterProof ' + suffix });
+      await card.locator('.bundle-card-title').click();
+      await page.waitForSelector('[data-testid="stage-badge"]');
+
+      const sponsorRow = page.locator('[data-task-row="' + sponsorTask.id + '"]');
+      await expect(sponsorRow).toContainText('Add Sponsorship document link to complete');
+      await expect(sponsorRow.locator('[data-task-checkbox="' + sponsorTask.id + '"]')).toBeDisabled();
+      await sponsorRow.locator('[data-skip-closure-task="' + sponsorTask.id + '"]').selectOption('not sponsored this week');
+      await sponsorRow.locator('[data-save-completion-proof="' + sponsorTask.id + '"]').click();
+      await expect(page.locator('[data-task-row="' + sponsorTask.id + '"] [data-task-checkbox="' + sponsorTask.id + '"]')).toBeEnabled();
+      await page.locator('[data-task-row="' + sponsorTask.id + '"] [data-task-checkbox="' + sponsorTask.id + '"]').check();
+
+      await expect.poll(async () => {
+        const task = await (await request.get('/api/tasks/' + sponsorTask.id)).json();
+        return task.status;
+      }).toBe('done');
+      await expect(page.locator('[data-task-completion-evidence="' + sponsorTask.id + '"]')).toContainText('Closed as: Not sponsored this week');
+      const sponsorLinkRow = page.locator('.bundle-link-row', { hasText: 'Sponsorship document' });
+      await expect(sponsorLinkRow).toHaveClass(/bundle-link-row--empty/);
+
+      for (const task of [sponsorEmailTask, sponsoredBlockTask]) {
+        const res = await request.put('/api/tasks/' + task.id, {
+          data: { status: 'done', comment: 'not sponsored this week' },
+        });
+        expect(res.status()).toBe(200);
+      }
+      await page.locator('.btn-back').click();
+      await page.waitForFunction(() => location.hash === '#/');
+      await page.goto('/#/bundles');
+      await page.waitForSelector('.bundle-card');
+      await page.locator('.bundle-card', { hasText: 'NewsletterProof ' + suffix }).locator('.bundle-card-title').click();
+      await page.waitForSelector('[data-testid="stage-badge"]');
+      await expect(sponsorLinkRow).not.toHaveClass(/bundle-link-row--empty/);
+
+      const externalStatusRow = page.locator('[data-task-row="' + externalStatusTask.id + '"]');
+      await expect(externalStatusRow).toContainText('Completion status: Mailchimp campaign scheduled');
+      await expect(externalStatusRow).toContainText('Add Mailchimp newsletter shared link to complete');
+      await expect(externalStatusRow.locator('[data-task-checkbox="' + externalStatusTask.id + '"]')).toBeDisabled();
+
+      const mailchimpLinkRowBefore = page.locator('.bundle-link-row', { hasText: 'Mailchimp newsletter' });
+      await expect(mailchimpLinkRowBefore).toHaveClass(/bundle-link-row--empty/);
+      await mailchimpLinkRowBefore.locator('.bundle-link-url-input').fill('https://mailchimp.example/newsletter-' + suffix);
+      await mailchimpLinkRowBefore.locator('.btn-save-link').click();
+      await expect(page.locator('.bundle-link-row', { hasText: 'Mailchimp newsletter' })).not.toHaveClass(/bundle-link-row--empty/);
+
+      await expect(page.locator('[data-task-row="' + externalStatusTask.id + '"]')).toContainText('Add completion status: Mailchimp campaign scheduled');
+      await externalStatusRow.locator('[data-completion-proof-task="' + externalStatusTask.id + '"]').fill('Mailchimp campaign scheduled');
+      await externalStatusRow.locator('[data-save-completion-proof="' + externalStatusTask.id + '"]').click();
+      await expect(page.locator('[data-task-row="' + externalStatusTask.id + '"] [data-task-checkbox="' + externalStatusTask.id + '"]')).toBeEnabled();
+      await page.locator('[data-task-row="' + externalStatusTask.id + '"] [data-task-checkbox="' + externalStatusTask.id + '"]').check();
+      await expect.poll(async () => {
+        const task = await (await request.get('/api/tasks/' + externalStatusTask.id)).json();
+        return task.externalStatus;
+      }).toBe('Mailchimp campaign scheduled');
+      await expect(page.locator('[data-task-completion-evidence="' + externalStatusTask.id + '"]')).toContainText('Status: Mailchimp campaign scheduled');
+
+      const commentRow = page.locator('[data-task-row="' + commentTask.id + '"]');
+      await expect(commentRow).toContainText('Completion note: Book block updated or removed');
+      await expect(commentRow).toContainText('Add completion note: Book block updated or removed');
+      await expect(commentRow.locator('[data-task-checkbox="' + commentTask.id + '"]')).toBeDisabled();
+
+      await commentRow.locator('[data-completion-proof-task="' + commentTask.id + '"]').fill('Book block removed; no book this week');
+      await commentRow.locator('[data-save-completion-proof="' + commentTask.id + '"]').click();
+      await expect(page.locator('[data-task-row="' + commentTask.id + '"] [data-task-checkbox="' + commentTask.id + '"]')).toBeEnabled();
+      await page.locator('[data-task-row="' + commentTask.id + '"] [data-task-checkbox="' + commentTask.id + '"]').check();
+
+      await expect.poll(async () => {
+        const task = await (await request.get('/api/tasks/' + commentTask.id)).json();
+        return task.status;
+      }).toBe('done');
+      const completedCommentTask = await (await request.get('/api/tasks/' + commentTask.id)).json();
+      expect(completedCommentTask.comment).toBe('Book block removed; no book this week');
+      await expect(page.locator('[data-task-completion-evidence="' + commentTask.id + '"]')).toContainText('Note: Book block removed; no book this week');
+
+      const skipRow = page.locator('[data-task-row="' + skipTask.id + '"]');
+      await expect(skipRow).toContainText('Add LinkedIn link to complete');
+      await expect(skipRow.locator('[data-task-checkbox="' + skipTask.id + '"]')).toBeDisabled();
+      await skipRow.locator('[data-skip-closure-task="' + skipTask.id + '"]').selectOption('not sponsored this week');
+      await skipRow.locator('[data-save-completion-proof="' + skipTask.id + '"]').click();
+      await expect(page.locator('[data-task-row="' + skipTask.id + '"] [data-task-checkbox="' + skipTask.id + '"]')).toBeEnabled();
+      await page.locator('[data-task-row="' + skipTask.id + '"] [data-task-checkbox="' + skipTask.id + '"]').check();
+
+      await expect.poll(async () => {
+        const task = await (await request.get('/api/tasks/' + skipTask.id)).json();
+        return task.status;
+      }).toBe('done');
+      const completedSkipTask = await (await request.get('/api/tasks/' + skipTask.id)).json();
+      expect(completedSkipTask.link).toBeUndefined();
+      expect(completedSkipTask.comment).toContain('not sponsored this week');
+      await expect(page.locator('[data-task-completion-evidence="' + skipTask.id + '"]')).toContainText('Closed as: Not sponsored this week');
+      await expect(page.locator('[data-testid="workflow-context"] .workflow-context-metric', { hasText: 'Missing links' })).toContainText('0');
+      const mailchimpLinkRow = page.locator('.bundle-link-row', { hasText: 'Mailchimp newsletter' });
+      await expect(mailchimpLinkRow).not.toHaveClass(/bundle-link-row--empty/);
+    });
+  });
+
   // ── Scenario: Grace scans bundle links to see what needs filling ──
   test.describe('Scenario: Empty bundle link slots are highlighted (issue #35)', () => {
     let bundleId;

@@ -1,4 +1,6 @@
 ---
+id: sop.social-media.linkedin.creating-sponsored-content-for-linkedin-post
+aliases: []
 title: "Creating Sponsored Content for LinkedIn Post"
 summary: "Steps to create a sponsored LinkedIn post from newsletter sponsor materials, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -11,7 +13,10 @@ systems:
   - trello
 loom:
   - https://www.loom.com/share/486851a598c74134815e497c2e65e603
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.newsletter.newsletter-sponsorship
+  - sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content
 ---
 
 # Creating Sponsored Content for LinkedIn Post

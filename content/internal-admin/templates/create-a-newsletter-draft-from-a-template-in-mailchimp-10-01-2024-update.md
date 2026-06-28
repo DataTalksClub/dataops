@@ -1,4 +1,7 @@
 ---
+id: template.newsletter.create-newsletter-draft-from-template-in-mailchimp
+aliases:
+  - template.internal-admin.create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update
 title: "Create a newsletter draft from a template in Mailchimp [10-01-2024 update]"
 summary: Template workflow for creating a Mailchimp newsletter draft from an existing campaign and preparing recurring content blocks.
 doc_type: template
@@ -10,7 +13,10 @@ systems:
 loom:
   - https://www.loom.com/share/a30e6953375444da8ce2850d22479d69
   - https://www.loom.com/share/42f39d56562f4ff686542adae4c4e55b
-related_docs: []
+related_docs:
+  - task-template.tasks.newsletter
+  - reference.overview.newsletter
+  - sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp
 ---
 
 # Create a newsletter draft from a template in Mailchimp [10-01-2024 update]

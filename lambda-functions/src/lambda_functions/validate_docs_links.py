@@ -230,8 +230,9 @@ def _source_doc_ids(seed_text: str) -> set[str]:
     for match in SOURCE_DOC_IDS_RE.finditer(seed_text):
         body = match.group("body")
         doc_ids.update(item.group("value") for item in STRING_LITERAL_RE.finditer(body))
-    const_match = re.search(r"const\s+PODCAST_SOURCE_DOC_IDS\s*=\s*\[(?P<body>.*?)\];", seed_text, re.DOTALL)
-    if const_match:
+    for const_match in re.finditer(r"const\s+(?P<name>[A-Z0-9_]*SOURCE_DOC_IDS)\s*=\s*\[(?P<body>.*?)\];", seed_text, re.DOTALL):
+        if "EXTERNAL_SOURCE_DOC_IDS" in const_match.group("name"):
+            continue
         doc_ids.update(item.group("value") for item in STRING_LITERAL_RE.finditer(const_match.group("body")))
     return doc_ids
 
