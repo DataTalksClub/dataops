@@ -78,59 +78,59 @@ Tasks (15):
   - Tags: Book of the Week
   - Title: {BOOK} - {AUTHOR}
 - Anchor date: Monday of event week (Mon-Fri)
-- Trigger: manual. Created when a book author agrees to participate and a date is confirmed
+- Trigger: manual. Created about 21 days before the Monday anchor date after a candidate book/date exists and an author or publisher has agreed
 
-Weekly book feature where authors answer community questions and winners receive free copies. Runs Monday through Friday of the event week.
+Weekly book feature where authors answer community questions and winners receive free copies. Runs Monday through Friday of the event week. The Monday anchor date drives all task offsets; bundle creation stays manual because each run depends on a confirmed author/book/date.
 
 Bundle links:
-- Guest email
-- Publisher link
+- Author email
+- Publisher or sponsor contact
+- Book or publisher source link
 - Website link
+- LinkedIn announcement
+- X announcement
+- Slack announcement
+- Author share proof
+- Winner announcement
+- Winner email handoff
+
+Phases:
+- `author-outreach` -> `preparation`
+- `book-and-page-setup` -> `preparation`
+- `pre-event-promotion` -> `preparation`
+- `event-week` -> `announced`
+- `giveaway-closeout` -> `after-event`
 
 References:
 - [Process documents](https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit)
 - [Events](https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit)
 - [Events (slack) - book of the week](https://docs.google.com/document/d/1RdxwuKVGRI69phmPbmJbgoO3o8il52LFZhiUu3qaDME/edit)
 
-Tasks (20):
+Tasks (21):
 
-- Reach out to book authors
-  - instructions: https://docs.google.com/document/d/1rGXg_1qbCmJUQpVxW9w12-BZObWaFBnTEr98eoMAJkk/edit
-- Agree on a date
-  - instructions: https://docs.google.com/document/d/1VC0nV7NVvKw5XaK9xYlLESystohHaaOthgIdyAmBJEo/edit
-- Change the status to "confirmed" in the schedule spreadsheet
-- Fill up the Airtable form for each author of the book
-  - instructions: https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit
-- Fill up the Airtable form for the book
-  - instructions: https://docs.google.com/document/d/11S7hjpIV0N3MnVm75ygBfwqB9c9_huRLaHil9Zzx_xY/edit
-- Create a web page from the forms
-  - instructions: https://docs.google.com/document/d/16hYJcuuEiG4nKS123_w95eaX3tcBqn6HgneXl0G9szY/edit
-- Announce the event on DTC LinkedIn [milestone: -7d]
-- Remind the author about the event [milestone: -7d]
-  - instructions: https://docs.google.com/document/d/1OuOW7IrYQYUS4UK3GBJZRWVIgqW9fp_rkp5hw2bwbjY/edit
-- Ask book authors to share the event page
-  - instructions: https://docs.google.com/document/d/1wnyMlIO3MuW7TwXkX6NYyo7XXp1hKM_lsp9KUgslSpg/edit
-- Announce the book of the week event on DTC LinkedIn [milestone: anchor, Tuesday of event week]
-  - instructions: https://docs.google.com/document/d/1HeorFgnMhVt2olNGYJNpoeht_-av-G-nFEf7NLKL8Ek/edit
-- Comment from Alexey's account on LinkedIn
-- Announce the book of the week event on DTC Twitter
-  - instructions: https://docs.google.com/document/d/1VCRVVhI7Lo4OOAg7Blkab94gyoJrjNRgBVKw3tjbxW4/edit
-- Invite the author(s) to Slack
-  - instructions: https://docs.google.com/document/d/1G8XBXPTQpX8nf873TQmNpkFee3mDueGoVvPGcE54Eho/edit
-- Schedule the announcement in Slack
-  - instructions: https://docs.google.com/document/d/1yf1f8ZLzePv-bFHjTlXmLydEzxGpuIG38BJwkqxAMbI/edit
-- Announce the book in the #book-of-the-week and #announcements channel [milestone: anchor, Monday of event week]
-- Authors answer questions
-- Select winners (ask author) [milestone: +4d, Friday of event week]
-  - instructions: https://docs.google.com/document/d/1S2CwgVZ9-7v_-9HIMk2CdODlkNqMejxqCOcs2bEo9G8/edit
-- Collect the emails from winners
-  - instructions: https://docs.google.com/document/d/14QzlXTP1FLHnNAn_ZyTGKlsst-H_hZKSnurzTy8D9TY/edit
-- Announce the book-of-the-week winners in the Slack community
-  - instructions: https://docs.google.com/document/d/1JxtqGk1UamUGp3PxtD3-YCJJagJdJK00CGBEPVd4VH8/edit
-- Contact the publisher or the authors and give them the emails
-  - instructions: https://docs.google.com/document/d/1szidymIamDfTI0LpkmwlRz7AX0qsRcPEVrcKtaFz_hs/edit
-- Fill in the newsletter announcement (assignee: Valeriia)
-  - instructions: https://docs.google.com/document/d/10y0CCq8ApFbH1Mx7wlh_b_ZudnPib9qk_tDysA99xNg/edit
+| Ref ID | Offset | Phase | Closure |
+|---|---:|---|---|
+| `reach-out-to-book-authors` | -21 | `author-outreach` | Record outreach channel/source. If no reply, mark waiting for author with `followUpAt` in 3 business days. |
+| `agree-on-a-date` | -20 | `author-outreach` | Confirm Monday-Friday event week. If not confirmed, mark waiting for author and set `followUpAt`. |
+| `change-status-confirmed` | -19 | `author-outreach` | Confirm schedule spreadsheet status is `confirmed`; external-status/comment proof is required. |
+| `fill-airtable-form-author` | -18 | `book-and-page-setup` | Author/person Airtable form submitted; capture `Author email`; `[HUMAN]` Airtable submission action. |
+| `fill-airtable-form-book` | -17 | `book-and-page-setup` | Book Airtable form submitted; capture `Book or publisher source link`; `[HUMAN]` Airtable submission action. |
+| `create-web-page` | -16 | `book-and-page-setup` | Required `Website link`; completion is blocked until public page URL exists; `[HUMAN]` website publication action. |
+| `fill-newsletter-announcement` | -8 | `pre-event-promotion` | Newsletter Book of the Week block prepared; assignee Valeriia. |
+| `announce-event-linkedin` | -7 | `pre-event-promotion` | Required `LinkedIn announcement` link or scheduled-post proof; `[HUMAN]` LinkedIn account action. |
+| `remind-author-about-event` | -7 | `pre-event-promotion` | Reminder sent with website link. If Slack invite is not accepted, mark waiting and set `followUpAt`. |
+| `ask-authors-share-event` | -6 | `pre-event-promotion` | Capture author-share proof if available; otherwise record waiting/follow-up. |
+| `announce-book-event-linkedin` | 0 | `event-week` | Required `LinkedIn announcement`; completion advances bundle stage to `announced`; `[HUMAN]` LinkedIn account action. |
+| `comment-from-alexey-linkedin` | 0 | `event-week` | Comment proof or `[HUMAN]` note when Alexey must do it directly. |
+| `announce-book-event-twitter` | 0 | `event-week` | Required `X announcement` proof link. |
+| `invite-author-to-slack` | 0 | `event-week` | Confirm invite sent/accepted; waiting state if author has not joined. |
+| `schedule-announcement-slack` | 0 | `event-week` | Slack announcement scheduled with cover and copied template; `[HUMAN]` external-account action. |
+| `announce-book-slack-channels` | 0 | `event-week` | Required `Slack announcement` proof link in `#book-of-the-week` and/or `#announcements`; `[HUMAN]` posting action. |
+| `authors-answer-questions` | +1 | `event-week` | Monitor Q&A activity. If inactive, mark waiting for author activity and set `followUpAt`. |
+| `select-winners` | +4 | `giveaway-closeout` | Winners selected by author or randomizer; completion advances stage to `after-event`. |
+| `collect-emails-from-winners` | +5 | `giveaway-closeout` | Winner emails collected. Missing emails require waiting/follow-up for winners by Tuesday/Wednesday. |
+| `announce-winners-slack` | +6 | `giveaway-closeout` | Required `Winner announcement` Slack proof link; `[HUMAN]` posting action. |
+| `contact-publisher-give-emails` | +7 | `giveaway-closeout` | Required `Winner email handoff`; completion advances stage to `done`; `[HUMAN]` publisher/author email action. |
 
 ---
 
@@ -686,7 +686,7 @@ Tasks (5):
 | # | Template | Type | Tags | Tasks | Trigger | Anchor date |
 |---|----------|------|------|-------|---------|-------------|
 | 1 | Newsletter | newsletter | Newsletter | 15 | Automatic (weekly, -14d) | Publish day |
-| 2 | Book of the Week | book-of-the-week | Book of the Week | 20 | Manual (author confirms) | Event week (Mon) |
+| 2 | Book of the Week | book-of-the-week | Book of the Week | 21 | Manual (author/date confirms) | Event week Monday |
 | 3 | Podcast | podcast | Podcast | 40 | Manual (guest confirms) | Stream date |
 | 4 | Webinar | webinar | Webinar | 28 | Manual (speaker confirms) | Stream date |
 | 5 | Workshop | workshop | Workshop | 30 | Manual (speaker confirms) | Stream date |

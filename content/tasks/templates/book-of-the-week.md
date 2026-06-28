@@ -13,7 +13,34 @@ tags:
   - "Book of the Week"
   - "task-template"
   - "book-of-the-week"
-related_docs: []
+related_docs:
+  - reference.overview.events-slack-book-of-the-week
+  - reference.social-media.posts-book-of-the-week
+  - sop.community.book-of-the-week.reach-out-to-book-authors
+  - sop.community.book-of-the-week.have-a-first-contact-with-the-author
+  - sop.community.book-of-the-week.change-the-status-to-confirmed
+  - sop.community.book-of-the-week.add-books-to-the-airtable-form
+  - sop.community.book-of-the-week.adding-an-author-to-book-of-the-week-pages
+  - sop.community.book-of-the-week.determining-the-publisher-of-a-book
+  - sop.community.book-of-the-week.add-links-and-edit-description
+  - sop.community.book-of-the-week.adding-book-covers
+  - sop.community.book-of-the-week.announce-book-of-the-week-announcement-on-linkedin
+  - sop.community.book-of-the-week.ask-book-authors-to-share-their-the-event-page
+  - sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form
+  - sop.community.book-of-the-week.schedule-the-announcement-in-slack
+  - sop.community.book-of-the-week.announce-the-book-of-the-week-event
+  - sop.community.book-of-the-week.select-book-of-the-week-winners
+  - sop.community.book-of-the-week.send-winners-emails
+  - template.community.book-of-the-week.book-of-the-week-reaching-out-to-authors
+  - template.community.book-of-the-week.book-of-the-week-remind-the-guest-about-the-event-template
+  - template.community.book-of-the-week.asking-books-authors-to-share-their-event-page
+  - template.community.book-of-the-week.book-of-the-week-linkedin-announcement-a-week-before-the-event
+  - template.community.book-of-the-week.book-of-the-week-linkedin-announcement
+  - template.community.book-of-the-week.book-of-the-week-announcement-template
+  - template.community.book-of-the-week.announce-the-book-of-the-week-winners-in-slack
+  - template.community.book-of-the-week.selecting-book-of-the-week-winners-template
+  - template.community.book-of-the-week.sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent
+  - sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block
 ---
 
 # Book of the Week Task Template
@@ -45,35 +72,61 @@ Preserve the canonical task template in Git so the operational process can be re
 <!-- sop-section-start: required-bundle-links -->
 ## Required Bundle Links
 
-- Guest email
-- Publisher link
+- Author email
+- Publisher or sponsor contact
+- Book or publisher source link
 - Website link
+- LinkedIn announcement
+- X announcement
+- Slack announcement
+- Author share proof
+- Winner announcement
+- Winner email handoff
+<!-- sop-section-end -->
+
+<!-- sop-section-start: workflow-definition -->
+## Workflow Definition
+
+- Template ID: `task-template.tasks.book-of-the-week`
+- Runtime type: `book-of-the-week`
+- Trigger: manual.
+- Default owner: `00000000-0000-0000-0000-000000000001`.
+
+Stages:
+
+| Phase ID | Phase | Stage |
+| - | - | - |
+| `author-outreach` | Author outreach and date confirmation | `preparation` |
+| `book-and-page-setup` | Book, author, and public page setup | `preparation` |
+| `pre-event-promotion` | Newsletter and pre-event promotion | `preparation` |
+| `event-week` | Event week announcements and Q&A | `announced` |
+| `giveaway-closeout` | Winner selection and publisher handoff | `after-event` |
 <!-- sop-section-end -->
 
 <!-- sop-section-start: task-definitions -->
 ## Task Definitions
 
-| # | Ref ID | Offset | Task | Requirements | Instructions |
-| - | - | -: | - | - | - |
-| 1 | `reach-out-to-book-authors` | -21 | Reach out to book authors |  | [open](https://docs.google.com/document/d/1rGXg_1qbCmJUQpVxW9w12-BZObWaFBnTEr98eoMAJkk/edit) |
-| 2 | `agree-on-a-date` | -20 | Agree on a date |  | [open](https://docs.google.com/document/d/1VC0nV7NVvKw5XaK9xYlLESystohHaaOthgIdyAmBJEo/edit) |
-| 3 | `change-status-confirmed` | -19 | Change the status to "confirmed" in the schedule spreadsheet |  |  |
-| 4 | `fill-airtable-form-author` | -18 | Fill up the Airtable form for each author of the book |  | [open](https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit) |
-| 5 | `fill-airtable-form-book` | -17 | Fill up the Airtable form for the book |  | [open](https://docs.google.com/document/d/11S7hjpIV0N3MnVm75ygBfwqB9c9_huRLaHil9Zzx_xY/edit) |
-| 6 | `create-web-page` | -16 | Create a web page from the forms | link: Website link | [open](https://docs.google.com/document/d/16hYJcuuEiG4nKS123_w95eaX3tcBqn6HgneXl0G9szY/edit) |
-| 7 | `announce-event-linkedin` | -7 | Announce the event on DTC LinkedIn | milestone |  |
-| 8 | `remind-author-about-event` | -7 | Remind the author about the event | milestone | [open](https://docs.google.com/document/d/1OuOW7IrYQYUS4UK3GBJZRWVIgqW9fp_rkp5hw2bwbjY/edit) |
-| 9 | `ask-authors-share-event` | -6 | Ask book authors to share the event page |  | [open](https://docs.google.com/document/d/1wnyMlIO3MuW7TwXkX6NYyo7XXp1hKM_lsp9KUgslSpg/edit) |
-| 10 | `announce-book-event-linkedin` | 0 | Announce the book of the week event on DTC LinkedIn | milestone<br>stage: announced | [open](https://docs.google.com/document/d/1HeorFgnMhVt2olNGYJNpoeht_-av-G-nFEf7NLKL8Ek/edit) |
-| 11 | `comment-from-alexey-linkedin` | 0 | Comment from Alexey's account on LinkedIn |  |  |
-| 12 | `announce-book-event-twitter` | 0 | Announce the book of the week event on DTC Twitter |  | [open](https://docs.google.com/document/d/1VCRVVhI7Lo4OOAg7Blkab94gyoJrjNRgBVKw3tjbxW4/edit) |
-| 13 | `invite-author-to-slack` | 0 | Invite the author(s) to Slack |  | [open](https://docs.google.com/document/d/1G8XBXPTQpX8nf873TQmNpkFee3mDueGoVvPGcE54Eho/edit) |
-| 14 | `schedule-announcement-slack` | 0 | Schedule the announcement in Slack |  | [open](https://docs.google.com/document/d/1yf1f8ZLzePv-bFHjTlXmLydEzxGpuIG38BJwkqxAMbI/edit) |
-| 15 | `announce-book-slack-channels` | 0 | Announce the book in the #book-of-the-week and #announcements channel | milestone |  |
-| 16 | `authors-answer-questions` | 1 | Authors answer questions |  |  |
-| 17 | `select-winners` | 4 | Select winners (ask author) | milestone<br>stage: after-event | [open](https://docs.google.com/document/d/1S2CwgVZ9-7v_-9HIMk2CdODlkNqMejxqCOcs2bEo9G8/edit) |
-| 18 | `collect-emails-from-winners` | 5 | Collect the emails from winners |  | [open](https://docs.google.com/document/d/14QzlXTP1FLHnNAn_ZyTGKlsst-H_hZKSnurzTy8D9TY/edit) |
-| 19 | `announce-winners-slack` | 6 | Announce the book-of-the-week winners in the Slack community |  | [open](https://docs.google.com/document/d/1JxtqGk1UamUGp3PxtD3-YCJJagJdJK00CGBEPVd4VH8/edit) |
-| 20 | `contact-publisher-give-emails` | 7 | Contact the publisher or the authors and give them the emails | stage: done | [open](https://docs.google.com/document/d/1szidymIamDfTI0LpkmwlRz7AX0qsRcPEVrcKtaFz_hs/edit) |
-| 21 | `fill-newsletter-announcement` | -8 | Fill in the newsletter announcement | assignee: 00000000-0000-0000-0000-000000000002 | [open](https://docs.google.com/document/d/10y0CCq8ApFbH1Mx7wlh_b_ZudnPib9qk_tDysA99xNg/edit) |
+| # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |
+| - | - | - | -: | - | - | - | - | - |
+| 1 | `reach-out-to-book-authors` | author-outreach | -21 |  | Reach out to book authors | template.community.book-of-the-week.book-of-the-week-reaching-out-to-authors | comment: Reach out to book authors confirmed | author reply |
+| 2 | `agree-on-a-date` | author-outreach | -20 |  | Agree on a date | sop.community.book-of-the-week.have-a-first-contact-with-the-author<br>step 1 | comment: Agree on a date confirmed | author date confirmation |
+| 3 | `change-status-confirmed` | author-outreach | -19 |  | Change the status to "confirmed" in the schedule spreadsheet | sop.community.book-of-the-week.change-the-status-to-confirmed<br>step 1 | external-status: Schedule spreadsheet status is confirmed |  |
+| 4 | `fill-airtable-form-author` | book-and-page-setup | -18 |  | Fill up the Airtable form for each author of the book | sop.community.book-of-the-week.adding-an-author-to-book-of-the-week-pages<br>step 1 | external-status: Author/person Airtable form submitted and author email captured<br>[HUMAN] Airtable submission uses an external account; accept with Airtable submission confirmation and captured author email. |  |
+| 5 | `fill-airtable-form-book` | book-and-page-setup | -17 |  | Fill up the Airtable form for the book | sop.community.book-of-the-week.add-books-to-the-airtable-form<br>step 1 | external-status: Book Airtable form submitted with book, publisher, cover, and description source<br>[HUMAN] Airtable submission uses an external account; accept with Airtable submission confirmation and book/publisher source captured. |  |
+| 6 | `create-web-page` | book-and-page-setup | -16 |  | Create a web page from the forms | sop.community.book-of-the-week.add-links-and-edit-description<br>step 1 | url: Website link<br>[HUMAN] Website publication uses the production website; accept only after the public page URL is captured. |  |
+| 7 | `announce-event-linkedin` | pre-event-promotion | -7 |  | Announce the event on DTC LinkedIn | template.community.book-of-the-week.book-of-the-week-linkedin-announcement-a-week-before-the-event | url: LinkedIn announcement<br>[HUMAN] LinkedIn publication or scheduling uses a DTC external account; accept with scheduled-post or public post proof. |  |
+| 8 | `remind-author-about-event` | pre-event-promotion | -7 |  | Remind the author about the event | template.community.book-of-the-week.book-of-the-week-remind-the-guest-about-the-event-template | comment: Remind the author about the event confirmed | author Slack invite acceptance |
+| 9 | `ask-authors-share-event` | pre-event-promotion | -6 |  | Ask book authors to share the event page | template.community.book-of-the-week.asking-books-authors-to-share-their-event-page | comment: Ask book authors to share the event page confirmed | author share confirmation or public share link |
+| 10 | `announce-book-event-linkedin` | event-week | 0 |  | Announce the book of the week event on DTC LinkedIn | template.community.book-of-the-week.book-of-the-week-linkedin-announcement | url: LinkedIn announcement<br>[HUMAN] LinkedIn publication uses a DTC external account; accept with the public announcement URL. |  |
+| 11 | `comment-from-alexey-linkedin` | event-week | 0 |  | Comment from Alexey's account on LinkedIn | template.community.book-of-the-week.book-of-the-week-linkedin-announcement | comment: Comment from Alexey's account on LinkedIn confirmed<br>[HUMAN] Alexey's LinkedIn account action must be performed by Alexey; accept with a comment note or public proof. |  |
+| 12 | `announce-book-event-twitter` | event-week | 0 |  | Announce the book of the week event on DTC Twitter | reference.social-media.posts-book-of-the-week | url: X announcement |  |
+| 13 | `invite-author-to-slack` | event-week | 0 |  | Invite the author(s) to Slack | sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form<br>step 1 | comment: Invite the author(s) to Slack confirmed | author Slack join confirmation |
+| 14 | `schedule-announcement-slack` | event-week | 0 |  | Schedule the announcement in Slack | sop.community.book-of-the-week.schedule-the-announcement-in-slack<br>step 1 | external-status: Slack announcement scheduled with cover and copied template<br>[HUMAN] Slack scheduling uses a community workspace account; accept with scheduling confirmation. |  |
+| 15 | `announce-book-slack-channels` | event-week | 0 |  | Announce the book in the #book-of-the-week and #announcements channel | sop.community.book-of-the-week.announce-the-book-of-the-week-event<br>step 1 | url: Slack announcement<br>[HUMAN] Slack posting uses the community workspace; accept with the Slack announcement proof link. |  |
+| 16 | `authors-answer-questions` | event-week | 1 |  | Authors answer questions | reference.overview.events-slack-book-of-the-week | external-status: Author Q&A activity monitored in Slack | author Q&A activity in Slack |
+| 17 | `select-winners` | giveaway-closeout | 4 |  | Select winners (ask author) | sop.community.book-of-the-week.select-book-of-the-week-winners<br>step 1 | external-status: Winners selected by author or randomizer |  |
+| 18 | `collect-emails-from-winners` | giveaway-closeout | 5 |  | Collect the emails from winners | sop.community.book-of-the-week.select-book-of-the-week-winners<br>step 6 | external-status: Winner emails collected or waiting follow-up recorded | winner email replies |
+| 19 | `announce-winners-slack` | giveaway-closeout | 6 |  | Announce the book-of-the-week winners in the Slack community | template.community.book-of-the-week.announce-the-book-of-the-week-winners-in-slack | url: Winner announcement<br>[HUMAN] Slack posting uses the community workspace; accept with the winner announcement proof link. |  |
+| 20 | `contact-publisher-give-emails` | giveaway-closeout | 7 |  | Contact the publisher or the authors and give them the emails | template.community.book-of-the-week.sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent | url: Winner email handoff<br>[HUMAN] Publisher or author email handoff uses external email; accept with the sent thread or handoff URL. | publisher or author fulfillment confirmation |
+| 21 | `fill-newsletter-announcement` | pre-event-promotion | -8 | 00000000-0000-0000-0000-000000000002 | Fill in the newsletter announcement | sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block | comment: Fill in the newsletter announcement confirmed |  |
 <!-- sop-section-end -->

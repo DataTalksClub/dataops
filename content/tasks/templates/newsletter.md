@@ -19,15 +19,15 @@ related_docs:
   - template.newsletter.create-newsletter-draft-from-template-in-mailchimp
   - sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter
   - sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter
-  - template.newsletter.send-sponsorship-document-2-weeks-before
   - template.newsletter.communication-with-sponsors
-  - sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp
-  - sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter
-  - sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block
-  - sop.newsletter.mailchimp.filling-newsletter-statistics
-  - sop.newsletter.mailchimp.getting-campaign-performance-stats
+  - template.newsletter.send-sponsorship-document-2-weeks-before
   - template.newsletter.sending-email-on-the-day-of-publication
   - template.newsletter.newsletter-performance
+  - sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block
+  - sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter
+  - sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp
+  - sop.newsletter.mailchimp.getting-campaign-performance-stats
+  - sop.newsletter.mailchimp.filling-newsletter-statistics
   - sop.finance.bookkeeping.creating-invoices-in-finom
   - sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content
   - sop.social-media.linkedin.creating-sponsored-content-for-linkedin-post
@@ -74,10 +74,8 @@ Preserve the canonical task template in Git so the operational process can be re
 
 - Template ID: `task-template.tasks.newsletter`
 - Runtime type: `newsletter`
-- Trigger: automatic weekly creation, `0 9 * * 1`, 14 lead days.
-- Anchor date: Monday newsletter send date.
+- Trigger: automatic, `0 9 * * 1`, 14 lead days.
 - Default owner: `00000000-0000-0000-0000-000000000001`.
-- Done criteria: the sponsor performance email task reaches `stage: done`; required proof is present for each completed task; skipped sponsor/content blocks have explicit comments or external status; no waiting follow-up is due.
 
 Stages:
 
@@ -91,35 +89,24 @@ Stages:
 | `performance` | Performance stats and sponsor report | `after-event` |
 <!-- sop-section-end -->
 
-<!-- sop-section-start: proof-waiting-and-skip-semantics -->
-## Proof, Waiting, And Skip Semantics
-
-- URL proof is required for `Sponsorship document`, `Mailchimp newsletter`, `LinkedIn`, and `X` bundle links.
-- Invoice closure requires an uploaded invoice file or file proof through the work-engine file mechanism.
-- Email, content-block, stats, and performance tasks require a comment or external status so completion is auditable.
-- Sponsor-dependent tasks can move to `waiting` only with `waitingFor`, `followUpAt`, and a comment.
-- Unsponsored or not-applicable work must be closed explicitly with comments or external statuses such as `not sponsored this week`, `no book this week`, `no event block this week`, `no podcast this week`, or `no article block this week`.
-- Completing `schedule-email-newsletter` moves the bundle to `announced`; completing `send-performance-to-sponsor` moves it to `done`.
-<!-- sop-section-end -->
-
 <!-- sop-section-start: task-definitions -->
 ## Task Definitions
 
 | # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |
 | - | - | - | -: | - | - | - | - | - |
-| 1 | `create-sponsorship-document` | sponsor-intake | -14 | 00000000-0000-0000-0000-000000000001 | Create sponsorship document | sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter | url: Sponsorship document, or `not sponsored this week` |  |
-| 2 | `email-sponsor` | sponsor-intake | -14 | 00000000-0000-0000-0000-000000000001 | Email the sponsor with the sponsorship document - add Valeriia in communication | template.newsletter.send-sponsorship-document-2-weeks-before | comment: email sent, or `not sponsored this week` | sponsor content, graphics, or Valeriia review |
-| 3 | `create-mailchimp-campaign` | draft-assembly | -13 | 00000000-0000-0000-0000-000000000001 | Create a MailChimp campaign | template.newsletter.create-newsletter-draft-from-template-in-mailchimp | url: Mailchimp newsletter |  |
-| 4 | `fill-sponsored-block` | draft-assembly | -12 | 00000000-0000-0000-0000-000000000001 | Fill up "Sponsored" block (after sponsorship document is completed) | sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter | external-status: sponsored block filled or `not sponsored this week` | approved sponsor copy, visual, and CTA |
-| 5 | `fill-book-of-the-week-block` | draft-assembly | -11 | 00000000-0000-0000-0000-000000000002 | Fill up "Book of the week" block | sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block | comment: block updated or `no book this week` |  |
-| 6 | `fill-event-block` | draft-assembly | -10 | 00000000-0000-0000-0000-000000000002 | Fill up "Event" block | template.newsletter.create-newsletter-draft-from-template-in-mailchimp | comment: event block updated or `no event block this week` |  |
-| 7 | `fill-podcast-block` | draft-assembly | -9 | 00000000-0000-0000-0000-000000000002 | Fill up "Podcast" block | sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter | comment: podcast page URL used or `no podcast this week` |  |
-| 8 | `fill-article-block` | draft-assembly | -8 | 00000000-0000-0000-0000-000000000002 | Fill up "Article" block | template.newsletter.create-newsletter-draft-from-template-in-mailchimp | comment: article block updated or `no article block this week` |  |
-| 9 | `schedule-email-newsletter` | send-prep | -1 | 00000000-0000-0000-0000-000000000001 | Schedule Email Newsletter | sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp | external-status: Mailchimp campaign scheduled; stage: announced |  |
-| 10 | `create-invoice` | publication | 0 | 00000000-0000-0000-0000-000000000001 | Create an Invoice | sop.finance.bookkeeping.creating-invoices-in-finom | file: Invoice PDF or invoice proof |  |
-| 11 | `send-email-sponsor-publication-live` | publication | 1 | 00000000-0000-0000-0000-000000000001 | Send email to notify sponsor that publication is live | template.newsletter.sending-email-on-the-day-of-publication | comment: sponsor notified, or `not sponsored this week` |  |
-| 12 | `schedule-sponsorship-linkedin` | promotion | 2 | 00000000-0000-0000-0000-000000000001 | Schedule Sponsorship content on LinkedIn | sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content | url: LinkedIn |  |
-| 13 | `schedule-sponsorship-twitter` | promotion | 3 | 00000000-0000-0000-0000-000000000001 | Schedule Sponsorship content on Twitter | sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content | url: X |  |
-| 14 | `add-newsletter-performance` | performance | 7 | 00000000-0000-0000-0000-000000000001 | Add newsletter performance on the spreadsheet | sop.newsletter.mailchimp.filling-newsletter-statistics | external-status: stats recorded, including missing-stat notes |  |
-| 15 | `send-performance-to-sponsor` | performance | 7 | 00000000-0000-0000-0000-000000000001 | Send the performance of the newsletter to the sponsor | template.newsletter.newsletter-performance | comment: performance summary sent; stage: done | complete Mailchimp, LinkedIn, and X performance stats |
+| 1 | `create-sponsorship-document` | sponsor-intake | -14 |  | Create sponsorship document | sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter | url: Sponsorship document |  |
+| 2 | `email-sponsor` | sponsor-intake | -14 |  | Email the sponsor with the sponsorship document - add Valeriia in communication | template.newsletter.send-sponsorship-document-2-weeks-before | comment: Email the sponsor with the sponsorship document - add Valeriia in communication confirmed | sponsor content, graphics, or Valeriia review |
+| 3 | `create-mailchimp-campaign` | draft-assembly | -13 |  | Create a MailChimp campaign | template.newsletter.create-newsletter-draft-from-template-in-mailchimp | url: Mailchimp newsletter |  |
+| 4 | `fill-sponsored-block` | draft-assembly | -12 |  | Fill up "Sponsored" block (after sponsorship document is completed) | sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter | external-status: Sponsored block filled or issue confirmed unsponsored | approved sponsor copy, visual, and CTA |
+| 5 | `fill-book-of-the-week-block` | draft-assembly | -11 | 00000000-0000-0000-0000-000000000002 | Fill up "Book of the week" block | sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block | comment: Fill up "Book of the week" block confirmed |  |
+| 6 | `fill-event-block` | draft-assembly | -10 | 00000000-0000-0000-0000-000000000002 | Fill up "Event" block | template.newsletter.create-newsletter-draft-from-template-in-mailchimp | comment: Fill up "Event" block confirmed |  |
+| 7 | `fill-podcast-block` | draft-assembly | -9 | 00000000-0000-0000-0000-000000000002 | Fill up "Podcast" block | sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter | comment: Fill up "Podcast" block confirmed |  |
+| 8 | `fill-article-block` | draft-assembly | -8 | 00000000-0000-0000-0000-000000000002 | Fill up "Article" block | template.newsletter.create-newsletter-draft-from-template-in-mailchimp | comment: Fill up "Article" block confirmed |  |
+| 9 | `schedule-email-newsletter` | send-prep | -1 |  | Schedule Email Newsletter | sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp | external-status: Mailchimp campaign scheduled |  |
+| 10 | `create-invoice` | publication | 0 |  | Create an Invoice | sop.finance.bookkeeping.creating-invoices-in-finom | file: Invoice PDF or invoice proof |  |
+| 11 | `send-email-sponsor-publication-live` | publication | 1 |  | Send email to notify sponsor that publication is live | template.newsletter.sending-email-on-the-day-of-publication | comment: Send email to notify sponsor that publication is live confirmed | sponsor contact confirmation or corrected publication link |
+| 12 | `schedule-sponsorship-linkedin` | promotion | 2 |  | Schedule Sponsorship content on LinkedIn | sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content | url: LinkedIn |  |
+| 13 | `schedule-sponsorship-twitter` | promotion | 3 |  | Schedule Sponsorship content on Twitter | sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content | url: X |  |
+| 14 | `add-newsletter-performance` | performance | 7 |  | Add newsletter performance on the spreadsheet | sop.newsletter.mailchimp.filling-newsletter-statistics | external-status: Newsletter, LinkedIn, and X performance stats recorded |  |
+| 15 | `send-performance-to-sponsor` | performance | 7 |  | Send the performance of the newsletter to the sponsor | template.newsletter.newsletter-performance | comment: Send the performance of the newsletter to the sponsor confirmed | complete Mailchimp, LinkedIn, and X performance stats |
 <!-- sop-section-end -->
