@@ -8,7 +8,10 @@ import subprocess
 import sys
 import tempfile
 
-from playwright.async_api import async_playwright
+import pytest
+
+playwright_api = pytest.importorskip("playwright.async_api")
+async_playwright = playwright_api.async_playwright
 
 
 HOST = "http://127.0.0.1:5173"
