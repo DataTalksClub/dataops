@@ -1,16 +1,19 @@
-# DataOps Podcast Assistant Module
+# DataOps Assistant: Podcast Skill
 
-DataOps assistant module for collecting podcast prep material and generating
-podcast guest documents.
+Podcast skill module for DataOps Assistant. It collects podcast prep material
+from Telegram and local inputs, then generates podcast guest documents.
 
-This directory is the canonical in-repo podcast assistant location for DataOps:
-`assistants/podcast/`. The old root-level `podcast-assistant/` import name is
-retained here only as migration history; active development uses this module
-path.
+This directory is the canonical in-repo implementation for the podcast skill:
+`assistants/podcast/`. The operator-facing assistant is DataOps Assistant;
+`podcast` remains the stable assistant type used by APIs, exports, seeded
+workflow templates, and dry-run tests. The old root-level `podcast-assistant/`
+import name is retained here only as migration history; active development uses
+this module path.
 
-This is copied from the Telegram Writing Assistant shape, but the agent execution boundary uses
-Heru instead of calling Claude directly. Set `HERU_ENGINE=codex` or `HERU_ENGINE=claude` to choose
-which coding agent processes the inbox.
+Telegram is a DataOps Assistant intake/progress channel. This module is copied
+from the Telegram Writing Assistant shape, but the agent execution boundary uses
+Heru instead of calling Claude directly. Set `HERU_ENGINE=codex` or
+`HERU_ENGINE=claude` to choose which coding agent processes the inbox.
 
 ## Setup
 
@@ -88,11 +91,12 @@ PODCAST_ASSISTANT_INTEGRATION_ENGINES=codex uv run pytest tests_integration -q
 ## DataOps Assistant Job Dry Run
 
 `dry_run.py` exposes `podcast_job_dry_run_metadata(job_payload)` for the V1
-work-engine assistant job lifecycle. It turns a podcast assistant job payload
-into deterministic output metadata for tests and local dry runs without reading
-`inbox/`, writing `documents/`, running Heru, or requiring external
-credentials. Production workflow storage still lives in work-engine assistant
-job records plus artifact metadata, not in the local assistant folders.
+work-engine assistant job lifecycle. It turns a DataOps Assistant job with
+`assistantType: "podcast"` into deterministic output metadata for tests and
+local dry runs without reading `inbox/`, writing `documents/`, running Heru, or
+requiring external credentials. Production workflow storage still lives in
+work-engine assistant job records plus artifact metadata, not in the local
+assistant folders.
 
 The exact podcast document format is intentionally left in `process/podcast.md` as a placeholder
 until you provide the final format.
