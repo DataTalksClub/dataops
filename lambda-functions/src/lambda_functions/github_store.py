@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any
 
 
+CONTENT_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+
+
 class GitHubError(RuntimeError):
     pass
 
@@ -71,7 +74,7 @@ class GitHubStore:
                     if len(parts) != 2:
                         continue
                     repo_path = parts[1]
-                    if not repo_path.startswith("content/") or not repo_path.endswith(".md"):
+                    if not should_hydrate_tarball_path(repo_path):
                         continue
                     extracted = archive.extractfile(member)
                     if extracted is None:
@@ -202,6 +205,18 @@ def normalize_repo_path(path: str) -> str:
     if not clean or ".." in clean.split("/"):
         raise ValueError("Invalid repository path")
     return clean
+
+
+def should_hydrate_tarball_path(path: str) -> bool:
+    try:
+        repo_path = normalize_repo_path(path)
+    except ValueError:
+        return False
+    if not repo_path.startswith("content/"):
+        return False
+    if repo_path.endswith(".md"):
+        return True
+    return repo_path.startswith("content/images/") and Path(repo_path).suffix.lower() in CONTENT_IMAGE_EXTENSIONS
 
 
 def quote_path(path: str) -> str:
