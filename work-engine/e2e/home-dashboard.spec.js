@@ -898,6 +898,160 @@ test.describe('Home dashboard (issue #26)', () => {
         }
       }
     });
+
+    test('Dashboard daily queue layout keeps dense operational rows readable', async ({ page, request }) => {
+      const today = todayString();
+      const created = [];
+      let bundleId;
+
+      try {
+        const bundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Issue 61 podcast workflow acceptance',
+            anchorDate: today,
+            status: 'active',
+            bundleLinks: [
+              { name: 'Sponsor document', url: '' },
+              { name: 'Luma event page', url: '' },
+            ],
+          },
+        });
+        bundleId = (await bundleRes.json()).bundle.id;
+
+        const taskInputs = [
+          {
+            description: 'Confirm guest recording date and send the operational follow-up note',
+            date: offsetDateString(-2),
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            status: 'waiting',
+            waitingFor: 'Jane Guest',
+            followUpAt: today,
+            comment: 'Waiting for guest confirmation',
+            validation: { dashboardStates: ['waiting', 'follow-up-due'] },
+          },
+          {
+            description: 'Review sponsor copy from migrated Trello card',
+            date: offsetDateString(-1),
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            requiredLinkName: 'Sponsor document',
+            proofRequirement: { type: 'url', label: 'Sponsor document', required: true },
+            validation: { dashboardStates: ['overdue'], requiredBundleLinks: ['Sponsor document'] },
+          },
+          {
+            description: 'Approve assistant-generated podcast prep document',
+            date: today,
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            proofRequirement: { type: 'external-status', label: 'Approved podcast waiting approval artifact', required: true },
+            validation: {
+              dashboardStates: ['missing-evidence'],
+              atRiskWhen: ['missing-evidence'],
+            },
+          },
+          {
+            description: 'Review today queue and confirm podcast guest assets',
+            date: today,
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            validation: { dashboardStates: ['today'] },
+          },
+          {
+            description: 'Agree on recording date with guest',
+            date: today,
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            status: 'waiting',
+            waitingFor: 'Audio production',
+            followUpAt: offsetDateString(2),
+            comment: 'Waiting for production slot',
+            validation: { dashboardStates: ['waiting'] },
+          },
+        ];
+
+        for (const data of taskInputs) {
+          const res = await request.post('/api/tasks', { data });
+          created.push(await res.json());
+        }
+
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.goto('/#/');
+        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+
+        await expect(page.locator('#dashboard-tasks thead')).toContainText('Required Proof');
+        await expect(page.locator('#dashboard-tasks thead')).toContainText('Next Action');
+
+        for (const group of ['Follow-ups due', 'Overdue', 'At risk', 'Today', 'Waiting']) {
+          await expect(page.locator('#dashboard-tasks .dashboard-queue-group', { hasText: group })).toBeVisible();
+        }
+
+        const desktopLayoutProblems = await page.evaluate(() => {
+          const root = document.querySelector('#dashboard-tasks');
+          const problems = [];
+          if (!root) return ['missing dashboard queue'];
+          if (document.documentElement.scrollWidth > document.documentElement.clientWidth) {
+            problems.push('document has horizontal overflow');
+          }
+
+          root.querySelectorAll('[data-task-row] > td > *, .dashboard-task-actions-row .task-action-group > *').forEach((el) => {
+            const rect = el.getBoundingClientRect();
+            const parent = el.closest('td') || el.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            if (rect.width > 0 && (rect.left < parentRect.left - 1 || rect.right > parentRect.right + 1)) {
+              problems.push((el.textContent || el.getAttribute('class') || el.tagName).trim() + ' overflows its cell');
+            }
+          });
+
+          root.querySelectorAll('.required-link-input, .required-bundle-link-input').forEach((el) => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.width < 110) {
+              problems.push('required proof input collapsed to ' + Math.round(rect.width) + 'px');
+            }
+          });
+
+          root.querySelectorAll('.dashboard-task-actions-row .task-action-btn').forEach((el) => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.width < 72) {
+              problems.push('follow-up button collapsed to ' + Math.round(rect.width) + 'px');
+            }
+          });
+
+          return problems;
+        });
+        expect(desktopLayoutProblems).toEqual([]);
+
+        await page.setViewportSize({ width: 412, height: 915 });
+        await expect(taskRow(page, created[0].id).locator('[data-label="Task"]')).toBeVisible();
+        await expect(taskRow(page, created[1].id).locator('[data-label="Required Proof"]')).toBeVisible();
+        await expect(taskRow(page, created[0].id).locator('[data-label="Next Action"]')).toBeVisible();
+
+        const mobileLayoutProblems = await page.evaluate(() => {
+          const problems = [];
+          if (document.documentElement.scrollWidth > document.documentElement.clientWidth) {
+            problems.push('document has horizontal overflow');
+          }
+          document.querySelectorAll('#dashboard-tasks input:not([type="checkbox"]), #dashboard-tasks button, #dashboard-tasks select').forEach((el) => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && rect.height < 28) {
+              problems.push((el.textContent || el.getAttribute('class') || el.tagName).trim() + ' touch target too short');
+            }
+          });
+          return problems;
+        });
+        expect(mobileLayoutProblems).toEqual([]);
+      } finally {
+        for (const task of created) {
+          await cleanupTask(request, task);
+        }
+        await cleanupBundle(request, bundleId);
+      }
+    });
   });
 
   // ──────────────────────────────────────────────────────────────────
