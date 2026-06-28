@@ -656,7 +656,7 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.error, 'Waiting tasks require waitingFor, followUpAt, and comment');
     });
 
-    it('allows a waiting task to move back to todo while preserving follow-up metadata', async () => {
+    it('blocks a generic waiting task update back to todo without response history', async () => {
       const createRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -677,14 +677,14 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({ status: 'todo' }),
       }, {});
 
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.status, 'todo');
-      assert.strictEqual(body.waitingFor, 'Sponsor answer');
-      assert.strictEqual(body.followUpAt, '2026-03-16T08:00:00.000Z');
+      assert.strictEqual(res.statusCode, 400);
+      assert.strictEqual(
+        JSON.parse(res.body).error,
+        'Waiting tasks must use the response received or unblocked action before returning to todo'
+      );
     });
 
-    it('allows a waiting task to move to done while preserving follow-up metadata', async () => {
+    it('blocks generic completion of a waiting task', async () => {
       const createRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -705,11 +705,166 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({ status: 'done' }),
       }, {});
 
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
+      assert.strictEqual(res.statusCode, 400);
+      assert.strictEqual(
+        JSON.parse(res.body).error,
+        'Waiting tasks must be resolved with the follow-up resolve action before completion'
+      );
+    });
+
+    it('records the full follow-up action lifecycle with structured history', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Lifecycle follow-up task', date: '2026-06-28' }),
+      }, {});
+      assert.strictEqual(createRes.statusCode, 201);
+      const created = JSON.parse(createRes.body);
+
+      const waitingRes = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/mark-waiting`,
+        headers: { 'x-user-id': 'ops-manager' },
+        body: JSON.stringify({
+          waitingFor: 'Sponsor assets',
+          channel: 'email',
+          followUpAt: '2026-07-01',
+          note: 'Asked for logo and copy',
+        }),
+      }, {});
+      assert.strictEqual(waitingRes.statusCode, 200);
+      const waiting = JSON.parse(waitingRes.body);
+      assert.strictEqual(waiting.status, 'waiting');
+      assert.strictEqual(waiting.waitingFor, 'Sponsor assets');
+      assert.strictEqual(waiting.followUpAt, '2026-07-01');
+      assert.strictEqual(waiting.followUpChannel, 'email');
+      assert.strictEqual(waiting.taskHistory.length, 1);
+      assert.strictEqual(waiting.taskHistory[0].action, 'waiting-started');
+      assert.strictEqual(waiting.taskHistory[0].actorId, 'ops-manager');
+      assert.strictEqual(waiting.taskHistory[0].note, 'Asked for logo and copy');
+
+      const followUpRes = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/follow-up-sent`,
+        headers: { 'x-user-id': 'ops-manager' },
+        body: JSON.stringify({
+          channel: 'email',
+          note: 'Sent second reminder',
+          nextFollowUpAt: '2026-07-02',
+        }),
+      }, {});
+      assert.strictEqual(followUpRes.statusCode, 200);
+      const followedUp = JSON.parse(followUpRes.body);
+      assert.strictEqual(followedUp.status, 'waiting');
+      assert.strictEqual(followedUp.followUpAt, '2026-07-02');
+      assert.strictEqual(followedUp.taskHistory.length, 2);
+      assert.strictEqual(followedUp.taskHistory[1].action, 'follow-up-sent');
+      assert.strictEqual(followedUp.taskHistory[1].previousFollowUpAt, '2026-07-01');
+
+      const responseRes = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/response-received`,
+        headers: { 'x-user-id': 'ops-manager' },
+        body: JSON.stringify({ note: 'Sponsor sent the assets' }),
+      }, {});
+      assert.strictEqual(responseRes.statusCode, 200);
+      const unblocked = JSON.parse(responseRes.body);
+      assert.strictEqual(unblocked.status, 'todo');
+      assert.strictEqual(unblocked.waitingFor, null);
+      assert.strictEqual(unblocked.followUpAt, null);
+      assert.strictEqual(unblocked.taskHistory.length, 3);
+      assert.strictEqual(unblocked.taskHistory[2].action, 'response-received');
+    });
+
+    it('requires channel, note, and follow-up date for follow-up actions', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Validation follow-up task', date: '2026-06-28' }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      const missingWaiting = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/mark-waiting`,
+        body: JSON.stringify({ waitingFor: 'Sponsor', followUpAt: '2026-07-01', note: 'Missing channel' }),
+      }, {});
+      assert.strictEqual(missingWaiting.statusCode, 400);
+      assert.strictEqual(JSON.parse(missingWaiting.body).error, 'channel is required');
+
+      await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/mark-waiting`,
+        body: JSON.stringify({
+          waitingFor: 'Sponsor',
+          channel: 'email',
+          followUpAt: '2026-07-01',
+          note: 'Waiting for assets',
+        }),
+      }, {});
+
+      const missingFollowUpNote = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/follow-up-sent`,
+        body: JSON.stringify({ channel: 'email', nextFollowUpAt: '2026-07-02' }),
+      }, {});
+      assert.strictEqual(missingFollowUpNote.statusCode, 400);
+      assert.strictEqual(JSON.parse(missingFollowUpNote.body).error, 'note is required');
+
+      const missingFollowUpDate = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/follow-up-sent`,
+        body: JSON.stringify({ channel: 'email', note: 'Sent reminder' }),
+      }, {});
+      assert.strictEqual(missingFollowUpDate.statusCode, 400);
+      assert.strictEqual(JSON.parse(missingFollowUpDate.body).error, 'nextFollowUpAt is required');
+    });
+
+    it('resolves a waiting task as done only through the explicit action and existing proof gates', async () => {
+      const createRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Resolve with proof',
+          date: '2026-06-28',
+          requiredLinkName: 'Luma',
+        }),
+      }, {});
+      const created = JSON.parse(createRes.body);
+
+      await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/mark-waiting`,
+        body: JSON.stringify({
+          waitingFor: 'Speaker confirmation',
+          channel: 'email',
+          followUpAt: '2026-07-01',
+          note: 'Waiting for approval',
+        }),
+      }, {});
+
+      const blocked = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/resolve-done`,
+        body: JSON.stringify({ note: 'Speaker replied' }),
+      }, {});
+      assert.strictEqual(blocked.statusCode, 400);
+      assert.strictEqual(JSON.parse(blocked.body).error, "Cannot mark task as done: required link 'Luma' is not filled");
+
+      const resolved = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/resolve-done`,
+        headers: { 'x-user-id': 'ops-manager' },
+        body: JSON.stringify({ note: 'Speaker replied and page is ready', link: 'https://luma.com/event' }),
+      }, {});
+      assert.strictEqual(resolved.statusCode, 200);
+      const body = JSON.parse(resolved.body);
       assert.strictEqual(body.status, 'done');
-      assert.strictEqual(body.waitingFor, 'Contract signature');
-      assert.strictEqual(body.followUpAt, '2026-03-17T08:00:00.000Z');
+      assert.strictEqual(body.waitingFor, null);
+      assert.strictEqual(body.followUpAt, null);
+      assert.strictEqual(body.completedBy, 'ops-manager');
+      assert.strictEqual(body.taskHistory[body.taskHistory.length - 2].action, 'wait-resolved');
+      assert.strictEqual(body.taskHistory[body.taskHistory.length - 1].action, 'completed');
     });
   });
 

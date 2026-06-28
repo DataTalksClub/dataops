@@ -70,6 +70,15 @@ const EXPORT_FORMAT_VERSION = 1;
 const OMITTED_ENTITIES = ['sessions'];
 const REDACTIONS = ['users.password_hash', 'sessions'];
 const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
+const VALID_TASK_HISTORY_ACTIONS = new Set([
+  'waiting-started',
+  'follow-up-sent',
+  'response-received',
+  'unblocked',
+  'wait-resolved',
+  'completed',
+  'reopened',
+]);
 const VALID_NOTIFICATION_TYPES = new Set([
   'task-due',
   'task-overdue',
@@ -220,6 +229,8 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     comment: optionalString(item.comment),
     waiting_for: optionalString(item.waitingFor),
     follow_up_at: optionalString(item.followUpAt),
+    follow_up_channel: optionalString(item.followUpChannel),
+    task_history: jsonArray(item.taskHistory),
     proof_requirement: optionalJsonStringOrObject(item.proofRequirement),
     external_status: optionalString(item.externalStatus),
     instructions_url: optionalString(item.instructionsUrl),
@@ -673,6 +684,53 @@ function optionalRefArrayField(
   }
 }
 
+function optionalTaskHistoryField(
+  task: JsonRecord,
+  userIds: Set<string>,
+  errors: string[],
+  context: string
+): void {
+  const value = task.task_history;
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    errors.push(`${context} field task_history must be an array when present`);
+    return;
+  }
+  const seenIds = new Set<string>();
+  const taskId = typeof task.task_id === 'string' ? task.task_id : '';
+  const bundleId = typeof task.bundle_id === 'string' ? task.bundle_id : '';
+  for (const [index, item] of value.entries()) {
+    const itemContext = `${context}.task_history[${index}]`;
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      errors.push(`${itemContext} must be an object`);
+      continue;
+    }
+    const event = item as JsonRecord;
+    const id = requireString(event, 'id', errors, itemContext);
+    if (id) {
+      if (seenIds.has(id)) errors.push(`${itemContext} has duplicate id: ${id}`);
+      seenIds.add(id);
+    }
+    const eventTaskId = requireString(event, 'taskId', errors, itemContext);
+    if (eventTaskId && taskId && eventTaskId !== taskId) {
+      errors.push(`${itemContext} taskId must match parent task_id`);
+    }
+    const eventBundleId = optionalStringField(event, 'bundleId', errors, itemContext);
+    if (eventBundleId && bundleId && eventBundleId !== bundleId) {
+      errors.push(`${itemContext} bundleId must match parent bundle_id`);
+    }
+    optionalEnum(event, 'action', VALID_TASK_HISTORY_ACTIONS, errors, itemContext);
+    optionalReference(event, 'actorId', userIds, errors, itemContext);
+    optionalStringField(event, 'channel', errors, itemContext);
+    optionalStringField(event, 'waitingFor', errors, itemContext);
+    validateDateOrTimestampField(event, 'followUpAt', errors, itemContext);
+    validateDateOrTimestampField(event, 'previousFollowUpAt', errors, itemContext);
+    optionalStringField(event, 'note', errors, itemContext);
+    validateDateOrTimestampField(event, 'createdAt', errors, itemContext, true);
+    validateNoSecretPayload(event, errors, itemContext);
+  }
+}
+
 function optionalProofRequirementField(
   record: JsonRecord,
   field: string,
@@ -1024,6 +1082,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalRefArrayField(task, 'artifact_refs', 'artifactId', errors, context);
     optionalRefArrayField(task, 'assistant_job_refs', 'assistantJobId', errors, context);
     optionalRefArrayField(task, 'audit_event_refs', 'auditEventId', errors, context);
+    optionalTaskHistoryField(task, userIds, errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);

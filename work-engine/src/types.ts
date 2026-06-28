@@ -175,6 +175,29 @@ export interface AuditEventRef {
   createdAt?: string;
 }
 
+export type TaskHistoryAction =
+  | 'waiting-started'
+  | 'follow-up-sent'
+  | 'response-received'
+  | 'unblocked'
+  | 'wait-resolved'
+  | 'completed'
+  | 'reopened';
+
+export interface TaskHistoryEvent {
+  id: string;
+  taskId: string;
+  bundleId?: string;
+  action: TaskHistoryAction;
+  actorId?: string;
+  channel?: string;
+  waitingFor?: string;
+  followUpAt?: string;
+  previousFollowUpAt?: string;
+  note?: string;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   description: string;
@@ -184,6 +207,7 @@ export interface Task {
   comment?: string | null;
   waitingFor?: string;
   followUpAt?: string;
+  followUpChannel?: string;
   completedBy?: string;
   completedAt?: string;
   proofRequirement?: ProofRequirement;
@@ -207,6 +231,7 @@ export interface Task {
   artifactRefs?: ArtifactRef[];
   assistantJobRefs?: AssistantJobRef[];
   auditEventRefs?: AuditEventRef[];
+  taskHistory?: TaskHistoryEvent[];
   createdAt: string;
   updatedAt: string;
 }

@@ -113,11 +113,11 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     });
     assert.strictEqual(missingWaitingNote.statusCode, 400);
     assert.strictEqual(parse(missingWaitingNote).error, 'Waiting tasks require waitingFor, followUpAt, and comment');
-    const waiting = await invoke('PUT', `/api/tasks/${waitingTask.id}`, {
-      status: 'waiting',
+    const waiting = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/mark-waiting`, {
       waitingFor: 'Jane Guest',
+      channel: 'email',
       followUpAt: '2000-01-01',
-      comment: '[2026-06-25T09:00:00.000Z] Waiting for Jane Guest: date confirmation',
+      note: 'date confirmation',
     });
     assert.strictEqual(waiting.statusCode, 200, waiting.body);
     assert.strictEqual(parse(waiting).status, 'waiting');
@@ -126,20 +126,25 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.ok(parse(notifications).notifications.some((notification: any) => (
       notification.type === 'follow-up-due' && notification.taskId === waitingTask.id && notification.bundleId === bundle.id
     )));
-    const responseReceived = await invoke('PUT', `/api/tasks/${waitingTask.id}`, {
-      status: 'todo',
-      comment: '[2026-06-27T10:00:00.000Z] Response received',
+    const responseReceived = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/response-received`, {
+      note: 'Jane replied with available dates',
     });
     assert.strictEqual(responseReceived.statusCode, 200, responseReceived.body);
     assert.strictEqual(parse(responseReceived).status, 'todo');
-    const followUpSent = await invoke('PUT', `/api/tasks/${waitingTask.id}`, {
-      status: 'waiting',
+    const waitingAgain = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/mark-waiting`, {
       waitingFor: 'Jane Guest',
+      channel: 'email',
       followUpAt: '2026-06-29',
-      comment: '[2026-06-27T11:00:00.000Z] Follow-up sent; next follow-up 2026-06-29',
+      note: 'Need final confirmation',
+    });
+    assert.strictEqual(waitingAgain.statusCode, 200, waitingAgain.body);
+    const followUpSent = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/follow-up-sent`, {
+      channel: 'email',
+      note: 'Sent final reminder',
+      nextFollowUpAt: '2026-06-30',
     });
     assert.strictEqual(followUpSent.statusCode, 200, followUpSent.body);
-    assert.strictEqual(parse(followUpSent).followUpAt, '2026-06-29');
+    assert.strictEqual(parse(followUpSent).followUpAt, '2026-06-30');
 
     const docTask = tasks.find((task) => task.templateTaskRef === 'create-podcast-document') as Task;
     assert.ok(docTask);
