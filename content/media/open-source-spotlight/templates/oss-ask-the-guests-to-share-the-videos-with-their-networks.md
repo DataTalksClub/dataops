@@ -1,14 +1,19 @@
 ---
+id: template.media.open-source-spotlight.oss-ask-the-guests-to-share-the-videos-with-their-networks
+aliases: []
 title: "OSS - Ask the guests to share the videos with their networks"
 summary: "Reusable template for OSS - Ask the guests to share the videos with their networks, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template
+schema_version: 1
 source: "Processes/Templates/Open-Source Spotlight - Templates/OSS - Ask the guests to share the videos with their networks.docx"
 tags:
   - templates
+  - open-source-spotlight
 systems:
   - linkedin
   - twitter
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # OSS - Ask the guests to share the videos with their networks

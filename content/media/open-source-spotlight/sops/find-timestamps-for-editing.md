@@ -1,4 +1,6 @@
 ---
+id: sop.media.open-source-spotlight.find-timestamps-for-editing
+aliases: []
 title: "Find timestamps for editing"
 summary: "Steps to convert Zoom chat timestamps into edit timestamps for the YouTube editor, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -12,7 +14,8 @@ systems:
   - zoom
 loom:
   - https://www.loom.com/share/b2154e8765b24b69a56188546999c753
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Find timestamps for editing

@@ -1,4 +1,6 @@
 ---
+id: sop.media.open-source-spotlight.filling-in-the-open-source-spotlight-airtable-database
+aliases: []
 title: "Filling in the Open-Source Spotlight Airtable database"
 summary: "Steps to record Open-Source Spotlight people and project leads in Airtable, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -13,7 +15,8 @@ systems:
   - loom
 loom:
   - https://www.loom.com/share/2b99cd60a15b4607bf0dc4287b8741dd
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Filling in the Open-Source Spotlight Airtable database

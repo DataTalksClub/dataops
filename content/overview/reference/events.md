@@ -1,7 +1,10 @@
 ---
+id: reference.overview.events
+aliases: []
 title: "Events"
 summary: Overview of DataTalks.Club event types, shared planning systems, speaker coordination, announcements, editing, and publication workflows.
 doc_type: reference
+schema_version: 1
 source: "Processes/Events.docx"
 systems:
   - linkedin
@@ -11,7 +14,8 @@ systems:
   - youtube
 loom:
   - https://www.loom.com/share/fc42930965794ad5971b6ed99dd1435d
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Events

@@ -1,4 +1,7 @@
 ---
+id: sop.media.open-source-spotlight.joining-open-source-project-communities-and-asking-for-oss-demos
+aliases:
+  - sop.media.open-source-spotlight.joining-open-source-project-communities-and-asking-for-oss-demos-there
 title: "Joining Open-Source Project Communities and Asking for OSS demos there"
 summary: "Steps to find project communities and ask maintainers to do Open-Source Spotlight demos, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -12,7 +15,8 @@ systems:
   - slack
 loom:
   - https://www.loom.com/share/f22df0040d5f483d8ca57d0ebafc0602
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Joining Open-Source Project Communities and Asking for OSS demos there

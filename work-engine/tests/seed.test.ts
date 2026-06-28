@@ -12,6 +12,7 @@ import {
   PODCAST_SOURCE_DOC_IDS,
   PODCAST_EXTERNAL_SOURCE_DOC_IDS,
   TAX_REPORT_SOURCE_DOC_IDS,
+  OSS_SOURCE_DOC_IDS,
 } from '../scripts/seed-templates';
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
@@ -874,6 +875,120 @@ describe('Seed script', () => {
     assert.strictEqual(oss.taskDefinitions!.length, 14);
     assert.strictEqual(oss.emoji, '\u{2699}\u{FE0F}');
     assert.deepStrictEqual(oss.tags, ['Open-Source Spotlight']);
+    assert.deepStrictEqual(oss.phases!.map((phase) => phase.id), [
+      'lead-outreach',
+      'recording-scheduling',
+      'recording-intake',
+      'video-production',
+      'publication',
+      'promotion-follow-up',
+    ]);
+    for (const docId of OSS_SOURCE_DOC_IDS) {
+      assert.ok(oss.sourceDocIds!.includes(docId), `OSS sourceDocIds should include ${docId}`);
+    }
+
+    const linkNames = oss.bundleLinkDefinitions!.map((link) => link.name);
+    assert.deepStrictEqual(linkNames, [
+      'Guest email',
+      'Tool GitHub',
+      'Recording source',
+      'YouTube',
+      'Author review',
+      'OSS playlist',
+      'Social announcement',
+    ]);
+  });
+
+  it('Open-Source Spotlight template maps operator proof, instructions, waiting, and stage semantics', async () => {
+    const templates = await listTemplates(client);
+    const oss = templates.find((t) => t.type === 'oss');
+    assert.ok(oss);
+
+    const outreach = oss.taskDefinitions!.find((td) => td.refId === 'reach-out-github-authors');
+    assert.ok(outreach);
+    assert.strictEqual(outreach.offsetDays, -21);
+    assert.strictEqual(outreach.phase, 'lead-outreach');
+    assert.strictEqual(outreach.instructionDocId, 'sop.media.open-source-spotlight.reach-out-to-open-source-spotlight-guests');
+    assert.deepStrictEqual(outreach.proofRequirement, {
+      type: 'comment',
+      label: 'Identify likely maintainers/contributors and start outreach from GitHub or community context confirmed',
+      required: true,
+    });
+    assert.deepStrictEqual((outreach.validation as any).requiredBundleLinks, ['Tool GitHub']);
+    assert.strictEqual((outreach.validation as any).waitingSemantics.waitingFor, 'author, maintainer, or project community reply');
+    assert.deepStrictEqual((outreach.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
+
+    const author = oss.taskDefinitions!.find((td) => td.refId === 'reach-out-tool-author');
+    assert.ok(author);
+    assert.strictEqual(author.requiredLinkName, 'Guest email');
+    assert.strictEqual(author.instructionDocId, 'template.media.open-source-spotlight.oss-reaching-out-to-authors-about-their-tool');
+    assert.deepStrictEqual(author.proofRequirement, { type: 'url', label: 'Guest email', required: true });
+
+    const youtubeDraft = oss.taskDefinitions!.find((td) => td.refId === 'download-upload-youtube');
+    assert.ok(youtubeDraft);
+    assert.strictEqual(youtubeDraft.requiredLinkName, 'YouTube');
+    assert.strictEqual(
+      youtubeDraft.instructionDocId,
+      'reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube'
+    );
+    assert.deepStrictEqual((youtubeDraft.validation as any).requiredBundleLinks, ['Recording source', 'YouTube']);
+
+    const review = oss.taskDefinitions!.find((td) => td.refId === 'ask-authors-review-codes');
+    assert.ok(review);
+    assert.strictEqual(review.instructionDocId, 'template.media.open-source-spotlight.oss-asking-for-revisions-and-links');
+    assert.strictEqual((review.validation as any).waitingSemantics.waitingFor, 'author review, cut requests, or missing project links');
+    assert.deepStrictEqual(review.proofRequirement, {
+      type: 'comment',
+      label: 'Author review request, timecodes, and link request sent',
+      required: true,
+    });
+
+    const publication = oss.taskDefinitions!.find((td) => td.refId === 'schedule-youtube-video');
+    assert.ok(publication);
+    assert.strictEqual(publication.stageOnComplete, 'after-event');
+    assert.strictEqual(publication.requiredLinkName, 'YouTube');
+    assert.strictEqual(publication.instructionDocId, 'sop.media.open-source-spotlight.schedule-open-source-spotlight-youtube-videos');
+    assert.deepStrictEqual(publication.proofRequirement, { type: 'url', label: 'YouTube', required: true });
+
+    const social = oss.taskDefinitions!.find((td) => td.refId === 'schedule-social-media');
+    assert.ok(social);
+    assert.strictEqual(social.stageOnComplete, 'done');
+    assert.strictEqual(social.requiredLinkName, 'Social announcement');
+    assert.strictEqual(social.instructionDocId, 'reference.social-media.post-oss');
+    assert.deepStrictEqual(social.proofRequirement, { type: 'url', label: 'Social announcement', required: true });
+    assert.deepStrictEqual((social.validation as any).closureSemantics.requiredProof, ['Social announcement']);
+  });
+
+  it('Open-Source Spotlight instantiation preserves offsets and executable task metadata', async () => {
+    const templates = await listTemplates(client);
+    const oss = templates.find((t) => t.type === 'oss');
+    assert.ok(oss);
+
+    const tasks = await instantiateTemplate(client, oss.id, 'bundle-oss-operator-ready-1', '2026-07-22');
+    assert.strictEqual(tasks.length, 14);
+
+    const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));
+    assert.strictEqual(byRef.get('reach-out-github-authors')!.date, '2026-07-01');
+    assert.strictEqual(byRef.get('reach-out-tool-author')!.date, '2026-07-02');
+    assert.strictEqual(byRef.get('schedule-youtube-video')!.date, '2026-07-22');
+    assert.strictEqual(byRef.get('tell-author-publish-date')!.date, '2026-07-22');
+    assert.strictEqual(byRef.get('add-to-oss-playlist')!.date, '2026-07-23');
+    assert.strictEqual(byRef.get('schedule-social-media')!.date, '2026-07-24');
+
+    const youtubeDraft = byRef.get('download-upload-youtube')!;
+    assert.strictEqual(youtubeDraft.requiredLinkName, 'YouTube');
+    assert.deepStrictEqual(youtubeDraft.proofRequirement, { type: 'url', label: 'YouTube', required: true });
+    assert.strictEqual(youtubeDraft.instructionDocId, 'reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube');
+    assert.strictEqual(youtubeDraft.phase, 'recording-intake');
+
+    const waiting = byRef.get('ask-authors-review-codes')!;
+    assert.strictEqual((waiting.validation as any).waitingSemantics.waitingFor, 'author review, cut requests, or missing project links');
+    assert.deepStrictEqual((waiting.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
+
+    const social = byRef.get('schedule-social-media')!;
+    assert.strictEqual(social.stageOnComplete, 'done');
+    assert.strictEqual(social.requiredLinkName, 'Social announcement');
+    assert.deepStrictEqual(social.proofRequirement, { type: 'url', label: 'Social announcement', required: true });
   });
 
   it('Maven Lightning Lesson template has 7 task definitions', async () => {

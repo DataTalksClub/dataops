@@ -1,4 +1,6 @@
 ---
+id: sop.media.open-source-spotlight.adding-timecodes-for-open-source-spotlight-videos
+aliases: []
 title: "Adding timecodes for Open Source Spotlight videos"
 summary: "Add timestamps to Open Source Spotlight videos so viewers can navigate demos, topics, and important discussion segments."
 doc_type: sop
@@ -9,7 +11,8 @@ tags:
 systems:
   - loom
   - youtube
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Adding timecodes for Open Source Spotlight videos

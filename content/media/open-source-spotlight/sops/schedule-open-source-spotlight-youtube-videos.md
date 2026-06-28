@@ -1,4 +1,6 @@
 ---
+id: sop.media.open-source-spotlight.schedule-open-source-spotlight-youtube-videos
+aliases: []
 title: "Schedule Open-Source Spotlight YouTube videos"
 summary: "Steps to schedule an Open-Source Spotlight video for publication on YouTube, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -11,7 +13,8 @@ systems:
   - youtube
 loom:
   - https://www.loom.com/share/d23a7d89700e4f00b7ebfbfa12247120
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Schedule Open-Source Spotlight YouTube videos

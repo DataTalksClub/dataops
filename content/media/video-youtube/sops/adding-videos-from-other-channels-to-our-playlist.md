@@ -13,7 +13,8 @@ systems:
   - youtube
 loom:
   - https://www.loom.com/share/86a36e83e0cc4243841f3a4bf7cb9e7f
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Adding videos from other channels to our playlist

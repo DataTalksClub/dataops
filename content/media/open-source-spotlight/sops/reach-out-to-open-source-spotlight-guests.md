@@ -1,4 +1,6 @@
 ---
+id: sop.media.open-source-spotlight.reach-out-to-open-source-spotlight-guests
+aliases: []
 title: "Reach out to open-source spotlight guests"
 summary: "Steps to find contributor contact details and invite them to an Open-Source Spotlight demo, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -12,7 +14,8 @@ systems:
   - loom
 loom:
   - https://www.loom.com/share/fa88ad63105449729bd75803c995101f
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Reach out to open-source spotlight guests
