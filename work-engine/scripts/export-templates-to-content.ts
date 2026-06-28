@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { DEFAULT_TEMPLATES } from './seed-templates';
+import { DEFAULT_TEMPLATES, PODCAST_EXTERNAL_SOURCE_DOC_IDS } from './seed-templates';
 
 type Link = {
   name?: string;
@@ -53,6 +53,11 @@ type TaskTemplate = {
 
 const repoRoot = resolve(__dirname, '..', '..');
 const outputDir = join(repoRoot, 'content', 'tasks', 'templates');
+const externalSourceDocIds = new Set(PODCAST_EXTERNAL_SOURCE_DOC_IDS.map((doc) => doc.id));
+const assistantLocalReferencePaths = new Set([
+  ...PODCAST_EXTERNAL_SOURCE_DOC_IDS.map((doc) => doc.path),
+  'assistants/podcast/README.md',
+]);
 
 mkdirSync(outputDir, { recursive: true });
 
@@ -67,7 +72,9 @@ function renderTemplate(template: TaskTemplate): string {
   const title = `${template.name} Task Template`;
   const summary = `Git-backed DataTasks template for the ${template.name} operational workflow.`;
   const tags = unique([...(template.tags || []), 'task-template', template.type]);
-  const relatedDocs = (template.sourceDocIds || []).filter((docId) => docId !== templateDocId(template));
+  const relatedDocs = (template.sourceDocIds || []).filter((docId) => (
+    docId !== templateDocId(template) && !externalSourceDocIds.has(docId)
+  ));
 
   const parts = [
     '---',
@@ -105,13 +112,22 @@ function renderTemplate(template: TaskTemplate): string {
     'Preserve the canonical task template in Git so the operational process can be reviewed, searched, and restored independently of the runtime task database.',
     '<!-- sop-section-end -->',
     '',
-    renderLinks('References', template.references || []),
+    renderLinks('References', contentSafeLinks(template.references || [])),
     renderLinks('Required Bundle Links', template.bundleLinkDefinitions || []),
     renderWorkflowDefinition(template),
     renderTasks(template.taskDefinitions),
   ].filter((line) => line !== null);
 
   return parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+}
+
+function contentSafeLinks(links: Link[]): Link[] {
+  return links.filter((link) => {
+    if (!link.url) {
+      return true;
+    }
+    return !assistantLocalReferencePaths.has(link.url);
+  });
 }
 
 function renderRelatedDocs(relatedDocs: string[]): string {
@@ -261,21 +277,34 @@ function renderTaskContext(task: TaskDefinition): string {
 }
 
 function renderProofClosure(task: TaskDefinition): string {
+  const acceptanceNote = renderAcceptanceNote(task);
   if (task.proofRequirement && task.proofRequirement.required !== false) {
     const type = task.proofRequirement.type || 'proof';
     const label = task.proofRequirement.label || 'Required proof';
-    return `${type}: ${label}`;
+    return withAcceptanceNote(`${type}: ${label}`, acceptanceNote);
   }
   if (task.requiredLinkName) {
-    return `url: ${task.requiredLinkName}`;
+    return withAcceptanceNote(`url: ${task.requiredLinkName}`, acceptanceNote);
   }
   if (task.requiresFile) {
-    return 'file: Required file';
+    return withAcceptanceNote('file: Required file', acceptanceNote);
   }
   if (task.stageOnComplete) {
-    return `stage: ${task.stageOnComplete}`;
+    return withAcceptanceNote(`stage: ${task.stageOnComplete}`, acceptanceNote);
   }
-  return 'none';
+  return acceptanceNote || 'none';
+}
+
+function renderAcceptanceNote(task: TaskDefinition): string {
+  if (typeof task.validation !== 'object' || task.validation === null) {
+    return '';
+  }
+  const acceptanceNote = task.validation.acceptanceNote;
+  return typeof acceptanceNote === 'string' ? acceptanceNote : '';
+}
+
+function withAcceptanceNote(proof: string, acceptanceNote: string): string {
+  return acceptanceNote ? `${proof}<br>${acceptanceNote}` : proof;
 }
 
 function renderWaitingFollowUp(task: TaskDefinition): string {
