@@ -1,4 +1,6 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
 
 // Helper to get today's date in YYYY-MM-DD format
 function todayString() {
@@ -19,6 +21,12 @@ function offsetDateString(days) {
 // Seed user IDs (from seed-users script)
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
+const ISSUE_67_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-67');
+
+async function screenshotIssue67(page, name) {
+  fs.mkdirSync(ISSUE_67_SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(ISSUE_67_SCREENSHOT_DIR, name + '.png'), fullPage: true });
+}
 
 async function cleanupTask(request, task) {
   if (!task) return;
@@ -1025,6 +1033,7 @@ test.describe('Home dashboard (issue #26)', () => {
           return problems;
         });
         expect(desktopLayoutProblems).toEqual([]);
+        await screenshotIssue67(page, 'desktop-operations-home-baseline');
 
         await page.setViewportSize({ width: 412, height: 915 });
         await expect(taskRow(page, created[0].id).locator('[data-label="Task"]')).toBeVisible();
@@ -1045,6 +1054,71 @@ test.describe('Home dashboard (issue #26)', () => {
           return problems;
         });
         expect(mobileLayoutProblems).toEqual([]);
+
+        const mobileTapTargetProblems = await page.evaluate(() => {
+          const problems = [];
+          const tooSmall = (label, rect, minWidth, minHeight) => {
+            if (rect.width > 0 && rect.height > 0 && (rect.width < minWidth || rect.height < minHeight)) {
+              problems.push(label + ' is ' + Math.round(rect.width) + 'x' + Math.round(rect.height));
+            }
+          };
+
+          document.querySelectorAll('#dashboard-tasks [data-task-row] .task-status-hit-target').forEach((el, index) => {
+            tooSmall('dashboard checkbox target ' + (index + 1), el.getBoundingClientRect(), 40, 40);
+          });
+
+          const assignedToggle = document.querySelector('.assigned-toggle');
+          if (!assignedToggle) problems.push('missing Assigned to me target');
+          else tooSmall('assigned-to-me target', assignedToggle.getBoundingClientRect(), 40, 40);
+
+          document.querySelectorAll('#dashboard-tasks [data-task-row] .badge-bundle').forEach((el, index) => {
+            tooSmall('dashboard bundle badge target ' + (index + 1), el.getBoundingClientRect(), 1, 32);
+            if (!/^Open bundle /.test(el.getAttribute('aria-label') || '')) {
+              problems.push('dashboard bundle badge ' + (index + 1) + ' missing Open bundle accessible name');
+            }
+          });
+
+          return problems;
+        });
+        expect(mobileTapTargetProblems).toEqual([]);
+        await screenshotIssue67(page, 'pixel7-operations-home');
+
+        await page.goto('/#/bundles?bundleId=' + bundleId);
+        await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 10000 });
+        await expect(page.locator('[data-task-row="' + created[0].id + '"]')).toContainText('Waiting: Jane Guest');
+
+        const workflowTapTargetProblems = await page.evaluate(() => {
+          const problems = [];
+          const tooSmall = (label, rect, minWidth, minHeight) => {
+            if (rect.width > 0 && rect.height > 0 && (rect.width < minWidth || rect.height < minHeight)) {
+              problems.push(label + ' is ' + Math.round(rect.width) + 'x' + Math.round(rect.height));
+            }
+          };
+
+          if (document.documentElement.scrollWidth > document.documentElement.clientWidth) {
+            problems.push('workflow detail has horizontal overflow');
+            Array.from(document.querySelectorAll('body *')).forEach((el) => {
+              if (problems.length >= 6) return;
+              const rect = el.getBoundingClientRect();
+              if (rect.width > 0 && rect.right > document.documentElement.clientWidth + 1) {
+                const label = (el.textContent || el.getAttribute('class') || el.tagName).trim().replace(/\s+/g, ' ').slice(0, 80);
+                problems.push('overflowing element: ' + label + ' right=' + Math.round(rect.right));
+              }
+            });
+          }
+
+          document.querySelectorAll('.task-checklist-row .task-status-hit-target').forEach((el, index) => {
+            tooSmall('workflow checkbox target ' + (index + 1), el.getBoundingClientRect(), 40, 40);
+          });
+
+          document.querySelectorAll('.task-checklist-row button, .task-checklist-row select, .task-checklist-row input:not([type="checkbox"])').forEach((el, index) => {
+            tooSmall('workflow action control ' + (index + 1), el.getBoundingClientRect(), 1, 32);
+          });
+
+          return problems;
+        });
+        expect(workflowTapTargetProblems).toEqual([]);
+        await screenshotIssue67(page, 'pixel7-workflow-detail-follow-up');
       } finally {
         for (const task of created) {
           await cleanupTask(request, task);
