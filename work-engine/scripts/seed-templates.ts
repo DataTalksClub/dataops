@@ -485,6 +485,118 @@ const PODCAST_AT_RISK_BY_REF: Record<string, string[]> = {
   'create-podcast-page': ['missing DTC podcast page'],
 };
 
+const TAX_REPORT_PHASES: WorkflowPhase[] = [
+  { id: 'report-intake', name: 'Report access and source document review', stage: 'preparation' },
+  { id: 'reconciliation', name: 'Spreadsheet values and bank reconciliation', stage: 'preparation' },
+  { id: 'statements', name: 'Bank statement exports', stage: 'preparation' },
+  { id: 'accountant-handoff', name: 'ZIP package, upload, and accountant notification', stage: 'after-event' },
+  { id: 'cleanup', name: 'Processed folders and workflow closure', stage: 'after-event' },
+];
+
+const TAX_REPORT_REQUIRED_BUNDLE_LINKS = [
+  'Monthly report/spreadsheet',
+  'Accountant upload/share link',
+  'Accountant email thread',
+];
+
+const TAX_REPORT_SOURCE_DOC_IDS = [
+  'task-template.tasks.tax-report',
+  'sop.finance.tax-reporting.monthly-tax-report',
+  'sop.finance.bookkeeping.adding-paid-invoices-to-the-bookkeeping-spreadsheet-and-adding-it-to-dropbox',
+  'sop.finance.bookkeeping.for-update-converting-usd-to-eur-for-revolut-transcations',
+  'sop.finance.bookkeeping.creating-bank-statements-in-finom',
+  'sop.finance.bookkeeping.creating-bank-statements-in-revolut',
+  'sop.finance.bookkeeping.crosschecking-with-revolut-and-finom',
+  'sop.finance.bookkeeping.preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant',
+  'sop.finance.bookkeeping.sending-reports-to-accountants-for-bookkeeping',
+  'template.finance.bookkeeping.sending-reports-to-accountants-for-bookkeeping-email-template',
+  'reference.finance.invoices-receipts-and-statements',
+];
+
+const TAX_REPORT_PHASE_BY_REF: Record<string, string> = {
+  'open-bookkeeping-report': 'report-intake',
+  'review-update-todos': 'reconciliation',
+  'convert-currencies': 'reconciliation',
+  'create-bank-statements-finom': 'statements',
+  'create-bank-statements-revolut': 'statements',
+  'cross-check-revolut-finom': 'reconciliation',
+  'prepare-zip-send-accounting': 'accountant-handoff',
+  'notify-accountants': 'accountant-handoff',
+  'organize-invoices-folders': 'cleanup',
+};
+
+const TAX_REPORT_PHASE_SYSTEMS: Record<string, string[]> = {
+  'report-intake': ['google-sheets', 'google-docs', 'dataops'],
+  reconciliation: ['google-sheets', 'dropbox', 'finom', 'revolut', 'wise'],
+  statements: ['finom', 'revolut', 'dropbox'],
+  'accountant-handoff': ['dropbox', 'email', 'accountant-upload', 'google-sheets'],
+  cleanup: ['dropbox', 'dataops'],
+};
+
+const TAX_REPORT_DOC_CONTEXT: Record<string, Pick<TaskDefinition, 'instructionDocId' | 'instructionStepId' | 'systems'>> = {
+  'open-bookkeeping-report': {
+    instructionDocId: 'sop.finance.tax-reporting.monthly-tax-report',
+    systems: ['google-sheets', 'google-docs'],
+  },
+  'review-update-todos': {
+    instructionDocId: 'sop.finance.bookkeeping.adding-paid-invoices-to-the-bookkeeping-spreadsheet-and-adding-it-to-dropbox',
+    systems: ['google-sheets', 'dropbox'],
+  },
+  'convert-currencies': {
+    instructionDocId: 'sop.finance.bookkeeping.for-update-converting-usd-to-eur-for-revolut-transcations',
+    systems: ['revolut', 'wise', 'google-sheets'],
+  },
+  'create-bank-statements-finom': {
+    instructionDocId: 'sop.finance.bookkeeping.creating-bank-statements-in-finom',
+    systems: ['finom', 'dropbox'],
+  },
+  'create-bank-statements-revolut': {
+    instructionDocId: 'sop.finance.bookkeeping.creating-bank-statements-in-revolut',
+    systems: ['revolut', 'dropbox'],
+  },
+  'cross-check-revolut-finom': {
+    instructionDocId: 'sop.finance.bookkeeping.crosschecking-with-revolut-and-finom',
+    systems: ['google-sheets', 'finom', 'revolut', 'dropbox'],
+  },
+  'prepare-zip-send-accounting': {
+    instructionDocId: 'sop.finance.bookkeeping.preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant',
+    systems: ['dropbox', 'accountant-upload', 'google-sheets'],
+  },
+  'notify-accountants': {
+    instructionDocId: 'sop.finance.bookkeeping.sending-reports-to-accountants-for-bookkeeping',
+    systems: ['email', 'google-sheets', 'accountant-upload'],
+  },
+  'organize-invoices-folders': {
+    instructionDocId: 'sop.finance.bookkeeping.preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant',
+    instructionStepId: '10',
+    systems: ['dropbox', 'dataops'],
+  },
+};
+
+const TAX_REPORT_WAITING_TASKS: Record<string, string> = {
+  'open-bookkeeping-report': 'monthly report access or spreadsheet range confirmation',
+  'review-update-todos': 'missing receipt, invoice, statement, owner clarification, or source document',
+  'convert-currencies': 'transaction screenshot, Wise/Revolut evidence, or source EUR amount',
+  'create-bank-statements-finom': 'Finom access or monthly statement export availability',
+  'create-bank-statements-revolut': 'Revolut access or monthly statement export availability',
+  'cross-check-revolut-finom': 'missing invoice/receipt, income invoice, Alexey clarification, or accounting rule clarification',
+  'prepare-zip-send-accounting': 'missing required file or accountant upload destination availability',
+  'notify-accountants': 'accountant acknowledgment or clarification',
+  'organize-invoices-folders': 'unresolved missing file cleanup blocker',
+};
+
+const TAX_REPORT_AT_RISK_BY_REF: Record<string, string[]> = {
+  'open-bookkeeping-report': ['missing month-specific report link', 'wrong month selected'],
+  'review-update-todos': ['TODO values still present', 'missing invoice, receipt, or statement'],
+  'convert-currencies': ['unclear EUR amount', 'missing conversion source/date'],
+  'create-bank-statements-finom': ['missing Finom statement file'],
+  'create-bank-statements-revolut': ['missing Revolut statement file'],
+  'cross-check-revolut-finom': ['unmatched Finom or Revolut transactions', 'undeclared income not resolved'],
+  'prepare-zip-send-accounting': ['missing tax ZIP file', 'missing accountant upload/share link'],
+  'notify-accountants': ['missing accountant email thread', 'accountant acknowledgment pending'],
+  'organize-invoices-folders': ['required proof missing', 'waiting follow-up still due', 'processed folders not organized'],
+};
+
 function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
   return tasks.map((task) => {
     const phase = PODCAST_PHASE_BY_REF[task.refId];
@@ -552,6 +664,111 @@ function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
         : {}),
     };
   });
+}
+
+function withTaxReportTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
+  return tasks.map((task) => {
+    const phase = TAX_REPORT_PHASE_BY_REF[task.refId];
+    const docContext = TAX_REPORT_DOC_CONTEXT[task.refId] || {};
+    const proofRequirement = taxReportProofRequirement(task);
+    const waitingFor = TAX_REPORT_WAITING_TASKS[task.refId];
+    const requiredBundleLinks = taxReportRequiredBundleLinks(task);
+    const validation: Record<string, unknown> = {
+      operatorAction: task.description,
+      completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
+      requiredBundleLinks,
+      reminderSemantics: {
+        due: true,
+        overdue: true,
+        missingEvidence: proofRequirement.required !== false || requiredBundleLinks.length > 0 || task.requiresFile === true,
+        waitingFollowUp: Boolean(waitingFor),
+        followUpNotificationType: 'follow-up-due',
+        monthlySequentialDueDate: true,
+      },
+      atRiskWhen: TAX_REPORT_AT_RISK_BY_REF[task.refId] || [],
+      dashboardStates: ['today', 'overdue', 'waiting', 'follow-up-due', 'missing-evidence', 'at-risk'],
+      dataSafety: {
+        noSensitiveFilesInGit: true,
+        noAccountantUploadSecretsInGit: true,
+        proofStoredAtRuntime: true,
+        portableExportRestoreRequired: true,
+      },
+      ...(typeof task.validation === 'object' && task.validation !== null ? task.validation : {}),
+    };
+    const skipClosure = taxReportSkipClosure(task.refId);
+    if (skipClosure) {
+      validation.skipClosure = skipClosure;
+    }
+    if (waitingFor) {
+      validation.waitingSemantics = {
+        waitingFor,
+        requires: ['waitingFor', 'followUpAt', 'comment'],
+        followUpDefaultDays: task.refId === 'notify-accountants' ? 2 : 1,
+      };
+    }
+
+    return {
+      ...task,
+      ...docContext,
+      phase,
+      systems: docContext.systems || task.systems || TAX_REPORT_PHASE_SYSTEMS[phase] || ['dataops'],
+      proofRequirement,
+      validation,
+    };
+  });
+}
+
+function taxReportProofRequirement(task: TaskDefinition): ProofRequirement {
+  if (task.requiredLinkName) {
+    return { type: 'url', label: task.requiredLinkName, required: true };
+  }
+  if (task.requiresFile) {
+    const labels: Record<string, string> = {
+      'create-bank-statements-finom': 'Finom monthly statement file',
+      'create-bank-statements-revolut': 'Revolut monthly statement file',
+      'prepare-zip-send-accounting': 'Tax ZIP file',
+    };
+    return { type: 'file', label: labels[task.refId] || 'Required finance file', required: true };
+  }
+  if (task.refId === 'review-update-todos') {
+    return { type: 'external-status', label: 'No reportable transaction has unresolved TODO values; missing documents are listed', required: true };
+  }
+  if (task.refId === 'convert-currencies') {
+    return { type: 'comment', label: 'Conversion source/date or linked conversion evidence recorded', required: true };
+  }
+  if (task.refId === 'cross-check-revolut-finom') {
+    return { type: 'external-status', label: 'Finom/Revolut counts and monthly report rows reconciled', required: true };
+  }
+  if (task.refId === 'organize-invoices-folders') {
+    return { type: 'external-status', label: 'Processed folders organized and monthly workflow closure criteria met', required: true };
+  }
+  return { type: 'comment', label: 'Manual completion confirmation', required: false };
+}
+
+function taxReportRequiredBundleLinks(task: TaskDefinition): string[] {
+  if (task.requiredLinkName) {
+    return [task.requiredLinkName];
+  }
+  if (task.refId === 'organize-invoices-folders') {
+    return TAX_REPORT_REQUIRED_BUNDLE_LINKS;
+  }
+  return [];
+}
+
+function taxReportSkipClosure(refId: string): Record<string, unknown> | undefined {
+  if (refId !== 'open-bookkeeping-report') return undefined;
+  return {
+    allowedStatuses: ['fixed monthly spreadsheet reused'],
+    requires: ['comment'],
+    auditNote: 'Use only when the standing bookkeeping spreadsheet is the report source and the operator records the month/range in the comment.',
+    suppresses: {
+      'fixed monthly spreadsheet reused': {
+        bundleLinks: ['Monthly report/spreadsheet'],
+        requiredLink: true,
+        proof: true,
+      },
+    },
+  };
 }
 
 function podcastProofRequirement(task: TaskDefinition): ProofRequirement {
@@ -1988,6 +2205,8 @@ const DEFAULT_TEMPLATES = [
     type: 'tax-report',
     emoji: '',
     tags: ['Tax', 'Finance'],
+    phases: TAX_REPORT_PHASES,
+    sourceDocIds: TAX_REPORT_SOURCE_DOC_IDS,
     defaultAssigneeId: GRACE_ID,
     triggerType: 'automatic',
     triggerSchedule: '0 9 1 * *',
@@ -1996,67 +2215,70 @@ const DEFAULT_TEMPLATES = [
       { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
       { name: 'Tax reports', url: 'https://docs.google.com/document/d/1fuWlBKFxWfupmRz9442En78xAwyXjYw_9Aspf81lhv8/edit' },
     ],
-    bundleLinkDefinitions: [
-      { name: 'Upload link' },
-    ],
-    taskDefinitions: [
+    bundleLinkDefinitions: TAX_REPORT_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    taskDefinitions: withTaxReportTaskSemantics([
       {
         refId: 'open-bookkeeping-report',
-        description: 'Open the bookkeeping report for the specific month',
+        description: 'Open the monthly bookkeeping/tax report and attach the month-specific report or spreadsheet link',
         offsetDays: 0,
+        instructionsUrl: 'https://docs.google.com/document/d/1fuWlBKFxWfupmRz9442En78xAwyXjYw_9Aspf81lhv8/edit',
+        requiredLinkName: 'Monthly report/spreadsheet',
       },
       {
         refId: 'review-update-todos',
-        description: 'Review and update to-dos with actual numbers from Dropbox documents, receipts, and invoices',
+        description: 'Review Dropbox documents, receipts, invoices, and spreadsheet rows; replace TODO values with actual numbers',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1O9TVl2Q2tTDDFaiZro0XTYXpB8i1r9Q6Ryp-dshGFbQ/edit',
       },
       {
         refId: 'convert-currencies',
-        description: 'Convert any USD or other non-euro currencies to EUR using WISE',
+        description: 'Convert USD or other non-EUR transactions to EUR using Wise/Revolut evidence and update the spreadsheet',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1WWhBApSyw2JsvkVL6WdmYYRcd9ETf58D5SmN2JnJCXo/edit',
       },
       {
         refId: 'create-bank-statements-finom',
-        description: 'Create Bank Statements from Finom',
+        description: 'Download/create the Finom bank statement for the month',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/198F0Z2auEkvRGHXgD5k2zYx7Cjk2mW6sUHuGeNspsYU/edit',
         requiresFile: true,
       },
       {
         refId: 'create-bank-statements-revolut',
-        description: 'Create Bank Statements from Revolut',
+        description: 'Download/create the Revolut bank statement for the month',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/1gzRoauqf8UVmJogYV4VphrgADesOrBpFSkOc-8uTq4Q/edit',
         requiresFile: true,
       },
       {
         refId: 'cross-check-revolut-finom',
-        description: 'Cross-check Revolut and Finom for any missing expenses or income',
+        description: 'Cross-check Finom and Revolut transactions against the bookkeeping spreadsheet and add missing income/expenses',
         offsetDays: 4,
         instructionsUrl: 'https://docs.google.com/document/d/1Uh6ZQwQ2wBV2S7WZVnph_SauyPQQTQsym5zrrX94vHg/edit',
       },
       {
         refId: 'prepare-zip-send-accounting',
-        description: 'Prepare a zip archive of the report and send it to accounting',
+        description: 'Prepare the datatalksclub-YYYY-MM.zip tax package and upload it to the accountant handoff destination',
         offsetDays: 5,
         instructionsUrl: 'https://docs.google.com/document/d/1__AYDWyzYiMzByGcWfdNq9wIWeCXy71Q7YHxq_LWmSs/edit',
         requiresFile: true,
-        requiredLinkName: 'Upload link',
+        requiredLinkName: 'Accountant upload/share link',
       },
       {
         refId: 'notify-accountants',
-        description: 'Notify the accountants that the report is ready',
+        description: 'Send the accountant email with the monthly report summary and uploaded package reference, cc Alexey',
         offsetDays: 6,
+        instructionsUrl: 'https://docs.google.com/document/d/1AYDWyzYiMzByGcWfdNq9wIWeCXy71Q7YHxq_LWmSs/edit',
+        requiredLinkName: 'Accountant email thread',
       },
       {
         refId: 'organize-invoices-folders',
-        description: 'Organize invoices folders: Expenses and Incoming Transactions',
+        description: 'Move processed expense and incoming invoice files into the correct processed folders and close the monthly workflow',
         offsetDays: 7,
+        instructionsUrl: 'https://docs.google.com/document/d/1__AYDWyzYiMzByGcWfdNq9wIWeCXy71Q7YHxq_LWmSs/edit',
         stageOnComplete: 'done',
       },
-    ],
+    ]),
   },
 
   // 10. Maven Lightning Lesson
@@ -2220,4 +2442,11 @@ if (require.main === module) {
     });
 }
 
-export { seed, DEFAULT_TEMPLATES, NEWSLETTER_SOURCE_DOC_IDS, PODCAST_SOURCE_DOC_IDS, PODCAST_EXTERNAL_SOURCE_DOC_IDS };
+export {
+  seed,
+  DEFAULT_TEMPLATES,
+  NEWSLETTER_SOURCE_DOC_IDS,
+  PODCAST_SOURCE_DOC_IDS,
+  PODCAST_EXTERNAL_SOURCE_DOC_IDS,
+  TAX_REPORT_SOURCE_DOC_IDS,
+};

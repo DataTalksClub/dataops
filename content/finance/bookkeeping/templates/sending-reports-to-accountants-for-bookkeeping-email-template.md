@@ -13,9 +13,9 @@ related_docs: []
 
 ## Usage
 
-- Use when:
-- Audience:
-- Required inputs:
+- Use when: the monthly tax/bookkeeping report has been reconciled, the ZIP package has been uploaded to the accountant handoff destination, and the accountant needs the report summary.
+- Audience: accountant recipients, with Alexey copied.
+- Required inputs: report month/year, copied monthly report table, upload/share confirmation, and any short notes about exclusions or follow-up questions.
 
 ## Template
 
@@ -34,4 +34,5 @@ Thanks,
 
 ## Notes
 
--
+- Capture the sent Gmail thread URL or sent-email proof on the DataOps `notify-accountants` task.
+- Do not paste private accountant upload URLs, credentials, or sensitive report data into Git-backed templates.
