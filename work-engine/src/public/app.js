@@ -573,6 +573,37 @@
     return labels;
   }
 
+  function taskPrimaryQueueGroup(task, taskFiles, today, bundle) {
+    var labels = dashboardQueueLabels(task, taskFiles, today, bundle);
+    if (labels.indexOf('Follow-up due') !== -1) return 'Follow-ups due';
+    if (labels.indexOf('Overdue') !== -1) return 'Overdue';
+    if (labels.indexOf('Missing evidence') !== -1 || labels.indexOf('At risk') !== -1) return 'At risk';
+    if (labels.indexOf('Today') !== -1) return 'Today';
+    if (labels.indexOf('Waiting') !== -1) return 'Waiting';
+    return 'Other';
+  }
+
+  function bundleRiskSummary(bundle, tasks, filesByTask) {
+    var today = todayString();
+    var active = (tasks || []).filter(function (task) { return task.status !== 'done'; });
+    var overdue = active.filter(function (task) { return task.date && task.date < today; });
+    var waiting = active.filter(function (task) { return task.status === 'waiting'; });
+    var followUps = waiting.filter(isDueFollowUpTask);
+    var missingEvidence = active.filter(function (task) {
+      return !!taskMissingProofTitle(task, (filesByTask || {})[task.id] || [], bundle);
+    });
+    var nextTask = active.slice().sort(function (a, b) {
+      return (a.date || '').localeCompare(b.date || '');
+    })[0];
+    return {
+      overdue: overdue.length,
+      waiting: waiting.length,
+      followUps: followUps.length,
+      missingEvidence: missingEvidence.length,
+      nextTask: nextTask || null,
+    };
+  }
+
   function assistantStatusLabel(status) {
     return String(status || 'draft').replace(/_/g, ' ');
   }
@@ -1325,10 +1356,11 @@
     return da.localeCompare(db);
   }
 
-  function renderBundleCard(b, taskMap) {
+  function renderBundleCard(b, taskMap, filesByTask) {
     var tasks = taskMap[b.id] || [];
     var doneCount = tasks.filter(function (t) { return t.status === 'done'; }).length;
     var totalCount = tasks.length;
+    var risk = bundleRiskSummary(b, tasks, filesByTask || {});
 
     var card = document.createElement('div');
     card.className = 'dashboard-bundle-card';
@@ -1376,6 +1408,21 @@
 
     card.appendChild(metaDiv);
 
+    var riskItems = [];
+    if (risk.overdue) riskItems.push('<span class="task-queue-label">Overdue ' + risk.overdue + '</span>');
+    if (risk.waiting) riskItems.push('<span class="task-queue-label">Waiting ' + risk.waiting + '</span>');
+    if (risk.followUps) riskItems.push('<span class="task-queue-label">Follow-ups ' + risk.followUps + '</span>');
+    if (risk.missingEvidence) riskItems.push('<span class="task-queue-label">Missing evidence ' + risk.missingEvidence + '</span>');
+    if (risk.nextTask) {
+      riskItems.push('<span class="task-queue-label">Next ' + escapeHtml(formatDateLabel(risk.nextTask.date)) + '</span>');
+    }
+    if (riskItems.length) {
+      var riskDiv = document.createElement('div');
+      riskDiv.className = 'task-queue-labels dashboard-bundle-risk';
+      riskDiv.innerHTML = riskItems.join('');
+      card.appendChild(riskDiv);
+    }
+
     function openBundle() {
       currentBundleId = b.id;
       location.hash = '#/bundles';
@@ -1387,15 +1434,15 @@
     return card;
   }
 
-  function renderBundlesDate(container, bundles, taskMap) {
+  function renderBundlesDate(container, bundles, taskMap, filesByTask) {
     // Flat list sorted by anchorDate ascending, no headings
     var sorted = bundles.slice().sort(anchorDateCompare);
     sorted.forEach(function (b) {
-      container.appendChild(renderBundleCard(b, taskMap));
+      container.appendChild(renderBundleCard(b, taskMap, filesByTask));
     });
   }
 
-  function renderBundlesStage(container, bundles, taskMap) {
+  function renderBundlesStage(container, bundles, taskMap, filesByTask) {
     // Group by stage, only show non-empty stages, in fixed order
     var groups = {};
     bundles.forEach(function (b) {
@@ -1413,12 +1460,12 @@
 
       var sorted = groups[stage].slice().sort(anchorDateCompare);
       sorted.forEach(function (b) {
-        container.appendChild(renderBundleCard(b, taskMap));
+        container.appendChild(renderBundleCard(b, taskMap, filesByTask));
       });
     });
   }
 
-  function renderBundlesTemplate(container, bundles, taskMap, templateMap) {
+  function renderBundlesTemplate(container, bundles, taskMap, templateMap, filesByTask) {
     // Group by templateId, "Other" last, sorted by name within groups
     var groups = {};
     bundles.forEach(function (b) {
@@ -1449,7 +1496,7 @@
 
       var sorted = groups[key].slice().sort(anchorDateCompare);
       sorted.forEach(function (b) {
-        container.appendChild(renderBundleCard(b, taskMap));
+        container.appendChild(renderBundleCard(b, taskMap, filesByTask));
       });
     });
   }
@@ -1496,20 +1543,41 @@
 
       Promise.all(taskPromises).then(function (taskResults) {
         var taskMap = {};
+        var allTasks = [];
         taskResults.forEach(function (r) {
           taskMap[r.bundleId] = r.tasks;
+          allTasks = allTasks.concat(r.tasks || []);
         });
 
-        container.innerHTML = '';
+        var fileTasks = allTasks.filter(function (task) {
+          var proof = taskProofRequirement(task);
+          return task.requiresFile || (proof && proof.type === 'file');
+        });
+        var filePromises = fileTasks.map(function (task) {
+          return api.files.list({ taskId: task.id }).then(function (fileData) {
+            return { taskId: task.id, files: fileData.files || [] };
+          }).catch(function () {
+            return { taskId: task.id, files: [] };
+          });
+        });
 
-        var mode = dashboardState.bundleSortMode || 'date';
-        if (mode === 'date') {
-          renderBundlesDate(container, bundles, taskMap);
-        } else if (mode === 'stage') {
-          renderBundlesStage(container, bundles, taskMap);
-        } else {
-          renderBundlesTemplate(container, bundles, taskMap, templateMap);
-        }
+        return Promise.all(filePromises).then(function (fileResults) {
+          var filesByTask = {};
+          fileResults.forEach(function (result) {
+            filesByTask[result.taskId] = result.files;
+          });
+
+          container.innerHTML = '';
+
+          var mode = dashboardState.bundleSortMode || 'date';
+          if (mode === 'date') {
+            renderBundlesDate(container, bundles, taskMap, filesByTask);
+          } else if (mode === 'stage') {
+            renderBundlesStage(container, bundles, taskMap, filesByTask);
+          } else {
+            renderBundlesTemplate(container, bundles, taskMap, templateMap, filesByTask);
+          }
+        });
       });
     }).catch(function (err) {
       container.innerHTML = '';
@@ -1614,12 +1682,35 @@
     var html = '<table class="task-table-compact"><thead><tr>' +
       '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th><th>Actions</th>' +
       '</tr></thead><tbody>';
+    var queueGroupOrder = {
+      'Follow-ups due': 0,
+      'Overdue': 1,
+      'At risk': 2,
+      'Today': 3,
+      'Waiting': 4,
+      'Other': 5,
+    };
+    tasks = tasks.slice().sort(function (a, b) {
+      var aGroup = taskPrimaryQueueGroup(a, (filesByTask || {})[a.id] || [], todayString(), a.bundleId ? bundleMap[a.bundleId] : null);
+      var bGroup = taskPrimaryQueueGroup(b, (filesByTask || {})[b.id] || [], todayString(), b.bundleId ? bundleMap[b.bundleId] : null);
+      var aOrder = Object.prototype.hasOwnProperty.call(queueGroupOrder, aGroup) ? queueGroupOrder[aGroup] : 99;
+      var bOrder = Object.prototype.hasOwnProperty.call(queueGroupOrder, bGroup) ? queueGroupOrder[bGroup] : 99;
+      var groupDelta = aOrder - bOrder;
+      if (groupDelta !== 0) return groupDelta;
+      return (a.date || '').localeCompare(b.date || '');
+    });
+    var currentGroup = '';
     tasks.forEach(function (t) {
       var isDone = t.status === 'done';
       var rowClass = isDone ? ' class="task-done"' : '';
       var checked = isDone ? ' checked' : '';
       var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
       var taskFiles = (filesByTask || {})[t.id] || [];
+      var queueGroup = taskPrimaryQueueGroup(t, taskFiles, todayString(), bundle);
+      if (queueGroup !== currentGroup) {
+        currentGroup = queueGroup;
+        html += '<tr class="dashboard-queue-group"><td colspan="8">' + escapeHtml(queueGroup) + '</td></tr>';
+      }
 
       var checkboxDisabled = '';
       var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
@@ -1631,6 +1722,8 @@
       var bundleBadge;
       if (t.bundleId && bundle) {
         bundleBadge = renderBundleBadgeLink(t.bundleId, bundle.title || 'Untitled');
+      } else if (t.source === 'recurring') {
+        bundleBadge = '<span class="badge-recurring">recurring</span>';
       } else {
         bundleBadge = '<span class="badge-adhoc">ad hoc</span>';
       }
@@ -1647,6 +1740,11 @@
         if (t.waitingFor) waitingText += ': ' + t.waitingFor;
         if (t.followUpAt) waitingText += ' · follow up ' + formatDateLabel(t.followUpAt);
         instructionsHtml += '<span class="badge-waiting">' + escapeHtml(waitingText) + '</span>';
+      }
+      if (t.source === 'recurring') {
+        instructionsHtml += '<span class="badge-recurring">Recurring: ' + escapeHtml(t.description) + '</span>';
+      } else if (t.source === 'template' && t.templateTaskRef) {
+        instructionsHtml += '<span class="badge-template-source">Template task: ' + escapeHtml(t.templateTaskRef) + '</span>';
       }
       if (missingProofTitle) {
         instructionsHtml += '<div class="task-missing-proof">' + escapeHtml(missingProofTitle) + '</div>';
@@ -5012,17 +5110,35 @@
         '</tr></thead><tbody>';
       configs.forEach(function (c) {
         var enabledText = c.enabled ? 'Yes' : 'No';
+        var pauseResumeText = c.enabled ? 'Pause' : 'Resume';
         html += '<tr>' +
           '<td data-label="Description">' + escapeHtml(c.description) + '</td>' +
           '<td data-label="Schedule">' + escapeHtml(scheduleSummary(c)) + '</td>' +
           '<td data-label="Enabled">' + enabledText + '</td>' +
           '<td data-label="Actions">' +
+            '<button class="task-action-btn" data-toggle-recurring="' + c.id + '" data-rec-enabled="' + (c.enabled ? 'true' : 'false') + '">' + pauseResumeText + '</button> ' +
             '<button class="btn-danger" data-delete-recurring="' + c.id + '" data-rec-desc="' + escapeHtml(c.description) + '">Delete</button>' +
           '</td>' +
           '</tr>';
       });
       html += '</tbody></table>';
       container.innerHTML = html;
+
+      container.querySelectorAll('[data-toggle-recurring]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.getAttribute('data-toggle-recurring');
+          var enabled = btn.getAttribute('data-rec-enabled') === 'true';
+          var nextEnabled = !enabled;
+          setButtonBusy(btn, true, enabled ? 'Pause' : 'Resume', 'Saving...');
+          api.recurring.update(id, { enabled: nextEnabled }).then(function () {
+            showSuccess(nextEnabled ? 'Recurring config resumed.' : 'Recurring config paused.');
+            loadRecurring();
+          }).catch(function (err) {
+            showError('Failed to update recurring config: ' + err.message);
+            setButtonBusy(btn, false, enabled ? 'Pause' : 'Resume');
+          });
+        });
+      });
 
       // Delete handlers
       container.querySelectorAll('[data-delete-recurring]').forEach(function (btn) {
@@ -5035,7 +5151,11 @@
             showSuccess('Recurring config deleted.');
             loadRecurring();
           }).catch(function (err) {
-            showError('Failed to delete: ' + err.message);
+            if (err.message && err.message.indexOf('generated history') !== -1) {
+              showError(err.message);
+            } else {
+              showError('Failed to delete recurring config: ' + err.message);
+            }
             setButtonBusy(btn, false, 'Delete');
           });
         });

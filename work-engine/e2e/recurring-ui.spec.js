@@ -5,7 +5,24 @@ async function deleteConfigsByDescription(request, description) {
   const body = await res.json();
   for (const config of body.recurringConfigs || []) {
     if (config.description === description) {
-      await request.delete('/api/recurring/' + config.id);
+      const deleteRes = await request.delete('/api/recurring/' + config.id);
+      if (deleteRes.status() === 409 && config.enabled) {
+        await request.put('/api/recurring/' + config.id, {
+          data: { enabled: false },
+        });
+      }
+    }
+  }
+}
+
+async function disableAllConfigs(request) {
+  const res = await request.get('/api/recurring');
+  const body = await res.json();
+  for (const config of body.recurringConfigs || []) {
+    if (config.enabled) {
+      await request.put('/api/recurring/' + config.id, {
+        data: { enabled: false },
+      });
     }
   }
 }
@@ -61,6 +78,58 @@ test.describe('Recurring UI polish', () => {
 
     await request.delete('/api/recurring/' + keepConfig.id);
     await request.delete('/api/recurring/' + hideConfig.id);
+  });
+
+  test('pauses and resumes a recurring config from the admin table', async ({ page, request }) => {
+    const description = 'UI recurring pause resume ' + Date.now();
+    const createRes = await request.post('/api/recurring', {
+      data: { description, cronExpression: '0 9 * * *', enabled: true },
+    });
+    const config = (await createRes.json()).recurringConfig;
+
+    await page.goto('/#/recurring');
+    const row = page.locator('#recurring-table tr', { hasText: description });
+    await expect(row).toContainText('Yes');
+
+    await row.getByRole('button', { name: 'Pause' }).click();
+    await expect(page.locator('.success-banner')).toContainText('Recurring config paused.');
+    await expect(page.locator('#recurring-table tr', { hasText: description })).toContainText('No');
+
+    await page.locator('#recurring-table tr', { hasText: description }).getByRole('button', { name: 'Resume' }).click();
+    await expect(page.locator('.success-banner')).toContainText('Recurring config resumed.');
+    await expect(page.locator('#recurring-table tr', { hasText: description })).toContainText('Yes');
+
+    await request.delete('/api/recurring/' + config.id);
+  });
+
+  test('shows pause guidance when deleting a config with generated history', async ({ page, request }) => {
+    await disableAllConfigs(request);
+    const description = 'UI recurring delete blocked ' + Date.now();
+    const createRes = await request.post('/api/recurring', {
+      data: { description, cronExpression: '0 9 * * *', enabled: true },
+    });
+    const config = (await createRes.json()).recurringConfig;
+
+    await request.post('/api/recurring/generate', {
+      data: {
+        startDate: '2031-04-10',
+        endDate: '2031-04-10',
+      },
+    });
+
+    await page.goto('/#/recurring');
+    const row = page.locator('#recurring-table tr', { hasText: description });
+    await expect(row).toBeVisible();
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await row.getByRole('button', { name: 'Delete' }).click();
+
+    await expect(page.locator('.error-banner')).toContainText('Pause or disable');
+    await expect(page.locator('#recurring-table tr', { hasText: description })).toBeVisible();
+
+    await request.put('/api/recurring/' + config.id, {
+      data: { enabled: false },
+    });
   });
 
   test('does not overflow horizontally on mobile', async ({ page }) => {
