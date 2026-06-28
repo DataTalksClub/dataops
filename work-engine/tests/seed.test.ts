@@ -11,6 +11,7 @@ import {
   NEWSLETTER_SOURCE_DOC_IDS,
   PODCAST_SOURCE_DOC_IDS,
   PODCAST_EXTERNAL_SOURCE_DOC_IDS,
+  TAX_REPORT_SOURCE_DOC_IDS,
 } from '../scripts/seed-templates';
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
@@ -547,26 +548,189 @@ describe('Seed script', () => {
     assert.strictEqual(socialMedia.triggerType, 'automatic');
   });
 
-  it('Tax Report template splits bank statement task into two', async () => {
+  it('Tax Report template has operator-ready monthly proof metadata', async () => {
     const templates = await listTemplates(client);
     const taxReport = templates.find((t) => t.type === 'tax-report');
     assert.ok(taxReport);
     assert.strictEqual(taxReport.taskDefinitions!.length, 9);
+    assert.strictEqual(taxReport.triggerType, 'automatic');
+    assert.strictEqual(taxReport.triggerSchedule, '0 9 1 * *');
+    assert.strictEqual(taxReport.triggerLeadDays, 0);
+    assert.strictEqual(taxReport.defaultAssigneeId, GRACE_ID);
+    assert.deepStrictEqual(taxReport.phases!.map((phase) => phase.id), [
+      'report-intake',
+      'reconciliation',
+      'statements',
+      'accountant-handoff',
+      'cleanup',
+    ]);
+    for (const docId of TAX_REPORT_SOURCE_DOC_IDS) {
+      assert.ok(taxReport.sourceDocIds!.includes(docId), `Tax Report sourceDocIds should include ${docId}`);
+    }
+
+    const linkNames = taxReport.bundleLinkDefinitions!.map((link) => link.name);
+    assert.deepStrictEqual(linkNames, [
+      'Monthly report/spreadsheet',
+      'Accountant upload/share link',
+      'Accountant email thread',
+    ]);
+
+    const refsAndOffsets = taxReport.taskDefinitions!.map((td) => [td.refId, td.offsetDays]);
+    assert.deepStrictEqual(refsAndOffsets, [
+      ['open-bookkeeping-report', 0],
+      ['review-update-todos', 1],
+      ['convert-currencies', 2],
+      ['create-bank-statements-finom', 3],
+      ['create-bank-statements-revolut', 3],
+      ['cross-check-revolut-finom', 4],
+      ['prepare-zip-send-accounting', 5],
+      ['notify-accountants', 6],
+      ['organize-invoices-folders', 7],
+    ]);
+
+    const openReport = taxReport.taskDefinitions!.find((td) => td.refId === 'open-bookkeeping-report');
+    assert.ok(openReport);
+    assert.strictEqual(openReport.requiredLinkName, 'Monthly report/spreadsheet');
+    assert.strictEqual(openReport.instructionDocId, 'sop.finance.tax-reporting.monthly-tax-report');
+    assert.strictEqual((openReport.validation as any).skipClosure.allowedStatuses[0], 'fixed monthly spreadsheet reused');
+    assert.strictEqual((openReport.validation as any).skipClosure.suppresses['fixed monthly spreadsheet reused'].requiredLink, true);
+
+    const reviewTodos = taxReport.taskDefinitions!.find((td) => td.refId === 'review-update-todos');
+    assert.ok(reviewTodos);
+    assert.strictEqual(reviewTodos.phase, 'reconciliation');
+    assert.strictEqual(reviewTodos.instructionDocId, 'sop.finance.bookkeeping.adding-paid-invoices-to-the-bookkeeping-spreadsheet-and-adding-it-to-dropbox');
+    assert.deepStrictEqual(reviewTodos.proofRequirement, {
+      type: 'external-status',
+      label: 'No reportable transaction has unresolved TODO values; missing documents are listed',
+      required: true,
+    });
+    assert.strictEqual((reviewTodos.validation as any).waitingSemantics.waitingFor, 'missing receipt, invoice, statement, owner clarification, or source document');
 
     const finom = taxReport.taskDefinitions!.find((td) => td.refId === 'create-bank-statements-finom');
     assert.ok(finom, 'Finom bank statement task should exist');
     assert.ok(finom.instructionsUrl, 'Finom task should have instructionsUrl');
     assert.ok(finom.instructionsUrl!.includes('198F0Z2auEkvRGHXgD5k2zYx7Cjk2mW6sUHuGeNspsYU'));
+    assert.strictEqual(finom.instructionDocId, 'sop.finance.bookkeeping.creating-bank-statements-in-finom');
     assert.strictEqual(finom.requiresFile, true);
+    assert.deepStrictEqual(finom.proofRequirement, {
+      type: 'file',
+      label: 'Finom monthly statement file',
+      required: true,
+    });
 
     const revolut = taxReport.taskDefinitions!.find((td) => td.refId === 'create-bank-statements-revolut');
     assert.ok(revolut, 'Revolut bank statement task should exist');
     assert.ok(revolut.instructionsUrl, 'Revolut task should have instructionsUrl');
     assert.ok(revolut.instructionsUrl!.includes('1gzRoauqf8UVmJogYV4VphrgADesOrBpFSkOc-8uTq4Q'));
+    assert.strictEqual(revolut.instructionDocId, 'sop.finance.bookkeeping.creating-bank-statements-in-revolut');
     assert.strictEqual(revolut.requiresFile, true);
+    assert.deepStrictEqual(revolut.proofRequirement, {
+      type: 'file',
+      label: 'Revolut monthly statement file',
+      required: true,
+    });
 
-    // Finom and Revolut should have different instructionsUrls
     assert.notStrictEqual(finom.instructionsUrl, revolut.instructionsUrl);
+
+    const zip = taxReport.taskDefinitions!.find((td) => td.refId === 'prepare-zip-send-accounting');
+    assert.ok(zip);
+    assert.strictEqual(zip.requiresFile, true);
+    assert.strictEqual(zip.requiredLinkName, 'Accountant upload/share link');
+    assert.deepStrictEqual(zip.proofRequirement, {
+      type: 'url',
+      label: 'Accountant upload/share link',
+      required: true,
+    });
+    assert.deepStrictEqual((zip.validation as any).requiredBundleLinks, ['Accountant upload/share link']);
+
+    const notify = taxReport.taskDefinitions!.find((td) => td.refId === 'notify-accountants');
+    assert.ok(notify);
+    assert.strictEqual(notify.requiredLinkName, 'Accountant email thread');
+    assert.strictEqual(notify.instructionDocId, 'sop.finance.bookkeeping.sending-reports-to-accountants-for-bookkeeping');
+    assert.deepStrictEqual(notify.proofRequirement, {
+      type: 'url',
+      label: 'Accountant email thread',
+      required: true,
+    });
+    assert.strictEqual((notify.validation as any).waitingSemantics.waitingFor, 'accountant acknowledgment or clarification');
+
+    const done = taxReport.taskDefinitions!.find((td) => td.refId === 'organize-invoices-folders');
+    assert.ok(done);
+    assert.strictEqual(done.stageOnComplete, 'done');
+    assert.strictEqual(done.instructionDocId, 'sop.finance.bookkeeping.preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant');
+    assert.deepStrictEqual((done.validation as any).requiredBundleLinks, [
+      'Monthly report/spreadsheet',
+      'Accountant upload/share link',
+      'Accountant email thread',
+    ]);
+
+    for (const td of taxReport.taskDefinitions!) {
+      assert.ok(td.phase, `${td.refId} should declare a phase`);
+      assert.ok(td.systems && td.systems.length > 0, `${td.refId} should declare systems`);
+      assert.ok(td.proofRequirement, `${td.refId} should declare completion proof semantics`);
+      assert.ok(td.validation && typeof td.validation === 'object', `${td.refId} should declare validation semantics`);
+      assert.ok((td.validation as any).operatorAction, `${td.refId} should declare operator action`);
+      assert.ok((td.validation as any).reminderSemantics, `${td.refId} should declare reminder semantics`);
+      assert.ok((td.validation as any).dashboardStates, `${td.refId} should declare dashboard states`);
+      assert.ok((td.validation as any).dataSafety.noSensitiveFilesInGit, `${td.refId} should declare data safety`);
+      assert.ok(td.instructionsUrl || td.instructionDocId, `${td.refId} should link operator instructions`);
+    }
+  });
+
+  it('Tax Report template instantiates monthly due dates and completion gates', async () => {
+    const templates = await listTemplates(client);
+    const taxReport = templates.find((t) => t.type === 'tax-report');
+    assert.ok(taxReport, 'Tax Report template should exist');
+
+    const tasks = await instantiateTemplate(client, taxReport.id, 'bundle-tax-report-sample', '2026-09-01');
+    assert.strictEqual(tasks.length, 9);
+
+    const expectedDates: Record<string, string> = {
+      'open-bookkeeping-report': '2026-09-01',
+      'review-update-todos': '2026-09-02',
+      'convert-currencies': '2026-09-03',
+      'create-bank-statements-finom': '2026-09-04',
+      'create-bank-statements-revolut': '2026-09-04',
+      'cross-check-revolut-finom': '2026-09-05',
+      'prepare-zip-send-accounting': '2026-09-06',
+      'notify-accountants': '2026-09-07',
+      'organize-invoices-folders': '2026-09-08',
+    };
+    for (const [ref, date] of Object.entries(expectedDates)) {
+      const task = tasks.find((candidate) => candidate.templateTaskRef === ref);
+      assert.ok(task, `${ref} should instantiate`);
+      assert.strictEqual(task.date, date);
+      assert.strictEqual(task.source, 'template');
+      assert.ok(task.phase, `${ref} should preserve phase`);
+      assert.ok(task.proofRequirement, `${ref} should preserve proofRequirement`);
+    }
+
+    const finom = tasks.find((task) => task.templateTaskRef === 'create-bank-statements-finom');
+    assert.ok(finom);
+    assert.strictEqual(finom.requiresFile, true);
+    assert.deepStrictEqual(finom.proofRequirement, {
+      type: 'file',
+      label: 'Finom monthly statement file',
+      required: true,
+    });
+
+    const zip = tasks.find((task) => task.templateTaskRef === 'prepare-zip-send-accounting');
+    assert.ok(zip);
+    assert.strictEqual(zip.requiresFile, true);
+    assert.strictEqual(zip.requiredLinkName, 'Accountant upload/share link');
+
+    const notify = tasks.find((task) => task.templateTaskRef === 'notify-accountants');
+    assert.ok(notify);
+    assert.strictEqual(notify.requiredLinkName, 'Accountant email thread');
+
+    const done = tasks.find((task) => task.templateTaskRef === 'organize-invoices-folders');
+    assert.ok(done);
+    assert.strictEqual(done.stageOnComplete, 'done');
+    assert.deepStrictEqual((done.validation as any).requiredBundleLinks, [
+      'Monthly report/spreadsheet',
+      'Accountant upload/share link',
+      'Accountant email thread',
+    ]);
   });
 
   it('templates with assignee overrides use correct user IDs', async () => {

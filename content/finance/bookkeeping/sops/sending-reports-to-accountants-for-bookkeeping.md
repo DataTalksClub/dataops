@@ -74,7 +74,7 @@ Step-by-step Instructions
 <!-- sop-step-end -->
 
 <!-- sop-step-start id=3 -->
-3.  Next, go to [https://tilz.direct.quickconnect.to:5001/sharing/UcXMIHLOH](https://tilz.direct.quickconnect.to:5001/sharing/UcXMIHLOH) and upload the zip file or drag it from your folder.
+3.  Next, open the accountant upload destination from the current runtime handoff instructions and upload the zip file or drag it from your folder. Do not copy private upload URLs into Git-backed docs or template metadata.
 
     <!-- sop-screenshot-start -->
     ![](../../../images/bookkeeping-invoices/sending-reports-to-accountants-for-bookkeeping/media/image3.png)
@@ -99,20 +99,24 @@ Step-by-step Instructions
 <!-- sop-section-start: validation -->
 ## Validation
 
-
--
+- The Gmail draft uses the correct month/year in the subject and includes the copied report summary table.
+- Alexey is copied on the message.
+- The ZIP package has been uploaded to the accountant handoff destination and the upload/share confirmation is captured on the DataOps workflow.
+- The sent Gmail thread URL, sent-email link, or explicit sent-email completion proof is captured on the `notify-accountants` task.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 
-
--
+- If the upload destination is unavailable, set the DataOps task to `waiting` with `waitingFor` set to the upload destination owner and a concrete `followUpAt`.
+- If Gmail does not expose a shareable thread URL, add a completion comment with the sent timestamp, subject, and recipients instead of storing private message content in Git.
+- If the accountant replies with questions, keep the workflow active or waiting until the reply is answered and the follow-up is cleared.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: references -->
 ## References
 
-
--
+- [Monthly Tax Report](../../tax-reporting/sops/monthly-tax-report.md)
+- [Preparing a ZIP archive with invoices and send reports to the accountant](preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant.md)
+- [Sending reports to accountants for bookkeeping - Email template](../templates/sending-reports-to-accountants-for-bookkeeping-email-template.md)
 <!-- sop-section-end -->

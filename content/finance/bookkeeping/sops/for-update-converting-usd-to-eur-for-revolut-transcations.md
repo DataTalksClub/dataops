@@ -39,9 +39,8 @@ related_docs: []
 
 <!-- sop-prose-start -->
 How to convert USD to EUR for Revolut transactions
-TODO
 
-- Use Wise historical rates instead of google
+Use Revolut transaction evidence when it shows the settled EUR amount. If the EUR amount is not visible, use Wise historical rates for the transaction date and record the source/date in the DataOps task comment.
 
 Step-by-step Instructions
 <!-- sop-prose-end -->
@@ -125,20 +124,23 @@ Step-by-step Instructions
 <!-- sop-section-start: validation -->
 ## Validation
 
-
--
+- The bookkeeping spreadsheet contains the EUR value, not only the original USD/non-EUR amount.
+- The DataOps task comment records the conversion source and transaction date, or links to runtime conversion evidence when available.
+- If Revolut shows the settled EUR charge, that amount is used before a generic calculator result.
+- No unclear EUR amount remains before the monthly tax report is sent.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 
-
--
+- If Revolut does not show the settled EUR amount, use Wise historical rates for the transaction date and note the source in the task comment.
+- If the transaction screenshot is missing, set the DataOps task to `waiting` with `waitingFor` set to the person or system that can provide it.
+- If fees and exchange rate evidence disagree, ask Alexey or the accountant for the reporting rule before clearing the task.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: references -->
 ## References
 
-
--
+- [Monthly Tax Report](../../tax-reporting/sops/monthly-tax-report.md)
+- [Checking historical exchange rates](checking-historical-exchange-rates.md)
 <!-- sop-section-end -->

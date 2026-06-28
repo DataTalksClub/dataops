@@ -136,7 +136,7 @@ If the invoice amount is in USD, we need to convert it to EUR
 
 - If the transaction happened in Finom (it supports only EUR), then we just take a look there to see how much we were actually charged – and use that in the “price, EUR” column
 
-- If the transaction happened in Revolut (it supports multiple currencies, including USD and EUR), we need to use [Wise](https://wise.com/gb/currency-converter/usd-to-eur-rate?amount=1000) to convert it to EUR (TODO: Link the process document).
+- If the transaction happened in Revolut (it supports multiple currencies, including USD and EUR), use [Wise](https://wise.com/gb/currency-converter/usd-to-eur-rate?amount=1000) or the Revolut transaction evidence to convert it to EUR. Record the source and date in the DataOps task comment.
 
 Sometimes Alexey will send a screenshot of a transaction from his personal bank account. Usually it means that the transaction was originally in USD, and the screenshot will show the converted EUR amount. In this case, use the value from the screenshot for the EUR amount.
 <!-- sop-prose-end -->
@@ -205,20 +205,29 @@ Subject: “DataTalks.Club Month Year”, e.g. “DataTalks.Club May 2023”.
 <!-- sop-section-start: validation -->
 ## Validation
 
-
--
+- The generated DataOps workflow has the month-specific report or spreadsheet link attached, or a comment explains that the fixed bookkeeping spreadsheet is reused for a named month/range.
+- No reportable transaction row still contains `TODO` in a value that must be sent to the accountant.
+- Finom and Revolut statements for the month are attached as runtime files to their statement tasks.
+- Missing invoices, receipts, statements, unclear EUR values, or accountant clarifications are represented as `waiting` tasks with `waitingFor`, `followUpAt`, and a comment.
+- The tax ZIP is named `datatalksclub-YYYY-MM.zip` and is attached as runtime proof, not committed to Git.
+- The accountant upload/share confirmation and accountant email thread are recorded as runtime links on the workflow.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 
-
--
+- If a receipt or invoice is missing, keep the reconciliation task in `waiting` and name the document owner or provider in `waitingFor`.
+- If a USD/non-EUR amount cannot be converted, wait for the source transaction screenshot or use the documented Revolut/Wise evidence path before clearing the task.
+- If a bank statement export is unavailable, keep the statement task in `waiting` for Finom/Revolut access or export availability.
+- If the accountant upload destination is unavailable, do not paste private upload URLs into Git. Put the package task in `waiting` and capture the destination only as runtime proof once available.
+- If the accountant asks a clarification question, keep `notify-accountants` active or waiting until the thread is answered and the follow-up date is cleared.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: references -->
 ## References
 
-
--
+- [Preparing a ZIP archive with invoices and send reports to the accountant](../../bookkeeping/sops/preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant.md)
+- [Sending reports to accountants for bookkeeping](../../bookkeeping/sops/sending-reports-to-accountants-for-bookkeeping.md)
+- [Converting USD to EUR for Revolut transactions](../../bookkeeping/sops/for-update-converting-usd-to-eur-for-revolut-transcations.md)
+- [Invoices, Receipts and Statements](../../reference/invoices-receipts-and-statements.md)
 <!-- sop-section-end -->

@@ -216,7 +216,7 @@ Step-by-step Instructions
 <!-- sop-step-end -->
 
 <!-- sop-step-start id=14 -->
-14. Next, upload the zip file from dropbox to this link: [https://tilz.quickconnect.to/sharing/UcXMIHLOH](https://tilz.quickconnect.to/sharing/UcXMIHLOH)
+14. Next, upload the zip file from Dropbox to the accountant handoff destination provided at runtime. Do not hardcode private accountant upload URLs in Git-backed process docs or template metadata.
 
     <!-- sop-screenshot-start -->
     ![](../../../images/bookkeeping-invoices/preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant/media/image5.jpg)
@@ -245,20 +245,26 @@ Step-by-step Instructions
 <!-- sop-section-start: validation -->
 ## Validation
 
-
--
+- The archive is named `datatalksclub-YYYY-MM.zip` for the report month.
+- The ZIP contains the month-specific expense invoices, incoming invoices, receipts, and required statements, excluding documented non-reportable items.
+- The Finom and Revolut transaction counts have been checked against the bookkeeping spreadsheet before the ZIP is uploaded.
+- The ZIP file is attached as runtime proof on the DataOps task, and the accountant upload/share confirmation is recorded as a runtime link.
+- Processed expense and income invoice files are moved to the correct processed folders only after the accountant package is complete.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 
-
--
+- If an invoice or receipt is missing, stop before upload and move the DataOps task to `waiting` with the missing document owner in `waitingFor`.
+- If the statement count and spreadsheet rows do not match, return to reconciliation and document the unresolved exclusion before sending anything to the accountant.
+- If the upload destination is unavailable, do not paste private URLs into Git. Keep the task waiting until the runtime destination is confirmed.
+- If the ZIP was created with the wrong month or file set, rebuild it and replace the runtime file proof with the corrected archive.
 <!-- sop-section-end -->
 
 <!-- sop-section-start: references -->
 ## References
 
-
--
+- [Monthly Tax Report](../../tax-reporting/sops/monthly-tax-report.md)
+- [Sending reports to accountants for bookkeeping](sending-reports-to-accountants-for-bookkeeping.md)
+- [Invoices, Receipts and Statements](../../reference/invoices-receipts-and-statements.md)
 <!-- sop-section-end -->

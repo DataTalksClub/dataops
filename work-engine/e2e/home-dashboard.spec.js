@@ -39,6 +39,51 @@ async function cleanupBundle(request, bundleId) {
   }
 }
 
+function taskRow(page, taskId) {
+  return page.locator('[data-task-row="' + taskId + '"]');
+}
+
+function successfulTaskUpdate(page, taskId, fieldName) {
+  return page.waitForResponse((response) => {
+    if (!response.url().includes('/api/tasks/' + taskId)) return false;
+    if (response.request().method() !== 'PUT') return false;
+    if (response.status() !== 200) return false;
+    if (!fieldName) return true;
+    return (response.request().postData() || '').includes('"' + fieldName + '"');
+  });
+}
+
+async function saveDashboardCompletionProof(page, taskId, fieldName) {
+  await Promise.all([
+    successfulTaskUpdate(page, taskId, fieldName),
+    taskRow(page, taskId).locator('[data-save-completion-proof="' + taskId + '"]').click(),
+  ]);
+  await expect(taskRow(page, taskId).locator('.task-status-checkbox')).toBeEnabled();
+}
+
+async function attachDashboardRequiredFile(page, taskId, file) {
+  await taskRow(page, taskId).locator('[data-required-file-task="' + taskId + '"]').setInputFiles(file);
+  await Promise.all([
+    page.waitForResponse((response) => (
+      response.url().includes('/api/files')
+      && response.request().method() === 'POST'
+      && response.status() === 201
+    )),
+    taskRow(page, taskId).locator('[data-upload-required-file="' + taskId + '"]').click(),
+  ]);
+  await expect(taskRow(page, taskId).locator('.proof-present')).toContainText('1 file attached');
+  await expect(taskRow(page, taskId).locator('.task-status-checkbox')).toBeEnabled();
+}
+
+async function markDashboardTaskDone(page, taskId) {
+  const checkbox = taskRow(page, taskId).locator('.task-status-checkbox');
+  await expect(checkbox).toBeEnabled();
+  await Promise.all([
+    successfulTaskUpdate(page, taskId, 'status'),
+    checkbox.check(),
+  ]);
+}
+
 test.describe('Home dashboard (issue #26)', () => {
 
   // ──────────────────────────────────────────────────────────────────
@@ -552,15 +597,14 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await expect(page.locator('#dashboard-tasks table')).toBeVisible({ timeout: 10000 });
 
-        const commentRow = page.locator('[data-task-row="' + task.id + '"]');
+        const commentRow = taskRow(page, task.id);
         await expect(commentRow).toContainText('Add completion note: Newsletter block updated');
         await expect(commentRow.locator('.task-status-checkbox')).toBeDisabled();
         await expect(commentRow).toContainText('Missing evidence');
 
         await commentRow.locator('[data-completion-proof-task="' + task.id + '"]').fill('Newsletter block updated from dashboard');
-        await commentRow.locator('[data-save-completion-proof="' + task.id + '"]').click();
-        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
-        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await saveDashboardCompletionProof(page, task.id, 'comment');
+        await markDashboardTaskDone(page, task.id);
         await expect.poll(async () => {
           const saved = await (await request.get('/api/tasks/' + task.id)).json();
           return saved.comment + '|' + saved.status;
@@ -588,15 +632,14 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await expect(page.locator('#dashboard-tasks table')).toBeVisible({ timeout: 10000 });
 
-        const statusRow = page.locator('[data-task-row="' + task.id + '"]');
+        const statusRow = taskRow(page, task.id);
         await expect(statusRow).toContainText('Add completion status: Mailchimp campaign scheduled');
         await expect(statusRow.locator('.task-status-checkbox')).toBeDisabled();
         await expect(statusRow).toContainText('Missing evidence');
 
         await statusRow.locator('[data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from dashboard');
-        await statusRow.locator('[data-save-completion-proof="' + task.id + '"]').click();
-        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
-        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await saveDashboardCompletionProof(page, task.id, 'externalStatus');
+        await markDashboardTaskDone(page, task.id);
         await expect.poll(async () => {
           const saved = await (await request.get('/api/tasks/' + task.id)).json();
           return saved.externalStatus + '|' + saved.status;
@@ -625,19 +668,16 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
 
-        const fileRow = page.locator('[data-task-row="' + task.id + '"]');
+        const fileRow = taskRow(page, task.id);
         await expect(fileRow).toContainText('Attach Invoice PDF or invoice proof to complete');
         await expect(fileRow.locator('.task-status-checkbox')).toBeDisabled();
 
-        await fileRow.locator('[data-required-file-task="' + task.id + '"]').setInputFiles({
+        await attachDashboardRequiredFile(page, task.id, {
           name: 'dashboard-invoice-proof.txt',
           mimeType: 'text/plain',
           buffer: Buffer.from('dashboard invoice proof'),
         });
-        await fileRow.locator('[data-upload-required-file="' + task.id + '"]').click();
-        await expect(page.locator('[data-task-row="' + task.id + '"] .proof-present')).toContainText('1 file attached');
-        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
-        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await markDashboardTaskDone(page, task.id);
         await expect.poll(async () => {
           const taskBody = await (await request.get('/api/tasks/' + task.id)).json();
           const files = await (await request.get('/api/files?taskId=' + task.id)).json();
@@ -700,17 +740,16 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
 
-        const linkRow = page.locator('[data-task-row="' + created[0].id + '"]');
+        const linkRow = taskRow(page, created[0].id);
         await expect(linkRow).toContainText('Add Sponsorship document link to complete');
         await expect(linkRow.locator('.task-status-checkbox')).toBeDisabled();
 
-        const skippedRow = page.locator('[data-task-row="' + created[1].id + '"]');
+        const skippedRow = taskRow(page, created[1].id);
         await expect(skippedRow.locator('.task-status-checkbox')).toBeDisabled();
 
         await linkRow.locator('.required-link-input').fill('https://docs.example/sponsorship');
         await linkRow.locator('.required-link-input').press('Enter');
-        await expect(page.locator('[data-task-row="' + created[0].id + '"] .task-status-checkbox')).toBeEnabled();
-        await page.locator('[data-task-row="' + created[0].id + '"] .task-status-checkbox').check();
+        await markDashboardTaskDone(page, created[0].id);
         await expect.poll(async () => {
           const task = await (await request.get('/api/tasks/' + created[0].id)).json();
           const bundle = (await (await request.get('/api/bundles/' + bundleId)).json()).bundle;
@@ -719,9 +758,8 @@ test.describe('Home dashboard (issue #26)', () => {
         }).toBe('https://docs.example/sponsorship|done|https://docs.example/sponsorship');
 
         await skippedRow.locator('[data-skip-closure-task="' + created[1].id + '"]').selectOption('not sponsored this week');
-        await skippedRow.locator('[data-save-completion-proof="' + created[1].id + '"]').click();
-        await expect(page.locator('[data-task-row="' + created[1].id + '"] .task-status-checkbox')).toBeEnabled();
-        await page.locator('[data-task-row="' + created[1].id + '"] .task-status-checkbox').check();
+        await saveDashboardCompletionProof(page, created[1].id, 'comment');
+        await markDashboardTaskDone(page, created[1].id);
         await expect.poll(async () => {
           const task = await (await request.get('/api/tasks/' + created[1].id)).json();
           return task.status + '|' + task.comment;
@@ -771,17 +809,16 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
 
-        const sharedLinkRow = page.locator('[data-task-row="' + task.id + '"]');
+        const sharedLinkRow = taskRow(page, task.id);
         await expect(sharedLinkRow).toContainText('Add Mailchimp newsletter shared link to complete');
         await expect(sharedLinkRow.locator('.task-status-checkbox')).toBeDisabled();
 
         await sharedLinkRow.locator('.required-bundle-link-input').fill('https://mailchimp.example/dashboard-newsletter');
         await sharedLinkRow.locator('.required-bundle-link-input').press('Enter');
-        await expect(page.locator('[data-task-row="' + task.id + '"]')).toContainText('Add completion status: Mailchimp campaign scheduled');
-        await page.locator('[data-task-row="' + task.id + '"] [data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from shared link row');
-        await page.locator('[data-task-row="' + task.id + '"] [data-save-completion-proof="' + task.id + '"]').click();
-        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
-        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await expect(taskRow(page, task.id)).toContainText('Add completion status: Mailchimp campaign scheduled');
+        await taskRow(page, task.id).locator('[data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from shared link row');
+        await saveDashboardCompletionProof(page, task.id, 'externalStatus');
+        await markDashboardTaskDone(page, task.id);
         await expect.poll(async () => {
           const taskBody = await (await request.get('/api/tasks/' + task.id)).json();
           const bundle = (await (await request.get('/api/bundles/' + bundleId)).json()).bundle;

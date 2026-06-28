@@ -61,8 +61,9 @@ Image note: This example helps distinguish the document type for bookkeeping. Lo
 ![](../../images/bookkeeping-invoices/invoices-receipts-and-statements/media/image7.jpg)
 Image note: This example helps distinguish the document type for bookkeeping. Look for the highlighted label such as invoice, receipt, or statement, then file or request the document under the matching category.
 
-THe file should always indicate the word “Invoice” or “Receipt”.
+The file should always indicate the word “Invoice” or “Receipt” when that document type is required. For monthly tax reporting, prefer receipts when both a receipt and an invoice are available, and use account statements only when the process requires a period summary such as a Finom or Revolut monthly statement.
 
 ## References
 
--
+- [Monthly Tax Report](../tax-reporting/sops/monthly-tax-report.md)
+- [Preparing a ZIP archive with invoices and send reports to the accountant](../bookkeeping/sops/preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant.md)
