@@ -237,8 +237,9 @@ from GitHub.
 
 ## Migration Checklist for a New AWS Account
 
-1. Deploy `lambda-functions/template.github-actions.yaml`.
-   This creates the GitHub Actions OIDC provider and deploy role.
+1. Deploy `../aws-infra/sandbox/dataops/template.github-actions.yaml` as stack
+   `dataops-github-actions`.
+   This updates the GitHub Actions OIDC deploy role used by this repo.
 
 2. Deploy `lambda-functions/template.runtime-secrets.yaml`.
    Provide the GitHub token and basic-auth password as parameters.

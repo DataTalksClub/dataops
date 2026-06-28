@@ -108,12 +108,22 @@ The CLI shims in `scripts/sop_parse.py`, `scripts/sop_lint.py`, and
 
 ## Deploy
 
-```bash
-aws cloudformation deploy \
-  --template-file template.github-actions-dataops.yaml \
-  --stack-name dataops-v1-github-actions \
-  --capabilities CAPABILITY_NAMED_IAM
+The GitHub Actions OIDC deploy role for the sandbox account is owned in the
+shared infrastructure repo, not edited directly from this app checkout:
 
+```bash
+cd ../aws-infra/sandbox/dataops
+aws cloudformation deploy \
+  --template-file template.github-actions.yaml \
+  --stack-name dataops-github-actions \
+  --region eu-west-1 \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Keep `lambda-functions/template.github-actions-dataops.yaml` aligned with that
+infra template as the app-repo copy used by tests and architecture docs.
+
+```bash
 aws cloudformation deploy \
   --template-file template.runtime-secrets.yaml \
   --stack-name dataops-v1-runtime-secrets \
@@ -136,9 +146,9 @@ with the Python helper from the repository root:
 python scripts/deploy_full_lambda.py
 ```
 
-The GitHub Actions OIDC provider and deploy role are managed by
-`template.github-actions.yaml`. The workflows use the role ARN directly, so
-the deploy role is not a GitHub secret.
+The GitHub Actions OIDC provider and deploy role are managed by the shared
+`../aws-infra/sandbox/dataops/template.github-actions.yaml` template. The
+workflows use the role ARN directly, so the deploy role is not a GitHub secret.
 
 Required repository secrets for the API workflow:
 
