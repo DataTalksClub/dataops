@@ -1604,6 +1604,95 @@ body[data-view="create"] .editor-view {
   line-height: 1.45;
 }
 
+.ops-process-quality,
+.ops-quality-drilldown {
+  border: var(--do-border);
+  border-radius: var(--do-radius-md);
+  background: var(--do-color-surface);
+  padding: var(--do-space-3);
+}
+
+.ops-quality-list {
+  display: grid;
+  gap: var(--do-space-2);
+}
+
+.ops-quality-row {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  border: var(--do-border);
+  border-left: 4px solid var(--do-color-info);
+  border-radius: var(--do-radius-sm);
+  background: var(--do-color-control);
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+}
+
+.ops-quality-row:hover {
+  background: var(--do-color-control-hover);
+}
+
+.ops-quality-row.ops-quality-blocking {
+  border-left-color: var(--danger);
+}
+
+.ops-quality-row.ops-quality-warning {
+  border-left-color: var(--do-color-warning);
+}
+
+.ops-quality-row-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--do-space-2);
+  min-width: 0;
+}
+
+.ops-quality-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--do-text-md);
+  line-height: 1.3;
+}
+
+.ops-quality-row-head span {
+  flex: 0 0 auto;
+  border-radius: var(--do-radius-xs);
+  background: var(--do-color-surface);
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: var(--do-text-xs);
+  font-weight: 700;
+}
+
+.ops-quality-row small {
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ops-quality-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--do-space-2);
+}
+
+.ops-quality-filter {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--do-text-xs);
+  font-weight: 700;
+}
+
+.ops-quality-filter select {
+  min-height: var(--do-density-control);
+}
+
 .ops-recurring-section {
   border: var(--do-border);
   border-radius: var(--do-radius-md);
@@ -1727,6 +1816,45 @@ body[data-view="create"] .editor-view {
 
 .task-instruction-doc-link:hover {
   text-decoration: underline;
+}
+
+.task-quality-notice {
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--line));
+  border-radius: var(--do-radius-sm);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  margin-bottom: 14px;
+  padding: 10px;
+}
+
+.task-quality-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: var(--do-border);
+  border-left: 4px solid var(--do-color-warning);
+  border-radius: var(--do-radius-sm);
+  background: var(--do-color-surface);
+  color: var(--text);
+  padding: 8px;
+  text-align: left;
+}
+
+.task-quality-row.ops-quality-blocking {
+  border-left-color: var(--danger);
+}
+
+.task-quality-row strong {
+  font-size: var(--do-text-sm);
+  line-height: 1.3;
+}
+
+.task-quality-row span {
+  color: var(--muted);
+  font-size: var(--do-text-xs);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .task-status-badge {
@@ -3074,6 +3202,7 @@ body.dark .task-status-badge.waiting {
   .ops-reference-grid,
   .ops-workflows-grid,
   .ops-admin-grid,
+  .ops-quality-filters,
   .ops-split-surface {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4513,6 +4642,7 @@ body[data-view="create"] #back-button {
   .ops-reference-grid,
   .ops-workflows-grid,
   .ops-admin-grid,
+  .ops-quality-filters,
   .ops-split-surface {
     grid-template-columns: 1fr;
   }
