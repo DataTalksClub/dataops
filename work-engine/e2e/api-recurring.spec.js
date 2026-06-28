@@ -397,6 +397,40 @@ test.describe('Recurring Config API', () => {
     expect(getRes.status()).toBe(404);
   });
 
+  test('DELETE /api/recurring/:id returns 409 when generated tasks reference the config', async ({ request }) => {
+    await disableAllConfigs(request);
+
+    const createRes = await request.post('/api/recurring', {
+      data: {
+        description: 'E2E delete blocked generated history',
+        cronExpression: '0 9 * * *',
+      },
+    });
+    const { recurringConfig: config } = await createRes.json();
+
+    const genRes = await request.post('/api/recurring/generate', {
+      data: {
+        startDate: '2031-04-10',
+        endDate: '2031-04-10',
+      },
+    });
+    expect(genRes.status()).toBe(200);
+
+    const delRes = await request.delete(`/api/recurring/${config.id}`);
+    expect(delRes.status()).toBe(409);
+    const body = await delRes.json();
+    expect(body.code).toBe('recurring_config_has_generated_history');
+    expect(body.error).toContain('Pause or disable');
+    expect(body.references.tasks).toBe(1);
+
+    const getRes = await request.get(`/api/recurring/${config.id}`);
+    expect(getRes.status()).toBe(200);
+
+    await request.put(`/api/recurring/${config.id}`, {
+      data: { enabled: false },
+    });
+  });
+
   test('PATCH /api/recurring returns 405', async ({ request }) => {
     const res = await request.patch('/api/recurring');
     expect(res.status()).toBe(405);

@@ -5,6 +5,7 @@ import {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
+  countRecurringConfigReferences,
   listRecurringConfigs,
   generateRecurringTasks,
 } from '../db/recurring';
@@ -254,6 +255,20 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         statusCode: 404,
         headers: JSON_HEADERS,
         body: JSON.stringify({ error: 'Recurring config not found' }),
+      };
+    }
+
+    const references = await countRecurringConfigReferences(client, id);
+    if (references.total > 0) {
+      return {
+        statusCode: 409,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          error: 'Recurring config has generated history and cannot be deleted. Pause or disable it instead to preserve generated tasks and notifications.',
+          code: 'recurring_config_has_generated_history',
+          recurringConfigId: id,
+          references,
+        }),
       };
     }
 

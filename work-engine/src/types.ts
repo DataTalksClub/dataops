@@ -301,6 +301,7 @@ export interface Template {
   triggerType?: string;
   triggerSchedule?: string;
   triggerLeadDays?: number;
+  triggerEnabled?: boolean;
   taskDefinitions?: TaskDefinition[];
   createdAt: string;
   updatedAt: string;
@@ -345,6 +346,8 @@ export interface Notification {
   taskId?: string;
   bundleId?: string;
   templateId?: string;
+  recurringConfigId?: string;
+  metadata?: Record<string, unknown>;
   userId?: string;
   dueAt?: string;
   dismissed: boolean;

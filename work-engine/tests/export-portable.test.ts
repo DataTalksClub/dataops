@@ -97,10 +97,18 @@ describe('portable execution data export', () => {
       completedAt: '2026-06-20T12:00:00.000Z',
       status: 'done',
     });
-    await createRecurringConfig(client, {
+    const recurringConfig = await createRecurringConfig(client, {
       description: 'Weekly community backup',
       cronExpression: '0 0 * * 1',
       assigneeId: user.id,
+    });
+    const recurringTask = await createTask(client, {
+      description: 'Weekly community backup',
+      date: '2026-06-23',
+      assigneeId: user.id,
+      source: 'recurring',
+      recurringConfigId: recurringConfig.id,
+      status: 'todo',
     });
     await createFile(client, {
       taskId: task.id,
@@ -164,6 +172,15 @@ describe('portable execution data export', () => {
       templateId: template.id,
       dueAt: '2026-06-21T09:00:00.000Z',
     });
+    await createNotification(client, {
+      type: 'recurring-due',
+      message: 'Recurring task generated: Weekly community backup',
+      userId: user.id,
+      taskId: recurringTask.id,
+      recurringConfigId: recurringConfig.id,
+      dueAt: '2026-06-23',
+      metadata: { recurringConfigId: recurringConfig.id },
+    });
 
     const result = await writePortableExport(client, exportDir, {
       generatedAt: '2026-06-27T00:00:00.000Z',
@@ -175,7 +192,7 @@ describe('portable execution data export', () => {
 
     assert.strictEqual(result.manifest.schema_version, 'dataops.execution.v1');
     assert.strictEqual(result.manifest.entity_counts.users, 1);
-    assert.strictEqual(result.manifest.entity_counts.tasks, 1);
+    assert.strictEqual(result.manifest.entity_counts.tasks, 2);
     assert.strictEqual(result.manifest.entity_counts.bundles, 1);
     assert.strictEqual(result.manifest.entity_counts.templates, 1);
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
@@ -183,7 +200,7 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
     assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
-    assert.strictEqual(result.manifest.entity_counts.notifications, 1);
+    assert.strictEqual(result.manifest.entity_counts.notifications, 2);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
     assert.ok(result.manifest.omitted_entities.includes('sessions'));
     assert.ok(!result.manifest.omitted_entities.includes('artifacts'));
@@ -197,6 +214,8 @@ describe('portable execution data export', () => {
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
+    assert.match(tasksJsonl, /"source":"recurring"/);
+    assert.match(tasksJsonl, /"recurring_config_id"/);
     assert.match(tasksJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
     assert.match(tasksJsonl, /"instruction_step_id":"4"/);
     assert.match(tasksJsonl, /"phase":"preparation"/);
@@ -227,6 +246,8 @@ describe('portable execution data export', () => {
 
     const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');
     assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
+    assert.match(notificationsJsonl, /"notification_type":"recurring-due"/);
+    assert.match(notificationsJsonl, /"recurring_config_id"/);
     assert.match(notificationsJsonl, /"due_at":"2026-06-21T09:00:00.000Z"/);
 
     const filesJsonl = await fs.readFile(path.join(exportDir, 'files.jsonl'), 'utf8');
@@ -257,7 +278,7 @@ describe('portable execution data export', () => {
     const validation = await validatePortableExport(exportDir);
     assert.deepStrictEqual(validation.errors, []);
     assert.strictEqual(validation.valid, true);
-    assert.strictEqual(validation.entityCounts.tasks, 1);
+    assert.strictEqual(validation.entityCounts.tasks, 2);
   });
 
   it('reports validation errors for broken references', async () => {
@@ -293,11 +314,24 @@ describe('portable execution data export', () => {
         }) + '\n',
         'utf8'
       );
+      await fs.appendFile(
+        path.join(brokenDir, 'tasks.jsonl'),
+        JSON.stringify({
+          task_id: 'task-broken-recurring',
+          description: 'Broken recurring relationship',
+          date: '2026-06-28',
+          status: 'todo',
+          source: 'recurring',
+          recurring_config_id: 'missing-recurring-config',
+        }) + '\n',
+        'utf8'
+      );
 
       const validation = await validatePortableExport(brokenDir);
       assert.strictEqual(validation.valid, false);
       assert.ok(validation.errors.some((error) => error.includes('checksum mismatch')));
       assert.ok(validation.errors.some((error) => error.includes('missing task_id: missing-task')));
+      assert.ok(validation.errors.some((error) => error.includes('missing recurring_config_id: missing-recurring-config')));
     } finally {
       await fs.rm(brokenDir, { recursive: true, force: true });
     }

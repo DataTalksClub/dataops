@@ -283,6 +283,7 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     trigger_type: optionalString(item.triggerType),
     trigger_schedule: optionalString(item.triggerSchedule),
     trigger_lead_days: optionalNumber(item.triggerLeadDays),
+    trigger_enabled: optionalBoolean(item.triggerEnabled),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
@@ -394,6 +395,8 @@ function mapNotification(item: Record<string, unknown>): JsonRecord {
     task_id: optionalString(item.taskId),
     bundle_id: optionalString(item.bundleId),
     template_id: optionalString(item.templateId),
+    recurring_config_id: optionalString(item.recurringConfigId),
+    metadata: optionalJsonStringOrObject(item.metadata),
     due_at: optionalString(item.dueAt),
     dismissed: optionalBoolean(item.dismissed),
     created_at: optionalString(item.createdAt),
@@ -615,6 +618,19 @@ function optionalNumberField(
   if (value === undefined || value === null) return;
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     errors.push(`${context} field ${field} must be a finite number when present`);
+  }
+}
+
+function optionalBooleanField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string
+): void {
+  const value = record[field];
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'boolean') {
+    errors.push(`${context} field ${field} must be a boolean when present`);
   }
 }
 
@@ -953,7 +969,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   const taskIds = collectIds(recordsByEntity.tasks || [], 'task_id', 'tasks', errors);
   const bundleIds = collectIds(recordsByEntity.bundles || [], 'bundle_id', 'bundles', errors);
   const templateIds = collectIds(recordsByEntity.templates || [], 'template_id', 'templates', errors);
-  collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
+  const recurringConfigIds = collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
   const fileIds = collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
   const artifactIds = collectIds(recordsByEntity.artifacts || [], 'artifact_id', 'artifacts', errors);
   const assistantJobIds = collectIds(recordsByEntity.assistant_jobs || [], 'assistant_job_id', 'assistant_jobs', errors);
@@ -1012,6 +1028,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);
+    optionalReference(task, 'recurring_config_id', recurringConfigIds, errors, context);
     if (Array.isArray(task.assistant_job_refs)) {
       task.assistant_job_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
@@ -1045,12 +1062,16 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(template, 'created_at', errors, context);
     validateDateOrTimestampField(template, 'updated_at', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
+    optionalBooleanField(template, 'trigger_enabled', errors, context);
     validateWorkflowPhases(template, errors, context);
     validateTaskDefinitionDocContext(template, errors, context);
   }
 
   for (const [index, recurring] of (recordsByEntity.recurring_configs || []).entries()) {
     const context = `recurring_configs[${index}]`;
+    requireString(recurring, 'description', errors, context);
+    requireString(recurring, 'cron_expression', errors, context);
+    optionalReference(recurring, 'assignee_id', userIds, errors, context);
     validateDateOrTimestampField(recurring, 'created_at', errors, context);
     validateDateOrTimestampField(recurring, 'updated_at', errors, context);
   }
@@ -1164,6 +1185,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   for (const [index, notification] of (recordsByEntity.notifications || []).entries()) {
     const context = `notifications[${index}]`;
     const notificationType = optionalEnum(notification, 'notification_type', VALID_NOTIFICATION_TYPES, errors, context);
+    requireString(notification, 'message', errors, context);
     if (notificationType === 'follow-up-due') {
       requireString(notification, 'task_id', errors, context);
       validateDateOrTimestampField(notification, 'due_at', errors, context, true);
@@ -1175,6 +1197,9 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(notification, 'task_id', taskIds, errors, context);
     optionalReference(notification, 'bundle_id', bundleIds, errors, context);
     optionalReference(notification, 'template_id', templateIds, errors, context);
+    optionalReference(notification, 'recurring_config_id', recurringConfigIds, errors, context);
+    optionalStringOrObjectField(notification, 'metadata', errors, context);
+    validateNoSecretPayload(notification, errors, context);
   }
 
   const manifestRedactions = new Set(manifest.redactions || []);

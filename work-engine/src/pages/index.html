@@ -2200,6 +2200,98 @@
       color: var(--muted);
     }
 
+    .badge-recurring,
+    .badge-template-source,
+    .task-queue-label {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.7;
+      white-space: nowrap;
+    }
+
+    .badge-recurring {
+      background: #e7f5ee;
+      color: #21734d;
+    }
+
+    .badge-template-source {
+      background: #eef4ff;
+      color: #345b9c;
+    }
+
+    .task-queue-labels {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .task-queue-label {
+      background: #fff3cd;
+      color: #7a4f01;
+    }
+
+    .dashboard-bundle-risk {
+      margin-top: 2px;
+    }
+
+    .dashboard-queue-group td {
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    #dashboard-tasks {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    #dashboard-tasks .task-table-compact {
+      width: 100%;
+      table-layout: fixed;
+    }
+
+    #dashboard-tasks .task-table-compact th,
+    #dashboard-tasks .task-table-compact td {
+      overflow-wrap: anywhere;
+      vertical-align: top;
+    }
+
+    #dashboard-tasks .task-action-group {
+      min-width: 0;
+    }
+
+    #dashboard-tasks .required-link-wrapper,
+    #dashboard-tasks .required-file-wrapper,
+    #dashboard-tasks .completion-proof-wrapper {
+      max-width: 100%;
+      width: 100%;
+    }
+
+    #dashboard-tasks .required-link-input,
+    #dashboard-tasks .required-bundle-link-input,
+    #dashboard-tasks .completion-proof-input,
+    #dashboard-tasks .skip-closure-select,
+    #dashboard-tasks .required-file-input {
+      max-width: 100%;
+      min-width: 0;
+      width: 100%;
+    }
+
+    #dashboard-tasks .badge-recurring,
+    #dashboard-tasks .badge-template-source,
+    #dashboard-tasks .badge-waiting {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+
     .badge-assignee,
     .badge-type {
       background: #eef4ff;
