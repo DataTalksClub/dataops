@@ -13,7 +13,7 @@ LAMBDA_SRC = REPO_ROOT / "lambda-functions" / "src"
 if str(LAMBDA_SRC) not in sys.path:
     sys.path.insert(0, str(LAMBDA_SRC))
 
-from lambda_functions import api_handler, full_app_handler, github_store, search_handler  # noqa: E402
+from lambda_functions import api_handler, docs_index, full_app_handler, github_store, search_handler  # noqa: E402
 
 
 def _event(path: str, method: str = "GET", **extra):
@@ -126,6 +126,145 @@ def test_full_app_commits_successful_doc_mutations_and_rebuilds_search(tmp_path,
     assert _json_body(response)["path"] == "content/finance/reference/new-invoice.md"
     assert calls == [
         ("content/finance/reference/new-invoice.md", "Update content/finance/reference/new-invoice.md"),
+        ("search", "rebuilt"),
+    ]
+
+
+def test_full_app_commits_image_upload_with_repo_path_and_rebuilds_search(tmp_path, monkeypatch):
+    cache_root = tmp_path / "cache"
+    content_root = cache_root / "content"
+    doc_path = content_root / "finance" / "sops" / "pay-invoice.md"
+    doc_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_path.write_text("# Pay Invoice\n", encoding="utf-8")
+
+    calls: list[tuple[str, str]] = []
+
+    class FakeStore:
+        def sync_markdown(self) -> None:
+            content_root.mkdir(parents=True, exist_ok=True)
+
+        def put_local_file(self, repo_path: str, message: str) -> None:
+            calls.append((repo_path, message))
+
+    FakeStore.content_root = content_root
+
+    monkeypatch.setattr(api_handler, "CONTENT_ROOT", content_root)
+    monkeypatch.setattr(full_app_handler, "CACHE_ROOT", cache_root)
+    monkeypatch.setattr(full_app_handler, "STORE", FakeStore())
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+    monkeypatch.setattr(full_app_handler, "rebuild_search", lambda: calls.append(("search", "rebuilt")))
+
+    response = full_app_handler.handler(
+        _event(
+            "/images",
+            "POST",
+            body=json.dumps(
+                {
+                    "doc_path": "content/finance/sops/pay-invoice.md",
+                    "filename": "../Receipt.PNG",
+                    "data": base64.b64encode(b"image-bytes").decode("ascii"),
+                }
+            ),
+        ),
+        None,
+    )
+
+    assert response["statusCode"] == 201
+    payload = _json_body(response)
+    assert payload["absolute_path"] == "content/images/pay-invoice/receipt.png"
+    assert payload["path"] == "../../images/pay-invoice/receipt.png"
+    assert calls == [
+        ("content/images/pay-invoice/receipt.png", "Upload content/images/pay-invoice/receipt.png"),
+        ("search", "rebuilt"),
+    ]
+
+
+def test_full_app_commits_folder_rename_and_delete_with_fake_store(tmp_path, monkeypatch):
+    cache_root = tmp_path / "cache"
+    content_root = cache_root / "content"
+    old_folder = content_root / "finance" / "reference"
+    old_folder.mkdir(parents=True, exist_ok=True)
+    (old_folder / "invoices.md").write_text("# Invoices\n", encoding="utf-8")
+    (old_folder / "receipts.md").write_text("# Receipts\n", encoding="utf-8")
+
+    calls: list[tuple[str, str]] = []
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.files = {
+                "content/finance/reference/invoices.md": {"type": "blob"},
+                "content/finance/reference/receipts.md": {"type": "blob"},
+            }
+
+        def sync_markdown(self) -> None:
+            content_root.mkdir(parents=True, exist_ok=True)
+
+        def tree(self) -> dict[str, dict[str, str]]:
+            return dict(self.files)
+
+        def put_local_file(self, repo_path: str, message: str) -> None:
+            calls.append((repo_path, message))
+
+        def delete_repo_file(self, repo_path: str, message: str) -> None:
+            calls.append((repo_path, message))
+            self.files.pop(repo_path, None)
+
+    store = FakeStore()
+    monkeypatch.setattr(api_handler, "CONTENT_ROOT", content_root)
+    monkeypatch.setattr(full_app_handler, "CACHE_ROOT", cache_root)
+    monkeypatch.setattr(full_app_handler, "STORE", store)
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+    monkeypatch.setattr(full_app_handler, "rebuild_search", lambda: calls.append(("search", "rebuilt")))
+
+    rename_response = full_app_handler.handler(
+        _event(
+            "/folders/rename",
+            "POST",
+            body=json.dumps(
+                {
+                    "old_path": "content/finance/reference",
+                    "new_path": "content/finance/guides",
+                }
+            ),
+        ),
+        None,
+    )
+
+    assert rename_response["statusCode"] == 200
+    assert calls == [
+        (
+            "content/finance/guides/invoices.md",
+            "Rename folder content/finance/reference to content/finance/guides",
+        ),
+        (
+            "content/finance/guides/receipts.md",
+            "Rename folder content/finance/reference to content/finance/guides",
+        ),
+        (
+            "content/finance/reference/invoices.md",
+            "Remove renamed content/finance/reference/invoices.md",
+        ),
+        (
+            "content/finance/reference/receipts.md",
+            "Remove renamed content/finance/reference/receipts.md",
+        ),
+        ("search", "rebuilt"),
+    ]
+
+    calls.clear()
+    store.files = {
+        "content/finance/guides/invoices.md": {"type": "blob"},
+        "content/finance/guides/receipts.md": {"type": "blob"},
+    }
+    delete_response = full_app_handler.handler(
+        _event("/folders", "DELETE", queryStringParameters={"path": "content/finance/guides"}),
+        None,
+    )
+
+    assert delete_response["statusCode"] == 200
+    assert calls == [
+        ("content/finance/guides/invoices.md", "Delete content/finance/guides/invoices.md"),
+        ("content/finance/guides/receipts.md", "Delete content/finance/guides/receipts.md"),
         ("search", "rebuilt"),
     ]
 
@@ -313,6 +452,29 @@ def test_full_app_work_shell_routes_require_portal_auth(monkeypatch):
         assert response["headers"]["location"] == "/login"
 
 
+def test_full_app_work_routes_do_not_fall_through_to_docs_api(monkeypatch):
+    monkeypatch.delenv("WORK_ENGINE_FUNCTION_NAME", raising=False)
+    monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
+    monkeypatch.setattr(
+        api_handler,
+        "handler",
+        lambda event, context: (_ for _ in ()).throw(AssertionError("docs API should not handle work routes")),
+    )
+    monkeypatch.setattr(
+        full_app_handler,
+        "serve_index",
+        lambda event: full_app_handler.json_response(200, {"shell": "work"}),
+    )
+
+    api_response = full_app_handler.handler(_event("/work/api/docs", "GET"), None)
+    shell_response = full_app_handler.handler(_event("/work/tasks", "GET"), None)
+
+    assert api_response["statusCode"] == 503
+    assert _json_body(api_response) == {"error": "Work engine is not configured"}
+    assert shell_response["statusCode"] == 200
+    assert _json_body(shell_response) == {"shell": "work"}
+
+
 def test_full_app_reports_unconfigured_work_engine(monkeypatch):
     monkeypatch.delenv("WORK_ENGINE_FUNCTION_NAME", raising=False)
     monkeypatch.setattr(full_app_handler, "require_auth", lambda event: None)
@@ -416,6 +578,7 @@ def test_search_handler_parses_raw_query_applies_filters_and_caps_limit(monkeypa
                     "domain": "finance",
                     "doc_type": "reference",
                     "summary": "Invoice summary",
+                    "description": "Workflow-facing invoice description",
                     "purpose": "Find invoice steps",
                 }
             ]
@@ -443,7 +606,7 @@ def test_search_handler_parses_raw_query_applies_filters_and_caps_limit(monkeypa
             "domain": "finance",
             "doc_type": "reference",
             "summary": "Invoice summary",
-            "description": "Invoice summary",
+            "description": "Workflow-facing invoice description",
             "purpose": "Find invoice steps",
         }
     ]
@@ -462,3 +625,52 @@ def test_search_handler_reports_missing_query_and_bad_limit_without_index_lookup
     assert _json_body(missing) == {"error": "Missing required query parameter: q"}
     assert bad_limit["statusCode"] == 400
     assert _json_body(bad_limit) == {"error": "invalid literal for int() with base 10: 'not-a-number'"}
+
+
+def test_built_search_index_exposes_workflow_facing_fields(tmp_path, monkeypatch):
+    content_root = tmp_path / "content"
+    doc_path = content_root / "finance" / "reference" / "invoices.md"
+    doc_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_path.write_text(
+        """---
+id: finance.invoices
+title: "Invoices"
+summary: "Invoice summary"
+description: "Workflow-facing invoice description"
+purpose: "Help the operator find invoice steps."
+doc_type: reference
+---
+
+# Invoices
+
+Use this reference when a workflow task needs invoice context.
+""",
+        encoding="utf-8",
+    )
+    index_path = tmp_path / "search.index"
+    count = docs_index.build_index(content_root, index_path)
+
+    assert count == 1
+    monkeypatch.setenv("SEARCH_INDEX_PATH", str(index_path))
+    search_handler.reset_index()
+
+    response = search_handler.handler(
+        _event(
+            "/search",
+            queryStringParameters={"q": "invoice", "domain": "finance", "doc_type": "reference"},
+        ),
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    result = _json_body(response)["results"][0]
+    assert result == {
+        "path": "content/finance/reference/invoices.md",
+        "id": "finance.invoices",
+        "title": "Invoices",
+        "domain": "finance",
+        "doc_type": "reference",
+        "summary": "Invoice summary",
+        "description": "Workflow-facing invoice description",
+        "purpose": "Help the operator find invoice steps.",
+    }
