@@ -114,15 +114,20 @@ bundlePanelClose.addEventListener("click", closeBundlePanel);
 
 const workBellButton = document.querySelector("#work-bell-button");
 const workBellCount = document.querySelector("#work-bell-count");
+const mobileWorkBellButton = document.querySelector("#mobile-work-bell-button");
+const mobileWorkBellCount = mobileWorkBellButton?.querySelector(".work-bell-count");
 const workBellPanel = document.querySelector("#work-bell-panel");
 const workBellBody = document.querySelector("#work-bell-body");
 const workBellClose = document.querySelector("#work-bell-close");
-workBellButton.addEventListener("click", () => {
+function toggleWorkBellPanel() {
   if (workBellPanel.hidden) openWorkBellPanel();
   else closeWorkBellPanel();
-});
+}
+workBellButton.addEventListener("click", toggleWorkBellPanel);
+mobileWorkBellButton?.addEventListener("click", toggleWorkBellPanel);
 workBellClose.addEventListener("click", closeWorkBellPanel);
 let workBellNotifications = [];
+let workBellError = "";
 
 let activeTaskPanelId = null;
 let activeTaskPanelTask = null;
@@ -174,6 +179,13 @@ viewToggleButton.addEventListener("click", toggleViewMode);
 docMenuButton.addEventListener("click", openDocMenu);
 
 documentTitle.addEventListener("input", syncTitleToMarkdown);
+documentTitle.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    editor.focus();
+  }
+});
+window.addEventListener("resize", resizeDocumentTitle);
 editor.addEventListener("input", () => {
   if (!currentDoc) return;
   storeDraft();
@@ -1951,13 +1963,24 @@ async function refreshWorkBell() {
   try {
     const payload = await request(workApiUrl("/api/notifications"));
     workBellNotifications = Array.isArray(payload) ? payload : payload.notifications || [];
-  } catch {
+    workBellError = "";
+  } catch (err) {
     workBellNotifications = [];
+    workBellError = err?.message || "Notifications API request failed";
   }
-  const count = workBellNotifications.length;
-  workBellCount.textContent = String(count);
-  workBellCount.classList.toggle("is-visible", count > 0);
+  syncWorkBellIndicators();
   if (!workBellPanel.hidden) renderWorkBellPanel();
+}
+
+function syncWorkBellIndicators() {
+  const count = workBellNotifications.length;
+  const indicatorText = workBellError ? "!" : String(count);
+  for (const indicator of [workBellCount, mobileWorkBellCount]) {
+    if (!indicator) continue;
+    indicator.textContent = indicatorText;
+    indicator.classList.toggle("is-visible", Boolean(workBellError) || count > 0);
+    indicator.classList.toggle("is-error", Boolean(workBellError));
+  }
 }
 
 function openWorkBellPanel() {
@@ -1971,6 +1994,13 @@ function closeWorkBellPanel() {
 
 function renderWorkBellPanel() {
   workBellBody.replaceChildren();
+  if (workBellError) {
+    const empty = document.createElement("p");
+    empty.className = "work-bell-empty is-error";
+    empty.textContent = `Notifications unavailable: ${workBellError}`;
+    workBellBody.append(empty);
+    return;
+  }
   if (workBellNotifications.length === 0) {
     const empty = document.createElement("p");
     empty.className = "work-bell-empty";
@@ -3628,11 +3658,24 @@ async function createDocument() {
 
 function syncTitleToMarkdown() {
   if (!currentDoc) return;
-  const title = documentTitle.value.trim() || basename(currentDoc.path);
+  const title = normalizedDocumentTitle() || basename(currentDoc.path);
+  if (documentTitle.value !== title) documentTitle.value = title;
+  resizeDocumentTitle();
   editor.value = setMarkdownTitle(editor.value, title);
   storeDraft();
   updateSaveState();
   setPageTitle(title, currentDoc.path);
+}
+
+function normalizedDocumentTitle() {
+  return documentTitle.value.replace(/\s+/g, " ").trim();
+}
+
+function resizeDocumentTitle() {
+  if (getComputedStyle(documentTitle).display === "none") return;
+  const fallbackHeight = parseFloat(getComputedStyle(documentTitle).lineHeight) || 32;
+  documentTitle.style.height = "auto";
+  documentTitle.style.height = `${Math.max(documentTitle.scrollHeight, fallbackHeight)}px`;
 }
 
 function setMarkdownTitle(markdown, title) {
@@ -3717,6 +3760,7 @@ function showLibrary(options = {}) {
   setView("library");
   if (options.updateUrl !== false) setFolderUrl(selectedFolder);
   syncLibraryPageTitle();
+  closeWorkBellPanel();
   closeSidebar();
 }
 
@@ -3735,6 +3779,9 @@ async function showOperationsHome() {
   searchInput.value = "";
   clearDocumentFilters();
   setFolderUrl("");
+  closeTaskPanel();
+  closeBundlePanel();
+  closeWorkBellPanel();
   setView("library");
   refreshDocuments();
   closeSidebar();
@@ -3744,6 +3791,7 @@ async function showCreate() {
   if (!(await canLeaveCurrentDocument())) return;
   closeTaskPanel();
   closeBundlePanel();
+  closeWorkBellPanel();
   if (!newDocPath.value.trim()) {
     const base = selectedFolder ? `content/${selectedFolder}` : "content";
     newDocPath.value = `${base}/new-document.md`;
@@ -3822,6 +3870,7 @@ function setPageTitle(title, path) {
   toolbarTitle.textContent = title;
   mobileTitle.textContent = title;
   breadcrumb.textContent = path;
+  resizeDocumentTitle();
 }
 
 function enhanceSelect(select) {
@@ -4705,6 +4754,7 @@ function exitRenderedMode() {
   editorView.dataset.mode = "raw";
   viewToggleButton.hidden = true;
   renderedView.replaceChildren();
+  resizeDocumentTitle();
 }
 
 function updateViewToggleAvailability() {

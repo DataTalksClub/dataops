@@ -919,6 +919,52 @@ assert.deepEqual(await request("https://ops.example.test/work/api/health"), { st
     assert result["ok"] is True
 
 
+def test_notification_panel_reports_work_api_failures_honestly():
+    result = _run_app_js_functions(
+        """
+workBellBody = makeElement("div");
+workBellNotifications = [];
+workBellError = "Unexpected non-JSON API response";
+
+renderWorkBellPanel();
+assert.equal(workBellBody.children.length, 1);
+assert.equal(workBellBody.children[0].className, "work-bell-empty is-error");
+assert.match(workBellBody.children[0].textContent, /Notifications unavailable/);
+assert.match(workBellBody.children[0].textContent, /Unexpected non-JSON API response/);
+
+workBellError = "";
+renderWorkBellPanel();
+assert.equal(workBellBody.children[0].textContent, "No active notifications.");
+""",
+        ["renderWorkBellPanel"],
+    )
+
+    assert result["ok"] is True
+
+
+def test_mobile_shell_exposes_notification_panel_entrypoint():
+    index = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert 'id="mobile-work-bell-button"' in index
+    assert 'aria-label="Notifications"' in index
+    assert 'const mobileWorkBellButton = document.querySelector("#mobile-work-bell-button");' in source
+    assert 'mobileWorkBellButton?.addEventListener("click", toggleWorkBellPanel);' in source
+
+
+def test_editor_title_is_wrappable_for_mobile_viewports():
+    index = (REPO_ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    styles = (REPO_ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
+    source = APP_JS.read_text(encoding="utf-8")
+
+    assert '<textarea id="document-title" class="document-title" rows="1"' in index
+    assert "field-sizing: content;" in styles
+    assert "overflow: hidden;" in styles
+    assert "white-space: pre-wrap;" in styles
+    assert "function normalizedDocumentTitle()" in source
+    assert "function resizeDocumentTitle()" in source
+
+
 def test_markdown_and_wiki_links_render_internal_docs_as_app_routes():
     result = _run_app_js_functions(
         """

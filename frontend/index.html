@@ -11,6 +11,10 @@
     <div class="mobile-topbar">
       <button id="mobile-menu-button" class="icon-button" type="button" aria-label="Open workspace">☰</button>
       <span id="mobile-title">DataOps</span>
+      <button id="mobile-work-bell-button" class="quiet-button work-bell-button mobile-work-bell-button" type="button" title="Notifications" aria-label="Notifications">
+        <span class="work-bell-icon" aria-hidden="true">&#9737;</span>
+        <span class="work-bell-count" aria-hidden="true">0</span>
+      </button>
       <button id="mobile-new-button" class="quiet-button" type="button">New</button>
     </div>
 
@@ -184,7 +188,7 @@
         </section>
 
         <section id="editor-view" class="view editor-view" data-mode="rendered">
-          <input id="document-title" class="document-title" type="text" disabled aria-label="Document title">
+          <textarea id="document-title" class="document-title" rows="1" disabled aria-label="Document title"></textarea>
           <div id="document-path" class="document-path">No document selected</div>
           <textarea id="editor" class="markdown-editor" spellcheck="true" disabled placeholder="Open a document from the sidebar or create a new page."></textarea>
           <div id="rendered-view" class="rendered-view" aria-live="polite"></div>
