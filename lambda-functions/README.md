@@ -108,20 +108,17 @@ The CLI shims in `scripts/sop_parse.py`, `scripts/sop_lint.py`, and
 
 ## Deploy
 
+The application stack is deployed by GitHub Actions CI/CD with OIDC on pushes
+to `main`; do not deploy the app stack manually from this checkout as the normal
+path.
+
 The GitHub Actions OIDC deploy role for the sandbox account is owned in the
-shared infrastructure repo, not edited directly from this app checkout:
-
-```bash
-cd ../aws-infra/sandbox/dataops
-aws cloudformation deploy \
-  --template-file template.github-actions.yaml \
-  --stack-name dataops-github-actions \
-  --region eu-west-1 \
-  --capabilities CAPABILITY_NAMED_IAM
-```
-
-Keep `lambda-functions/template.github-actions-dataops.yaml` aligned with that
-infra template as the app-repo copy used by tests and architecture docs.
+shared infrastructure source at
+`../aws-infra/sandbox/dataops/template.github-actions.yaml`. Update that infra
+source and apply it through the infra CI/CD/OIDC path or a credentialed infra
+operator. Keep `lambda-functions/template.github-actions-dataops.yaml` aligned
+with the infra template as the app-repo copy used by tests and architecture
+docs.
 
 ```bash
 aws cloudformation deploy \
@@ -147,8 +144,8 @@ python scripts/deploy_full_lambda.py
 ```
 
 The GitHub Actions OIDC provider and deploy role are managed by the shared
-`../aws-infra/sandbox/dataops/template.github-actions.yaml` template. The
-workflows use the role ARN directly, so the deploy role is not a GitHub secret.
+infra template. The workflows use the role ARN directly, so the deploy role is
+not a GitHub secret.
 
 Required repository secrets for the API workflow:
 

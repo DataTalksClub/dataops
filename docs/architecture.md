@@ -237,17 +237,17 @@ from GitHub.
 
 ## Migration Checklist for a New AWS Account
 
-1. Deploy `../aws-infra/sandbox/dataops/template.github-actions.yaml` as stack
-   `dataops-github-actions`.
-   This updates the GitHub Actions OIDC deploy role used by this repo.
+1. Update the shared infra source for the GitHub Actions OIDC deploy role:
+   `../aws-infra/sandbox/dataops/template.github-actions.yaml`.
+   Apply it through the infra CI/CD/OIDC path or a credentialed infra operator.
 
 2. Deploy `lambda-functions/template.runtime-secrets.yaml`.
    Provide the GitHub token and basic-auth password as parameters.
 
 3. Update workflow role ARN if the deploy role ARN changes.
 
-4. Deploy the full app stack with `sam deploy --config-env full-sandbox`, or add
-   a new SAM config for the target account and environment.
+4. Push application changes to `main`; GitHub Actions deploys the full app stack
+   through OIDC after checks pass.
 
 5. Verify:
    - Login works.
