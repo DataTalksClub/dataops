@@ -1,0 +1,154 @@
+{
+  "lists": [
+    { "id": "list-preparation", "name": "Preparation", "closed": false, "pos": 1 },
+    { "id": "list-announced", "name": "Announced", "closed": false, "pos": 2 },
+    { "id": "list-after-event", "name": "After event", "closed": false, "pos": 3 },
+    { "id": "list-done", "name": "Done", "closed": false, "pos": 4 }
+  ],
+  "cards": [
+    {
+      "id": "card-preparation",
+      "name": "🎙️ [Podcast] 2026-06-20 - Feature Store - Alice",
+      "desc": "Use [Podcast SOP](http://localhost/content/media/podcast/sops/create-a-podcast-document.md). Event page: https://lu.ma/prep-event",
+      "due": "2026-06-20T00:00:00.000Z",
+      "closed": false,
+      "isTemplate": false,
+      "idList": "list-preparation",
+      "idChecklists": ["checklist-preparation"],
+      "labels": [{ "name": "Podcast" }],
+      "attachments": [
+        { "id": "att-prep-luma", "name": "Luma event", "url": "https://lu.ma/prep-event" },
+        { "id": "att-prep-trello", "name": "Trello image", "url": "https://trello.com/1/cards/card-preparation/attachments/image.png" }
+      ],
+      "dateLastActivity": "2026-06-15T12:00:00.000Z"
+    },
+    {
+      "id": "card-announced",
+      "name": "[Webinar] 2026-06-24 - Warehouse Patterns - Bob",
+      "desc": "Announced publicly. Meetup: https://meetup.com/datatalksclub/events/123",
+      "due": "2026-06-24T00:00:00.000Z",
+      "closed": false,
+      "isTemplate": false,
+      "idList": "list-announced",
+      "idChecklists": ["checklist-announced"],
+      "labels": [{ "name": "Webinar" }],
+      "attachments": [
+        { "id": "att-announced-meetup", "name": "Meetup event", "url": "https://meetup.com/datatalksclub/events/123" }
+      ],
+      "dateLastActivity": "2026-06-21T12:00:00.000Z"
+    },
+    {
+      "id": "card-after-event",
+      "name": "[Open-Source Spotlight] 2026-06-10 - DuckDB - Carol",
+      "desc": "Recording source: https://youtube.com/watch?v=duckdb123 Unsafe archive: https://example.com/archive.zip?X-Amz-Signature=secret",
+      "due": "2026-06-10T00:00:00.000Z",
+      "closed": false,
+      "isTemplate": false,
+      "idList": "list-after-event",
+      "idChecklists": ["checklist-after-event"],
+      "labels": [{ "name": "Open-Source Spotlight" }],
+      "attachments": [
+        { "id": "att-after-youtube", "name": "YouTube recording", "url": "https://youtube.com/watch?v=duckdb123" },
+        { "id": "att-after-unsafe", "name": "Signed archive", "url": "https://example.com/archive.zip?X-Amz-Signature=secret" }
+      ],
+      "dateLastActivity": "2026-06-11T12:00:00.000Z"
+    },
+    {
+      "id": "card-template",
+      "name": "[Podcast] Template",
+      "desc": "",
+      "closed": false,
+      "isTemplate": true,
+      "idList": "list-preparation",
+      "idChecklists": [],
+      "labels": [{ "name": "Podcast" }],
+      "attachments": [],
+      "dateLastActivity": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "id": "card-done",
+      "name": "[Podcast] Finished episode",
+      "desc": "",
+      "due": "2026-05-01T00:00:00.000Z",
+      "closed": false,
+      "isTemplate": false,
+      "idList": "list-done",
+      "idChecklists": [],
+      "labels": [{ "name": "Podcast" }],
+      "attachments": [],
+      "dateLastActivity": "2026-05-02T00:00:00.000Z"
+    }
+  ],
+  "checklists": [
+    {
+      "id": "checklist-preparation",
+      "name": "Preparation",
+      "pos": 1,
+      "checkItems": [
+        {
+          "id": "item-create-podcast-doc",
+          "name": "Create podcast document ([doc](http://localhost/content/media/podcast/sops/create-a-podcast-document.md))",
+          "pos": 1,
+          "state": "incomplete",
+          "due": "2026-06-16T00:00:00.000Z"
+        },
+        {
+          "id": "item-follow-up-guest",
+          "name": "Follow up with guest about bio",
+          "pos": 2,
+          "state": "incomplete",
+          "due": "2026-06-18T00:00:00.000Z"
+        },
+        {
+          "id": "item-publish-luma",
+          "name": "Publish Luma link",
+          "pos": 3,
+          "state": "incomplete",
+          "due": "2026-06-19T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "checklist-announced",
+      "name": "Announced",
+      "pos": 1,
+      "checkItems": [
+        {
+          "id": "item-share-meetup",
+          "name": "Share Meetup link",
+          "pos": 1,
+          "state": "incomplete",
+          "due": "2026-06-22T00:00:00.000Z"
+        },
+        {
+          "id": "item-wait-sponsor",
+          "name": "Waiting for sponsor response",
+          "pos": 2,
+          "state": "incomplete",
+          "due": "2026-06-23T00:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "checklist-after-event",
+      "name": "After event",
+      "pos": 1,
+      "checkItems": [
+        {
+          "id": "item-upload-youtube",
+          "name": "Upload YouTube recording https://youtube.com/watch?v=duckdb123",
+          "pos": 1,
+          "state": "complete",
+          "due": "2026-06-11T00:00:00.000Z"
+        },
+        {
+          "id": "item-send-report",
+          "name": "Send report spreadsheet to sponsor",
+          "pos": 2,
+          "state": "incomplete",
+          "due": "2026-06-12T00:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
