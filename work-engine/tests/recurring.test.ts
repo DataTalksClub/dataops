@@ -9,13 +9,15 @@ import {
   getRecurringConfig,
   updateRecurringConfig,
   deleteRecurringConfig,
+  countRecurringConfigReferences,
   listRecurringConfigs,
   listEnabledRecurringConfigs,
   generateRecurringTasks,
   cronMatchesDate,
   matchCronField,
 } from '../src/db/recurring';
-import { getTask } from '../src/db/tasks';
+import { createNotification } from '../src/db/notifications';
+import { createTask, getTask } from '../src/db/tasks';
 
 describe('Recurring configs data layer', () => {
   let client: DynamoDBDocumentClient;
@@ -201,6 +203,32 @@ describe('Recurring configs data layer', () => {
     await deleteRecurringConfig(client, created.id);
     const result = await getRecurringConfig(client, created.id);
     assert.strictEqual(result, null);
+  });
+
+  it('countRecurringConfigReferences finds generated task and notification relationships', async () => {
+    const created = await createRecurringConfig(client, {
+      description: 'Referenced recurring config',
+      cronExpression: '0 9 * * *',
+    });
+
+    await createTask(client, {
+      description: 'Generated recurring task',
+      date: '2027-01-10',
+      source: 'recurring',
+      recurringConfigId: created.id,
+    });
+    await createNotification(client, {
+      type: 'recurring-due',
+      message: 'Generated recurring task due',
+      recurringConfigId: created.id,
+      metadata: { recurringConfigId: created.id },
+    });
+
+    const references = await countRecurringConfigReferences(client, created.id);
+
+    assert.strictEqual(references.tasks, 1);
+    assert.strictEqual(references.notifications, 1);
+    assert.strictEqual(references.total, 2);
   });
 
   it('listRecurringConfigs returns all configs', async () => {

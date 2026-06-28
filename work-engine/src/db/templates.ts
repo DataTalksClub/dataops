@@ -8,7 +8,7 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_TEMPLATES } from './setup';
-import { createTask } from './tasks';
+import { createTask, listTasksByBundle } from './tasks';
 import type { Template, Task } from '../types';
 
 /**
@@ -133,9 +133,19 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
   }
 
   const taskDefinitions = template.taskDefinitions || [];
+  const existingTasks = await listTasksByBundle(client, bundleId);
+  const existingRefs = new Set(
+    existingTasks
+      .filter((task) => task.templateId === templateId && task.templateTaskRef)
+      .map((task) => task.templateTaskRef as string)
+  );
   const createdTasks: Task[] = [];
 
   for (const def of taskDefinitions) {
+    if (existingRefs.has(def.refId)) {
+      continue;
+    }
+
     const anchor = new Date(anchorDate + 'T00:00:00Z');
     anchor.setUTCDate(anchor.getUTCDate() + (def.offsetDays || 0));
     const taskDate = anchor.toISOString().split('T')[0];
@@ -209,6 +219,7 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
 
     const task = await createTask(client, taskData);
 
+    existingRefs.add(def.refId);
     createdTasks.push(task);
   }
 

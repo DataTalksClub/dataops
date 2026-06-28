@@ -822,6 +822,16 @@ test.describe('Home dashboard (issue #26)', () => {
         });
         created.push(await followUpRes.json());
 
+        const todayRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard today newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+            validation: { dashboardStates: ['today'] },
+          },
+        });
+        created.push(await todayRes.json());
+
         await page.goto('/#/');
         await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
 
@@ -830,6 +840,20 @@ test.describe('Home dashboard (issue #26)', () => {
 
         const followUpRow = page.locator('[data-task-row="' + created[1].id + '"]');
         await expect(followUpRow).toContainText('Follow-up due');
+
+        const todayRow = page.locator('[data-task-row="' + created[2].id + '"]');
+        await expect(todayRow).toContainText('Today');
+
+        const groupHeadings = await page.locator('#dashboard-tasks .dashboard-queue-group').allTextContents();
+        expect(groupHeadings.indexOf('Follow-ups due')).toBeGreaterThanOrEqual(0);
+        expect(groupHeadings.indexOf('Today')).toBeGreaterThanOrEqual(0);
+        expect(groupHeadings.indexOf('Follow-ups due')).toBeLessThan(groupHeadings.indexOf('Today'));
+
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        const hasOverflow = await page.evaluate(() => (
+          document.documentElement.scrollWidth > document.documentElement.clientWidth
+        ));
+        expect(hasOverflow).toBe(false);
       } finally {
         for (const task of created) {
           await cleanupTask(request, task);
