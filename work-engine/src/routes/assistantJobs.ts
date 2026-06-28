@@ -616,7 +616,7 @@ async function handlePodcastDryRun(id: string, event: LambdaEvent, client: Dynam
   const artifact = await createArtifact(client, {
     type: 'assistant-output',
     title: `${job.title} output metadata`,
-    description: 'Deterministic Podcast Assistant dry-run output metadata.',
+    description: 'Deterministic DataOps podcast assistant dry-run output metadata.',
     status: job.approvalRequired ? 'needs-review' : 'approved',
     storageProvider: 'local-dev',
     storageUri: `local-dev://assistant-jobs/${job.id}/podcast-dry-run.json`,

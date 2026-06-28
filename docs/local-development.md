@@ -130,7 +130,7 @@ trusted headers and the shared portal secret.
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
 | `lambda-functions/**` | Docs app tests. | Search-index build for search/content behavior. SAM validation for template, dependency, packaging, or Lambda runtime changes. |
 | `work-engine/**` | Unit tests, typecheck, and build. | E2E for changed operator flows, browser UI, route behavior, or end-to-end task/workflow behavior. |
-| `assistants/podcast/**` | Podcast Assistant pytest command. | `[HUMAN]` or opt-in integration checks for Telegram, Groq, live Heru, Codex, or Claude. |
+| `assistants/podcast/**` | DataOps podcast assistant module pytest command. | `[HUMAN]` or opt-in integration checks for Telegram, Groq, live Heru, Codex, or Claude. |
 | `.github/workflows/**` | Inspect changed workflow paths and commands; run the nearest local equivalent. | For deployment workflow changes, SAM validation and a clear On-Call follow-up after push. |
 | `lambda-functions/template*.yaml` or `samconfig.toml` | SAM template validation. | `sam build --config-env full-sandbox` when package/build behavior changes. Production deploy remains CI/OIDC after `main` is pushed. |
 | root `package.json` | Affected root wrapper command and underlying package-local command. | Work-engine tests/typecheck/build when wrappers target work-engine. |
@@ -192,9 +192,9 @@ npm run dev:work-engine
 The package-local commands remain canonical because CI and role-agent issue
 specs usually name them directly.
 
-### Podcast Assistant
+### DataOps Podcast Assistant Module
 
-Run safe local Podcast Assistant tests from the repo root:
+Run safe local DataOps podcast assistant module tests from the repo root:
 
 ```bash
 uv run --project assistants/podcast pytest

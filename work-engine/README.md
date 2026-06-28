@@ -1,13 +1,18 @@
-# DataTasks
+# DataOps Work Engine
 
-A unified task management app for community managers and small teams. Combines Trello-like project templates with a spreadsheet-like task list view.
+DataOps work-engine module for DataTalks.Club operations tasks, workflow
+bundles, recurring work, notifications, files, artifacts, and assistant jobs.
+
+This directory is an internal DataOps runtime surface. Operators should
+experience it through the unified DataOps operations workspace, not as a
+separate task product.
 
 ## Tech Stack
 
 - **Backend**: AWS Lambda (TypeScript/Node.js)
-- **Database**: DynamoDB
-- **Frontend**: SPA with vanilla JavaScript
-- **Deployment**: Fully serverless
+- **Database**: DynamoDB execution tables owned by the DataOps stack
+- **Frontend**: SPA with vanilla JavaScript for local/module workflows
+- **Deployment**: serverless, normally brokered by the DataOps portal
 
 ## Local Development
 
@@ -28,7 +33,8 @@ npm install
 npm run dev
 ```
 
-This starts a local HTTP server on `http://localhost:3000` with an in-process DynamoDB (dynalite). No Docker or external database needed.
+This starts a local HTTP server on `http://localhost:3000` with an in-process
+DynamoDB (dynalite). No Docker or external database is needed.
 
 ### Seed default templates
 
@@ -111,19 +117,19 @@ Compiles TypeScript to `dist/` (CommonJS) and copies `src/public/` and `src/page
 
 ```
 src/
-  db/          — DynamoDB data layer (client, setup, tasks, projects, templates, recurring)
-  routes/      — Route handlers (projects, templates, recurring, telegram, email)
-  public/      — Frontend JS (vanilla, served as static files)
-  pages/       — HTML templates
-  router.ts    — Request routing
-  handler.ts   — Lambda entry point
-  types.ts     — Shared TypeScript interfaces
-scripts/       — Dev server, seed, migration scripts
-tests/         — Unit tests (node:test)
-e2e/           — Playwright E2E tests
+  db/          - DynamoDB data layer
+  routes/      - Route handlers for tasks, templates, assistants, intake, and files
+  public/      - Frontend JS (vanilla, served as static files)
+  pages/       - HTML templates
+  router.ts    - Request routing
+  handler.ts   - Lambda entry point
+  types.ts     - Shared TypeScript interfaces
+scripts/       - Dev server, seed, migration, and export scripts
+tests/         - Unit tests (node:test)
+e2e/           - Playwright E2E tests
 ```
 
 ## Docs
 
-- [Product Specification](docs/specs.md)
-- [Development Process](docs/PROCESS.md)
+- [Imported source product specification](docs/specs.md)
+- [Imported source development process](docs/PROCESS.md)

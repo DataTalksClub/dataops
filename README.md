@@ -8,17 +8,19 @@ Version 1 focuses on operations docs and tasks:
 - task workflows, bundles, recurring work, required links, and execution state
 - AWS Lambda deployment with GitHub Actions OIDC
 
-The first deployed app uses the DTC Operations docs portal as the base Lambda
-application. DataTasks is imported under `work-engine/` for the task execution
-engine, and the podcast assistant is imported under `assistants/podcast/` for
-the podcast operations workflow.
+The deployed V1 app is the DataTalks.Club operations portal for
+`ops.dtcdev.click`, served from the `DataTalksClub/dataops` repository and the
+`dataops-v1` stack. The work engine lives under `work-engine/` as an internal
+DataOps task/workflow module, and the podcast assistant lives under
+`assistants/podcast/` as a DataOps assistant module for the podcast operations
+workflow.
 
 ## Layout
 
 - `content/` — operational documentation (SOPs, templates, references,
   playbooks, prompts) and its image assets.
-- `work-engine/` — imported DataTasks task execution system.
-- `assistants/podcast/` — imported podcast workflow assistant, process docs,
+- `work-engine/` — DataOps task/workflow execution module.
+- `assistants/podcast/` — DataOps podcast workflow assistant module, process docs,
   guest-intake template, knowledge-base builder, and tests.
 - `docs/` — repo-meta docs (this README, `STRUCTURE.md`, `sop-format*.md`,
   archived materials).

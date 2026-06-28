@@ -317,7 +317,7 @@ Fields:
 - `tags`
 - small redacted `metadata`
 
-`assistant_job_id` references an assistant job when present. Podcast Assistant local folders such as `documents/`, `inbox/`,
+`assistant_job_id` references an assistant job when present. DataOps podcast assistant local folders such as `documents/`, `inbox/`,
 and `heru_runs/` are local runtime/dev storage; attached assistant outputs must
 be represented by artifact metadata instead of committed as durable artifacts.
 

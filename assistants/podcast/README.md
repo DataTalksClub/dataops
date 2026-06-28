@@ -1,10 +1,12 @@
-# Podcast Assistant
+# DataOps Podcast Assistant Module
 
-Telegram assistant for collecting podcast prep material and generating podcast guest documents.
+DataOps assistant module for collecting podcast prep material and generating
+podcast guest documents.
 
-This directory is the canonical in-repo Podcast Assistant location for DataOps:
-`assistants/podcast/`. The old root-level `podcast-assistant/` import has been
-folded into this module.
+This directory is the canonical in-repo podcast assistant location for DataOps:
+`assistants/podcast/`. The old root-level `podcast-assistant/` import name is
+retained here only as migration history; active development uses this module
+path.
 
 This is copied from the Telegram Writing Assistant shape, but the agent execution boundary uses
 Heru instead of calling Claude directly. Set `HERU_ENGINE=codex` or `HERU_ENGINE=claude` to choose

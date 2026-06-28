@@ -2,7 +2,7 @@
 
 /**
  * Migration script: imports data from Trello board export and CSV spreadsheets
- * into the DataTasks application (persistent LevelDB via dynalite).
+ * into the DataOps work-engine module (persistent LevelDB via dynalite).
  *
  * Prerequisites:
  *   Stop the dev server first (LevelDB only allows one process at a time).
@@ -572,7 +572,7 @@ function isRecurringTask(description: string): boolean {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log('=== DataTasks Migration Script ===');
+  console.log('=== DataOps Work-Engine Migration Script ===');
   if (DRY_RUN) console.log('** DRY RUN - no data will be written **\n');
 
   // Load Trello data

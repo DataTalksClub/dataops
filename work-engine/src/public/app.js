@@ -1,17 +1,30 @@
 (function () {
   'use strict';
 
-  var TOKEN_KEY = 'datatasks_token';
-  var USER_KEY = 'datatasks_user';
+  var TOKEN_KEY = 'dataops_token';
+  var USER_KEY = 'dataops_user';
+  var LEGACY_TOKEN_KEY = 'datatasks_token';
+  var LEGACY_USER_KEY = 'datatasks_user';
 
   var app = document.getElementById('app');
   var nav = document.querySelector('nav');
 
   // ── Auth helpers ─────────────────────────────────────────────────
 
+  function getItemWithLegacyFallback(key, legacyKey) {
+    var value = localStorage.getItem(key);
+    if (value !== null) return value;
+
+    var legacyValue = localStorage.getItem(legacyKey);
+    if (legacyValue !== null) {
+      localStorage.setItem(key, legacyValue);
+    }
+    return legacyValue;
+  }
+
   function getStoredUser() {
     try {
-      var raw = localStorage.getItem(USER_KEY);
+      var raw = getItemWithLegacyFallback(USER_KEY, LEGACY_USER_KEY);
       return raw ? JSON.parse(raw) : null;
     } catch (e) {
       return null;
@@ -19,17 +32,21 @@
   }
 
   function getStoredToken() {
-    return localStorage.getItem(TOKEN_KEY);
+    return getItemWithLegacyFallback(TOKEN_KEY, LEGACY_TOKEN_KEY);
   }
 
   function setSession(token, user) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_USER_KEY);
   }
 
   function clearSession() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_USER_KEY);
     usersCache = null;
     bundlesCache = null;
   }

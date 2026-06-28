@@ -7,8 +7,8 @@
  * Use setupPageWithAuth(page) to inject a session into localStorage before navigating.
  */
 
-const TOKEN_KEY = 'datatasks_token';
-const USER_KEY = 'datatasks_user';
+const TOKEN_KEY = 'dataops_token';
+const USER_KEY = 'dataops_user';
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 

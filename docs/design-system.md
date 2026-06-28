@@ -34,8 +34,8 @@ process docs in context without switching between disconnected tools.
 This is not a generic documentation site system and not a generic admin
 dashboard system. Docs remain important, but V1 is workflow-first: daily work,
 proof, reminders, follow-ups, workflow state, and assistant artifacts are the
-primary product surface. The calmer portal direction is the baseline. Legacy
-DataTasks work-engine patterns are migration targets.
+primary product surface. The calmer portal direction is the baseline. Imported
+work-engine UI patterns are migration targets.
 
 Primary inputs:
 
@@ -73,7 +73,7 @@ Follow-up implementation issue:
    Done states require acceptance criteria and proof when the task requires a
    link, file, artifact, or review record.
 6. Assistant output is operational output.
-   Podcast Assistant and future assistant UI must reuse DataOps components for
+   DataOps podcast assistant and future assistant UI must reuse DataOps components for
    jobs, artifacts, logs, approvals, retries, and review actions. They must not
    introduce a second assistant-specific visual language.
 7. Incremental implementation.
@@ -238,7 +238,7 @@ Layer rules:
 | Canonical token | Current portal source | Current work-engine source | Migration note |
 | --- | --- | --- | --- |
 | `--do-color-bg` | `--bg` | `--bg` in polish layer, `#f5f5f5` legacy body | Alias both to canonical. |
-| `--do-color-shell` | `--sidebar` | `nav` legacy `#2c3e50` and mobile nav surface | Replace DataTasks nav with DataOps shell later. |
+| `--do-color-shell` | `--sidebar` | `nav` legacy `#2c3e50` and mobile nav surface | Align the work-engine nav with the DataOps shell after token migration. |
 | `--do-color-surface` | `--surface` | `--surface`, many `#fff` rules | Alias and remove hard-coded white over time. |
 | `--do-color-border` | `--line` | `--border`, `#ddd`, `#e0e0e0`, `#eee` | Normalize borders before component migration. |
 | `--do-color-accent` | `--accent` | `--primary`, `#3498db` | Portal accent is canonical; work-engine blue becomes alias only. |
@@ -551,7 +551,7 @@ Canonical primitives: `do-assistant-job-row`, `do-assistant-output-panel`,
 
 Usage rules:
 
-- Podcast Assistant and future assistant UI must reuse DataOps shell, panels,
+- DataOps podcast assistant and future assistant UI must reuse DataOps shell, panels,
   cards, buttons, status badges, file rows, empty states, and proof/artifact
   controls.
 - Assistant jobs are workflow-linked operational items. They should show job
@@ -613,7 +613,7 @@ Portal drift to address:
 
 Work-engine drift to address:
 
-- Brand still says `DataTasks`; V1 shared shell should say `DataOps`.
+- Work-engine brand now says `DataOps`; V1 still needs shared shell and token convergence.
 - Sticky top nav is a legacy admin pattern beside the portal sidebar shell.
 - Blue primary buttons and blue hover borders conflict with DataOps teal.
 - Card-heavy dashboards, large mobile form cards, and empty states reduce
@@ -639,10 +639,10 @@ Work-engine drift to address:
    Align task rows, workflow cards, progress, required proof, and follow-up
    controls across Operations Home and work-engine.
 6. Work-engine shell cleanup.
-   Replace DataTasks top nav and generated inline class fragments after tokens
-   and core primitives are stable.
+   Replace the imported work-engine top nav and generated inline class
+   fragments after tokens and core primitives are stable.
 7. Assistant UI reuse.
-   Build Podcast Assistant and future assistant surfaces only on shared panels,
+   Build DataOps podcast assistant and future assistant surfaces only on shared panels,
    artifacts, status badges, buttons, and empty states.
 
 ## Responsive Rules
@@ -731,7 +731,7 @@ Work-engine drift to address:
 
 - Work-engine generated inline styles in `app.js` for forms, task definitions,
   required links, and recurring controls.
-- Work-engine DataTasks top nav and route link structure.
+- Imported work-engine top nav and route link structure.
 - Clickable cards that need consistent role, tab index, and keyboard handling.
 - Mobile task route ordering so active tasks are not pushed below long filters
   and create forms.
@@ -791,7 +791,7 @@ Phase 4: Unified task and workflow execution.
 
 Phase 5: Assistant surfaces.
 
-- Build Podcast Assistant and future assistant UI with shared shell, panel,
+- Build DataOps podcast assistant and future assistant UI with shared shell, panel,
   artifact row, status badge, empty state, and review action primitives.
 - Link assistant artifacts to workflows and tasks using the same proof/evidence
   controls.

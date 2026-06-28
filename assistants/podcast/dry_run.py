@@ -1,4 +1,4 @@
-"""Deterministic Podcast Assistant dry-run boundary for DataOps job payloads."""
+"""Deterministic DataOps podcast assistant dry-run boundary for job payloads."""
 
 from __future__ import annotations
 

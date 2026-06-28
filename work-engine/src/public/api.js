@@ -1,11 +1,20 @@
 (function () {
   'use strict';
 
-  var TOKEN_KEY = 'datatasks_token';
-  var USER_KEY = 'datatasks_user';
+  var TOKEN_KEY = 'dataops_token';
+  var USER_KEY = 'dataops_user';
+  var LEGACY_TOKEN_KEY = 'datatasks_token';
+  var LEGACY_USER_KEY = 'datatasks_user';
 
   function getToken() {
-    return localStorage.getItem(TOKEN_KEY);
+    var token = localStorage.getItem(TOKEN_KEY);
+    if (token !== null) return token;
+
+    var legacyToken = localStorage.getItem(LEGACY_TOKEN_KEY);
+    if (legacyToken !== null) {
+      localStorage.setItem(TOKEN_KEY, legacyToken);
+    }
+    return legacyToken;
   }
 
   function getAuthHeaders() {
@@ -23,6 +32,8 @@
     if (response.status === 401 && !skipAuthRedirect) {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
+      localStorage.removeItem(LEGACY_USER_KEY);
       // Signal to the app to show sign-in form
       if (window._onUnauthorized) {
         window._onUnauthorized();

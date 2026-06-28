@@ -373,9 +373,9 @@ function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
         ? {
             artifactRefs: [
               {
-                artifactId: 'artifact.podcast-assistant-draft',
+                artifactId: 'artifact.dataops-podcast-draft',
                 type: 'podcast-prep-draft',
-                title: 'Podcast Assistant draft',
+                title: 'DataOps podcast assistant draft',
                 status: 'planned',
               },
             ],
@@ -400,7 +400,7 @@ function podcastProofRequirement(task: TaskDefinition): ProofRequirement {
     return { type: 'file', label: task.refId === 'create-banner-figma' ? 'Podcast banner or cover' : 'Required file', required: true };
   }
   if (task.refId === 'create-podcast-document') {
-    return { type: 'artifact', label: 'Accepted Podcast Assistant draft or podcast document link', required: true };
+    return { type: 'artifact', label: 'Accepted DataOps podcast assistant draft or podcast document link', required: true };
   }
   if (task.refId === 'recheck-video-edit') {
     return { type: 'external-status', label: 'Edited YouTube video verified', required: true };
@@ -709,8 +709,8 @@ const DEFAULT_TEMPLATES = [
       { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
       { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
       { name: 'Events (live) - podcast', url: 'https://docs.google.com/document/d/19d_kBOVQJ2p5qZCtGywzWzYeyCv5FWeHApZnEUZIYRg/edit' },
-      { name: 'Podcast Assistant README', url: 'assistants/podcast/README.md' },
-      { name: 'Podcast Assistant process', url: 'assistants/podcast/process/podcast.md' },
+      { name: 'DataOps podcast assistant README', url: 'assistants/podcast/README.md' },
+      { name: 'DataOps podcast assistant process', url: 'assistants/podcast/process/podcast.md' },
     ],
     bundleLinkDefinitions: PODCAST_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
     taskDefinitions: withPodcastTaskSemantics([
