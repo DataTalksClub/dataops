@@ -165,6 +165,21 @@ def test_github_deploy_role_can_manage_work_engine_lambda():
     assert "secretsmanager:GetRandomPassword" in template
 
 
+def test_github_deploy_role_can_manage_dataops_eventbridge_rules():
+    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "Sid: EventBridgeDataOpsRules" in template
+    assert "events:DescribeRule" in template
+    assert "events:PutRule" in template
+    assert "events:PutTargets" in template
+    assert "events:RemoveTargets" in template
+    assert "events:DeleteRule" in template
+    assert "events:ListTargetsByRule" in template
+    assert "events:TagResource" in template
+    assert "events:UntagResource" in template
+    assert "events:${FullDocsRegion}:${AWS::AccountId}:rule/${FullDocsStackName}-*" in template
+
+
 def test_active_and_legacy_oidc_templates_default_to_dataops_repo_and_stack():
     active = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
     legacy = LEGACY_DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
