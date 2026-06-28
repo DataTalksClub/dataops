@@ -17,6 +17,12 @@ describe('Assistant job UI assets', () => {
     assert.ok(api.includes('/api/assistant-jobs'), 'client API should call assistant job routes');
     assert.ok(app.includes('#/assistants'), 'router should include Assistants route');
     assert.ok(app.includes('renderAssistants'), 'app should render assistant queue view');
+    assert.ok(app.includes('DataOps Assistant'), 'assistant UI should use DataOps Assistant as the product name');
+    assert.ok(app.includes('Ask DataOps Assistant'), 'contextual assistant actions should use the DataOps Assistant label');
+    assert.ok(app.includes('Assistant skill'), 'assistant request forms should describe podcast as a skill/type');
+    assert.ok(app.includes("assistantType: 'podcast'"), 'podcast should remain the stable assistant type');
+    assert.ok(!app.includes('Ask podcast assistant'), 'generic assistant actions should not be branded as Podcast Assistant');
+    assert.ok(!app.includes('Request podcast help from workflow context'), 'assistant queue should not present podcast as the whole assistant product');
     assert.ok(app.includes('data-request-assistant-task'), 'task surfaces should request contextual assistant help');
     assert.ok(app.includes('showPodcastAssistantRequest'), 'contextual assistant requests should open a form before job creation');
     assert.ok(app.includes('Input URLs or artifact links'), 'request form should accept input references');

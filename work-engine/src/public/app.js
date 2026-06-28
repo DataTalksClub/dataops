@@ -648,7 +648,7 @@
 
   function renderPodcastAssistantButton(task, bundle) {
     if (!supportsPodcastAssistant(task, bundle)) return '';
-    return '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(task.id) + '" data-request-assistant-bundle="' + escapeHtml(task.bundleId || '') + '">Podcast help</button>';
+    return '<button class="assistant-mini-btn" data-request-assistant-task="' + escapeHtml(task.id) + '" data-request-assistant-bundle="' + escapeHtml(task.bundleId || '') + '">Ask DataOps Assistant</button>';
   }
 
   function validationArray(task, field) {
@@ -848,7 +848,7 @@
       showError('Open a workflow or task before requesting assistant help.');
       return;
     }
-    var title = 'Podcast assistant: ' + (context.title || context.description || 'workflow support');
+    var title = 'DataOps Assistant: podcast - ' + (context.title || context.description || 'workflow support');
     var inputRefs = [];
     if (context.taskId) inputRefs.push({ type: 'task', id: context.taskId });
     if (context.bundleId) inputRefs.push({ type: 'bundle', id: context.bundleId });
@@ -874,7 +874,7 @@
     }).then(function (data) {
       return api.assistantJobs.submit(data.job.id);
     }).then(function () {
-      showSuccess('Podcast assistant job queued.');
+      showSuccess('DataOps Assistant podcast job queued.');
       if (onDone) onDone();
     }).catch(function (err) {
       showError('Failed to request assistant help: ' + err.message);
@@ -908,20 +908,20 @@
     overlay.innerHTML =
       '<div class="assistant-request-dialog">' +
         '<div class="assistant-request-header">' +
-          '<div><h3 id="assistant-request-title">Ask podcast assistant</h3>' +
-          '<div class="assistant-request-context">' + escapeHtml(contextLines.join(' | ') || 'Podcast workflow context') + '</div></div>' +
+          '<div><h3 id="assistant-request-title">Ask DataOps Assistant</h3>' +
+          '<div class="assistant-request-context">' + escapeHtml(contextLines.join(' | ') || 'Podcast skill context') + '</div></div>' +
           '<button type="button" class="assistant-action-btn" data-assistant-request-close>Close</button>' +
         '</div>' +
         '<div class="assistant-request-grid">' +
-          '<label>Assistant type<input type="text" id="assistant-request-type" value="podcast" disabled /></label>' +
-          '<label>Title<input type="text" id="assistant-request-job-title" value="' + escapeHtml(context.title || context.taskTitle || context.bundleTitle || 'Podcast prep assistant') + '" /></label>' +
+          '<label>Assistant skill<input type="text" id="assistant-request-type" value="podcast" disabled /></label>' +
+          '<label>Title<input type="text" id="assistant-request-job-title" value="' + escapeHtml(context.title || context.taskTitle || context.bundleTitle || 'DataOps Assistant podcast prep') + '" /></label>' +
         '</div>' +
         '<label class="assistant-request-field">Input URLs or artifact links<textarea id="assistant-request-urls" rows="3" placeholder="One source URL, artifact link, or process reference per line"></textarea></label>' +
         '<label class="assistant-request-field">Source notes<textarea id="assistant-request-notes" rows="4" placeholder="Guest, topic, outline, missing details, or source-message notes"></textarea></label>' +
         '<label class="assistant-request-checkbox"><input type="checkbox" id="assistant-request-approval" checked /> Require operator approval before proof is accepted</label>' +
         '<div class="assistant-request-actions">' +
           '<button type="button" class="assistant-action-btn" data-assistant-request-close>Cancel</button>' +
-          '<button type="button" class="btn-primary" id="assistant-request-submit">Queue podcast job</button>' +
+          '<button type="button" class="btn-primary" id="assistant-request-submit">Queue DataOps Assistant job</button>' +
         '</div>' +
       '</div>';
 
@@ -945,11 +945,11 @@
       var urls = document.getElementById('assistant-request-urls').value.split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
       var notes = document.getElementById('assistant-request-notes').value.trim();
       var approval = document.getElementById('assistant-request-approval').checked;
-      setButtonBusy(btn, true, 'Queue podcast job', 'Queueing...');
+      setButtonBusy(btn, true, 'Queue DataOps Assistant job', 'Queueing...');
       var request = requestPodcastAssistantForContext({
         taskId: context.taskId,
         bundleId: context.bundleId,
-        title: title || context.title || 'Podcast prep assistant',
+        title: title || context.title || 'DataOps Assistant podcast prep',
         instructionDocId: context.instructionDocId,
         urls: urls,
         sourceNotes: notes,
@@ -960,7 +960,7 @@
       });
       if (request && request.catch) {
         request.catch(function () {
-          setButtonBusy(btn, false, 'Queue podcast job');
+          setButtonBusy(btn, false, 'Queue DataOps Assistant job');
         });
       }
     });
@@ -2406,7 +2406,7 @@
         var taskId = btn.getAttribute('data-request-assistant-task');
         var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
         var row = btn.closest('[data-task-row]');
-        var title = row ? row.querySelector('.task-description').textContent : 'Podcast assistant';
+        var title = row ? row.querySelector('.task-description').textContent : 'DataOps Assistant';
         showPodcastAssistantRequest({
           taskId: taskId,
           bundleId: bundleId,
@@ -3230,7 +3230,7 @@
           var taskId = btn.getAttribute('data-request-assistant-task');
           var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
           var row = btn.closest('[data-task-row]');
-          var title = row ? row.querySelector('.task-description').textContent : 'Podcast assistant';
+          var title = row ? row.querySelector('.task-description').textContent : 'DataOps Assistant';
           showPodcastAssistantRequest({
             taskId: taskId,
             bundleId: bundleId,
@@ -4140,13 +4140,13 @@
         var askWorkflowBtn = document.createElement('button');
         askWorkflowBtn.className = 'btn-primary assistant-workflow-request';
         askWorkflowBtn.type = 'button';
-        askWorkflowBtn.textContent = 'Ask podcast assistant';
+        askWorkflowBtn.textContent = 'Ask DataOps Assistant';
         askWorkflowBtn.addEventListener('click', function () {
           showPodcastAssistantRequest({
             bundleId: bundle.id,
             bundleTitle: bundle.title,
             anchorDate: bundle.anchorDate,
-            title: bundle.title || 'Podcast workflow support',
+            title: bundle.title || 'DataOps Assistant podcast workflow support',
           }, function () {
             loadBundleDetail(bundleId);
           });
@@ -4507,7 +4507,7 @@
         var requestAssistantBtn = document.createElement('button');
         requestAssistantBtn.className = 'assistant-mini-btn';
         requestAssistantBtn.type = 'button';
-        requestAssistantBtn.textContent = 'Podcast help';
+        requestAssistantBtn.textContent = 'Ask DataOps Assistant';
         requestAssistantBtn.addEventListener('click', function () {
           showPodcastAssistantRequest({
             taskId: t.id,
@@ -4516,7 +4516,7 @@
             taskTitle: t.description,
             anchorDate: bundle.anchorDate,
             instructionDocId: t.instructionDocId,
-            title: t.description || bundle.title || 'Podcast assistant',
+            title: t.description || bundle.title || 'DataOps Assistant podcast help',
           }, function () {
             loadBundleDetail(bundleId);
           });
@@ -4856,18 +4856,18 @@
     var header = document.createElement('div');
     header.className = 'page-header';
     header.innerHTML =
-      '<div><h2>Assistant jobs</h2><div class="page-subtitle">Workflow support jobs that are running, failed, or need review</div></div>';
+      '<div><h2>DataOps Assistant</h2><div class="page-subtitle">Workflow support jobs that are running, failed, or need review</div></div>';
     app.appendChild(header);
 
     var createPanel = document.createElement('div');
     createPanel.className = 'assistant-panel';
     createPanel.innerHTML =
-      '<h3>Request podcast help from workflow context</h3>' +
+      '<h3>Request DataOps Assistant help</h3>' +
       '<div class="assistant-create-grid">' +
         '<div class="form-group"><label for="assistant-bundle-select">Workflow</label><select id="assistant-bundle-select"><option value="">Select workflow</option></select></div>' +
         '<div class="form-group"><label for="assistant-task-select">Task</label><select id="assistant-task-select"><option value="">Workflow-level job</option></select></div>' +
-        '<div class="form-group"><label for="assistant-title-input">Title</label><input type="text" id="assistant-title-input" placeholder="Podcast prep assistant" /></div>' +
-        '<button class="btn-primary" id="assistant-create-btn">Ask assistant</button>' +
+        '<div class="form-group"><label for="assistant-title-input">Title</label><input type="text" id="assistant-title-input" placeholder="DataOps Assistant podcast prep" /></div>' +
+        '<button class="btn-primary" id="assistant-create-btn">Ask DataOps Assistant</button>' +
       '</div>';
     app.appendChild(createPanel);
 
@@ -5009,7 +5009,7 @@
         taskTitle: task.description,
         anchorDate: bundle.anchorDate,
         instructionDocId: task.instructionDocId,
-        title: title || 'Podcast prep assistant',
+        title: title || 'DataOps Assistant podcast prep',
       }, reloadQueue);
     });
 
@@ -5230,9 +5230,9 @@
             '<label class="form-group wide">Follow-up note<input type="text" id="intake-follow-up-note" placeholder="Short operational note" /></label>' +
             '<button class="intake-action-btn" id="intake-follow-up-sent-btn">Follow-up sent</button>' +
             '<button class="intake-action-btn" id="intake-response-btn">Response received</button>' +
-            '<label class="form-group">Assistant type<input type="text" id="intake-assistant-type" value="' + escapeHtml((item.assistantReadiness && item.assistantReadiness.assistantType) || 'podcast') + '" /></label>' +
+            '<label class="form-group">Assistant skill<input type="text" id="intake-assistant-type" value="' + escapeHtml((item.assistantReadiness && item.assistantReadiness.assistantType) || 'podcast') + '" /></label>' +
             '<label class="form-group">Create job<select id="intake-create-job"><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label>' +
-            '<button class="intake-action-btn" id="intake-assistant-btn">Assistant ready</button>' +
+            '<button class="intake-action-btn" id="intake-assistant-btn">Prepare DataOps Assistant</button>' +
             '<button class="intake-action-btn" id="intake-ignore-btn">Ignore</button>' +
             '<button class="intake-action-btn" id="intake-archive-btn">Archive</button>' +
           '</div>' +
