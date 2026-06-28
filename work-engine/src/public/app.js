@@ -1119,6 +1119,7 @@
 
   var routes = {
     '#/': renderDashboard,
+    '#/inbox': renderInbox,
     '#/tasks': renderTasks,
     '#/bundles': renderBundles,
     '#/assistants': renderAssistants,
@@ -1334,6 +1335,12 @@
   function renderDashboard() {
     clearApp();
 
+    var intakeRisk = document.createElement('div');
+    intakeRisk.id = 'dashboard-intake-risk';
+    intakeRisk.innerHTML = '<div class="intake-dashboard-risk"><a href="#/inbox"><span>Untriaged intake</span><strong>...</strong></a><a href="#/inbox"><span>Blocked intake</span><strong>...</strong></a><a href="#/inbox"><span>Assistant-ready</span><strong>...</strong></a></div>';
+    app.appendChild(intakeRisk);
+    loadDashboardIntakeRisk();
+
     // Two-column layout
     var layout = document.createElement('div');
     layout.className = 'dashboard-layout';
@@ -1441,6 +1448,28 @@
     // Load data
     loadDashboardBundles();
     loadDashboardTasks();
+  }
+
+  function loadDashboardIntakeRisk() {
+    var container = document.getElementById('dashboard-intake-risk');
+    if (!container || !window.api || !api.intake) return;
+    Promise.all([
+      api.intake.list({ status: 'new' }),
+      api.intake.list({ status: 'blocked' }),
+      api.intake.list({ assistantReadinessStatus: 'ready' }),
+    ]).then(function (results) {
+      var untriaged = (results[0].items || []).length;
+      var blocked = (results[1].items || []).length;
+      var ready = (results[2].items || []).length;
+      container.innerHTML =
+        '<div class="intake-dashboard-risk" data-testid="dashboard-intake-risk">' +
+          '<a href="#/inbox"><span>Untriaged intake</span><strong>' + untriaged + '</strong></a>' +
+          '<a href="#/inbox"><span>Blocked intake</span><strong>' + blocked + '</strong></a>' +
+          '<a href="#/inbox"><span>Assistant-ready</span><strong>' + ready + '</strong></a>' +
+        '</div>';
+    }).catch(function () {
+      container.innerHTML = '';
+    });
   }
 
   // ── Notifications Page ─────────────────────────────────────────
@@ -4640,6 +4669,289 @@
     });
 
     reloadQueue();
+  }
+
+  // ── Inbox View ─────────────────────────────────────────────────
+
+  var intakeState = {
+    filter: 'actionable',
+    selectedId: null,
+    bundleMap: {},
+  };
+
+  function intakeStatusHtml(item) {
+    var readiness = item && item.assistantReadiness ? item.assistantReadiness.status : '';
+    var cls = readiness === 'ready' ? 'ready' : String(item.status || 'new');
+    var label = readiness === 'ready' ? 'assistant ready' : String(item.status || 'new');
+    return '<span class="intake-status ' + escapeHtml(cls) + '">' + escapeHtml(label.replace(/-/g, ' ')) + '</span>';
+  }
+
+  function intakeMeta(item) {
+    var parts = [];
+    if (item.source) parts.push(item.source);
+    if (item.priority) parts.push(item.priority);
+    if (item.dataClass) parts.push(item.dataClass);
+    if (item.sourceReceivedAt) parts.push(formatDateLabel(item.sourceReceivedAt));
+    return parts.join(' | ');
+  }
+
+  function intakeMatchesFilter(item, filter) {
+    if (filter === 'new') return item.status === 'new';
+    if (filter === 'blocked') return item.status === 'blocked';
+    if (filter === 'assistant-ready') return item.assistantReadiness && item.assistantReadiness.status === 'ready';
+    if (filter === 'resolved') return ['attached', 'converted', 'ignored', 'duplicate', 'archived'].indexOf(item.status) !== -1;
+    if (filter === 'all') return true;
+    return item.status === 'new' || item.status === 'blocked' || (item.assistantReadiness && item.assistantReadiness.status === 'ready');
+  }
+
+  function renderIntakeRows(container, items, onSelect) {
+    if (!items.length) {
+      container.innerHTML = '<div class="intake-panel"><div class="empty-state">No intake items match this view.</div></div>';
+      return;
+    }
+    var html = '<div class="intake-panel" data-testid="inbox-queue"><h3>Inbox queue</h3>';
+    items.forEach(function (item) {
+      html += '<div class="intake-row" data-intake-row="' + escapeHtml(item.id) + '">' +
+        '<div>' +
+          '<div class="intake-row-title">' + escapeHtml(item.title || 'Untitled intake') + '</div>' +
+          '<div class="intake-row-meta">' + escapeHtml(intakeMeta(item)) + '</div>' +
+          '<div class="intake-next">' + escapeHtml((item.summary || '').slice(0, 180)) + '</div>' +
+        '</div>' +
+        '<div>' + intakeStatusHtml(item) + '<div><button class="intake-action-btn" data-intake-select="' + escapeHtml(item.id) + '">Open</button></div></div>' +
+      '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    container.querySelectorAll('[data-intake-select]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        intakeState.selectedId = btn.getAttribute('data-intake-select');
+        onSelect(intakeState.selectedId);
+      });
+    });
+  }
+
+  function refPills(items, prefix) {
+    if (!items || !items.length) return '<span class="intake-next">None</span>';
+    return '<div class="intake-ref-list">' + items.map(function (item) {
+      return '<span class="intake-ref-pill">' + escapeHtml(prefix ? prefix + ' ' + item : item) + '</span>';
+    }).join('') + '</div>';
+  }
+
+  function refGroup(label, items, prefix) {
+    return '<div class="intake-next"><strong>' + escapeHtml(label) + ':</strong> ' + refPills(items, prefix) + '</div>';
+  }
+
+  function renderIntakeDetail(container, item, options) {
+    if (!item) {
+      container.innerHTML = '<div class="intake-panel"><h3>Intake detail</h3><div class="empty-state">Select an intake item to triage it into workflow context.</div></div>';
+      return;
+    }
+    var bundleOptions = '<option value="">No workflow</option>' + Object.keys(intakeState.bundleMap).map(function (bundleId) {
+      var bundle = intakeState.bundleMap[bundleId];
+      return '<option value="' + escapeHtml(bundleId) + '">' + escapeHtml(bundle.title || bundleId) + '</option>';
+    }).join('');
+    var linkLabels = (item.linkRefs || []).map(function (link) { return link.title || link.normalizedUrl || link.url; });
+    var fileLabels = (item.fileRefs || []).map(function (file) { return file.title || file.filename || file.fileId || 'file ref'; });
+    var artifactLabels = (item.artifactRefs || []).map(function (artifact) { return artifact.title || artifact.artifactId; });
+    var history = (item.history || []).slice(-5).reverse().map(function (event) {
+      return '<div class="assistant-event-row"><strong>' + escapeHtml(event.action || 'event') + '</strong><span>' + escapeHtml(event.createdAt || '') + '</span>' + (event.reason ? '<em>' + escapeHtml(event.reason) + '</em>' : '') + '</div>';
+    }).join('');
+
+    container.innerHTML =
+      '<div class="intake-panel" data-testid="inbox-detail">' +
+        '<div class="assistant-detail-header">' +
+          '<div><h3>' + escapeHtml(item.title || 'Untitled intake') + '</h3><div class="intake-detail-meta">' + escapeHtml(intakeMeta(item)) + '</div></div>' +
+          '<div>' + intakeStatusHtml(item) + '</div>' +
+        '</div>' +
+        '<div class="intake-detail-section"><h4>Raw intake excerpt</h4><p>' + escapeHtml(item.summary || '') + '</p><div class="intake-next">Raw bodies and binaries stay behind storage refs; this item is not task proof.</div></div>' +
+        '<div class="intake-detail-section"><h4>Relationships</h4>' +
+          refGroup('Tasks', item.taskIds || [], 'task') + refGroup('Workflows', item.bundleIds || [], 'workflow') + refGroup('Assistant jobs', item.assistantJobIds || [], 'assistant') +
+        '</div>' +
+        '<div class="intake-detail-section"><h4>Links, files, and artifacts</h4>' +
+          refGroup('Links', linkLabels, '') + refGroup('Files', fileLabels, '') + refGroup('Artifacts', artifactLabels, '') +
+        '</div>' +
+        '<div class="intake-detail-section">' +
+          '<h4>Triage actions</h4>' +
+          '<div class="intake-action-grid">' +
+            '<label class="form-group">Task ID<input type="text" id="intake-task-id" placeholder="Existing task id" /></label>' +
+            '<label class="form-group">Workflow<select id="intake-bundle-id">' + bundleOptions + '</select></label>' +
+            '<button class="intake-action-btn" id="intake-attach-btn">Attach</button>' +
+            '<label class="form-group">Task date<input type="date" id="intake-task-date" value="' + todayString() + '" /></label>' +
+            '<label class="form-group">Assignee<input type="text" id="intake-assignee-id" placeholder="User id" value="' + escapeHtml(item.assigneeId || '') + '" /></label>' +
+            '<button class="btn-primary" id="intake-convert-btn">Convert to task</button>' +
+            '<label class="form-group">Duplicate of<input type="text" id="intake-duplicate-id" placeholder="Intake item id" /></label>' +
+            '<label class="form-group">Reason<input type="text" id="intake-reason" placeholder="Required for resolved states" /></label>' +
+            '<button class="intake-action-btn" id="intake-duplicate-btn">Duplicate</button>' +
+            '<label class="form-group">Waiting for<input type="text" id="intake-waiting-for" placeholder="Person or system" /></label>' +
+            '<label class="form-group">Follow up<input type="date" id="intake-follow-up-at" /></label>' +
+            '<button class="intake-action-btn" id="intake-block-btn">Block</button>' +
+            '<label class="form-group">Assistant type<input type="text" id="intake-assistant-type" value="' + escapeHtml((item.assistantReadiness && item.assistantReadiness.assistantType) || 'podcast') + '" /></label>' +
+            '<label class="form-group">Create job<select id="intake-create-job"><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label>' +
+            '<button class="intake-action-btn" id="intake-assistant-btn">Assistant ready</button>' +
+            '<button class="intake-action-btn" id="intake-ignore-btn">Ignore</button>' +
+            '<button class="intake-action-btn" id="intake-archive-btn">Archive</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="intake-detail-section"><h4>History</h4><div class="assistant-timeline">' + (history || '<div class="intake-next">No triage history recorded.</div>') + '</div></div>' +
+      '</div>';
+
+    function reason() {
+      return document.getElementById('intake-reason').value.trim();
+    }
+    function reloadDone(message) {
+      showSuccess(message);
+      if (options && options.onDone) options.onDone();
+    }
+    document.getElementById('intake-attach-btn').addEventListener('click', function () {
+      var taskId = document.getElementById('intake-task-id').value.trim();
+      var bundleId = document.getElementById('intake-bundle-id').value;
+      api.intake.attach(item.id, { taskIds: taskId ? [taskId] : [], bundleIds: bundleId ? [bundleId] : [] }).then(function () {
+        reloadDone('Intake attached to workflow context.');
+      }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-convert-btn').addEventListener('click', function () {
+      api.intake.convertTask(item.id, {
+        date: document.getElementById('intake-task-date').value,
+        assigneeId: document.getElementById('intake-assignee-id').value.trim() || undefined,
+        bundleId: document.getElementById('intake-bundle-id').value || undefined,
+      }).then(function (result) {
+        reloadDone('Task created from intake.');
+        if (result && result.task && result.task.bundleId) location.hash = '#/bundles';
+      }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-duplicate-btn').addEventListener('click', function () {
+      api.intake.markDuplicate(item.id, {
+        duplicateOfIntakeItemId: document.getElementById('intake-duplicate-id').value.trim(),
+        reason: reason(),
+      }).then(function () { reloadDone('Duplicate marked.'); }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-block-btn').addEventListener('click', function () {
+      api.intake.block(item.id, {
+        reason: reason(),
+        waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
+        followUpAt: document.getElementById('intake-follow-up-at').value || undefined,
+      }).then(function () { reloadDone('Intake blocked for follow-up.'); }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-assistant-btn').addEventListener('click', function () {
+      api.intake.prepareAssistant(item.id, {
+        assistantType: document.getElementById('intake-assistant-type').value.trim(),
+        createJob: document.getElementById('intake-create-job').value === 'true',
+      }).then(function () { reloadDone('Assistant input refs prepared.'); }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-ignore-btn').addEventListener('click', function () {
+      api.intake.ignore(item.id, reason()).then(function () { reloadDone('Intake ignored.'); }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-archive-btn').addEventListener('click', function () {
+      api.intake.archive(item.id, reason()).then(function () { reloadDone('Intake archived.'); }).catch(function (err) { showError(err.message); });
+    });
+  }
+
+  function renderInbox() {
+    clearApp();
+    app.classList.remove('dashboard-wide');
+
+    var header = document.createElement('div');
+    header.className = 'page-header';
+    header.innerHTML = '<div><h2>Inbox</h2><div class="page-subtitle">Capture and triage raw operational inputs into normal workflow work</div></div>';
+    app.appendChild(header);
+
+    var createPanel = document.createElement('div');
+    createPanel.className = 'intake-panel';
+    createPanel.innerHTML =
+      '<h3>Manual intake</h3>' +
+      '<div class="intake-create-grid" data-testid="manual-intake-form">' +
+        '<label class="form-group wide">Note<textarea id="intake-create-note" placeholder="Paste the request, context, and safe links"></textarea></label>' +
+        '<label class="form-group">Title<input type="text" id="intake-create-title" placeholder="Short subject" /></label>' +
+        '<label class="form-group">Data class<select id="intake-create-data-class"><option>internal</option><option>public</option><option>private</option><option>sensitive</option></select></label>' +
+        '<label class="form-group">Tags<input type="text" id="intake-create-tags" placeholder="comma,separated" /></label>' +
+        '<button class="btn-primary" id="intake-create-btn">Capture intake</button>' +
+      '</div>';
+    app.appendChild(createPanel);
+
+    var filters = document.createElement('div');
+    filters.className = 'intake-filter-bar';
+    filters.innerHTML =
+      '<button type="button" data-intake-filter="actionable">Actionable</button>' +
+      '<button type="button" data-intake-filter="new">New</button>' +
+      '<button type="button" data-intake-filter="blocked">Blocked</button>' +
+      '<button type="button" data-intake-filter="assistant-ready">Assistant-ready</button>' +
+      '<button type="button" data-intake-filter="resolved">Resolved</button>' +
+      '<button type="button" data-intake-filter="all">All</button>';
+    app.appendChild(filters);
+
+    var layout = document.createElement('div');
+    layout.className = 'intake-layout';
+    var queue = document.createElement('div');
+    queue.id = 'inbox-queue';
+    queue.innerHTML = '<div class="intake-panel"><p>Loading...</p></div>';
+    var detail = document.createElement('div');
+    detail.id = 'inbox-detail';
+    layout.appendChild(queue);
+    layout.appendChild(detail);
+    app.appendChild(layout);
+
+    function renderFilterButtons() {
+      filters.querySelectorAll('[data-intake-filter]').forEach(function (btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-intake-filter') === intakeState.filter);
+      });
+    }
+
+    function reloadInbox() {
+      renderFilterButtons();
+      Promise.all([
+        api.intake.list(),
+        api.bundles.list(),
+      ]).then(function (results) {
+        var items = results[0].items || [];
+        var bundles = results[1].bundles || [];
+        intakeState.bundleMap = {};
+        bundles.forEach(function (bundle) { intakeState.bundleMap[bundle.id] = bundle; });
+        var filtered = items.filter(function (item) { return intakeMatchesFilter(item, intakeState.filter); });
+        renderIntakeRows(queue, filtered, function (id) {
+          var selected = items.find(function (item) { return item.id === id; });
+          renderIntakeDetail(detail, selected, { onDone: reloadInbox });
+        });
+        var selected = items.find(function (item) { return item.id === intakeState.selectedId; }) || filtered[0] || null;
+        intakeState.selectedId = selected ? selected.id : null;
+        renderIntakeDetail(detail, selected, { onDone: reloadInbox });
+      }).catch(function (err) {
+        queue.innerHTML = '<div class="intake-panel"><div class="error-banner">Failed to load inbox: ' + escapeHtml(err.message) + '</div></div>';
+      });
+    }
+
+    document.getElementById('intake-create-btn').addEventListener('click', function () {
+      var note = document.getElementById('intake-create-note').value.trim();
+      var title = document.getElementById('intake-create-title').value.trim();
+      var tags = document.getElementById('intake-create-tags').value.split(',').map(function (tag) { return tag.trim(); }).filter(Boolean);
+      if (!note && !title) {
+        showError('Add a note or title before capturing intake.');
+        return;
+      }
+      api.intake.create({
+        source: 'manual',
+        title: title || note.split(/\r?\n/)[0],
+        note: note || title,
+        dataClass: document.getElementById('intake-create-data-class').value,
+        tags: tags,
+      }).then(function () {
+        document.getElementById('intake-create-note').value = '';
+        document.getElementById('intake-create-title').value = '';
+        document.getElementById('intake-create-tags').value = '';
+        showSuccess('Manual intake captured.');
+        intakeState.filter = 'actionable';
+        reloadInbox();
+      }).catch(function (err) { showError(err.message); });
+    });
+
+    filters.querySelectorAll('[data-intake-filter]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        intakeState.filter = btn.getAttribute('data-intake-filter') || 'actionable';
+        intakeState.selectedId = null;
+        reloadInbox();
+      });
+    });
+
+    reloadInbox();
   }
 
   // ── Templates View ──────────────────────────────────────────────

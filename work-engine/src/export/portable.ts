@@ -10,6 +10,7 @@ import {
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
   TABLE_FILES,
+  TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_TASKS,
   TABLE_TEMPLATES,
@@ -63,6 +64,7 @@ type ExportEntityName =
   | 'artifacts'
   | 'assistant_jobs'
   | 'audit_events'
+  | 'intake_items'
   | 'notifications';
 
 const SCHEMA_VERSION = 'dataops.execution.v1';
@@ -96,8 +98,13 @@ const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 's
 const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
 const VALID_ASSISTANT_JOB_STATUSES = new Set(['draft', 'queued', 'running', 'waiting_approval', 'approved', 'rejected', 'retrying', 'succeeded', 'failed', 'canceled']);
 const VALID_ASSISTANT_EVENT_ACTIONS = new Set(['created', 'queued', 'started', 'log-appended', 'artifact-attached', 'approval-requested', 'approved', 'rejected', 'retry-requested', 'failed', 'canceled', 'succeeded']);
+const VALID_INTAKE_SOURCES = new Set(['telegram', 'email', 'manual', 'file', 'link', 'import', 'assistant', 'unknown']);
+const VALID_INTAKE_STATUSES = new Set(['new', 'triaged', 'attached', 'converted', 'ignored', 'duplicate', 'blocked', 'archived']);
+const VALID_INTAKE_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+const VALID_INTAKE_DATA_CLASSES = new Set(['public', 'internal', 'private', 'sensitive']);
+const VALID_INTAKE_ASSISTANT_STATUSES = new Set(['not-applicable', 'candidate', 'ready', 'submitted', 'blocked']);
 const SECRET_EXPORT_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
-const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=)/i;
+const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=|password=|secret=|credential=|api[_-]?key=)/i;
 
 const ENTITY_SPECS: EntitySpec[] = [
   {
@@ -162,6 +169,13 @@ const ENTITY_SPECS: EntitySpec[] = [
     tableName: TABLE_AUDIT_EVENTS,
     prefix: 'AUDIT_EVENT#',
     map: mapAuditEvent,
+  },
+  {
+    name: 'intake_items',
+    filename: 'intake_items.jsonl',
+    tableName: TABLE_INTAKE,
+    prefix: 'INTAKE#',
+    map: mapIntakeItem,
   },
   {
     name: 'notifications',
@@ -250,6 +264,7 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     stage_on_complete: optionalString(item.stageOnComplete),
     artifact_refs: jsonArray(item.artifactRefs),
     assistant_job_refs: jsonArray(item.assistantJobRefs),
+    intake_refs: jsonArray(item.intakeRefs),
     audit_event_refs: jsonArray(item.auditEventRefs),
     tags: stringArray(item.tags),
     completed_by: optionalString(item.completedBy),
@@ -273,6 +288,7 @@ function mapBundle(item: Record<string, unknown>): JsonRecord {
     tags: stringArray(item.tags),
     artifact_refs: jsonArray(item.artifactRefs),
     assistant_job_refs: jsonArray(item.assistantJobRefs),
+    intake_refs: jsonArray(item.intakeRefs),
     audit_event_refs: jsonArray(item.auditEventRefs),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
@@ -394,6 +410,49 @@ function mapAuditEvent(item: Record<string, unknown>): JsonRecord {
     summary: optionalString(item.summary),
     metadata: optionalJsonStringOrObject(item.metadata),
     created_at: optionalString(item.createdAt),
+  });
+}
+
+function mapIntakeItem(item: Record<string, unknown>): JsonRecord {
+  return stripEmpty({
+    intake_item_id: optionalString(item.id),
+    source: optionalString(item.source),
+    source_message_id: optionalString(item.sourceMessageId),
+    source_thread_id: optionalString(item.sourceThreadId),
+    source_received_at: optionalString(item.sourceReceivedAt),
+    created_at: optionalString(item.createdAt),
+    updated_at: optionalString(item.updatedAt),
+    triaged_at: optionalString(item.triagedAt),
+    archived_at: optionalString(item.archivedAt),
+    created_by: optionalString(item.createdBy),
+    triaged_by: optionalString(item.triagedBy),
+    owner_id: optionalString(item.ownerId),
+    assignee_id: optionalString(item.assigneeId),
+    status: optionalString(item.status),
+    title: optionalString(item.title),
+    summary: optionalString(item.summary),
+    body_ref: optionalString(item.bodyRef),
+    source_actor: optionalJsonStringOrObject(item.sourceActor),
+    received_channels: stringArray(item.receivedChannels),
+    link_refs: jsonArray(item.linkRefs),
+    file_refs: jsonArray(item.fileRefs),
+    artifact_refs: jsonArray(item.artifactRefs),
+    task_ids: stringArray(item.taskIds),
+    bundle_ids: stringArray(item.bundleIds),
+    assistant_job_ids: stringArray(item.assistantJobIds),
+    assistant_readiness: optionalJsonStringOrObject(item.assistantReadiness),
+    duplicate_of_intake_item_id: optionalString(item.duplicateOfIntakeItemId),
+    related_intake_item_ids: stringArray(item.relatedIntakeItemIds),
+    tags: stringArray(item.tags),
+    priority: optionalString(item.priority),
+    data_class: optionalString(item.dataClass),
+    metadata: optionalJsonStringOrObject(item.metadata),
+    resolution_reason: optionalString(item.resolutionReason),
+    blocked_reason: optionalString(item.blockedReason),
+    waiting_for: optionalString(item.waitingFor),
+    follow_up_at: optionalString(item.followUpAt),
+    last_follow_up_at: optionalString(item.lastFollowUpAt),
+    history: jsonArray(item.history),
   });
 }
 
@@ -1032,6 +1091,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   const artifactIds = collectIds(recordsByEntity.artifacts || [], 'artifact_id', 'artifacts', errors);
   const assistantJobIds = collectIds(recordsByEntity.assistant_jobs || [], 'assistant_job_id', 'assistant_jobs', errors);
   collectIds(recordsByEntity.audit_events || [], 'audit_event_id', 'audit_events', errors);
+  const intakeItemIds = collectIds(recordsByEntity.intake_items || [], 'intake_item_id', 'intake_items', errors);
   collectIds(recordsByEntity.notifications || [], 'notification_id', 'notifications', errors);
   const taskFileIds = new Set(
     (recordsByEntity.files || [])
@@ -1081,6 +1141,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalStringField(task, 'external_status', errors, context);
     optionalRefArrayField(task, 'artifact_refs', 'artifactId', errors, context);
     optionalRefArrayField(task, 'assistant_job_refs', 'assistantJobId', errors, context);
+    optionalRefArrayField(task, 'intake_refs', 'intakeItemId', errors, context);
     optionalRefArrayField(task, 'audit_event_refs', 'auditEventId', errors, context);
     optionalTaskHistoryField(task, userIds, errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
@@ -1095,6 +1156,13 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
         }
       });
     }
+    if (Array.isArray(task.intake_refs)) {
+      task.intake_refs.forEach((ref, refIndex) => {
+        if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
+          optionalReference(ref as JsonRecord, 'intakeItemId', intakeItemIds, errors, `${context}.intake_refs[${refIndex}]`);
+        }
+      });
+    }
     validateCompletedTaskProof(task, proofRequirement, taskFileIds, approvedArtifactTaskIds, approvedArtifactBundleIds, approvedArtifactIds, errors, context);
   }
 
@@ -1106,11 +1174,19 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(bundle, 'template_id', templateIds, errors, context);
     optionalRefArrayField(bundle, 'artifact_refs', 'artifactId', errors, context);
     optionalRefArrayField(bundle, 'assistant_job_refs', 'assistantJobId', errors, context);
+    optionalRefArrayField(bundle, 'intake_refs', 'intakeItemId', errors, context);
     optionalRefArrayField(bundle, 'audit_event_refs', 'auditEventId', errors, context);
     if (Array.isArray(bundle.assistant_job_refs)) {
       bundle.assistant_job_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
           optionalReference(ref as JsonRecord, 'assistantJobId', assistantJobIds, errors, `${context}.assistant_job_refs[${refIndex}]`);
+        }
+      });
+    }
+    if (Array.isArray(bundle.intake_refs)) {
+      bundle.intake_refs.forEach((ref, refIndex) => {
+        if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
+          optionalReference(ref as JsonRecord, 'intakeItemId', intakeItemIds, errors, `${context}.intake_refs[${refIndex}]`);
         }
       });
     }
@@ -1239,6 +1315,105 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(event, 'actor_id', userIds, errors, context);
     validateDateOrTimestampField(event, 'created_at', errors, context, true);
     validateNoSecretPayload(event, errors, context);
+  }
+
+  const seenSourceIds = new Set<string>();
+  for (const [index, item] of (recordsByEntity.intake_items || []).entries()) {
+    const context = `intake_items[${index}]`;
+    requireString(item, 'source', errors, context);
+    requireString(item, 'status', errors, context);
+    requireString(item, 'title', errors, context);
+    requireString(item, 'summary', errors, context);
+    validateDateOrTimestampField(item, 'source_received_at', errors, context, true);
+    validateDateOrTimestampField(item, 'created_at', errors, context, true);
+    validateDateOrTimestampField(item, 'updated_at', errors, context, true);
+    validateDateOrTimestampField(item, 'triaged_at', errors, context);
+    validateDateOrTimestampField(item, 'archived_at', errors, context);
+    validateDateOrTimestampField(item, 'follow_up_at', errors, context);
+    validateDateOrTimestampField(item, 'last_follow_up_at', errors, context);
+    optionalEnum(item, 'source', VALID_INTAKE_SOURCES, errors, context);
+    const status = optionalEnum(item, 'status', VALID_INTAKE_STATUSES, errors, context);
+    optionalEnum(item, 'priority', VALID_INTAKE_PRIORITIES, errors, context);
+    optionalEnum(item, 'data_class', VALID_INTAKE_DATA_CLASSES, errors, context);
+    optionalReference(item, 'created_by', userIds, errors, context);
+    optionalReference(item, 'triaged_by', userIds, errors, context);
+    optionalReference(item, 'owner_id', userIds, errors, context);
+    optionalReference(item, 'assignee_id', userIds, errors, context);
+    optionalReference(item, 'duplicate_of_intake_item_id', intakeItemIds, errors, context);
+    optionalStringArrayField(item, 'received_channels', errors, context);
+    optionalStringArrayField(item, 'task_ids', errors, context);
+    optionalStringArrayField(item, 'bundle_ids', errors, context);
+    optionalStringArrayField(item, 'assistant_job_ids', errors, context);
+    optionalStringArrayField(item, 'related_intake_item_ids', errors, context);
+    optionalStringArrayField(item, 'tags', errors, context);
+    optionalStringField(item, 'body_ref', errors, context);
+    optionalStringField(item, 'resolution_reason', errors, context);
+    optionalStringField(item, 'blocked_reason', errors, context);
+    optionalStringField(item, 'waiting_for', errors, context);
+    if (typeof item.summary === 'string' && item.summary.length > 1000) {
+      errors.push(`${context} summary must be 1000 characters or fewer`);
+    }
+    if (typeof item.title === 'string' && item.title.length > 160) {
+      errors.push(`${context} title must be 160 characters or fewer`);
+    }
+    if (item.metadata !== undefined && JSON.stringify(item.metadata).length > 4096) {
+      errors.push(`${context} metadata must be 4096 bytes or less`);
+    }
+    if (status === 'duplicate') {
+      requireString(item, 'duplicate_of_intake_item_id', errors, context);
+      requireString(item, 'resolution_reason', errors, context);
+    }
+    if (status === 'ignored' || status === 'archived') {
+      requireString(item, 'resolution_reason', errors, context);
+    }
+    if (status === 'blocked') {
+      requireString(item, 'blocked_reason', errors, context);
+    }
+    if (typeof item.source === 'string' && typeof item.source_message_id === 'string') {
+      const sourceKey = `${item.source}#${item.source_message_id}`;
+      if (seenSourceIds.has(sourceKey)) errors.push(`${context} duplicates source/source_message_id: ${sourceKey}`);
+      seenSourceIds.add(sourceKey);
+    }
+    if (Array.isArray(item.task_ids)) {
+      item.task_ids.forEach((taskId, taskIndex) => {
+        if (typeof taskId === 'string' && !taskIds.has(taskId)) errors.push(`${context}.task_ids[${taskIndex}] references missing task_id: ${taskId}`);
+      });
+    }
+    if (Array.isArray(item.bundle_ids)) {
+      item.bundle_ids.forEach((bundleId, bundleIndex) => {
+        if (typeof bundleId === 'string' && !bundleIds.has(bundleId)) errors.push(`${context}.bundle_ids[${bundleIndex}] references missing bundle_id: ${bundleId}`);
+      });
+    }
+    if (Array.isArray(item.assistant_job_ids)) {
+      item.assistant_job_ids.forEach((jobId, jobIndex) => {
+        if (typeof jobId === 'string' && !assistantJobIds.has(jobId)) errors.push(`${context}.assistant_job_ids[${jobIndex}] references missing assistant_job_id: ${jobId}`);
+      });
+    }
+    if (Array.isArray(item.related_intake_item_ids)) {
+      item.related_intake_item_ids.forEach((relatedId, relatedIndex) => {
+        if (typeof relatedId === 'string' && !intakeItemIds.has(relatedId)) errors.push(`${context}.related_intake_item_ids[${relatedIndex}] references missing intake_item_id: ${relatedId}`);
+      });
+    }
+    if (Array.isArray(item.artifact_refs)) {
+      item.artifact_refs.forEach((ref, refIndex) => {
+        if (ref && typeof ref === 'object' && !Array.isArray(ref)) optionalReference(ref as JsonRecord, 'artifactId', artifactIds, errors, `${context}.artifact_refs[${refIndex}]`);
+      });
+    }
+    if (item.assistant_readiness !== undefined) {
+      if (item.assistant_readiness === null || typeof item.assistant_readiness !== 'object' || Array.isArray(item.assistant_readiness)) {
+        errors.push(`${context} field assistant_readiness must be an object when present`);
+      } else {
+        const readiness = item.assistant_readiness as JsonRecord;
+        optionalEnum(readiness, 'status', VALID_INTAKE_ASSISTANT_STATUSES, errors, `${context}.assistant_readiness`);
+        if (readiness.inputRefs !== undefined && !Array.isArray(readiness.inputRefs)) {
+          errors.push(`${context}.assistant_readiness field inputRefs must be an array when present`);
+        }
+        if (readiness.missingFields !== undefined && !Array.isArray(readiness.missingFields)) {
+          errors.push(`${context}.assistant_readiness field missingFields must be an array when present`);
+        }
+      }
+    }
+    validateNoSecretPayload(item, errors, context);
   }
 
   for (const [index, notification] of (recordsByEntity.notifications || []).entries()) {

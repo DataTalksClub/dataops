@@ -307,6 +307,83 @@
       },
     },
 
+    intake: {
+      list: function (params) {
+        var qs = new URLSearchParams(params || {}).toString();
+        return fetch('/api/intake' + (qs ? '?' + qs : ''), {
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      get: function (id) {
+        return fetch('/api/intake/' + id, {
+          headers: getAuthHeaders(),
+        }).then(handleResponse);
+      },
+      create: function (data) {
+        return fetch('/api/intake', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      update: function (id, data) {
+        return fetch('/api/intake/' + id, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      attach: function (id, data) {
+        return fetch('/api/intake/' + id + '/attach', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      convertTask: function (id, data) {
+        return fetch('/api/intake/' + id + '/convert-task', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      markDuplicate: function (id, data) {
+        return fetch('/api/intake/' + id + '/mark-duplicate', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      ignore: function (id, reason) {
+        return fetch('/api/intake/' + id + '/ignore', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ reason: reason }),
+        }).then(handleResponse);
+      },
+      archive: function (id, reason) {
+        return fetch('/api/intake/' + id + '/archive', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ reason: reason }),
+        }).then(handleResponse);
+      },
+      block: function (id, data) {
+        return fetch('/api/intake/' + id + '/block', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+      prepareAssistant: function (id, data) {
+        return fetch('/api/intake/' + id + '/prepare-assistant', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(data),
+        }).then(handleResponse);
+      },
+    },
+
     templates: {
       list: function () {
         return fetch('/api/templates', {

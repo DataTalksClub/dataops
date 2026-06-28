@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createTask } from '../db/tasks';
+import { createEmailIntake } from './intake';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 // Extract date from email body (first YYYY-MM-DD match)
@@ -62,7 +63,18 @@ async function handleEmailWebhook(event: LambdaEvent, client: DynamoDBDocumentCl
     };
   }
 
-  // Extract date from body text, default to today (UTC)
+  if (process.env.EMAIL_DIRECT_TASKS_COMPAT !== 'true') {
+    const item = await createEmailIntake(client, body);
+    return {
+      statusCode: 201,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ item }),
+    };
+  }
+
+  // Compatibility mode: create a task directly from the email payload.
+  // V1 intake-first behavior is the default; set EMAIL_DIRECT_TASKS_COMPAT=true
+  // only for temporary legacy webhook consumers.
   const date = extractDate(body.body as string | null) || new Date().toISOString().slice(0, 10);
 
   // Comment is the email body text, or null if empty/missing

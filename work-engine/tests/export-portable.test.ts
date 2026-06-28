@@ -8,12 +8,13 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
-import { createBundle } from '../src/db/bundles';
+import { createBundle, updateBundle } from '../src/db/bundles';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
+import { createIntakeItem } from '../src/db/intake';
 import { createNotification } from '../src/db/notifications';
 import { createRecurringConfig } from '../src/db/recurring';
-import { createTask } from '../src/db/tasks';
+import { createTask, updateTask } from '../src/db/tasks';
 import { createTemplate } from '../src/db/templates';
 import { createUser } from '../src/db/users';
 import { validatePortableExport, writePortableExport } from '../src/export/portable';
@@ -183,6 +184,45 @@ describe('portable execution data export', () => {
       metadata: { source: 'operator' },
     });
     await updateAssistantJob(client, assistantJob.id, { outputArtifactIds: [artifact.id] });
+    const intake = await createIntakeItem(client, {
+      id: 'intake-export',
+      source: 'manual',
+      sourceMessageId: 'manual-export-1',
+      sourceReceivedAt: '2026-06-20T10:00:00.000Z',
+      createdBy: user.id,
+      triagedBy: user.id,
+      ownerId: user.id,
+      assigneeId: user.id,
+      status: 'converted',
+      title: 'Exported intake',
+      summary: 'Safe bounded operator excerpt with https://example.com/source-document',
+      sourceActor: { name: 'Operator' },
+      receivedChannels: ['manual'],
+      linkRefs: [{ url: 'https://example.com/source-document', normalizedUrl: 'https://example.com/source-document', safetyStatus: 'unchecked' }],
+      fileRefs: [{ fileId: 'file-export-ref', filename: 'source.txt', storageUri: 'https://example.com/source-file' }],
+      artifactRefs: [{ artifactId: artifact.id, type: artifact.type, title: artifact.title, status: artifact.status }],
+      taskIds: [task.id],
+      bundleIds: [bundle.id],
+      assistantJobIds: [assistantJob.id],
+      assistantReadiness: {
+        assistantType: 'podcast',
+        status: 'submitted',
+        inputRefs: [{ type: 'source-message', id: 'intake-export' }],
+        missingFields: [],
+      },
+      tags: ['podcast'],
+      priority: 'high',
+      dataClass: 'private',
+      metadata: { source: 'operator' },
+      history: [{
+        id: 'intake-history-export',
+        action: 'converted-to-task',
+        actorId: user.id,
+        createdAt: '2026-06-20T10:05:00.000Z',
+      }],
+    });
+    await updateTask(client, task.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
+    await updateBundle(client, bundle.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
     await appendAssistantJobEvent(client, {
       assistantJobId: assistantJob.id,
       actorId: user.id,
@@ -228,12 +268,14 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
     assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
+    assert.strictEqual(result.manifest.entity_counts.intake_items, 1);
     assert.strictEqual(result.manifest.entity_counts.notifications, 2);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
     assert.ok(result.manifest.omitted_entities.includes('sessions'));
     assert.ok(!result.manifest.omitted_entities.includes('artifacts'));
     assert.ok(!result.manifest.omitted_entities.includes('assistant_jobs'));
     assert.ok(!result.manifest.omitted_entities.includes('audit_events'));
+    assert.ok(!result.manifest.omitted_entities.includes('intake_items'));
 
     const usersJsonl = await fs.readFile(path.join(exportDir, 'users.jsonl'), 'utf8');
     assert.match(usersJsonl, /"user_id"/);
@@ -256,6 +298,7 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"link":"https:\/\/example.com\/source-document"/);
     assert.match(tasksJsonl, /"artifact_refs":\[\{"artifactId":"artifact-task-ref","type":"document"\}\]/);
     assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
+    assert.match(tasksJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
     assert.match(tasksJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-task-ref","action":"completed"\}\]/);
     assert.match(tasksJsonl, /"task_history":\[\{"id":"history-waiting-started"/);
     assert.match(tasksJsonl, /"action":"follow-up-sent"/);
@@ -267,6 +310,7 @@ describe('portable execution data export', () => {
     const bundlesJsonl = await fs.readFile(path.join(exportDir, 'bundles.jsonl'), 'utf8');
     assert.match(bundlesJsonl, /"artifact_refs":\[\{"artifactId":"artifact-bundle-ref","type":"document"\}\]/);
     assert.match(bundlesJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
+    assert.match(bundlesJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
     assert.match(bundlesJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-bundle-ref","action":"created"\}\]/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
@@ -305,6 +349,14 @@ describe('portable execution data export', () => {
     assert.match(auditEventsJsonl, /"assistant_job_id":"assistant-job-export"/);
     assert.match(auditEventsJsonl, /"action":"approval-requested"/);
     assert.doesNotMatch(auditEventsJsonl, /password|token|secret/i);
+
+    const intakeJsonl = await fs.readFile(path.join(exportDir, 'intake_items.jsonl'), 'utf8');
+    assert.match(intakeJsonl, /"intake_item_id":"intake-export"/);
+    assert.match(intakeJsonl, /"source":"manual"/);
+    assert.match(intakeJsonl, /"task_ids":\["task-export-stable"\]/);
+    assert.match(intakeJsonl, /"assistant_job_ids":\["assistant-job-export"\]/);
+    assert.match(intakeJsonl, /"assistant_readiness":\{"assistantType":"podcast","status":"submitted"/);
+    assert.doesNotMatch(intakeJsonl, /api[_-]?key|access_token|X-Amz-Signature|password/i);
 
     const validation = await validatePortableExport(exportDir);
     assert.deepStrictEqual(validation.errors, []);

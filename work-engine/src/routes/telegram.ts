@@ -1,6 +1,7 @@
 import { createTask } from '../db/tasks';
 import { getClient } from '../db/client';
 import { createTables } from '../db/setup';
+import { createTelegramIntake } from './intake';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 // Parse message: extract description and optional date (YYYY-MM-DD at end)
@@ -58,7 +59,7 @@ async function handleTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse
   // /start command
   if (text === '/start') {
     await sendTelegramReply(chatId,
-      'DataOps operations intake\n\nSend me a message to create an operations task.\nFormat: Task description [YYYY-MM-DD]\n\nExamples:\n- Follow up with podcast guest\n- Submit report 2026-03-15',
+      'DataOps operations intake\n\nSend me a message to capture raw operations intake for triage.\nFormat: Request or context [YYYY-MM-DD]\n\nExamples:\n- Follow up with podcast guest\n- Submit report 2026-03-15',
       botToken
     );
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
@@ -74,6 +75,13 @@ async function handleTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse
 
   const client = await getClient();
   await createTables(client);
+
+  if (process.env.TELEGRAM_DIRECT_TASKS_COMPAT !== 'true') {
+    const item = await createTelegramIntake(client, body);
+    await sendTelegramReply(chatId, item ? `Intake captured: "${item.title}"` : 'Intake update received.', botToken);
+    return { statusCode: 200, body: JSON.stringify({ ok: true, intakeItemId: item?.id }) };
+  }
+
   const task = await createTask(client, { description, date, source: 'telegram' });
 
   await sendTelegramReply(chatId, `Task created: "${task.description}" for ${task.date}`, botToken);
