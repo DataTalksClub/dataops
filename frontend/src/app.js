@@ -1491,8 +1491,9 @@ function buildOperationsHomeModel(documents, options) {
     .sort((a, b) => workflowPriority(a.slug) - workflowPriority(b.slug) || a.title.localeCompare(b.title));
 
   const recurringItems = templates.filter((template) => template.recurring).map(operationItemFromTemplate);
-  const todayWorkTasks = work.currentOperatorId
-    ? work.todayTasks.filter((task) => isCurrentOperatorTodayTask(task, work.currentOperatorId))
+  const scopedCurrentOperatorId = currentOperatorIdForTodayScope(work.currentOperatorId);
+  const todayWorkTasks = scopedCurrentOperatorId
+    ? work.todayTasks.filter((task) => isCurrentOperatorTodayTask(task, scopedCurrentOperatorId))
     : work.todayTasks;
   const todayItems = hasLiveWork
     ? todayWorkTasks.map((task) => operationItemFromTask(task, { today }))
@@ -1532,7 +1533,7 @@ function buildOperationsHomeModel(documents, options) {
       id: "today",
       title: "Today",
       empty: hasLiveWork
-        ? (work.currentOperatorId ? "No live tasks assigned to you or unassigned due today." : "No live tasks due today.")
+        ? (scopedCurrentOperatorId ? "No live tasks assigned to you or unassigned due today." : "No live tasks due today.")
         : "Live work data unavailable; tasks will appear here when /work/api/tasks is connected.",
       items: todayItems,
     },
@@ -3478,6 +3479,17 @@ function isCurrentOperatorTodayTask(task, currentOperatorId) {
   if (!isOpenWorkTask(task)) return false;
   const assigneeId = String(task.assigneeId || "");
   return !assigneeId || assigneeId === String(currentOperatorId || "");
+}
+
+function currentOperatorIdForTodayScope(currentOperatorId) {
+  const id = String(currentOperatorId || "").trim();
+  if (!id || isSyntheticCurrentOperatorId(id)) return "";
+  return id;
+}
+
+function isSyntheticCurrentOperatorId(currentOperatorId) {
+  const id = String(currentOperatorId || "").trim().toLowerCase();
+  return id === "portal-admin";
 }
 
 function isTaskOverdue(task, today) {
