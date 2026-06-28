@@ -431,7 +431,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
-      CodeUri: ../work-engine
+      CodeUri: ..
       Runtime: nodejs20.x
       Handler: dist/handler.handler
       Timeout: 30
