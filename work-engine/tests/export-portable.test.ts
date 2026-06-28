@@ -130,6 +130,13 @@ describe('portable execution data export', () => {
       description: 'Weekly community backup',
       cronExpression: '0 0 * * 1',
       assigneeId: user.id,
+      instructionDocId: 'sop.workflow.collect-inputs',
+      instructionStepId: '2',
+      systems: ['google-drive'],
+      proofRequirement: { type: 'comment', label: 'Backup reviewed', required: false },
+      requiredLinkName: 'Backup folder',
+      requiresFile: true,
+      tags: ['community', 'backup'],
     });
     const recurringTask = await createTask(client, {
       description: 'Weekly community backup',
@@ -355,6 +362,15 @@ describe('portable execution data export', () => {
     assert.match(templatesJsonl, /"instructionDocId":"sop.workflow.collect-inputs"/);
     assert.match(templatesJsonl, /"proofRequirement":\{"type":"url","label":"Source document"\}/);
 
+    const recurringConfigsJsonl = await fs.readFile(path.join(exportDir, 'recurring_configs.jsonl'), 'utf8');
+    assert.match(recurringConfigsJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
+    assert.match(recurringConfigsJsonl, /"instruction_step_id":"2"/);
+    assert.match(recurringConfigsJsonl, /"systems":\["google-drive"\]/);
+    assert.match(recurringConfigsJsonl, /"proof_requirement":\{"type":"comment","label":"Backup reviewed","required":false\}/);
+    assert.match(recurringConfigsJsonl, /"required_link_name":"Backup folder"/);
+    assert.match(recurringConfigsJsonl, /"requires_file":true/);
+    assert.match(recurringConfigsJsonl, /"tags":\["community","backup"\]/);
+
     const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');
     assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
     assert.match(notificationsJsonl, /"notification_type":"recurring-due"/);
@@ -529,6 +545,22 @@ describe('portable execution data export', () => {
         'utf8'
       );
       await fs.writeFile(
+        path.join(brokenDir, 'recurring_configs.jsonl'),
+        JSON.stringify({
+          recurring_config_id: 'recurring-broken-doc-context',
+          description: 'Broken recurring doc context',
+          cron_expression: '0 9 * * *',
+          instruction_doc_id: 42,
+          systems: ['github', 42],
+          proof_requirement: { type: 'unsupported' },
+          requires_file: 'yes',
+          tags: ['daily', 42],
+          created_at: '2026-06-27T00:00:00.000Z',
+          updated_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.writeFile(
         path.join(brokenDir, 'notifications.jsonl'),
         JSON.stringify({
           notification_id: 'notification-broken-type',
@@ -602,6 +634,11 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].artifactRefs[0] missing required string field artifactId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].assistantJobRefs[0] missing required string field assistantJobId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].auditEventRefs[0] missing required string field auditEventId')));
+      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field instruction_doc_id must be a string when present')));
+      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field systems must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field proof_requirement.type must be one of')));
+      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field requires_file must be a boolean when present')));
+      assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field tags must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[0] field notification_type has unknown value: unknown-reminder')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[1] missing required string field due_at')));
       assert.ok(validation.errors.some((error) => error.includes('notifications[2] field due_at must be a parseable date or timestamp')));

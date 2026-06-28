@@ -251,6 +251,28 @@ async function recurringTaskExists(client: DynamoDBDocumentClient, recurringConf
   return (result.Items || []).length > 0;
 }
 
+function recurringTaskDefaults(config: RecurringConfig): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {};
+  const fields: (keyof RecurringConfig)[] = [
+    'assigneeId',
+    'instructionsUrl',
+    'instructionDocId',
+    'instructionStepId',
+    'systems',
+    'proofRequirement',
+    'requiredLinkName',
+    'requiresFile',
+    'tags',
+  ];
+
+  for (const field of fields) {
+    const value = config[field];
+    if (value !== undefined) defaults[field] = value;
+  }
+
+  return defaults;
+}
+
 /**
  * Generate concrete task instances from enabled recurring configs for a date range.
  * Uses cron expression matching to determine which dates each config should generate tasks for.
@@ -288,16 +310,13 @@ async function generateRecurringTasks(client: DynamoDBDocumentClient, startDate:
 
       // Create the task
       const taskData: Record<string, unknown> = {
+        ...recurringTaskDefaults(config),
         description: config.description,
         date: dateStr,
         status: 'todo',
         source: 'recurring',
         recurringConfigId: config.id,
       };
-
-      if (config.assigneeId) {
-        taskData.assigneeId = config.assigneeId;
-      }
 
       const task = await createTask(client, taskData);
       generated.push(task);
@@ -316,6 +335,7 @@ export {
   listRecurringConfigs,
   listEnabledRecurringConfigs,
   generateRecurringTasks,
+  recurringTaskDefaults,
   cronMatchesDate,
   matchCronField,
 };

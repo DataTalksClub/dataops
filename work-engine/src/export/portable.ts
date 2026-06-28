@@ -322,6 +322,14 @@ function mapRecurringConfig(item: Record<string, unknown>): JsonRecord {
     description: optionalString(item.description),
     cron_expression: optionalString(item.cronExpression),
     assignee_id: optionalString(item.assigneeId),
+    instructions_url: optionalString(item.instructionsUrl),
+    instruction_doc_id: optionalString(item.instructionDocId),
+    instruction_step_id: optionalString(item.instructionStepId),
+    systems: stringArray(item.systems),
+    proof_requirement: optionalJsonStringOrObject(item.proofRequirement),
+    required_link_name: optionalString(item.requiredLinkName),
+    requires_file: optionalBoolean(item.requiresFile),
+    tags: stringArray(item.tags),
     enabled: optionalBoolean(item.enabled),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
@@ -1208,6 +1216,14 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     requireString(recurring, 'description', errors, context);
     requireString(recurring, 'cron_expression', errors, context);
     optionalReference(recurring, 'assignee_id', userIds, errors, context);
+    optionalStringField(recurring, 'instructions_url', errors, context);
+    optionalStringField(recurring, 'instruction_doc_id', errors, context);
+    optionalStringField(recurring, 'instruction_step_id', errors, context);
+    optionalStringArrayField(recurring, 'systems', errors, context);
+    optionalProofRequirementField(recurring, 'proof_requirement', errors, context);
+    optionalStringField(recurring, 'required_link_name', errors, context);
+    optionalBooleanField(recurring, 'requires_file', errors, context);
+    optionalStringArrayField(recurring, 'tags', errors, context);
     validateDateOrTimestampField(recurring, 'created_at', errors, context);
     validateDateOrTimestampField(recurring, 'updated_at', errors, context);
   }
