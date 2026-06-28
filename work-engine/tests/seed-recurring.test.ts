@@ -9,7 +9,7 @@ import {
   listRecurringConfigs,
   updateRecurringConfig,
 } from '../src/db/recurring';
-import { listTasksByDate } from '../src/db/tasks';
+import { createTask, listTasksByDate, updateTask } from '../src/db/tasks';
 import { runCron } from '../src/cron/runner';
 import { seed as seedUsers } from '../scripts/seed-users';
 import {
@@ -39,6 +39,7 @@ describe('Seed recurring script', () => {
       created: BASELINE_RECURRING_CONFIGS.length,
       updated: 0,
       skipped: 0,
+      repairedTasks: 0,
       total: BASELINE_RECURRING_CONFIGS.length,
     });
 
@@ -54,13 +55,40 @@ describe('Seed recurring script', () => {
       assert.strictEqual(matches.length, 1, `${expected.description} should be seeded once`);
       assert.strictEqual(matches[0].enabled, true);
       assert.strictEqual(matches[0].assigneeId, OPERATOR_USER_ID);
+      if (expected.instructionDocId) {
+        assert.strictEqual(matches[0].instructionDocId, expected.instructionDocId);
+      }
+      if (expected.systems) {
+        assert.deepStrictEqual(matches[0].systems, expected.systems);
+      }
     }
+
+    const slackConfig = configsAfterFirstRun.find(
+      (config) => config.description === 'Invite people to Slack from Airtable'
+    );
+    assert.ok(slackConfig);
+    assert.strictEqual(
+      slackConfig.instructionDocId,
+      'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
+    );
+    assert.deepStrictEqual(slackConfig.systems, ['airtable', 'slack']);
+
+    const trelloConfig = configsAfterFirstRun.find(
+      (config) => config.description === 'Create new Trello cards and review existing ones'
+    );
+    assert.ok(trelloConfig);
+    assert.strictEqual(
+      trelloConfig.instructionDocId,
+      'sop.internal-admin.trello.how-to-create-an-event-through-trello'
+    );
+    assert.deepStrictEqual(trelloConfig.systems, ['trello']);
 
     const second = await seedRecurring();
     assert.deepStrictEqual(second, {
       created: 0,
       updated: 0,
       skipped: BASELINE_RECURRING_CONFIGS.length,
+      repairedTasks: 0,
       total: BASELINE_RECURRING_CONFIGS.length,
     });
 
@@ -78,6 +106,7 @@ describe('Seed recurring script', () => {
       created: 0,
       updated: 1,
       skipped: BASELINE_RECURRING_CONFIGS.length - 1,
+      repairedTasks: 0,
       total: BASELINE_RECURRING_CONFIGS.length,
     });
 
@@ -112,7 +141,27 @@ describe('Seed recurring script', () => {
       assert.strictEqual(task.date, '2029-01-05');
       assert.ok(task.recurringConfigId);
       assert.strictEqual(task.assigneeId, OPERATOR_USER_ID);
+      assert.ok(task.instructionDocId, `${task.description} should include instructionDocId`);
+      assert.ok(Array.isArray(task.systems), `${task.description} should include systems`);
     }
+
+    const slackTask = tasks.find((task) => task.description === 'Invite people to Slack from Airtable');
+    assert.ok(slackTask);
+    assert.strictEqual(
+      slackTask.instructionDocId,
+      'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
+    );
+    assert.deepStrictEqual(slackTask.systems, ['airtable', 'slack']);
+
+    const trelloTask = tasks.find(
+      (task) => task.description === 'Create new Trello cards and review existing ones'
+    );
+    assert.ok(trelloTask);
+    assert.strictEqual(
+      trelloTask.instructionDocId,
+      'sop.internal-admin.trello.how-to-create-an-event-through-trello'
+    );
+    assert.deepStrictEqual(trelloTask.systems, ['trello']);
 
     const notificationsAfterFirstCron = (await listUndismissedNotifications(client)).filter(
       (notification) => notification.type === 'recurring-due'
@@ -136,5 +185,66 @@ describe('Seed recurring script', () => {
       (notification) => notification.type === 'recurring-due'
     );
     assert.strictEqual(notificationsAfterSecondCron.length, 2);
+
+    await updateTask(client, slackTask.id, {
+      instructionDocId: '',
+      systems: [],
+    });
+    await updateTask(client, trelloTask.id, {
+      instructionDocId: 'sop.operator.override',
+      systems: ['operator-system'],
+    });
+    const manualTask = await createTask(client, {
+      description: 'Invite people to Slack from Airtable',
+      date: '2029-01-05',
+      source: 'manual',
+      status: 'todo',
+    });
+
+    const repairedTasks = await seedRecurring();
+    assert.deepStrictEqual(repairedTasks, {
+      created: 0,
+      updated: 0,
+      skipped: BASELINE_RECURRING_CONFIGS.length,
+      repairedTasks: 1,
+      total: BASELINE_RECURRING_CONFIGS.length,
+    });
+
+    const tasksAfterRepair = (await listTasksByDate(client, '2029-01-05')).filter(
+      (task) => task.source === 'recurring'
+    );
+    assert.strictEqual(tasksAfterRepair.length, 2);
+    const repairedSlackTask = tasksAfterRepair.find(
+      (task) => task.description === 'Invite people to Slack from Airtable'
+    );
+    assert.ok(repairedSlackTask);
+    assert.strictEqual(
+      repairedSlackTask.instructionDocId,
+      'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form'
+    );
+    assert.deepStrictEqual(repairedSlackTask.systems, ['airtable', 'slack']);
+
+    const preservedTrelloTask = tasksAfterRepair.find(
+      (task) => task.description === 'Create new Trello cards and review existing ones'
+    );
+    assert.ok(preservedTrelloTask);
+    assert.strictEqual(preservedTrelloTask.instructionDocId, 'sop.operator.override');
+    assert.deepStrictEqual(preservedTrelloTask.systems, ['operator-system']);
+
+    const manualTaskAfterRepair = (await listTasksByDate(client, '2029-01-05')).find(
+      (task) => task.id === manualTask.id
+    );
+    assert.ok(manualTaskAfterRepair);
+    assert.strictEqual(manualTaskAfterRepair.instructionDocId, undefined);
+    assert.strictEqual(manualTaskAfterRepair.systems, undefined);
+
+    const idempotentRepair = await seedRecurring();
+    assert.deepStrictEqual(idempotentRepair, {
+      created: 0,
+      updated: 0,
+      skipped: BASELINE_RECURRING_CONFIGS.length,
+      repairedTasks: 0,
+      total: BASELINE_RECURRING_CONFIGS.length,
+    });
   });
 });

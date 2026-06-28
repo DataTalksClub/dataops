@@ -441,6 +441,14 @@ export interface RecurringConfig {
   description: string;
   cronExpression: string;
   assigneeId?: string;
+  instructionsUrl?: string;
+  instructionDocId?: string;
+  instructionStepId?: string;
+  systems?: string[];
+  proofRequirement?: ProofRequirement;
+  requiredLinkName?: string;
+  requiresFile?: boolean;
+  tags?: string[];
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
