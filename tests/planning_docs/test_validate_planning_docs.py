@@ -79,3 +79,45 @@ tags:
     assert any("doc_type must be task-template" in violation for violation in violations)
     assert any("systems must include dataops and datatasks" in violation for violation in violations)
     assert any("tags must include task-template and newsletter" in violation for violation in violations)
+
+
+def test_task_template_accepts_richer_operator_workflow_table(tmp_path):
+    templates_dir = tmp_path / "content" / "tasks" / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "newsletter.md").write_text(
+        """---
+title: "Newsletter"
+doc_type: task-template
+schema_version: 1
+source: "work-engine/scripts/seed-templates.ts"
+systems:
+  - dataops
+  - datatasks
+tags:
+  - task-template
+  - newsletter
+---
+
+# Newsletter
+
+<!-- sop-section-start: summary -->
+## Summary
+<!-- sop-section-start: purpose -->
+## Purpose
+<!-- sop-section-start: references -->
+## References
+<!-- sop-section-start: required-bundle-links -->
+## Required Bundle Links
+<!-- sop-section-start: task-definitions -->
+## Task Definitions
+
+| # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |
+| - | - | - | -: | - | - | - | - | - |
+| 1 | `create-sponsorship-document` | sponsor-intake | -14 | owner | Create sponsorship document | doc.id | url: Sponsorship document |  |
+""",
+        encoding="utf-8",
+    )
+
+    violations = validate_planning_docs.validate_task_templates(tmp_path)
+
+    assert violations == []
