@@ -429,6 +429,47 @@ def test_workflow_critical_search_docs_index_stable_id_keywords():
         assert external_id not in indexed
 
 
+def test_search_docs_index_ids_come_from_document_registry(tmp_path):
+    content_root = tmp_path / "content"
+    _write_doc(
+        content_root,
+        "finance/reference/invoices.md",
+        """---
+id: finance.invoices
+title: "Invoices"
+doc_type: reference
+---
+
+# Invoices
+""",
+    )
+    _write_doc(
+        content_root,
+        "communications/templates/datatalksclub-email-templates.md",
+        """---
+title: "DataTalksClub Email Templates"
+doc_type: template
+---
+
+# DataTalksClub Email Templates
+""",
+    )
+
+    registry = doc_registry.build_registry(content_root)
+    registry_ids_by_path = {record.path: record.id for record in registry.documents}
+    indexed = {doc["path"]: doc for doc in iter_docs(content_root)}
+
+    assert indexed["content/finance/reference/invoices.md"]["id"] == registry_ids_by_path[
+        "content/finance/reference/invoices.md"
+    ]
+    assert indexed["content/communications/templates/datatalksclub-email-templates.md"]["id"] == (
+        "template.communications.datatalksclub-email-templates"
+    )
+    assert indexed["content/communications/templates/datatalksclub-email-templates.md"]["id"] == registry_ids_by_path[
+        "content/communications/templates/datatalksclub-email-templates.md"
+    ]
+
+
 def test_doc_and_folder_path_normalization_accepts_visible_urls(tmp_path, monkeypatch):
     content_root = tmp_path / "content"
     doc = _write_doc(content_root, "finance/reference/invoices.md", "# Invoices\n")

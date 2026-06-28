@@ -167,8 +167,8 @@ trusted headers and the shared portal secret.
 
 | Changed area | Required local checks | Add when relevant |
 | --- | --- | --- |
-| `_docs/**`, `docs/**`, `templates/**`, `content/tasks/templates/**`, `.goal-v1.md`, `PROJECT_PLAN.md`, `PORTAL_ANALYSIS.md`, or `README.md` | Planning docs validation; build the search index when task templates or content metadata are touched. | Docs app tests when registry/search behavior or metadata parsing can be affected. Process Curator review for operational usefulness. |
-| `content/**` | Build the search index. | Docs app tests when frontmatter, document IDs, routing, registry behavior, templates, archive rules, or content shape changes. Process Curator review for operational usefulness. |
+| `_docs/**`, `docs/**`, `templates/**`, `content/tasks/templates/**`, `.goal-v1.md`, `PROJECT_PLAN.md`, `PORTAL_ANALYSIS.md`, or `README.md` | Docs link validation; planning docs validation; build the search index when task templates or content metadata are touched. | Docs app tests when registry/search behavior or metadata parsing can be affected. Process Curator review for operational usefulness. |
+| `content/**` | Docs link validation; build the search index. | Docs app tests when frontmatter, document IDs, routing, registry behavior, templates, archive rules, or content shape changes. Process Curator review for operational usefulness. |
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
 | `lambda-functions/**` | Docs app tests. | Search-index build for search/content behavior. SAM validation for template, dependency, packaging, or Lambda runtime changes. |
 | `work-engine/**` | Unit tests, typecheck, and build. | E2E for changed operator flows, browser UI, route behavior, or end-to-end task/workflow behavior. |
@@ -198,6 +198,27 @@ This check validates internal repo links, V1 goal/JTBD references, process
 lifecycle guardrails, task-template metadata, doc registry references, and the
 read-only planning-docs workflow. It intentionally ignores external URLs and
 does not invoke stylint or prose-polish tooling.
+
+Run content/process-doc link validation from the repo root:
+
+```bash
+make validate-docs-links
+```
+
+Underlying command:
+
+```bash
+uv run --project lambda-functions --extra search python -m lambda_functions.validate_docs_links \
+  --repo-root . \
+  --content-root content
+```
+
+This check validates document IDs, aliases, `related_docs`, wiki refs, `doc:`
+refs, repo-local Markdown links and images, task-template docs, and work-engine
+seed `sourceDocIds`/`instructionDocId` values. It ignores external URLs,
+`mailto:` links, and anchor-only links. Heading-anchor validation is deferred:
+links with `#anchor` still need an existing target file or document ID, but the
+anchor text itself is not checked yet.
 
 Run docs app tests from the repo root:
 

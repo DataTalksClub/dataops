@@ -6,10 +6,30 @@ on:
       - main
     paths:
       - "content/**"
+      - "_docs/**"
+      - "docs/**"
+      - ".goal-v1.md"
+      - "PROJECT_PLAN.md"
+      - "PORTAL_ANALYSIS.md"
+      - "README.md"
+      - "work-engine/scripts/seed-templates.ts"
+      - "lambda-functions/src/lambda_functions/doc_registry.py"
+      - "lambda-functions/src/lambda_functions/validate_docs_links.py"
+      - "tests/docs_app/**"
       - ".github/workflows/validate-dataops-content.yml"
   pull_request:
     paths:
       - "content/**"
+      - "_docs/**"
+      - "docs/**"
+      - ".goal-v1.md"
+      - "PROJECT_PLAN.md"
+      - "PORTAL_ANALYSIS.md"
+      - "README.md"
+      - "work-engine/scripts/seed-templates.ts"
+      - "lambda-functions/src/lambda_functions/doc_registry.py"
+      - "lambda-functions/src/lambda_functions/validate_docs_links.py"
+      - "tests/docs_app/**"
       - ".github/workflows/validate-dataops-content.yml"
   workflow_dispatch:
 
@@ -42,6 +62,10 @@ jobs:
 
       - name: Install Python
         run: uv python install
+
+      - name: Validate docs links and workflow doc IDs
+        working-directory: .
+        run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_docs_links --repo-root . --content-root content
 
       - name: Build search index
         run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-content-search.index

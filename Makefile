@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-docs dev-frontend dev-work-engine seed-work-engine dev-compose search-index validate-planning-docs sop-lint test-docs test-work-engine typecheck-work-engine build-work-engine test-work-engine-e2e test-assistant smoke-docs sam-local-aws-config sam-validate sam-build ci clean build-WorkEngineFunction
+.PHONY: help setup dev-docs dev-frontend dev-work-engine seed-work-engine dev-compose search-index validate-docs-links validate-planning-docs sop-lint test-docs test-work-engine typecheck-work-engine build-work-engine test-work-engine-e2e test-assistant smoke-docs sam-local-aws-config sam-validate sam-build ci clean build-WorkEngineFunction
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -15,6 +15,7 @@ help:
 	@printf '%-28s %s\n' 'make seed-work-engine' 'Seed local work-engine users and templates through the workspace script.'
 	@printf '%-28s %s\n' 'make dev-compose' 'Run the current Docker Compose portal stack in the foreground.'
 	@printf '%-28s %s\n' 'make search-index' 'Build .tmp/dataops-content-search.index from content/.'
+	@printf '%-28s %s\n' 'make validate-docs-links' 'Validate content/process-doc links and workflow doc IDs.'
 	@printf '%-28s %s\n' 'make validate-planning-docs' 'Run planning/process docs contract validation.'
 	@printf '%-28s %s\n' 'make sop-lint FILES=...' 'Lint marked SOP files; FILES is required.'
 	@printf '%-28s %s\n' 'make test-docs' 'Run docs portal pytest.'
@@ -61,6 +62,9 @@ dev-compose:
 search-index: .tmp
 	cd lambda-functions && uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output ../.tmp/dataops-content-search.index
 
+validate-docs-links:
+	uv run --project lambda-functions --extra search python -m lambda_functions.validate_docs_links --repo-root . --content-root content
+
 validate-planning-docs:
 	uv run --with pytest python -m pytest tests/planning_docs
 
@@ -101,6 +105,7 @@ sam-build:
 	cd lambda-functions && sam build --config-env full-sandbox
 
 ci:
+	$(MAKE) validate-docs-links
 	$(MAKE) test-docs
 	$(MAKE) test-work-engine
 	$(MAKE) typecheck-work-engine
