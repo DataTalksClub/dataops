@@ -1,5 +1,6 @@
 import { getClient } from '../db/client';
 import { runCron } from '../cron/runner';
+import { writePortableExportArchive } from '../export/archive';
 import { writePortableExport } from '../export/portable';
 import type { LambdaResponse } from '../types';
 
@@ -55,12 +56,41 @@ async function handleScheduledExport(method: string): Promise<LambdaResponse> {
 
   try {
     const client = await getClient();
+    const archiveBucket = process.env.DATAOPS_EXPORT_ARCHIVE_BUCKET || '';
+    const archivePrefix = process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX || 'execution-exports';
+    const archiveLocalDir = process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR || '';
     const outputDir = process.env.EXPORT_OUTPUT_DIR || '';
+
+    if (archiveBucket || archiveLocalDir) {
+      const result = await writePortableExportArchive(client, {
+        bucket: archiveBucket || undefined,
+        prefix: archivePrefix,
+        environment: process.env.DATAOPS_ENV,
+        localArchiveDir: archiveLocalDir || undefined,
+        tempDir: outputDir || undefined,
+      });
+      return {
+        statusCode: 200,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          archive_uri: result.archiveUri,
+          archive_key: result.archiveKey,
+          generated_at: result.manifest.generated_at,
+          schema_version: result.manifest.schema_version,
+          export_format_version: result.manifest.export_format_version,
+          entity_counts: result.manifest.entity_counts,
+          checksums: result.manifest.checksums,
+          archive_checksum: result.archiveChecksum,
+          archive_size_bytes: result.archiveSizeBytes,
+        }),
+      };
+    }
+
     if (!outputDir) {
       return {
         statusCode: 400,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'EXPORT_OUTPUT_DIR is not configured' }),
+        body: JSON.stringify({ error: 'Export storage is not configured' }),
       };
     }
 

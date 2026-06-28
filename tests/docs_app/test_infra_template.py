@@ -88,6 +88,8 @@ def test_dataops_table_outputs_are_available_for_work_engine_env_wiring():
         "DataOpsArtifactsTableName",
         "DataOpsNotificationsTableName",
         "DataOpsSessionsTableName",
+        "DataOpsExportArchiveBucketName",
+        "DataOpsExportArchivePrefix",
     ]
 
     for output in expected_outputs:
@@ -107,7 +109,7 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "Type: AWS::Serverless::Function" in work_engine
     assert "BuildMethod: makefile" in work_engine
     assert "CodeUri: .." in work_engine
-    assert "Runtime: nodejs20.x" in work_engine
+    assert "Runtime: nodejs24.x" in work_engine
     assert "Handler: dist/handler.handler" in work_engine
     assert "FunctionUrlConfig" not in work_engine
     assert "WORK_ENGINE_AUTH_MODE: portal" in work_engine
@@ -119,6 +121,8 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable" in work_engine
     assert "DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable" in work_engine
     assert "DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable" in work_engine
+    assert "DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket" in work_engine
+    assert "DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix" in work_engine
     assert "dynamodb:GetItem" in work_engine
     assert "dynamodb:PutItem" in work_engine
     assert "dynamodb:Query" in work_engine
@@ -131,6 +135,10 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "${DataOpsTasksTable.Arn}/index/*" in work_engine
     assert "${DataOpsFilesTable.Arn}/index/*" in work_engine
     assert "secretsmanager:GetSecretValue" in work_engine
+    assert "s3:PutObject" in work_engine
+    assert "${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*" in work_engine
+    assert "DailyWorkEngineExport" in work_engine
+    assert '"dataopsAction":"export"' in work_engine
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret" in work_engine
 
     assert "WORK_ENGINE_FUNCTION_NAME: !Ref WorkEngineFunction" in docs_app
@@ -139,6 +147,24 @@ def test_private_work_engine_lambda_is_wired_to_dataops_tables():
     assert "!GetAtt WorkEngineFunction.Arn" in docs_app
     assert "  WorkEngineFunctionName:" in template
     assert "  WorkEnginePortalSecretName:" in template
+
+
+def test_dataops_export_archive_bucket_is_private_retained_and_versioned():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    bucket = _resource_block(template, "DataOpsExportArchiveBucket")
+
+    assert "Type: AWS::S3::Bucket" in bucket
+    assert "DeletionPolicy: Retain" in bucket
+    assert "UpdateReplacePolicy: Retain" in bucket
+    assert "BlockPublicAcls: true" in bucket
+    assert "BlockPublicPolicy: true" in bucket
+    assert "IgnorePublicAcls: true" in bucket
+    assert "RestrictPublicBuckets: true" in bucket
+    assert "SSEAlgorithm: AES256" in bucket
+    assert "Status: Enabled" in bucket
+    assert "NoncurrentVersionExpirationInDays: !Ref ExportArchiveRetentionDays" in bucket
+    assert "Value: ExecutionExportArchive" in bucket
+    assert "Value: DataOpsV1ExecutionExports" in bucket
 
 
 def test_github_deploy_role_can_manage_dataops_execution_tables():
@@ -178,6 +204,19 @@ def test_github_deploy_role_can_manage_dataops_eventbridge_rules():
     assert "events:TagResource" in template
     assert "events:UntagResource" in template
     assert "events:${FullDocsRegion}:${AWS::AccountId}:rule/${FullDocsStackName}-*" in template
+
+
+def test_github_deploy_role_can_manage_dataops_export_archive_bucket():
+    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "Sid: DataOpsExportArchiveBucket" in template
+    assert "s3:CreateBucket" in template
+    assert "s3:PutEncryptionConfiguration" in template
+    assert "s3:PutBucketPublicAccessBlock" in template
+    assert "s3:PutBucketVersioning" in template
+    assert "s3:PutLifecycleConfiguration" in template
+    assert "s3:PutBucketTagging" in template
+    assert "arn:${AWS::Partition}:s3:::${FullDocsStackName}-*" in template
 
 
 def test_active_and_legacy_oidc_templates_default_to_dataops_repo_and_stack():
