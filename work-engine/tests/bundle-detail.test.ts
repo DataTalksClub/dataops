@@ -170,6 +170,27 @@ describe('Bundle detail view (issue #27)', () => {
       assert.ok(result.body.includes('bundleUpdatePromise'), 'should update bundle links when saving required link');
       assert.ok(result.body.includes('taskUpdatePromise'), 'should update task link when saving required link');
     });
+
+    it('app.js renders operator-fillable completion proof and skip closure controls', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('completion-proof-wrapper'), 'should render completion proof wrapper');
+      assert.ok(result.body.includes('data-completion-proof-task'), 'should render completion proof input');
+      assert.ok(result.body.includes('data-skip-closure-task'), 'should render skip closure select');
+      assert.ok(result.body.includes('data-save-completion-proof'), 'should render save proof button');
+      assert.ok(result.body.includes('taskMissingProofTitle'), 'should name missing proof before completion');
+    });
+
+    it('app.js uses shared proof and skip logic on dashboard and done task evidence', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask)'), 'dashboard should pass file proof state');
+      assert.ok(result.body.includes('task-missing-proof'), 'dashboard should show missing proof reason');
+      assert.ok(result.body.includes('renderTaskCompletionEvidence'), 'done tasks should render compact evidence');
+      assert.ok(result.body.includes('data-task-completion-evidence'), 'done evidence should have a stable selector');
+      assert.ok(result.body.includes('isBundleLinkMissing'), 'bundle missing-link checks should be skip-aware');
+      assert.ok(result.body.includes('emptyBundleLinkCoveredBySkip'), 'empty bundle links should be suppressible by completed skip evidence');
+    });
   });
 
   describe('Bundle API - stage update', () => {

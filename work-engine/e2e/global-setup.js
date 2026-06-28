@@ -1,7 +1,6 @@
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
-const { chromium } = require('@playwright/test');
 const fs = require('fs');
 
 const TEST_SERVER_PORT = 3001;
@@ -9,6 +8,30 @@ const READY_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 300;
 
 const AUTH_STATE_PATH = path.join(__dirname, '.auth-state.json');
+const GRACE_USER = {
+  id: '00000000-0000-0000-0000-000000000001',
+  name: 'Grace',
+  email: 'grace@datatalks.club',
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
+
+function writeDefaultAuthState() {
+  fs.writeFileSync(
+    AUTH_STATE_PATH,
+    JSON.stringify({
+      cookies: [],
+      origins: [
+        {
+          origin: `http://localhost:${TEST_SERVER_PORT}`,
+          localStorage: [
+            { name: 'dataops_token', value: 'e2e-bypass-token' },
+            { name: 'dataops_user', value: JSON.stringify(GRACE_USER) },
+          ],
+        },
+      ],
+    }, null, 2)
+  );
+}
 
 /**
  * Poll the test server until it responds or timeout is reached.
@@ -88,41 +111,9 @@ module.exports = async function globalSetup() {
 
   console.log(`[global-setup] Test server is ready on port ${TEST_SERVER_PORT}`);
 
-  // ── Auth: Log in as Grace and save the auth state ──────────────
-  const baseURL = `http://localhost:${TEST_SERVER_PORT}`;
-
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ baseURL });
-
-  try {
-    const response = await page.request.post('/api/auth/login', {
-      data: { email: 'grace@datatalks.club', password: '111' },
-    });
-
-    if (response.status() === 200) {
-      const { token, user } = await response.json();
-
-      // Navigate to the app and set localStorage
-      await page.goto('/');
-      await page.evaluate((args) => {
-        localStorage.setItem(args.tokenKey, args.token);
-        localStorage.setItem(args.userKey, JSON.stringify(args.user));
-      }, {
-        tokenKey: 'dataops_token',
-        userKey: 'dataops_user',
-        token,
-        user,
-      });
-
-      // Save the storage state
-      await page.context().storageState({ path: AUTH_STATE_PATH });
-      console.log('[global-setup] Auth state saved with token for Grace');
-    } else {
-      console.warn('[global-setup] Login failed with status', response.status(), '- tests may fail');
-    }
-  } catch (err) {
-    console.warn('[global-setup] Could not set up auth state:', err.message);
-  } finally {
-    await browser.close();
-  }
+  // UI tests do not need a server-side session while SKIP_AUTH=true. Use a
+  // deterministic localStorage session so auth/logout tests cannot invalidate
+  // the shared browser storage state for unrelated UI tests.
+  writeDefaultAuthState();
+  console.log('[global-setup] Auth state saved with test bypass token for Grace');
 };

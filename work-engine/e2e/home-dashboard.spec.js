@@ -8,9 +8,36 @@ function todayString() {
     String(d.getDate()).padStart(2, '0');
 }
 
+function offsetDateString(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
 // Seed user IDs (from seed-users script)
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
+
+async function cleanupTask(request, task) {
+  if (!task) return;
+  try {
+    await request.delete('/api/tasks/' + task.id);
+  } catch (err) {
+    console.warn('[cleanup] Could not delete task ' + task.id + ': ' + err.message);
+  }
+}
+
+async function cleanupBundle(request, bundleId) {
+  if (!bundleId) return;
+  try {
+    await request.put('/api/bundles/' + bundleId + '/archive');
+    await request.delete('/api/bundles/' + bundleId);
+  } catch (err) {
+    console.warn('[cleanup] Could not delete bundle ' + bundleId + ': ' + err.message);
+  }
+}
 
 test.describe('Home dashboard (issue #26)', () => {
 
@@ -320,9 +347,14 @@ test.describe('Home dashboard (issue #26)', () => {
       await expect(page.locator('#dashboard-bundles .empty-state-body')).toContainText('Create a bundle');
       await expect(page.locator('#dashboard-bundles .empty-state-action', { hasText: 'New bundle' })).toHaveAttribute('href', '#/bundles');
 
-      await expect(page.locator('#dashboard-tasks .empty-state-title')).toHaveText('No tasks for today');
-      await expect(page.locator('#dashboard-tasks .empty-state-body')).toContainText('Use the task list');
-      await expect(page.locator('#dashboard-tasks .empty-state-action', { hasText: 'Open tasks' })).toHaveAttribute('href', '#/tasks');
+      const queueEmpty = page.locator('#dashboard-tasks .empty-state-title');
+      if (await queueEmpty.count()) {
+        await expect(queueEmpty).toHaveText('No queue tasks');
+        await expect(page.locator('#dashboard-tasks .empty-state-body')).toContainText('Use the task list');
+        await expect(page.locator('#dashboard-tasks .empty-state-action', { hasText: 'Open tasks' })).toHaveAttribute('href', '#/tasks');
+      } else {
+        await expect(page.locator('#dashboard-tasks table')).toBeVisible();
+      }
     });
   });
 
@@ -357,9 +389,9 @@ test.describe('Home dashboard (issue #26)', () => {
       await expect(page.locator('.dashboard-left')).toContainText('Active Bundles');
     });
 
-    test('Right column has "Today\'s Tasks" heading', async ({ page }) => {
+    test('Right column has "Daily Queue" heading', async ({ page }) => {
       await page.goto('/#/');
-      await expect(page.locator('.dashboard-right')).toContainText("Today's Tasks");
+      await expect(page.locator('.dashboard-right')).toContainText('Daily Queue');
     });
 
     test('Assigned to me toggle is present and checked by default', async ({ page }) => {
@@ -498,6 +530,310 @@ test.describe('Home dashboard (issue #26)', () => {
         await expect(page.locator('#dashboard-tasks')).not.toContainText('This comment should NOT be visible');
       } finally {
         await request.delete('/api/tasks/' + task.id);
+      }
+    });
+
+    test('Dashboard task rows save comment evidence from the queue', async ({ page, request }) => {
+      const today = todayString();
+      let task;
+
+      try {
+        const commentRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard comment proof newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+            proofRequirement: { type: 'comment', label: 'Newsletter block updated', required: true },
+          },
+        });
+        task = await commentRes.json();
+
+        await page.goto('/#/');
+        await expect(page.locator('#dashboard-tasks table')).toBeVisible({ timeout: 10000 });
+
+        const commentRow = page.locator('[data-task-row="' + task.id + '"]');
+        await expect(commentRow).toContainText('Add completion note: Newsletter block updated');
+        await expect(commentRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expect(commentRow).toContainText('Missing evidence');
+
+        await commentRow.locator('[data-completion-proof-task="' + task.id + '"]').fill('Newsletter block updated from dashboard');
+        await commentRow.locator('[data-save-completion-proof="' + task.id + '"]').click();
+        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
+        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await expect.poll(async () => {
+          const saved = await (await request.get('/api/tasks/' + task.id)).json();
+          return saved.comment + '|' + saved.status;
+        }).toBe('Newsletter block updated from dashboard|done');
+      } finally {
+        await cleanupTask(request, task);
+      }
+    });
+
+    test('Dashboard task rows save external status evidence from the queue', async ({ page, request }) => {
+      const today = todayString();
+      let task;
+
+      try {
+        const statusRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard external status newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+            proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
+          },
+        });
+        task = await statusRes.json();
+
+        await page.goto('/#/');
+        await expect(page.locator('#dashboard-tasks table')).toBeVisible({ timeout: 10000 });
+
+        const statusRow = page.locator('[data-task-row="' + task.id + '"]');
+        await expect(statusRow).toContainText('Add completion status: Mailchimp campaign scheduled');
+        await expect(statusRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expect(statusRow).toContainText('Missing evidence');
+
+        await statusRow.locator('[data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from dashboard');
+        await statusRow.locator('[data-save-completion-proof="' + task.id + '"]').click();
+        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
+        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await expect.poll(async () => {
+          const saved = await (await request.get('/api/tasks/' + task.id)).json();
+          return saved.externalStatus + '|' + saved.status;
+        }).toBe('Mailchimp campaign scheduled from dashboard|done');
+      } finally {
+        await cleanupTask(request, task);
+      }
+    });
+
+    test('Dashboard task rows save file proof from the queue', async ({ page, request }) => {
+      const today = todayString();
+      let task;
+
+      try {
+        const fileRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard invoice proof newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+            requiresFile: true,
+            proofRequirement: { type: 'file', label: 'Invoice PDF or invoice proof', required: true },
+          },
+        });
+        task = await fileRes.json();
+
+        await page.goto('/#/');
+        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+
+        const fileRow = page.locator('[data-task-row="' + task.id + '"]');
+        await expect(fileRow).toContainText('Attach Invoice PDF or invoice proof to complete');
+        await expect(fileRow.locator('.task-status-checkbox')).toBeDisabled();
+
+        await fileRow.locator('[data-required-file-task="' + task.id + '"]').setInputFiles({
+          name: 'dashboard-invoice-proof.txt',
+          mimeType: 'text/plain',
+          buffer: Buffer.from('dashboard invoice proof'),
+        });
+        await fileRow.locator('[data-upload-required-file="' + task.id + '"]').click();
+        await expect(page.locator('[data-task-row="' + task.id + '"] .proof-present')).toContainText('1 file attached');
+        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
+        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await expect.poll(async () => {
+          const taskBody = await (await request.get('/api/tasks/' + task.id)).json();
+          const files = await (await request.get('/api/files?taskId=' + task.id)).json();
+          return taskBody.status + '|' + files.files.length;
+        }).toBe('done|1');
+      } finally {
+        await cleanupTask(request, task);
+      }
+    });
+
+    test('Dashboard task rows save direct links and fresh skip closures from the queue', async ({ page, request }) => {
+      const today = todayString();
+      const created = [];
+      let bundleId;
+
+      try {
+        const bundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Dashboard direct evidence bundle',
+            anchorDate: today,
+            status: 'active',
+            bundleLinks: [
+              { name: 'Sponsorship document', url: '' },
+            ],
+          },
+        });
+        bundleId = (await bundleRes.json()).bundle.id;
+
+        const linkRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard required link newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            requiredLinkName: 'Sponsorship document',
+            proofRequirement: { type: 'url', label: 'Sponsorship document', required: true },
+            validation: { requiredBundleLinks: ['Sponsorship document'] },
+          },
+        });
+        created.push(await linkRes.json());
+
+        const skippedRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard skipped sponsored social task',
+            date: today,
+            assigneeId: GRACE_ID,
+            requiredLinkName: 'LinkedIn',
+            proofRequirement: { type: 'url', label: 'LinkedIn', required: true },
+            validation: {
+              skipClosure: {
+                allowedStatuses: ['not sponsored this week'],
+                requires: ['comment'],
+              },
+            },
+          },
+        });
+        created.push(await skippedRes.json());
+
+        await page.goto('/#/');
+        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+
+        const linkRow = page.locator('[data-task-row="' + created[0].id + '"]');
+        await expect(linkRow).toContainText('Add Sponsorship document link to complete');
+        await expect(linkRow.locator('.task-status-checkbox')).toBeDisabled();
+
+        const skippedRow = page.locator('[data-task-row="' + created[1].id + '"]');
+        await expect(skippedRow.locator('.task-status-checkbox')).toBeDisabled();
+
+        await linkRow.locator('.required-link-input').fill('https://docs.example/sponsorship');
+        await linkRow.locator('.required-link-input').press('Enter');
+        await expect(page.locator('[data-task-row="' + created[0].id + '"] .task-status-checkbox')).toBeEnabled();
+        await page.locator('[data-task-row="' + created[0].id + '"] .task-status-checkbox').check();
+        await expect.poll(async () => {
+          const task = await (await request.get('/api/tasks/' + created[0].id)).json();
+          const bundle = (await (await request.get('/api/bundles/' + bundleId)).json()).bundle;
+          const sponsorLink = bundle.bundleLinks.find((link) => link.name === 'Sponsorship document');
+          return task.link + '|' + task.status + '|' + sponsorLink.url;
+        }).toBe('https://docs.example/sponsorship|done|https://docs.example/sponsorship');
+
+        await skippedRow.locator('[data-skip-closure-task="' + created[1].id + '"]').selectOption('not sponsored this week');
+        await skippedRow.locator('[data-save-completion-proof="' + created[1].id + '"]').click();
+        await expect(page.locator('[data-task-row="' + created[1].id + '"] .task-status-checkbox')).toBeEnabled();
+        await page.locator('[data-task-row="' + created[1].id + '"] .task-status-checkbox').check();
+        await expect.poll(async () => {
+          const task = await (await request.get('/api/tasks/' + created[1].id)).json();
+          return task.status + '|' + task.comment;
+        }).toContain('done|');
+        const skippedTask = await (await request.get('/api/tasks/' + created[1].id)).json();
+        expect(skippedTask.comment).toContain('not sponsored this week');
+        expect(skippedTask.link).toBeUndefined();
+      } finally {
+        for (const task of created) {
+          await cleanupTask(request, task);
+        }
+        await cleanupBundle(request, bundleId);
+      }
+    });
+
+    test('Dashboard task rows save shared bundle links from the queue', async ({ page, request }) => {
+      const today = todayString();
+      let task;
+      let bundleId;
+
+      try {
+        const bundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Dashboard shared evidence bundle',
+            anchorDate: today,
+            status: 'active',
+            bundleLinks: [
+              { name: 'Mailchimp newsletter', url: '' },
+            ],
+          },
+        });
+        bundleId = (await bundleRes.json()).bundle.id;
+
+        const sharedLinkRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard shared Mailchimp link newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
+            proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
+            validation: { requiredBundleLinks: ['Mailchimp newsletter'] },
+          },
+        });
+        task = await sharedLinkRes.json();
+
+        await page.goto('/#/');
+        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+
+        const sharedLinkRow = page.locator('[data-task-row="' + task.id + '"]');
+        await expect(sharedLinkRow).toContainText('Add Mailchimp newsletter shared link to complete');
+        await expect(sharedLinkRow.locator('.task-status-checkbox')).toBeDisabled();
+
+        await sharedLinkRow.locator('.required-bundle-link-input').fill('https://mailchimp.example/dashboard-newsletter');
+        await sharedLinkRow.locator('.required-bundle-link-input').press('Enter');
+        await expect(page.locator('[data-task-row="' + task.id + '"]')).toContainText('Add completion status: Mailchimp campaign scheduled');
+        await page.locator('[data-task-row="' + task.id + '"] [data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from shared link row');
+        await page.locator('[data-task-row="' + task.id + '"] [data-save-completion-proof="' + task.id + '"]').click();
+        await expect(page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox')).toBeEnabled();
+        await page.locator('[data-task-row="' + task.id + '"] .task-status-checkbox').check();
+        await expect.poll(async () => {
+          const taskBody = await (await request.get('/api/tasks/' + task.id)).json();
+          const bundle = (await (await request.get('/api/bundles/' + bundleId)).json()).bundle;
+          const mailchimpLink = bundle.bundleLinks.find((link) => link.name === 'Mailchimp newsletter');
+          return taskBody.externalStatus + '|' + taskBody.status + '|' + mailchimpLink.url;
+        }).toBe('Mailchimp campaign scheduled from shared link row|done|https://mailchimp.example/dashboard-newsletter');
+      } finally {
+        await cleanupTask(request, task);
+        await cleanupBundle(request, bundleId);
+      }
+    });
+
+    test('Dashboard task rows keep overdue and follow-up labels visible', async ({ page, request }) => {
+      const today = todayString();
+      const created = [];
+
+      try {
+        const overdueRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard overdue newsletter task',
+            date: offsetDateString(-1),
+            assigneeId: GRACE_ID,
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        created.push(await overdueRes.json());
+
+        const followUpRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard follow-up newsletter task',
+            date: offsetDateString(-2),
+            assigneeId: GRACE_ID,
+            status: 'waiting',
+            waitingFor: 'Sponsor reply',
+            followUpAt: today,
+            comment: 'Waiting for sponsor reply',
+            validation: { dashboardStates: ['waiting', 'follow-up-due'] },
+          },
+        });
+        created.push(await followUpRes.json());
+
+        await page.goto('/#/');
+        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+
+        const overdueRow = page.locator('[data-task-row="' + created[0].id + '"]');
+        await expect(overdueRow).toContainText('Overdue');
+
+        const followUpRow = page.locator('[data-task-row="' + created[1].id + '"]');
+        await expect(followUpRow).toContainText('Follow-up due');
+      } finally {
+        for (const task of created) {
+          await cleanupTask(request, task);
+        }
       }
     });
   });
