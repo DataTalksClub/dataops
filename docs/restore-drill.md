@@ -29,9 +29,9 @@ Before any restore, make sure both layers are active:
 1. **DynamoDB PITR** - point-in-time recovery is enabled on all durable
    execution tables (tasks, bundles, templates, users, files, notifications).
    This protects against accidental deletes and bad updates.
-2. **Portable export** - an application-level JSONL snapshot that does not
-   depend on DynamoDB internals. This is the migration path to Postgres or
-   another store.
+2. **Portable export archive** - an application-level JSONL snapshot bundled as
+   a retained offsite archive that does not depend on DynamoDB internals. This
+   is the migration path to Postgres or another store.
 
 ## On-Demand Backup Procedure
 
@@ -52,14 +52,15 @@ Repeat for each durable table: `bundles`, `templates`, `users`, `files`,
 Create a portable export:
 
 ```bash
-npm --prefix work-engine run export:data -- /tmp/dataops-export
+npm --prefix work-engine run export:data -- .tmp/exports/dataops-export
 ```
 
 Or trigger the scheduled export route:
 
 ```bash
 curl -X POST http://localhost:3000/api/cron/export
-# Requires EXPORT_OUTPUT_DIR to be set on the work-engine
+# Uses DATAOPS_EXPORT_ARCHIVE_BUCKET/DATAOPS_EXPORT_ARCHIVE_PREFIX when set,
+# or DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR for local archive drills.
 ```
 
 The export produces:
@@ -73,17 +74,31 @@ templates.jsonl
 recurring_configs.jsonl
 files.jsonl
 notifications.jsonl
+artifacts.jsonl
+assistant_jobs.jsonl
+audit_events.jsonl
 ```
 
 Password hashes and session tokens are redacted. File binaries are excluded;
 only metadata is exported.
+
+Offsite archives are gzip-compressed tar files stored under:
+
+```text
+<prefix>/<environment>/<YYYY-MM-DD>/dataops-execution-<generated-at>.tar.gz
+```
+
+The deployed SAM stack sets `DATAOPS_EXPORT_ARCHIVE_BUCKET`,
+`DATAOPS_EXPORT_ARCHIVE_PREFIX`, and `DATAOPS_ENV` for the private work-engine.
+The archive bucket is retained, private, encrypted, versioned, tagged for backup
+selection, and configured with noncurrent-version lifecycle retention.
 
 ## Validation
 
 Validate the export:
 
 ```bash
-npm --prefix work-engine run validate:export -- /tmp/dataops-export
+npm --prefix work-engine run validate:export -- .tmp/exports/dataops-export
 ```
 
 This checks manifest schema version, file presence, entity counts, checksums,
@@ -95,7 +110,7 @@ Run a dry-run import to see what a restore would write without mutating any
 data:
 
 ```bash
-npm --prefix work-engine run dry-run:import -- /tmp/dataops-export
+npm --prefix work-engine run dry-run:import -- .tmp/exports/dataops-export
 ```
 
 Output:
@@ -116,6 +131,38 @@ Output:
 ```
 
 Exits zero when valid, non-zero when validation fails.
+
+## Restore Evidence From Archive
+
+Generate local restore evidence from an archive without writing production data:
+
+```bash
+npm --prefix work-engine run restore:drill -- \
+  --archive s3://<archive-bucket>/<archive-key> \
+  --target-environment staging-drill \
+  --output-dir .tmp/exports/restore-drill
+```
+
+For local tests, pass a `file://` archive URI returned by the scheduled export
+route. The command extracts the archive under `.tmp/exports/restore-drill`, runs
+`validate:export`, runs `dry-run:import`, and writes
+`restore-evidence-<timestamp>.json`.
+
+The evidence report includes:
+
+- source archive URI/key
+- app git SHA
+- export `generated_at`
+- manifest checksum summary
+- validation result
+- dry-run import counts
+- skipped and invalid record counts
+- target environment
+- evidence timestamp
+- smoke-check checklist result
+
+`restore:drill` rejects `production` and `prod` as target environments. It does
+not restore, import, overwrite, delete, or repair production DynamoDB records.
 
 ## PITR Restore
 
@@ -141,12 +188,14 @@ aws dynamodb restore-table-to-point-in-time \
 Run this sequence end-to-end before production data becomes critical:
 
 1. Create on-demand DynamoDB backups for all durable tables.
-2. Create a portable export.
-3. Validate the export.
-4. Run a dry-run import to confirm record counts.
-5. Restore or import into a staging environment.
-6. Run the smoke checks below.
-7. Export staging data again and compare entity counts.
+2. Create or select an offsite portable export archive.
+3. Run `restore:drill` into `.tmp/exports/restore-drill`.
+4. Validate the extracted export.
+5. Run a dry-run import to confirm record counts.
+6. Restore or import into a staging or isolated environment only after a human
+   approves the write target.
+7. Run the smoke checks below.
+8. Export staging data again and compare entity counts.
 
 ### Smoke Checks After Restore
 
@@ -166,3 +215,6 @@ Run this sequence end-to-end before production data becomes critical:
   a separate artifact archive.
 - The dry-run import validates and counts but does not write to a target
   database. A full import tool (for Postgres migration) is a follow-up.
+- Production restore/import/write behavior is human-gated. Automated cron
+  export, admin export, validation, and dry-run evidence paths are read-only
+  with respect to production execution tables.

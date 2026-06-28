@@ -80,6 +80,38 @@ export bundles.
 DynamoDB records should reference S3 objects by `storage_uri`, checksum, and
 metadata. DynamoDB shouldn't store the file binaries.
 
+## Offsite Export Archives
+
+The V1 SAM stack owns a retained S3 bucket for portable execution export
+archives. The work-engine receives the bucket name and prefix through stack
+environment variables:
+
+- `DATAOPS_EXPORT_ARCHIVE_BUCKET`
+- `DATAOPS_EXPORT_ARCHIVE_PREFIX` (default `execution-exports`)
+- `DATAOPS_ENV`
+
+Archive object keys use this shape:
+
+```text
+<prefix>/<environment>/<YYYY-MM-DD>/dataops-execution-<generated-at>.tar.gz
+```
+
+The key includes environment and generation time only. It must not include task
+titles, user emails, operator names, customer names, credentials, signed URLs,
+or other private data.
+
+The archive object is a gzip-compressed tar containing `manifest.json` and the
+portable JSONL entity files. It is still an application-level export and must
+preserve the normal portable export safety rules: no password hashes, live
+sessions, API keys, OAuth tokens, cookies, signed temporary URLs, private
+credentials, raw binary payloads, or DynamoDB-only key dependency.
+
+The SAM bucket is private, encrypted with S3-managed encryption, versioned,
+retained on stack deletion/replacement, tagged for backup selection, and has a
+lifecycle rule for noncurrent versions. Production operators must verify the
+deployed bucket settings and at least one scheduled/admin archive object in AWS
+before treating production execution data as critical.
+
 ## Portable Export Format
 
 Portable exports are application-level snapshots.
@@ -88,6 +120,7 @@ Current implementation:
 
 - `npm --prefix work-engine run export:data -- <export-dir>`
 - `npm --prefix work-engine run validate:export -- <export-dir>`
+- `npm --prefix work-engine run restore:drill -- --archive <file-or-s3-uri> --target-environment <non-prod> --output-dir .tmp/exports/restore-drill`
 
 Required archive layout:
 
@@ -280,12 +313,14 @@ able to read the archive from disk or S3 and write to Postgres.
 Run a restore drill before relying on production execution data:
 
 1. Create on-demand DynamoDB backups.
-2. Create a portable export.
-3. Validate the export.
-4. Restore or import into a staging environment.
-5. Run smoke checks.
-6. Export staging data again.
-7. Compare entity counts and key checksums.
+2. Create or select a portable export archive.
+3. Generate restore evidence under `.tmp/exports/restore-drill`.
+4. Validate the extracted export.
+5. Run a dry-run import.
+6. Restore or import into staging or a scratch table only after human approval.
+7. Run smoke checks.
+8. Export staging data again.
+9. Compare entity counts and key checksums.
 
 Minimum smoke checks:
 
@@ -296,6 +331,16 @@ Minimum smoke checks:
 - list due notifications
 - list files for a task
 - export again
+
+The restore evidence report records the source archive URI/key, app git SHA,
+export `generated_at`, manifest checksum summary, validation result, dry-run
+import counts, skipped/invalid record counts, target environment, timestamp,
+and smoke-check checklist result. The evidence command never writes production
+data.
+
+Production restore, import, table replacement, overwrite, delete, or data repair
+is human-gated. Automated cron export, admin export, validation, restore
+evidence, and dry-run import paths must not mutate production DynamoDB tables.
 
 ## Implementation Checklist
 
