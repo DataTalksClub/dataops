@@ -21,7 +21,10 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: dataops-v1-deploy
+  cancel-in-progress: false
 
 env:
   AWS_REGION: eu-west-1
@@ -36,9 +39,6 @@ jobs:
   checks:
     name: Check DataOps v1 app
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: lambda-functions
 
     steps:
       - name: Check out repository
@@ -58,25 +58,78 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Run docs app tests
-        working-directory: .
         run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
 
+      - name: Install docs Playwright Chromium
+        run: uv run --project lambda-functions --with playwright python -m playwright install --with-deps chromium
+
+      - name: Run browser-backed docs portal flow
+        run: uv run --project lambda-functions --extra search --with pytest --with playwright python -m pytest tests/docs_app/test_playwright_local_docs_flow.py
+
       - name: Install Node workspace dependencies
-        working-directory: .
         run: npm ci
 
+      - name: Install work-engine Playwright Chromium
+        run: npm exec --workspace dataops-work-engine -- playwright install --with-deps chromium
+
       - name: Run work-engine tests
-        working-directory: .
-        run: npm run test:work-engine
+        run: npm --prefix work-engine test
 
       - name: Typecheck work-engine
-        working-directory: .
-        run: npm run typecheck:work-engine
+        run: npm --prefix work-engine run typecheck
+
+      - name: Build work-engine
+        run: npm --prefix work-engine run build
+
+      - name: Run work-engine Playwright E2E
+        run: npm --prefix work-engine run test:e2e
+
+      - name: Upload work-engine Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: work-engine-playwright-artifacts
+          path: |
+            work-engine/playwright-report/
+            work-engine/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build search index
-        run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-search.index
+        working-directory: lambda-functions
+        run: |
+          mkdir -p ../.tmp
+          uv run --extra search python -m lambda_functions.build_search_index \
+            --docs-dir ../content \
+            --output ../.tmp/dataops-content-search.index
+
+      - name: Smoke test search handler against built index
+        working-directory: lambda-functions
+        env:
+          SEARCH_INDEX_PATH: ../.tmp/dataops-content-search.index
+        run: |
+          uv run --extra search python - <<'PY'
+          import json
+          from lambda_functions import search_handler
+
+          search_handler.reset_index()
+          response = search_handler.handler(
+              {
+                  "rawPath": "/search",
+                  "requestContext": {"http": {"method": "GET"}},
+                  "queryStringParameters": {"q": "workflow", "limit": "5"},
+              },
+              None,
+          )
+          assert response["statusCode"] == 200, response
+          body = json.loads(response["body"])
+          assert body["results"], body
+          first = body["results"][0]
+          assert first["id"] and first["path"] and first["title"], first
+          PY
 
       - name: Smoke test full app handler
+        working-directory: lambda-functions
         env:
           BASIC_AUTH_PASSWORD: smoke-test-password
           BASIC_AUTH_USERNAME: smoke-test-user
@@ -111,15 +164,20 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate SAM template
+        working-directory: lambda-functions
         run: sam validate --template-file template.full.yaml
 
       - name: Build SAM artifact
+        working-directory: lambda-functions
         run: sam build --config-env full-sandbox
 
   deploy:
     name: Deploy DataOps v1 app
     runs-on: ubuntu-latest
     needs: checks
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: lambda-functions
@@ -166,6 +224,36 @@ jobs:
               "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
               "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"
+
+      - name: Smoke test deployed docs full app
+        run: |
+          docs_url="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='DocsFullAppUrl'].OutputValue" \
+            --output text)"
+          python - "$docs_url" <<'PY'
+          import sys
+          from urllib.error import HTTPError
+          from urllib.request import HTTPRedirectHandler, build_opener
+
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          base_url = sys.argv[1].rstrip("/")
+          opener = build_opener(NoRedirect)
+
+          login = opener.open(f"{base_url}/login")
+          assert login.status == 200, login.status
+
+          try:
+              opener.open(f"{base_url}/")
+          except HTTPError as exc:
+              assert exc.code == 302, exc.code
+              assert exc.headers["location"] == "/login", exc.headers
+          else:
+              raise AssertionError("Protected root did not redirect to /login")
+          PY
 
       - name: Smoke test private work engine Lambda
         run: |

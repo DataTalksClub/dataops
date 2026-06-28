@@ -657,19 +657,19 @@ test.describe('Frontend bundles page', () => {
   });
 
   test('creating a bundle from the frontend form works', async ({ page }) => {
+    const title = `Frontend Bundle ${Date.now()}`;
+
     await page.goto('/#/bundles');
     await page.waitForSelector('#bundle-title');
 
-    await page.fill('#bundle-title', 'Test Bundle');
+    await page.fill('#bundle-title', title);
     await page.fill('#bundle-anchor', '2026-07-01');
     await page.click('#bundle-create-btn');
 
-    // Wait for the bundle card to appear
-    await page.waitForSelector('.bundle-card-title');
-
-    const titles = await page.locator('.bundle-card-title').allTextContents();
-    expect(titles).toContain('Test Bundle');
-    const card = page.locator('.bundle-card', { hasText: 'Test Bundle' });
+    const card = page.locator('.bundle-card').filter({
+      has: page.locator('.bundle-card-title', { hasText: title }),
+    });
+    await expect(card).toBeVisible();
     await expect(card.locator('.card-action-link')).toHaveText('Open bundle');
     await expect(card.locator('.card-action-link')).toHaveAttribute('href', '#/bundles');
   });
