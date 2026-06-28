@@ -641,6 +641,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
 
                     page.locator(".ops-lane-today .ops-lane-item", has_text="Approve newsletter draft artifact").click()
                     page.locator("#task-panel-title").wait_for(state="visible")
+                    page.locator("#task-panel-body").get_by_text("Newsletter draft output").wait_for(state="visible")
                     assert page.locator("#task-panel-body").get_by_text("Artifact proof").is_visible()
                     assert page.locator("#task-panel-body").get_by_text("Newsletter draft output").is_visible()
                     assert page.locator("#task-panel-body").get_by_text("needs-review").is_visible()
