@@ -188,6 +188,26 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('currentUserId'), 'should have currentUserId field set from logged-in user');
     });
 
+    it('app.js resets assigned-to-me when current user is missing from loaded users', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('if (dashboardState.currentUserId && !usersMap[dashboardState.currentUserId])'), 'should detect missing current user');
+      assert.ok(result.body.includes("dashboardState.currentUserId = '';"), 'should clear missing current user id');
+      assert.ok(result.body.includes('dashboardState.assignedToMe = false;'), 'should turn off assigned-to-me filtering');
+      assert.ok(result.body.includes("document.getElementById('assigned-to-me')"), 'should find assigned-to-me checkbox');
+      assert.ok(result.body.includes('if (toggle) toggle.checked = false;'), 'should uncheck assigned-to-me checkbox');
+      assert.ok(result.body.includes("allOpt.textContent = 'All operators';"), 'should include All operators option');
+      assert.ok(result.body.includes('allOpt.selected = !dashboardState.currentUserId;'), 'should select All operators with no current user');
+    });
+
+    it('app.js only applies assigned-to-me filtering for known users and keeps unassigned rows', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('if (dashboardState.assignedToMe && dashboardState.currentUserId && usersMap[dashboardState.currentUserId])'), 'should guard assigned-to-me filtering by usersMap membership');
+      assert.ok(result.body.includes('return !t.assigneeId || t.assigneeId === dashboardState.currentUserId;'), 'should include unassigned tasks in assigned-to-me view');
+      assert.ok(result.body.includes('return !item.assigneeId || item.assigneeId === dashboardState.currentUserId;'), 'should include unassigned intake items in assigned-to-me view');
+    });
+
     it('app.js filters active bundles client-side', async () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});

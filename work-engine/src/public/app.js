@@ -1481,7 +1481,18 @@
     loadUsersOnce().then(function (usersMap) {
       var picker = document.getElementById('dashboard-user-picker');
       if (!picker) return;
+      if (dashboardState.currentUserId && !usersMap[dashboardState.currentUserId]) {
+        dashboardState.currentUserId = '';
+        dashboardState.assignedToMe = false;
+        var toggle = document.getElementById('assigned-to-me');
+        if (toggle) toggle.checked = false;
+      }
       picker.replaceChildren();
+      var allOpt = document.createElement('option');
+      allOpt.value = '';
+      allOpt.textContent = 'All operators';
+      allOpt.selected = !dashboardState.currentUserId;
+      picker.appendChild(allOpt);
       Object.keys(usersMap).forEach(function (uid) {
         var opt = document.createElement('option');
         opt.value = uid;
@@ -2111,9 +2122,9 @@
       var tasks = dedupeTasksById(todoTasks.concat(waitingTasks));
 
       // Apply assigned-to-me filter
-      if (dashboardState.assignedToMe && dashboardState.currentUserId) {
+      if (dashboardState.assignedToMe && dashboardState.currentUserId && usersMap[dashboardState.currentUserId]) {
         tasks = tasks.filter(function (t) {
-          return t.assigneeId === dashboardState.currentUserId;
+          return !t.assigneeId || t.assigneeId === dashboardState.currentUserId;
         });
         dueIntake = dueIntake.filter(function (item) {
           return !item.assigneeId || item.assigneeId === dashboardState.currentUserId;
