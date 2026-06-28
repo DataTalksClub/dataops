@@ -151,10 +151,13 @@ let currentWarnings = [];
 let lastSavedContent = "";
 let hasDraft = false;
 let searchController = null;
+let activeSearchSources = [];
 let operationsWorkSnapshot = emptyOperationsWorkSnapshot();
 let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
 let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
 let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
+let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
+let operationsQualityFilters = { severity: "", category: "", workflow: "", document: "" };
 let activeWorkspaceView = "home";
 let docReturnContext = null;
 const DRAFT_PREFIX = "dtc-doc-draft:";
@@ -208,6 +211,7 @@ editor.addEventListener("input", () => {
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   refreshDocuments();
+  closeSidebar();
 });
 
 searchInput.addEventListener("input", debounce(refreshDocuments, 250));
@@ -399,6 +403,7 @@ async function loadDocuments() {
     refreshOperationsRecurringSnapshot({ rerender: true });
     refreshOperationsArtifactSnapshot({ rerender: true });
     refreshOperationsAssistantSnapshot({ rerender: true });
+    refreshOperationsQualitySnapshot({ rerender: true });
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -578,22 +583,21 @@ async function refreshDocuments() {
       url.searchParams.set("limit", "80");
       if (domainFilter.value) url.searchParams.set("domain", domainFilter.value);
       if (typeFilter.value) url.searchParams.set("doc_type", typeFilter.value);
+      if (systemFilter.value) url.searchParams.set("system", systemFilter.value);
+      if (tagFilter.value) url.searchParams.set("tag", tagFilter.value);
 
       const payload = await request(url, { signal: controller.signal });
       if (searchController !== controller) return;
       searchController = null;
 
-      let results = payload.results || [];
-      // Tag/system filters aren't server-side; intersect with the local list.
-      if (systemFilter.value || tagFilter.value) {
-        const allowed = new Set(localFiltered.map((d) => d.path));
-        results = results.filter((r) => allowed.has(r.path));
-      }
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      activeSearchSources = Array.isArray(payload.sources) ? payload.sources : [];
       visibleDocuments = results;
       selectedFolder = "";
       renderTree(localFiltered);
-      renderDocuments(visibleDocuments, "Search results");
-      setStatus(resultCount(visibleDocuments, "matching document"));
+      renderUnifiedSearchResults(results, activeSearchSources, query);
+      const unavailable = activeSearchSources.filter((source) => source.status === "unavailable").length;
+      setStatus(`${results.length} search results${unavailable ? ` · ${unavailable} source issues` : ""}.`);
       syncLibraryPageTitle();
       return;
     }
@@ -672,8 +676,10 @@ function renderOperationsHome(documents) {
     draftPaths: listDraftPaths(),
     workSnapshot: operationsWorkSnapshot,
     recurringSnapshot: operationsRecurringSnapshot,
+    qualitySnapshot: operationsQualitySnapshot,
   });
   documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = "Operations Home";
   setPageTitle("Operations Home", "Home");
   clearSelectionButton.hidden = true;
@@ -696,6 +702,7 @@ function renderOperationsHome(documents) {
     ["Waiting", model.lanes.find((lane) => lane.id === "waiting")?.items.length || 0],
     ["Missing proof", model.stats.missingProofTasks],
     ["At-risk workflows", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
+    ["Process blockers", model.quality.activeBlockingCount],
   ]) {
     const box = document.createElement("div");
     box.className = "ops-stat";
@@ -738,6 +745,7 @@ function renderOperationsHome(documents) {
   for (const lane of model.lanes) lanes.append(renderOperationsLane(lane));
   wrap.append(lanes);
 
+  wrap.append(renderProcessQualityHomeSection(model.quality));
   wrap.append(renderOperationsFutureSections(model.futureSections));
   wrap.append(renderOperationalSurfaceStates(model));
   wrap.append(renderRecurringOperationsSection(model.recurring));
@@ -788,6 +796,7 @@ function renderOperationsSurface(documents, view) {
     draftPaths: listDraftPaths(),
     workSnapshot: operationsWorkSnapshot,
     recurringSnapshot: operationsRecurringSnapshot,
+    qualitySnapshot: operationsQualitySnapshot,
   });
   const titles = {
     queue: "Work Queue",
@@ -796,11 +805,12 @@ function renderOperationsSurface(documents, view) {
     assistants: "Assistants",
     artifacts: "Artifacts",
     processes: "Processes / Docs",
-    search: "Search / Docs-only",
+    search: "Search",
     admin: "Admin",
   };
   const title = titles[view] || "Operations Home";
   documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = title;
   setPageTitle(title, title);
   clearSelectionButton.hidden = true;
@@ -817,8 +827,8 @@ function renderOperationsSurface(documents, view) {
   else if (view === "templates") wrap.append(renderTemplatesRecurringSurface(model));
   else if (view === "assistants") wrap.append(renderAssistantsSurface());
   else if (view === "artifacts") wrap.append(renderArtifactsSurface());
-  else if (view === "processes") wrap.append(renderProcessesSurface(documents));
-  else if (view === "search") wrap.append(renderDocsOnlySearchSurface(documents));
+  else if (view === "processes") wrap.append(renderProcessesSurface(documents, model));
+  else if (view === "search") wrap.append(renderUnifiedSearchSurface(documents));
   else if (view === "admin") wrap.append(renderAdminSurface(model));
   else renderOperationsHome(documents);
 
@@ -833,7 +843,7 @@ function surfaceDescription(view) {
     assistants: "Workflow support jobs appear here only when the assistant job lifecycle is connected.",
     artifacts: "Review proof and operational outputs linked to workflows and tasks.",
     processes: "SOPs, templates, and references are contextual support for work.",
-    search: "Current search is docs-only until unified work/docs/artifact search ships.",
+    search: "Find live work, workflows, artifacts, assistant jobs, templates, and process docs from one operator search.",
     admin: "Maintainer tools for process docs, content publishing, diagnostics, and configuration.",
   };
   return descriptions[view] || "";
@@ -845,7 +855,8 @@ function surfaceStatusText(view, model) {
   if (view === "templates") return `${model.templates.length} workflow templates · ${model.recurring.configs.length} recurring configs.`;
   if (view === "assistants") return operationsAssistantSnapshot.loaded ? `${operationsAssistantSnapshot.jobs.length} assistant jobs.` : "Assistant jobs not connected.";
   if (view === "artifacts") return operationsArtifactSnapshot.loaded ? `${operationsArtifactSnapshot.artifacts.length} artifacts indexed.` : "Artifact index not connected.";
-  if (view === "search") return "Docs-only search.";
+  if (view === "processes") return operationsQualitySnapshot.loaded ? `${operationsQualitySnapshot.findings.length} process quality findings.` : "Process quality report unavailable.";
+  if (view === "search") return "Unified operator search.";
   return "Workflow-first workspace.";
 }
 
@@ -1070,11 +1081,15 @@ function renderArtifactSurfaceRow(artifact) {
   return row;
 }
 
-function renderProcessesSurface(documents) {
+function renderProcessesSurface(documents, model) {
   const section = document.createElement("section");
   section.className = "ops-processes-surface";
-  const note = renderHonestState("Processes support work", "Use SOPs, templates, and references from task or workflow context first. Browse unmapped process docs here when needed.");
+  const quality = model?.quality || buildProcessQualityModel(operationsQualitySnapshot, operationsWorkSnapshot);
+  const note = renderHonestState("Processes support work", "Use SOPs, templates, and references from task or workflow context first. Process quality findings below focus on runnable workflow risk and maintainer gaps.");
   section.append(note);
+
+  section.append(renderProcessQualityDrilldown(quality));
+
   const grid = document.createElement("div");
   grid.className = "ops-reference-grid";
   for (const ref of buildOperationsReferenceLinks(documents)) grid.append(renderOperationsReference(ref));
@@ -1082,14 +1097,103 @@ function renderProcessesSurface(documents) {
   return section;
 }
 
-function renderDocsOnlySearchSurface(documents) {
+function renderProcessQualityDrilldown(quality) {
+  const wrap = document.createElement("section");
+  wrap.className = "ops-section ops-quality-drilldown";
+  wrap.setAttribute("aria-label", "Process quality drill-down");
+
+  const header = document.createElement("div");
+  header.className = "ops-section-header";
+  const title = document.createElement("h3");
+  title.textContent = "Quality Findings";
+  const meta = document.createElement("span");
+  meta.textContent = quality.loaded
+    ? `${quality.totalFindings} findings - ${quality.summary?.blocking || 0} blocking in template/report data`
+    : "Report unavailable";
+  header.append(title, meta);
+  wrap.append(header);
+
+  if (!quality.loaded) {
+    wrap.append(renderHonestState("Process quality report unavailable", quality.errors[0] || "Validation could not run."));
+    return wrap;
+  }
+  if (!quality.activeWorkLoaded) {
+    wrap.append(renderHonestState("Live work unavailable", "Active task/workflow impact cannot be confirmed. Severity below reflects template and process-doc risk only."));
+  }
+
+  const filters = document.createElement("div");
+  filters.className = "ops-quality-filters";
+  const findings = quality.maintainerFindings;
+  const filterDefs = [
+    ["severity", "Severity", ["", ...uniqueSorted(findings.map((finding) => finding.severity))]],
+    ["category", "Category", ["", ...uniqueSorted(findings.map((finding) => finding.category))]],
+    ["workflow", "Workflow", ["", ...uniqueSorted(findings.map((finding) => finding.workflowSlug || finding.templateId).filter(Boolean))]],
+    ["document", "Document", ["", ...uniqueSorted(findings.map((finding) => finding.docPath || finding.docId || finding.instructionDocId).filter(Boolean))]],
+  ];
+  for (const [key, labelText, values] of filterDefs) {
+    const label = document.createElement("label");
+    label.className = "ops-quality-filter";
+    label.textContent = labelText;
+    const select = document.createElement("select");
+    for (const value of values) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value ? value : "All";
+      select.append(option);
+    }
+    select.value = operationsQualityFilters[key] || "";
+    select.addEventListener("change", () => {
+      operationsQualityFilters = { ...operationsQualityFilters, [key]: select.value };
+      refreshDocuments();
+    });
+    label.append(select);
+    filters.append(label);
+  }
+  wrap.append(filters);
+
+  const filtered = filterQualityFindings(findings, operationsQualityFilters);
+  const list = document.createElement("div");
+  list.className = "ops-quality-list";
+  if (filtered.length === 0) {
+    list.append(renderHonestState("No findings match filters", "Change filters to inspect other process quality findings."));
+  } else {
+    for (const finding of filtered.slice(0, 80)) list.append(renderQualityFindingRow(finding));
+    if (filtered.length > 80) {
+      const more = document.createElement("p");
+      more.className = "ops-empty";
+      more.textContent = `Showing 80 of ${filtered.length} findings. Narrow the filters to inspect the rest.`;
+      list.append(more);
+    }
+  }
+  wrap.append(list);
+  return wrap;
+}
+
+function filterQualityFindings(findings, filters) {
+  return findings.filter((finding) => {
+    if (filters.severity && finding.severity !== filters.severity) return false;
+    if (filters.category && finding.category !== filters.category) return false;
+    if (filters.workflow && ![finding.workflowSlug, finding.templateId].includes(filters.workflow)) return false;
+    if (filters.document && ![finding.docPath, finding.docId, finding.instructionDocId].includes(filters.document)) return false;
+    return true;
+  });
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean).map(String))].sort((a, b) => a.localeCompare(b));
+}
+
+function renderUnifiedSearchSurface(documents) {
   const section = document.createElement("section");
   section.className = "ops-state-list";
-  section.append(renderHonestState("Docs-only search", "Unified task, workflow, artifact, and document search belongs to #32. The sidebar search field currently searches indexed process docs only."));
+  const searchState = activeSearchSources.some((source) => source.status === "unavailable")
+    ? "Search is showing partial source availability from the latest query."
+    : "Use the sidebar search to find executable work and process context together.";
+  section.append(renderHonestState("Operator search", searchState));
   const action = document.createElement("button");
   action.type = "button";
   action.className = "ops-quick-btn";
-  action.textContent = "Focus docs search";
+  action.textContent = "Focus search";
   action.addEventListener("click", () => {
     searchInput.focus();
     searchInput.select();
@@ -1137,6 +1241,234 @@ function renderHonestState(titleText, bodyText) {
   return state;
 }
 
+function normalizeOperationsQualitySnapshot(input) {
+  const snapshot = input && typeof input === "object" ? input : {};
+  const findings = Array.isArray(snapshot.findings)
+    ? snapshot.findings.filter((finding) => finding && typeof finding === "object").map(normalizeQualityFinding)
+    : [];
+  return {
+    loaded: Boolean(snapshot.loaded),
+    ok: snapshot.ok !== false,
+    findings,
+    summary: snapshot.summary && typeof snapshot.summary === "object" ? snapshot.summary : { total: findings.length },
+    errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
+    validationErrors: Array.isArray(snapshot.validationErrors) ? snapshot.validationErrors : [],
+  };
+}
+
+function normalizeQualityFinding(finding) {
+  return {
+    ...finding,
+    id: String(finding.id || `${finding.category || "quality"}:${finding.title || ""}:${finding.docPath || ""}:${finding.taskId || ""}`),
+    category: String(finding.category || "process-quality"),
+    severity: normalizeQualitySeverity(finding.severity),
+    title: String(finding.title || "Process quality finding"),
+    summary: String(finding.summary || ""),
+    source: String(finding.source || "process quality"),
+    nextAction: String(finding.nextAction || "open doc"),
+    status: String(finding.status || "open"),
+    docId: String(finding.docId || ""),
+    docPath: String(finding.docPath || ""),
+    templateId: String(finding.templateId || ""),
+    workflowSlug: String(finding.workflowSlug || ""),
+    instructionDocId: String(finding.instructionDocId || ""),
+    taskRef: String(finding.taskRef || ""),
+    taskId: String(finding.taskId || ""),
+    bundleId: String(finding.bundleId || ""),
+  };
+}
+
+function normalizeQualitySeverity(value) {
+  const severity = String(value || "warning").toLowerCase();
+  return ["blocking", "warning", "info"].includes(severity) ? severity : "warning";
+}
+
+function buildProcessQualityModel(report, work) {
+  const snapshot = normalizeOperationsQualitySnapshot(report || operationsQualitySnapshot);
+  const activeFindings = snapshot.loaded && work.loaded ? activeProcessQualityFindings(snapshot.findings, work) : [];
+  const maintainerFindings = snapshot.findings.slice().sort(compareQualityFindings);
+  const visibleHomeFindings = (activeFindings.length > 0 ? activeFindings : maintainerFindings).slice(0, 6);
+  return {
+    loaded: snapshot.loaded,
+    ok: snapshot.ok,
+    errors: snapshot.errors,
+    validationErrors: snapshot.validationErrors,
+    summary: snapshot.summary,
+    activeWorkLoaded: work.loaded,
+    activeFindings,
+    maintainerFindings,
+    visibleHomeFindings,
+    activeBlockingCount: activeFindings.filter((finding) => finding.severity === "blocking").length,
+    totalFindings: maintainerFindings.length,
+  };
+}
+
+function activeProcessQualityFindings(reportFindings, work) {
+  const findings = [];
+  const tasks = allWorkTasks(work).filter(isOpenWorkTask);
+  const taskIds = new Set();
+  for (const task of tasks) {
+    for (const finding of runtimeTaskQualityFindings(task)) {
+      findings.push(finding);
+      taskIds.add(finding.id);
+    }
+    const doc = task.instructionDocId ? resolveDocReference(task.instructionDocId) : null;
+    if (!doc) continue;
+    for (const finding of reportFindings) {
+      if (!findingMatchesDoc(finding, doc)) continue;
+      const active = {
+        ...finding,
+        id: `${finding.id}:task:${task.id}`,
+        severity: "blocking",
+        taskId: String(task.id || ""),
+        bundleId: String(task.bundleId || finding.bundleId || ""),
+        title: `${finding.title}`,
+        summary: `${workTaskTitle(task)} uses this process doc. ${finding.summary}`,
+        nextAction: "open task",
+      };
+      if (!taskIds.has(active.id)) {
+        findings.push(active);
+        taskIds.add(active.id);
+      }
+    }
+  }
+  for (const bundle of work.activeBundles || []) {
+    const matched = reportFindings.filter((finding) => findingMatchesBundle(finding, bundle));
+    for (const finding of matched) {
+      findings.push({
+        ...finding,
+        id: `${finding.id}:bundle:${bundle.id}`,
+        severity: "blocking",
+        bundleId: String(bundle.id || ""),
+        summary: `${workBundleTitle(bundle)} is active. ${finding.summary}`,
+        nextAction: "open workflow",
+      });
+    }
+  }
+  return dedupeQualityFindings(findings).sort(compareQualityFindings);
+}
+
+function runtimeTaskQualityFindings(task) {
+  const findings = [];
+  const title = workTaskTitle(task);
+  const docId = String(task?.instructionDocId || "");
+  if (docId && !resolveDocReference(docId)) {
+    findings.push(normalizeQualityFinding({
+      id: `runtime-missing-doc:${task.id}:${docId}`,
+      category: "broken-doc-reference",
+      severity: "blocking",
+      title: "Task instructions cannot be opened",
+      summary: `${title} points to instructionDocId ${docId}, but the document registry cannot resolve it.`,
+      source: "runtime task scan",
+      nextAction: "open task",
+      instructionDocId: docId,
+      taskId: task.id,
+      bundleId: task.bundleId,
+    }));
+  } else if (!docId && task?.instructionsUrl && /docs\.google\.com\/document/i.test(String(task.instructionsUrl))) {
+    findings.push(normalizeQualityFinding({
+      id: `runtime-external-doc:${task.id}`,
+      category: "legacy-external-only-doc",
+      severity: "blocking",
+      title: "Task only has an external instructions link",
+      summary: `${title} uses a Google Docs instructionsUrl without a stable in-repo instructionDocId.`,
+      source: "runtime task scan",
+      nextAction: "open task",
+      taskId: task.id,
+      bundleId: task.bundleId,
+    }));
+  } else if (!docId && !task?.instructionsUrl) {
+    findings.push(normalizeQualityFinding({
+      id: `runtime-no-doc:${task.id}`,
+      category: "template-doc-gap",
+      severity: "blocking",
+      title: "Task has no process instructions",
+      summary: `${title} has no instructionDocId or instructionsUrl, so the operator cannot open task instructions from the workflow.`,
+      source: "runtime task scan",
+      nextAction: "open task",
+      taskId: task.id,
+      bundleId: task.bundleId,
+    }));
+  }
+
+  if (taskNeedsProofInstruction(task) && !taskHasClearProofInstruction(task)) {
+    findings.push(normalizeQualityFinding({
+      id: `runtime-proof:${task.id}`,
+      category: "missing-proof-instructions",
+      severity: "blocking",
+      title: "Task proof guidance is unclear",
+      summary: `${title} requires evidence, but the task does not clearly name the URL, file, artifact, comment, or external status needed for closure.`,
+      source: "runtime task scan",
+      nextAction: "add proof requirement",
+      taskId: task.id,
+      bundleId: task.bundleId,
+      instructionDocId: docId,
+    }));
+  }
+  return findings;
+}
+
+function taskNeedsProofInstruction(task) {
+  if (!task || typeof task !== "object") return false;
+  if (task.requiredLinkName || task.requiresFile) return true;
+  const proof = task.proofRequirement;
+  if (proof && typeof proof === "object" && proof.required !== false) return true;
+  const validation = task.validation;
+  return Boolean(validation && typeof validation === "object" && (validation.requiredEvidence || validation.requiredBundleLinks));
+}
+
+function taskHasClearProofInstruction(task) {
+  if (task.requiredLinkName) return true;
+  const proof = task.proofRequirement;
+  if (proof && typeof proof === "object" && String(proof.label || "").trim()) return true;
+  const validation = task.validation;
+  if (validation && typeof validation === "object" && String(validation.requiredEvidence || "").trim()) return true;
+  return false;
+}
+
+function findingMatchesDoc(finding, doc) {
+  if (!finding || !doc) return false;
+  const ids = [doc.id, ...(Array.isArray(doc.aliases) ? doc.aliases : [])].filter(Boolean).map(String);
+  return (finding.docPath && finding.docPath === doc.path)
+    || (finding.docId && ids.includes(String(finding.docId)))
+    || (finding.instructionDocId && ids.includes(String(finding.instructionDocId)));
+}
+
+function findingMatchesBundle(finding, bundle) {
+  if (!finding || !bundle) return false;
+  const workflowValues = [
+    bundle.templateId,
+    bundle.templateType,
+    bundle.type,
+    bundle.workflowSlug,
+    bundle.workflowType,
+    bundle.slug,
+    bundle.title,
+    bundle.name,
+  ].filter(Boolean).map(normalizeTemplateMatchValue);
+  const findingValues = [finding.templateId, finding.workflowSlug].filter(Boolean).map(normalizeTemplateMatchValue);
+  return findingValues.some((value) => workflowValues.includes(value));
+}
+
+function dedupeQualityFindings(findings) {
+  const seen = new Set();
+  const out = [];
+  for (const finding of findings.map(normalizeQualityFinding)) {
+    const key = finding.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(finding);
+  }
+  return out;
+}
+
+function compareQualityFindings(a, b) {
+  const order = { blocking: 0, warning: 1, info: 2 };
+  const bySeverity = (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
+  if (bySeverity !== 0) return bySeverity;
+  return `${a.workflowSlug || ""}:${a.category}:${a.title}`.localeCompare(`${b.workflowSlug || ""}:${b.category}:${b.title}`);
+}
+
 function buildOperationsHomeModel(documents, options) {
   options = options || {};
   const docs = Array.isArray(documents) ? documents : [];
@@ -1180,6 +1512,8 @@ function buildOperationsHomeModel(documents, options) {
     : [];
   const allKnownTasks = allWorkTasks(work);
   const missingProofTasks = allKnownTasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok);
+  const fallbackQualitySnapshot = typeof operationsQualitySnapshot !== "undefined" ? operationsQualitySnapshot : {};
+  const quality = buildProcessQualityModel(options.qualitySnapshot || fallbackQualitySnapshot, work);
 
   const lanes = [
     {
@@ -1226,6 +1560,7 @@ function buildOperationsHomeModel(documents, options) {
     templates,
     references: buildOperationsReferenceLinks(docs),
     recurring,
+    quality,
     runtime: {
       connected: hasLiveWork,
       errors: runtimeErrors,
@@ -1246,6 +1581,7 @@ function buildOperationsHomeModel(documents, options) {
       enabledRecurringConfigs: recurring.enabled.length,
       workErrors: work.errors,
       currentOperatorId: work.currentOperatorId,
+      processQualityBlocking: quality.activeBlockingCount,
     },
   };
 }
@@ -1285,6 +1621,33 @@ function emptyOperationsAssistantSnapshot() {
     jobs: [],
     errors: [],
   };
+}
+
+function emptyOperationsQualitySnapshot() {
+  return {
+    loaded: false,
+    ok: false,
+    findings: [],
+    summary: { total: 0, blocking: 0, warning: 0, info: 0, byCategory: {} },
+    errors: [],
+    validationErrors: [],
+  };
+}
+
+async function refreshOperationsQualitySnapshot(options = {}) {
+  const snapshot = emptyOperationsQualitySnapshot();
+  try {
+    const payload = await request(apiUrl("/docs/process-quality"));
+    snapshot.loaded = true;
+    snapshot.ok = payload?.ok !== false;
+    snapshot.findings = Array.isArray(payload?.findings) ? payload.findings : [];
+    snapshot.summary = payload?.summary || snapshot.summary;
+    snapshot.validationErrors = Array.isArray(payload?.validationErrors) ? payload.validationErrors : [];
+  } catch (err) {
+    snapshot.errors = [err?.message || "Process quality report could not be loaded"];
+  }
+  operationsQualitySnapshot = normalizeOperationsQualitySnapshot(snapshot);
+  if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
 }
 
 async function refreshOperationsRecurringSnapshot(options = {}) {
@@ -1498,6 +1861,8 @@ function renderTaskPanel() {
     meta.append(assigneeRow);
   }
   taskPanelBody.append(meta);
+  const taskQuality = taskProcessQualityFindings(task);
+  if (taskQuality.length > 0) taskPanelBody.append(renderTaskQualityNotice(taskQuality));
 
   // Required link field
   if (task.requiredLinkName) {
@@ -1697,6 +2062,46 @@ function renderTaskInstructionDoc(task) {
   }
 
   return instruction;
+}
+
+function taskProcessQualityFindings(task) {
+  const runtimeFindings = runtimeTaskQualityFindings(task);
+  const doc = task?.instructionDocId ? resolveDocReference(task.instructionDocId) : null;
+  const docFindings = doc
+    ? operationsQualitySnapshot.findings
+        .filter((finding) => findingMatchesDoc(normalizeQualityFinding(finding), doc))
+        .map((finding) => normalizeQualityFinding({
+          ...finding,
+          id: `${finding.id}:panel:${task.id}`,
+          severity: "blocking",
+          taskId: task.id,
+          bundleId: task.bundleId,
+          nextAction: "open doc",
+        }))
+    : [];
+  return dedupeQualityFindings([...runtimeFindings, ...docFindings]).sort(compareQualityFindings);
+}
+
+function renderTaskQualityNotice(findings) {
+  const notice = document.createElement("div");
+  notice.className = "task-quality-notice";
+  const label = document.createElement("div");
+  label.className = "task-history-label";
+  label.textContent = `Process quality risk (${findings.length})`;
+  notice.append(label);
+  for (const finding of findings.slice(0, 3)) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `task-quality-row ops-quality-${finding.severity}`;
+    row.addEventListener("click", () => openQualityFinding(finding));
+    const title = document.createElement("strong");
+    title.textContent = finding.title;
+    const summary = document.createElement("span");
+    summary.textContent = finding.summary;
+    row.append(title, summary);
+    notice.append(row);
+  }
+  return notice;
 }
 
 function formatValidationInstruction(validation) {
@@ -3417,12 +3822,6 @@ function buildOperationsFutureSections() {
       status: "Not connected yet",
       body: "Assistant run status, approvals, retries, logs, and outputs will appear here after the assistant job lifecycle ships in #30.",
     },
-    {
-      id: "process-quality",
-      title: "Process Quality",
-      status: "Not connected yet",
-      body: "Broken links, TODO values, missing validation, and doc-health warnings will appear here after process quality telemetry ships in #35.",
-    },
   ];
 }
 
@@ -3512,6 +3911,109 @@ function renderOperationsFutureSections(sections) {
   return wrap;
 }
 
+function renderProcessQualityHomeSection(quality) {
+  const section = document.createElement("section");
+  section.className = "ops-section ops-process-quality";
+  section.setAttribute("aria-label", "Process quality");
+
+  const header = document.createElement("div");
+  header.className = "ops-section-header";
+  const title = document.createElement("h3");
+  title.textContent = "Process Quality";
+  const meta = document.createElement("span");
+  if (!quality.loaded) meta.textContent = "Report unavailable";
+  else if (quality.activeWorkLoaded) meta.textContent = `${quality.activeBlockingCount} active blockers`;
+  else meta.textContent = "Active impact unknown";
+  header.append(title, meta);
+
+  const drilldown = document.createElement("button");
+  drilldown.type = "button";
+  drilldown.className = "ops-quick-btn";
+  drilldown.textContent = "Open drill-down";
+  drilldown.addEventListener("click", () => showWorkspaceSurface("processes"));
+  header.append(drilldown);
+  section.append(header);
+
+  if (!quality.loaded) {
+    section.append(renderHonestState("Process quality could not load", quality.errors[0] || "Validation could not run in this environment."));
+    return section;
+  }
+  if (!quality.activeWorkLoaded) {
+    section.append(renderHonestState("Active-work impact cannot be confirmed", "Live /work/api task and workflow data is unavailable. Template and process-doc findings below are maintainer warnings, not confirmed production blockers."));
+  } else if (quality.activeFindings.length === 0) {
+    section.append(renderHonestState("No active process blockers", "Loaded tasks and active workflows have no unresolved instruction-doc, proof-guidance, or linked-SOP quality blockers."));
+  }
+
+  const list = document.createElement("div");
+  list.className = "ops-quality-list";
+  const findings = quality.visibleHomeFindings;
+  if (findings.length === 0) {
+    list.append(renderHonestState("No process quality findings", "The deterministic report returned no findings for workflow templates or process docs."));
+  } else {
+    for (const finding of findings) {
+      const displayFinding = quality.activeWorkLoaded ? finding : { ...finding, severity: finding.severity === "blocking" ? "warning" : finding.severity };
+      list.append(renderQualityFindingRow(displayFinding));
+    }
+  }
+  section.append(list);
+  return section;
+}
+
+function renderQualityFindingRow(finding) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = `ops-quality-row ops-quality-${finding.severity || "warning"}`;
+  row.addEventListener("click", () => openQualityFinding(finding));
+
+  const head = document.createElement("div");
+  head.className = "ops-quality-row-head";
+  const title = document.createElement("strong");
+  title.textContent = finding.title;
+  const severity = document.createElement("span");
+  severity.textContent = labelizeWorkValue(finding.severity || "warning");
+  head.append(title, severity);
+
+  const summary = document.createElement("small");
+  summary.textContent = finding.summary || finding.docPath || finding.instructionDocId || "";
+
+  const meta = document.createElement("div");
+  meta.className = "ops-queue-meta";
+  for (const value of [
+    finding.category,
+    finding.workflowSlug || finding.templateId,
+    finding.taskId ? `task ${finding.taskId}` : "",
+    finding.docPath || finding.docId || finding.instructionDocId,
+    finding.nextAction,
+  ].filter(Boolean).slice(0, 5)) {
+    const chip = document.createElement("span");
+    chip.textContent = value;
+    meta.append(chip);
+  }
+  row.append(head, summary, meta);
+  return row;
+}
+
+function openQualityFinding(finding) {
+  if (finding.taskId) {
+    openTaskPanel(finding.taskId);
+    return;
+  }
+  if (finding.bundleId) {
+    openBundlePanel(finding.bundleId);
+    return;
+  }
+  const doc = finding.docPath ? { path: finding.docPath } : resolveDocReference(finding.docId || finding.instructionDocId);
+  if (doc?.path) {
+    openDocument(doc.path, {
+      returnContext: finding.bundleId
+        ? { type: "workflow", id: finding.bundleId, title: finding.workflowSlug || finding.templateId }
+        : null,
+    });
+    return;
+  }
+  if (finding.workflowSlug || finding.templateId) showWorkspaceSurface("templates");
+}
+
 function renderOperationalSurfaceStates() {
   const wrap = document.createElement("section");
   wrap.className = "ops-section ops-future-section";
@@ -3535,7 +4037,7 @@ function renderOperationalSurfaceStates() {
       ? ["Artifacts", `${operationsArtifactSnapshot.artifacts.length} artifact rows loaded from /work/api/artifacts.`]
       : ["Artifacts", "Cross-workflow artifact index not connected; task/workflow artifacts still appear in context."],
     ["Inbox", "Not connected; #31 raw Telegram/email/manual intake is not represented with fake rows."],
-    ["Search", "Docs-only; unified task/workflow/artifact search belongs to #32."],
+    ["Search", "Connected through /search with partial-source states when work APIs are unavailable."],
   ];
   for (const [stateTitle, stateBody] of states) {
     const card = document.createElement("article");
@@ -3810,8 +4312,170 @@ function renderOperationsReference(ref) {
   return el;
 }
 
+function renderUnifiedSearchResults(results, sources, query) {
+  documentList.classList.remove("is-operations-home");
+  documentList.classList.add("is-unified-search");
+  libraryTitle.textContent = "Search results";
+  clearSelectionButton.hidden = false;
+
+  const wrap = document.createElement("div");
+  wrap.className = "unified-search-results";
+  const sourceState = renderSearchSourceState(sources);
+  if (sourceState) wrap.append(sourceState);
+
+  const safeResults = Array.isArray(results) ? results : [];
+  if (safeResults.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = query ? "No work or process context matches this search." : "Search for work, workflows, artifacts, assistant jobs, templates, or process docs.";
+    wrap.append(empty);
+    documentList.replaceChildren(wrap);
+    return;
+  }
+
+  for (const group of groupSearchResults(safeResults)) {
+    const section = document.createElement("section");
+    section.className = "unified-search-group";
+    const header = document.createElement("div");
+    header.className = "unified-search-group-header";
+    const title = document.createElement("h3");
+    title.textContent = group.label;
+    const count = document.createElement("span");
+    count.textContent = String(group.items.length);
+    header.append(title, count);
+    section.append(header);
+    for (const result of group.items) section.append(renderUnifiedSearchRow(result, query));
+    wrap.append(section);
+  }
+  documentList.replaceChildren(wrap);
+}
+
+function renderSearchSourceState(sources) {
+  const unavailable = (sources || []).filter((source) => source && source.status === "unavailable");
+  if (unavailable.length === 0) return null;
+  const section = document.createElement("section");
+  section.className = "ops-runtime-state search-source-state";
+  const title = document.createElement("strong");
+  title.textContent = "Partial search results";
+  const body = document.createElement("span");
+  body.textContent = "Some work sources could not load. Document results and any loaded work sources remain visible.";
+  section.append(title, body);
+  const list = document.createElement("ul");
+  for (const source of unavailable.slice(0, 5)) {
+    const item = document.createElement("li");
+    item.textContent = `${source.source || "source"}: ${source.error || "unavailable"}`;
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function groupSearchResults(results) {
+  const labels = {
+    task: "Tasks",
+    workflow: "Workflows",
+    template: "Runtime Templates",
+    doc: "Process Docs",
+    artifact: "Artifacts",
+    file: "Files",
+    "assistant-job": "Assistant Jobs",
+  };
+  const order = ["task", "workflow", "template", "doc", "artifact", "file", "assistant-job"];
+  const groups = new Map();
+  for (const result of results) {
+    const type = result?.type || "doc";
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(result);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => {
+      const ai = order.indexOf(a[0]);
+      const bi = order.indexOf(b[0]);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    })
+    .map(([type, items]) => ({ type, label: labels[type] || labelizeWorkValue(type), items }));
+}
+
+function renderUnifiedSearchRow(result, query) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = `unified-search-row result-${String(result.type || "doc").replace(/[^a-z0-9-]/gi, "-")}`;
+  row.addEventListener("click", () => openUnifiedSearchResult(result));
+
+  const main = document.createElement("div");
+  main.className = "unified-search-main";
+  const title = document.createElement("h3");
+  setHighlightedText(title, result.title || result.id || result.path || "Untitled result", query);
+  const summary = document.createElement("p");
+  setHighlightedText(summary, result.context || result.description || result.summary || "", query);
+  main.append(title, summary);
+
+  const meta = document.createElement("div");
+  meta.className = "unified-search-meta";
+  const chips = [
+    result.source_label || result.source || "",
+    result.doc_type || result.fields?.status || result.fields?.stage || "",
+    result.fields?.due_date ? `due ${result.fields.due_date}` : "",
+    result.fields?.assignee ? `owner ${result.fields.assignee}` : "",
+    result.fields?.proof || "",
+    result.path || "",
+  ].filter(Boolean);
+  for (const chipText of chips.slice(0, 5)) {
+    const chip = document.createElement("span");
+    chip.textContent = chipText;
+    meta.append(chip);
+  }
+
+  const action = document.createElement("span");
+  action.className = "unified-search-action";
+  action.textContent = result.action_label || "Open";
+  row.append(main, meta, action);
+  return row;
+}
+
+function openUnifiedSearchResult(result) {
+  const route = result?.route || {};
+  const kind = route.kind || result?.type;
+  if (kind === "doc" && (route.path || result.path)) {
+    openDocument(route.path || result.path);
+    return;
+  }
+  if (kind === "task" && route.taskId) {
+    openTaskPanel(route.taskId);
+    return;
+  }
+  if ((kind === "workflow" || kind === "bundle") && route.bundleId) {
+    openBundlePanel(route.bundleId);
+    return;
+  }
+  if (kind === "template") {
+    openQuickWorkflowForm({
+      template: {
+        templateId: route.templateId || result.id,
+        type: route.templateType || result.fields?.template_type,
+        title: result.title,
+      },
+    });
+    return;
+  }
+  if ((kind === "artifact" || kind === "file" || kind === "assistant-job") && route.taskId) {
+    openTaskPanel(route.taskId);
+    return;
+  }
+  if ((kind === "artifact" || kind === "file" || kind === "assistant-job") && route.bundleId) {
+    openBundlePanel(route.bundleId);
+    return;
+  }
+  if (kind === "assistant-job") {
+    showWorkspaceSurface("assistants");
+    return;
+  }
+  if (kind === "artifact" || kind === "file") showWorkspaceSurface("artifacts");
+}
+
 function renderDocuments(documents, title) {
   documentList.classList.remove("is-operations-home");
+  documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = title;
   const hasFilter = !!(selectedFolder || searchInput.value.trim());
   clearSelectionButton.hidden = !hasFilter;
