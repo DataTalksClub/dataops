@@ -2131,7 +2131,7 @@
         '</div>';
 
       html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
-        '<td class="task-status"><input type="checkbox" class="task-status-checkbox" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></td>' +
+        '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' +
         '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
         '<td class="task-description" data-label="Task">' + taskCellHtml + '</td>' +
         '<td data-label="Status / Proof">' + instructionsHtml + '</td>' +
@@ -2960,7 +2960,7 @@
         }
 
         html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
-          '<td class="task-status"><input type="checkbox" class="task-status-checkbox" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></td>' +
+          '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' +
           '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
           '<td class="task-description editable" data-label="Description" data-field="description" data-task-id="' + t.id + '">' + renderMarkdownLinks(t.description) + '</td>' +
           '<td data-label="Bundle">' + bundleBadge + '</td>' +
@@ -4028,9 +4028,13 @@
       var checkboxCol = document.createElement('div');
       checkboxCol.className = 'task-checklist-checkbox-col';
 
+      var checkboxTarget = document.createElement('label');
+      checkboxTarget.className = 'task-status-hit-target';
+
       var checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'task-status-checkbox';
+      checkbox.setAttribute('aria-label', 'Toggle task completion');
       checkbox.checked = isDone;
       checkbox.disabled = checkboxDisabled;
       if (waitingBlockTitle || missingProofTitle) checkbox.title = waitingBlockTitle || missingProofTitle;
@@ -4044,7 +4048,8 @@
           checkbox.checked = !checkbox.checked;
         });
       });
-      checkboxCol.appendChild(checkbox);
+      checkboxTarget.appendChild(checkbox);
+      checkboxCol.appendChild(checkboxTarget);
       row.appendChild(checkboxCol);
 
       // ── Body column ──
