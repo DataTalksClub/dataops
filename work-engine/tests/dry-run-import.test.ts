@@ -9,6 +9,7 @@ import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createBundle } from '../src/db/bundles';
 import { createIntakeItem } from '../src/db/intake';
+import { createNotification } from '../src/db/notifications';
 import { createTask } from '../src/db/tasks';
 import { createTemplate } from '../src/db/templates';
 import { createUser } from '../src/db/users';
@@ -59,6 +60,28 @@ describe('dry-run import', () => {
       priority: 'normal',
       dataClass: 'internal',
     });
+    await createIntakeItem(client, {
+      id: 'dry-run-blocked-intake',
+      source: 'manual',
+      sourceReceivedAt: '2026-06-20T10:00:00.000Z',
+      status: 'blocked',
+      title: 'Dry-run blocked intake',
+      summary: 'Safe blocked intake context',
+      receivedChannels: ['manual'],
+      taskIds: [],
+      tags: ['restore'],
+      priority: 'normal',
+      dataClass: 'internal',
+      blockedReason: 'Waiting for guest',
+      waitingFor: 'Guest',
+      followUpAt: '2026-06-27',
+    });
+    await createNotification(client, {
+      type: 'follow-up-due',
+      message: 'Intake follow-up due: Dry-run blocked intake',
+      intakeItemId: 'dry-run-blocked-intake',
+      dueAt: '2026-06-27',
+    });
 
     await writePortableExport(client, exportDir, {
       generatedAt: '2026-06-27T00:00:00.000Z',
@@ -74,9 +97,14 @@ describe('dry-run import', () => {
     assert.deepStrictEqual(result.errors, []);
     assert.strictEqual(result.wouldWrite.users, 1);
     assert.strictEqual(result.wouldWrite.tasks, 1);
-    assert.strictEqual(result.wouldWrite.intake_items, 1);
+    assert.strictEqual(result.wouldWrite.intake_items, 2);
+    assert.strictEqual(result.wouldWrite.notifications, 1);
     assert.strictEqual(result.wouldWrite.bundles, 1);
     assert.strictEqual(result.wouldWrite.templates, 1);
+    assert.strictEqual(result.followUpSummary.blockedIntakeItems, 1);
+    assert.strictEqual(result.followUpSummary.standaloneBlockedIntakeItems, 1);
+    assert.strictEqual(result.followUpSummary.linkedWaitingTasks, 1);
+    assert.strictEqual(result.followUpSummary.intakeFollowUpNotifications, 1);
     assert.ok(result.totalRecords >= 4, `expected >= 4 records, got ${result.totalRecords}`);
   });
 

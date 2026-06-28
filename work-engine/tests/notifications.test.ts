@@ -13,6 +13,7 @@ import {
   listAllNotifications,
   dismissAllNotifications,
 } from '../src/db/notifications';
+import { createIntakeItem, updateIntakeItem } from '../src/db/intake';
 import { createTask, updateTask } from '../src/db/tasks';
 
 describe('Notifications data layer', () => {
@@ -256,6 +257,65 @@ describe('Notifications data layer', () => {
     assert.strictEqual(afterNewCycle.length, 1);
     assert.strictEqual(afterNewCycle[0].taskId, task.id);
     assert.strictEqual(afterNewCycle[0].dueAt, '2098-03-19T09:00:00.000Z');
+  });
+
+  it('creates idempotent reminders for standalone due blocked intake', async () => {
+    const dueIntake = await createIntakeItem(client, {
+      id: 'intake-notification-due',
+      source: 'manual',
+      sourceReceivedAt: '2098-04-01T09:00:00.000Z',
+      status: 'blocked',
+      title: 'Guest has not replied',
+      summary: 'Need a guest response',
+      receivedChannels: ['manual'],
+      taskIds: [],
+      waitingFor: 'Guest',
+      followUpAt: '2098-04-02T09:00:00.000Z',
+      blockedReason: 'Waiting for guest',
+      priority: 'normal',
+      dataClass: 'internal',
+    });
+    await createIntakeItem(client, {
+      id: 'intake-notification-attached',
+      source: 'manual',
+      sourceReceivedAt: '2098-04-01T09:00:00.000Z',
+      status: 'blocked',
+      title: 'Attached intake should not notify',
+      summary: 'Task owns this follow-up',
+      receivedChannels: ['manual'],
+      taskIds: ['task-owning-follow-up'],
+      waitingFor: 'Sponsor',
+      followUpAt: '2098-04-02T09:00:00.000Z',
+      blockedReason: 'Waiting for sponsor',
+      priority: 'normal',
+      dataClass: 'internal',
+    });
+
+    const first = await createDueFollowUpNotifications(client, {
+      now: '2098-04-02T10:00:00.000Z',
+    });
+    const intakeNotifications = first.filter((notification) => notification.intakeItemId === dueIntake.id);
+    assert.strictEqual(intakeNotifications.length, 1);
+    assert.strictEqual(intakeNotifications[0].type, 'follow-up-due');
+    assert.strictEqual(intakeNotifications[0].dueAt, '2098-04-02T09:00:00.000Z');
+    assert.ok(intakeNotifications[0].message.includes('Intake follow-up due'));
+
+    const second = await createDueFollowUpNotifications(client, {
+      now: '2098-04-02T10:00:00.000Z',
+    });
+    assert.strictEqual(second.filter((notification) => notification.intakeItemId === dueIntake.id).length, 0);
+
+    await dismissNotification(client, intakeNotifications[0].id);
+    const afterDismiss = await createDueFollowUpNotifications(client, {
+      now: '2098-04-02T10:00:00.000Z',
+    });
+    assert.strictEqual(afterDismiss.filter((notification) => notification.intakeItemId === dueIntake.id).length, 0);
+
+    await updateIntakeItem(client, dueIntake.id, { followUpAt: '2098-04-03T09:00:00.000Z' });
+    const afterReschedule = await createDueFollowUpNotifications(client, {
+      now: '2098-04-03T10:00:00.000Z',
+    });
+    assert.strictEqual(afterReschedule.filter((notification) => notification.intakeItemId === dueIntake.id).length, 1);
   });
 
   it('dismissAllNotifications dismisses all undismissed and returns count', async () => {

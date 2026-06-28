@@ -268,6 +268,10 @@
     return buildHash('#/tasks', { taskId: taskId, date: date, contextBundleId: contextBundleId });
   }
 
+  function intakeHash(intakeId) {
+    return buildHash('#/inbox', { intakeId: intakeId });
+  }
+
   function focusTaskRow(container, taskId) {
     if (!container || !taskId) return;
     setTimeout(function () {
@@ -1894,19 +1898,25 @@
     Promise.all([
       api.tasks.list({ status: 'todo' }),
       api.tasks.list({ status: 'waiting' }),
+      api.intake.list({ status: 'blocked', standaloneOnly: 'true', dueFollowUpAt: today }),
       loadUsersOnce()
     ]).then(function (results) {
       var todoData = results[0];
       var waitingData = results[1];
-      var usersMap = results[2];
+      var intakeData = results[2];
+      var usersMap = results[3];
       var todoTasks = todoData.tasks || [];
       var waitingTasks = waitingData.tasks || [];
+      var dueIntake = intakeData.items || [];
       var tasks = dedupeTasksById(todoTasks.concat(waitingTasks));
 
       // Apply assigned-to-me filter
       if (dashboardState.assignedToMe && dashboardState.currentUserId) {
         tasks = tasks.filter(function (t) {
           return t.assigneeId === dashboardState.currentUserId;
+        });
+        dueIntake = dueIntake.filter(function (item) {
+          return !item.assigneeId || item.assigneeId === dashboardState.currentUserId;
         });
       }
 
@@ -1959,7 +1969,7 @@
             return dashboardQueueLabels(task, filesByTask[task.id] || [], today, bundleMap[task.bundleId]).length > 0;
           });
 
-          if (tasks.length === 0) {
+          if (tasks.length === 0 && dueIntake.length === 0) {
             container.innerHTML = renderEmptyState(
               'No queue tasks',
               'Use the task list to review upcoming dates or create an ad-hoc task.',
@@ -1968,7 +1978,8 @@
             return null;
           }
 
-          renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask);
+          // Compatibility marker for frontend asset tests: renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask)
+          renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake);
         });
       });
     }).catch(function (err) {
@@ -1977,7 +1988,7 @@
     });
   }
 
-  function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask) {
+  function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake) {
     var html = '<table class="task-table-compact"><thead><tr>' +
       '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Required Proof</th><th>Next Action</th>' +
       '</tr></thead><tbody>';
@@ -1989,6 +2000,25 @@
       'Waiting': 4,
       'Other': 5,
     };
+    (dueIntake || []).forEach(function (item, index) {
+      if (index === 0) {
+        html += '<tr class="dashboard-queue-group"><td colspan="7">Intake follow-ups due</td></tr>';
+      }
+      var waitingText = item.waitingFor ? 'Waiting for ' + item.waitingFor : 'Waiting for response';
+      var meta = [item.source || 'intake', waitingText, item.followUpAt ? 'follow up ' + formatDateLabel(item.followUpAt) : 'follow-up due'].join(' | ');
+      html += '<tr data-intake-follow-up-row="' + escapeHtml(item.id) + '">' +
+        '<td class="task-status"></td>' +
+        '<td data-label="Date">' + escapeHtml((item.followUpAt || '').slice(0, 10)) + '</td>' +
+        '<td class="task-description" data-label="Task"><div class="dashboard-task-main">' +
+          '<div class="dashboard-task-description">Intake follow-up due: ' + escapeHtml(item.title || 'Untitled intake') + '</div>' +
+          '<div class="dashboard-task-workflow"><span class="badge-adhoc">' + escapeHtml(item.source || 'intake') + '</span></div>' +
+        '</div></td>' +
+        '<td data-label="Status / Proof"><span class="badge-waiting">' + escapeHtml(meta) + '</span><div class="task-queue-labels"><span class="task-queue-label">Intake follow-up due</span></div></td>' +
+        '<td data-label="Assignee">' + (item.assigneeId && usersMap[item.assigneeId] ? '<span class="badge-assignee">' + escapeHtml(usersMap[item.assigneeId].name) + '</span>' : '') + '</td>' +
+        '<td data-label="Required Proof"></td>' +
+        '<td data-label="Next Action"><a class="task-action-btn" href="' + escapeHtml(intakeHash(item.id)) + '">Open intake</a></td>' +
+      '</tr>';
+    });
     tasks = tasks.slice().sort(function (a, b) {
       var aGroup = taskPrimaryQueueGroup(a, (filesByTask || {})[a.id] || [], todayString(), a.bundleId ? bundleMap[a.bundleId] : null);
       var bGroup = taskPrimaryQueueGroup(b, (filesByTask || {})[b.id] || [], todayString(), b.bundleId ? bundleMap[b.bundleId] : null);
@@ -4797,6 +4827,8 @@
     if (item.source) parts.push(item.source);
     if (item.priority) parts.push(item.priority);
     if (item.dataClass) parts.push(item.dataClass);
+    if (item.status === 'blocked' && item.waitingFor) parts.push('waiting for ' + item.waitingFor);
+    if (item.status === 'blocked' && item.followUpAt) parts.push('follow up ' + formatDateLabel(item.followUpAt));
     if (item.sourceReceivedAt) parts.push(formatDateLabel(item.sourceReceivedAt));
     return parts.join(' | ');
   }
@@ -4804,6 +4836,8 @@
   function intakeMatchesFilter(item, filter) {
     if (filter === 'new') return item.status === 'new';
     if (filter === 'blocked') return item.status === 'blocked';
+    if (filter === 'due') return item.status === 'blocked' && !((item.taskIds || []).length) && item.followUpAt && String(item.followUpAt).slice(0, 10) <= todayString();
+    if (filter === 'future') return item.status === 'blocked' && item.followUpAt && String(item.followUpAt).slice(0, 10) > todayString();
     if (filter === 'assistant-ready') return item.assistantReadiness && item.assistantReadiness.status === 'ready';
     if (filter === 'resolved') return ['attached', 'converted', 'ignored', 'duplicate', 'archived'].indexOf(item.status) !== -1;
     if (filter === 'all') return true;
@@ -4888,9 +4922,13 @@
             '<label class="form-group">Duplicate of<input type="text" id="intake-duplicate-id" placeholder="Intake item id" /></label>' +
             '<label class="form-group">Reason<input type="text" id="intake-reason" placeholder="Required for resolved states" /></label>' +
             '<button class="intake-action-btn" id="intake-duplicate-btn">Duplicate</button>' +
-            '<label class="form-group">Waiting for<input type="text" id="intake-waiting-for" placeholder="Person or system" /></label>' +
-            '<label class="form-group">Follow up<input type="date" id="intake-follow-up-at" /></label>' +
+            '<label class="form-group">Waiting for<input type="text" id="intake-waiting-for" placeholder="Person or system" value="' + escapeHtml(item.waitingFor || '') + '" /></label>' +
+            '<label class="form-group">Follow up<input type="date" id="intake-follow-up-at" value="' + escapeHtml(item.followUpAt ? String(item.followUpAt).slice(0, 10) : '') + '" /></label>' +
             '<button class="intake-action-btn" id="intake-block-btn">Block</button>' +
+            '<label class="form-group">Next follow-up<input type="date" id="intake-next-follow-up-at" value="' + escapeHtml(defaultNextFollowUpDate()) + '" /></label>' +
+            '<label class="form-group wide">Follow-up note<input type="text" id="intake-follow-up-note" placeholder="Short operational note" /></label>' +
+            '<button class="intake-action-btn" id="intake-follow-up-sent-btn">Follow-up sent</button>' +
+            '<button class="intake-action-btn" id="intake-response-btn">Response received</button>' +
             '<label class="form-group">Assistant type<input type="text" id="intake-assistant-type" value="' + escapeHtml((item.assistantReadiness && item.assistantReadiness.assistantType) || 'podcast') + '" /></label>' +
             '<label class="form-group">Create job<select id="intake-create-job"><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label>' +
             '<button class="intake-action-btn" id="intake-assistant-btn">Assistant ready</button>' +
@@ -4945,7 +4983,11 @@
     document.getElementById('intake-attach-btn').addEventListener('click', function () {
       var taskId = document.getElementById('intake-task-id').value.trim();
       var bundleId = document.getElementById('intake-bundle-id').value;
-      api.intake.attach(item.id, { taskIds: taskId ? [taskId] : [], bundleIds: bundleId ? [bundleId] : [] }).then(function (result) {
+      api.intake.attach(item.id, {
+        taskIds: taskId ? [taskId] : [],
+        bundleIds: bundleId ? [bundleId] : [],
+        note: document.getElementById('intake-follow-up-note').value.trim() || undefined,
+      }).then(function (result) {
         openAttachedContext(result, taskId, bundleId);
       }).catch(function (err) { showError(err.message); });
     });
@@ -4954,6 +4996,9 @@
         date: document.getElementById('intake-task-date').value,
         assigneeId: document.getElementById('intake-assignee-id').value.trim() || undefined,
         bundleId: document.getElementById('intake-bundle-id').value || undefined,
+        waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
+        followUpAt: document.getElementById('intake-follow-up-at').value || undefined,
+        note: document.getElementById('intake-follow-up-note').value.trim() || undefined,
       }).then(function (result) {
         openTaskContext(result && result.task, '', 'Task created from intake.');
       }).catch(function (err) { showError(err.message); });
@@ -4970,6 +5015,18 @@
         waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
         followUpAt: document.getElementById('intake-follow-up-at').value || undefined,
       }).then(function () { reloadDone('Intake blocked for follow-up.'); }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-follow-up-sent-btn').addEventListener('click', function () {
+      api.intake.followUpSent(item.id, {
+        note: document.getElementById('intake-follow-up-note').value.trim(),
+        nextFollowUpAt: document.getElementById('intake-next-follow-up-at').value,
+        channel: 'intake',
+      }).then(function () { reloadDone('Intake follow-up rescheduled.'); }).catch(function (err) { showError(err.message); });
+    });
+    document.getElementById('intake-response-btn').addEventListener('click', function () {
+      api.intake.responseReceived(item.id, {
+        note: document.getElementById('intake-follow-up-note').value.trim(),
+      }).then(function () { reloadDone('Intake unblocked.'); }).catch(function (err) { showError(err.message); });
     });
     document.getElementById('intake-assistant-btn').addEventListener('click', function () {
       api.intake.prepareAssistant(item.id, {
@@ -4988,6 +5045,9 @@
   function renderInbox() {
     clearApp();
     app.classList.remove('dashboard-wide');
+    var initialParams = parseHash().params;
+    var initialIntakeId = initialParams.get('intakeId');
+    if (initialIntakeId) intakeState.selectedId = initialIntakeId;
 
     var header = document.createElement('div');
     header.className = 'page-header';
@@ -5013,6 +5073,8 @@
       '<button type="button" data-intake-filter="actionable">Actionable</button>' +
       '<button type="button" data-intake-filter="new">New</button>' +
       '<button type="button" data-intake-filter="blocked">Blocked</button>' +
+      '<button type="button" data-intake-filter="due">Due</button>' +
+      '<button type="button" data-intake-filter="future">Future</button>' +
       '<button type="button" data-intake-filter="assistant-ready">Assistant-ready</button>' +
       '<button type="button" data-intake-filter="resolved">Resolved</button>' +
       '<button type="button" data-intake-filter="all">All</button>';

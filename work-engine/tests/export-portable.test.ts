@@ -221,6 +221,34 @@ describe('portable execution data export', () => {
         createdAt: '2026-06-20T10:05:00.000Z',
       }],
     });
+    const blockedIntake = await createIntakeItem(client, {
+      id: 'intake-export-blocked',
+      source: 'manual',
+      sourceMessageId: 'manual-export-blocked-1',
+      sourceReceivedAt: '2026-06-20T10:30:00.000Z',
+      createdBy: user.id,
+      triagedBy: user.id,
+      status: 'blocked',
+      title: 'Blocked intake follow-up',
+      summary: 'Bounded follow-up context',
+      receivedChannels: ['manual'],
+      taskIds: [],
+      bundleIds: [],
+      tags: ['follow-up'],
+      priority: 'normal',
+      dataClass: 'internal',
+      blockedReason: 'Waiting for requester',
+      waitingFor: 'Requester',
+      followUpAt: '2026-06-21T09:00:00.000Z',
+      history: [{
+        id: 'intake-history-blocked',
+        action: 'blocked',
+        actorId: user.id,
+        reason: 'Waiting for requester',
+        metadata: { waitingFor: 'Requester', followUpAt: '2026-06-21T09:00:00.000Z' },
+        createdAt: '2026-06-20T10:35:00.000Z',
+      }],
+    });
     await updateTask(client, task.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
     await updateBundle(client, bundle.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
     await appendAssistantJobEvent(client, {
@@ -239,6 +267,14 @@ describe('portable execution data export', () => {
       bundleId: bundle.id,
       templateId: template.id,
       dueAt: '2026-06-21T09:00:00.000Z',
+    });
+    await createNotification(client, {
+      type: 'follow-up-due',
+      message: 'Intake follow-up due: Blocked intake follow-up',
+      userId: user.id,
+      intakeItemId: blockedIntake.id,
+      dueAt: '2026-06-21T09:00:00.000Z',
+      metadata: { kind: 'intake-follow-up-due' },
     });
     await createNotification(client, {
       type: 'recurring-due',
@@ -268,8 +304,8 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
     assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
-    assert.strictEqual(result.manifest.entity_counts.intake_items, 1);
-    assert.strictEqual(result.manifest.entity_counts.notifications, 2);
+    assert.strictEqual(result.manifest.entity_counts.intake_items, 2);
+    assert.strictEqual(result.manifest.entity_counts.notifications, 3);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
     assert.ok(result.manifest.omitted_entities.includes('sessions'));
     assert.ok(!result.manifest.omitted_entities.includes('artifacts'));
@@ -322,6 +358,7 @@ describe('portable execution data export', () => {
     const notificationsJsonl = await fs.readFile(path.join(exportDir, 'notifications.jsonl'), 'utf8');
     assert.match(notificationsJsonl, /"notification_type":"follow-up-due"/);
     assert.match(notificationsJsonl, /"notification_type":"recurring-due"/);
+    assert.match(notificationsJsonl, /"intake_item_id":"intake-export-blocked"/);
     assert.match(notificationsJsonl, /"recurring_config_id"/);
     assert.match(notificationsJsonl, /"due_at":"2026-06-21T09:00:00.000Z"/);
 
@@ -352,7 +389,11 @@ describe('portable execution data export', () => {
 
     const intakeJsonl = await fs.readFile(path.join(exportDir, 'intake_items.jsonl'), 'utf8');
     assert.match(intakeJsonl, /"intake_item_id":"intake-export"/);
+    assert.match(intakeJsonl, /"intake_item_id":"intake-export-blocked"/);
     assert.match(intakeJsonl, /"source":"manual"/);
+    assert.match(intakeJsonl, /"blocked_reason":"Waiting for requester"/);
+    assert.match(intakeJsonl, /"waiting_for":"Requester"/);
+    assert.match(intakeJsonl, /"follow_up_at":"2026-06-21T09:00:00.000Z"/);
     assert.match(intakeJsonl, /"task_ids":\["task-export-stable"\]/);
     assert.match(intakeJsonl, /"assistant_job_ids":\["assistant-job-export"\]/);
     assert.match(intakeJsonl, /"assistant_readiness":\{"assistantType":"podcast","status":"submitted"/);
