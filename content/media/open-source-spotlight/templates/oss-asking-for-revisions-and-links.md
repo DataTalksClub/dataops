@@ -1,14 +1,19 @@
 ---
+id: template.media.open-source-spotlight.oss-asking-for-revisions-and-links
+aliases: []
 title: "OSS - Asking for revisions and links"
 summary: "Reusable template for OSS - Asking for revisions and links, with placeholder wording for DataTalks.Club outreach, event reminders, announcements, or follow-up messages."
 doc_type: template
+schema_version: 1
 source: "Processes/Templates/Open-Source Spotlight - Templates/OSS - Asking for revisions and links.docx"
 tags:
   - templates
+  - open-source-spotlight
 systems:
   - github
   - youtube
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # OSS - Asking for revisions and links

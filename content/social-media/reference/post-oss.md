@@ -1,15 +1,20 @@
 ---
+id: reference.social-media.post-oss
+aliases: []
 title: "Post. OSS"
 summary: "Reference guide for Post. OSS, covering copy, assets, examples, or workflow notes for related DataTalks.Club operations."
 doc_type: reference
+schema_version: 1
 source: "Processes/Social Media/Post. OSS.docx"
 tags:
   - social-media
+  - open-source-spotlight
 systems:
   - loom
 loom:
   - https://www.loom.com/share/0de5cb62d40f4616942a0947a52cf187
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Post. OSS

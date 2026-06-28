@@ -1,4 +1,6 @@
 ---
+id: sop.media.open-source-spotlight.adding-links-from-the-zoom-chat
+aliases: []
 title: "Adding links from the Zoom chat"
 summary: "Extract useful links from a Zoom chat and add them to the relevant Open Source Spotlight video or event materials."
 doc_type: sop
@@ -8,7 +10,8 @@ tags:
   - open-source-spotlight
 systems:
   - zoom
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Adding links from the Zoom chat

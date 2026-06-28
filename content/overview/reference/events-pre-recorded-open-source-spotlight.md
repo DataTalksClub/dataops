@@ -1,7 +1,10 @@
 ---
+id: reference.overview.events-pre-recorded-open-source-spotlight
+aliases: []
 title: "Events (pre-recorded) - Open-Source Spotlight"
 summary: Covers Open-Source Spotlight from guest outreach and scheduling through Zoom recording, editing, speaker review, and YouTube publishing.
 doc_type: reference
+schema_version: 1
 source: "Processes/Events (pre-recorded) - Open-Source Spotlight.docx"
 systems:
   - github
@@ -9,7 +12,8 @@ systems:
   - linkedin
   - youtube
   - zoom
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Events (pre-recorded) - Open-Source Spotlight

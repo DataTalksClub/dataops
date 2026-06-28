@@ -1,4 +1,6 @@
 ---
+id: sop.media.video-youtube.add-timecodes-to-youtube-videos
+aliases: []
 title: "Add timecodes to YouTube videos"
 summary: "Steps to add generated timecodes to a YouTube video description, with guidance for the related DataTalks.Club workflow."
 doc_type: sop
@@ -11,7 +13,8 @@ systems:
   - youtube
 loom:
   - https://www.loom.com/share/94ae1b21839e45d7a5d3a8c771f9f5a6
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # Add timecodes to YouTube videos

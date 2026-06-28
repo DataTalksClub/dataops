@@ -438,47 +438,56 @@ Tasks (30):
   - Emoji: ⚙️
   - Tags: Open-Source Spotlight
   - Title: {TOOL} - {AUTHOR}
-- Anchor date: YouTube publish date
-- Trigger: manual. Created when a tool author agrees to record a demo
+- Anchor date: planned YouTube publication date, usually Wednesday 17:00 Europe/Berlin
+- Trigger: manual. Created when a tool/project is selected and author outreach or scheduling starts
 
-Pre-recorded video showcasing an open-source tool. Unlike live events, this is recorded asynchronously and then published.
+Pre-recorded video showcasing an open-source tool. The executable DataOps workflow keeps 14 task refs from the original Trello-derived OSS template and adds phase, stable process-doc IDs, proof gates, required runtime links, waiting/follow-up metadata, and stage transitions.
 
 Bundle links:
 - Guest email
 - Tool GitHub
-- Youtube
+- Recording source
+- YouTube
+- Author review
+- OSS playlist
+- Social announcement
+
+Phases:
+- `lead-outreach`: find project/authors and send outreach.
+- `recording-scheduling`: coordinate time, Calendly fallback, calendar, and recording details.
+- `recording-intake`: record or receive the demo and create the YouTube draft.
+- `video-production`: edit/review, add timecodes/links, and request author review.
+- `publication`: schedule YouTube, confirm playlist state, and notify the author.
+- `promotion-follow-up`: ask guest to share/recommend authors and publish/schedule social announcement.
 
 References:
 - [Process documents](https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit)
 - [Events](https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit)
 - [Events (pre-recorded) - Open-Source Spotlight](https://docs.google.com/document/d/1foX7pya-Ywi153LkZWFWBw2nI6HYvcQKS-QQBEUmGZc/edit)
 
+Stable source document IDs:
+- `task-template.tasks.oss`
+- `reference.overview.events`
+- `reference.overview.events-pre-recorded-open-source-spotlight`
+- OSS SOP/template/reference IDs under `sop.media.open-source-spotlight.*`, `template.media.open-source-spotlight.*`, and `reference.media.open-source-spotlight.*`
+- Shared context: `reference.social-media.post-oss`, `sop.media.video-youtube.add-timecodes-to-youtube-videos`, `sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist`
+
 Tasks (14):
 
-- Reach out to github authors
-- Reach out to tool author(s)
-  - instructions: https://docs.google.com/document/d/1FSJQoMOAZOpiA7EGR2t-xYcu_nEEd2hQSZCC3t5vdq8/edit
-- Find time if they can't find anything in calendly
-- Schedule the recording
-  - instructions: https://docs.google.com/document/d/1GsM_Vlit2bB5MCRUH3AQHZWk3xI96ZZEtEvgzb_CMyY/edit
-- Record the demo
-- Download the video from zoom and upload to YouTube
-  - instructions: https://docs.google.com/document/d/1LU0G3jlcCf19hYIp-TNfz94tDUrjEBvyPJ3_QuJQNvg/edit
-- Editing the video
-  - instructions: https://docs.google.com/document/d/1hN5STE669QiqwL5oWCIEDP-jbe7W2Aa93UKSQ3iUHEU/edit
-- Add timecodes to the YouTube video
-  - instructions: https://docs.google.com/document/d/1csT9bIvr8WNz3anuS-fO_WrIHvln2P3Hcsh7P0t-lOc/edit
-- Ask the authors to review the generated codes
-  - instructions: https://docs.google.com/document/d/1csT9bIvr8WNz3anuS-fO_WrIHvln2P3Hcsh7P0t-lOc/edit
-- Schedule Youtube video [milestone: anchor, publish on Wed at 5PM CET]
-  - instructions: https://docs.google.com/document/d/1GsM_Vlit2bB5MCRUH3AQHZWk3xI96ZZEtEvgzb_CMyY/edit
-- Tell the Author when the OSS video will be published
-  - instructions: https://docs.google.com/document/d/1_jJLDGSTuyRGz6fimgwJLBGyT_dVl_rfr8T50qIqwa8/edit
-- Add to the "Open-Source Spotlight" playlist after it's published
-- Ask the guest to share the recording with their network
-  - instructions: https://docs.google.com/document/d/1JJxAnhoVslGXmjc9Fw3JZrUDD6-srJQcMiHP8rPjMsw/edit
-- Schedule for Social Media Announcement
-  - instructions: https://docs.google.com/document/d/1BleKsd44Uhhj24D-D5qup0Gf3GcM6cwdAjbZD2jGGuA/edit
+- `reach-out-github-authors` (-21): capture `Tool GitHub`, outreach channel/comment, and waiting follow-up if no contact/reply.
+- `reach-out-tool-author` (-20): use the OSS author outreach template; required link `Guest email`; waiting follow-up if author has not replied.
+- `find-time-calendly` (-19): record proposed/confirmed time; waiting follow-up for author date confirmation.
+- `schedule-recording` (-18): external-status proof for calendar/recording details.
+- `record-demo` (-14): external-status proof for recording source or owner handoff.
+- `download-upload-youtube` (-13): required link `YouTube`; capture recording source context.
+- `editing-video` (-12): external-status proof that edit passed review.
+- `add-timecodes-youtube` (-11): external-status proof that timecodes/links are updated.
+- `ask-authors-review-codes` (-10): completion note required; waiting follow-up for author review, cuts, or missing links.
+- `schedule-youtube-video` (0): required link `YouTube`; milestone moves bundle to `after-event`.
+- `tell-author-publish-date` (0): completion note/external status that author was notified.
+- `add-to-oss-playlist` (+1): external-status proof that playlist status is confirmed.
+- `ask-guest-share-recording` (+1): completion note required; waiting follow-up for guest share/recommendations.
+- `schedule-social-media` (+2): required link `Social announcement`; stage moves to `done` after proof and unresolved waiting work are settled.
 
 ---
 

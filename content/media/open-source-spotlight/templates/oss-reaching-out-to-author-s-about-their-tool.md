@@ -1,14 +1,20 @@
 ---
+id: template.media.open-source-spotlight.oss-reaching-out-to-authors-about-their-tool
+aliases:
+  - template.media.open-source-spotlight.oss-reaching-out-to-author-s-about-their-tool
 title: "OSS - Reaching out to authors about their tool"
 summary: "Reusable OSS outreach template for contacting tool authors about Open Source Spotlight demos and required event details."
 doc_type: template
+schema_version: 1
 source: "Processes/Templates/Open-Source Spotlight - Templates/OSS - Reaching out to author_s about their tool.docx"
 tags:
   - templates
+  - open-source-spotlight
 systems:
   - github
   - linkedin
-related_docs: []
+related_docs:
+  - task-template.tasks.oss
 ---
 
 # OSS - Reaching out to authors about their tool

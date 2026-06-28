@@ -94,6 +94,37 @@ NEWSLETTER_WORKFLOW_CONTENT_DOC_IDS = {
     "template.newsletter.sending-email-on-the-day-of-publication",
 }
 
+OSS_WORKFLOW_CONTENT_DOC_IDS = {
+    "reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube",
+    "reference.overview.events",
+    "reference.overview.events-pre-recorded-open-source-spotlight",
+    "reference.social-media.post-oss",
+    "sop.media.open-source-spotlight.adding-links-from-the-zoom-chat",
+    "sop.media.open-source-spotlight.adding-timecodes-for-open-source-spotlight-videos",
+    "sop.media.open-source-spotlight.filling-in-the-open-source-spotlight-airtable-database",
+    "sop.media.open-source-spotlight.find-timestamps-for-editing",
+    "sop.media.open-source-spotlight.joining-open-source-project-communities-and-asking-for-oss-demos",
+    "sop.media.open-source-spotlight.reach-out-to-open-source-spotlight-guests",
+    "sop.media.open-source-spotlight.schedule-open-source-spotlight-youtube-videos",
+    "sop.media.video-youtube.add-timecodes-to-youtube-videos",
+    "sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist",
+    "template.media.open-source-spotlight.oss-ask-the-guests-to-share-the-videos-with-their-networks",
+    "template.media.open-source-spotlight.oss-asking-for-revisions-and-links",
+    "template.media.open-source-spotlight.oss-reaching-out-to-authors-about-their-tool",
+}
+
+OSS_WORKFLOW_CONTENT_DOC_ALIASES = {
+    "reference.media.open-source-spotlight.for-update-download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube": (
+        "reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube"
+    ),
+    "sop.media.open-source-spotlight.joining-open-source-project-communities-and-asking-for-oss-demos-there": (
+        "sop.media.open-source-spotlight.joining-open-source-project-communities-and-asking-for-oss-demos"
+    ),
+    "template.media.open-source-spotlight.oss-reaching-out-to-author-s-about-their-tool": (
+        "template.media.open-source-spotlight.oss-reaching-out-to-authors-about-their-tool"
+    ),
+}
+
 
 def _write_doc(content_root: Path, relative_path: str, markdown: str) -> Path:
     path = content_root / relative_path
@@ -440,6 +471,12 @@ def test_workflow_critical_docs_use_explicit_stable_frontmatter_ids():
         assert record.id_source == "frontmatter"
         assert record.to_dict()["stable_id"] is True
 
+    for stable_id in OSS_WORKFLOW_CONTENT_DOC_IDS:
+        record = doc_registry.resolve_reference(registry, stable_id)
+        assert record.id == stable_id
+        assert record.id_source == "frontmatter"
+        assert record.to_dict()["stable_id"] is True
+
     assert doc_registry.resolve_reference(registry, "sop.media.podcast.create-a-podcast-document").id == (
         "sop.media.podcast.create-podcast-document"
     )
@@ -447,12 +484,19 @@ def test_workflow_critical_docs_use_explicit_stable_frontmatter_ids():
         registry,
         "template.internal-admin.create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update",
     ).id == "template.newsletter.create-newsletter-draft-from-template-in-mailchimp"
+    for alias, stable_id in OSS_WORKFLOW_CONTENT_DOC_ALIASES.items():
+        assert doc_registry.resolve_reference(registry, alias).id == stable_id
 
 
 def test_workflow_critical_search_docs_index_stable_id_keywords():
     indexed = {doc["id"]: doc for doc in iter_docs(REPO_ROOT / "content")}
 
-    for stable_id in set(TASK_TEMPLATE_DOC_IDS.values()) | PODCAST_WORKFLOW_CONTENT_DOC_IDS | NEWSLETTER_WORKFLOW_CONTENT_DOC_IDS:
+    for stable_id in (
+        set(TASK_TEMPLATE_DOC_IDS.values())
+        | PODCAST_WORKFLOW_CONTENT_DOC_IDS
+        | NEWSLETTER_WORKFLOW_CONTENT_DOC_IDS
+        | OSS_WORKFLOW_CONTENT_DOC_IDS
+    ):
         assert stable_id in indexed
         assert indexed[stable_id]["id"] == stable_id
 
