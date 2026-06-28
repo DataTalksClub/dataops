@@ -167,6 +167,7 @@ trusted headers and the shared portal secret.
 
 | Changed area | Required local checks | Add when relevant |
 | --- | --- | --- |
+| `_docs/**`, `docs/**`, `templates/**`, `content/tasks/templates/**`, `.goal-v1.md`, `PROJECT_PLAN.md`, `PORTAL_ANALYSIS.md`, or `README.md` | Planning docs validation; build the search index when task templates or content metadata are touched. | Docs app tests when registry/search behavior or metadata parsing can be affected. Process Curator review for operational usefulness. |
 | `content/**` | Build the search index. | Docs app tests when frontmatter, document IDs, routing, registry behavior, templates, archive rules, or content shape changes. Process Curator review for operational usefulness. |
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
 | `lambda-functions/**` | Docs app tests. | Search-index build for search/content behavior. SAM validation for template, dependency, packaging, or Lambda runtime changes. |
@@ -180,6 +181,23 @@ trusted headers and the shared portal secret.
 ## Canonical Commands
 
 ### Docs Portal, Lambda, And Frontend
+
+Run planning/process docs validation from the repo root:
+
+```bash
+make validate-planning-docs
+```
+
+Underlying command:
+
+```bash
+uv run --with pytest python -m pytest tests/planning_docs
+```
+
+This check validates internal repo links, V1 goal/JTBD references, process
+lifecycle guardrails, task-template metadata, doc registry references, and the
+read-only planning-docs workflow. It intentionally ignores external URLs and
+does not invoke stylint or prose-polish tooling.
 
 Run docs app tests from the repo root:
 
