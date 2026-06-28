@@ -691,6 +691,9 @@ def test_search_handler_metadata_filters_exclude_docs_without_requested_values(m
 
 
 def test_search_handler_returns_typed_docs_and_work_results_with_source_states(monkeypatch):
+    assignee_id = "00000000-0000-0000-0000-000000000001"
+    bundle_id = "11111111-1111-1111-1111-111111111111"
+
     class FakeIndex:
         def search(self, query, filter_dict, boost_dict, num_results):
             assert query == "Mailchimp newsletter"
@@ -717,8 +720,8 @@ def test_search_handler_returns_typed_docs_and_work_results_with_source_states(m
                         "description": "Prepare Mailchimp newsletter",
                         "status": "todo",
                         "date": "2026-06-29",
-                        "bundleId": "bundle-newsletter",
-                        "assigneeId": "operator",
+                        "bundleId": bundle_id,
+                        "assigneeId": assignee_id,
                         "instructionDocId": "task-template.newsletter",
                         "instructionStepId": "publish",
                         "systems": ["mailchimp"],
@@ -732,7 +735,7 @@ def test_search_handler_returns_typed_docs_and_work_results_with_source_states(m
             return {
                 "bundles": [
                     {
-                        "id": "bundle-newsletter",
+                        "id": bundle_id,
                         "title": "Mailchimp newsletter run",
                         "stage": "preparation",
                         "status": "active",
@@ -740,7 +743,7 @@ def test_search_handler_returns_typed_docs_and_work_results_with_source_states(m
                     }
                 ]
             }
-        if path == "/api/tasks" and params == {"bundleId": "bundle-newsletter"}:
+        if path == "/api/tasks" and params == {"bundleId": bundle_id}:
             return {
                 "tasks": [
                     {
@@ -753,6 +756,8 @@ def test_search_handler_returns_typed_docs_and_work_results_with_source_states(m
                     }
                 ]
             }
+        if path == "/api/users":
+            return {"users": [{"id": assignee_id, "name": "Grace", "email": "grace@datatalks.club"}]}
         if path == "/api/templates":
             return {"templates": [{"id": "tmpl-newsletter", "name": "Mailchimp Newsletter", "type": "newsletter", "sourceDocIds": ["task-template.newsletter"]}]}
         if path == "/api/artifacts":
@@ -790,16 +795,27 @@ def test_search_handler_returns_typed_docs_and_work_results_with_source_states(m
     assert task["route"] == {
         "kind": "task",
         "taskId": "task-newsletter",
-        "bundleId": "bundle-newsletter",
+        "bundleId": bundle_id,
         "instructionDocId": "task-template.newsletter",
         "instructionStepId": "publish",
     }
     assert task["fields"]["proof"] == "url proof required"
+    assert task["fields"]["assignee"] == "Grace"
+    assert task["fields"]["assignee_name"] == "Grace"
+    assert task["fields"]["assignee_id"] == assignee_id
+    assert task["fields"]["workflow_title"] == "Mailchimp newsletter run"
+    assert "Assignee Grace" in task["summary"]
+    assert "Workflow Mailchimp newsletter run" in task["summary"]
+    assert assignee_id not in task["summary"]
+    assert bundle_id not in task["summary"]
+    assert assignee_id not in task["context"]
+    assert bundle_id not in task["context"]
     artifact = next(result for result in payload["results"] if result["type"] == "artifact")
     assert artifact["action_label"] == "Open owner context"
     assert "private-proof" not in artifact["summary"]
     assert {"source": "docs", "status": "ok", "count": 1} in payload["sources"]
     assert any(source["source"] == "work-engine:tasks" and source["status"] == "ok" for source in payload["sources"])
+    assert {"source": "work-engine:users", "status": "ok", "count": 1} in payload["sources"]
 
 
 def test_search_handler_keeps_docs_when_work_sources_are_unavailable(monkeypatch):
@@ -832,6 +848,53 @@ def test_search_handler_keeps_docs_when_work_sources_are_unavailable(monkeypatch
     assert payload["results"][0]["type"] == "doc"
     assert payload["results"][0]["route"]["kind"] == "doc"
     assert any(source["status"] == "unavailable" and "work down" in source["error"] for source in payload["sources"])
+
+
+def test_search_handler_hides_task_ids_when_user_or_bundle_lookup_is_unavailable():
+    assignee_id = "00000000-0000-0000-0000-000000000001"
+    bundle_id = "11111111-1111-1111-1111-111111111111"
+
+    def work_fetcher(path, params):
+        if path == "/api/tasks" and params == {"status": "todo"}:
+            return {
+                "tasks": [
+                    {
+                        "id": "task-uuid-fallback",
+                        "description": "Review UUID fallback search result",
+                        "status": "todo",
+                        "date": "2026-06-29",
+                        "bundleId": bundle_id,
+                        "assigneeId": assignee_id,
+                    }
+                ]
+            }
+        if path == "/api/tasks" and params == {"status": "waiting"}:
+            return {"tasks": []}
+        if path in {"/api/bundles", "/api/users"}:
+            raise RuntimeError(f"{path} unavailable")
+        if path in {"/api/templates", "/api/artifacts", "/api/files", "/api/assistant-jobs"}:
+            return {}
+        raise AssertionError((path, params))
+
+    response = search_handler.handler(
+        _event("/search", queryStringParameters={"q": "UUID fallback", "source": "work", "limit": "10"}),
+        None,
+        work_fetcher=work_fetcher,
+    )
+
+    assert response["statusCode"] == 200
+    payload = _json_body(response)
+    task = next(result for result in payload["results"] if result["type"] == "task")
+    assert task["summary"] == "Status todo · Due 2026-06-29 · Assigned · Workflow linked"
+    assert task["context"] == task["summary"]
+    assert assignee_id not in task["summary"]
+    assert bundle_id not in task["summary"]
+    assert task["fields"]["assignee"] == ""
+    assert task["fields"]["workflow_title"] == ""
+    assert task["fields"]["assignee_id"] == assignee_id
+    assert task["fields"]["bundle_id"] == bundle_id
+    assert any(source["source"] == "work-engine:workflows" and source["status"] == "unavailable" for source in payload["sources"])
+    assert any(source["source"] == "work-engine:users" and source["status"] == "unavailable" for source in payload["sources"])
 
 
 def test_built_search_index_exposes_workflow_facing_fields(tmp_path, monkeypatch):

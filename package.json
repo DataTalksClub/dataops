@@ -16,6 +16,7 @@
     "test:e2e:work-engine": "npm run test:e2e --workspace dataops-work-engine",
     "test:work-engine": "npm test --workspace dataops-work-engine",
     "typecheck:work-engine": "npm run typecheck --workspace dataops-work-engine",
-    "validate:export:work-engine": "npm run validate:export --workspace dataops-work-engine --"
+    "validate:export:work-engine": "npm run validate:export --workspace dataops-work-engine --",
+    "restore:drill:work-engine": "npm run restore:drill --workspace dataops-work-engine --"
   }
 }

@@ -4417,10 +4417,11 @@ function renderUnifiedSearchRow(result, query) {
     result.doc_type || result.fields?.status || result.fields?.stage || "",
     result.fields?.due_date ? `due ${result.fields.due_date}` : "",
     result.fields?.assignee ? `owner ${result.fields.assignee}` : "",
+    result.fields?.workflow_title ? `workflow ${result.fields.workflow_title}` : "",
     result.fields?.proof || "",
     result.path || "",
   ].filter(Boolean);
-  for (const chipText of chips.slice(0, 5)) {
+  for (const chipText of chips.slice(0, 6)) {
     const chip = document.createElement("span");
     chip.textContent = chipText;
     meta.append(chip);
