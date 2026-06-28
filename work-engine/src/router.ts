@@ -151,7 +151,7 @@ const ALLOWED_UPDATE_FIELDS = [
 ];
 const VALID_TASK_STATUSES = new Set<TaskStatus>(['todo', 'waiting', 'done', 'archived']);
 const VALID_PROOF_REQUIREMENT_TYPES = new Set(['url', 'file', 'artifact', 'comment', 'external-status']);
-const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor and followUpAt';
+const WAITING_FIELDS_ERROR = 'Waiting tasks require waitingFor, followUpAt, and comment';
 
 function isTaskStatus(value: unknown): value is TaskStatus {
   return typeof value === 'string' && VALID_TASK_STATUSES.has(value as TaskStatus);
@@ -489,7 +489,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         }
         taskData.status = body.status;
       }
-      if (taskData.status === 'waiting' && (!isNonEmptyString(taskData.waitingFor) || !isNonEmptyString(taskData.followUpAt))) {
+      if (taskData.status === 'waiting' && (
+        !isNonEmptyString(taskData.waitingFor)
+        || !isNonEmptyString(taskData.followUpAt)
+        || !isNonEmptyString(taskData.comment)
+      )) {
         return jsonResponse(400, { error: WAITING_FIELDS_ERROR });
       }
       const docContextError = validateTaskDocContext(taskData);
@@ -620,7 +624,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (effectiveStatus === 'waiting') {
         const effectiveWaitingFor = updates.waitingFor !== undefined ? updates.waitingFor : existing.waitingFor;
         const effectiveFollowUpAt = updates.followUpAt !== undefined ? updates.followUpAt : existing.followUpAt;
-        if (!isNonEmptyString(effectiveWaitingFor) || !isNonEmptyString(effectiveFollowUpAt)) {
+        const effectiveComment = updates.comment !== undefined ? updates.comment : existing.comment;
+        if (
+          !isNonEmptyString(effectiveWaitingFor)
+          || !isNonEmptyString(effectiveFollowUpAt)
+          || !isNonEmptyString(effectiveComment)
+        ) {
           return jsonResponse(400, { error: WAITING_FIELDS_ERROR });
         }
       }
