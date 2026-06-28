@@ -40,6 +40,7 @@ module.exports = defineConfig({
   reporter: process.env.CI
     ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : [['list']],
+  workers: 1,
   globalSetup: './e2e/global-setup.js',
   globalTeardown: './e2e/global-teardown.js',
   use: {
