@@ -348,7 +348,8 @@ test.describe('Home dashboard (issue #26)', () => {
       await expect(page.locator('#dashboard-bundles .empty-state-action', { hasText: 'New bundle' })).toHaveAttribute('href', '#/bundles');
 
       const queueEmpty = page.locator('#dashboard-tasks .empty-state-title');
-      if (await queueEmpty.count()) {
+      await page.locator('#dashboard-tasks .empty-state-title, #dashboard-tasks table').first().waitFor({ state: 'visible' });
+      if (await queueEmpty.isVisible()) {
         await expect(queueEmpty).toHaveText('No queue tasks');
         await expect(page.locator('#dashboard-tasks .empty-state-body')).toContainText('Use the task list');
         await expect(page.locator('#dashboard-tasks .empty-state-action', { hasText: 'Open tasks' })).toHaveAttribute('href', '#/tasks');
