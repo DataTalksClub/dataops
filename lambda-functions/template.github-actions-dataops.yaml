@@ -161,6 +161,15 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-*
                   - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-*/index/*
+              - Sid: DynamoDbDataOpsRuntimeSeed
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-users
+                  - !Sub arn:${AWS::Partition}:dynamodb:${FullDocsRegion}:${AWS::AccountId}:table/${FullDocsStackName}-templates
               - Sid: IamDataOpsFunctionRole
                 Effect: Allow
                 Action:

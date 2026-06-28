@@ -7,6 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO_ROOT / "lambda-functions" / "template.full.yaml"
 DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "lambda-functions" / "template.github-actions-dataops.yaml"
 LEGACY_DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "lambda-functions" / "template.github-actions.yaml"
+DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
 
 
 def _resource_block(template: str, resource_name: str) -> str:
@@ -176,6 +177,37 @@ def test_github_deploy_role_can_manage_dataops_execution_tables():
     assert "dynamodb:UpdateContinuousBackups" in template
     assert "dynamodb:UpdateTable" in template
     assert "table/${FullDocsStackName}-*" in template
+
+
+def test_github_deploy_role_can_seed_runtime_users_and_templates():
+    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "Sid: DynamoDbDataOpsRuntimeSeed" in template
+    assert "dynamodb:GetItem" in template
+    assert "dynamodb:PutItem" in template
+    assert "dynamodb:Scan" in template
+    assert "dynamodb:UpdateItem" not in template
+    assert "dynamodb:BatchWriteItem" not in template
+    assert "table/${FullDocsStackName}-users" in template
+    assert "table/${FullDocsStackName}-templates" in template
+
+
+def test_deploy_workflow_seeds_and_verifies_runtime_templates():
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "Seed runtime users and workflow templates" in workflow
+    assert "DataOpsUsersTableName" in workflow
+    assert "DataOpsTemplatesTableName" in workflow
+    assert "scripts/seed-users.ts" in workflow
+    assert "scripts/seed-templates.ts" in workflow
+    assert "Smoke test deployed workflow templates" in workflow
+    assert "WorkEnginePortalSecretName" in workflow
+    assert "/api/templates" in workflow
+    assert "x-portal-auth" in workflow
+    assert "x-portal-secret" in workflow
+    assert "fileb:///tmp/work-engine-templates-payload.json" in workflow
+    assert "len(templates) >= 11" in workflow
+    assert 'template.get("type") == "podcast"' in workflow
 
 
 def test_github_deploy_role_can_manage_work_engine_lambda():
