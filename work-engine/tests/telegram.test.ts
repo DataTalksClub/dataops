@@ -61,7 +61,7 @@ describe('Telegram integration', () => {
   // ── handleTelegramWebhook ────────────────────────────────────────
 
   describe('handleTelegramWebhook', () => {
-    it('creates a task from a plain message with source "telegram"', async () => {
+    it('creates an intake item from a plain message by default', async () => {
       const event = {
         headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
         body: JSON.stringify({
@@ -77,40 +77,46 @@ describe('Telegram integration', () => {
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.ok, true);
-      assert.ok(body.taskId);
+      assert.ok(body.intakeItemId);
+      assert.strictEqual(body.taskId, undefined);
 
-      const { getTask } = await import('../src/db/tasks');
+      const { getIntakeItem } = await import('../src/db/intake');
       const client = await getClient();
-      const task = await getTask(client, body.taskId);
-      assert.strictEqual(task!.description, 'Buy groceries');
-      assert.strictEqual(task!.source, 'telegram');
-      const today = new Date().toISOString().slice(0, 10);
-      assert.strictEqual(task!.date, today);
+      const item = await getIntakeItem(client, body.intakeItemId);
+      assert.strictEqual(item!.title, 'Buy groceries');
+      assert.strictEqual(item!.source, 'telegram');
+      assert.strictEqual(item!.status, 'new');
     });
 
-    it('creates a task with an explicit date from the message', async () => {
-      const event = {
-        headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
-        body: JSON.stringify({
-          message: {
-            message_id: 2,
-            chat: { id: 12345 },
-            text: 'Dentist appointment 2026-04-15'
-          }
-        })
-      };
+    it('creates a task only when direct task compatibility mode is enabled', async () => {
+      process.env.TELEGRAM_DIRECT_TASKS_COMPAT = 'true';
+      try {
+        const event = {
+          headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+          body: JSON.stringify({
+            message: {
+              message_id: 2,
+              chat: { id: 12345 },
+              text: 'Dentist appointment 2026-04-15'
+            }
+          })
+        };
 
-      const res = await handleTelegramWebhook(event as any);
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
-      assert.ok(body.taskId);
+        const res = await handleTelegramWebhook(event as any);
+        assert.strictEqual(res.statusCode, 200);
+        const body = JSON.parse(res.body);
+        assert.ok(body.taskId);
+        assert.strictEqual(body.intakeItemId, undefined);
 
-      const { getTask } = await import('../src/db/tasks');
-      const client = await getClient();
-      const task = await getTask(client, body.taskId);
-      assert.strictEqual(task!.description, 'Dentist appointment');
-      assert.strictEqual(task!.date, '2026-04-15');
-      assert.strictEqual(task!.source, 'telegram');
+        const { getTask } = await import('../src/db/tasks');
+        const client = await getClient();
+        const task = await getTask(client, body.taskId);
+        assert.strictEqual(task!.description, 'Dentist appointment');
+        assert.strictEqual(task!.date, '2026-04-15');
+        assert.strictEqual(task!.source, 'telegram');
+      } finally {
+        delete process.env.TELEGRAM_DIRECT_TASKS_COMPAT;
+      }
     });
 
     it('/start command returns DataOps intake instructions and does not create a task', async () => {
@@ -142,7 +148,7 @@ describe('Telegram integration', () => {
         assert.strictEqual(replies.length, 1);
         assert.strictEqual(replies[0].chat_id, 12345);
         assert.ok(replies[0].text.includes('DataOps operations intake'));
-        assert.ok(replies[0].text.includes('create an operations task'));
+        assert.ok(replies[0].text.includes('capture raw operations intake'));
         assert.ok(!replies[0].text.includes('DataTasks Bot'));
       } finally {
         globalThis.fetch = originalFetch;
@@ -220,15 +226,13 @@ describe('Telegram integration', () => {
       const res = await handleTelegramWebhook(event as any);
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.ok(body.taskId);
+      assert.ok(body.intakeItemId);
 
-      const { getTask } = await import('../src/db/tasks');
+      const { getIntakeItem } = await import('../src/db/intake');
       const client = await getClient();
-      const task = await getTask(client, body.taskId);
-      assert.strictEqual(task!.description, '2026-05-01');
-      const today = new Date().toISOString().slice(0, 10);
-      assert.strictEqual(task!.date, today);
-      assert.strictEqual(task!.source, 'telegram');
+      const item = await getIntakeItem(client, body.intakeItemId);
+      assert.strictEqual(item!.title, '2026-05-01');
+      assert.strictEqual(item!.source, 'telegram');
     });
   });
 });

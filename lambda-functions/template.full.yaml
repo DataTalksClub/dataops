@@ -305,6 +305,98 @@ Resources:
         - Key: DataClass
           Value: ExecutionState
 
+  DataOpsIntakeTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-intake
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: updatedAt
+          AttributeType: S
+        - AttributeName: sourceMessageKey
+          AttributeType: S
+        - AttributeName: ownerStatusKey
+          AttributeType: S
+        - AttributeName: assigneeStatusKey
+          AttributeType: S
+        - AttributeName: assistantStatusKey
+          AttributeType: S
+        - AttributeName: followUpAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Status
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-SourceMessage
+          KeySchema:
+            - AttributeName: sourceMessageKey
+              KeyType: HASH
+            - AttributeName: SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-OwnerStatus
+          KeySchema:
+            - AttributeName: ownerStatusKey
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-AssigneeStatus
+          KeySchema:
+            - AttributeName: assigneeStatusKey
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-AssistantStatus
+          KeySchema:
+            - AttributeName: assistantStatusKey
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-FollowUp
+          KeySchema:
+            - AttributeName: followUpAt
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
   DataOpsNotificationsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -457,6 +549,8 @@ Resources:
               - !GetAtt DataOpsArtifactsTable.Arn
               - !GetAtt DataOpsAssistantJobsTable.Arn
               - !GetAtt DataOpsAuditEventsTable.Arn
+              - !GetAtt DataOpsIntakeTable.Arn
+              - !Sub ${DataOpsIntakeTable.Arn}/index/*
               - !GetAtt DataOpsNotificationsTable.Arn
               - !GetAtt DataOpsSessionsTable.Arn
         - Statement:
@@ -475,6 +569,7 @@ Resources:
           DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable
           DATAOPS_ASSISTANT_JOBS_TABLE: !Ref DataOpsAssistantJobsTable
           DATAOPS_AUDIT_EVENTS_TABLE: !Ref DataOpsAuditEventsTable
+          DATAOPS_INTAKE_TABLE: !Ref DataOpsIntakeTable
           DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
           WORK_ENGINE_AUTH_MODE: portal
@@ -515,6 +610,9 @@ Outputs:
   DataOpsAuditEventsTableName:
     Description: DynamoDB table for assistant job and workflow audit events
     Value: !Ref DataOpsAuditEventsTable
+  DataOpsIntakeTableName:
+    Description: DynamoDB table for raw operational intake metadata
+    Value: !Ref DataOpsIntakeTable
   DataOpsNotificationsTableName:
     Description: DynamoDB table for reminders and notifications
     Value: !Ref DataOpsNotificationsTable
