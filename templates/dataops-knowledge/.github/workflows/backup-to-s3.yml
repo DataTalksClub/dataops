@@ -1,0 +1,55 @@
+name: Backup Knowledge Repo To S3
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Upload a backup even when the current commit already matches the latest S3 manifest."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: knowledge-repo-s3-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Zip repository and upload changed backups
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.DATAOPS_KNOWLEDGE_BACKUP_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Upload backup when commit changed
+        env:
+          DATAOPS_KNOWLEDGE_BACKUP_BUCKET: ${{ vars.DATAOPS_KNOWLEDGE_BACKUP_BUCKET }}
+          DATAOPS_KNOWLEDGE_BACKUP_PREFIX: ${{ vars.DATAOPS_KNOWLEDGE_BACKUP_PREFIX || 'dataops-knowledge' }}
+          FORCE_BACKUP: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+
+          args=()
+          if [[ "${FORCE_BACKUP}" == "true" ]]; then
+            args+=(--force)
+          fi
+
+          python scripts/backup_to_s3.py \
+            --bucket "${DATAOPS_KNOWLEDGE_BACKUP_BUCKET}" \
+            --prefix "${DATAOPS_KNOWLEDGE_BACKUP_PREFIX}" \
+            "${args[@]}"

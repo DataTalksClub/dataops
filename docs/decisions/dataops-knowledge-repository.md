@@ -399,6 +399,9 @@ This boundary preserves the existing V1 data-safety model:
 - Private/generated operational data does not move into the public app repo.
 - Artifact binary backup is handled by S3 versioning, external system exports,
   or private artifact backups.
+- The private knowledge repository is backed up daily to private S3 by a
+  scheduled job that uploads only when the current commit differs from the
+  latest backup manifest.
 - Portable execution exports remain application-level JSON/JSONL archives with
   manifests, checksums, redaction rules, and relationship validation.
 
@@ -416,24 +419,27 @@ Create these after ADR acceptance:
 2. Add knowledge-repo schemas and CI for frontmatter, stable IDs, internal
    links, image checks, workflow-template validation, prompt validation, and
    search-index generation.
-3. Run data-safety review for `content/`, `content/images/`, `content/prompts/`,
+3. Add daily private S3 backup for the knowledge repo using GitHub Actions OIDC,
+   a Git archive zip, a Git bundle, manifests, checksums, and skip-if-unchanged
+   behavior based on the latest S3 manifest.
+4. Run data-safety review for `content/`, `content/images/`, `content/prompts/`,
    `content/tasks/templates/`, and assistant knowledge/example paths.
-4. Migrate `content/` process docs and safe images into the knowledge repo.
-5. Convert `content/tasks/templates/*.md` to
+5. Migrate `content/` process docs and safe images into the knowledge repo.
+6. Convert `content/tasks/templates/*.md` to
    `workflow-templates/*.yaml` and generate any needed Markdown views.
-6. Implement work-engine template loading/sync from Git-backed YAML with
+7. Implement work-engine template loading/sync from Git-backed YAML with
    versioning and source commit tracking.
-7. Add Lambda/portal configuration for reading from `dataops-knowledge`,
+8. Add Lambda/portal configuration for reading from `dataops-knowledge`,
    including local development fallback.
-8. Implement portal edit commits to the knowledge repository with branch,
+9. Implement portal edit commits to the knowledge repository with branch,
    validation, authoring, and revert behavior.
-9. Wire knowledge-repo CI to refresh the deployed portal cache/search index
+10. Wire knowledge-repo CI to refresh the deployed portal cache/search index
    without app redeploy.
-10. Classify and migrate reusable DataOps podcast assistant process knowledge,
+11. Classify and migrate reusable DataOps podcast assistant process knowledge,
     templates, prompts, and approved knowledge-base summaries.
-11. Move DataOps podcast assistant generated/private outputs to private artifact
+12. Move DataOps podcast assistant generated/private outputs to private artifact
     storage and attach artifact metadata to workflow records.
-12. Add admin/status visibility for loaded knowledge repo branch, commit SHA,
+13. Add admin/status visibility for loaded knowledge repo branch, commit SHA,
     index build time, and template sync version.
 
 ## Consequences

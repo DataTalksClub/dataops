@@ -211,6 +211,12 @@ The app repo can import or sync these templates into DynamoDB for execution.
 The app can also serve them in the unified operator UI, but raw private
 knowledge should remain in the private repository.
 
+The private knowledge repository should back itself up to private S3 once per
+day. The backup job should compare the current Git commit SHA to the latest S3
+backup manifest and upload a new archive only when the commit changed. Each
+backup should include a Git archive zip for quick inspection, a Git bundle for
+full-history restore, a JSON manifest, and SHA-256 checksums.
+
 ### 3. `DataTalksClub/aws-infra`
 
 Role: infrastructure repository.
@@ -287,6 +293,10 @@ s3://dtc-dataops-artifacts/
   reports/
     finance/
   exports/
+  knowledge-backups/
+    dataops-knowledge/
+      daily/
+      latest/
 ```
 
 DataOps should store metadata in DynamoDB:
