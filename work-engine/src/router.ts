@@ -11,6 +11,7 @@ import { handleUserRoutes } from './routes/users';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleAssistantJobRoutes } from './routes/assistantJobs';
+import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
 import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
@@ -1152,6 +1153,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/assistant-jobs')) {
       const result = await handleAssistantJobRoutes(event, client);
+      if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/assistant-social-drafts')) {
+      const result = await handleSocialDraftAssistantRoutes(event, client);
       if (result) return result;
     }
 

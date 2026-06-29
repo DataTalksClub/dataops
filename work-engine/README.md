@@ -51,6 +51,36 @@ npm run seed
 From the repository root, `npm run seed:work-engine` runs both default user and
 template seeders.
 
+### Social draft assistant configuration
+
+The first social drafting slice is covered by local tests with mocked external
+services. A real local route call uses configured z.ai and Typefully credentials
+when the target account is unambiguous:
+
+```bash
+curl -X POST http://localhost:3000/api/assistant-social-drafts/mock-telegram \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Draft Alexey social posts about the upcoming AI agents workshop"}'
+```
+
+Production-style external calls require managed credentials and account config:
+
+| Variable | Purpose |
+|----------|---------|
+| `ZAI_API_KEY` | z.ai key for the Anthropic-compatible Messages API |
+| `ZAI_MODEL` | Optional model override; defaults to `glm-5.2` |
+| `ZAI_BASE_URL` | Optional z.ai base URL; defaults to `https://api.z.ai/api/anthropic` |
+| `ZAI_MAX_TOKENS` | Optional max output tokens; defaults to `4096` |
+| `TYPEFULLY_API_KEY` | Typefully API key for saved draft creation |
+| `TYPEFULLY_SOCIAL_SET_ALEXEY` | Typefully social set id for Alexey / `Al_Grigor` |
+| `TYPEFULLY_SOCIAL_SET_DATATALKSCLUB` | Typefully social set id for DataTalksClub |
+| `TELEGRAM_WEBHOOK_SECRET` | Telegram webhook secret token for real webhook delivery |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for optional replies |
+
+The assistant route creates Typefully saved drafts only. It does not schedule or
+publish posts. Automated tests use mocked z.ai and Typefully clients; real z.ai,
+Typefully, and Telegram checks are human-gated.
+
 ## Repository-root commands
 
 Use these from the DataOps repo root after `npm ci`:
