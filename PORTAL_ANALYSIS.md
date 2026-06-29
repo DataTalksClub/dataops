@@ -20,8 +20,8 @@ The product becomes an operations OS for DataTalks.Club:
 
 - Work: tasks, bundles, due dates, assignments, statuses, files, required
   links, and recurring work.
-- Knowledge: SOPs, templates, references, playbooks, screenshots, Looms,
-  prompts, and search.
+- Knowledge: private SOPs, templates, references, playbooks, screenshots,
+  Looms, prompts, and search surfaced inside the authenticated portal.
 - Assistants: ingestion and drafting workflows such as the podcast assistant.
 - History: execution logs, task completion, generated docs, decisions, and
   links to final artifacts.
@@ -56,7 +56,7 @@ Location: `../dtc-operations`
 
 What it gives us:
 
-- A large operations knowledge base under `content/`.
+- A large private operations knowledge base under `content/`.
 - Git-backed markdown docs with screenshots and Loom links.
 - A structured SOP format that can be parsed by scripts and the Lambda app.
 - A docs editor with search, filters, linting, drafts, diff, and GitHub-backed
@@ -101,8 +101,9 @@ Current limitation:
 
 ## Current Content Coverage
 
-DTC Operations already has enough content to be the knowledge base for the
-portal.
+DTC Operations already has enough content to be the private knowledge base for
+the portal. That content should be surfaced through DataOps, not copied into
+the public app repo as the long-term source of truth.
 
 Content inventory:
 
@@ -316,12 +317,14 @@ What needs to be added:
 
 ## Recommended Architecture
 
-Use DTC Operations as the base product shell and absorb the other systems into
-it.
+Use one public app repo plus one private operational knowledge repo. The app
+provides one frontend/API and authenticated access to private Git-backed
+knowledge.
 
 Reasoning:
 
-- The operational knowledge base is already in `dtc-operations`.
+- The operational knowledge base is already in `dtc-operations`, but it
+  contains sensitive information and should stay behind a private boundary.
 - It already has the docs editor, search, content validation, GitHub publishing,
   Lambda deployment, and domain-first content structure.
 - DataTasks is smaller and can be added as the execution module.
@@ -330,13 +333,14 @@ Reasoning:
 
 Target shape:
 
-- One repo for the portal.
+- One public repo for the portal/runtime code.
+- One private repo for operational knowledge.
 - One frontend shell with `Work`, `Processes`, `Assistants`, `Assets`, `Search`,
   and `Admin`.
 - One backend API surface.
-- GitHub markdown remains the source of truth for knowledge.
+- Private GitHub markdown remains the source of truth for knowledge.
 - DynamoDB stores execution state.
-- Object storage or GitHub stores generated artifacts, depending on type.
+- Object storage stores generated/private artifacts by default.
 - Assistant jobs run asynchronously with durable logs and outputs.
 
 ## Proposed Navigation
@@ -436,8 +440,10 @@ Goal: make the podcast assistant part of the portal.
 
 Build:
 
-- Move `podcast-assistant` into the portal repo or package it as an internal
-  module.
+- Move `podcast-assistant` code into the portal repo or package it as an
+  internal module.
+- Move sensitive assistant prompts, templates, examples, and process
+  instructions to the private knowledge repo after review.
 - Replace local `documents/` output with portal artifacts.
 - Add assistant job records.
 - Add job status, logs, retry, and output review UI.
@@ -480,13 +486,14 @@ publishing steps.
 
 Scope:
 
-- Add stable IDs to the main podcast docs.
+- Add stable IDs to the main private podcast docs.
 - Create a Podcast workflow definition from the existing Trello/DataTasks
   template.
-- Link each Podcast task to the best matching DTC Operations SOP or template.
+- Link each Podcast task to the best matching private SOP or template by stable
+  doc ID.
 - Add required artifacts for podcast doc, Luma link, YouTube link, transcript,
   Spotify link, Apple link, and DTC webpage.
-- Bring `podcast-assistant` into the repo as `assistants/podcast/`.
+- Bring `podcast-assistant` code into the repo as `assistants/podcast/`.
 - Add a portal page for Podcast Assistant inbox, processing jobs, and generated
   document review.
 - Create one end-to-end flow: raw Telegram material -> assistant draft -> review
@@ -496,16 +503,15 @@ Scope:
 
 ### Repo
 
-Recommendation: base the portal on `dtc-operations`, or make `dataops` a real
-new repo and import `dtc-operations` content with history. Do not base the
-portal on `datatasks` alone because the knowledge base is the larger and more
-valuable asset.
+Recommendation: keep `dataops` as the public app/runtime repo. Keep
+operational knowledge in a separate private GitHub repo. DataOps renders and
+edits that knowledge through authenticated APIs.
 
 ### Source of Truth
 
 Recommendation:
 
-- GitHub markdown is the source of truth for process knowledge.
+- Private GitHub markdown is the source of truth for process knowledge.
 - DynamoDB is the source of truth for execution state.
 - Assistant outputs become artifacts that are attached to bundles.
 

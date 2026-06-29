@@ -34,7 +34,7 @@ Files that live here:
   accessibility, responsive behavior, and migration sequencing.
 - `decisions/` - durable architecture decision records for repository,
   runtime, data, and process boundaries.
-- `decisions/dataops-knowledge-repository.md` - ADR for the future
+- `decisions/dataops-knowledge-repository.md` - ADR for the future private
   `DataTalksClub/dataops-knowledge` boundary and migration plan.
 - `local-development.md` - developer command plan for local checks, focused
   verification, handoff, and deployment-adjacent work.
@@ -51,9 +51,9 @@ Files that live here:
 - `sop-format-design.md` - design log and tooling notes.
 - `archive/` - deprecated or imported historical material.
 
-## content/ - operational documentation
+## content/ - transitional operational documentation
 
-Operational docs live under `content/`, alongside their image assets:
+Operational docs currently live under `content/`, alongside their image assets:
 
 - `content/<domain>/sops/`, `content/<domain>/templates/`, and related folders.
 - `content/media/` - podcast, video, webinar, workshops.
@@ -61,8 +61,14 @@ Operational docs live under `content/`, alongside their image assets:
 - `content/prompts/` - maintained AI prompts.
 - `content/images/` - screenshots and other doc images.
 
+This repo is public. Treat `content/` as transitional migration debt and do not
+add new sensitive operational docs, screenshots, prompts, private links,
+contact details, sponsor or finance context, or generated artifacts here. The
+canonical operational knowledge target is a separate private
+`DataTalksClub/dataops-knowledge` repository.
+
 The Lambda app reads operational docs from the `content/` directory when it
-serves the docs frontend.
+serves the docs frontend until private knowledge-repo sync is implemented.
 
 ## References
 

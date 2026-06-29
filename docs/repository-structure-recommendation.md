@@ -10,7 +10,8 @@ The goal is to make the unified DataOps platform easy to change while keeping a
 clear boundary between:
 
 - the product that runs the portal;
-- the operational knowledge that defines how DataTalksClub work is done;
+- the private operational knowledge that defines how DataTalksClub work is
+  done;
 - the runtime records that prove real work happened;
 - private or bulky files that should not live in Git.
 
@@ -27,8 +28,11 @@ from them, or remind the operator to update them.
 The product UI can unify everything. The repositories should keep ownership
 clear:
 
-- Git stores code, process knowledge, workflow definitions, and small canonical
-  templates.
+- Public Git in `DataTalksClub/dataops` stores code, schemas, tests, sanitized
+  fixtures, and public-safe planning docs.
+- Private Git in `DataTalksClub/dataops-knowledge` stores process knowledge,
+  workflow definitions, assistant prompts/process instructions, screenshots,
+  and small canonical templates.
 - DynamoDB stores execution state: tasks, workflow runs, reminders, statuses,
   assignments, and audit events.
 - S3/Dropbox/Google Drive stores private or bulky operational files.
@@ -59,9 +63,11 @@ It should contain:
 - Deployment workflow for this app.
 - Small seed data needed for development and tests.
 
-It may temporarily contain `content/` while the product is being unified. The
-long-term recommendation is to make operational knowledge a separate repo or a
-clearly isolated Git-backed content package, described below.
+It may temporarily contain `content/` while the product is being unified, but
+that content is public-sensitive migration debt because this repo is public.
+The long-term recommendation is to make operational knowledge a separate
+private repo, described below, and keep only sanitized fixtures or generated
+public-safe views here.
 
 Recommended top-level shape:
 
@@ -111,12 +117,15 @@ dataops/
 The current shape can ship. The recommended shape is the cleanup target once
 the unified flows are clear.
 
-### 2. `DataTalksClub/dataops-knowledge`
+### 2. `DataTalksClub/dataops-knowledge` private repo
 
 Role: canonical process knowledge repository.
 
 This is the repo I recommend creating once V1 is stable enough that process
-docs and app code should move at different speeds.
+docs and app code should move at different speeds. It should be private by
+default because the operational docs contain sensitive process details, private
+links, people/contact context, sponsor or finance context, screenshots, and
+assistant instructions that should not be public.
 
 It should contain:
 
@@ -135,8 +144,8 @@ It should not contain:
 - Podcast guest-specific prep docs.
 - Raw podcast inputs.
 - Recordings.
-- Transcripts for specific episodes unless intentionally used as public
-  knowledge examples.
+- Transcripts for specific episodes unless explicitly reviewed and approved as
+  private repository examples.
 - Invoices, receipts, bank statements, tax zips, sponsor performance files, or
   private contact lists.
 - DynamoDB exports.
@@ -199,6 +208,8 @@ Why workflow templates belong with process docs:
   them.
 
 The app repo can import or sync these templates into DynamoDB for execution.
+The app can also serve them in the unified operator UI, but raw private
+knowledge should remain in the private repository.
 
 ### 3. `DataTalksClub/aws-infra`
 
@@ -301,10 +312,10 @@ remain outside Git.
 | Portal backend APIs | `dataops/app/backend` | Product code |
 | Work engine | `dataops/app/backend` and `dataops/app/frontend` | Core product, not separate app |
 | Docs editor/search code | `dataops/app` | Product capability |
-| SOP markdown | `dataops-knowledge/content` | Canonical operational knowledge |
-| Task/workflow templates | `dataops-knowledge/workflow-templates` | Canonical process definitions |
-| Communication templates | `dataops-knowledge/content/**/templates` | Knowledge, reusable wording |
-| Assistant prompts/processes | `dataops-knowledge/assistant-prompts` | Reviewable operational knowledge |
+| SOP markdown | private `dataops-knowledge/content` | Canonical operational knowledge |
+| Task/workflow templates | private `dataops-knowledge/workflow-templates` | Canonical process definitions |
+| Communication templates | private `dataops-knowledge/content/**/templates` | Knowledge, reusable wording |
+| Assistant prompts/processes | private `dataops-knowledge/assistant-prompts` | Reviewable operational knowledge |
 | Assistant service code | `dataops/assistants` | Product code |
 | Assistant raw inbox | S3 or private runtime storage | Private/bulky operational input |
 | Assistant generated draft | S3 plus DynamoDB artifact record | Runtime artifact needing review |
@@ -327,7 +338,7 @@ Podcast is the clearest example because it has process docs, task templates,
 assistant code, raw inputs, generated drafts, recordings, transcripts, public
 pages, and third-party links.
 
-### Keep in Git as process knowledge
+### Keep in private knowledge repo as process knowledge
 
 ```text
 dataops-knowledge/
@@ -353,7 +364,7 @@ This includes:
 - email/message templates;
 - podcast task template;
 - assistant instructions;
-- curated examples only if they are safe and useful for future generation.
+- curated examples only if reviewed and approved for private repository use.
 
 ### Keep in the app repo as product code
 
@@ -625,13 +636,14 @@ site.
 
 ## Transition Plan
 
-### Step 1: Keep current repo intact but label ownership
+### Step 1: Keep current app repo intact but label ownership
 
 Add documentation and metadata that says:
 
-- `content/` is operational knowledge.
-- `content/tasks/templates/` is canonical imported task-template documentation
-  for now.
+- `content/` is transitional operational knowledge in a public repo and must be
+  audited before it is treated as safe.
+- `content/tasks/templates/` is transitional imported task-template
+  documentation until private `workflow-templates/*.yaml` sources exist.
 - `work-engine/` is the DataOps execution engine.
 - `assistants/podcast/` is the DataOps podcast assistant module.
 - `lambda-functions/` and `frontend/` are current deployed portal app.
@@ -661,12 +673,13 @@ Then map runtime tasks to `instructionDocId`, not just raw Google Doc URLs.
 
 For podcast assistant:
 
-- Keep prompts and code in Git.
+- Keep assistant code in the public app repo.
+- Move prompts and process instructions to the private knowledge repo.
 - Move raw inputs, generated drafts, logs, and episode-specific outputs to S3 or
   another private storage backend.
 - Store artifact metadata in DynamoDB.
 
-### Step 4: Split `dataops-knowledge` only when the sync boundary exists
+### Step 4: Split private `dataops-knowledge` when the sync boundary exists
 
 Do not split content before the app can:
 
@@ -676,7 +689,10 @@ Do not split content before the app can:
 - deploy or refresh content without app-code deploy;
 - keep CI green in both repos.
 
-Until then, keeping `content/` in `dataops` is simpler and safer.
+Until then, do not add new sensitive operational knowledge to `dataops`.
+Existing `content/` should be treated as migration debt and reduced to
+sanitized fixtures or generated public-safe views as the private repo comes
+online.
 
 ### Step 5: Clean up the app folders
 
@@ -691,27 +707,29 @@ After unified UX decisions are implemented:
 
 ## Recommended Near-Term Decision
 
-For the next implementation goal, keep everything in `DataTalksClub/dataops`
-except shared AWS infrastructure in `../aws-infra`.
+For the next implementation goal, keep product/runtime work in public
+`DataTalksClub/dataops`, keep shared AWS infrastructure in `../aws-infra`, and
+move the operational knowledge source of truth toward private
+`DataTalksClub/dataops-knowledge`.
 
 Do this because:
 
 - V1 still needs product discovery and fast iteration.
-- Splitting content now would add sync complexity before the user experience is
-  clear.
 - The app already deploys from this repo.
-- The current docs, task templates, and assistant prototype are already visible
-  here.
+- The operator UX must stay unified even though the knowledge source is
+  private.
+- The current public-repo docs, task templates, and assistant knowledge need an
+  audit/migration path instead of becoming the steady state.
 
-But design the directories as if `content/`, `workflow-templates/`, and
-`assistant-prompts/` can later become `DataTalksClub/dataops-knowledge`.
+Design the directories and loaders so `content/`, `workflow-templates/`, and
+`assistant-prompts/` become private `DataTalksClub/dataops-knowledge` inputs.
 
 The clearest near-term structure is:
 
 ```text
 dataops/
   content/
-    ...existing process docs...
+    ...transitional, audited, public-safe process docs or generated views...
     workflow-templates/
     assistant-prompts/
     indexes/
@@ -736,11 +754,14 @@ later.
 
 Build DataOps as one operations workspace where:
 
-- `dataops` owns the running app and current canonical knowledge;
+- `dataops` owns the running public app, schemas, tests, sanitized fixtures,
+  and public-safe planning docs;
+- private `dataops-knowledge` owns canonical operational knowledge;
 - `aws-infra` owns AWS account-level infrastructure;
 - runtime work state lives in DynamoDB;
 - private/bulky artifacts live outside Git;
-- process docs, workflow templates, and assistant prompts are versioned in Git;
+- process docs, workflow templates, and assistant prompts are versioned in
+  private Git;
 - the UI hides repository boundaries and gives the operations manager one daily
   flow for tasks, workflows, reminders, follow-ups, artifacts, docs, and
   assistants.
