@@ -7,13 +7,15 @@ execution, process documentation, recurring workflows, artifacts, and assistants
 
 The combined project should let the team:
 
-- Find the SOP or template needed to do operational work.
+- Find the private SOP or template needed to do operational work through the
+  authenticated portal.
 - Turn recurring playbooks into task bundles.
 - Execute tasks from one unified task list.
 - Collect raw operational inputs from Telegram, email, files, and manual entry.
 - Run assistants that draft operational artifacts, starting with podcast prep
   documents.
-- Keep operational knowledge in Git-backed markdown.
+- Keep sensitive operational knowledge in Git-backed markdown in a private
+  repository.
 - Preserve lightweight serverless deployment and low maintenance cost.
 
 ## Source Projects
@@ -47,7 +49,8 @@ Important concepts to retain:
 
 Source: `../dtc-operations`
 
-Role in the combined project: operational knowledge base and SOP editor.
+Role in the combined project: private operational knowledge base and SOP
+editor pattern.
 
 Current capabilities:
 
@@ -62,7 +65,7 @@ Current capabilities:
 
 Important concepts to retain:
 
-- GitHub is the source of truth for operational documentation.
+- Private GitHub is the source of truth for operational documentation.
 - Markdown remains readable on GitHub.
 - Structured SOP markers make docs machine-readable.
 - Content changes can validate and refresh search without redeploying app code.
@@ -96,8 +99,9 @@ four primary surfaces:
 
 1. **Work**: tasks, bundles, recurring operations, assignments, due dates,
    execution status, and links/files needed to complete work.
-2. **Knowledge**: SOPs, templates, references, playbooks, prompts, screenshots,
-   search, editing, linting, and publishing.
+2. **Knowledge**: authenticated in-app access to private SOPs, templates,
+   references, playbooks, prompts, screenshots, search, editing, linting, and
+   publishing.
 3. **Assistants**: intake, transcription, AI drafting, job logs, retry, and
    human review.
 4. **Artifacts**: podcast docs, event pages, Luma links, YouTube links,
@@ -115,7 +119,9 @@ The user-facing distinction should be simple:
 
 ### Document
 
-Backed by markdown in `content/`, not copied into DynamoDB.
+Backed by markdown in the private operational knowledge repo, not copied into
+DynamoDB. During migration, `content/` in this public repo is only a
+transitional/sanitized fixture source.
 
 Minimum metadata exposed to the task app:
 
@@ -218,8 +224,9 @@ boundaries clear.
 - DynamoDB stores operational execution state: users, tasks, bundles, recurring
   configs, notifications, sessions, assistant jobs, artifacts, and files
   metadata.
-- GitHub markdown stores operational knowledge: SOPs, templates, references,
-  playbooks, prompts, and screenshots.
+- Private GitHub markdown stores operational knowledge: SOPs, templates,
+  references, playbooks, prompts, and screenshots. The public app repo stores
+  code, schemas, migrations, sanitized examples, and registry client logic.
 - Search indexes markdown content and selected task/template metadata.
 - Lambda remains the primary deployment unit unless scale or auth needs force a
   different hosting model.
@@ -247,17 +254,19 @@ Avoid in the first merge:
 
 Deliverables:
 
-- Decide whether the combined app lives in a new repo or one source repo absorbs
-  the other.
-- Keep `content/` history intact if DTC Operations is moved.
-- Define code owners for docs, task backend, task frontend, infra, and content.
+- Keep the combined app in the public `DataTalksClub/dataops` repo.
+- Preserve private operational content history in a private knowledge repo
+  rather than importing sensitive docs into the public app repo.
+- Define code owners for app code, task backend, task frontend, infra, and the
+  private knowledge repo.
 - Establish branch and release policy.
 
 Recommendation:
 
-- Use a new `dataops` repo only if the intent is a clean combined product.
-- Otherwise, merge DataTasks into `dtc-operations` because operational docs are
-  already the durable knowledge base and have the broader content structure.
+- Keep `DataTalksClub/dataops` as the public app/runtime repo.
+- Keep operational knowledge in a separate private GitHub repo so sensitive
+  SOPs, templates, prompts, screenshots, and operational context are not
+  exposed publicly.
 
 ### 2. Shared Product Shell
 
@@ -283,6 +292,8 @@ Deliverables:
 - Stable document IDs and aliases for markdown docs.
 - Resolver for `instructionDocId` and wiki-style links.
 - Internal-link validation in CI.
+- Authenticated private-doc resolution through the app API; public code must
+  not expose private repo paths, tokens, or raw content.
 
 Acceptance:
 
@@ -293,7 +304,8 @@ Acceptance:
 
 Deliverables:
 
-- Mapping from DTC Operations checklists/playbooks/SOPs to DataTasks templates.
+- Mapping from private operational checklists/playbooks/SOPs to DataOps
+  workflow templates.
 - Import or sync command for selected docs.
 - UI affordance to create a task template from a checklist or playbook.
 - Review screen for offsets, assignees, milestones, required links, and files.
@@ -303,8 +315,10 @@ Acceptance:
 - Newsletter, podcast, webinar, workshop, book of the week, open-source
   spotlight, social media, Maven lightning lesson, office hours, and tax report
   templates can be represented from the existing docs.
-- Generated templates keep links to the source docs and specific SOP steps where
-  possible.
+- Generated templates keep stable private-doc IDs and specific SOP-step
+  references where possible. Public-side records may contain task structure,
+  offsets, required proof, and doc IDs, but not copied SOP/template text unless
+  explicitly sanitized.
 
 ### 5. Unified Search
 
@@ -380,15 +394,16 @@ Priority workflows:
 Deliverables:
 
 - Shared typecheck/build/test commands.
-- Docs content validation and SOP linting.
+- Private knowledge validation, SOP linting, and public fixture validation.
 - Unit tests for docs registry and template import.
 - Playwright coverage for task-to-doc and doc-to-template flows.
-- Separate fast path for content-only changes.
+- Separate fast path for private knowledge changes to validate and refresh
+  search/index metadata without unnecessary public app deploys.
 - Full deploy path for app, Lambda, infra, and package changes.
 
 Acceptance:
 
-- Content-only changes validate and refresh search without unnecessary app
+- Private knowledge changes validate and refresh search without unnecessary app
   redeploys.
 - App changes run both docs and task tests before deployment.
 
@@ -403,7 +418,8 @@ Tasks:
 
 - Choose target repo strategy.
 - Decide whether to preserve both old apps during transition.
-- Decide whether docs saves still commit directly to `main`.
+- Decide how authenticated doc saves commit to the private knowledge repo and
+  how the public app consumes refreshed metadata/indexes.
 - Decide if current DataTasks production state exists and must be migrated.
 
 ### Milestone 1: Read-Only Integration
@@ -476,8 +492,11 @@ provenance, and `instructionsUrl` remains only a legacy or external fallback.
 
 Risk: task templates and docs drift apart.
 
-Decision: docs are the source of truth for instructions; task templates are the
-source of truth for execution scheduling and status.
+Decision: private Git-backed operational docs are the source of truth for
+instructions; private Git-backed workflow templates are the source of truth for
+repeatable execution definitions; DynamoDB is the source of truth for runtime
+execution scheduling and status. The public `dataops` repo may keep only
+sanitized fixtures, generated public-safe views, schemas, and product code.
 
 ### Scope Creep
 
@@ -502,7 +521,8 @@ Decision: preserve the content-only validation/refresh path.
 
 ## Immediate Next Steps
 
-1. Decide the target repository strategy.
+1. Create the private operational knowledge repository boundary and migration
+   plan.
 2. Add stable IDs to high-priority DTC Operations docs.
 3. Design the document registry API contract.
 4. Add `instructionDocId` support to DataTasks templates and tasks.

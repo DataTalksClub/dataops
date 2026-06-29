@@ -32,17 +32,20 @@ manager, but repository and storage ownership need clear boundaries.
 
 Current state:
 
-- `DataTalksClub/dataops` is the product/runtime repository for
+- `DataTalksClub/dataops` is the public product/runtime repository for
   `ops.dtcdev.click`.
 - `content/` is the transitional Git home for imported SOPs, references,
-  images, prompts, indexes, and task templates.
+  images, prompts, indexes, and task templates. Because this repository is
+  public, existing operational content is public-sensitive migration debt until
+  it is audited and moved behind the private knowledge boundary.
 - `content/tasks/templates/` contains DataOps workflow templates that encode
   repeatable operational process.
 - `assistants/podcast/` is the canonical in-repo DataOps podcast assistant
   module.
 - Runtime workflow state is stored in DynamoDB execution tables managed by the
   deployed stack.
-- Private or bulky files must remain outside public process documentation.
+- Private or bulky files must remain outside the public app repository and
+  outside private process Git unless explicitly approved as canonical knowledge.
 - `../dtc-operations`, `../datatasks`, and `../podcast-assistant` are read-only
   source systems for DataOps migration work unless another issue explicitly
   scopes source-repo edits.
@@ -56,11 +59,13 @@ would make review, restore, export, and future repo migration harder.
 Create a future canonical process repository named
 `DataTalksClub/dataops-knowledge`.
 
-Visibility: public by default, with a required pre-migration data review. If the
-review finds private credentials, private contact data, customer or sponsor
-records, invoice data, unreleased guest material, or generated assistant output,
-those items stay out of the repository or the repository remains private until
-redaction is complete.
+Visibility: private by default. The app repository stays public, but the
+operational knowledge repository must be private because DataOps SOPs,
+workflow templates, assistant prompts/process instructions, screenshots,
+private links, contact details, sponsor or finance context, and generated
+operational materials may contain sensitive information. Public excerpts or
+examples require an explicit data review and must be copied out as sanitized
+fixtures or public-safe documentation, not treated as the canonical source.
 
 Ownership:
 
@@ -85,7 +90,8 @@ Rationale:
   database rebuild.
 - DynamoDB execution records are mutable operational state and should not be
   reviewed as Git documentation.
-- Private outputs and uploads should not enter a public docs repository.
+- Private operational knowledge, outputs, and uploads should not enter the
+  public app repository.
 
 Do not split the repository immediately. Keep `content/` in `dataops` until the
 app can read from the knowledge repository, validate it in CI, sync templates
@@ -96,8 +102,8 @@ portal edits to the correct repository.
 
 | Boundary | Canonical home | Includes | Excludes |
 |---|---|---|---|
-| Product/runtime code | `DataTalksClub/dataops` | Portal frontend, Lambda APIs, work-engine code, assistant service code, tests, app deployment, local development seeds, product architecture docs | Canonical process repo after migration, private artifacts, long-lived runtime records |
-| Process knowledge | `DataTalksClub/dataops-knowledge` | SOPs, references, playbooks, communication templates, workflow templates, assistant prompts/process instructions, small doc images, validation schemas, lightweight generated indexes | Runtime task instances, audit events, assistant jobs, generated documents, raw recordings, invoices, DynamoDB exports |
+| Product/runtime code | `DataTalksClub/dataops` public repo | Portal frontend, Lambda APIs, work-engine code, assistant service code, tests, app deployment, schemas, sanitized local development seeds, public-safe product architecture docs | Canonical private process repo after migration, raw operational docs/templates/prompts, private artifacts, long-lived runtime records |
+| Process knowledge | `DataTalksClub/dataops-knowledge` private repo | SOPs, references, playbooks, communication templates, workflow templates, assistant prompts/process instructions, small doc images, validation schemas, lightweight generated indexes | Runtime task instances, audit events, assistant jobs, generated documents, raw recordings, invoices, DynamoDB exports |
 | Shared infrastructure | `DataTalksClub/aws-infra` | Account-level OIDC, IAM, Route 53, certificates, shared buckets, shared deployment wrappers | App source, app-specific Lambda code, process content |
 | Runtime execution state | DynamoDB tables owned by the `dataops-v1` stack | Tasks, bundles, reminders, runtime templates loaded from Git, recurring configs, file metadata, artifact metadata, assistant job metadata, audit events | Canonical process docs and template source files |
 | Private/bulky artifacts | S3, Dropbox, Google Drive, or equivalent private storage | Raw uploads, recordings, transcripts, invoices, receipts, guest-specific podcast drafts, generated assistant outputs, export bundles | Public process knowledge, app code |
@@ -160,8 +166,9 @@ Rules:
   either maintained metadata or deterministic generated files.
 - Large generated indexes, search bundles, and runtime caches remain generated
   artifacts and are not hand-edited.
-- Curated examples may move only after data review confirms they are safe,
-  useful, and intentionally public.
+- The repository is private by default. Curated examples may be made public
+  only after a separate data review confirms they are safe, useful, and
+  intentionally public.
 
 ## DataOps Workflow Template Decision
 
@@ -226,14 +233,14 @@ Keep in `dataops`:
 - job creation, retry, resume, queue, progress, and DataOps integration code
 - local `.env.example` and development documentation
 
-Move or duplicate to `dataops-knowledge` after review:
+Move or duplicate to private `dataops-knowledge` after review:
 
 - reusable podcast process instructions from `assistants/podcast/process/`
 - reusable guest-intake templates from `assistants/podcast/templates/`
 - prompts and review checklists used to shape assistant behavior
-- curated, public-safe knowledge-base summaries and taxonomies from
+- curated, approved knowledge-base summaries and taxonomies from
   `assistants/podcast/knowledge_base/`
-- curated examples only when explicitly approved as public training/reference
+- curated examples only when explicitly approved for private training/reference
   material
 
 Keep outside Git:
@@ -254,14 +261,14 @@ in private artifact storage with DynamoDB metadata.
 
 | Current path | Decision | Future home | Notes |
 |---|---|---|---|
-| `content/` | Move later | `dataops-knowledge/content/` plus selected sibling folders | Keep in `dataops` until read/sync/edit/refresh support exists. |
-| `content/tasks/templates/` | Convert then move | `dataops-knowledge/workflow-templates/*.yaml` | Current Markdown remains transitional canonical source. Generate Markdown views only if needed. |
-| `content/images/` | Move after review | `dataops-knowledge/images/` or content-relative images | Keep small SOP screenshots. Exclude private screenshots or bulky media. |
-| `content/prompts/` | Move after review | `dataops-knowledge/assistant-prompts/` or `content/prompts/` | Process prompts are knowledge, not runtime code. |
+| `content/` | Move after private-repo sync exists | `dataops-knowledge/content/` plus selected sibling folders | Treat existing public-repo content as migration debt. Audit before moving and leave only sanitized fixtures or generated public-safe views in `dataops`. |
+| `content/tasks/templates/` | Convert then move | `dataops-knowledge/workflow-templates/*.yaml` | Current Markdown remains transitional only until private YAML sources exist. Generate Markdown views only if needed. |
+| `content/images/` | Move after review | `dataops-knowledge/images/` or content-relative images | Keep SOP screenshots private by default. Copy public screenshots only after explicit review. |
+| `content/prompts/` | Move after review | `dataops-knowledge/assistant-prompts/` or `content/prompts/` | Process prompts are private operational knowledge, not runtime code. |
 | `content/indexes/` | Split | `dataops-knowledge/indexes/` for maintained registries; CI artifacts for generated search bundles | Do not hand-edit generated search indexes. |
 | `assistants/podcast/process/` | Move or duplicate after review | `dataops-knowledge/assistant-process/podcast/` | Reusable process knowledge. Code keeps references/config to load it. |
 | `assistants/podcast/templates/` | Move or duplicate after review | `dataops-knowledge/assistant-process/podcast/` or `assistant-prompts/podcast/` | Guest-intake and reusable templates are knowledge. |
-| `assistants/podcast/knowledge_base/` | Curate before moving | `dataops-knowledge/assistant-process/podcast/` or `examples/podcast/` | Only stable, public-safe summaries/taxonomies move. Episode-specific or private material stays external. |
+| `assistants/podcast/knowledge_base/` | Curate before moving | `dataops-knowledge/assistant-process/podcast/` or `examples/podcast/` | Only stable, reviewed, approved summaries/taxonomies move. Episode-specific or private artifact material stays external. |
 | `assistants/podcast/data/` | Defer | App repo or generated artifact storage depending on file role | Decide after classifying source data versus generated indexes. |
 | `assistants/podcast/podcast_examples/` | Keep out unless curated | External/private storage, or `dataops-knowledge/examples/podcast/` after approval | Current `.docx` examples look episode-specific and need data review. |
 | `assistants/podcast/inbox/` | Keep outside Git | S3 or private runtime storage | Git should keep placeholders only during transition. |
@@ -389,24 +396,23 @@ This boundary preserves the existing V1 data-safety model:
 - Runtime task/workflow state remains exportable separately from process docs.
 - DynamoDB exports include runtime template records and template source commit
   metadata, not the canonical Git source itself.
-- Private/generated operational data does not move into a public docs repo.
+- Private/generated operational data does not move into the public app repo.
 - Artifact binary backup is handled by S3 versioning, external system exports,
   or private artifact backups.
 - Portable execution exports remain application-level JSON/JSONL archives with
   manifests, checksums, redaction rules, and relationship validation.
 
-Before public migration, run an explicit data review over `content/`,
-assistant knowledge files, examples, images, and templates. Anything with
-private contacts, secrets, unreleased guest context, finance records, sponsor
-confidential data, or generated guest-specific output must be redacted or left
-outside the public repository.
+Before migration, run an explicit data review over `content/`, assistant
+knowledge files, examples, images, and templates. The default destination is
+the private knowledge repo. Anything copied back into the public app repo must
+be sanitized and intentionally public-safe.
 
 ## Follow-Up Implementation Issues
 
 Create these after ADR acceptance:
 
-1. Create `DataTalksClub/dataops-knowledge` with branch protection, ownership,
-   visibility, and initial empty structure.
+1. Create private `DataTalksClub/dataops-knowledge` with branch protection,
+   ownership, visibility locked to private, and initial empty structure.
 2. Add knowledge-repo schemas and CI for frontmatter, stable IDs, internal
    links, image checks, workflow-template validation, prompt validation, and
    search-index generation.
@@ -424,7 +430,7 @@ Create these after ADR acceptance:
 9. Wire knowledge-repo CI to refresh the deployed portal cache/search index
    without app redeploy.
 10. Classify and migrate reusable DataOps podcast assistant process knowledge,
-    templates, prompts, and safe knowledge-base summaries.
+    templates, prompts, and approved knowledge-base summaries.
 11. Move DataOps podcast assistant generated/private outputs to private artifact
     storage and attach artifact metadata to workflow records.
 12. Add admin/status visibility for loaded knowledge repo branch, commit SHA,

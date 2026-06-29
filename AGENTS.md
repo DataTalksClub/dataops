@@ -14,6 +14,20 @@ This repo uses GitHub Issues in `DataTalksClub/dataops` as the work tracker.
 The orchestrator files raw user requests as issues with `needs grooming`, then
 role agents move each issue through the pipeline.
 
+Operational knowledge boundary:
+
+- `DataTalksClub/dataops` stays public and owns product/runtime code, CI/CD,
+  tests, schemas, sanitized fixtures, and public-safe planning docs.
+- Operational documents and knowledge belong in a separate private repository.
+  The planned repo name is `DataTalksClub/dataops-knowledge`.
+- Do not add raw SOPs, workflow templates, assistant prompts/process
+  instructions, screenshots, private links, credentials-adjacent setup notes,
+  contact details, sponsor or finance context, or generated operational
+  artifacts to this public repo.
+- Existing `content/` material in this repo is transitional migration debt.
+  Treat it as public-sensitive until it is audited and moved behind the private
+  knowledge boundary.
+
 Current planning docs:
 
 - `_docs/MERGE_PLAN.md`

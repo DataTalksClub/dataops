@@ -31,14 +31,18 @@ The analysis is grounded in:
 - `work-engine/src/public/app.js`: current SPA behavior for dashboard, tasks,
   bundles, templates, recurring configs, notifications, required links, and
   completion checkboxes.
-- `content/tasks/templates/*.md`: imported task templates and due-date offsets.
-- `content/overview/reference/*.md`: schedule, newsletter, and operations
-  reference material.
-- `content/**/sops/*.md` and `content/**/templates/*.md`: process documents
-  used as contextual instructions.
-- `assistants/podcast/README.md`, `assistants/podcast/process/podcast.md`, and
-  `assistants/podcast/templates/podcast_guest_intake.md`: assistant pattern for
-  turning raw inputs into prepared operating documents.
+- `content/tasks/templates/*.md`: transitional imported task templates and
+  due-date offsets; long-term canonical templates belong in the private
+  knowledge repo.
+- Private operations-knowledge content, or sanitized fixtures when referenced
+  from this public repo: schedule, newsletter, operations reference material,
+  SOPs, and templates used as contextual instructions.
+- `assistants/podcast/README.md`: current assistant module overview.
+- `assistants/podcast/process/podcast.md` and
+  `assistants/podcast/templates/podcast_guest_intake.md`: current assistant
+  process/template inputs for turning raw inputs into prepared operating
+  documents; long-term reusable process/template content belongs in the
+  private knowledge repo.
 
 ## The User
 
@@ -52,7 +56,8 @@ product should not be built around one hard-coded person. The role is:
 - Works across Trello-like workflow cards, a spreadsheet-like task list,
   Google Docs, Google Sheets, Google Calendar, Slack, Mailchimp, Luma, Meetup,
   YouTube, Spotify, Airtable, Dropbox, Figma, LinkedIn, X, Finom, Revolut, Wise,
-  email, Telegram, and GitHub-backed process docs.
+  email, Telegram, and private GitHub-backed process docs surfaced inside
+  DataOps.
 - Handles both planned workflows and ad-hoc incoming requests.
 - Needs to know what to do now, what is waiting for someone else, what is late,
   what needs a reminder, and what proof is required before something can be
@@ -99,8 +104,9 @@ The current code already contains useful primitives:
 - Task checkboxes to mark done or todo.
 - Required link fields that block completion until a URL is saved.
 - Bundle links that store workflow-specific URLs.
-- Template references that point to fixed process docs.
-- Task instructions URLs that open process docs.
+- Template references that resolve through the private document registry.
+- Task instructions URLs or IDs that open process docs inside the authenticated
+  app.
 - Stage transitions for bundles, including preparation, announced,
   after-event, and done.
 - File records in the data model.
@@ -454,7 +460,8 @@ so docs help me finish work instead of becoming a separate place to browse.
 Platform actions:
 
 - Click the instructions icon on a task.
-- View the relevant SOP/template/reference.
+- View the relevant private SOP/template/reference inside the authenticated
+  app.
 - Return to the workflow and complete the task.
 
 Acceptance criteria:
@@ -463,6 +470,8 @@ Acceptance criteria:
 - Search is available when a task does not have a mapped SOP.
 - The workflow remains the primary screen.
 - Docs are contextual help, not the main navigation model.
+- The UI does not expose private repo paths or require the operator to
+  understand where the doc is stored.
 
 ### JTBD 8: Improve the process when a gap is found
 
@@ -475,7 +484,9 @@ Platform actions:
 - Click "Report process gap" from a task or doc.
 - Enter what was missing or wrong.
 - Link it to the task, workflow, and source SOP.
-- Create a GitHub issue or internal improvement task.
+- Create a private knowledge-repo issue or internal improvement task when the
+  gap contains operational details; public GitHub issues may contain only
+  sanitized product/code work.
 
 Acceptance criteria:
 
@@ -1046,6 +1057,8 @@ Product response:
 - Search can find docs when a task has no mapped instructions.
 - Docs are not the primary daily work screen.
 - User can report a process gap from a task.
+- Sensitive SOP/template content is resolved through authenticated private-doc
+  APIs, not stored in or linked directly from the public app repo.
 
 ### Audit acceptance criteria
 
@@ -1105,7 +1118,8 @@ The first meaningful version should not be "docs plus search". It should be:
 
 ### Phase 5: Integrate docs and assistant into execution
 
-- Keep docs as contextual instruction links.
+- Keep private docs as contextual instruction links through the document
+  registry.
 - Add process gap reporting.
 - Attach assistant output as workflow artifacts.
 - Generalize the podcast assistant pattern into workflow assistants that turn
@@ -1120,6 +1134,8 @@ The first meaningful version should not be "docs plus search". It should be:
 - Do not build a heavy project-management system with unnecessary complexity.
 - Do not require the operator to understand the underlying Git/content layout to
   do daily work.
+- Do not store sensitive SOPs, templates, prompts, screenshots, or generated
+  operational artifacts in the public app repo.
 
 ## Product Goal Statement
 
