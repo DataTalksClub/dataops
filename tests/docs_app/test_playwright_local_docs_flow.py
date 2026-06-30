@@ -617,7 +617,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                         "Process doc", exact=True
                     ).is_visible()
                     assert page.locator("#task-panel-body .task-instruction-doc-link", has_text="Newsletter Task Template").inner_text() == "Newsletter Task Template"
-                    assert page.locator("#task-panel-body").get_by_text("Workflow bundle-ops-smoke").is_visible()
+                    assert page.locator("#task-panel-body").get_by_text("Workflow Newsletter smoke workflow").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-task-panel-missing-proof.png"), full_page=True)
                     page.locator("#task-panel-close").click()
                     assert page.locator("#task-panel").is_hidden()
@@ -770,6 +770,7 @@ def test_operations_smoke_runtime_failure_state_is_honest(tmp_path):
                 try:
                     page.route("**/work/api/tasks**", lambda route: route.fulfill(status=503, json={"error": "work down"}))
                     page.route("**/work/api/bundles**", lambda route: route.fulfill(status=503, json={"error": "work down"}))
+                    page.route("**/work/api/users**", lambda route: route.fulfill(status=503, json={"error": "work down"}))
                     page.goto(frontend_url, wait_until="domcontentloaded")
                     page.locator("#library-title").wait_for(state="visible")
                     page.get_by_text("Live work data unavailable", exact=True).wait_for()
