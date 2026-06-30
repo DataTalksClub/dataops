@@ -199,6 +199,12 @@ export class ContentsApiGithubStore implements GithubStore {
 
   async sync(): Promise<void> {
     if (this.hydrated) return;
+    // Offline/local dev: content is already present under contentRoot (e.g. the
+    // repo's own content/), so skip GitHub hydration entirely.
+    if (process.env.DTC_OFFLINE === '1') {
+      this.hydrated = true;
+      return;
+    }
     mkdirSync(this.root, { recursive: true });
     mkdirSync(this.contentRoot, { recursive: true });
     const tree = await this.tree();
@@ -215,6 +221,12 @@ export class ContentsApiGithubStore implements GithubStore {
     const clean = normalizeRepoPath(repoPath);
     const local = this.localPath(clean);
     if (existsSync(local)) return local;
+    // Offline/local dev: never reach for GitHub — a missing file is just ENOENT.
+    if (process.env.DTC_OFFLINE === '1') {
+      const err = new Error(clean) as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }
     const entry = (await this.tree())[clean];
     if (!entry || entry.type !== 'blob') {
       const err = new Error(clean) as NodeJS.ErrnoException;
