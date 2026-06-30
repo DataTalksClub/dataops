@@ -108,7 +108,11 @@ const taskPanel = document.querySelector("#task-panel");
 const taskPanelTitle = document.querySelector("#task-panel-title");
 const taskPanelBody = document.querySelector("#task-panel-body");
 const taskPanelClose = document.querySelector("#task-panel-close");
+const taskModalBackdrop = document.querySelector("#task-modal-backdrop");
 taskPanelClose.addEventListener("click", closeTaskPanel);
+// Backdrop click closes the modal, matching the confirm/diff modal pattern.
+taskModalBackdrop.addEventListener("click", closeTaskPanel);
+let taskModalOpener = null;
 
 const bundlePanel = document.querySelector("#bundle-panel");
 const bundlePanelTitle = document.querySelector("#bundle-panel-title");
@@ -1794,6 +1798,12 @@ function findWorkTaskInSnapshot(taskId) {
 
 async function openTaskPanel(taskId) {
   closeBundlePanel();
+  // Capture the element that opened the modal so focus can return to it on
+  // close. Only capture on a fresh open, not when swapping tasks while open.
+  const wasOpen = !taskPanel.hidden;
+  if (!wasOpen && document.activeElement instanceof HTMLElement) {
+    taskModalOpener = document.activeElement;
+  }
   activeTaskPanelId = taskId;
   activeTaskPanelTask = findWorkTaskInSnapshot(taskId);
   activeTaskPanelArtifacts = [];
@@ -1801,6 +1811,11 @@ async function openTaskPanel(taskId) {
   taskPanelBody.replaceChildren();
   taskPanel.hidden = false;
   body.classList.add("task-panel-open");
+  body.classList.add("task-modal-open");
+  if (!wasOpen) {
+    document.addEventListener("keydown", handleTaskModalKeydown);
+    taskPanelClose.focus();
+  }
   renderTaskPanel();
   try {
     const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
@@ -1827,6 +1842,38 @@ function closeTaskPanel() {
   activeTaskPanelArtifacts = [];
   taskPanel.hidden = true;
   body.classList.remove("task-panel-open");
+  body.classList.remove("task-modal-open");
+  document.removeEventListener("keydown", handleTaskModalKeydown);
+  const focusTarget = taskModalOpener?.isConnected ? taskModalOpener : null;
+  taskModalOpener = null;
+  if (focusTarget instanceof HTMLElement) focusTarget.focus();
+}
+
+// Focus trap for the task modal: Tab/Shift+Tab cycle within the dialog, Esc
+// closes it. Mirrors the sidebar's handleSidebarKeydown focus-trap pattern.
+function handleTaskModalKeydown(event) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeTaskPanel();
+    return;
+  }
+  if (event.key !== "Tab" || taskPanel.hidden) return;
+  const panel = taskPanel.querySelector(".task-modal-panel");
+  if (!panel) return;
+  const focusables = [...panel.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+    (el) => el.offsetParent !== null,
+  );
+  if (focusables.length === 0) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !panel.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function renderTaskPanel() {
