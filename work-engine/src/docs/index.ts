@@ -14,6 +14,7 @@
 
 export * from './errors';
 export * from './searchIndex';
+export * from './search/extract';
 export * from './sopEngine';
 export * from './githubStore';
 export * from './contentApi';
