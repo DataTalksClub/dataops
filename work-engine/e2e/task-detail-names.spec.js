@@ -108,10 +108,28 @@ async function openTaskPanelFor(page, textFragment) {
   await expect(
     page.locator('[data-operations-work-loaded="true"]'),
   ).toBeVisible({ timeout: 20000 });
-  // Match the lane item whose title (<strong>) is exactly the task description,
-  // so a same-suffix workflow bundle in another lane is not also matched.
+  // The loaded signal means the work snapshot fetched — but on a slower runner
+  // that snapshot can be hydrated-but-stale (fetched before this spec created
+  // its task), so the Today lane row is absent even though the signal is true.
+  // Rather than a single visibility check that fails forever on a stale
+  // snapshot, poll for the row and force a fresh snapshot fetch when it's
+  // missing, then re-wait. The test-server fetches are fast, so one refresh is
+  // normally enough, but the bounded loop keeps this robust to slow CI.
   const row = page.locator('.ops-lane-item', { has: page.locator('strong', { hasText: textFragment }) });
-  await expect(row.first()).toBeVisible({ timeout: 15000 });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      await expect(row.first()).toBeVisible({ timeout: 8000 });
+      break;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      // Force a fresh work-snapshot fetch + re-render, then wait for the
+      // hydrated signal again before re-checking the row.
+      await page.evaluate(() => window.__dataopsRefreshWork && window.__dataopsRefreshWork());
+      await expect(
+        page.locator('[data-operations-work-loaded="true"]'),
+      ).toBeVisible({ timeout: 20000 });
+    }
+  }
   await row.first().click();
   await expect(page.locator('#task-panel')).toBeVisible({ timeout: 10000 });
   return page.locator('#task-panel-body');
