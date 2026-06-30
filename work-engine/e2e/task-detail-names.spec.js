@@ -101,6 +101,13 @@ async function archiveAndDeleteBundle(bundleId) {
 async function openTaskPanelFor(page, textFragment) {
   // Operations Home renders today's tasks as clickable .ops-lane-item rows.
   await page.goto(`${BASE_URL}/#/`);
+  // The home view renders once with an unloaded work snapshot and re-renders
+  // after the async /work/api fetch hydrates. Wait for the hydrated render via
+  // the data-operations-work-loaded signal before querying lane rows, so the
+  // 15s visibility check never races a still-empty Today lane.
+  await expect(
+    page.locator('[data-operations-work-loaded="true"]'),
+  ).toBeVisible({ timeout: 20000 });
   // Match the lane item whose title (<strong>) is exactly the task description,
   // so a same-suffix workflow bundle in another lane is not also matched.
   const row = page.locator('.ops-lane-item', { has: page.locator('strong', { hasText: textFragment }) });

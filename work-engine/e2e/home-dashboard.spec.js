@@ -57,6 +57,16 @@ function taskRow(page, taskId) {
   return page.locator('[data-task-row="' + taskId + '"]');
 }
 
+// The dashboard's task table loads through a chain of async fetches (tasks,
+// files, bundles) in loadDashboardTasks. #dashboard-tasks carries a
+// data-loaded attribute that flips to "true" only at the terminal render
+// (table populated, empty state, or error). Waiting for it before asserting on
+// rows avoids races where the container exists but today's tasks haven't
+// hydrated yet on a slower CI runner.
+async function waitForDashboardTasksLoaded(page, timeout = 15000) {
+  await page.waitForSelector('#dashboard-tasks[data-loaded="true"]', { timeout });
+}
+
 function successfulTaskUpdate(page, taskId, fieldName) {
   return page.waitForResponse((response) => {
     if (!response.url().includes('/api/tasks/' + taskId)) return false;
@@ -963,7 +973,7 @@ test.describe('Home dashboard (issue #26)', () => {
         created.push(await skippedRes.json());
 
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         const linkRow = taskRow(page, created[0].id);
         await expect(linkRow).toContainText('Add Sponsorship document link to complete');
