@@ -1157,7 +1157,7 @@ body[data-view="create"] .editor-view {
 
 .ops-summary {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--do-space-2);
 }
 
@@ -1352,6 +1352,38 @@ body[data-view="create"] .editor-view {
   color: var(--muted);
   font-size: var(--do-text-md);
   line-height: 1.45;
+}
+
+.ops-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: var(--do-border);
+  border-radius: var(--do-radius-md);
+  background: var(--do-color-surface);
+  padding: 4px;
+}
+
+.ops-subnav-tab {
+  flex: 1 1 auto;
+  min-height: 31px;
+  border-radius: var(--do-radius-sm);
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 10px;
+  font-size: var(--do-text-md);
+  font-weight: 650;
+  text-align: center;
+}
+
+.ops-subnav-tab:hover {
+  background: var(--do-color-control-hover);
+  color: var(--text);
+}
+
+.ops-subnav-tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .ops-work-queue {
