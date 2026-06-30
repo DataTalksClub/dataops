@@ -60,11 +60,51 @@ function taskRow(page, taskId) {
 // The dashboard's task table loads through a chain of async fetches (tasks,
 // files, bundles) in loadDashboardTasks. #dashboard-tasks carries a
 // data-loaded attribute that flips to "true" only at the terminal render
-// (table populated, empty state, or error). Waiting for it before asserting on
-// rows avoids races where the container exists but today's tasks haven't
-// hydrated yet on a slower CI runner.
-async function waitForDashboardTasksLoaded(page, timeout = 15000) {
-  await page.waitForSelector('#dashboard-tasks[data-loaded="true"]', { timeout });
+// (table populated, empty state, or error). Under CI cross-worker contention
+// on the shared port-3001 server the first fetch can be slow, and the snapshot
+// can be hydrated-but-stale (fetched before this spec created today's task),
+// so a single wait on the signal can time out or resolve against an empty
+// table.
+//
+// waitForDashboardTasksLoaded therefore uses a retry-with-refresh loop: every
+// attempt forces a fresh dashboard-tasks fetch via the
+// window.__dataopsRefreshDashboardTasks seam at the top, waits for the hydrated
+// data-loaded signal inside a try/catch, and recovers a cold-start or stale
+// snapshot by forcing a fresh fetch rather than waiting longer on a fetch that
+// already raced task creation. This mirrors the portal-spec fix in 3a7c3b4.
+async function waitForDashboardTasksLoaded(page) {
+  const loadedSignal = page.locator('#dashboard-tasks[data-loaded="true"]');
+  for (let attempt = 0; attempt < 4; attempt++) {
+    // Idempotent: the dashboard view's initial render already triggered a fetch
+    // on attempt 0, but re-invoking keeps every iteration uniform and
+    // guarantees a fresh fetch on the retries.
+    await page.evaluate(() => window.__dataopsRefreshDashboardTasks && window.__dataopsRefreshDashboardTasks());
+    try {
+      await expect(loadedSignal).toBeVisible({ timeout: 10000 });
+      return;
+    } catch (err) {
+      if (attempt === 3) throw err;
+    }
+  }
+}
+
+// Wait for a specific task row to be ready before asserting on it. On a stale
+// snapshot the row can be absent even after data-loaded flips true (the queue
+// hydrated against a snapshot taken before this spec created its task), so poll
+// for the row with a bounded retry that re-fetches on each attempt.
+async function waitForDashboardTaskRow(page, taskId) {
+  const row = taskRow(page, taskId);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await page.evaluate(() => window.__dataopsRefreshDashboardTasks && window.__dataopsRefreshDashboardTasks());
+    try {
+      await expect(page.locator('#dashboard-tasks[data-loaded="true"]')).toBeVisible({ timeout: 10000 });
+      await expect(row).toBeVisible({ timeout: 8000 });
+      return row;
+    } catch (err) {
+      if (attempt === 3) throw err;
+    }
+  }
+  return row;
 }
 
 function successfulTaskUpdate(page, taskId, fieldName) {
@@ -100,6 +140,9 @@ async function attachDashboardRequiredFile(page, taskId, file) {
 }
 
 async function markDashboardTaskDone(page, taskId) {
+  // Ensure the row is hydrated and the checkbox is present before interacting,
+  // so .check() never races a still-empty/stale queue render.
+  await waitForDashboardTaskRow(page, taskId);
   const checkbox = taskRow(page, taskId).locator('.task-status-checkbox');
   await expect(checkbox).toBeEnabled();
   await Promise.all([
@@ -109,6 +152,12 @@ async function markDashboardTaskDone(page, taskId) {
 }
 
 test.describe('Home dashboard (issue #26)', () => {
+  // The dashboard wait helpers use a bounded retry-with-refresh loop (up to ~72s
+  // worst case to recover a cold-start/stale queue snapshot), which can exceed
+  // the 30s Playwright config default and fail with "Test timeout of 30000ms
+  // exceeded". Scope a generous timeout across this spec, as the portal specs
+  // did in 3a7c3b4.
+  test.setTimeout(90000);
 
   // ──────────────────────────────────────────────────────────────────
   // Scenario: Grace opens the app and sees her tasks for today
@@ -158,7 +207,7 @@ test.describe('Home dashboard (issue #26)', () => {
       await page.waitForSelector('#dashboard-tasks');
 
       // Wait for tasks to load
-      await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+      await waitForDashboardTasksLoaded(page);
 
       // Should see Grace's tasks
       await expect(page.locator('#dashboard-tasks')).toContainText('Grace task 1 dashboard');
@@ -198,7 +247,7 @@ test.describe('Home dashboard (issue #26)', () => {
 
     test('unchecking toggle shows all tasks including Valeriia\'s', async ({ page }) => {
       await page.goto('/#/');
-      await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+      await waitForDashboardTasksLoaded(page);
 
       // Initially Grace's toggle is on, should see Grace's task
       await expect(page.locator('#dashboard-tasks')).toContainText('Grace toggle test task');
@@ -208,7 +257,7 @@ test.describe('Home dashboard (issue #26)', () => {
       await toggle.uncheck();
 
       // Wait for reload
-      await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+      await waitForDashboardTasksLoaded(page);
 
       // Now should see both Grace's and Valeriia's tasks
       await expect(page.locator('#dashboard-tasks')).toContainText('Grace toggle test task');
@@ -579,7 +628,7 @@ test.describe('Home dashboard (issue #26)', () => {
         await expect(page.locator('#dashboard-tasks .empty-state-body')).toContainText('Use the task list');
         await expect(page.locator('#dashboard-tasks .empty-state-action', { hasText: 'Open tasks' })).toHaveAttribute('href', '#/tasks');
       } else {
-        await expect(page.locator('#dashboard-tasks table')).toBeVisible();
+        await waitForDashboardTasksLoaded(page);
       }
     });
 
@@ -703,10 +752,9 @@ test.describe('Home dashboard (issue #26)', () => {
 
       try {
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
-        const row = page.locator('[data-task-row="' + task.id + '"]');
-        await expect(row).toBeVisible();
+        const row = await waitForDashboardTaskRow(page, task.id);
 
         // Checkbox should be disabled
         const checkbox = row.locator('.task-status-checkbox');
@@ -730,10 +778,9 @@ test.describe('Home dashboard (issue #26)', () => {
 
       try {
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
-        const row = page.locator('[data-task-row="' + task.id + '"]');
-        await expect(row).toBeVisible();
+        const row = await waitForDashboardTaskRow(page, task.id);
         await expect(row.locator('.badge-adhoc')).toHaveText('ad hoc');
       } finally {
         await request.delete('/api/tasks/' + task.id);
@@ -753,10 +800,9 @@ test.describe('Home dashboard (issue #26)', () => {
 
       try {
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
-        const row = page.locator('[data-task-row="' + task.id + '"]');
-        await expect(row).toBeVisible();
+        const row = await waitForDashboardTaskRow(page, task.id);
         await expect(row.locator('.badge-assignee')).toHaveText('Grace');
       } finally {
         await request.delete('/api/tasks/' + task.id);
@@ -777,10 +823,9 @@ test.describe('Home dashboard (issue #26)', () => {
 
       try {
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
-        const row = page.locator('[data-task-row="' + task.id + '"]');
-        await expect(row).toBeVisible();
+        const row = await waitForDashboardTaskRow(page, task.id);
         const instrLink = row.locator('.instructions-link');
         await expect(instrLink).toBeVisible();
         await expect(instrLink).toHaveAttribute('href', 'https://docs.google.com/dashboard-test');
@@ -805,7 +850,7 @@ test.describe('Home dashboard (issue #26)', () => {
 
       try {
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         // The comment should not appear anywhere on the dashboard task table
         await expect(page.locator('#dashboard-tasks')).not.toContainText('This comment should NOT be visible');
@@ -830,7 +875,7 @@ test.describe('Home dashboard (issue #26)', () => {
         task = await commentRes.json();
 
         await page.goto('/#/');
-        await expect(page.locator('#dashboard-tasks table')).toBeVisible({ timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         const commentRow = taskRow(page, task.id);
         await expect(commentRow).toContainText('Add completion note: Newsletter block updated');
@@ -865,7 +910,7 @@ test.describe('Home dashboard (issue #26)', () => {
         task = await statusRes.json();
 
         await page.goto('/#/');
-        await expect(page.locator('#dashboard-tasks table')).toBeVisible({ timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         const statusRow = taskRow(page, task.id);
         await expect(statusRow).toContainText('Add completion status: Mailchimp campaign scheduled');
@@ -901,7 +946,7 @@ test.describe('Home dashboard (issue #26)', () => {
         task = await fileRes.json();
 
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         const fileRow = taskRow(page, task.id);
         await expect(fileRow).toContainText('Attach Invoice PDF or invoice proof to complete');
@@ -1042,7 +1087,7 @@ test.describe('Home dashboard (issue #26)', () => {
         task = await sharedLinkRes.json();
 
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         const sharedLinkRow = taskRow(page, task.id);
         await expect(sharedLinkRow).toContainText('Add Mailchimp newsletter shared link to complete');
@@ -1106,7 +1151,7 @@ test.describe('Home dashboard (issue #26)', () => {
         created.push(await todayRes.json());
 
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         const overdueRow = page.locator('[data-task-row="' + created[0].id + '"]');
         await expect(overdueRow).toContainText('Overdue');
@@ -1217,7 +1262,7 @@ test.describe('Home dashboard (issue #26)', () => {
 
         await page.setViewportSize({ width: 1440, height: 1000 });
         await page.goto('/#/');
-        await page.waitForSelector('#dashboard-tasks table', { timeout: 10000 });
+        await waitForDashboardTasksLoaded(page);
 
         await expect(page.locator('#dashboard-tasks thead')).toContainText('Required Proof');
         await expect(page.locator('#dashboard-tasks thead')).toContainText('Next Action');

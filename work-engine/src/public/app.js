@@ -198,6 +198,16 @@
     renderSignIn();
   };
 
+  // Test-only seam: force a fresh dashboard-tasks fetch + re-render. Specs use
+  // this to recover from a hydrated-but-stale queue (the dashboard fetched its
+  // tasks before this spec created today's task). Not user-facing; a no-op when
+  // the dashboard view isn't mounted.
+  if (typeof window !== 'undefined') {
+    window.__dataopsRefreshDashboardTasks = function () {
+      loadDashboardTasks();
+    };
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────
 
   function todayString() {
