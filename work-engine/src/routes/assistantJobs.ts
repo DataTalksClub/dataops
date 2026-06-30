@@ -13,6 +13,19 @@ import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../d
 import { getBundle, updateBundle } from '../db/bundles';
 import { createNotification } from '../db/notifications';
 import { getTask, updateTask } from '../db/tasks';
+import {
+  DEFAULT_TYPEFULLY_BASE_URL as TYPEFULLY_BASE_URL_DEFAULT,
+  FetchTypefullyDraftClient,
+  TypefullyRequestError,
+  buildCreateDraftRequest,
+  containsSecret as typefullyContainsSecret,
+  isPublishAtAttempt,
+  type TypefullyDraftClient,
+  type TypefullyDraftResult,
+  type TypefullyPlatform,
+  type TypefullySavedDraftInput,
+} from '../assistant/typefullyClient';
+import type { GeneratedSocialDraft } from '../assistant/socialDraftAssistant';
 import type {
   ArtifactRecord,
   ArtifactRef,
@@ -99,6 +112,14 @@ function isNonEmptyString(value: unknown): value is string {
 function boundedString(value: unknown, maxLength: number): string {
   const text = typeof value === 'string' ? value : '';
   return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
+}
+
+function withoutUndefined(record: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value !== undefined) clean[key] = value;
+  }
+  return clean;
 }
 
 function containsSecret(value: unknown): boolean {
@@ -646,6 +667,203 @@ async function handlePodcastDryRun(id: string, event: LambdaEvent, client: Dynam
   return jsonResponse(200, { job: updated, artifact });
 }
 
+// Injectable Typefully client for tests. When null, a FetchTypefullyDraftClient
+// is used at call time (reads TYPEFULLY_API_KEY from the environment).
+let typefullyClientOverride: TypefullyDraftClient | null = null;
+
+function setTypefullyDraftClient(client: TypefullyDraftClient | null): void {
+  typefullyClientOverride = client;
+}
+
+function typefullyClient(): TypefullyDraftClient {
+  return typefullyClientOverride || new FetchTypefullyDraftClient();
+}
+
+// Statuses allowed to trigger a Typefully draft write: the job must have been
+// reviewed by the operator (waiting_approval) or already approved/succeeded.
+// Draft/queued/running jobs have not produced reviewable output yet.
+const TYPEFULLY_READY_STATUSES = new Set<AssistantJobStatus>(['waiting_approval', 'approved', 'succeeded']);
+
+interface TypefullyDraftRequestBody {
+  socialSetId?: unknown;
+  platforms?: unknown;
+  draftTitle?: unknown;
+  scratchpadText?: unknown;
+  xPosts?: unknown;
+  linkedinPosts?: unknown;
+}
+
+// Parse and validate the operator/API Typefully draft request before any client
+// call. Rejects publish_at attempts at the validation layer and builds the
+// GeneratedSocialDraft the client expects. Returns a 400 error string on failure.
+function parseTypefullyDraftRequest(
+  body: Record<string, unknown>
+): { ok: true; socialSetId: number; platforms: TypefullyPlatform[]; draft: GeneratedSocialDraft } | { ok: false; error: string } {
+  const request = body as TypefullyDraftRequestBody;
+
+  // Reject publish_at anywhere in the request before doing anything else.
+  if (isPublishAtAttempt(body)) {
+    return { ok: false, error: 'publish_at is not allowed: Typefully integration creates saved drafts only' };
+  }
+  if (typefullyContainsSecret(body)) {
+    return { ok: false, error: 'request must not contain tokens or credentials' };
+  }
+
+  const socialSetId = Number(request.socialSetId);
+  if (!Number.isInteger(socialSetId) || socialSetId <= 0) {
+    return { ok: false, error: 'socialSetId must be a positive integer' };
+  }
+
+  let platforms: TypefullyPlatform[] = ['x', 'linkedin'];
+  if (request.platforms !== undefined) {
+    if (!Array.isArray(request.platforms) || request.platforms.length === 0) {
+      return { ok: false, error: 'platforms must be a non-empty array of x and/or linkedin' };
+    }
+    const filtered = (request.platforms as unknown[]).filter((p): p is TypefullyPlatform => p === 'x' || p === 'linkedin');
+    if (filtered.length === 0) return { ok: false, error: 'platforms must be a non-empty array of x and/or linkedin' };
+    platforms = Array.from(new Set(filtered));
+  }
+
+  const xPosts = Array.isArray(request.xPosts)
+    ? (request.xPosts as unknown[]).filter((t): t is string => typeof t === 'string' && t.trim().length > 0).map((t) => t.trim())
+    : [];
+  const linkedinPosts = Array.isArray(request.linkedinPosts)
+    ? (request.linkedinPosts as unknown[]).filter((t): t is string => typeof t === 'string' && t.trim().length > 0).map((t) => t.trim())
+    : [];
+  if (xPosts.length === 0 && linkedinPosts.length === 0) {
+    return { ok: false, error: 'xPosts or linkedinPosts with non-empty text is required' };
+  }
+
+  const draft: GeneratedSocialDraft = { xPosts, linkedinPosts };
+  if (typeof request.draftTitle === 'string' && request.draftTitle.trim().length > 0) draft.draftTitle = request.draftTitle.trim();
+  if (typeof request.scratchpadText === 'string' && request.scratchpadText.trim().length > 0) draft.scratchpadText = request.scratchpadText.trim();
+
+  return { ok: true, socialSetId, platforms, draft };
+}
+
+// Build the secret-free proof artifact metadata from a Typefully draft result.
+// Contains only safe identifiers and URLs: draft id, social set id, status,
+// private URL, platform list, title/preview, and originating job/task/bundle.
+function typefullyProofMetadata(
+  job: AssistantJobRecord,
+  result: TypefullyDraftResult,
+  platforms: TypefullyPlatform[]
+): Record<string, unknown> {
+  return withoutUndefined({
+    assistant_type: job.assistantType,
+    integration: 'typefully',
+    typefully: withoutUndefined({
+      draft_id: result.id,
+      status: result.status,
+      social_set_id: result.socialSetId,
+      private_url: result.privateUrl,
+      share_url: result.shareUrl,
+      platforms: result.platforms,
+      preview: result.preview,
+      draft_title: result.draftTitle,
+    }),
+    originating_job_id: job.id,
+    task_id: job.taskId,
+    bundle_id: job.bundleId,
+    target_platforms: platforms,
+    publish_at_sent: false,
+  });
+}
+
+async function handleTypefullyDraft(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  const job = await getAssistantJob(client, id);
+  if (!job) return jsonResponse(404, { error: 'Assistant job not found' });
+  if (!TYPEFULLY_READY_STATUSES.has(job.status)) {
+    return jsonResponse(409, { error: `Typefully draft can only be created for reviewed jobs (waiting_approval, approved, succeeded); job is ${job.status}` });
+  }
+
+  const body = parseBody(event);
+  if (!body) return jsonResponse(400, { error: 'Request body is required' });
+  const parsed = parseTypefullyDraftRequest(body);
+  if (!parsed.ok) return jsonResponse(400, { error: parsed.error });
+
+  const actorId = headerValue(event.headers, 'x-user-id') || job.requestedBy;
+  const input: TypefullySavedDraftInput = {
+    socialSetId: parsed.socialSetId,
+    platforms: parsed.platforms,
+    draft: parsed.draft,
+  };
+
+  let result: TypefullyDraftResult;
+  try {
+    // buildCreateDraftRequest is the final guard: it re-checks publish_at and
+    // non-empty platform content before any network call.
+    buildCreateDraftRequest(parsed.draft, parsed.platforms);
+    result = await typefullyClient().createSavedDraft(input);
+  } catch (err: unknown) {
+    const error = err instanceof TypefullyRequestError
+      ? { code: err.code, summary: err.message, retryable: err.retryable }
+      : { code: 'typefully-error', summary: 'Typefully draft creation failed with redacted details', retryable: false };
+
+    const nextStatus: AssistantJobStatus = error.retryable && job.status !== 'approved' && job.status !== 'succeeded' ? 'retrying' : 'failed';
+    const lastError = { code: error.code, summary: typefullyContainsSecret(error.summary) ? 'Typefully draft creation failed with redacted sensitive details' : boundedString(error.summary, 500) };
+    const failed = await updateAssistantJob(client, id, {
+      ...transitionTimestamps(nextStatus),
+      lastError,
+    });
+    if (failed) {
+      await mirrorJobRef(client, failed);
+      if (nextStatus === 'failed') await createFailureNotification(client, failed);
+      await appendEvent(
+        client,
+        id,
+        nextStatus === 'retrying' ? 'retry-requested' : 'failed',
+        `Typefully draft creation failed: ${lastError.code}`,
+        actorId,
+        { integration: 'typefully', error_code: error.code, retryable: error.retryable }
+      );
+    }
+    return jsonResponse(502, { error: lastError.summary, code: lastError.code, job: failed, retryable: error.retryable });
+  }
+
+  const proofArtifact = await createArtifact(client, {
+    type: 'assistant-output',
+    title: boundedString(parsed.draft.draftTitle || `Typefully draft for job ${id}`, 120),
+    description: 'Saved Typefully draft created from reviewed assistant output.',
+    status: job.approval?.status === 'approved' || !job.approvalRequired ? 'approved' : 'needs-review',
+    storageProvider: result.privateUrl ? 'external-url' : 'local-dev',
+    storageUri: result.privateUrl || `local-dev://assistant-jobs/${id}/typefully-draft.json`,
+    checksum: stableHash(typefullyProofMetadata(job, result, parsed.platforms)),
+    dataClass: 'internal',
+    visibility: 'internal',
+    taskId: job.taskId,
+    bundleId: job.bundleId,
+    assistantJobId: job.id,
+    sourceType: 'assistant-output',
+    createdBy: actorId,
+    metadata: typefullyProofMetadata(job, result, parsed.platforms),
+  });
+
+  const updated = await updateAssistantJob(client, id, {
+    outputArtifactIds: Array.from(new Set(job.outputArtifactIds.concat(proofArtifact.id))),
+    lastError: undefined,
+  });
+  if (updated) {
+    await mirrorJobRef(client, updated);
+    await mirrorArtifactRef(client, updated, proofArtifact);
+    await appendEvent(
+      client,
+      id,
+      'artifact-attached',
+      'Typefully saved draft proof artifact attached',
+      actorId,
+      {
+        integration: 'typefully',
+        artifactIds: [proofArtifact.id],
+        typefully_draft_id: result.id,
+        typefully_status: result.status,
+        publish_at_sent: false,
+      }
+    );
+  }
+  return jsonResponse(201, { job: updated, artifact: proofArtifact, typefully: result });
+}
+
 async function handleAppendEvent(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const job = await getAssistantJob(client, id);
   if (!job) return jsonResponse(404, { error: 'Assistant job not found' });
@@ -713,6 +931,7 @@ async function handleAssistantJobRoutes(event: LambdaEvent, client: DynamoDBDocu
       if ((method === 'POST' || method === 'PUT') && action === 'cancel') return await handleCancel(id, event, client);
       if ((method === 'POST' || method === 'PUT') && action === 'artifacts') return await handleAttachArtifact(id, event, client);
       if ((method === 'POST' || method === 'PUT') && action === 'run-dry') return await handlePodcastDryRun(id, event, client);
+      if ((method === 'POST' || method === 'PUT') && action === 'typefully-draft') return await handleTypefullyDraft(id, event, client);
       if (method === 'POST' && action === 'events') return await handleAppendEvent(id, event, client);
       if (method === 'GET' && action === 'events') {
         const events = await listAssistantJobEvents(client, id);
@@ -740,4 +959,5 @@ async function handleAssistantJobRoutes(event: LambdaEvent, client: DynamoDBDocu
 export {
   ASSISTANT_STATUSES,
   handleAssistantJobRoutes,
+  setTypefullyDraftClient,
 };
