@@ -62,7 +62,9 @@ const results = index.search(
   5,                             // num results
 );
 
-for (const r of results) console.log(r.score, r.title);
+for (const r of results) {
+  console.log(r.score, r.title);
+}
 ```
 
 Each result is a shallow copy of the original document with an added `score`.
