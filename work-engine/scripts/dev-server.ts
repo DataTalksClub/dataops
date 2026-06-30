@@ -51,9 +51,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     res.writeHead(result.statusCode);
-    // If Content-Disposition is set, treat the body as binary
+    // Base64-encoded binary responses (images, downloads) decode before sending.
     const hasDownload = result.headers?.['Content-Disposition'];
-    if (hasDownload && result.body) {
+    if ((result as { isBase64Encoded?: boolean }).isBase64Encoded && result.body) {
+      res.end(Buffer.from(result.body, 'base64'));
+    } else if (hasDownload && result.body) {
       res.end(Buffer.from(result.body, 'binary'));
     } else {
       res.end(result.body || '');
