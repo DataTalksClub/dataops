@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-docs dev-frontend dev-work-engine seed-work-engine dev-compose search-index validate-docs-links validate-planning-docs sop-lint test-docs test-work-engine typecheck-work-engine build-work-engine test-work-engine-e2e test-assistant smoke-docs sam-local-aws-config sam-validate sam-build ci clean build-WorkEngineFunction
+.PHONY: help setup dev-docs dev-frontend dev-work-engine seed-work-engine dev-compose dev search-index validate-docs-links validate-planning-docs sop-lint test-docs test-work-engine typecheck-work-engine build-work-engine test-work-engine-e2e test-assistant smoke-docs sam-local-aws-config sam-validate sam-build ci clean build-WorkEngineFunction
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -55,6 +55,16 @@ seed-work-engine:
 
 dev-compose:
 	docker compose up --build
+
+# Consolidated dev: one origin (port 3000) serves the frontend + docs API + work
+# API from the TypeScript backend, with backend hot-reload (tsx watch). Reads docs
+# live from ./content (offline mode, no GitHub/token); auth runs open. For full
+# GitHub-backed mode (commit-on-save), drop DTC_OFFLINE and set
+# GITHUB_TOKEN=$$(gh auth token).
+dev:
+	@mkdir -p .tmp/dev-portal
+	@ln -sfn $(CURDIR)/content .tmp/dev-portal/content
+	DTC_OFFLINE=1 DATAOPS_DOCS_DOMAIN=1 DTC_CACHE_ROOT=$(CURDIR)/.tmp/dev-portal FRONTEND_ROOT=$(CURDIR)/frontend SKIP_AUTH=true npm --prefix work-engine run dev
 
 .tmp:
 	mkdir -p .tmp
