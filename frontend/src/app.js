@@ -134,6 +134,57 @@ function toggleWorkBellPanel() {
 workBellButton.addEventListener("click", toggleWorkBellPanel);
 mobileWorkBellButton?.addEventListener("click", toggleWorkBellPanel);
 workBellClose.addEventListener("click", closeWorkBellPanel);
+
+const settingsButton = document.querySelector("#settings-button");
+const mobileSettingsButton = document.querySelector("#mobile-settings-button");
+const settingsMenu = document.querySelector("#settings-menu");
+const settingsMenuClose = document.querySelector("#settings-menu-close");
+const settingsAdminButton = document.querySelector("#settings-admin-button");
+const settingsButtons = [settingsButton, mobileSettingsButton].filter(Boolean);
+
+function openSettingsMenu() {
+  closeWorkBellPanel();
+  syncThemeToggleLabel();
+  settingsMenu.hidden = false;
+  for (const button of settingsButtons) {
+    button.setAttribute("aria-expanded", "true");
+  }
+}
+
+function closeSettingsMenu() {
+  settingsMenu.hidden = true;
+  for (const button of settingsButtons) {
+    button.setAttribute("aria-expanded", "false");
+  }
+}
+
+function toggleSettingsMenu() {
+  if (settingsMenu.hidden) openSettingsMenu();
+  else closeSettingsMenu();
+}
+
+settingsButton.addEventListener("click", toggleSettingsMenu);
+mobileSettingsButton?.addEventListener("click", toggleSettingsMenu);
+settingsMenuClose.addEventListener("click", closeSettingsMenu);
+settingsAdminButton.addEventListener("click", () => {
+  closeSettingsMenu();
+  showWorkspaceSurface("admin");
+});
+// Close the dropdown when the theme toggle or a git action is invoked, then
+// let the existing handlers run. Stop propagation so the outside-click closer
+// does not also fire on the same event.
+for (const el of [themeToggleButton, gitPullButton, gitCommitButton]) {
+  el.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeSettingsMenu();
+  });
+}
+document.addEventListener("click", (event) => {
+  if (settingsMenu.hidden) return;
+  if (settingsMenu.contains(event.target)) return;
+  if (settingsButtons.some((button) => button.contains(event.target))) return;
+  closeSettingsMenu();
+});
 let workBellNotifications = [];
 let workBellError = "";
 
@@ -300,6 +351,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     closeWorkBellPanel();
   }
+  if (event.key === "Escape" && settingsMenu && !settingsMenu.hidden) {
+    event.preventDefault();
+    closeSettingsMenu();
+  }
 });
 
 
@@ -316,10 +371,17 @@ syncSidebarShellState();
 
 function setDarkMode(on) {
   body.classList.toggle("dark", on);
+  syncThemeToggleLabel(on);
+  try { localStorage.setItem("dtc-theme", on ? "dark" : "light"); } catch {}
+}
+
+// Keeps the relocated theme-toggle control (now inside the Settings dropdown)
+// in sync: label, title, and checked state reflect the current theme.
+function syncThemeToggleLabel(on = body.classList.contains("dark")) {
   themeToggleButton.title = on ? "Switch to light mode" : "Switch to dark mode";
   themeToggleButton.textContent = on ? "Light mode" : "Dark mode";
   themeToggleButton.setAttribute("aria-label", themeToggleButton.title);
-  try { localStorage.setItem("dtc-theme", on ? "dark" : "light"); } catch {}
+  themeToggleButton.setAttribute("aria-checked", String(on));
 }
 
 function restoreDarkMode() {
@@ -694,6 +756,10 @@ function renderOperationsWorkspace(documents) {
     renderDocsSurface(documents);
     return;
   }
+  if (activeWorkspaceView === "admin") {
+    renderAdminSurfaceView(documents);
+    return;
+  }
   renderOperationsHome(documents);
 }
 
@@ -919,6 +985,31 @@ function renderDocsSurface(documents) {
 
 // Legacy per-view surface dispatch, retained for any direct caller that still
 // references a single legacy view. The Tasks tab now owns the live rendering.
+// Admin surface: maintainer tools for process docs, content publishing,
+// diagnostics, and configuration. Reached from the Settings dropdown gear
+// (re-surfacing what the #93 nav restructure left without an entry point).
+function renderAdminSurfaceView(documents) {
+  const model = buildOperationsHomeModel(documents, {
+    draftPaths: listDraftPaths(),
+    workSnapshot: operationsWorkSnapshot,
+    recurringSnapshot: operationsRecurringSnapshot,
+    qualitySnapshot: operationsQualitySnapshot,
+  });
+  documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
+  libraryTitle.textContent = "Admin";
+  setPageTitle("Admin", "Admin");
+  clearSelectionButton.hidden = true;
+  setStatus(surfaceStatusText("admin", model));
+
+  const wrap = document.createElement("div");
+  wrap.className = "operations-home ops-surface ops-surface-admin";
+  wrap.append(renderSurfaceHeader("Admin", surfaceDescription("admin")));
+  wrap.append(renderAdminSurface(model));
+
+  documentList.replaceChildren(wrap);
+}
+
 function renderOperationsSurface(documents, view) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
@@ -1340,7 +1431,10 @@ function renderAdminSurface(model) {
   const cards = [
     ["New process doc", "Create SOPs, templates, references, and playbooks in the git-backed content tree.", showCreate],
     ["Recurring config", `${model.recurring.configs.length} configs loaded. Generated tasks appear in Home and Work Queue.`, () => showWorkspaceSurface("templates")],
-    ["Git/content tools", "Review, lint, pull, and publish controls remain maintainer paths in the sidebar Tools section.", () => gitCommitButton.focus()],
+    ["Git/content tools", "Review, lint, pull, and publish controls live under the Settings dropdown.", () => {
+      closeWorkBellPanel();
+      openSettingsMenu();
+    }],
     ["Diagnostics", "Runtime unavailable states are shown in-place. Production diagnostics stay out of the daily loop.", () => workBellButton.focus()],
   ];
   for (const [title, body, action] of cards) {
@@ -5390,6 +5484,7 @@ async function showWorkspaceSurface(view) {
   closeTaskPanel();
   closeBundlePanel();
   closeWorkBellPanel();
+  closeSettingsMenu();
   setView("library");
   refreshDocuments();
   closeSidebar();

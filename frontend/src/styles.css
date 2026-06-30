@@ -2329,6 +2329,63 @@ body.task-modal-open {
   text-align: left;
 }
 
+.settings-button {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.mobile-settings-button {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.settings-menu-item {
+  display: grid;
+  gap: 2px;
+  border: var(--do-border);
+  background: var(--do-color-control);
+  padding: 8px 10px;
+  border-radius: var(--do-radius-sm);
+  font-size: var(--do-text-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+}
+
+.settings-menu-item:hover {
+  background: color-mix(in srgb, var(--do-color-control) 92%, var(--do-color-accent));
+}
+
+.settings-menu-item strong {
+  font-weight: 600;
+}
+
+.settings-menu-item span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-version-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  color: var(--muted);
+  cursor: default;
+}
+
+.settings-version-row:hover {
+  background: var(--do-color-control);
+}
+
+.settings-version-row code {
+  overflow: hidden;
+  color: var(--faint);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 body.dark .task-panel {
   background: var(--surface);
 }
