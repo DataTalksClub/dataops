@@ -821,3 +821,41 @@ def test_operations_smoke_runtime_failure_state_is_honest(tmp_path):
                     ).is_visible()
                 finally:
                     browser.close()
+
+
+def test_operations_smoke_per_lane_degradation_on_partial_work_outage(tmp_path):
+    # #97: a single failed endpoint (bundles) must not hide the Today lane.
+    # Only /work/api/bundles is failed; tasks and users still load, so the
+    # needs-action lane renders real tasks while the Workflows surface degrades
+    # to its own "unavailable" copy independently.
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    content_root = tmp_path / "content"
+    search_index = tmp_path / "search.index"
+    _write_temp_content(content_root)
+    build_index(content_root, search_index)
+
+    with _lambda_server(content_root, search_index) as api_url:
+        with _frontend_server(content_root, api_url) as frontend_url:
+            with playwright_api.sync_playwright() as playwright:
+                try:
+                    browser = playwright.chromium.launch(headless=True)
+                except playwright_api.Error as exc:
+                    pytest.skip(f"Playwright browser is not available: {exc}")
+                page = browser.new_page()
+                try:
+                    page.route("**/work/api/bundles**", lambda route: route.fulfill(status=503, json={"error": "bundles down"}))
+                    page.goto(frontend_url, wait_until="domcontentloaded")
+                    page.locator("#library-title").wait_for(state="visible")
+                    # The work snapshot loaded (tasks/users resolved), so the
+                    # needs-action lane renders real tasks rather than the
+                    # blanket "unavailable" copy.
+                    page.locator(".ops-lane-needs-action .ops-lane-item").first.wait_for(state="visible")
+                    assert page.locator(".ops-lane-needs-action .ops-empty").count() == 0
+                    # The Workflows surface degrades on its own: bundles is
+                    # down, so it shows the bundles-specific unavailable copy.
+                    page.locator("#tasks-nav-button").click()
+                    page.locator(".ops-subnav").get_by_role("button", name="Workflows").click()
+                    page.locator("#library-title", has_text="Tasks - Workflows").wait_for(state="visible")
+                    assert page.get_by_text("Live workflow data is unavailable from /work/api/bundles.").is_visible()
+                finally:
+                    browser.close()
