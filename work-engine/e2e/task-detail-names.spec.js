@@ -101,33 +101,30 @@ async function archiveAndDeleteBundle(bundleId) {
 async function openTaskPanelFor(page, textFragment) {
   // Operations Home renders today's tasks as clickable .ops-lane-item rows.
   await page.goto(`${BASE_URL}/#/`);
-  // The home view renders once with an unloaded work snapshot and re-renders
-  // after the async /work/api fetch hydrates. Wait for the hydrated render via
-  // the data-operations-work-loaded signal before querying lane rows, so the
-  // 15s visibility check never races a still-empty Today lane.
-  await expect(
-    page.locator('[data-operations-work-loaded="true"]'),
-  ).toBeVisible({ timeout: 20000 });
-  // The loaded signal means the work snapshot fetched — but on a slower runner
-  // that snapshot can be hydrated-but-stale (fetched before this spec created
-  // its task), so the Today lane row is absent even though the signal is true.
-  // Rather than a single visibility check that fails forever on a stale
-  // snapshot, poll for the row and force a fresh snapshot fetch when it's
-  // missing, then re-wait. The test-server fetches are fast, so one refresh is
-  // normally enough, but the bounded loop keeps this robust to slow CI.
   const row = page.locator('.ops-lane-item', { has: page.locator('strong', { hasText: textFragment }) });
+  const loadedSignal = page.locator('[data-operations-work-loaded="true"]');
+
+  // Retry-with-refresh loop. Every attempt forces a fresh work-snapshot fetch
+  // at the TOP, waits for the hydrated render, then checks the row. On a
+  // cold-started isolated server under CI contention the first fetch can be
+  // slow, and the snapshot can also be hydrated-but-stale (fetched before this
+  // spec created its task, so the Today lane row is absent). Forcing a fresh
+  // fetch + re-render recovers both rather than waiting longer on a fetch that
+  // already raced task creation. Crucially the signal wait lives INSIDE the
+  // try/catch, so a single slow first-fetch times out into a refresh + retry
+  // instead of failing the test before recovery ever runs.
   for (let attempt = 0; attempt < 4; attempt++) {
+    // Idempotent: goto already triggered a fetch on attempt 0, but re-invoking
+    // keeps every iteration uniform and guarantees a fresh fetch.
+    await page.evaluate(() => window.__dataopsRefreshWork && window.__dataopsRefreshWork());
     try {
+      // Wait for the hydrated render before checking rows, so the visibility
+      // check never races a still-empty Today lane.
+      await expect(loadedSignal).toBeVisible({ timeout: 10000 });
       await expect(row.first()).toBeVisible({ timeout: 8000 });
       break;
     } catch (err) {
       if (attempt === 3) throw err;
-      // Force a fresh work-snapshot fetch + re-render, then wait for the
-      // hydrated signal again before re-checking the row.
-      await page.evaluate(() => window.__dataopsRefreshWork && window.__dataopsRefreshWork());
-      await expect(
-        page.locator('[data-operations-work-loaded="true"]'),
-      ).toBeVisible({ timeout: 20000 });
     }
   }
   await row.first().click();
@@ -172,6 +169,7 @@ test.describe('Task detail resolves names (issue #90)', () => {
   });
 
   test('known workflow and assignee resolve to title/name', async ({ browser }) => {
+    test.setTimeout(90000);
     const suffix = uid();
     const today = todayString();
     const bundleTitle = 'Workflow Names E2E ' + suffix;
@@ -206,6 +204,7 @@ test.describe('Task detail resolves names (issue #90)', () => {
   });
 
   test('unknown assignee and unknown bundle fall back to "—"', async ({ browser }) => {
+    test.setTimeout(90000);
     const suffix = uid();
     const today = todayString();
     const desc = 'Task detail names unknown ' + suffix;
