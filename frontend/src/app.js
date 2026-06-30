@@ -3702,7 +3702,27 @@ function operationItemFromBundle(bundle, tasks, options) {
 }
 
 function workTaskTitle(task) {
-  return task.description || task.title || task.name || task.id || "Untitled task";
+  return stripTitleSuffix(task.description || task.title || task.name || task.id || "Untitled task");
+}
+
+// Strips a leaked Trello shortLink token (e.g. "p3by19", "qVB6fAUG") from the
+// end of a task title before display. The token is data-layer noise from a
+// legacy Trello import, not a deliberate run id (see issue #91). Kept in sync
+// with the work-engine scrubber in work-engine/scripts/scrub-task-titles.ts.
+//
+// Safety: the leaked token is a short alphanumeric id that mixes letters and
+// digits (Trello shortLink shape). Legitimate trailing words are either
+// all-letters ("guest", "Alice") or all-digits ("2026"), so requiring the
+// TRAILING TOKEN ITSELF to mix a letter and a digit, plus a prior normal word,
+// is what keeps real titles intact.
+function stripTitleSuffix(value) {
+  if (value == null) return "";
+  const title = typeof value === "string" ? value : String(value);
+  const m = title.match(/^(.+[ ].+)[ \t]+([a-zA-Z0-9]{4,8})$/);
+  if (!m) return title;
+  const [, head, token] = m;
+  if (/[a-zA-Z]/.test(token) && /[0-9]/.test(token)) return head.trimEnd();
+  return title;
 }
 
 function workBundleTitle(bundle) {
