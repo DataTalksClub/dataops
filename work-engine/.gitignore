@@ -5,6 +5,9 @@ node_modules/
 .env
 coverage/
 dist/
+# Vendored zerosearch-node ships a prebuilt CommonJS dist that must be committed
+# so `npm ci` / CI / Lambda packaging work without the upstream source.
+!vendor/zerosearch-node/dist/
 deployment.zip
 data/
 uploads/

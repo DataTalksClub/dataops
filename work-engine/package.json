@@ -22,6 +22,7 @@
     "dry-run:import": "tsx scripts/dry-run-import.ts",
     "restore:drill": "tsx scripts/restore-drill.ts",
     "cron": "IS_LOCAL=true tsx scripts/cron-runner.ts",
+    "build:search-index": "tsx scripts/build-search-index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.scripts.json",
     "clean": "rm -rf dist"
   },
@@ -29,7 +30,9 @@
     "@aws-sdk/client-dynamodb": "^3.700.0",
     "@aws-sdk/client-s3": "^3.996.0",
     "@aws-sdk/client-secrets-manager": "3.996.0",
-    "@aws-sdk/lib-dynamodb": "^3.700.0"
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "gray-matter": "^4.0.3",
+    "zerosearch-node": "file:vendor/zerosearch-node"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
