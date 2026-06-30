@@ -303,6 +303,7 @@ assert.equal(model.maintainerFindings.length, 1);
             "allWorkTasks",
             "resolveDocReference",
             "workTaskTitle",
+            "stripTitleSuffix",
             "workBundleTitle",
             "normalizeTemplateMatchValue",
             "taskDate",
@@ -686,6 +687,7 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "operationItemFromTask",
             "operationItemFromBundle",
             "workTaskTitle",
+            "stripTitleSuffix",
             "workBundleTitle",
             "recurringConfigTitle",
             "formatTaskDateMeta",
@@ -803,6 +805,7 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "operationItemFromTask",
             "operationItemFromBundle",
             "workTaskTitle",
+            "stripTitleSuffix",
             "workBundleTitle",
             "recurringConfigTitle",
             "formatTaskDateMeta",
@@ -951,6 +954,7 @@ assert.equal(currentOperatorIdForTodayScope("grace"), "grace");
             "operationItemFromTask",
             "operationItemFromBundle",
             "workTaskTitle",
+            "stripTitleSuffix",
             "workBundleTitle",
             "recurringConfigTitle",
             "formatTaskDateMeta",
@@ -1276,6 +1280,7 @@ assert.equal(missing.children[1].textContent, "Document unavailable: missing.doc
             "formatValidationInstruction",
             "renderTaskInstructionDoc",
             "workTaskTitle",
+            "stripTitleSuffix",
         ],
     )
 
@@ -1336,6 +1341,7 @@ assert.deepEqual(actionCalls.at(-1), {
             "formatValidationInstruction",
             "renderTaskInstructionDoc",
             "workTaskTitle",
+            "stripTitleSuffix",
         ],
     )
 
