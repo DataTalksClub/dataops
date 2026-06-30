@@ -12,6 +12,7 @@ import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleAssistantJobRoutes } from './routes/assistantJobs';
 import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
+import { handleDocsRoutes, isDocsDomainEnabled } from './docs';
 import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
@@ -1225,6 +1226,15 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (method === 'POST' && reqPath === '/api/webhook/email') {
       return await handleEmailWebhook(event, client);
+    }
+
+    // ── Docs domain (seam — stubs, flag-gated) ──────────────────
+    // TODO(#87/#88): the docs content API is ported into this backend. While the
+    // seam is stub-only it stays behind DATAOPS_DOCS_DOMAIN so existing routes
+    // and tests are unaffected. Handlers currently return 501.
+    if (isDocsDomainEnabled()) {
+      const result = await handleDocsRoutes(event);
+      if (result) return result;
     }
 
     // Anything else — 404
