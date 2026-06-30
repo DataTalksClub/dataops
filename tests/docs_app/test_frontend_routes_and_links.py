@@ -604,7 +604,7 @@ assert.equal(model.templates[0].recurring, true);
 assert.equal(model.templates[1].atRisk, true);
 
 const lanes = Object.fromEntries(model.lanes.map((lane) => [lane.id, lane]));
-assert.deepEqual(model.lanes.map((lane) => lane.id), ["overdue", "followups", "today", "waiting", "bundles"]);
+assert.deepEqual(model.lanes.map((lane) => lane.id), ["overdue", "followups", "today", "missing-proof", "waiting", "bundles"]);
 assert.deepEqual(lanes.today.items.map((item) => item.title), ["Publish newsletter", "Unassigned urgent work"]);
 assert.deepEqual(lanes.today.items.map((item) => item.taskId), ["task-today", "task-unassigned"]);
 assert.equal(lanes.today.items[0].nextAction, "Mark done");
@@ -613,6 +613,9 @@ assert.equal(model.stats.currentOperatorId, "ops");
 assert.deepEqual(lanes.overdue.items.map((item) => item.title), ["Upload podcast recording"]);
 assert.equal(lanes.overdue.items[0].nextAction, "Add Recording link");
 assert.equal(lanes.overdue.items[0].proof.label, "Missing proof: Recording link");
+// Missing-proof lane exposes the missing-proof tasks as items (not just a count).
+assert.deepEqual(lanes["missing-proof"].items.map((item) => item.taskId), ["task-overdue"]);
+assert.equal(lanes["missing-proof"].items[0].proof.label, "Missing proof: Recording link");
 assert.equal(lanes.followups.items[0].summary, "Waiting for guest; follow up Today");
 assert.equal(lanes.followups.items[0].nextAction, "Follow up");
 assert.deepEqual(lanes.waiting.items.map((item) => item.title), []);
