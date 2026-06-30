@@ -135,4 +135,7 @@ build-WorkEngineFunction:
 	cp -R work-engine/dist "$(ARTIFACTS_DIR)/dist"
 	cp package.json package-lock.json "$(ARTIFACTS_DIR)/"
 	cp work-engine/package.json "$(ARTIFACTS_DIR)/work-engine/package.json"
+	cp -R work-engine/vendor "$(ARTIFACTS_DIR)/work-engine/vendor"
 	cd "$(ARTIFACTS_DIR)" && npm ci --omit=dev --workspace dataops-work-engine
+	rm -rf "$(ARTIFACTS_DIR)/node_modules/zerosearch-node"
+	cp -R work-engine/vendor/zerosearch-node "$(ARTIFACTS_DIR)/node_modules/zerosearch-node"
