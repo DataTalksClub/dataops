@@ -80,6 +80,9 @@ function openTaskPanel(taskId) {{ actionCalls.push({{ type: "task", taskId }}); 
 function openBundlePanel(bundleId) {{ actionCalls.push({{ type: "bundle", bundleId }}); }}
 function openQuickWorkflowForm(options) {{ actionCalls.push({{ type: "startWorkflow", options }}); }}
 function showWorkspaceSurface(view) {{ actionCalls.push({{ type: "surface", view }}); }}
+// Resolved-owner and quality lookups read these cached globals in the real app.
+let operationsWorkSnapshot = {{ loaded: false, usersById: new Map(), bundlesById: new Map(), bundleTasks: {{}}, todayTasks: [], overdueTasks: [], waitingTasks: [], bundles: [] }};
+let operationsQualitySnapshot = {{ loaded: false, ok: true, findings: [] }};
 function makeElement(tag) {{
   const element = {{
     tagName: tag.toUpperCase(),
@@ -685,6 +688,7 @@ assert.equal(model.references.some((ref) => ref.path === "content/finance/refere
             "operationItemFromTemplate",
             "operationItemFromDoc",
             "operationItemFromTask",
+            "resolveAssigneeLabel",
             "operationItemFromBundle",
             "workTaskTitle",
             "stripTitleSuffix",
@@ -803,6 +807,7 @@ assert.equal(currentOperatorIdFromPayload({ user: { id: "ops" } }), "ops");
             "operationItemFromTemplate",
             "operationItemFromDoc",
             "operationItemFromTask",
+            "resolveAssigneeLabel",
             "operationItemFromBundle",
             "workTaskTitle",
             "stripTitleSuffix",
@@ -952,6 +957,7 @@ assert.equal(currentOperatorIdForTodayScope("grace"), "grace");
             "operationItemFromTemplate",
             "operationItemFromDoc",
             "operationItemFromTask",
+            "resolveAssigneeLabel",
             "operationItemFromBundle",
             "workTaskTitle",
             "stripTitleSuffix",
