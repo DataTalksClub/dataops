@@ -433,3 +433,21 @@ assert.equal(hasApprovedArtifactEvidence(approvedArtifactTask, [{ id: "artifact-
         ],
     )
     assert result["ok"] is True
+
+
+def test_resolve_assignee_label_returns_user_name_from_cached_lookup():
+    """Task list cards and detail panel both render the assignee name (not the
+    raw UUID) via the cached usersById lookup on operationsWorkSnapshot."""
+    result = _run_app_js_functions(
+        """
+operationsWorkSnapshot.usersById = new Map([
+  ["00000000-0000-0000-0000-000000000001", { id: "00000000-0000-0000-0000-000000000001", name: "Grace" }],
+]);
+
+assert.equal(resolveAssigneeLabel("00000000-0000-0000-0000-000000000001"), "Grace");
+assert.equal(resolveAssigneeLabel(""), "—");
+assert.equal(resolveAssigneeLabel("not-a-known-user"), "—");
+""",
+        ["resolveAssigneeLabel"],
+    )
+    assert result["ok"] is True
