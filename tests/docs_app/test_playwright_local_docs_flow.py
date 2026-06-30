@@ -578,24 +578,31 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                 try:
                     page.goto(frontend_url, wait_until="domcontentloaded")
                     page.locator("#library-title").wait_for(state="visible")
-                    assert page.locator("#library-title").inner_text() == "Operations Home"
+                    assert page.locator("#library-title").inner_text() == "Home"
                     page.locator(".operations-home").wait_for(state="visible")
 
-                    for label in ["Overdue", "Follow-Ups Due", "Today", "Waiting", "At-Risk Workflows"]:
-                        assert page.locator(".ops-lanes").get_by_text(label).first.is_visible()
-                    for label in ["Operations Home", "Work Queue", "Workflows", "Templates / Recurring", "Assistants", "Artifacts", "Processes / Docs", "Search", "Admin"]:
+                    # Primary nav collapsed to three tabs: Home, Tasks, Docs.
+                    for label in ["Home", "Tasks", "Docs"]:
                         assert page.locator("#sidebar").get_by_text(label).first.is_visible()
-                    for label in ["New task", "Start workflow", "New recurring", "Recurring Operations", "Workflow Templates"]:
-                        assert page.get_by_text(label).first.is_visible()
-                    assert page.get_by_text("Incoming And Quality Signals").is_visible()
-                    assert page.get_by_text("Assistant Jobs").is_visible()
-                    assert page.get_by_text("Not connected yet").first.is_visible()
-                    assert page.locator(".ops-summary").get_by_text("Overdue").is_visible()
-                    assert page.locator(".ops-lane-overdue .ops-next-action", has_text="Add Luma").is_visible()
+                    for removed in ["Work Queue", "Workflows", "Templates / Recurring", "Assistants", "Artifacts", "Processes / Docs", "Search", "Admin"]:
+                        assert page.locator("#sidebar .workspace-nav-button", has_text=removed).count() == 0
+                    # Home is slimmed: 3 stat tiles, New task + Start workflow,
+                    # and one focused "Needs your action" lane. Template grid,
+                    # recurring section, process quality, and future sections are gone.
+                    for label in ["Overdue", "Today", "Waiting"]:
+                        assert page.locator(".ops-summary").get_by_text(label).first.is_visible()
+                    for label in ["New task", "Start workflow"]:
+                        assert page.locator(".ops-quick-bar").get_by_text(label).first.is_visible()
+                    assert page.locator(".ops-lanes").get_by_text("Needs your action").first.is_visible()
+                    assert page.get_by_text("New recurring", exact=True).count() == 0
+                    assert page.get_by_text("Workflow Templates").count() == 0
+                    assert page.get_by_text("Recurring Operations").count() == 0
+                    assert page.get_by_text("Incoming And Quality Signals").count() == 0
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-operations-home-desktop.png"), full_page=True)
 
-                    page.locator("#work-queue-button").click()
-                    page.locator("#library-title", has_text="Work Queue").wait_for(state="visible")
+                    # Tasks > Queue sub-tab holds the work queue groups.
+                    page.locator("#tasks-nav-button").click()
+                    page.locator("#library-title", has_text="Tasks - Work Queue").wait_for(state="visible")
                     assert page.get_by_role("heading", name="Overdue").is_visible()
                     assert page.get_by_role("heading", name="Follow-ups due").is_visible()
                     assert page.get_by_role("heading", name="Missing proof").is_visible()
@@ -604,9 +611,13 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert page.locator(".ops-queue-row", has_text="Workflow-linked").first.is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-work-queue-desktop.png"), full_page=True)
 
+                    # The Tasks sub-nav exposes every work surface.
+                    for label in ["Queue", "Workflows", "Templates", "Assistants", "Artifacts"]:
+                        assert page.locator(".ops-subnav").get_by_role("button", name=label).is_visible()
+
                     page.locator("#operations-home-button").click()
-                    page.locator("#library-title", has_text="Operations Home").wait_for(state="visible")
-                    page.locator(".ops-lane-overdue .ops-lane-item", has_text="Add Luma event page").click()
+                    page.locator("#library-title", has_text="Home").wait_for(state="visible")
+                    page.locator(".ops-lane-needs-action .ops-lane-item", has_text="Add Luma event page").click()
                     page.locator("#task-panel-title").wait_for(state="visible")
                     assert page.locator("#task-panel-title").inner_text() == "Add Luma event page"
                     assert page.locator("#task-panel-body").get_by_text("Luma").is_visible()
@@ -621,9 +632,13 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-task-panel-missing-proof.png"), full_page=True)
                     page.locator("#task-panel-close").click()
                     assert page.locator("#task-panel").is_hidden()
-                    assert page.locator("#library-title").inner_text() == "Operations Home"
+                    assert page.locator("#library-title").inner_text() == "Home"
 
-                    page.locator(".ops-lane-bundles .ops-lane-item", has_text="Newsletter smoke workflow").click()
+                    # The active bundle lives under Tasks > Workflows.
+                    page.locator("#tasks-nav-button").click()
+                    page.locator(".ops-subnav").get_by_role("button", name="Workflows").click()
+                    page.locator("#library-title", has_text="Tasks - Workflows").wait_for(state="visible")
+                    page.locator(".ops-workflow-card", has_text="Newsletter smoke workflow").first.click()
                     page.locator("#bundle-panel-title", has_text="Newsletter smoke workflow").wait_for(state="visible")
                     assert page.locator("#bundle-panel-title").inner_text() == "Newsletter smoke workflow"
                     assert page.locator("#bundle-panel-body").get_by_text("Process references").is_visible()
@@ -637,9 +652,11 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-workflow-panel-context.png"), full_page=True)
                     page.locator("#bundle-panel-close").click()
                     assert page.locator("#bundle-panel").is_hidden()
-                    assert page.locator("#library-title").inner_text() == "Operations Home"
 
-                    page.locator(".ops-lane-today .ops-lane-item", has_text="Approve newsletter draft artifact").click()
+                    # The needs-action lane also surfaces today's tasks.
+                    page.locator("#operations-home-button").click()
+                    page.locator("#library-title", has_text="Home").wait_for(state="visible")
+                    page.locator(".ops-lane-needs-action .ops-lane-item", has_text="Approve newsletter draft artifact").click()
                     page.locator("#task-panel-title").wait_for(state="visible")
                     page.locator("#task-panel-body").get_by_text("Newsletter draft output").wait_for(state="visible")
                     assert page.locator("#task-panel-body").get_by_text("Artifact proof").is_visible()
@@ -658,19 +675,21 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.locator("#task-panel-close").click()
                     assert page.locator("#sidebar").is_visible()
 
-                    page.locator("#assistants-button").click()
-                    page.locator("#library-title", has_text="Assistants").wait_for(state="visible")
+                    # Assistants + Artifacts now live behind the Tasks sub-nav.
+                    page.locator("#tasks-nav-button").click()
+                    page.locator(".ops-subnav").get_by_role("button", name="Assistants").click()
+                    page.locator("#library-title", has_text="Tasks - Assistants").wait_for(state="visible")
                     assert page.locator(".ops-state-list").get_by_text("Assistant jobs not connected").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-assistants-empty-desktop.png"), full_page=True)
 
-                    page.locator("#artifacts-button").click()
-                    page.locator("#library-title", has_text="Artifacts").wait_for(state="visible")
+                    page.locator(".ops-subnav").get_by_role("button", name="Artifacts").click()
+                    page.locator("#library-title", has_text="Tasks - Artifacts").wait_for(state="visible")
                     assert page.get_by_text("No artifacts registered").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-artifacts-empty-desktop.png"), full_page=True)
 
                     page.locator("#operations-home-button").click()
                     page.locator("#library-title").wait_for(state="visible")
-                    assert page.locator("#library-title").inner_text() == "Operations Home"
+                    assert page.locator("#library-title").inner_text() == "Home"
 
                     page.set_viewport_size({"width": 390, "height": 844})
                     page.locator("#mobile-menu-button").wait_for(state="visible")
@@ -688,16 +707,10 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     drawer_labels = page.locator("#sidebar .workspace-nav-button").evaluate_all(
                         "buttons => buttons.map((button) => button.textContent.trim())"
                     )
-                    assert drawer_labels[:9] == [
-                        "Operations Home",
-                        "Work Queue",
-                        "Workflows",
-                        "Templates / Recurring",
-                        "Assistants",
-                        "Artifacts",
-                        "Processes / Docs",
-                        "Search",
-                        "Admin",
+                    assert drawer_labels == [
+                        "Home",
+                        "Tasks",
+                        "Docs",
                     ]
                     page.keyboard.press("Escape")
                     assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
@@ -711,7 +724,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
                     _assert_mobile_operations_home_settled(page)
 
-                    page.locator(".ops-lane-today .ops-lane-item", has_text="Approve newsletter draft artifact").click()
+                    page.locator(".ops-lane-needs-action .ops-lane-item", has_text="Approve newsletter draft artifact").click()
                     page.locator("#task-panel-title").wait_for(state="visible")
                     assert page.locator("#task-panel-title").inner_text() == "Approve newsletter draft artifact"
                     assert page.evaluate("document.body.scrollWidth <= document.documentElement.clientWidth + 1")
@@ -721,9 +734,11 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
 
                     page.locator("#mobile-menu-button").click()
                     _assert_mobile_drawer_open(page)
-                    page.locator("#assistants-button").click()
-                    page.locator("#library-title", has_text="Assistants").wait_for(state="visible")
+                    page.locator("#tasks-nav-button").click()
+                    page.locator("#library-title", has_text="Tasks - Work Queue").wait_for(state="visible")
                     _assert_mobile_drawer_closed(page)
+                    page.locator(".ops-subnav").get_by_role("button", name="Assistants").click()
+                    page.locator("#library-title", has_text="Tasks - Assistants").wait_for(state="visible")
                     assert page.locator(".ops-state-list").get_by_text("Assistant jobs not connected").is_visible()
                     assert page.evaluate("document.body.scrollWidth <= document.documentElement.clientWidth + 1")
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-assistants-empty-mobile.png"), full_page=True)
@@ -731,7 +746,7 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.locator("#mobile-menu-button").click()
                     _assert_mobile_drawer_open(page)
                     page.locator("#operations-home-button").click()
-                    page.locator("#library-title", has_text="Operations Home").wait_for(state="visible")
+                    page.locator("#library-title", has_text="Home").wait_for(state="visible")
                     _assert_mobile_operations_home_settled(page)
 
                     page.locator("#mobile-menu-button").click()
@@ -774,9 +789,11 @@ def test_operations_smoke_runtime_failure_state_is_honest(tmp_path):
                     page.goto(frontend_url, wait_until="domcontentloaded")
                     page.locator("#library-title").wait_for(state="visible")
                     page.get_by_text("Live work data unavailable", exact=True).wait_for()
-                    assert page.get_by_role("heading", name="Workflow Templates").is_visible()
-                    assert page.locator(".ops-lane-today .ops-empty").get_by_text(
-                        "Live work data unavailable; tasks will appear here"
+                    # Home no longer renders the template grid; the needs-action
+                    # lane reports the unavailable work snapshot honestly.
+                    assert page.get_by_role("heading", name="Workflow Templates").count() == 0
+                    assert page.locator(".ops-lane-needs-action .ops-empty").get_by_text(
+                        "Live work data unavailable; overdue and today work cannot be confirmed."
                     ).is_visible()
                 finally:
                     browser.close()
