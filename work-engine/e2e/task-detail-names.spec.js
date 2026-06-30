@@ -60,7 +60,10 @@ function waitForServer(port, timeoutMs = 30000) {
 }
 
 function uid() {
-  return Math.random().toString(36).slice(2, 8);
+  // Keep the run-id longer than 8 chars so stripTitleSuffix (#91), which trims
+  // leaked Trello shortLink tokens of 4-8 chars, does not strip the test's own
+  // uniqueness suffix off the displayed task title.
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
 function todayString() {
