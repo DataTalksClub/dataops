@@ -30,6 +30,66 @@ workflow.
 - `scripts/` — repo tooling (SOP parser/linter/normalizer, migration scripts,
   the dev server).
 
+## Architecture
+
+DataOps is a portal assembled from four runtime components that share one
+repository and one deployment pipeline. GitHub is the source of truth for all
+markdown content; execution state lives in DynamoDB.
+
+| Component | Path | Runtime | Responsibility |
+|---|---|---|---|
+| Frontend shell | `frontend/` | Static vanilla JS | SOP block editor, search UI, filters, publish dialog. No build step; served as static assets. |
+| Docs app (Lambda) | `lambda-functions/` | Python (AWS Lambda) | Serves the frontend, docs API, same-origin `minsearch` search, and GitHub-backed content editing from a single Function URL. |
+| Work engine | `work-engine/` | TypeScript / Node (Lambda) | Task and workflow execution — bundles, recurring work, required links — backed by DynamoDB. |
+| Podcast assistant | `assistants/podcast/` | Python module | Guest-intake, knowledge-base builder, and draft generation for the podcast operations workflow. |
+
+```mermaid
+flowchart TB
+  Browser[Browser]
+
+  subgraph Portal
+    Frontend[Static frontend shell]
+    DocsApp[Docs app Lambda - Python]
+    WorkEngine[Work engine Lambda - TypeScript]
+  end
+
+  Podcast[Podcast assistant - Python module]
+
+  GitHub[(GitHub repo: content/ markdown)]
+  Dynamo[(DynamoDB: execution state)]
+  Secrets[(AWS Secrets Manager)]
+
+  Browser -->|Basic auth| DocsApp
+  DocsApp --> Frontend
+  DocsApp -->|docs API + minsearch| Index[/Lambda /tmp cache + index/]
+  DocsApp -->|GitHub Contents API| GitHub
+  WorkEngine --> Dynamo
+  Podcast -->|drafts + knowledge base| GitHub
+  Portal -->|runtime secrets| Secrets
+```
+
+How the pieces fit:
+
+- **Content is GitHub-backed.** Edits made in the UI are committed straight to
+  GitHub by the docs Lambda through the Contents API; the Lambda keeps a `/tmp`
+  cache and rebuilds the `minsearch` index from it. No SQLite, no EFS.
+- **The frontend has no build pipeline** in this milestone — it is static
+  vanilla JS served by the Python Lambda in production and by
+  `scripts/serve_frontend.py` (the Docker Compose `frontend` service) locally,
+  which proxies `/docs`, `/search`, `/health`, `/images`, `/folders`, and
+  `/lint` to the docs Lambda.
+- **The work engine is the only stateful service**, persisting task/workflow
+  execution to DynamoDB; it ships as its own Lambda with a local dev server and
+  Playwright E2E suite.
+- **The podcast assistant runs as a Python module**, not a web service — it
+  drives the podcast intake/drafting workflow and writes into the knowledge base.
+- **Infra is SAM/CloudFormation** (templates under `lambda-functions/`),
+  deployed by GitHub Actions through an AWS OIDC role; runtime secrets live in
+  AWS Secrets Manager rather than GitHub Actions secrets.
+
+The [Architecture Review](#architecture-review) section below covers the
+deployed docs Lambda in more detail.
+
 ## Planning
 
 - [Portal Analysis](PORTAL_ANALYSIS.md)
