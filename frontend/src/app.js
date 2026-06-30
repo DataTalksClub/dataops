@@ -1595,6 +1595,7 @@ function emptyOperationsWorkSnapshot() {
     overdueTasks: [],
     waitingTasks: [],
     bundles: [],
+    users: [],
     bundleTasks: {},
     errors: [],
   };
@@ -1711,23 +1712,26 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   const overdueUrl = workApiUrl("/api/tasks", { startDate: "1970-01-01", endDate: yesterday });
   const waitingUrl = workApiUrl("/api/tasks", { status: "waiting" });
   const bundlesUrl = workApiUrl("/api/bundles");
+  const usersUrl = workApiUrl("/api/users");
   const meUrl = workApiUrl("/api/me");
-  const [todayResult, overdueResult, waitingResult, bundlesResult, meResult] = await Promise.allSettled([
+  const [todayResult, overdueResult, waitingResult, bundlesResult, usersResult, meResult] = await Promise.allSettled([
     request(todayUrl),
     request(overdueUrl),
     request(waitingUrl),
     request(bundlesUrl),
+    request(usersUrl),
     request(meUrl),
   ]);
 
   const snapshot = emptyOperationsWorkSnapshot();
-  snapshot.loaded = [todayResult, overdueResult, waitingResult, bundlesResult].some((result) => result.status === "fulfilled");
+  snapshot.loaded = [todayResult, overdueResult, waitingResult, bundlesResult, usersResult].some((result) => result.status === "fulfilled");
   snapshot.todayTasks = tasksFromWorkPayload(settledPayload(todayResult));
   snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
   snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
   snapshot.bundles = bundlesFromWorkPayload(settledPayload(bundlesResult));
+  snapshot.users = usersFromWorkPayload(settledPayload(usersResult));
   snapshot.currentOperatorId = currentOperatorIdFromPayload(settledPayload(meResult));
-  snapshot.errors = [todayResult, overdueResult, waitingResult, bundlesResult]
+  snapshot.errors = [todayResult, overdueResult, waitingResult, bundlesResult, usersResult]
     .filter((result) => result.status === "rejected")
     .map((result) => result.reason?.message || "Work API request failed");
 
@@ -1851,14 +1855,14 @@ function renderTaskPanel() {
     const link = document.createElement("button");
     link.type = "button";
     link.className = "task-instruction-doc-link";
-    link.textContent = String(task.bundleId);
+    link.textContent = resolveBundleLabel(task.bundleId);
     link.addEventListener("click", () => openBundlePanel(task.bundleId));
     bundleRow.append(link);
     meta.append(bundleRow);
   }
   if (task.assigneeId) {
     const assigneeRow = document.createElement("div");
-    assigneeRow.append(document.createTextNode("Assignee "), formatMetaText(task.assigneeId));
+    assigneeRow.append(document.createTextNode("Assignee "), formatMetaText(resolveAssigneeLabel(task.assigneeId)));
     meta.append(assigneeRow);
   }
   taskPanelBody.append(meta);
@@ -2262,6 +2266,24 @@ function formatMetaText(value) {
   const strong = document.createElement("strong");
   strong.textContent = String(value || "");
   return strong;
+}
+
+// Resolve bundle/user ids to human-readable labels for the task detail meta
+// rows. Fall back to "—" when an id is unknown/missing so we never render a
+// raw UUID, undefined, or [object Object]. These read from the cached work
+// snapshot (operationsWorkSnapshot), so they add no per-open HTTP calls.
+function resolveBundleLabel(bundleId) {
+  if (!bundleId) return "—";
+  const bundle = operationsWorkSnapshot.bundlesById?.get(bundleId);
+  if (bundle && bundle.title) return bundle.title;
+  return "—";
+}
+
+function resolveAssigneeLabel(assigneeId) {
+  if (!assigneeId) return "—";
+  const user = operationsWorkSnapshot.usersById?.get(assigneeId);
+  if (user && user.name) return user.name;
+  return "—";
 }
 
 function formatHistoryLine(line) {
@@ -3341,6 +3363,14 @@ function bundlesFromWorkPayload(payload) {
   return [];
 }
 
+function usersFromWorkPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.users)) return payload.users;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
 function recurringConfigsFromPayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
@@ -3403,6 +3433,7 @@ function normalizeOperationsWorkSnapshot(input, options) {
   const explicitOverdue = tasksFromWorkPayload(snapshot.overdueTasks || []);
   const explicitWaiting = tasksFromWorkPayload(snapshot.waitingTasks || []);
   const bundles = bundlesFromWorkPayload(snapshot.bundles || []);
+  const users = usersFromWorkPayload(snapshot.users || []);
   const bundleTasks = normalizeBundleTaskMap(snapshot.bundleTasks || {}, allTasks);
 
   return {
@@ -3413,6 +3444,9 @@ function normalizeOperationsWorkSnapshot(input, options) {
     waitingTasks: sortWorkTasks(dedupeWorkTasks([...explicitWaiting, ...allTasks.filter((task) => isWaitingOrFollowUpTask(task))]), "waiting", today),
     activeBundles: sortActiveWorkBundles(bundles.filter(isActiveWorkBundle), bundleTasks, today),
     bundles,
+    bundlesById: new Map(bundles.filter((bundle) => bundle && bundle.id).map((bundle) => [bundle.id, bundle])),
+    users,
+    usersById: new Map(users.filter((user) => user && user.id).map((user) => [user.id, user])),
     bundleTasks,
     errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
   };
