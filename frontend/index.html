@@ -15,6 +15,7 @@
         <span class="work-bell-icon" aria-hidden="true">&#9737;</span>
         <span class="work-bell-count" aria-hidden="true">0</span>
       </button>
+      <button id="mobile-settings-button" class="icon-button mobile-settings-button" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙</button>
       <button id="mobile-new-button" class="quiet-button" type="button">New</button>
     </div>
     <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
@@ -125,26 +126,6 @@
             <div id="recent-list" class="recent-list"></div>
           </section>
         </details>
-
-        <details class="sidebar-details">
-          <summary>Tools</summary>
-          <button id="theme-toggle-button" class="tool-row-button" type="button">Dark mode</button>
-          <div class="tool-version-row">
-            <span>Version</span>
-            <code id="app-version">local</code>
-          </div>
-          <section id="git-section" class="git-section" aria-label="Git">
-            <div class="git-status-line">
-              <span class="git-status-dot" aria-hidden="true"></span>
-              <span id="git-status-text">Checking git…</span>
-            </div>
-            <div class="git-actions-row">
-              <button id="git-pull-button" class="quiet-button" type="button" title="Pull latest from origin">⟲ Pull</button>
-              <button id="git-commit-button" class="primary-button" type="button">Review</button>
-            </div>
-            <div id="git-result" class="git-result" hidden></div>
-          </section>
-        </details>
       </aside>
 
       <section class="page-shell">
@@ -161,6 +142,7 @@
               <span class="work-bell-icon" aria-hidden="true">&#9737;</span>
               <span class="work-bell-count" aria-hidden="true">0</span>
             </button>
+            <button id="settings-button" class="icon-button settings-button" type="button" title="Settings" aria-label="Settings" aria-haspopup="true" aria-expanded="false">⚙</button>
             <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
             <button id="doc-pin-button" class="quiet-button" type="button" hidden title="Pin to sidebar" aria-label="Pin to sidebar">Pin</button>
             <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions">⋯</button>
@@ -285,6 +267,35 @@
         <button id="work-bell-close" class="quiet-button" type="button" aria-label="Close">Close</button>
       </header>
       <div id="work-bell-body" class="work-bell-body"></div>
+    </div>
+
+    <div id="settings-menu" class="settings-menu work-bell-panel" hidden role="menu" aria-label="Settings">
+      <header class="work-bell-header">
+        <strong>Settings</strong>
+        <button id="settings-menu-close" class="quiet-button" type="button" aria-label="Close settings">Close</button>
+      </header>
+      <div class="settings-menu-body work-bell-body">
+        <button id="settings-admin-button" class="settings-menu-item" type="button" role="menuitem">
+          <strong>Admin</strong>
+          <span>Process docs, recurring config, diagnostics.</span>
+        </button>
+        <button id="theme-toggle-button" class="settings-menu-item" type="button" role="menuitemcheckbox" aria-checked="false">Dark mode</button>
+        <div class="settings-menu-item settings-version-row">
+          <span>Version</span>
+          <code id="app-version">local</code>
+        </div>
+        <section id="git-section" class="git-section settings-menu-item" aria-label="Git">
+          <div class="git-status-line">
+            <span class="git-status-dot" aria-hidden="true"></span>
+            <span id="git-status-text">Checking git…</span>
+          </div>
+          <div class="git-actions-row">
+            <button id="git-pull-button" class="quiet-button" type="button" title="Pull latest from origin">⟲ Pull</button>
+            <button id="git-commit-button" class="primary-button" type="button">Review</button>
+          </div>
+          <div id="git-result" class="git-result" hidden></div>
+        </section>
+      </div>
     </div>
 
     <div id="confirm-modal" class="confirm-modal" hidden>
