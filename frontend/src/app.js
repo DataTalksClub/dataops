@@ -163,6 +163,11 @@ let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
 let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
 let operationsQualityFilters = { severity: "", category: "", workflow: "", document: "" };
 let activeWorkspaceView = "home";
+// Tasks sub-section (Queue / Workflows / Templates / Assistants / Artifacts).
+// Only consulted when activeWorkspaceView === "tasks". The legacy top-level
+// views (queue, workflows, templates, assistants, artifacts) now live behind
+// the Tasks tab and are routed through this internal state.
+let activeTasksSection = "queue";
 let docReturnContext = null;
 const DRAFT_PREFIX = "dtc-doc-draft:";
 const customSelects = [];
@@ -681,8 +686,51 @@ function renderOperationsWorkspace(documents) {
     renderOperationsHome(documents);
     return;
   }
-  renderOperationsSurface(documents, activeWorkspaceView);
+  if (activeWorkspaceView === "tasks") {
+    renderTasksSurface(documents, activeTasksSection);
+    return;
+  }
+  if (activeWorkspaceView === "docs") {
+    renderDocsSurface(documents);
+    return;
+  }
+  renderOperationsHome(documents);
 }
+
+// Title/path helpers for the new Home / Tasks / Docs IA.
+function operationsViewTitle(view, tasksSection) {
+  if (view === "home") return "Home";
+  if (view === "tasks") return tasksSectionTitle(tasksSection);
+  if (view === "docs") return "Docs";
+  return "Home";
+}
+
+function operationsViewPath(view) {
+  if (view === "home") return "Home";
+  if (view === "tasks") return "Tasks";
+  if (view === "docs") return "Docs";
+  return "Workspace";
+}
+
+function tasksSectionTitle(section) {
+  const titles = {
+    queue: "Tasks - Work Queue",
+    workflows: "Tasks - Workflows",
+    templates: "Tasks - Templates",
+    assistants: "Tasks - Assistants",
+    artifacts: "Tasks - Artifacts",
+  };
+  return titles[section] || "Tasks - Work Queue";
+}
+
+// The Tasks sub-nav tabs. Order is fixed for consistency across the Tasks tab.
+const TASKS_SECTIONS = [
+  ["queue", "Queue"],
+  ["workflows", "Workflows"],
+  ["templates", "Templates"],
+  ["assistants", "Assistants"],
+  ["artifacts", "Artifacts"],
+];
 
 function renderOperationsHome(documents) {
   const model = buildOperationsHomeModel(documents, {
@@ -693,8 +741,8 @@ function renderOperationsHome(documents) {
   });
   documentList.classList.add("is-operations-home");
   documentList.classList.remove("is-unified-search");
-  libraryTitle.textContent = "Operations Home";
-  setPageTitle("Operations Home", "Home");
+  libraryTitle.textContent = "Home";
+  setPageTitle("Home", "Home");
   clearSelectionButton.hidden = true;
   if (model.stats.liveLoaded) {
     setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active workflows.`);
@@ -712,17 +760,15 @@ function renderOperationsHome(documents) {
   // distinguish the hydrated render from the skeleton render without polling rows.
   wrap.dataset.operationsWorkLoaded = String(Boolean(model.stats.liveLoaded));
 
+  // Home keeps only the three action-driving counts: Overdue, Today, Waiting.
   const summary = document.createElement("section");
   summary.className = "ops-summary";
   summary.setAttribute("aria-label", "Operations summary");
+  const byId = (id) => model.lanes.find((lane) => lane.id === id);
   for (const stat of [
-    ["Overdue", model.lanes.find((lane) => lane.id === "overdue")?.items.length || 0],
-    ["Follow-ups due", model.lanes.find((lane) => lane.id === "followups")?.items.length || 0],
-    ["Today", model.lanes.find((lane) => lane.id === "today")?.items.length || 0],
-    ["Waiting", model.lanes.find((lane) => lane.id === "waiting")?.items.length || 0],
-    ["Missing proof", model.stats.missingProofTasks],
-    ["At-risk workflows", model.lanes.find((lane) => lane.id === "bundles")?.items.length || 0],
-    ["Process blockers", model.quality.activeBlockingCount],
+    ["Overdue", (byId("overdue")?.items || []).length],
+    ["Today", (byId("today")?.items || []).length],
+    ["Waiting", (byId("waiting")?.items || []).length],
   ]) {
     const box = document.createElement("div");
     box.className = "ops-stat";
@@ -738,6 +784,8 @@ function renderOperationsHome(documents) {
   const runtimeState = renderOperationsRuntimeState(model.runtime);
   if (runtimeState) wrap.append(runtimeState);
 
+  // Quick actions: New task and Start workflow. Recurring config lives under
+  // Tasks > Templates, so it is no longer a Home quick action.
   const quickBar = document.createElement("section");
   quickBar.className = "ops-quick-bar";
   quickBar.setAttribute("aria-label", "Quick actions");
@@ -751,66 +799,126 @@ function renderOperationsHome(documents) {
   quickWorkflow.className = "ops-quick-btn";
   quickWorkflow.textContent = "Start workflow";
   quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
-  const quickRecurring = document.createElement("button");
-  quickRecurring.type = "button";
-  quickRecurring.className = "ops-quick-btn";
-  quickRecurring.textContent = "New recurring";
-  quickRecurring.addEventListener("click", () => openQuickRecurringForm());
-  quickBar.append(quickTask, quickWorkflow, quickRecurring);
+  quickBar.append(quickTask, quickWorkflow);
   wrap.append(quickBar);
 
+  // One focused "Needs your action" lane: overdue + today + missing-proof
+  // tasks merged into a single prioritized list. Reuses the lane machinery.
+  const actionLane = buildNeedsActionLane(model);
   const lanes = document.createElement("section");
   lanes.className = "ops-lanes";
-  lanes.setAttribute("aria-label", "Daily lanes");
-  for (const lane of model.lanes) lanes.append(renderOperationsLane(lane));
+  lanes.setAttribute("aria-label", "Needs your action");
+  lanes.append(renderOperationsLane(actionLane));
   wrap.append(lanes);
-
-  wrap.append(renderProcessQualityHomeSection(model.quality));
-  wrap.append(renderOperationsFutureSections(model.futureSections));
-  wrap.append(renderOperationalSurfaceStates(model));
-  wrap.append(renderRecurringOperationsSection(model.recurring));
-
-  const templates = document.createElement("section");
-  templates.className = "ops-section";
-  templates.setAttribute("aria-label", "Workflow templates");
-  const templatesHeader = document.createElement("div");
-  templatesHeader.className = "ops-section-header";
-  const templatesTitle = document.createElement("h3");
-  templatesTitle.textContent = "Workflow Templates";
-  const templatesMeta = document.createElement("span");
-  templatesMeta.textContent = `${model.templates.length} available`;
-  templatesHeader.append(templatesTitle, templatesMeta);
-  templates.append(templatesHeader);
-  const templateGrid = document.createElement("div");
-  templateGrid.className = "ops-template-grid";
-  for (const template of model.templates) templateGrid.append(renderWorkflowTemplateCard(template));
-  if (model.templates.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "ops-empty";
-    empty.textContent = "No workflow templates indexed.";
-    templateGrid.append(empty);
-  }
-  templates.append(templateGrid);
-  wrap.append(templates);
-
-  const refs = document.createElement("section");
-  refs.className = "ops-section";
-  refs.setAttribute("aria-label", "Goal and reference docs");
-  const refsHeader = document.createElement("div");
-  refsHeader.className = "ops-section-header";
-  const refsTitle = document.createElement("h3");
-  refsTitle.textContent = "Goal And Reference Docs";
-  refsHeader.append(refsTitle);
-  refs.append(refsHeader);
-  const refsGrid = document.createElement("div");
-  refsGrid.className = "ops-reference-grid";
-  for (const ref of model.references) refsGrid.append(renderOperationsReference(ref));
-  refs.append(refsGrid);
-  wrap.append(refs);
 
   documentList.replaceChildren(wrap);
 }
 
+// Builds the single Home "Needs your action" lane by merging overdue, today,
+// and missing-proof task items into one prioritized list (overdue first).
+function buildNeedsActionLane(model) {
+  const byId = (id) => model.lanes.find((lane) => lane.id === id);
+  const overdue = (byId("overdue")?.items || []).slice();
+  const today = (byId("today")?.items || []).slice();
+  const hasLiveWork = model.stats.liveLoaded;
+  const items = [...overdue, ...today];
+  return {
+    id: "needs-action",
+    title: "Needs your action",
+    empty: hasLiveWork ? "Nothing overdue or due today." : "Live work data unavailable; overdue and today work cannot be confirmed.",
+    items,
+  };
+}
+
+// Tasks tab: sub-nav (Queue / Workflows / Templates / Assistants / Artifacts)
+// over the existing per-section renderers. The sub-nav drives an internal
+// tasksSection state; each tab reuses the existing renderOperationsSurface
+// dispatch functions so no work surface is lost in the restructure.
+function renderTasksSurface(documents, section) {
+  const model = buildOperationsHomeModel(documents, {
+    draftPaths: listDraftPaths(),
+    workSnapshot: operationsWorkSnapshot,
+    recurringSnapshot: operationsRecurringSnapshot,
+    qualitySnapshot: operationsQualitySnapshot,
+  });
+  const activeSection = section || "queue";
+  documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
+  const title = tasksSectionTitle(activeSection);
+  libraryTitle.textContent = title;
+  setPageTitle(title, "Tasks");
+  clearSelectionButton.hidden = true;
+  setStatus(surfaceStatusText(activeSection, model));
+
+  const wrap = document.createElement("div");
+  wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
+  wrap.append(renderTasksSubNav(activeSection));
+  wrap.append(renderSurfaceHeader(title, surfaceDescription(activeSection)));
+  const runtimeState = renderOperationsRuntimeState(model.runtime);
+  if (runtimeState && ["queue", "workflows"].includes(activeSection)) wrap.append(runtimeState);
+
+  if (activeSection === "queue") wrap.append(renderWorkQueueSurface(model));
+  else if (activeSection === "workflows") wrap.append(renderWorkflowsSurface(model));
+  else if (activeSection === "templates") wrap.append(renderTemplatesRecurringSurface(model));
+  else if (activeSection === "assistants") wrap.append(renderAssistantsSurface());
+  else if (activeSection === "artifacts") wrap.append(renderArtifactsSurface());
+
+  documentList.replaceChildren(wrap);
+}
+
+// Segmented sub-nav for the Tasks tab. Clicking a tab updates the internal
+// tasksSection state and re-renders without a full navigation round-trip.
+function renderTasksSubNav(activeSection) {
+  const nav = document.createElement("nav");
+  nav.className = "ops-subnav";
+  nav.setAttribute("aria-label", "Tasks sections");
+  for (const [id, label] of TASKS_SECTIONS) {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "ops-subnav-tab";
+    tab.textContent = label;
+    tab.dataset.tasksSection = id;
+    if (id === activeSection) {
+      tab.classList.add("is-active");
+      tab.setAttribute("aria-current", "page");
+    }
+    tab.addEventListener("click", () => {
+      activeTasksSection = id;
+      renderTasksSurface(allDocuments, id);
+      syncLibraryPageTitle();
+    });
+    nav.append(tab);
+  }
+  return nav;
+}
+
+// Docs tab: the library surface. The doc tree (sidebar) is the primary nav
+// here; the Processes/reference landing renders as the main content when no
+// document or folder is selected, and search results fold in in-context.
+function renderDocsSurface(documents) {
+  const model = buildOperationsHomeModel(documents, {
+    draftPaths: listDraftPaths(),
+    workSnapshot: operationsWorkSnapshot,
+    recurringSnapshot: operationsRecurringSnapshot,
+    qualitySnapshot: operationsQualitySnapshot,
+  });
+  documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
+  libraryTitle.textContent = "Docs";
+  setPageTitle("Docs", "Docs");
+  clearSelectionButton.hidden = true;
+  setStatus(surfaceStatusText("processes", model));
+
+  const wrap = document.createElement("div");
+  wrap.className = "operations-home ops-surface ops-surface-docs";
+  wrap.append(renderSurfaceHeader("Docs", surfaceDescription("processes")));
+  wrap.append(renderProcessesSurface(documents, model));
+
+  documentList.replaceChildren(wrap);
+}
+
+// Legacy per-view surface dispatch, retained for any direct caller that still
+// references a single legacy view. The Tasks tab now owns the live rendering.
 function renderOperationsSurface(documents, view) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
@@ -819,16 +927,16 @@ function renderOperationsSurface(documents, view) {
     qualitySnapshot: operationsQualitySnapshot,
   });
   const titles = {
-    queue: "Work Queue",
-    workflows: "Workflows",
-    templates: "Templates / Recurring",
-    assistants: "Assistants",
-    artifacts: "Artifacts",
-    processes: "Processes / Docs",
-    search: "Search",
+    queue: "Tasks - Work Queue",
+    workflows: "Tasks - Workflows",
+    templates: "Tasks - Templates",
+    assistants: "Tasks - Assistants",
+    artifacts: "Tasks - Artifacts",
+    processes: "Docs",
+    search: "Docs",
     admin: "Admin",
   };
-  const title = titles[view] || "Operations Home";
+  const title = titles[view] || "Home";
   documentList.classList.add("is-operations-home");
   documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = title;
@@ -5214,22 +5322,24 @@ function showLibrary(options = {}) {
 function syncLibraryPageTitle() {
   if (body.dataset.view !== "library") return;
   if (!selectedFolder && !searchInput.value.trim()) {
-    const titles = {
-      home: "Operations Home",
-      queue: "Work Queue",
-      workflows: "Workflows",
-      templates: "Templates / Recurring",
-      assistants: "Assistants",
-      artifacts: "Artifacts",
-      processes: "Processes / Docs",
-      search: "Search / Docs-only",
-      admin: "Admin",
-    };
-    setPageTitle(titles[activeWorkspaceView] || "Operations Home", activeWorkspaceView === "home" ? "Home" : "Workspace");
+    setPageTitle(operationsViewTitle(activeWorkspaceView, activeTasksSection), activeWorkspaceView === "home" ? "Home" : operationsViewPath(activeWorkspaceView));
     return;
   }
   setPageTitle("", "");
 }
+
+// Maps the legacy 9-view nav set onto the new Home / Tasks / Docs IA. Old
+// programmatic callers (e.g. showWorkspaceSurface("queue")) still work: work
+// views resolve into the Tasks tab at the matching sub-section, while the
+// library surfaces (processes/search) route to Docs.
+const TASKS_SECTION_BY_LEGACY_VIEW = {
+  queue: "queue",
+  workflows: "workflows",
+  templates: "templates",
+  assistants: "assistants",
+  artifacts: "artifacts",
+};
+const LEGACY_VIEW_TO_TASKS_SECTION = (view) => TASKS_SECTION_BY_LEGACY_VIEW[view] || null;
 
 async function showOperationsHome() {
   activeWorkspaceView = "home";
@@ -5254,7 +5364,24 @@ async function showWorkspaceSurface(view) {
     return;
   }
   if (!(await canLeaveCurrentDocument())) return;
-  activeWorkspaceView = nextView;
+  // Route the legacy 9-view nav onto the new Home / Tasks / Docs IA. Work
+  // surfaces collapse into the Tasks tab at the matching sub-section; the
+  // library surfaces (processes/search) route to Docs. New primary views
+  // (tasks, docs) land directly.
+  const tasksSection = LEGACY_VIEW_TO_TASKS_SECTION(nextView);
+  if (tasksSection) {
+    activeWorkspaceView = "tasks";
+    activeTasksSection = tasksSection;
+  } else if (nextView === "tasks") {
+    // The Tasks tab always lands on its default sub-section (Queue) on a
+    // top-level navigation, even if a previous visit left a different section.
+    activeWorkspaceView = "tasks";
+    activeTasksSection = "queue";
+  } else if (nextView === "processes" || nextView === "search") {
+    activeWorkspaceView = "docs";
+  } else {
+    activeWorkspaceView = nextView;
+  }
   syncWorkspaceNav();
   selectedFolder = "";
   searchInput.value = "";
