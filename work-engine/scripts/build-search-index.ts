@@ -21,6 +21,7 @@ import { dirname, resolve } from 'node:path';
 
 import { createSearchIndex } from '../src/docs/searchIndex';
 import { iterContentDocs } from '../src/docs/search/extract';
+import { sopStructuredText } from '../src/docs/search/sopExtract';
 
 const repoRoot = resolve(__dirname, '..', '..');
 const DEFAULT_CONTENT_DIR = resolve(repoRoot, 'content');
@@ -46,9 +47,10 @@ function parseArgs(argv: string[]): Args {
 async function main(): Promise<void> {
   const { contentDir, output } = parseArgs(process.argv.slice(2));
 
-  // TODO(#86): pass a `structuredText` extractor that routes schema_version: 1
-  // SOPs through `sopEngine.parse()`; until #87 wires it, index the raw body.
-  const docs = iterContentDocs(contentDir);
+  // Route schema_version: 1 SOPs through the SOP parser (#86) so step bodies,
+  // prose, and captions are indexed without marker noise — matching the
+  // in-process refresh performed by the content API after a save (#87).
+  const docs = iterContentDocs(contentDir, { structuredText: sopStructuredText });
 
   mkdirSync(dirname(output), { recursive: true });
   const index = createSearchIndex();

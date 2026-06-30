@@ -505,4 +505,6 @@ export interface LambdaResponse {
   statusCode: number;
   headers?: Record<string, string>;
   body: string;
+  /** Set when `body` is base64-encoded binary (images, gzip, downloads). */
+  isBase64Encoded?: boolean;
 }
