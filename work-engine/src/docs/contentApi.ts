@@ -264,7 +264,7 @@ async function listDocs(rt: DocsRuntime): Promise<LambdaResponse> {
   await rt.ensureSynced();
   const registry = buildRegistry(rt.contentRoot);
   const docs = registry.documents.map((record) => {
-    const item = recordToDict(record) as Record<string, unknown>;
+    const item = recordToDict(record) as unknown as Record<string, unknown>;
     item.updated = item.updated_at;
     return item;
   });

@@ -27,7 +27,7 @@ export function sopStructuredText(rawText: string): string | null {
     if (err instanceof ParseError) return null;
     throw err;
   }
-  if (parsed.schema_version !== 1 && parsed.schema_version !== '1') return null;
+  if (String(parsed.schema_version) !== '1') return null;
   return extractStructuredText(parsed);
 }
 

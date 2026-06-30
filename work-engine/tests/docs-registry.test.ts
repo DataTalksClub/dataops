@@ -8,11 +8,11 @@ import {
   buildRegistry,
   resolveReference,
   normalizeReference,
-  generatedId,
   recordToDict,
   DocumentRegistryError,
   LookupError,
 } from '../src/docs/docRegistry';
+import { generatedId } from '../src/docs/search/extract';
 import { sopStructuredText } from '../src/docs/search/sopExtract';
 import { extractDoc } from '../src/docs/search/extract';
 
