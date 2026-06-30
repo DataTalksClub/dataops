@@ -817,7 +817,7 @@ def test_operations_smoke_runtime_failure_state_is_honest(tmp_path):
                     # lane reports the unavailable work snapshot honestly.
                     assert page.get_by_role("heading", name="Workflow Templates").count() == 0
                     assert page.locator(".ops-lane-needs-action .ops-empty").get_by_text(
-                        "Live work data unavailable; overdue and today work cannot be confirmed."
+                        "Live work data unavailable; overdue, today, and missing-proof work cannot be confirmed."
                     ).is_visible()
                 finally:
                     browser.close()
