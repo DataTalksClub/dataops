@@ -1,0 +1,778 @@
+{
+  "generated_by": "lambda_functions.sop_parse / sop_lint (Python, pure stdlib)",
+  "count": 20,
+  "cases": [
+    {
+      "name": "flat_with_prose_todo_screenshot",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-todo: \"Document the VLC fallback\" -->\n\n<!-- sop-step-start id=1 systems=\"youtube\" action=\"navigate\" tool=\"browser\" -->\n1.  Open the video.\n\n    <!-- sop-screenshot-start -->\n    ![alt text](../img/one.jpg)\n    <!-- sop-caption-start -->\n    Look for the title bar.\n    <!-- sop-caption-end -->\n    <!-- sop-screenshot-end -->\n<!-- sop-step-end -->\n\n<!-- sop-prose-start -->\nNow we are ready to upload.\n<!-- sop-prose-end -->\n\n<!-- sop-step-start id=2 systems=\"google-drive\" action=\"upload\" -->\n2.  Upload the file.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {
+                  "systems": [
+                    "youtube"
+                  ],
+                  "action": "navigate",
+                  "tool": "browser"
+                },
+                "body_md": " Open the video.",
+                "screenshots": [
+                  {
+                    "alt": "alt text",
+                    "src": "../img/one.jpg",
+                    "caption": "Look for the title bar."
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "rendered_number": 2,
+                "attrs": {
+                  "systems": [
+                    "google-drive"
+                  ],
+                  "action": "upload"
+                },
+                "body_md": " Upload the file.",
+                "screenshots": []
+              }
+            ],
+            "prose": [
+              {
+                "after_step_id": 1,
+                "body_md": "Now we are ready to upload."
+              }
+            ],
+            "todos": [
+              "Document the VLC fallback"
+            ]
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": []
+    },
+    {
+      "name": "groups",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-group-start: \"Getting the file\" -->\n### Getting the file\n\n<!-- sop-step-start id=1 -->\n1.  Step one.\n<!-- sop-step-end -->\n\n<!-- sop-step-start id=2 -->\n2.  Step two.\n<!-- sop-step-end -->\n<!-- sop-group-end -->\n\n<!-- sop-group-start: \"Uploading\" -->\n### Uploading\n\n<!-- sop-step-start id=3 action=\"upload\" -->\n3.  Step three.\n<!-- sop-step-end -->\n<!-- sop-group-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [
+              {
+                "title": "Getting the file",
+                "steps": [
+                  {
+                    "id": 1,
+                    "rendered_number": 1,
+                    "attrs": {},
+                    "body_md": " Step one.",
+                    "screenshots": []
+                  },
+                  {
+                    "id": 2,
+                    "rendered_number": 2,
+                    "attrs": {},
+                    "body_md": " Step two.",
+                    "screenshots": []
+                  }
+                ]
+              },
+              {
+                "title": "Uploading",
+                "steps": [
+                  {
+                    "id": 3,
+                    "rendered_number": 3,
+                    "attrs": {
+                      "action": "upload"
+                    },
+                    "body_md": " Step three.",
+                    "screenshots": []
+                  }
+                ]
+              }
+            ],
+            "flat_steps": [],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": []
+    },
+    {
+      "name": "raw_procedure",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure raw -->\n## Procedure\n\n### LinkedIn\nFree-form copy bank the parser does not analyze.\n\n<!-- this is not parsed -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": true,
+            "body_md": "## Procedure\n\n### LinkedIn\nFree-form copy bank the parser does not analyze.\n\n<!-- this is not parsed -->"
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": []
+    },
+    {
+      "name": "multi_screenshot",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  Do a thing.\n\n    <!-- sop-screenshot-start -->\n    ![](a.jpg)\n    <!-- sop-screenshot-end -->\n\n    <!-- sop-screenshot-start -->\n    ![second](b.png)\n    <!-- sop-caption-start -->\n    Caption two.\n    <!-- sop-caption-end -->\n    <!-- sop-screenshot-end -->\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {},
+                "body_md": " Do a thing.",
+                "screenshots": [
+                  {
+                    "alt": "",
+                    "src": "a.jpg",
+                    "caption": ""
+                  },
+                  {
+                    "alt": "second",
+                    "src": "b.png",
+                    "caption": "Caption two."
+                  }
+                ]
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": []
+    },
+    {
+      "name": "inline_list_frontmatter",
+      "text": "---\ntitle: \"Inline\"\ndoc_type: sop\nschema_version: 1\nsystems: [slack, loom]\ntags: []\n---\n\n# Inline\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 systems=\"slack\" -->\n1.  A step.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Inline",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "slack",
+            "loom"
+          ],
+          "tags": []
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {
+                  "systems": [
+                    "slack"
+                  ]
+                },
+                "body_md": " A step.",
+                "screenshots": []
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": []
+    },
+    {
+      "name": "checklist_doc_type",
+      "text": "---\ntitle: \"Checklist\"\ndoc_type: checklist\nschema_version: 1\n---\n\n# Checklist\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  A step.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Checklist",
+          "doc_type": "checklist",
+          "schema_version": "1"
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {},
+                "body_md": " A step.",
+                "screenshots": []
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": []
+    },
+    {
+      "name": "lint_duplicate_ids",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  One.\n<!-- sop-step-end -->\n<!-- sop-step-start id=1 -->\n1.  Dup.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {},
+                "body_md": " One.",
+                "screenshots": []
+              },
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {},
+                "body_md": " Dup.",
+                "screenshots": []
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": [
+        "duplicate step ids: [1]",
+        "step ids are not sequential 1..N; got [1, 1], expected [1, 2]"
+      ]
+    },
+    {
+      "name": "lint_nonsequential_ids",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  One.\n<!-- sop-step-end -->\n<!-- sop-step-start id=3 -->\n3.  Three.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 1,
+                "attrs": {},
+                "body_md": " One.",
+                "screenshots": []
+              },
+              {
+                "id": 3,
+                "rendered_number": 3,
+                "attrs": {},
+                "body_md": " Three.",
+                "screenshots": []
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": [
+        "step ids are not sequential 1..N; got [1, 3], expected [1, 2]"
+      ]
+    },
+    {
+      "name": "lint_bad_attrs",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 action=\"frobnicate\" systems=\"nope\" -->\n9.  Mismatched rendered number.\n\n    <!-- sop-screenshot-start -->\n    No image here, just text.\n    <!-- sop-screenshot-end -->\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [],
+            "flat_steps": [
+              {
+                "id": 1,
+                "rendered_number": 9,
+                "attrs": {
+                  "action": "frobnicate",
+                  "systems": [
+                    "nope"
+                  ]
+                },
+                "body_md": " Mismatched rendered number.",
+                "screenshots": [
+                  {
+                    "alt": "",
+                    "src": "",
+                    "caption": ""
+                  }
+                ]
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": [
+        "step id=1: action 'frobnicate' not in ['click', 'copy', 'download', 'navigate', 'other', 'paste', 'submit', 'type', 'upload', 'verify', 'wait']",
+        "step id=1: systems ['nope'] not in frontmatter `systems`",
+        "step id=1: <!-- sop-screenshot-start --> block has no image",
+        "step id=1: rendered number 9 does not match id"
+      ]
+    },
+    {
+      "name": "lint_mixed_groups_flat",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-group-start: \"G\" -->\n### G\n\n<!-- sop-step-start id=1 -->\n1.  In group.\n<!-- sop-step-end -->\n<!-- sop-group-end -->\n\n<!-- sop-step-start id=2 -->\n2.  Flat.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "Synthetic SOP",
+          "doc_type": "sop",
+          "schema_version": "1",
+          "systems": [
+            "google-drive",
+            "youtube"
+          ]
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nA summary."
+          },
+          "prerequisites": {
+            "raw": false,
+            "body_md": "## Prerequisites\nNone."
+          },
+          "procedure": {
+            "raw": false,
+            "groups": [
+              {
+                "title": "G",
+                "steps": [
+                  {
+                    "id": 1,
+                    "rendered_number": 1,
+                    "attrs": {},
+                    "body_md": " In group.",
+                    "screenshots": []
+                  }
+                ]
+              }
+            ],
+            "flat_steps": [
+              {
+                "id": 2,
+                "rendered_number": 2,
+                "attrs": {},
+                "body_md": " Flat.",
+                "screenshots": []
+              }
+            ],
+            "prose": [],
+            "todos": []
+          },
+          "validation": {
+            "raw": false,
+            "body_md": "## Validation"
+          },
+          "troubleshooting": {
+            "raw": false,
+            "body_md": "## Troubleshooting"
+          },
+          "references": {
+            "raw": false,
+            "body_md": "## References"
+          }
+        }
+      },
+      "lint": [
+        "procedure mixes groups and flat steps — pick one shape"
+      ]
+    },
+    {
+      "name": "lint_missing_frontmatter",
+      "text": "# No frontmatter\n\nJust text.\n",
+      "parse": {
+        "schema_version": null,
+        "frontmatter": {},
+        "sections": {}
+      },
+      "lint": [
+        "missing frontmatter"
+      ]
+    },
+    {
+      "name": "lint_bad_doctype_no_schema",
+      "text": "---\ndoc_type: reference\n---\n\n# X\n\nbody\n",
+      "parse": {
+        "schema_version": null,
+        "frontmatter": {
+          "doc_type": "reference"
+        },
+        "sections": {}
+      },
+      "lint": [
+        "doc_type must be 'sop' or 'checklist' (got 'reference')",
+        "frontmatter is missing `title`"
+      ]
+    },
+    {
+      "name": "lint_bad_schema_version",
+      "text": "---\ntitle: \"X\"\ndoc_type: sop\nschema_version: 1.5\n---\n\n# X\n",
+      "parse": {
+        "schema_version": "1.5",
+        "frontmatter": {
+          "title": "X",
+          "doc_type": "sop",
+          "schema_version": "1.5"
+        },
+        "sections": {}
+      },
+      "lint": [
+        "schema_version must be an integer (got '1.5')"
+      ]
+    },
+    {
+      "name": "lint_unsupported_schema_version",
+      "text": "---\ntitle: \"X\"\ndoc_type: sop\nschema_version: 2\n---\n\n# X\n",
+      "parse": {
+        "schema_version": "2",
+        "frontmatter": {
+          "title": "X",
+          "doc_type": "sop",
+          "schema_version": "2"
+        },
+        "sections": {}
+      },
+      "lint": [
+        "unsupported schema_version: 2"
+      ]
+    },
+    {
+      "name": "lint_missing_sections",
+      "text": "---\ntitle: \"X\"\ndoc_type: sop\nschema_version: 1\n---\n\n# X\n\n<!-- sop-section-start: summary -->\n## Summary\nhi\n<!-- sop-section-end -->\n",
+      "parse": {
+        "schema_version": "1",
+        "frontmatter": {
+          "title": "X",
+          "doc_type": "sop",
+          "schema_version": "1"
+        },
+        "sections": {
+          "summary": {
+            "raw": false,
+            "body_md": "## Summary\nhi"
+          }
+        }
+      },
+      "lint": [
+        "missing required section: prerequisites",
+        "missing required section: procedure",
+        "missing required section: validation",
+        "missing required section: troubleshooting",
+        "missing required section: references"
+      ]
+    },
+    {
+      "name": "err_step_missing_id",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start action=\"click\" -->\n1.  No id.\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse_error": "line 2: step missing required `id` attribute",
+      "lint": [
+        "parse error: line 2: step missing required `id` attribute"
+      ]
+    },
+    {
+      "name": "err_unclosed_step",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  Never closed.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse_error": "line 4: unclosed <!-- sop-step-start -->",
+      "lint": [
+        "parse error: line 4: unclosed <!-- sop-step-start -->"
+      ]
+    },
+    {
+      "name": "err_nested_step",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n<!-- sop-step-start id=2 -->\n<!-- sop-step-end -->\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse_error": "line 3: nested <!-- sop-step-start --> not allowed",
+      "lint": [
+        "parse error: line 3: nested <!-- sop-step-start --> not allowed"
+      ]
+    },
+    {
+      "name": "err_group_end_no_open",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-group-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse_error": "line 2: <!-- sop-group-end --> with no open group",
+      "lint": [
+        "parse error: line 2: <!-- sop-group-end --> with no open group"
+      ]
+    },
+    {
+      "name": "err_unclosed_screenshot",
+      "text": "---\ntitle: \"Synthetic SOP\"\ndoc_type: sop\nschema_version: 1\nsystems:\n  - google-drive\n  - youtube\n---\n\n# Synthetic SOP\n\n<!-- sop-section-start: summary -->\n## Summary\nA summary.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: prerequisites -->\n## Prerequisites\nNone.\n<!-- sop-section-end -->\n\n<!-- sop-section-start: procedure -->\n## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  Step.\n    <!-- sop-screenshot-start -->\n    ![](a.jpg)\n<!-- sop-step-end -->\n<!-- sop-section-end -->\n\n<!-- sop-section-start: validation -->\n## Validation\n<!-- sop-section-end -->\n\n<!-- sop-section-start: troubleshooting -->\n## Troubleshooting\n<!-- sop-section-end -->\n\n<!-- sop-section-start: references -->\n## References\n<!-- sop-section-end -->\n",
+      "parse_error": "line 1: unclosed <!-- sop-screenshot-start -->",
+      "lint": [
+        "parse error: line 1: unclosed <!-- sop-screenshot-start -->"
+      ]
+    }
+  ]
+}
