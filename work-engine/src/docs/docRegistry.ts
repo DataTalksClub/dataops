@@ -274,7 +274,9 @@ function recordFromMetadata(
   };
 }
 
-export function generatedId(repoPath: string, docType: string): string {
+// Canonical implementation lives in ./search/extract (re-used here internally).
+// Not exported to avoid an ambiguous duplicate in the docs barrel (index.ts).
+function generatedId(repoPath: string, docType: string): string {
   const path = removeSuffix(removePrefix(repoPath, 'content/'), '.md');
   const parts = path.split('/').filter((part) => !ID_STRIP_DIRS.has(part));
   const slug = parts.join('.');
