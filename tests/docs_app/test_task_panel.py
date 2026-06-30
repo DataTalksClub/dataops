@@ -232,7 +232,7 @@ assert.equal(workTaskTitle({ id: "x", title: "T" }), "T");
 assert.equal(workTaskTitle({ id: "x" }), "x");
 assert.equal(workTaskTitle({}), "Untitled task");
 """,
-        ["workTaskTitle"],
+        ["workTaskTitle", "stripTitleSuffix"],
     )
     assert result["ok"] is True
 
