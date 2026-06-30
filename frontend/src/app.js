@@ -893,10 +893,15 @@ function buildNeedsActionLane(model) {
   const placed = new Set([...overdue, ...today].map((item) => item.taskId).filter(Boolean));
   const missingProof = (byId("missing-proof")?.items || []).filter((item) => !placed.has(item.taskId));
   const items = dedupeOperationItems([...overdue, ...today, ...missingProof]);
+  // Needs-action is a composite of the overdue, today, and missing-proof
+  // lanes. If none of those sources loaded, report the work data as
+  // unavailable; otherwise an empty merged list genuinely means nothing is
+  // pending (#97).
+  const needsActionLoaded = model.stats.overdueLoaded || model.stats.todayLoaded || model.stats.missingProofLoaded;
   return {
     id: "needs-action",
     title: "Needs your action",
-    empty: hasLiveWork ? "Nothing overdue, due today, or missing proof." : "Live work data unavailable; overdue, today, and missing-proof work cannot be confirmed.",
+    empty: needsActionLoaded ? "Nothing overdue, due today, or missing proof." : "Live work data unavailable; overdue, today, and missing-proof work cannot be confirmed.",
     items,
   };
 }
@@ -1098,6 +1103,16 @@ function renderSurfaceHeader(titleText, descriptionText) {
 function renderWorkQueueSurface(model) {
   const today = todayIsoDate();
   const tasks = allWorkTasks(operationsWorkSnapshot);
+  // Per-group loaded state (#97): each queue group degrades against its own
+  // data source so a single failed endpoint only empties its own group.
+  const groupLoaded = {
+    "Overdue": operationsWorkSnapshot.overdueLoaded,
+    "Follow-ups due": operationsWorkSnapshot.waitingLoaded,
+    "Missing proof": operationsWorkSnapshot.todayLoaded || operationsWorkSnapshot.overdueLoaded || operationsWorkSnapshot.waitingLoaded,
+    "Waiting": operationsWorkSnapshot.waitingLoaded,
+    "Today": operationsWorkSnapshot.todayLoaded,
+    "Done / history": operationsWorkSnapshot.todayLoaded || operationsWorkSnapshot.overdueLoaded || operationsWorkSnapshot.waitingLoaded,
+  };
   const groups = [
     ["Overdue", tasks.filter((task) => isTaskOverdue(task, today))],
     ["Follow-ups due", tasks.filter((task) => isFollowUpDueTask(task, today))],
@@ -1125,7 +1140,7 @@ function renderWorkQueueSurface(model) {
     if (list.length === 0) {
       const empty = document.createElement("p");
       empty.className = "ops-empty";
-      empty.textContent = operationsWorkSnapshot.loaded ? `No ${label.toLowerCase()} work.` : "Live work data unavailable.";
+      empty.textContent = groupLoaded[label] ? `No ${label.toLowerCase()} work.` : "Live work data unavailable.";
       rows.append(empty);
     } else {
       const visible = label === "Done / history"
@@ -1175,7 +1190,7 @@ function renderWorkflowsSurface(model) {
   section.setAttribute("aria-label", "Workflow list");
   const bundles = operationsWorkSnapshot.activeBundles || [];
   if (bundles.length === 0) {
-    section.append(renderHonestState("No active workflows", operationsWorkSnapshot.loaded ? "Start a workflow from Templates / Recurring when new work arrives." : "Live workflow data is unavailable from /work/api/bundles."));
+    section.append(renderHonestState("No active workflows", operationsWorkSnapshot.bundlesLoaded ? "Start a workflow from Templates / Recurring when new work arrives." : "Live workflow data is unavailable from /work/api/bundles."));
     return section;
   }
   const today = todayIsoDate();
@@ -1712,6 +1727,11 @@ function buildOperationsHomeModel(documents, options) {
   }, { today });
   const recurring = normalizeOperationsRecurringSnapshot(options.recurringSnapshot || {});
   const hasLiveWork = work.loaded;
+  // Per-lane load state (#97): each lane degrades against its OWN data source
+  // rather than the coarse top-level `loaded` (.some()). Missing-proof is a
+  // derived view over all task fetches, so it is "loaded" when any task source
+  // resolved; bundles is gated on the bundles fetch alone.
+  const tasksLoaded = work.todayLoaded || work.overdueLoaded || work.waitingLoaded;
   const templates = docs
     .filter(isWorkflowTemplateDoc)
     .map((doc) => summarizeWorkflowTemplate(doc))
@@ -1722,25 +1742,25 @@ function buildOperationsHomeModel(documents, options) {
   const todayWorkTasks = scopedCurrentOperatorId
     ? work.todayTasks.filter((task) => isCurrentOperatorTodayTask(task, scopedCurrentOperatorId))
     : work.todayTasks;
-  const todayItems = hasLiveWork
+  const todayItems = work.todayLoaded
     ? todayWorkTasks.map((task) => operationItemFromTask(task, { today }))
     : [];
-  const overdueItems = hasLiveWork
+  const overdueItems = work.overdueLoaded
     ? work.overdueTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
     : [];
   const followUpTasks = work.waitingTasks.filter((task) => isFollowUpDueTask(task, today));
-  const followUpItems = hasLiveWork
+  const followUpItems = work.waitingLoaded
     ? followUpTasks.map((task) => operationItemFromTask(task, { today, followUp: true }))
     : [];
-  const waitingItems = hasLiveWork
+  const waitingItems = work.waitingLoaded
     ? work.waitingTasks.filter((task) => !isFollowUpDueTask(task, today)).map((task) => operationItemFromTask(task, { today, waiting: true }))
     : [];
-  const bundleItems = hasLiveWork
+  const bundleItems = work.bundlesLoaded
     ? work.activeBundles.map((bundle) => operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], { today }))
     : [];
   const allKnownTasks = allWorkTasks(work);
   const missingProofTasks = allKnownTasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok);
-  const missingProofItems = hasLiveWork
+  const missingProofItems = tasksLoaded
     ? missingProofTasks.map((task) => operationItemFromTask(task, { today }))
     : [];
   const fallbackQualitySnapshot = typeof operationsQualitySnapshot !== "undefined" ? operationsQualitySnapshot : {};
@@ -1750,19 +1770,19 @@ function buildOperationsHomeModel(documents, options) {
     {
       id: "overdue",
       title: "Overdue",
-      empty: hasLiveWork ? "No live overdue tasks." : "Live work data unavailable; overdue work cannot be confirmed.",
+      empty: work.overdueLoaded ? "No live overdue tasks." : "Live work data unavailable; overdue work cannot be confirmed.",
       items: overdueItems,
     },
     {
       id: "followups",
       title: "Follow-Ups Due",
-      empty: hasLiveWork ? "No follow-ups due right now." : "Live work data unavailable; follow-ups cannot be confirmed.",
+      empty: work.waitingLoaded ? "No follow-ups due right now." : "Live work data unavailable; follow-ups cannot be confirmed.",
       items: followUpItems,
     },
     {
       id: "today",
       title: "Today",
-      empty: hasLiveWork
+      empty: work.todayLoaded
         ? (scopedCurrentOperatorId ? "No live tasks assigned to you or unassigned due today." : "No live tasks due today.")
         : "Live work data unavailable; tasks will appear here when /work/api/tasks is connected.",
       items: todayItems,
@@ -1770,19 +1790,19 @@ function buildOperationsHomeModel(documents, options) {
     {
       id: "missing-proof",
       title: "Missing Proof",
-      empty: hasLiveWork ? "No tasks waiting on proof." : "Live work data unavailable; missing-proof work cannot be confirmed.",
+      empty: tasksLoaded ? "No tasks waiting on proof." : "Live work data unavailable; missing-proof work cannot be confirmed.",
       items: missingProofItems,
     },
     {
       id: "waiting",
       title: "Waiting",
-      empty: hasLiveWork ? "No live waiting tasks." : "Live work data unavailable; waiting work cannot be confirmed.",
+      empty: work.waitingLoaded ? "No live waiting tasks." : "Live work data unavailable; waiting work cannot be confirmed.",
       items: waitingItems,
     },
     {
       id: "bundles",
       title: "At-Risk Workflows",
-      empty: hasLiveWork ? "No active workflows." : "No live workflow data loaded.",
+      empty: work.bundlesLoaded ? "No active workflows." : "No live workflow data loaded.",
       items: bundleItems,
     },
   ];
@@ -1808,6 +1828,14 @@ function buildOperationsHomeModel(documents, options) {
       workflowTemplates: templates.length,
       recurringTemplates: recurringItems.length,
       liveLoaded: hasLiveWork,
+      // Per-lane load state (#97), exposed for downstream consumers like the
+      // composite needs-action lane and the work-queue/workflows surfaces.
+      todayLoaded: work.todayLoaded,
+      overdueLoaded: work.overdueLoaded,
+      waitingLoaded: work.waitingLoaded,
+      bundlesLoaded: work.bundlesLoaded,
+      usersLoaded: work.usersLoaded,
+      missingProofLoaded: tasksLoaded,
       todayTasks: todayWorkTasks.length,
       overdueTasks: work.overdueTasks.length,
       waitingTasks: work.waitingTasks.length,
@@ -1834,6 +1862,14 @@ function emptyOperationsWorkSnapshot() {
     users: [],
     bundleTasks: {},
     errors: [],
+    // Per-source load state so a single failed endpoint degrades only its own
+    // lane instead of hiding the whole work surface (see #97). Normalized to
+    // the coarse `loaded` flag when a snapshot lacks these fields.
+    todayLoaded: false,
+    overdueLoaded: false,
+    waitingLoaded: false,
+    bundlesLoaded: false,
+    usersLoaded: false,
   };
 }
 
@@ -1969,6 +2005,14 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   // the e2e specs' retry-with-refresh loop, not in making this signal precise.
   // (See #97 for finer per-lane degradation tracking.) /api/me is optional.
   snapshot.loaded = [todayResult, overdueResult, waitingResult, bundlesResult, usersResult].some((result) => result.status === "fulfilled");
+  // Per-lane load state (#97): each fetch tracks whether its OWN data source
+  // resolved, so a single failed endpoint degrades only its lane rather than
+  // hiding the whole work surface behind the coarse `.some()` signal above.
+  snapshot.todayLoaded = todayResult.status === "fulfilled";
+  snapshot.overdueLoaded = overdueResult.status === "fulfilled";
+  snapshot.waitingLoaded = waitingResult.status === "fulfilled";
+  snapshot.bundlesLoaded = bundlesResult.status === "fulfilled";
+  snapshot.usersLoaded = usersResult.status === "fulfilled";
   snapshot.todayTasks = tasksFromWorkPayload(settledPayload(todayResult));
   snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
   snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
@@ -3723,8 +3767,19 @@ function normalizeOperationsWorkSnapshot(input, options) {
   const users = usersFromWorkPayload(snapshot.users || []);
   const bundleTasks = normalizeBundleTaskMap(snapshot.bundleTasks || {}, allTasks);
 
+  // Per-lane load state (#97): fall back to the coarse `loaded` flag when a
+  // snapshot was built without per-source tracking (e.g. legacy test fixtures or
+  // the buildOperationsHomeModel fallback path). When per-source flags ARE
+  // present, use them directly so a single failed endpoint only degrades its lane.
+  const laneLoaded = (flag) => (snapshot[flag] === undefined ? Boolean(snapshot.loaded) : Boolean(snapshot[flag]));
+
   return {
     loaded: Boolean(snapshot.loaded),
+    todayLoaded: laneLoaded("todayLoaded"),
+    overdueLoaded: laneLoaded("overdueLoaded"),
+    waitingLoaded: laneLoaded("waitingLoaded"),
+    bundlesLoaded: laneLoaded("bundlesLoaded"),
+    usersLoaded: laneLoaded("usersLoaded"),
     currentOperatorId: String(snapshot.currentOperatorId || ""),
     todayTasks: sortWorkTasks(dedupeWorkTasks([...explicitToday, ...allTasks.filter((task) => isTaskDueToday(task, today))]), "today", today),
     overdueTasks: sortWorkTasks(dedupeWorkTasks([...explicitOverdue, ...allTasks.filter((task) => isTaskOverdue(task, today))]), "overdue", today),
