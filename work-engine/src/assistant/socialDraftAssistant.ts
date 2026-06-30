@@ -4,13 +4,13 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../db/assistantJobs';
 import { createArtifact } from '../db/artifacts';
 import { styleExamplesFor, type SocialStyleExample } from './socialStyleExamples';
+import { DEFAULT_TYPEFULLY_BASE_URL, FetchTypefullyDraftClient, type TypefullyDraftClient, type TypefullyDraftResult } from './typefullyClient';
 import type { ArtifactRecord, AssistantJobRecord, LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const DEFAULT_ZAI_BASE_URL = 'https://api.z.ai/api/anthropic';
 const DEFAULT_ZAI_MODEL = 'glm-5.2';
 const DEFAULT_ZAI_MAX_TOKENS = 4096;
-const DEFAULT_TYPEFULLY_BASE_URL = 'https://api.typefully.com';
 const SOCIAL_ASSISTANT_TYPE = 'social-draft';
 const SECRET_KEY_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
 const SECRET_VALUE_PATTERN = /(x-amz-signature|x-amz-credential|x-amz-security-token|access_token=|token=|secret=|api[_-]?key|bearer\s+[a-z0-9._-]+|ghp_[a-z0-9_]+|sk-[a-z0-9_-]+|zai[_-]?api[_-]?key|private[_-]?url|typefully\.com\/\?d=|\.tmp\/typefully|typefully-export|all-drafts\.json)/i;
@@ -48,26 +48,8 @@ interface GeneratedSocialDraft {
   linkedinPosts: string[];
 }
 
-interface TypefullyDraftResult {
-  id: string | number;
-  status?: string;
-  privateUrl?: string;
-  shareUrl?: string | null;
-  socialSetId: number;
-  platforms: Platform[];
-  preview?: string;
-}
-
 interface ZaiSocialDraftClient {
   generateDraft(intent: SocialDraftIntent): Promise<GeneratedSocialDraft>;
-}
-
-interface TypefullyDraftClient {
-  createSavedDraft(input: {
-    socialSetId: number;
-    draft: GeneratedSocialDraft;
-    platforms: Platform[];
-  }): Promise<TypefullyDraftResult>;
 }
 
 interface SocialDraftClients {
@@ -334,52 +316,6 @@ function normalizeGeneratedDraft(value: Record<string, unknown>): GeneratedSocia
     xPosts,
     linkedinPosts,
   };
-}
-
-class FetchTypefullyDraftClient implements TypefullyDraftClient {
-  async createSavedDraft(input: { socialSetId: number; draft: GeneratedSocialDraft; platforms: Platform[] }): Promise<TypefullyDraftResult> {
-    const apiKey = process.env.TYPEFULLY_API_KEY;
-    if (!apiKey) throw new Error('TYPEFULLY_API_KEY is not configured');
-
-    const platformPayload: Record<string, unknown> = {};
-    if (input.platforms.includes('x') && input.draft.xPosts.length > 0) {
-      platformPayload.x = { enabled: true, posts: input.draft.xPosts.map((text) => ({ text })) };
-    }
-    if (input.platforms.includes('linkedin') && input.draft.linkedinPosts.length > 0) {
-      platformPayload.linkedin = { enabled: true, posts: input.draft.linkedinPosts.map((text) => ({ text })) };
-    }
-    if (Object.keys(platformPayload).length === 0) throw new Error('No generated platform posts to send to Typefully');
-
-    const response = await fetch(`${(process.env.TYPEFULLY_BASE_URL || DEFAULT_TYPEFULLY_BASE_URL).replace(/\/+$/, '')}/v2/social-sets/${input.socialSetId}/drafts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        draft_title: input.draft.draftTitle,
-        scratchpad_text: input.draft.scratchpadText,
-        share: false,
-        platforms: platformPayload,
-      }),
-    });
-
-    const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok) {
-      const error = payload && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : {};
-      throw new Error(isNonEmptyString(error.message) ? error.message : `Typefully request failed with HTTP ${response.status}`);
-    }
-
-    return {
-      id: String(payload?.id || payload?.draft_id || ''),
-      status: isNonEmptyString(payload?.status) ? payload.status : undefined,
-      privateUrl: isNonEmptyString(payload?.private_url) ? payload.private_url : undefined,
-      shareUrl: isNonEmptyString(payload?.share_url) ? payload.share_url : null,
-      socialSetId: input.socialSetId,
-      platforms: input.platforms,
-      preview: isNonEmptyString(payload?.preview) ? payload.preview : undefined,
-    };
-  }
 }
 
 function socialDraftClients(): Required<SocialDraftClients> {

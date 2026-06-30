@@ -33,6 +33,19 @@ Parameters:
     Type: Number
     Default: 365
     MinValue: 90
+  TypefullyApiTokenSecretName:
+    Type: String
+    Default: dataops-v1/work-engine/typefully-api-token
+  TypefullyApiToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TypefullySocialSetAlexey:
+    Type: Number
+    Default: 0
+  TypefullySocialSetDataTalksClub:
+    Type: Number
+    Default: 0
 
 Globals:
   Function:
@@ -514,6 +527,22 @@ Resources:
         - Key: DataClass
           Value: PortalBrokerSecret
 
+  WorkEngineTypefullyApiTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Ref TypefullyApiTokenSecretName
+      Description: Typefully API bearer token used by the work engine to create saved drafts only
+      SecretString: !Ref TypefullyApiToken
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: IntegrationCredential
+
   DocsFullAppFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -603,6 +632,7 @@ Resources:
               - secretsmanager:GetSecretValue
             Resource:
               - !Ref WorkEnginePortalSecret
+              - !Ref WorkEngineTypefullyApiTokenSecret
         - Statement:
             Effect: Allow
             Action:
@@ -627,6 +657,9 @@ Resources:
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
+          TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecret
+          TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
+          TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
       Events:
         DailyWorkEngineCron:
           Type: Schedule
@@ -691,3 +724,6 @@ Outputs:
   WorkEnginePortalSecretName:
     Description: Secret shared by the portal broker and private work engine
     Value: !Ref WorkEnginePortalSecret
+  WorkEngineTypefullyApiTokenSecretName:
+    Description: Typefully API token secret consumed by the work engine for saved-draft creation
+    Value: !Ref TypefullyApiTokenSecretName
