@@ -13,6 +13,7 @@ import { handleArtifactRoutes } from './routes/artifacts';
 import { handleAssistantJobRoutes } from './routes/assistantJobs';
 import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
 import { handleDocsRoutes, isDocsDomainEnabled } from './docs';
+import { handlePortal } from './docs/portal';
 import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
@@ -583,11 +584,29 @@ async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, taskDat
 
 async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const method = event.httpMethod || 'GET';
-  const reqPath = event.path || '/';
+  let reqPath = event.path || '/';
   const portalMode = process.env.WORK_ENGINE_AUTH_MODE === 'portal';
   decodeBase64Body(event);
 
   try {
+    // ── Single-origin portal layer (docs domain, flag-gated) ─────
+    // When the docs domain is enabled, the portal serves the frontend, the docs
+    // content API, and `/content/*`, enforces Basic auth / session cookie, and
+    // rewrites the old `/work/api/*` proxy path to `/api/*`. A verified portal
+    // session also authorizes the work `/api/*` routes (portalAuthorized).
+    let portalAuthorized = false;
+    if (isDocsDomainEnabled()) {
+      const portal = await handlePortal(event);
+      if (portal.response) return portal.response;
+      portalAuthorized = portal.authorized;
+      if (portalAuthorized) {
+        if (!event.headers) event.headers = {};
+        if (!event.headers['x-user-id']) event.headers['x-user-id'] = 'portal-admin';
+      }
+      // The portal may rewrite the path (e.g. /work/api/* -> /api/*).
+      reqPath = event.path || '/';
+    }
+
     // ── Auth routes (exempt from middleware) ─────────────────────
     const portalUserId = await portalTrustedUserId(event);
     if (portalMode && reqPath.startsWith('/api/auth')) {
@@ -612,10 +631,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = portalUserId;
     }
-    if (portalMode && !portalUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    if (portalMode && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
       return jsonResponse(401, { error: 'Unauthorized' });
     }
-    if (!skipAuth && !portalUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });
