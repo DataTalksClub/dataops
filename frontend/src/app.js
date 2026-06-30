@@ -1147,7 +1147,7 @@ function renderWorkQueueRow(task, today) {
   for (const value of [
     status,
     task.date ? `Due ${formatTaskDateMeta(task.date, today)}` : "",
-    task.assigneeId ? `Owner ${task.assigneeId}` : "Unassigned",
+    task.assigneeId ? `Owner ${resolveAssigneeLabel(task.assigneeId)}` : "Unassigned",
     task.bundleId ? "Workflow-linked" : "Ad hoc",
     taskSourceLabel(task),
     taskProofState(task).label,
@@ -3935,7 +3935,7 @@ function operationItemFromTask(task, options) {
   if (task.status) meta.push(task.status);
   meta.push(task.bundleId ? "Workflow" : "Ad hoc");
   meta.push(taskSourceLabel(task));
-  if (task.assigneeId) meta.push(`Owner ${task.assigneeId}`);
+  if (task.assigneeId) meta.push(`Owner ${resolveAssigneeLabel(task.assigneeId)}`);
   meta.push(proof.label);
   meta.push(`Next: ${taskNextActionLabel(task, today)}`);
   const summary = task.waitingFor
