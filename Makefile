@@ -70,7 +70,7 @@ validate-planning-docs:
 
 sop-lint:
 	@if [ -z "$(strip $(FILES))" ]; then echo 'FILES is required. Usage: make sop-lint FILES="content/path/to/sop.md [...]"' >&2; exit 2; fi
-	uv run --project lambda-functions python scripts/sop_lint.py $(FILES)
+	npx --prefix work-engine tsx work-engine/scripts/sop.ts lint $(FILES)
 
 test-docs:
 	uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
