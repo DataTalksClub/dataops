@@ -106,26 +106,30 @@ async function archiveAndDeleteBundle(bundleId) {
 }
 
 async function openTaskFromHome(page, textFragment) {
-  // The Operations Home lanes are populated from the async work snapshot
-  // (/work/api/tasks). In slower headless environments the snapshot can take a
-  // few seconds to land, so wait for the network to settle before locating the
-  // card rather than racing a tight visibility check.
   await page.goto(`${BASE_URL}/#/`);
-  await page.waitForLoadState('networkidle').catch(() => {});
-  // The work snapshot can be hydrated-but-stale (fetched before this spec
-  // created its task), so the Today lane card is absent even after the network
-  // settles. Poll for the card and force a fresh snapshot fetch when it is
-  // missing; the test-server fetches are fast, so one refresh is usually
-  // enough, and the bounded loop keeps this robust to slow CI runners.
   const row = page.locator('.ops-lane-item', { has: page.locator('strong', { hasText: textFragment }) });
+
+  // Retry-with-refresh loop. Every attempt forces a fresh work-snapshot fetch
+  // at the TOP, waits for the network to settle + hydrated render, then checks
+  // the card. On a cold-started isolated server under CI contention the first
+  // fetch can be slow, and the snapshot can also be hydrated-but-stale (fetched
+  // before this spec created its task). Forcing a fresh fetch + re-render
+  // recovers both rather than waiting longer on a fetch that already raced task
+  // creation. The network settle lives INSIDE the try/catch so a single slow
+  // first-fetch times out into a refresh + retry instead of failing the test
+  // before recovery ever runs.
   for (let attempt = 0; attempt < 4; attempt++) {
+    // Idempotent: goto already triggered a fetch on attempt 0, but re-invoking
+    // keeps every iteration uniform and guarantees a fresh fetch.
+    await page.evaluate(() => window.__dataopsRefreshWork && window.__dataopsRefreshWork());
     try {
+      // Wait for the network to settle before locating the card, rather than
+      // racing a tight visibility check against a still-empty Today lane.
+      await page.waitForLoadState('networkidle').catch(() => {});
       await expect(row.first()).toContainText(textFragment, { timeout: 8000 });
       break;
     } catch (err) {
       if (attempt === 3) throw err;
-      await page.evaluate(() => window.__dataopsRefreshWork && window.__dataopsRefreshWork());
-      await page.waitForLoadState('networkidle').catch(() => {});
     }
   }
   await row.first().scrollIntoViewIfNeeded({ timeout: 30000 }).catch(() => {});
