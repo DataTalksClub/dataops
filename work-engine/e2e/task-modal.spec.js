@@ -112,9 +112,23 @@ async function openTaskFromHome(page, textFragment) {
   // card rather than racing a tight visibility check.
   await page.goto(`${BASE_URL}/#/`);
   await page.waitForLoadState('networkidle').catch(() => {});
+  // The work snapshot can be hydrated-but-stale (fetched before this spec
+  // created its task), so the Today lane card is absent even after the network
+  // settles. Poll for the card and force a fresh snapshot fetch when it is
+  // missing; the test-server fetches are fast, so one refresh is usually
+  // enough, and the bounded loop keeps this robust to slow CI runners.
   const row = page.locator('.ops-lane-item', { has: page.locator('strong', { hasText: textFragment }) });
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      await expect(row.first()).toContainText(textFragment, { timeout: 8000 });
+      break;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      await page.evaluate(() => window.__dataopsRefreshWork && window.__dataopsRefreshWork());
+      await page.waitForLoadState('networkidle').catch(() => {});
+    }
+  }
   await row.first().scrollIntoViewIfNeeded({ timeout: 30000 }).catch(() => {});
-  await expect(row.first()).toContainText(textFragment, { timeout: 30000 });
   await row.first().click();
   await expect(page.locator('#task-panel')).toBeVisible({ timeout: 15000 });
   return row.first();

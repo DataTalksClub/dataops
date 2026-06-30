@@ -332,6 +332,15 @@ updateSaveState();
 loadDocuments().then(openInitialRoute);
 refreshGitStatus();
 
+// Test-only seam: force a fresh work-snapshot fetch + re-render of Operations
+// Home. Specs use this to recover from a hydrated-but-stale snapshot (the home
+// fetched its snapshot before the spec created its task). Not user-facing.
+if (typeof window !== "undefined") {
+  window.__dataopsRefreshWork = function refreshOperationsWorkForTests() {
+    return refreshOperationsWorkSnapshot({ rerender: true });
+  };
+}
+
 function setSidebarCollapsed(collapsed) {
   body.classList.toggle("sidebar-collapsed", collapsed);
   sidebarExpandButton.hidden = !collapsed;
@@ -1735,7 +1744,16 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   ]);
 
   const snapshot = emptyOperationsWorkSnapshot();
-  snapshot.loaded = [todayResult, overdueResult, waitingResult, bundlesResult, usersResult].some((result) => result.status === "fulfilled");
+  // The home "work loaded" signal must only flip true once the work snapshot
+  // is actually current enough to render lane rows and resolved names. Using
+  // .some() let the signal go true when only one of the five work fetches
+  // resolved, so a slow/pending today-tasks (or users/bundles) fetch left the
+  // signal saying "loaded" while the lane row and assignee/workflow names were
+  // absent — a flaky single-visibility check in the e2e specs. Require every
+  // required work fetch to settle successfully; /api/me is optional because
+  // operator scoping degrades gracefully (currentOperatorId "" shows all tasks).
+  const requiredResults = [todayResult, overdueResult, waitingResult, bundlesResult, usersResult];
+  snapshot.loaded = requiredResults.every((result) => result.status === "fulfilled");
   snapshot.todayTasks = tasksFromWorkPayload(settledPayload(todayResult));
   snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
   snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
