@@ -696,6 +696,13 @@ function renderOperationsHome(documents) {
   const wrap = document.createElement("div");
   wrap.className = "operations-home";
 
+  // Read-only load signal for tests: reflects whether the async work snapshot
+  // (/work/api/tasks, /work/api/bundles) has finished hydrating. The home view
+  // renders immediately on first paint with an unloaded snapshot, then re-renders
+  // once refreshOperationsWorkSnapshot resolves. This attribute lets waiters
+  // distinguish the hydrated render from the skeleton render without polling rows.
+  wrap.dataset.operationsWorkLoaded = String(Boolean(model.stats.liveLoaded));
+
   const summary = document.createElement("section");
   summary.className = "ops-summary";
   summary.setAttribute("aria-label", "Operations summary");
