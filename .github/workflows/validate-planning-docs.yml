@@ -22,6 +22,8 @@ on:
       - "lambda-functions/src/lambda_functions/docs_index.py"
       - "lambda-functions/src/lambda_functions/sop_parse.py"
       - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
+      - "work-engine/src/docs/sop/**"
+      - "work-engine/scripts/sop.ts"
       - "Makefile"
   pull_request:
     paths:
@@ -42,6 +44,8 @@ on:
       - "lambda-functions/src/lambda_functions/docs_index.py"
       - "lambda-functions/src/lambda_functions/sop_parse.py"
       - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
+      - "work-engine/src/docs/sop/**"
+      - "work-engine/scripts/sop.ts"
       - "Makefile"
   workflow_dispatch:
 
@@ -62,6 +66,21 @@ jobs:
 
       - name: Install Python
         run: uv python install
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Lint marked SOPs via Node CLI
+        run: |
+          files=$(grep -rl "schema_version: 1" content --include='*.md' | xargs grep -l "^doc_type: sop$" | tr '\n' ' ')
+          if [ -z "$(echo "$files" | tr -d '[:space:]')" ]; then echo 'No marked SOP files found' >&2; exit 1; fi
+          make sop-lint FILES="$files"
 
       - name: Run planning docs validation
         run: uv run --with pytest python -m pytest tests/planning_docs

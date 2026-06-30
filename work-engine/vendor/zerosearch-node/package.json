@@ -1,0 +1,22 @@
+{
+  "name": "zerosearch-node",
+  "version": "0.4.0",
+  "description": "A tiny, zero-dependency BM25-lite in-memory text search index. TypeScript/Node port of the Python zerosearch library, with a cross-language-compatible index format. Vendored CommonJS build for the CJS work-engine; see ../README.md.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "FORMAT.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "WTFPL"
+}
