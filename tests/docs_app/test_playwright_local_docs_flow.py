@@ -600,6 +600,32 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     assert page.get_by_text("Incoming And Quality Signals").count() == 0
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-operations-home-desktop.png"), full_page=True)
 
+                    # Settings dropdown (#94): gear in the toolbar holds the
+                    # config/admin surfaces removed from primary nav. No sidebar
+                    # Tools <details> remains.
+                    assert page.locator("#settings-button").is_visible()
+                    assert page.locator("summary", has_text="Tools").count() == 0
+                    page.locator("#settings-button").click()
+                    page.locator("#settings-menu").wait_for(state="visible")
+                    for label in ["Admin", "Dark mode", "Version"]:
+                        assert page.locator("#settings-menu").get_by_text(label, exact=True).first.is_visible()
+                    assert page.locator("#git-pull-button").is_visible()
+                    assert page.locator("#git-commit-button").is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-settings-dropdown-open-desktop.png"), full_page=True)
+                    # Outside-click closes the dropdown.
+                    page.locator("#library-title").click()
+                    assert page.locator("#settings-menu").is_hidden()
+                    # Admin is reachable from Settings and renders its cards.
+                    page.locator("#settings-button").click()
+                    page.locator("#settings-admin-button").click()
+                    page.locator("#library-title", has_text="Admin").wait_for(state="visible")
+                    assert page.locator(".ops-surface-admin").is_visible()
+                    for label in ["New process doc", "Recurring config", "Diagnostics"]:
+                        assert page.locator(".ops-surface-admin").get_by_text(label).first.is_visible()
+                    page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-settings-admin-desktop.png"), full_page=True)
+                    page.locator("#operations-home-button").click()
+                    page.locator("#library-title", has_text="Home").wait_for(state="visible")
+
                     # Tasks > Queue sub-tab holds the work queue groups.
                     page.locator("#tasks-nav-button").click()
                     page.locator("#library-title", has_text="Tasks - Work Queue").wait_for(state="visible")
@@ -749,15 +775,13 @@ def test_operations_smoke_portal_shell_workflow_panels_and_docs_context(tmp_path
                     page.locator("#library-title", has_text="Home").wait_for(state="visible")
                     _assert_mobile_operations_home_settled(page)
 
-                    page.locator("#mobile-menu-button").click()
-                    _assert_mobile_drawer_open(page)
-                    page.locator("summary", has_text="Tools").click()
+                    # Dark mode now lives behind the Settings gear dropdown (#94),
+                    # not the removed sidebar Tools <details>.
+                    page.locator("#mobile-settings-button").click()
+                    page.locator("#settings-menu").wait_for(state="visible")
                     page.locator("#theme-toggle-button").click()
                     assert page.locator("body").evaluate("el => el.classList.contains('dark')")
-                    assert page.locator("#sidebar-scrim").is_visible()
                     page.screenshot(path=str(OPS_SCREENSHOT_DIR / "docs-mobile-drawer-dark.png"))
-                    page.locator("#sidebar-close-button").click()
-                    assert not page.locator("body").evaluate("el => el.classList.contains('sidebar-open')")
                 finally:
                     browser.close()
 
