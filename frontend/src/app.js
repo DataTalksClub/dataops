@@ -887,11 +887,16 @@ function buildNeedsActionLane(model) {
   const overdue = (byId("overdue")?.items || []).slice();
   const today = (byId("today")?.items || []).slice();
   const hasLiveWork = model.stats.liveLoaded;
-  const items = [...overdue, ...today];
+  // Overdue and today already cover their tasks; fold in missing-proof items
+  // that are not already listed, so a task shows once even when it is both
+  // overdue and missing proof.
+  const placed = new Set([...overdue, ...today].map((item) => item.taskId).filter(Boolean));
+  const missingProof = (byId("missing-proof")?.items || []).filter((item) => !placed.has(item.taskId));
+  const items = dedupeOperationItems([...overdue, ...today, ...missingProof]);
   return {
     id: "needs-action",
     title: "Needs your action",
-    empty: hasLiveWork ? "Nothing overdue or due today." : "Live work data unavailable; overdue and today work cannot be confirmed.",
+    empty: hasLiveWork ? "Nothing overdue, due today, or missing proof." : "Live work data unavailable; overdue, today, and missing-proof work cannot be confirmed.",
     items,
   };
 }
@@ -1735,6 +1740,9 @@ function buildOperationsHomeModel(documents, options) {
     : [];
   const allKnownTasks = allWorkTasks(work);
   const missingProofTasks = allKnownTasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok);
+  const missingProofItems = hasLiveWork
+    ? missingProofTasks.map((task) => operationItemFromTask(task, { today }))
+    : [];
   const fallbackQualitySnapshot = typeof operationsQualitySnapshot !== "undefined" ? operationsQualitySnapshot : {};
   const quality = buildProcessQualityModel(options.qualitySnapshot || fallbackQualitySnapshot, work);
 
@@ -1758,6 +1766,12 @@ function buildOperationsHomeModel(documents, options) {
         ? (scopedCurrentOperatorId ? "No live tasks assigned to you or unassigned due today." : "No live tasks due today.")
         : "Live work data unavailable; tasks will appear here when /work/api/tasks is connected.",
       items: todayItems,
+    },
+    {
+      id: "missing-proof",
+      title: "Missing Proof",
+      empty: hasLiveWork ? "No tasks waiting on proof." : "Live work data unavailable; missing-proof work cannot be confirmed.",
+      items: missingProofItems,
     },
     {
       id: "waiting",
