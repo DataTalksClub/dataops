@@ -184,12 +184,15 @@
             <button id="clear-selection-button" class="quiet-button" type="button" hidden>All docs</button>
           </div>
           <div id="document-list" class="document-list" aria-label="Documents"></div>
-          <section id="task-panel" class="task-panel" aria-label="Task actions" hidden>
-            <header class="task-panel-header">
-              <strong id="task-panel-title">Task</strong>
-              <button id="task-panel-close" class="quiet-button" type="button" aria-label="Close task">Close</button>
-            </header>
-            <div id="task-panel-body" class="task-panel-body"></div>
+          <section id="task-panel" class="task-modal diff-modal" aria-label="Task actions" hidden>
+            <div class="task-modal-backdrop diff-backdrop" id="task-modal-backdrop"></div>
+            <div class="task-modal-panel diff-panel" role="dialog" aria-modal="true" aria-labelledby="task-panel-title">
+              <header class="task-panel-header">
+                <strong id="task-panel-title">Task</strong>
+                <button id="task-panel-close" class="quiet-button" type="button" aria-label="Close task">Close</button>
+              </header>
+              <div id="task-panel-body" class="task-panel-body"></div>
+            </div>
           </section>
           <section id="bundle-panel" class="task-panel" aria-label="Workflow detail" hidden>
             <header class="task-panel-header">

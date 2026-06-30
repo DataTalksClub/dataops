@@ -1782,6 +1782,34 @@ body[data-view="create"] .editor-view {
     padding-left: clamp(28px, 4vw, 72px);
   }
 }
+/* ---------- Task modal (Trello-style overlay) ---------- */
+/* #task-panel reuses the .diff-modal backdrop/centering shell and layers a
+   task-specific panel on top. The dimmed backdrop + centered panel match the
+   app's other overlays (confirm/diff modals). */
+
+.task-modal[hidden] {
+  display: none;
+}
+
+#task-panel .task-modal-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(680px, 94vw);
+  max-height: 86vh;
+}
+
+#task-panel .task-modal-panel .task-panel-header {
+  border-radius: 8px 8px 0 0;
+}
+
+#task-panel .task-modal-panel .task-panel-body {
+  padding: var(--do-space-4);
+}
+
+/* Centered task modal locks body scroll while open, restoring it on close. */
+body.task-modal-open {
+  overflow: hidden;
+}
 
 .task-detail-meta {
   display: grid;
@@ -2275,6 +2303,10 @@ body.dark .task-panel {
 
 body.dark .task-panel-header {
   background: var(--sidebar);
+}
+
+body.dark #task-panel .task-modal-panel {
+  background: var(--surface);
 }
 
 body.dark .task-status-badge.waiting {
