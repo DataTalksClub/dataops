@@ -123,8 +123,15 @@ async function openTaskFromHome(page, textFragment) {
 test.describe('Task card opens in a Trello-style modal (issue #92)', () => {
   test.describe.configure({ mode: 'serial' });
 
+  // Per-test budget: test.setTimeout inside beforeAll only scopes the setup
+  // hook; individual tests otherwise fall back to the config default (30s),
+  // which the heavy first test (shared openTaskFromHome + name resolution)
+  // exceeds on a slower CI runner. Each test below re-asserts this budget so
+  // teardown screenshots never run on a context killed by a spent timeout.
+  const TEST_TIMEOUT = 90000;
+
   test.beforeAll(async () => {
-    test.setTimeout(90000);
+    test.setTimeout(TEST_TIMEOUT);
     serverProcess = spawn(
       'npx',
       ['tsx', path.join('scripts', 'test-server.ts')],
@@ -157,6 +164,7 @@ test.describe('Task card opens in a Trello-style modal (issue #92)', () => {
   });
 
   test('clicking a task opens a centered modal with backdrop and content', async ({ browser }) => {
+    test.setTimeout(TEST_TIMEOUT);
     const suffix = uid();
     const today = todayString();
     const bundleTitle = 'Modal Workflow ' + suffix;
@@ -193,6 +201,7 @@ test.describe('Task card opens in a Trello-style modal (issue #92)', () => {
   });
 
   test('modal closes via Esc, backdrop click, and close button with focus return', async ({ browser }) => {
+    test.setTimeout(TEST_TIMEOUT);
     const suffix = uid();
     const today = todayString();
     const desc = 'Task modal close paths ' + suffix;
@@ -230,6 +239,7 @@ test.describe('Task card opens in a Trello-style modal (issue #92)', () => {
   });
 
   test('focus is trapped inside the modal while open', async ({ browser }) => {
+    test.setTimeout(TEST_TIMEOUT);
     const suffix = uid();
     const today = todayString();
     const desc = 'Task modal focus trap ' + suffix;
@@ -265,6 +275,7 @@ test.describe('Task card opens in a Trello-style modal (issue #92)', () => {
   });
 
   test('opening a different task while the modal is open swaps content', async ({ browser }) => {
+    test.setTimeout(TEST_TIMEOUT);
     const suffix = uid();
     const today = todayString();
     const descA = 'Task modal switch A ' + suffix;
@@ -313,6 +324,7 @@ test.describe('Task card opens in a Trello-style modal (issue #92)', () => {
   });
 
   test('modal is usable on a narrow viewport', async ({ browser }) => {
+    test.setTimeout(TEST_TIMEOUT);
     const suffix = uid();
     const today = todayString();
     const desc = 'Task modal narrow ' + suffix;

@@ -2104,6 +2104,7 @@
     var container = document.getElementById('dashboard-tasks');
     if (!container) return;
     container.innerHTML = '<p>Loading...</p>';
+    container.setAttribute('data-loaded', 'false');
 
     var today = todayString();
 
@@ -2187,15 +2188,18 @@
               'Use the task list to review upcoming dates or create an ad-hoc task.',
               [{ href: '#/tasks', label: 'Open tasks' }]
             );
+            container.setAttribute('data-loaded', 'true');
             return null;
           }
 
           // Compatibility marker for frontend asset tests: renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask)
           renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake);
+          container.setAttribute('data-loaded', 'true');
         });
       });
     }).catch(function (err) {
       container.innerHTML = '';
+      container.setAttribute('data-loaded', 'true');
       showError('Failed to load tasks: ' + err.message);
     });
   }
