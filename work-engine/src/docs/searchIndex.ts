@@ -5,13 +5,16 @@
  * docs field configuration ported as data from
  * `lambda-functions/src/lambda_functions/docs_index.py`.
  *
- * The stub implementation throws {@link NotImplementedError}. Issue #85 will
- * implement this on top of `zerosearch-node` (BM25-lite, portable index format
- * compatible with the Python `zerosearch`). Per `_docs/TARGET_ARCHITECTURE.md`
- * the field config below carries over unchanged from `minsearch`.
+ * Implemented (issue #85) on top of `zerosearch-node` (BM25-lite, portable
+ * `json-1` index format compatible with the Python `zerosearch`). Per
+ * `_docs/TARGET_ARCHITECTURE.md` the field config below carries over unchanged
+ * from `minsearch`; ranking shifts from TF-IDF (minsearch) to BM25-lite, with
+ * recall on par and ordering allowed to differ.
  */
 
-import { NotImplementedError } from './errors';
+import { readFile, writeFile } from 'node:fs/promises';
+
+import { Index } from 'zerosearch-node';
 
 // ── Field configuration (ported from docs_index.py) ───────────────────────────
 
@@ -103,42 +106,70 @@ export interface SearchIndex {
   load(path: string): Promise<SearchIndex>;
 }
 
-// ── Stub implementation (issue #85 implements on zerosearch-node) ──────────────
+// ── zerosearch-node implementation ────────────────────────────────────────────
 
-const UNIMPLEMENTED_ISSUE = '#85';
+/** Default result count, matching the Python search handler's `DEFAULT_LIMIT`. */
+const DEFAULT_NUM_RESULTS = 10;
 
 /**
- * Placeholder search index. Every method throws {@link NotImplementedError}
- * until issue #85 swaps in `zerosearch-node`.
+ * Docs search index backed by `zerosearch-node`.
+ *
+ * Wraps a `zerosearch-node` {@link Index} configured with this domain's text
+ * fields, keyword fields, and boosts. `fit` builds the inverted index; `search`
+ * applies keyword filters and per-field boosts (config boosts overlaid by
+ * per-query overrides); `save`/`load` use the portable `json-1` format that the
+ * Python `zerosearch` library also reads.
  */
 export class ZeroSearchIndex implements SearchIndex {
-  constructor(_config: SearchIndexConfig = DOCS_SEARCH_CONFIG) {
-    // Config is retained by the real implementation; the stub does nothing.
+  private readonly config: SearchIndexConfig;
+  private inner: Index | null;
+
+  constructor(config: SearchIndexConfig = DOCS_SEARCH_CONFIG, inner: Index | null = null) {
+    this.config = config;
+    this.inner = inner;
   }
 
-  fit(_docs: SearchDocument[]): SearchIndex {
-    throw new NotImplementedError('SearchIndex.fit', UNIMPLEMENTED_ISSUE);
+  fit(docs: SearchDocument[]): SearchIndex {
+    const index = new Index([...this.config.textFields], [...this.config.keywordFields]);
+    index.fit(docs as Record<string, unknown>[]);
+    this.inner = index;
+    return this;
   }
 
-  search(_query: string, _options?: SearchQueryOptions): SearchResult[] {
-    throw new NotImplementedError('SearchIndex.search', UNIMPLEMENTED_ISSUE);
+  search(query: string, options: SearchQueryOptions = {}): SearchResult[] {
+    if (this.inner === null) {
+      throw new Error('SearchIndex.search called before fit/load');
+    }
+    // Config boosts are the baseline; a per-query `boost` overrides per field.
+    const boosts: Record<string, number> = { ...this.config.boosts, ...(options.boost ?? {}) };
+    const numResults = options.numResults ?? DEFAULT_NUM_RESULTS;
+    const matches = this.inner.search(query, options.filter ?? null, boosts, numResults);
+    return matches.map(({ score, ...rest }) => ({ ...rest, _score: score }) as SearchResult);
   }
 
-  save(_path: string): Promise<void> {
-    throw new NotImplementedError('SearchIndex.save', UNIMPLEMENTED_ISSUE);
+  async save(path: string): Promise<void> {
+    if (this.inner === null) {
+      throw new Error('SearchIndex.save called before fit/load');
+    }
+    await writeFile(path, this.inner.dumps());
   }
 
-  load(_path: string): Promise<SearchIndex> {
-    throw new NotImplementedError('SearchIndex.load', UNIMPLEMENTED_ISSUE);
+  async load(path: string): Promise<SearchIndex> {
+    const bytes = await readFile(path);
+    this.inner = Index.loadBytes(bytes);
+    return this;
   }
 }
 
-/** Construct an empty docs search index. Stub until issue #85. */
+/** Construct an empty docs search index backed by `zerosearch-node`. */
 export function createSearchIndex(config: SearchIndexConfig = DOCS_SEARCH_CONFIG): SearchIndex {
   return new ZeroSearchIndex(config);
 }
 
-/** Load a docs search index from a saved portable index file. Stub until #85. */
-export function loadSearchIndex(_path: string): Promise<SearchIndex> {
-  throw new NotImplementedError('loadSearchIndex', UNIMPLEMENTED_ISSUE);
+/** Load a docs search index from a saved portable (`json-1`) index file. */
+export async function loadSearchIndex(
+  path: string,
+  config: SearchIndexConfig = DOCS_SEARCH_CONFIG,
+): Promise<SearchIndex> {
+  return new ZeroSearchIndex(config).load(path);
 }
