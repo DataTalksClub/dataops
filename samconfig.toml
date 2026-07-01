@@ -8,7 +8,7 @@ region = "eu-west-1"
 template_file = "infra/template.full.yaml"
 
 [full-sandbox.deploy.parameters]
-template_file = "infra/.aws-sam/build/template.yaml"
+template_file = ".aws-sam/build/template.yaml"
 resolve_s3 = true
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
 confirm_changeset = false
