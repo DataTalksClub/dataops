@@ -25,9 +25,9 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 const USERS = [
-  { id: '00000000-0000-0000-0000-000000000001', name: 'Grace', email: 'grace@datatalks.club' },
-  { id: '00000000-0000-0000-0000-000000000002', name: 'Valeriia', email: 'valeriia@datatalks.club' },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Alexey', email: 'alexey@datatalks.club' },
+  { id: '00000000-0000-0000-0000-000000000001', name: 'Grace', email: 'grace@datatalks.club', role: 'admin' as const },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'Valeriia', email: 'valeriia@datatalks.club', role: 'admin' as const },
+  { id: '00000000-0000-0000-0000-000000000003', name: 'Alexey', email: 'alexey@datatalks.club', role: 'admin' as const },
 ];
 
 // Default password for all seeded users

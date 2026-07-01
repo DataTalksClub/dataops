@@ -2,6 +2,7 @@ import {
   PutCommand,
   GetCommand,
   ScanCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
@@ -25,6 +26,59 @@ function rawItem(item: Record<string, unknown> | undefined): (User & { passwordH
   if (!item) return null;
   const { PK, SK, ...rest } = item;
   return rest as unknown as User & { passwordHash?: string };
+}
+
+/**
+ * Mutable user attributes accepted by {@link updateUser}. PK/SK/id/createdAt
+ * are identity and never written here.
+ */
+const UPDATEABLE_USER_FIELDS = new Set(['name', 'email', 'role', 'disabled', 'passwordHash']);
+
+/**
+ * Patch a user's mutable attributes. Returns the clean updated user or null if
+ * the user does not exist (ConditionExpression fails when the item is absent).
+ * Only fields in {@link UPDATEABLE_USER_FIELDS} are applied.
+ */
+async function updateUser(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<User | null> {
+  const fields: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (UPDATEABLE_USER_FIELDS.has(key)) fields[key] = value;
+  }
+  if (Object.keys(fields).length === 0) {
+    return getUser(client, id);
+  }
+
+  const expressionParts: string[] = [];
+  const expressionAttrNames: Record<string, string> = {};
+  const expressionAttrValues: Record<string, unknown> = {};
+  let i = 0;
+  for (const [key, value] of Object.entries(fields)) {
+    const nameToken = `#f${i}`;
+    const valueToken = `:v${i}`;
+    expressionParts.push(`${nameToken} = ${valueToken}`);
+    expressionAttrNames[nameToken] = key;
+    expressionAttrValues[valueToken] = value;
+    i++;
+  }
+
+  try {
+    const result = await client.send(
+      new UpdateCommand({
+        TableName: TABLE_USERS,
+        Key: { PK: `USER#${id}`, SK: `USER#${id}` },
+        UpdateExpression: `SET ${expressionParts.join(', ')}`,
+        ExpressionAttributeNames: expressionAttrNames,
+        ExpressionAttributeValues: expressionAttrValues,
+        ConditionExpression: 'attribute_exists(PK)',
+        ReturnValues: 'ALL_NEW',
+      })
+    );
+    return cleanItem(result.Attributes as Record<string, unknown>);
+  } catch (err: unknown) {
+    // ConditionalCheckFailedException => user does not exist.
+    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw err;
+  }
 }
 
 /**
@@ -131,4 +185,5 @@ export {
   getUser,
   listUsers,
   getUserByEmail,
+  updateUser,
 };
