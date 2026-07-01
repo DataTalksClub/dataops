@@ -87,6 +87,15 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
         };
       }
 
+      // Disabled accounts cannot log in.
+      if (rawUser.disabled) {
+        return {
+          statusCode: 403,
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ error: 'Account is disabled' }),
+        };
+      }
+
       const inputHash = await hashPassword(password);
       if (inputHash !== rawUser.passwordHash) {
         return {

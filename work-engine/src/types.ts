@@ -461,8 +461,14 @@ export interface User {
   name: string;
   email: string;
   createdAt: string;
+  /** Authorization role. `admin` may manage users; `operator` is read-only for user data. */
+  role?: UserRole;
+  /** When true the account is disabled and cannot log in. */
+  disabled?: boolean;
   passwordHash?: string;
 }
+
+export type UserRole = 'admin' | 'operator';
 
 // --- Session ---
 

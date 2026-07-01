@@ -60,33 +60,9 @@ test.describe('User API', () => {
   // Scenario: API consumer sends unsupported method to users collection
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('Unsupported methods', () => {
-    test('POST /api/users returns 405', async ({ request }) => {
-      const res = await request.post('/api/users', { data: { name: 'test' } });
-      expect(res.status()).toBe(405);
-
-      const body = await res.json();
-      expect(body.error).toBe('Method not allowed');
-    });
-
+ test.describe('Unsupported methods', () => {
     test('DELETE /api/users returns 405', async ({ request }) => {
       const res = await request.delete('/api/users');
-      expect(res.status()).toBe(405);
-
-      const body = await res.json();
-      expect(body.error).toBe('Method not allowed');
-    });
-
-    test('PUT /api/users returns 405', async ({ request }) => {
-      const res = await request.put('/api/users', { data: { name: 'test' } });
-      expect(res.status()).toBe(405);
-
-      const body = await res.json();
-      expect(body.error).toBe('Method not allowed');
-    });
-
-    test('PUT /api/users/:id returns 405', async ({ request }) => {
-      const res = await request.put(`/api/users/${GRACE_ID}`, { data: { name: 'test' } });
       expect(res.status()).toBe(405);
 
       const body = await res.json();
@@ -102,9 +78,65 @@ test.describe('User API', () => {
     });
   });
 
+ // ──────────────────────────────────────────────────────────────────
+  // Scenario: Write endpoints require admin permission. The dev server runs
+  // e2e with SKIP_AUTH, so a missing x-user-id resolves to no actor and write
+  // attempts return 403. Grace (GRACE_ID) is seeded as an admin.
   // ──────────────────────────────────────────────────────────────────
-  // Scenario: Existing API endpoints still work after adding user routes
+
+  test.describe('Write permission gating', () => {
+    test('POST /api/users without an admin actor returns 403', async ({ request }) => {
+      const res = await request.post('/api/users', { data: { name: 'test', email: 'test@example.com' } });
+      expect(res.status()).toBe(403);
+
+      const body = await res.json();
+      expect(body.error).toBe('Admin access required');
+    });
+
+    test('PATCH /api/users/:id without an admin actor returns 403', async ({ request }) => {
+      const res = await request.patch(`/api/users/${GRACE_ID}`, { data: { name: 'test' } });
+      expect(res.status()).toBe(403);
+
+      const body = await res.json();
+      expect(body.error).toBe('Admin access required');
+    });
+
+    test('POST /api/users with an admin actor creates a user', async ({ request }) => {
+      const res = await request.post('/api/users', {
+        data: { name: 'E2E Created', email: 'e2e-created@datatalks.club', role: 'operator' },
+        headers: { 'x-user-id': GRACE_ID },
+      });
+      expect(res.status()).toBe(201);
+
+      const body = await res.json();
+      expect(body.user.name).toBe('E2E Created');
+      expect(body.user.role).toBe('operator');
+      expect(body.user.passwordHash).toBeUndefined();
+    });
+
+    test('PATCH /api/users/:id with an admin actor edits the user', async ({ request }) => {
+      const createRes = await request.post('/api/users', {
+        data: { name: 'Patch E2E', email: 'patch-e2e@datatalks.club', role: 'operator' },
+        headers: { 'x-user-id': GRACE_ID },
+      });
+      expect(createRes.status()).toBe(201);
+      const { user } = await createRes.json();
+
+      const res = await request.patch(`/api/users/${user.id}`, {
+        data: { name: 'Patched', disabled: true },
+        headers: { 'x-user-id': GRACE_ID },
+      });
+      expect(res.status()).toBe(200);
+
+      const body = await res.json();
+      expect(body.user.name).toBe('Patched');
+      expect(body.user.disabled).toBe(true);
+    });
+  });
+
   // ──────────────────────────────────────────────────────────────────
+ // Scenario: Existing API endpoints still work after adding user routes
+ // ──────────────────────────────────────────────────────────────────
 
   test.describe('Existing routes still work', () => {
     test('GET /api/health returns 200 with status ok', async ({ request }) => {
