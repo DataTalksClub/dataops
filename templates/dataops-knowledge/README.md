@@ -2,7 +2,7 @@
 
 This directory is a scaffold for the future private
 `DataTalksClub/dataops-knowledge` repository. It is not the live source for the
-DataOps portal, docs search, work-engine templates, or portal edit commits.
+DataOps portal, docs search, backend templates, or portal edit commits.
 
 For this migration slice, `content/` in public `DataTalksClub/dataops` remains
 transitional migration debt. The files here define the target private
@@ -17,7 +17,7 @@ issue explicitly scopes that migration.
 Validate the scaffold from the `dataops` repository root with:
 
 ```bash
-uv run --project lambda-functions --extra search python -m lambda_functions.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
+uv run --project tools/content_tools python -m content_tools.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
 ```
 
 Target top-level directories:

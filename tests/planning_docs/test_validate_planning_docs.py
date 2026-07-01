@@ -62,7 +62,7 @@ def test_task_template_metadata_requires_unified_platform_fields(tmp_path):
 title: "Newsletter"
 doc_type: template
 schema_version: 1
-source: "work-engine/scripts/seed-templates.ts"
+source: "backend/scripts/seed-templates.ts"
 systems:
   - dataops
 tags:
@@ -89,7 +89,7 @@ def test_task_template_accepts_richer_operator_workflow_table(tmp_path):
 title: "Newsletter"
 doc_type: task-template
 schema_version: 1
-source: "work-engine/scripts/seed-templates.ts"
+source: "backend/scripts/seed-templates.ts"
 systems:
   - dataops
   - datatasks

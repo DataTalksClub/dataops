@@ -15,15 +15,17 @@ on:
       - "PORTAL_ANALYSIS.md"
       - "README.md"
       - "scripts/validate_planning_docs.py"
+      - "tools/content_tools/content_tools/doc_registry.py"
+      - "tools/content_tools/content_tools/validate_docs_links.py"
+      - "tools/content_tools/content_tools/validate_knowledge_repo.py"
       - "tests/planning_docs/**"
-      - "tests/docs_app/**"
-      - "lambda-functions/src/lambda_functions/doc_registry.py"
-      - "lambda-functions/src/lambda_functions/build_search_index.py"
-      - "lambda-functions/src/lambda_functions/docs_index.py"
-      - "lambda-functions/src/lambda_functions/sop_parse.py"
-      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
-      - "work-engine/src/docs/sop/**"
-      - "work-engine/scripts/sop.ts"
+      - "tests/infra/**"
+      - "infra/template.full.yaml"
+      - "infra/template.github-actions-dataops.yaml"
+      - "infra/template.github-actions.yaml"
+      - ".github/workflows/deploy-dataops-v1.yml"
+      - "backend/src/docs/sop/**"
+      - "backend/scripts/sop.ts"
       - "Makefile"
   pull_request:
     paths:
@@ -37,15 +39,17 @@ on:
       - "PORTAL_ANALYSIS.md"
       - "README.md"
       - "scripts/validate_planning_docs.py"
+      - "tools/content_tools/content_tools/doc_registry.py"
+      - "tools/content_tools/content_tools/validate_docs_links.py"
+      - "tools/content_tools/content_tools/validate_knowledge_repo.py"
       - "tests/planning_docs/**"
-      - "tests/docs_app/**"
-      - "lambda-functions/src/lambda_functions/doc_registry.py"
-      - "lambda-functions/src/lambda_functions/build_search_index.py"
-      - "lambda-functions/src/lambda_functions/docs_index.py"
-      - "lambda-functions/src/lambda_functions/sop_parse.py"
-      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
-      - "work-engine/src/docs/sop/**"
-      - "work-engine/scripts/sop.ts"
+      - "tests/infra/**"
+      - "infra/template.full.yaml"
+      - "infra/template.github-actions-dataops.yaml"
+      - "infra/template.github-actions.yaml"
+      - ".github/workflows/deploy-dataops-v1.yml"
+      - "backend/src/docs/sop/**"
+      - "backend/scripts/sop.ts"
       - "Makefile"
   workflow_dispatch:
 
@@ -85,12 +89,11 @@ jobs:
       - name: Run planning docs validation
         run: uv run --with pytest python -m pytest tests/planning_docs
 
-      - name: Run docs metadata and registry tests
-        run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
+      - name: Run infra template validation
+        run: uv run --with pytest python -m pytest tests/infra
 
       - name: Validate dataops-knowledge migration scaffold
-        run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
+        run: uv run --project tools/content_tools python -m content_tools.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
 
-      - name: Build content search index
-        working-directory: lambda-functions
-        run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output ../.tmp/dataops-content-search.index
+      - name: Validate docs links and workflow doc IDs
+        run: uv run --project tools/content_tools python -m content_tools.validate_docs_links --repo-root . --content-root content
