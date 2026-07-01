@@ -47,6 +47,11 @@ Parameters:
     Type: Number
     Default: 0
 
+
+  WorkEngineTypefullyApiTokenSecretArn:
+    Type: String
+    Description: ARN of the pre-created Typefully API token secret (created out-of-band via aws cli)
+    Default: arn:aws:secretsmanager:eu-west-1:817685572750:secret:dataops-v1/work-engine/typefully-api-token-3j9k3Q
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -527,23 +532,6 @@ Resources:
         - Key: DataClass
           Value: PortalBrokerSecret
 
-  WorkEngineTypefullyApiTokenSecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Name: !Ref TypefullyApiTokenSecretName
-      Description: Typefully API bearer token used by the work engine to create saved drafts only
-      SecretString: !Ref TypefullyApiToken
-      Tags:
-        - Key: Project
-          Value: DataOps
-        - Key: App
-          Value: DataOpsV1
-        - Key: DataClass
-          Value: IntegrationCredential
-
-
   BackendFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -587,7 +575,7 @@ Resources:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BasicAuthPasswordSecretName}-*
               - !Ref WorkEnginePortalSecret
-              - !Ref WorkEngineTypefullyApiTokenSecret
+              - !Ref WorkEngineTypefullyApiTokenSecretArn
         - Statement:
             Effect: Allow
             Action:
@@ -619,7 +607,7 @@ Resources:
           DATAOPS_DOCS_DOMAIN: "1"
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
-          TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecret
+          TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecretArn
           TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
           TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
       FunctionUrlConfig:
