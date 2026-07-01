@@ -13,11 +13,8 @@ on:
       - "PROJECT_PLAN.md"
       - "PORTAL_ANALYSIS.md"
       - "README.md"
-      - "work-engine/scripts/seed-templates.ts"
-      - "lambda-functions/src/lambda_functions/doc_registry.py"
-      - "lambda-functions/src/lambda_functions/validate_docs_links.py"
-      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
-      - "tests/docs_app/**"
+      - "backend/scripts/seed-templates.ts"
+      - "tools/content_tools/**"
       - ".github/workflows/validate-dataops-content.yml"
   pull_request:
     paths:
@@ -29,11 +26,8 @@ on:
       - "PROJECT_PLAN.md"
       - "PORTAL_ANALYSIS.md"
       - "README.md"
-      - "work-engine/scripts/seed-templates.ts"
-      - "lambda-functions/src/lambda_functions/doc_registry.py"
-      - "lambda-functions/src/lambda_functions/validate_docs_links.py"
-      - "lambda-functions/src/lambda_functions/validate_knowledge_repo.py"
-      - "tests/docs_app/**"
+      - "backend/scripts/seed-templates.ts"
+      - "tools/content_tools/**"
       - ".github/workflows/validate-dataops-content.yml"
   workflow_dispatch:
 
@@ -51,9 +45,6 @@ jobs:
   validate-content:
     name: Validate operation docs content
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: lambda-functions
 
     steps:
       - name: Check out repository
@@ -67,33 +58,43 @@ jobs:
       - name: Install Python
         run: uv python install
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
       - name: Validate docs links and workflow doc IDs
-        working-directory: .
-        run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_docs_links --repo-root . --content-root content
+        run: uv run --project tools/content_tools python -m content_tools.validate_docs_links --repo-root . --content-root content
 
       - name: Validate dataops-knowledge migration scaffold
-        working-directory: .
-        run: uv run --project lambda-functions --extra search python -m lambda_functions.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
+        run: uv run --project tools/content_tools python -m content_tools.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
+
+      - name: Install Node workspace dependencies
+        run: npm ci
 
       - name: Build search index
-        run: uv run --extra search python -m lambda_functions.build_search_index --docs-dir ../content --output /tmp/dataops-content-search.index
+        run: |
+          mkdir -p .tmp
+          npm --prefix backend run build:search-index -- --content-dir ../content --output ../.tmp/dataops-content-search.index
 
       - name: Smoke test built index
         run: |
-          SEARCH_INDEX_PATH=/tmp/dataops-content-search.index uv run --extra search python - <<'PY'
-          import json
-          from lambda_functions.search_handler import handler
-
-          result = handler({"queryStringParameters": {"q": "invoice", "limit": "1"}}, None)
-          assert result["statusCode"] == 200, result
-          body = json.loads(result["body"])
-          assert "results" in body, body
-          PY
+          node --import tsx -e "
+            import { createSearchIndex } from './backend/src/docs/searchIndex';
+            const idx = createSearchIndex();
+            await idx.load('.tmp/dataops-content-search.index');
+            const results = idx.search('invoice', { numResults: 1 });
+            if (!results.length) { console.error('No search results for invoice'); process.exit(1); }
+            const first = results[0];
+            if (!first.id || !first.path || !first.title) { console.error('Bad result shape', first); process.exit(1); }
+            console.log('Search smoke OK:', first.title);
+          "
 
       - name: Check whether content changed
         if: github.event_name == 'push'
         id: content-changes
-        working-directory: .
         run: |
           if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -q '^content/'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -116,7 +117,7 @@ jobs:
           function_name="$(
             aws cloudformation describe-stack-resource \
               --stack-name "$FULL_DOCS_STACK_NAME" \
-              --logical-resource-id DocsFullAppFunction \
+              --logical-resource-id BackendFunction \
               --region "$AWS_REGION" \
               --query 'StackResourceDetail.PhysicalResourceId' \
               --output text
@@ -131,7 +132,7 @@ jobs:
             --payload file:///tmp/dataops-refresh-event.json \
             /tmp/dataops-refresh-response.json
 
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           from pathlib import Path
 

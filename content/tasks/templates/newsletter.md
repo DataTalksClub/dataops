@@ -5,7 +5,7 @@ title: "Newsletter Task Template"
 summary: "Git-backed DataTasks template for the Newsletter operational workflow."
 doc_type: task-template
 schema_version: 1
-source: "work-engine/scripts/seed-templates.ts"
+source: "backend/scripts/seed-templates.ts"
 systems:
   - dataops
   - datatasks

@@ -56,25 +56,32 @@ Transition rule:
 
 ### Backend
 
-Use Python as the long-term portal backend.
+**Superseded** -- TypeScript is the consolidated backend. The analysis below
+was the original merge-period direction; it was reversed in favor of one
+TypeScript backend (see `_docs/TARGET_ARCHITECTURE.md` for the decision and
+rationale). The Python docs/SOP/search backend has been retired; its
+content-validation tooling lives in `tools/content_tools/`.
 
-Reasons:
+Original direction (historical context):
 
-- `dtc-operations` already uses a Python Lambda backend for docs, search, lint,
-  GitHub-backed content editing, and image handling.
-- `podcast-assistant` is Python.
-- Process-doc parsing and linting are already Python.
-- Python is a better fit for assistant jobs, document parsing, transcription,
+- Use Python as the long-term portal backend.
+- The `dtc-operations` docs Lambda, `podcast-assistant`, and process-doc
+  parsing/linting are already Python.
+- Python was a better fit for assistant jobs, document parsing, transcription,
   and background processing.
 
-Keep the DataTasks TypeScript backend as `work-engine/` during the first merge.
-Expose its concepts through integration code before rewriting them.
+Why this was reversed:
 
-Long-term options:
+- The work engine (the larger, stateful, actively-developed core) is TypeScript.
+- The Python backend's only runtime third-party deps were `minsearch` and
+  `python-frontmatter`, both with drop-in Node equivalents.
+- `minsearch` pulled in `scikit-learn` + `numpy` + `scipy` + `pandas` -- the
+  single largest contributor to Lambda package size and cold-start latency.
+- Replacing it with `zerosearch-node` (zero-dependency BM25-lite) both removes
+  the heavy scientific-Python stack and gives the lighter Lambda.
 
-- Move task execution into the Python backend after the models are stable.
-- Keep a small TypeScript service only if it provides a real operational
-  advantage.
+Current state: `backend/` is the single TypeScript backend. The only remaining
+Python is the podcast assistant worker and the content-validation CI tools.
 
 ### Frontend
 
@@ -101,7 +108,11 @@ Use separate stores for separate truth:
 
 ### Search
 
-Start with the existing `minsearch` index for process docs.
+**Superseded** -- search now uses `zerosearch-node` (zero-dependency
+BM25-lite). The original `minsearch` (TF-IDF via scikit-learn) has been
+retired; see `_docs/TARGET_ARCHITECTURE.md`.
+
+Original direction (historical context):
 
 Then add indexed records for:
 

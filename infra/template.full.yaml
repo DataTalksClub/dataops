@@ -1,0 +1,706 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: DataTalksClub DataOps v1 protected Lambda app
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: DataTalksClub
+  GitHubRepo:
+    Type: String
+    Default: dataops
+  GitHubBranch:
+    Type: String
+    Default: main
+  GitHubTokenSecretName:
+    Type: String
+    Default: dataops-v1/full-app/github-token
+  BasicAuthUsername:
+    Type: String
+    Default: admin
+  BasicAuthPasswordSecretName:
+    Type: String
+    Default: dataops-v1/full-app/basic-auth-password
+  DataOpsEnvironment:
+    Type: String
+    Default: prod
+    AllowedPattern: "^[a-zA-Z0-9_.-]+$"
+  ExportArchivePrefix:
+    Type: String
+    Default: execution-exports
+    AllowedPattern: "^[a-zA-Z0-9_.\\/-]+$"
+  ExportArchiveRetentionDays:
+    Type: Number
+    Default: 365
+    MinValue: 90
+  TypefullyApiTokenSecretName:
+    Type: String
+    Default: dataops-v1/work-engine/typefully-api-token
+  TypefullyApiToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TypefullySocialSetAlexey:
+    Type: Number
+    Default: 0
+  TypefullySocialSetDataTalksClub:
+    Type: Number
+    Default: 0
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Timeout: 60
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+
+Resources:
+  DataOpsTasksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-tasks
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: bundleId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Date
+          KeySchema:
+            - AttributeName: date
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-Bundle
+          KeySchema:
+            - AttributeName: bundleId
+              KeyType: HASH
+            - AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-Status
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsBundlesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-bundles
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsTemplatesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-templates
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsUsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-users
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsFilesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-files
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: taskId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Task
+          KeySchema:
+            - AttributeName: taskId
+              KeyType: HASH
+            - AttributeName: SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsArtifactsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-artifacts
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsAssistantJobsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-assistant-jobs
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsAuditEventsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-audit-events
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsIntakeTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-intake
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: updatedAt
+          AttributeType: S
+        - AttributeName: sourceMessageKey
+          AttributeType: S
+        - AttributeName: ownerStatusKey
+          AttributeType: S
+        - AttributeName: assigneeStatusKey
+          AttributeType: S
+        - AttributeName: assistantStatusKey
+          AttributeType: S
+        - AttributeName: followUpAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Status
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-SourceMessage
+          KeySchema:
+            - AttributeName: sourceMessageKey
+              KeyType: HASH
+            - AttributeName: SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-OwnerStatus
+          KeySchema:
+            - AttributeName: ownerStatusKey
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-AssigneeStatus
+          KeySchema:
+            - AttributeName: assigneeStatusKey
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-AssistantStatus
+          KeySchema:
+            - AttributeName: assistantStatusKey
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GSI-FollowUp
+          KeySchema:
+            - AttributeName: followUpAt
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsNotificationsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-notifications
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionState
+
+  DataOpsSessionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-sessions
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: SessionState
+
+  DataOpsExportArchiveBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainPortableExecutionExports
+            Status: Enabled
+            Prefix: !Sub ${ExportArchivePrefix}/
+            NoncurrentVersionExpirationInDays: !Ref ExportArchiveRetentionDays
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: ExecutionExportArchive
+        - Key: BackupSelection
+          Value: DataOpsV1ExecutionExports
+
+  WorkEnginePortalSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub ${AWS::StackName}/work-engine/portal-secret
+      GenerateSecretString:
+        PasswordLength: 48
+        ExcludePunctuation: true
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: PortalBrokerSecret
+
+  WorkEngineTypefullyApiTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Ref TypefullyApiTokenSecretName
+      Description: Typefully API bearer token used by the work engine to create saved drafts only
+      SecretString: !Ref TypefullyApiToken
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: IntegrationCredential
+
+
+  BackendFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: ..
+      Runtime: nodejs24.x
+      Handler: dist/handler.handler
+      Timeout: 30
+      MemorySize: 1024
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:DeleteItem
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:UpdateItem
+            Resource:
+              - !GetAtt DataOpsTasksTable.Arn
+              - !Sub ${DataOpsTasksTable.Arn}/index/*
+              - !GetAtt DataOpsBundlesTable.Arn
+              - !GetAtt DataOpsTemplatesTable.Arn
+              - !GetAtt DataOpsUsersTable.Arn
+              - !GetAtt DataOpsFilesTable.Arn
+              - !Sub ${DataOpsFilesTable.Arn}/index/*
+              - !GetAtt DataOpsArtifactsTable.Arn
+              - !GetAtt DataOpsAssistantJobsTable.Arn
+              - !GetAtt DataOpsAuditEventsTable.Arn
+              - !GetAtt DataOpsIntakeTable.Arn
+              - !Sub ${DataOpsIntakeTable.Arn}/index/*
+              - !GetAtt DataOpsNotificationsTable.Arn
+              - !GetAtt DataOpsSessionsTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BasicAuthPasswordSecretName}-*
+              - !Ref WorkEnginePortalSecret
+              - !Ref WorkEngineTypefullyApiTokenSecret
+        - Statement:
+            Effect: Allow
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub ${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*
+      Environment:
+        Variables:
+          DATAOPS_ENV: !Ref DataOpsEnvironment
+          DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable
+          DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable
+          DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable
+          DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
+          DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable
+          DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable
+          DATAOPS_ASSISTANT_JOBS_TABLE: !Ref DataOpsAssistantJobsTable
+          DATAOPS_AUDIT_EVENTS_TABLE: !Ref DataOpsAuditEventsTable
+          DATAOPS_INTAKE_TABLE: !Ref DataOpsIntakeTable
+          DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
+          DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
+          DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
+          DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
+          GITHUB_OWNER: !Ref GitHubOwner
+          GITHUB_REPO: !Ref GitHubRepo
+          GITHUB_BRANCH: !Ref GitHubBranch
+          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
+          BASIC_AUTH_USERNAME: !Ref BasicAuthUsername
+          BASIC_AUTH_PASSWORD_SECRET_NAME: !Ref BasicAuthPasswordSecretName
+          DATAOPS_DOCS_DOMAIN: "1"
+          WORK_ENGINE_AUTH_MODE: portal
+          WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
+          TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecret
+          TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
+          TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowCredentials: false
+          AllowHeaders:
+            - authorization
+            - content-type
+            - x-user-email
+          AllowMethods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+          AllowOrigins:
+            - "*"
+      Events:
+        DailyBackendCron:
+          Type: Schedule
+          Properties:
+            Description: Run DataOps recurring task and automatic template generation once per day.
+            Schedule: cron(0 8 * * ? *)
+            Enabled: true
+        DailyBackendExport:
+          Type: Schedule
+          Properties:
+            Description: Export DataOps execution data to the retained offsite archive bucket once per day.
+            Schedule: cron(30 8 * * ? *)
+            Enabled: true
+            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}'
+
+Outputs:
+  BackendUrl:
+    Description: Protected DataOps v1 Lambda Function URL
+    Value: !GetAtt BackendFunctionUrl.FunctionUrl
+  DataOpsTasksTableName:
+    Description: DynamoDB table for task and recurring execution state
+    Value: !Ref DataOpsTasksTable
+  DataOpsBundlesTableName:
+    Description: DynamoDB table for workflow bundles
+    Value: !Ref DataOpsBundlesTable
+  DataOpsTemplatesTableName:
+    Description: DynamoDB table for runtime template projections
+    Value: !Ref DataOpsTemplatesTable
+  DataOpsUsersTableName:
+    Description: DynamoDB table for operator identities
+    Value: !Ref DataOpsUsersTable
+  DataOpsFilesTableName:
+    Description: DynamoDB table for file metadata
+    Value: !Ref DataOpsFilesTable
+  DataOpsArtifactsTableName:
+    Description: DynamoDB table for artifact metadata
+    Value: !Ref DataOpsArtifactsTable
+  DataOpsAssistantJobsTableName:
+    Description: DynamoDB table for assistant job metadata
+    Value: !Ref DataOpsAssistantJobsTable
+  DataOpsAuditEventsTableName:
+    Description: DynamoDB table for assistant job and workflow audit events
+    Value: !Ref DataOpsAuditEventsTable
+  DataOpsIntakeTableName:
+    Description: DynamoDB table for raw operational intake metadata
+    Value: !Ref DataOpsIntakeTable
+  DataOpsNotificationsTableName:
+    Description: DynamoDB table for reminders and notifications
+    Value: !Ref DataOpsNotificationsTable
+  DataOpsSessionsTableName:
+    Description: DynamoDB table for session state
+    Value: !Ref DataOpsSessionsTable
+  DataOpsExportArchiveBucketName:
+    Description: Retained S3 bucket for portable execution export archives
+    Value: !Ref DataOpsExportArchiveBucket
+  DataOpsExportArchivePrefix:
+    Description: Prefix used for portable execution export archives
+    Value: !Ref ExportArchivePrefix
+  BackendFunctionName:
+    Description: DataOps single backend Lambda function
+    Value: !Ref BackendFunction
+  WorkEnginePortalSecretName:
+    Description: Secret shared by the portal broker and private work engine
+    Value: !Ref WorkEnginePortalSecret
+  WorkEngineTypefullyApiTokenSecretName:
+    Description: Typefully API token secret consumed by the work engine for saved-draft creation
+    Value: !Ref TypefullyApiTokenSecretName

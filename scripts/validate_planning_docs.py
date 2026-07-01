@@ -9,11 +9,11 @@ from urllib.parse import unquote
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LAMBDA_SRC = REPO_ROOT / "lambda-functions" / "src"
-if str(LAMBDA_SRC) not in sys.path:
-    sys.path.insert(0, str(LAMBDA_SRC))
+CONTENT_TOOLS_SRC = REPO_ROOT / "tools" / "content_tools"
+if str(CONTENT_TOOLS_SRC) not in sys.path:
+    sys.path.insert(0, str(CONTENT_TOOLS_SRC))
 
-from lambda_functions import doc_registry, sop_parse  # noqa: E402
+from content_tools import doc_registry, sop_parse  # noqa: E402
 
 
 PROTECTED_MARKDOWN_GLOBS = [
@@ -40,10 +40,9 @@ REQUIRED_WORKFLOW_PATHS = [
     "README.md",
     "scripts/validate_planning_docs.py",
     "tests/planning_docs/**",
-    "tests/docs_app/**",
-    "lambda-functions/src/lambda_functions/doc_registry.py",
-    "lambda-functions/src/lambda_functions/build_search_index.py",
-    "lambda-functions/src/lambda_functions/validate_knowledge_repo.py",
+    "tools/content_tools/content_tools/doc_registry.py",
+    "tools/content_tools/content_tools/validate_docs_links.py",
+    "tools/content_tools/content_tools/validate_knowledge_repo.py",
 ]
 TASK_TEMPLATE_SECTIONS = [
     "summary",
@@ -224,11 +223,11 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
     refs = _code_refs_after_heading(text, "## Source Material Used")
     violations: list[str] = []
     required = {
-        "work-engine/docs/specs.md",
-        "work-engine/docs/data.md",
-        "work-engine/docs/templates.md",
-        "work-engine/src/types.ts",
-        "work-engine/src/public/app.js",
+        "backend/docs/specs.md",
+        "backend/docs/data.md",
+        "backend/docs/templates.md",
+        "backend/src/types.ts",
+        "backend/src/public/app.js",
         "content/tasks/templates/*.md",
         "assistants/podcast/README.md",
         "assistants/podcast/process/podcast.md",
@@ -299,8 +298,8 @@ def validate_task_templates(repo_root: Path) -> list[str]:
             violations.append(f"{repo_path}: doc_type must be task-template")
         if str(metadata.get("schema_version")) != "1":
             violations.append(f"{repo_path}: schema_version must be 1")
-        if metadata.get("source") != "work-engine/scripts/seed-templates.ts":
-            violations.append(f"{repo_path}: source must stay linked to work-engine/scripts/seed-templates.ts")
+        if metadata.get("source") != "backend/scripts/seed-templates.ts":
+            violations.append(f"{repo_path}: source must stay linked to backend/scripts/seed-templates.ts")
         systems = set(_strings(metadata.get("systems")))
         if not TASK_TEMPLATE_SYSTEMS.issubset(systems):
             violations.append(f"{repo_path}: systems must include dataops and datatasks")
@@ -327,8 +326,8 @@ def validate_workflow(repo_root: Path) -> list[str]:
         "permissions:",
         "contents: read",
         "uv run --with pytest python -m pytest tests/planning_docs",
-        "uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app",
-        "python -m lambda_functions.build_search_index",
+        "uv run --with pytest python -m pytest tests/infra",
+        "python -m content_tools.validate_docs_links",
     ]
     for snippet in required_snippets:
         if snippet not in text:

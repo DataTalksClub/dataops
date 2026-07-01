@@ -1,0 +1,18 @@
+FROM node:20 AS builder
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN mkdir -p backend
+COPY backend/package.json ./backend/package.json
+RUN npm ci
+COPY backend/tsconfig.json ./backend/tsconfig.json
+COPY backend/src/ ./backend/src/
+WORKDIR /build/backend
+RUN npm run build
+
+FROM public.ecr.aws/lambda/nodejs:20
+COPY --from=builder /build/backend/dist/ ${LAMBDA_TASK_ROOT}/dist/
+COPY package.json package-lock.json ${LAMBDA_TASK_ROOT}/
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/backend
+COPY backend/package.json ${LAMBDA_TASK_ROOT}/backend/package.json
+RUN npm ci --omit=dev --workspace dataops-backend
+CMD ["dist/handler.handler"]

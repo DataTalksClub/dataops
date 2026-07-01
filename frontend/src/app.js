@@ -3687,7 +3687,7 @@ async function openQuickWorkflowForm(options = {}) {
   form.append(selectLabel, titleInput.label, anchorInput.label, createBtn);
   overlay.querySelector(".quick-form-body").append(form);
 
-  // Fetch live templates from the work-engine API (UUIDs, not doc slugs)
+  // Fetch live templates from the backend API (UUIDs, not doc slugs)
   let liveTemplates = [];
   try {
     const payload = await request(workApiUrl("/api/templates"));
@@ -4333,7 +4333,7 @@ function workTaskTitle(task) {
 // Strips a leaked Trello shortLink token (e.g. "p3by19", "qVB6fAUG") from the
 // end of a task title before display. The token is data-layer noise from a
 // legacy Trello import, not a deliberate run id (see issue #91). Kept in sync
-// with the work-engine scrubber in work-engine/scripts/scrub-task-titles.ts.
+// with the backend scrubber in backend/scripts/scrub-task-titles.ts.
 //
 // Safety: the leaked token is a short alphanumeric id that mixes letters and
 // digits (Trello shortLink shape). Legitimate trailing words are either

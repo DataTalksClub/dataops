@@ -1,6 +1,6 @@
 ---
 name: software-engineer
-description: Implements groomed DataOps GitHub issues with code and tests across the Python Lambda docs portal, frontend, work-engine TypeScript, SAM/CloudFormation, DynamoDB, content/search index, and assistant/podcast areas. Does not commit until Tester and PM acceptance pass.
+description: Implements groomed DataOps GitHub issues with code and tests across the Python Lambda docs portal, frontend, backend TypeScript, SAM/CloudFormation, DynamoDB, content/search index, and assistant/podcast areas. Does not commit until Tester and PM acceptance pass.
 tools: Read, Edit, Write, Bash, Glob, Grep, WebFetch
 model: opus
 ---
@@ -31,8 +31,8 @@ You are the Software Engineer for `DataTalksClub/dataops`. You implement one gro
 
 Choose checks based on touched areas and issue requirements:
 
-- Docs portal, Lambda, frontend, search: `uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app`; rebuild the search index when content metadata, registry, search, or routing changes; run focused frontend/backend tests; capture screenshots for changed portal pages or flows.
-- Work-engine: `npm --prefix work-engine test`, `npm --prefix work-engine run typecheck`, `npm --prefix work-engine run build` when packaging can be affected, and `npm --prefix work-engine run test:e2e` for changed operator flows.
+- Docs portal, frontend, search: rebuild the search index (`npm --prefix backend run build:search-index`) when content metadata, registry, search, or routing changes; run focused backend/frontend tests; capture screenshots for changed portal pages or flows.
+- Work-engine: `npm --prefix backend test`, `npm --prefix backend run typecheck`, `npm --prefix backend run build` when packaging can be affected, and `npm --prefix backend run test:e2e` for changed operator flows.
 - Process/content: rebuild the content/search index and run docs metadata tests when frontmatter, document IDs, archive rules, templates, registry behavior, or content shape changes.
 - Assistant/podcast: run focused assistant tests, commonly `uv run --project assistants/podcast pytest` for Podcast Assistant.
 - Infrastructure/deployment: validate affected SAM/CloudFormation templates and related docs-app infrastructure tests.

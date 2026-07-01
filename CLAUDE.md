@@ -22,18 +22,20 @@ PM groom -> implement -> tester verify -> PM accept -> commit -> merge -> push -
 
 ## Current Stage
 
-The project is in the merge-planning and import stage.
+The project is in the consolidation stage. Source systems have been merged into
+a single TypeScript backend. See `_docs/TARGET_ARCHITECTURE.md`.
 
-The first implementation objective is to import the source systems while keeping
-them runnable. The first end-to-end product slice is Podcast.
+The single `backend/` package serves the frontend, docs content API, search,
+and work APIs from one TypeScript Lambda. The Python docs/SOP backend has been
+retired; its content-validation tooling lives in `tools/content_tools/`.
 
 ## Technology Direction
 
-- Long-term backend: Python
+- Backend: TypeScript (single `backend/` package — supersedes the earlier
+  "Long-term backend: Python" direction; see `_docs/MERGE_PLAN.md`)
+- Search: `zerosearch-node` (BM25-lite, zero-dependency; supersedes `minsearch`)
 - First frontend shell: existing `dtc-operations` vanilla JavaScript frontend
 - Execution state: DynamoDB
 - Process docs: GitHub markdown
-- Search: existing `minsearch` path first
-- Python package management: `uv`
 - TypeScript transition package management: `npm`
-
+- Python tooling (content validation, podcast assistant): `uv`
