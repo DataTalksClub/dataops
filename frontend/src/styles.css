@@ -5095,3 +5095,132 @@ body[data-view="create"] #back-button {
     max-height: 4in;
   }
 }
+
+/* Users management surface (#95) */
+.ops-users-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.ops-users-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--do-color-control);
+}
+
+.ops-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--do-text-sm);
+}
+
+.ops-users-table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: var(--do-border);
+  white-space: nowrap;
+}
+
+.ops-users-table tbody td {
+  padding: 10px 12px;
+  border-bottom: var(--do-border);
+  vertical-align: middle;
+}
+
+.ops-users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ops-user-row.is-disabled {
+  opacity: 0.6;
+}
+
+.ops-user-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.ops-user-badge {
+  font-size: var(--do-text-xs, 11px);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  border: var(--do-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.ops-user-email {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ops-user-role {
+  white-space: nowrap;
+}
+
+.ops-user-created {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ops-user-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ops-user-actions .quiet-button {
+  margin-left: 6px;
+}
+
+.ops-user-form-panel {
+  display: grid;
+  gap: 14px;
+  max-width: 460px;
+}
+
+.ops-user-form {
+  display: grid;
+  gap: 12px;
+}
+
+.ops-field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--do-text-sm);
+  color: var(--muted);
+}
+
+.ops-field input,
+.ops-field select {
+  padding: 7px 9px;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--do-color-control);
+  color: var(--text);
+ font-size: var(--do-text-md);
+}
+
+.ops-user-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ops-user-form-result {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: var(--do-text-sm);
+}
+
+.ops-user-form-result.ops-error {
+  color: var(--do-color-danger, #c0392b);
+}
