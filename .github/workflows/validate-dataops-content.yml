@@ -81,10 +81,10 @@ jobs:
 
       - name: Smoke test built index
         run: |
-          node --import tsx -e "
-            import { createSearchIndex } from './backend/src/docs/searchIndex';
+          cd backend && node --import tsx -e "
+            import { createSearchIndex } from './src/docs/searchIndex';
             const idx = createSearchIndex();
-            await idx.load('.tmp/dataops-content-search.index');
+            await idx.load('../.tmp/dataops-content-search.index');
             const results = idx.search('invoice', { numResults: 1 });
             if (!results.length) { console.error('No search results for invoice'); process.exit(1); }
             const first = results[0];
