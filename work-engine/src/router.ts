@@ -1214,10 +1214,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // ── User routes ──────────────────────────────────────────────
 
-    if (reqPath.startsWith('/api/users')) {
-      const result = await handleUserRoutes(reqPath, method, event.body || null);
+   if (reqPath.startsWith('/api/users')) {
+      const result = await handleUserRoutes(reqPath, method, event.body || null, event);
       if (result) return result;
-    }
+   }
 
     // ── Notification routes ─────────────────────────────────────
 
