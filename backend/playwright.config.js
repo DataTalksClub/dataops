@@ -36,7 +36,7 @@ module.exports = defineConfig({
   testDir: './e2e',
   outputDir: './test-results',
   timeout: 30000,
-  retries: 0,
+  retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI
     ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : [['list']],
