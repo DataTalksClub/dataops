@@ -1,54 +1,27 @@
+# Single-origin local portal: the consolidated TypeScript backend serves the
+# static frontend, docs content API, and work APIs from one process on port
+# 3000. For hot-reload dev use `make dev` instead; this compose is for running
+# the compiled artifact in a container.
 services:
-  frontend:
+  backend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: backend/Dockerfile.lambda
     working_dir: /app
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       FRONTEND_ROOT: /app/frontend
       CONTENT_ROOT: /app/repo/content
-      REPO_ROOT: /app/repo
-      API_UPSTREAM: http://lambda-functions:8787
-      DTC_GIT: "${DTC_GIT:-}"
+      DATAOPS_DOCS_DOMAIN: "1"
+      DTC_OFFLINE: "1"
+      SKIP_AUTH: "true"
+      PORT: "3000"
       HOME: /app/home
-      GIT_AUTHOR_NAME: "${GIT_AUTHOR_NAME:-}"
-      GIT_AUTHOR_EMAIL: "${GIT_AUTHOR_EMAIL:-}"
-      GIT_COMMITTER_NAME: "${GIT_COMMITTER_NAME:-}"
-      GIT_COMMITTER_EMAIL: "${GIT_COMMITTER_EMAIL:-}"
     volumes:
       - ./frontend:/app/frontend:ro
-      - .:/app/repo
-      - ./scripts/serve_frontend.py:/app/serve_frontend.py:ro
-      - ${HOME}/.ssh:/app/home/.ssh:ro
-      - ${HOME}/.gitconfig:/app/home/.gitconfig:ro
+      - ./content:/app/repo/content:ro
     ports:
-      - "5173:5173"
+      - "3000:3000"
     command:
-      - python
-      - /app/serve_frontend.py
-    depends_on:
-      lambda-functions:
-        condition: service_healthy
-
-  lambda-functions:
-    build:
-      context: ./lambda-functions
-    working_dir: /app/lambda-functions
-    user: "${UID:-1000}:${GID:-1000}"
-    environment:
-      CONTENT_ROOT: /app/content
-      SEARCH_INDEX_PATH: /tmp/search.index
-    volumes:
-      - ./content:/app/content
-    ports:
-      - "8787:8787"
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=2).read()"
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 15s
+      - node
+      - dist/scripts/dev-server.js

@@ -6,17 +6,14 @@ on:
       - main
     paths:
       - ".github/workflows/deploy-dataops-v1.yml"
+      - "backend/**"
       - "content/**"
       - "frontend/**"
-      - "lambda-functions/**"
-      - "scripts/**"
-      - "tests/docs_app/**"
-      - "work-engine/**"
+      - "infra/**"
       - "Makefile"
       - "package.json"
       - "package-lock.json"
-      - "pyproject.toml"
-      - "uv.lock"
+      - "samconfig.toml"
   workflow_dispatch:
 
 permissions:
@@ -44,12 +41,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-
-      - name: Install Python
-        run: uv python install
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -57,105 +48,34 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Run docs app tests
-        run: uv run --project lambda-functions --extra search --with pytest python -m pytest tests/docs_app
-
-      - name: Install docs Playwright Chromium
-        run: uv run --project lambda-functions --with playwright python -m playwright install --with-deps chromium
-
-      - name: Run browser-backed docs portal flow
-        run: uv run --project lambda-functions --extra search --with pytest --with playwright python -m pytest tests/docs_app/test_playwright_local_docs_flow.py
-
       - name: Install Node workspace dependencies
         run: npm ci
 
-      - name: Install work-engine Playwright Chromium
-        run: npm exec --workspace dataops-work-engine -- playwright install --with-deps chromium
+      - name: Install backend Playwright Chromium
+        run: npm exec --workspace dataops-backend -- playwright install --with-deps chromium
 
-      - name: Run work-engine tests
-        run: npm --prefix work-engine test
+      - name: Run backend tests
+        run: npm --prefix backend test
 
-      - name: Typecheck work-engine
-        run: npm --prefix work-engine run typecheck
+      - name: Typecheck backend
+        run: npm --prefix backend run typecheck
 
-      - name: Build work-engine
-        run: npm --prefix work-engine run build
+      - name: Build backend
+        run: npm --prefix backend run build
 
-      - name: Run work-engine Playwright E2E
-        run: npm --prefix work-engine run test:e2e
+      - name: Run backend Playwright E2E
+        run: npm --prefix backend run test:e2e
 
-      - name: Upload work-engine Playwright artifacts
+      - name: Upload backend Playwright artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: work-engine-playwright-artifacts
+          name: backend-playwright-artifacts
           path: |
-            work-engine/playwright-report/
-            work-engine/test-results/
+            backend/playwright-report/
+            backend/test-results/
           if-no-files-found: ignore
           retention-days: 7
-
-      - name: Build search index
-        working-directory: lambda-functions
-        run: |
-          mkdir -p ../.tmp
-          uv run --extra search python -m lambda_functions.build_search_index \
-            --docs-dir ../content \
-            --output ../.tmp/dataops-content-search.index
-
-      - name: Smoke test search handler against built index
-        working-directory: lambda-functions
-        env:
-          SEARCH_INDEX_PATH: ../.tmp/dataops-content-search.index
-        run: |
-          uv run --extra search python - <<'PY'
-          import json
-          from lambda_functions import search_handler
-
-          search_handler.reset_index()
-          response = search_handler.handler(
-              {
-                  "rawPath": "/search",
-                  "requestContext": {"http": {"method": "GET"}},
-                  "queryStringParameters": {"q": "workflow", "limit": "5"},
-              },
-              None,
-          )
-          assert response["statusCode"] == 200, response
-          body = json.loads(response["body"])
-          assert body["results"], body
-          first = body["results"][0]
-          assert first["id"] and first["path"] and first["title"], first
-          PY
-
-      - name: Smoke test full app handler
-        working-directory: lambda-functions
-        env:
-          BASIC_AUTH_PASSWORD: smoke-test-password
-          BASIC_AUTH_USERNAME: smoke-test-user
-        run: |
-          uv run --extra search python - <<'PY'
-          from lambda_functions.full_app_handler import handler
-
-          login = handler(
-              {
-                  "rawPath": "/login",
-                  "requestContext": {"http": {"method": "GET"}},
-              },
-              None,
-          )
-          assert login["statusCode"] == 200, login
-
-          protected = handler(
-              {
-                  "rawPath": "/",
-                  "requestContext": {"http": {"method": "GET"}},
-              },
-              None,
-          )
-          assert protected["statusCode"] == 302, protected
-          assert protected["headers"]["location"] == "/login", protected
-          PY
 
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
@@ -164,12 +84,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate SAM template
-        working-directory: lambda-functions
-        run: sam validate --template-file template.full.yaml
+        run: make sam-validate
 
       - name: Build SAM artifact
-        working-directory: lambda-functions
-        run: sam build --config-env full-sandbox
+        run: make sam-build
 
   deploy:
     name: Deploy DataOps v1 app
@@ -178,19 +96,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    defaults:
-      run:
-        working-directory: lambda-functions
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-
-      - name: Install Python
-        run: uv python install
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -201,7 +110,6 @@ jobs:
 
       - name: Install Node workspace dependencies
         run: npm ci
-        working-directory: ${{ github.workspace }}
 
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
@@ -217,7 +125,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Build SAM artifact
-        run: sam build --config-env full-sandbox
+        run: make sam-build
 
       - name: Deploy DataOps v1 stack
         run: |
@@ -230,7 +138,7 @@ jobs:
               "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"
 
       - name: Seed runtime users, workflow templates, and recurring configs
-        working-directory: ${{ github.workspace }}/work-engine
+        working-directory: ${{ github.workspace }}/backend
         run: |
           export DATAOPS_TASKS_TABLE="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
@@ -248,13 +156,13 @@ jobs:
           npm exec -- tsx scripts/seed-templates.ts
           npm exec -- tsx scripts/seed-recurring.ts
 
-      - name: Smoke test deployed docs full app
+      - name: Smoke test deployed single-origin backend
         run: |
-          docs_url="$(aws cloudformation describe-stacks \
+          backend_url="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
-            --query "Stacks[0].Outputs[?OutputKey=='DocsFullAppUrl'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" \
             --output text)"
-          python - "$docs_url" <<'PY'
+          python3 - "$backend_url" <<'PY'
           import sys
           from urllib.error import HTTPError
           from urllib.request import HTTPRedirectHandler, build_opener
@@ -282,7 +190,7 @@ jobs:
         run: |
           function_name="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
-            --query "Stacks[0].Outputs[?OutputKey=='WorkEngineFunctionName'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='BackendFunctionName'].OutputValue" \
             --output text)"
           portal_secret_name="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
@@ -292,12 +200,12 @@ jobs:
             --secret-id "$portal_secret_name" \
             --query SecretString \
             --output text)"
-          python - "$portal_secret" <<'PY'
+          python3 - "$portal_secret" <<'PY'
           import json
           import sys
           from pathlib import Path
 
-          Path("/tmp/work-engine-templates-payload.json").write_text(json.dumps({
+          Path("/tmp/backend-templates-payload.json").write_text(json.dumps({
               "httpMethod": "GET",
               "path": "/api/templates",
               "headers": {
@@ -308,13 +216,13 @@ jobs:
           PY
           aws lambda invoke \
             --function-name "$function_name" \
-            --payload fileb:///tmp/work-engine-templates-payload.json \
-            /tmp/work-engine-templates.json
-          python - <<'PY'
+            --payload fileb:///tmp/backend-templates-payload.json \
+            /tmp/backend-templates.json
+          python3 - <<'PY'
           import json
           from pathlib import Path
 
-          response = json.loads(Path("/tmp/work-engine-templates.json").read_text())
+          response = json.loads(Path("/tmp/backend-templates.json").read_text())
           assert response["statusCode"] == 200, response
           payload = json.loads(response["body"])
           templates = payload.get("templates") or []
@@ -323,22 +231,22 @@ jobs:
           assert any(template.get("type") == "newsletter" for template in templates), payload
           PY
 
-      - name: Smoke test private work engine Lambda
+      - name: Smoke test backend health
         run: |
           function_name="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
-            --query "Stacks[0].Outputs[?OutputKey=='WorkEngineFunctionName'].OutputValue" \
+            --query "Stacks[0].Outputs[?OutputKey=='BackendFunctionName'].OutputValue" \
             --output text)"
-          printf '%s' '{"httpMethod":"GET","path":"/api/health"}' > /tmp/work-engine-health-payload.json
+          printf '%s' '{"httpMethod":"GET","path":"/api/health"}' > /tmp/backend-health-payload.json
           aws lambda invoke \
             --function-name "$function_name" \
-            --payload fileb:///tmp/work-engine-health-payload.json \
-            /tmp/work-engine-health.json
-          python - <<'PY'
+            --payload fileb:///tmp/backend-health-payload.json \
+            /tmp/backend-health.json
+          python3 - <<'PY'
           import json
           from pathlib import Path
 
-          response = json.loads(Path("/tmp/work-engine-health.json").read_text())
+          response = json.loads(Path("/tmp/backend-health.json").read_text())
           assert response["statusCode"] == 200, response
           assert json.loads(response["body"]) == {"status": "ok"}, response
           PY

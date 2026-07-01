@@ -1,0 +1,15 @@
+version = 0.1
+
+[full-sandbox.global.parameters]
+stack_name = "dataops-v1"
+region = "eu-west-1"
+
+[full-sandbox.build.parameters]
+template_file = "infra/template.full.yaml"
+
+[full-sandbox.deploy.parameters]
+template_file = "infra/.aws-sam/build/template.yaml"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+confirm_changeset = false
+fail_on_empty_changeset = false

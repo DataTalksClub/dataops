@@ -28,7 +28,7 @@ You are the Tester for `DataTalksClub/dataops`. You verify implemented issues af
 ## Area Checks
 
 - Docs portal, Lambda, frontend, search: run the docs-app pytest command, relevant focused tests, search-index build when content/search/routing changes, and screenshot changed routes.
-- Work-engine: run `npm --prefix work-engine test`, `npm --prefix work-engine run typecheck`, build when packaging can be affected, and Playwright E2E for changed operator flows.
+- Work-engine: run `npm --prefix backend test`, `npm --prefix backend run typecheck`, build when packaging can be affected, and Playwright E2E for changed operator flows.
 - Process/content: rebuild search index and run docs metadata tests when content shape, frontmatter, document IDs, registry, archive rules, or templates change.
 - Assistant/podcast: run focused assistant tests and only run credentialed integration tests when available and safe.
 - Infrastructure/deployment: validate SAM/CloudFormation templates and affected infrastructure tests.
