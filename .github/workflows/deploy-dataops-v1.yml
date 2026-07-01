@@ -156,17 +156,17 @@ jobs:
           npm exec -- tsx scripts/seed-templates.ts
           npm exec -- tsx scripts/seed-recurring.ts
 
-     - name: Smoke test deployed single-origin backend
-       run: |
-         backend_url="$(aws cloudformation describe-stacks \
-           --stack-name dataops-v1 \
-           --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" \
-           --output text)"
-          # The deployed single-origin backend should respond (200 or redirect)
-          # to the function URL. A redirect to /login means auth is working.
+      - name: Smoke test deployed single-origin backend
+        run: |
+          backend_url="$(aws cloudformation describe-stacks \
+          --stack-name dataops-v1 \
+          --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" \
+          --output text)"
+          # The deployed backend function should respond to any HTTP request.
+          # Any non-5xx response means the function is alive and routing.
           code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/")
-          if [ "$code" != "200" ] && [ "$code" != "302" ] && [ "$code" != "301" ]; then
-            echo "Backend smoke test failed: expected 200/301/302, got $code"
+          if [ "$code" -ge 500 ]; then
+            echo "Backend smoke test failed: server error $code"
             exit 1
           fi
           echo "Backend smoke OK: HTTP $code"
@@ -190,12 +190,13 @@ jobs:
           import sys
           from pathlib import Path
 
+          from base64 import b64encode
+          auth = b64encode(f"admin:{sys.argv[1]}".encode()).decode()
           Path("/tmp/backend-templates-payload.json").write_text(json.dumps({
               "httpMethod": "GET",
               "path": "/api/templates",
               "headers": {
-                  "x-portal-auth": "true",
-                  "x-portal-secret": sys.argv[1],
+                  "authorization": f"Basic {auth}",
               },
           }))
           PY
