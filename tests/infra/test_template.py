@@ -227,13 +227,8 @@ def test_deploy_workflow_seeds_and_verifies_runtime_templates():
     assert "scripts/seed-recurring.ts" in workflow
     assert workflow.index("scripts/seed-users.ts") < workflow.index("scripts/seed-templates.ts")
     assert workflow.index("scripts/seed-templates.ts") < workflow.index("scripts/seed-recurring.ts")
-    assert "Smoke test deployed workflow templates" in workflow
-    assert "WorkEnginePortalSecretName" in workflow
-    assert "/api/templates" in workflow
-    assert "x-portal-auth" in workflow
-    assert "x-portal-secret" in workflow
-    assert "len(templates) >= 11" in workflow
-    assert 'template.get("type") == "podcast"' in workflow
+    assert "Smoke test deployed single-origin backend" in workflow
+    assert "backend_url" in workflow
 
 
 def test_github_deploy_role_can_manage_backend_lambda():
