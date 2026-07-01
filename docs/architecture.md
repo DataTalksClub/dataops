@@ -31,35 +31,36 @@ The current recommendation is to keep the sandbox lightweight:
 
 ```mermaid
 flowchart TB
-  User[User browser] -->|HTTPS Lambda Function URL| FullApp[DocsFullAppFunction]
-  FullApp -->|serves| Frontend[frontend/index.html and assets]
-  FullApp -->|routes /docs, /folders, /images, /lint, /parse| DocsApi[Docs API]
-  FullApp -->|routes /search| Search[Search handler]
+  User[User browser] -->|HTTPS Lambda Function URL| Backend[BackendFunction]
+  Backend -->|serves| Frontend[frontend/index.html and assets]
+  Backend -->|routes /docs, /folders, /images, /lint, /parse| DocsApi[Docs API]
+  Backend -->|routes /search| Search[Search handler]
+  Backend -->|routes /api/*| WorkApi[Work API: tasks, bundles, templates, etc]
   DocsApi --> Cache[/Lambda /tmp GitHub content cache/]
-  Search --> Index[/Lambda /tmp dtc-search.index/]
-  FullApp -->|download tarball, read blobs, write contents| GitHub[(GitHub repo)]
-  FullApp -->|GetSecretValue| Secrets[AWS Secrets Manager]
+  Search --> Index[/Lambda /tmp zerosearch-node index/]
+  Backend -->|download tarball, read blobs, write contents| GitHub[(GitHub repo)]
+  Backend -->|GetSecretValue| Secrets[AWS Secrets Manager]
   Actions[GitHub Actions] -->|AssumeRoleWithWebIdentity| DeployRole[AWS deploy role]
   DeployRole --> CloudFormation[CloudFormation and SAM]
-  CloudFormation --> FullApp
+  CloudFormation --> Backend
 ```
 
-The deployed function is `DocsFullAppFunction`, implemented by
-`lambda_functions.full_app_handler`. It owns:
+The deployed function is `BackendFunction`, a single TypeScript/Node Lambda
+(`backend/dist/handler.handler`). It owns:
 
 - Basic-auth protected frontend serving.
 - Docs CRUD and structured-SOP parsing/linting.
 - GitHub-backed persistence.
-- Search through a `minsearch` index.
+- Search through a `zerosearch-node` index.
 - Compatibility `/git/*` endpoints used by the frontend.
-- Same-origin `/work/api/*` brokering to the private work-engine Lambda.
+- All work `/api/*` routes (tasks, bundles, templates, recurring, files,
+  artifacts, assistant jobs, notifications, intake, users) served in-process.
 
-The Lambda Function URL is public at the AWS edge, but the app requires its own
-basic-auth session before serving internal docs or work routes. The password is
-stored in AWS Secrets Manager. V1 has no public work-engine URL: the browser
-uses the portal session cookie, and the Python portal invokes the private
-work-engine Lambda with trusted portal headers and a SAM-owned Secrets Manager
-shared secret.
+One Lambda serves everything from a single Function URL. There is no separate
+work-engine Lambda and no `/work/api/*` proxy hop -- docs and work are one
+process. The Lambda Function URL is public at the AWS edge, but the app
+requires its own basic-auth session before serving internal docs or work
+routes. The password is stored in AWS Secrets Manager.
 
 ## Content Save Lifecycle
 
@@ -68,7 +69,7 @@ When a user edits a page in the deployed app, the content path is:
 ```mermaid
 sequenceDiagram
   participant U as Browser
-  participant L as Full docs Lambda
+  participant L as Backend Lambda
   participant T as Lambda /tmp cache
   participant G as GitHub Contents API
   participant I as /tmp search index
@@ -78,7 +79,7 @@ sequenceDiagram
   L->>G: PUT /repos/.../contents/content/...
   G-->>L: Commit created on main
   L->>L: Refresh GitHub tree cache
-  L->>I: Rebuild minsearch index
+  L->>I: Rebuild zerosearch-node index
   L-->>U: Save response with lint warnings, if any
 ```
 
@@ -101,7 +102,7 @@ GitHub API.
 
 ```mermaid
 sequenceDiagram
-  participant L as Full docs Lambda
+  participant L as Backend Lambda
   participant G as GitHub
   participant T as Lambda /tmp cache
   participant I as Search index
@@ -109,7 +110,7 @@ sequenceDiagram
   L->>G: Download repository tarball for configured branch
   G-->>L: Tarball
   L->>T: Extract content/**/*.md
-  L->>I: Build minsearch index
+  L->>I: Build zerosearch-node index
 ```
 
 On cold start, or after an explicit `/git/pull`, Lambda downloads markdown from
@@ -131,8 +132,8 @@ Content-only changes should be cheap and fast:
 ```mermaid
 flowchart LR
   ContentPush[Push content/**] --> Validate[Validate Docs Content workflow]
-  Validate --> BuildIndex[Build minsearch index]
-  BuildIndex --> Smoke[Smoke test search handler]
+  Validate --> BuildIndex[Build zerosearch-node index]
+  BuildIndex --> Smoke[Smoke test search index]
   Smoke --> OIDC[Assume AWS OIDC role]
   OIDC --> Refresh[Invoke /admin/refresh directly]
   Refresh --> Done[No Lambda deploy]
@@ -142,9 +143,9 @@ App or infrastructure changes need the full deployment path:
 
 ```mermaid
 flowchart LR
-  CodePush[Push app/infra/test paths] --> Tests[Docs app tests]
+  CodePush[Push app/infra/test paths] --> Tests[Backend tests]
   Tests --> IndexCheck[Build search index]
-  IndexCheck --> HandlerSmoke[Full app handler smoke test]
+  IndexCheck --> HandlerSmoke[Backend smoke test]
   HandlerSmoke --> SamValidate[SAM validate/build]
   SamValidate --> OIDC[Assume AWS OIDC deploy role]
   OIDC --> Deploy[SAM deploy full Lambda stack]
@@ -160,11 +161,8 @@ Current workflows:
     directly invokes the deployed Lambda refresh endpoint.
   - Does not deploy Lambda code.
 - `.github/workflows/deploy-dataops-v1.yml`
-  - Runs for frontend, Lambda, infra, package, deploy script, and docs-app test
-    changes.
-  - Runs tests and deploys the full app Lambda stack if checks pass.
-- `lambda-functions/template.api.yaml`
-  - Legacy or separate API Lambda deploy path retained for compatibility.
+  - Runs for backend, frontend, infra, package, and deploy script changes.
+  - Runs tests and deploys the single backend Lambda stack if checks pass.
 
 ## Credentials and CloudFormation
 
@@ -183,7 +181,7 @@ Runtime secrets are also managed through CloudFormation:
 
 - `template.runtime-secrets.yaml` creates or updates the AWS Secrets Manager
   secrets.
-- `template.full.yaml` gives the full docs Lambda permission to read only those
+- `template.full.yaml` gives the backend Lambda permission to read only those
   secrets.
 - GitHub Actions does not store the full-app GitHub token or basic-auth
   password.
@@ -243,7 +241,7 @@ from GitHub.
    credentialed AWS operator must apply the `dataops-github-actions`
    CloudFormation stack after this template changes.
 
-2. Deploy `lambda-functions/template.runtime-secrets.yaml`.
+2. Deploy `infra/template.runtime-secrets.yaml`.
    Provide the GitHub token and basic-auth password as parameters.
 
 3. Update workflow role ARN if the deploy role ARN changes.
@@ -255,6 +253,7 @@ from GitHub.
    - Login works.
    - A document page loads by path.
    - Search returns results.
+   - Work `/api/*` routes return data.
    - Saving a test document creates a GitHub commit.
    - Refresh pulls the latest GitHub content.
 
@@ -263,7 +262,5 @@ from GitHub.
 - Whether content-only CI should call a refresh endpoint automatically.
 - Whether document saves should commit directly to `main` forever, or move to a
   branch and pull-request model.
-- Whether the legacy separate API Lambda should remain, or the full app Lambda
-  should be the only production surface.
 - Whether basic auth is enough for production, or access should move behind a
   stronger identity layer.

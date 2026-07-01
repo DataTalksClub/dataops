@@ -1,16 +1,10 @@
 [project]
 name = "dataops"
 version = "0.1.0"
-description = "Repository coordination tooling for DataTalks.Club DataOps."
+description = "DataTalksClub DataOps — content validation and planning docs tooling."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-    "httpx>=0.28.1",
-    "openpyxl>=3.1.5",
-    "pillow>=12.2.0",
-    "python-slugify>=8.0.4",
-    "uvicorn>=0.35.0",
-]
+dependencies = []
 
 [dependency-groups]
 dev = [

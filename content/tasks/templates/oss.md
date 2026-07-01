@@ -5,7 +5,7 @@ title: "Open-Source Spotlight Task Template"
 summary: "Git-backed DataTasks template for the Open-Source Spotlight operational workflow."
 doc_type: task-template
 schema_version: 1
-source: "work-engine/scripts/seed-templates.ts"
+source: "backend/scripts/seed-templates.ts"
 systems:
   - dataops
   - datatasks

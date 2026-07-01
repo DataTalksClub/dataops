@@ -17,18 +17,18 @@ artifacts are part of one flow.
 
 The analysis is grounded in:
 
-- `work-engine/docs/specs.md`: imported source product problem, data model, task
+- `backend/docs/specs.md`: imported source product problem, data model, task
   types, templates, bundles, recurring configs, required links, required files,
   stages, and dashboard goals.
-- `work-engine/docs/data.md`: Trello board and spreadsheet analysis, including
+- `backend/docs/data.md`: Trello board and spreadsheet analysis, including
   active columns, templates, open tasks, completed recurring tasks, and daily
   spreadsheet behavior.
-- `work-engine/docs/templates.md`: canonical workflow templates for newsletter,
+- `backend/docs/templates.md`: canonical workflow templates for newsletter,
   podcast, webinar, workshop, book of the week, OSS, course, social media, tax
   report, Maven lightning lesson, and office hours.
-- `work-engine/src/types.ts`: current platform objects for tasks, bundles,
+- `backend/src/types.ts`: current platform objects for tasks, bundles,
   templates, recurring configs, users, files, and notifications.
-- `work-engine/src/public/app.js`: current SPA behavior for dashboard, tasks,
+- `backend/src/public/app.js`: current SPA behavior for dashboard, tasks,
   bundles, templates, recurring configs, notifications, required links, and
   completion checkboxes.
 - `content/tasks/templates/*.md`: transitional imported task templates and

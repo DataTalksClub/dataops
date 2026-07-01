@@ -14,7 +14,7 @@ systems:
 related_docs:
   - docs/v1-runtime-architecture.md
   - docs/v1-execution-data-safety.md
-  - work-engine/docs/specs.md
+  - backend/docs/specs.md
 ---
 
 # V1 Execution State Schema
@@ -47,11 +47,11 @@ can export the data and migrate to Postgres later.
 The deployed DataOps stack now owns the V1 execution-state DynamoDB tables and
 the private `WorkEngineFunction` that uses them through the portal broker.
 
-Runtime state access lives in `work-engine/`:
+Runtime state access lives in `backend/`:
 
-- `work-engine/src/types.ts` defines the runtime entities.
-- `work-engine/src/db/setup.ts` creates local/prototype DynamoDB tables.
-- `work-engine/docs/specs.md` documents the original model.
+- `backend/src/types.ts` defines the runtime entities.
+- `backend/src/db/setup.ts` creates local/prototype DynamoDB tables.
+- `backend/docs/specs.md` documents the original model.
 
 For production V1:
 

@@ -13,5 +13,4 @@ dist/
 frontend/.vite/
 frontend/dist/
 backend/dist/
-lambda-functions/src/lambda_functions/search.index
-lambda-functions/.aws-sam/
+infra/.aws-sam/
