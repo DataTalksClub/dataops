@@ -80,17 +80,8 @@ jobs:
           npm --prefix backend run build:search-index -- --content-dir ../content --output ../.tmp/dataops-content-search.index
 
       - name: Smoke test built index
-        run: |
-          cd backend && node --import tsx -e "
-            import { createSearchIndex } from './src/docs/searchIndex';
-            const idx = createSearchIndex();
-            await idx.load('../.tmp/dataops-content-search.index');
-            const results = idx.search('invoice', { numResults: 1 });
-            if (!results.length) { console.error('No search results for invoice'); process.exit(1); }
-            const first = results[0];
-            if (!first.id || !first.path || !first.title) { console.error('Bad result shape', first); process.exit(1); }
-            console.log('Search smoke OK:', first.title);
-          "
+        working-directory: backend
+        run: npx tsx scripts/smoke-search-index.ts ../.tmp/dataops-content-search.index
 
       - name: Check whether content changed
         if: github.event_name == 'push'
