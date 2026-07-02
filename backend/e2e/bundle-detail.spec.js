@@ -11,6 +11,19 @@ function uid() {
   return Math.random().toString(36).slice(2, 8);
 }
 
+// Task rows collapse to a scannable line at rest (#102). Expand the row to
+// reveal the required-link/file, completion-proof, waiting, and assistant
+// controls before interacting with them.
+async function expandRow(row) {
+  const toggle = row.locator('[data-task-expand]').first();
+  if (await toggle.count()) {
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+      await toggle.click();
+    }
+    await expect(row.locator('.task-checklist-details')).toBeVisible();
+  }
+}
+
 test.describe('Bundle detail view (issue #27)', () => {
 
   // ── Scenario: Grace views a bundle with references and bundle links ──
@@ -161,6 +174,9 @@ test.describe('Bundle detail view (issue #27)', () => {
       // Checkbox should be disabled since link is empty
       const checkbox = taskRow.locator('.task-status-checkbox');
       await expect(checkbox).toBeDisabled();
+
+      // Expand the collapsed row to reach the required-link editor
+      await expandRow(taskRow);
 
       // Required link label
       const linkLabel = taskRow.locator('.required-link-label');
@@ -745,6 +761,7 @@ test.describe('Bundle detail view (issue #27)', () => {
       const sponsorRow = page.locator('[data-task-row="' + sponsorTask.id + '"]');
       await expect(sponsorRow).toContainText('Add Sponsorship document link to complete');
       await expect(sponsorRow.locator('[data-task-checkbox="' + sponsorTask.id + '"]')).toBeDisabled();
+      await expandRow(sponsorRow);
       await sponsorRow.locator('[data-skip-closure-task="' + sponsorTask.id + '"]').selectOption('not sponsored this week');
       await sponsorRow.locator('[data-save-completion-proof="' + sponsorTask.id + '"]').click();
       await expect(page.locator('[data-task-row="' + sponsorTask.id + '"] [data-task-checkbox="' + sponsorTask.id + '"]')).toBeEnabled();
@@ -784,6 +801,7 @@ test.describe('Bundle detail view (issue #27)', () => {
       await expect(page.locator('.bundle-link-row', { hasText: 'Mailchimp newsletter' })).not.toHaveClass(/bundle-link-row--empty/);
 
       await expect(page.locator('[data-task-row="' + externalStatusTask.id + '"]')).toContainText('Add completion status: Mailchimp campaign scheduled');
+      await expandRow(externalStatusRow);
       await externalStatusRow.locator('[data-completion-proof-task="' + externalStatusTask.id + '"]').fill('Mailchimp campaign scheduled');
       await externalStatusRow.locator('[data-save-completion-proof="' + externalStatusTask.id + '"]').click();
       await expect(page.locator('[data-task-row="' + externalStatusTask.id + '"] [data-task-checkbox="' + externalStatusTask.id + '"]')).toBeEnabled();
@@ -799,6 +817,7 @@ test.describe('Bundle detail view (issue #27)', () => {
       await expect(commentRow).toContainText('Add completion note: Book block updated or removed');
       await expect(commentRow.locator('[data-task-checkbox="' + commentTask.id + '"]')).toBeDisabled();
 
+      await expandRow(commentRow);
       await commentRow.locator('[data-completion-proof-task="' + commentTask.id + '"]').fill('Book block removed; no book this week');
       await commentRow.locator('[data-save-completion-proof="' + commentTask.id + '"]').click();
       await expect(page.locator('[data-task-row="' + commentTask.id + '"] [data-task-checkbox="' + commentTask.id + '"]')).toBeEnabled();
@@ -815,6 +834,7 @@ test.describe('Bundle detail view (issue #27)', () => {
       const skipRow = page.locator('[data-task-row="' + skipTask.id + '"]');
       await expect(skipRow).toContainText('Add LinkedIn link to complete');
       await expect(skipRow.locator('[data-task-checkbox="' + skipTask.id + '"]')).toBeDisabled();
+      await expandRow(skipRow);
       await skipRow.locator('[data-skip-closure-task="' + skipTask.id + '"]').selectOption('not sponsored this week');
       await skipRow.locator('[data-save-completion-proof="' + skipTask.id + '"]').click();
       await expect(page.locator('[data-task-row="' + skipTask.id + '"] [data-task-checkbox="' + skipTask.id + '"]')).toBeEnabled();
@@ -1088,6 +1108,75 @@ test.describe('Bundle detail view (issue #27)', () => {
       await expect(regularRow).toBeVisible();
       await expect(regularRow).not.toHaveAttribute('data-testid', 'milestone-task-row');
       await expect(regularRow).not.toHaveClass(/milestone-task-row/);
+    });
+  });
+
+  // ── Scenario: Rows collapse to a scannable line and expand on demand ──
+  test.describe('Scenario: Task rows collapse and expand (issue #102)', () => {
+    let bundleId;
+    let taskId;
+    const suffix = uid();
+
+    test.beforeAll(async ({ request }) => {
+      const bundleRes = await request.post('/api/bundles', {
+        data: {
+          title: 'Collapse ' + suffix,
+          anchorDate: '2026-05-15',
+          bundleLinks: [{ name: 'Luma', url: '' }],
+        },
+      });
+      expect(bundleRes.status()).toBe(201);
+      bundleId = (await bundleRes.json()).bundle.id;
+
+      const taskRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Collapsible required-link task ' + suffix,
+          date: '2026-05-15',
+          bundleId,
+          requiredLinkName: 'Luma',
+          source: 'template',
+        },
+      });
+      expect(taskRes.status()).toBe(201);
+      taskId = (await taskRes.json()).id;
+    });
+
+    test.afterAll(async ({ request }) => {
+      if (taskId) await request.delete('/api/tasks/' + taskId);
+      if (bundleId) await archiveAndDelete(request, bundleId);
+    });
+
+    test('row is collapsed at rest and reveals controls only after expand', async ({ page }) => {
+      await page.goto('/#/bundles');
+      await page.waitForSelector('.bundle-card');
+      await page.locator('.bundle-card', { hasText: 'Collapse ' + suffix }).locator('.bundle-card-title').click();
+      await page.waitForSelector('[data-testid="stage-badge"]');
+
+      const row = page.locator('[data-task-row="' + taskId + '"]');
+      await expect(row).toBeVisible();
+
+      // At rest: the checkbox is visible but the detail editor is hidden.
+      await expect(row.locator('.task-status-checkbox')).toBeVisible();
+      const details = row.locator('.task-checklist-details');
+      await expect(details).toBeHidden();
+      await expect(row.locator('.required-link-input')).toBeHidden();
+
+      // The single next-action toggle exposes an accessible collapsed state.
+      const toggle = row.locator('[data-task-expand]');
+      await expect(toggle).toBeVisible();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      // Keyboard-operable: focus and press Enter to expand.
+      await toggle.focus();
+      await page.keyboard.press('Enter');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(details).toBeVisible();
+      await expect(row.locator('.required-link-input')).toBeVisible();
+
+      // Toggling again collapses the row back to one line.
+      await page.keyboard.press('Enter');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(details).toBeHidden();
     });
   });
 });

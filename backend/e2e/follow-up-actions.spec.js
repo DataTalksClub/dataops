@@ -21,6 +21,18 @@ async function screenshot(page, name) {
   await page.screenshot({ path: `../.tmp/screenshots/${name}.png`, fullPage: true });
 }
 
+// Workflow-detail rows collapse to a scannable line at rest (#102). Expand the
+// row to reach the follow-up/waiting controls in the disclosure region.
+async function expandRow(row) {
+  const toggle = row.locator('[data-task-expand]').first();
+  if (await toggle.count()) {
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+      await toggle.click();
+    }
+    await expect(row.locator('.task-checklist-details')).toBeVisible();
+  }
+}
+
 async function cleanupTask(request, task) {
   if (!task) return;
   await request.delete('/api/tasks/' + task.id).catch(() => {});
@@ -100,6 +112,7 @@ test.describe('Operator follow-up actions (#56)', () => {
       await expect(workflowRow).toContainText('Sent sponsor reminder from Gmail');
       await screenshot(page, 'issue-56-workflow-waiting-history');
 
+      await expandRow(workflowRow);
       await workflowRow.locator('.follow-up-note').fill('Sponsor replied with approval');
       await Promise.all([
         page.waitForResponse((response) => (
@@ -110,6 +123,7 @@ test.describe('Operator follow-up actions (#56)', () => {
         workflowRow.locator('[data-follow-up-action="response-received"]').click(),
       ]);
       await expect(workflowRow).toContainText('Response received');
+      await expandRow(workflowRow);
       await expect(workflowRow.locator('.waiting-form')).toBeVisible();
       await screenshot(page, 'issue-56-resolved-unblocked-state');
 
