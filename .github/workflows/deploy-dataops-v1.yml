@@ -159,15 +159,19 @@ jobs:
       - name: Smoke test deployed single-origin backend
         run: |
           backend_url="$(aws cloudformation describe-stacks \
-          --stack-name dataops-v1 \
-          --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" \
-          --output text)"
-          # The deployed backend function should respond to any HTTP request.
-          # Any non-5xx response means the function is alive and routing.
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" \
+            --output text)"
+          # The deployed backend should serve /login (200) and redirect / to /login (302).
+          # The Function URL event normalization in handler.ts must work for this.
           code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/")
-          if [ "$code" -ge 500 ]; then
-            echo "Backend smoke test failed: server error $code"
+          if [ "$code" != "200" ] && [ "$code" != "302" ] && [ "$code" != "301" ]; then
+            echo "Backend smoke test failed: root expected 200/301/302, got $code"
             exit 1
           fi
-          echo "Backend smoke OK: HTTP $code"
-
+          login_code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/login")
+          if [ "$login_code" != "200" ]; then
+            echo "Backend smoke test failed: /login expected 200, got $login_code"
+            exit 1
+          fi
+          echo "Backend smoke OK: root=$code login=$login_code"

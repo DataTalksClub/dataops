@@ -33,6 +33,25 @@ function isScheduledEvent(event: unknown): boolean {
 }
 
 async function handler(event: LambdaEvent | Record<string, unknown>, _context?: unknown): Promise<LambdaResponse | CronRunnerResult> {
+  // Normalize Lambda Function URL events to the API Gateway-shaped LambdaEvent
+  // the router expects. Function URLs send requestContext.http.method/path and
+  // rawPath, not httpMethod/path.
+  if (typeof event === 'object' && event !== null && !('httpMethod' in event)) {
+    const raw = event as Record<string, unknown>;
+    const requestContext = raw.requestContext as Record<string, unknown> | undefined;
+    const http = requestContext?.http as Record<string, unknown> | undefined;
+    if (http?.method || raw.rawPath) {
+      event = {
+        httpMethod: (http?.method as string) || 'GET',
+        path: (raw.rawPath as string) || (http?.path as string) || '/',
+        headers: (raw.headers as Record<string, string>) || {},
+        body: (raw.body as string) ?? null,
+        isBase64Encoded: (raw.isBase64Encoded as boolean) || false,
+        queryStringParameters: (raw.queryStringParameters as Record<string, string>) || null,
+      } as LambdaEvent;
+    }
+  }
+
   await ensureInitialized();
 
   // Handle EventBridge scheduled events
