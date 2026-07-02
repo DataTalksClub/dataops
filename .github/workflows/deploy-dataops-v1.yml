@@ -162,6 +162,9 @@ jobs:
             --stack-name dataops-v1 \
             --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" \
             --output text)"
+          # The Function URL output ends with a trailing slash; strip it so we hit
+          # "/" and "/login" instead of malformed double-slash paths ("//", "//login").
+          backend_url="${backend_url%/}"
           # The deployed backend should serve /login (200) and redirect / to /login (302).
           # The Function URL event normalization in handler.ts must work for this.
           # Retry a few times: immediately after a stack update the Function URL can
