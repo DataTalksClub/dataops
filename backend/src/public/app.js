@@ -666,6 +666,39 @@
     return 'Expand';
   }
 
+  // Dashboard Daily Queue routes proof editing to the task/workflow-detail
+  // surface instead of embedding the completion editor in a narrow cell (#103).
+  // Map a missing-proof reason to the single next-action button label.
+  function dashboardMissingProofActionLabel(missingProofTitle) {
+    if (/workflow bundle/.test(missingProofTitle)) return 'Open workflow';
+    if (/^Attach /.test(missingProofTitle)) return 'Add file';
+    if (/ link to complete$/.test(missingProofTitle)) return 'Add link';
+    return 'Add evidence';
+  }
+
+  // Deep-link a queue task to where its proof can be added: the bundle
+  // workflow-detail when it belongs to one, else the standalone task detail.
+  function dashboardTaskDeepLink(task, bundle) {
+    if (task.bundleId && bundle) return bundleHash(task.bundleId, task.id);
+    return taskHash(task.id, task.date, task.bundleId);
+  }
+
+  // Exactly one primary next-action per Daily Queue row (#103):
+  // Follow up (waiting), Add link/file/evidence or Open workflow (missing
+  // proof -> routes to detail), or Complete (ready, completes in place).
+  function renderDashboardNextAction(task, bundle, missingProofTitle, isDone) {
+    if (task.status === 'waiting') {
+      return '<button type="button" class="task-action-btn task-next-action" data-dashboard-follow-up="' + escapeHtml(task.id) + '">Follow up</button>';
+    }
+    if (isDone) {
+      return '<a class="task-action-btn task-next-action" href="' + escapeHtml(dashboardTaskDeepLink(task, bundle)) + '">Open workflow</a>';
+    }
+    if (missingProofTitle) {
+      return '<a class="task-action-btn task-next-action" href="' + escapeHtml(dashboardTaskDeepLink(task, bundle)) + '" data-dashboard-next-action="detail" data-task-id="' + escapeHtml(task.id) + '">' + dashboardMissingProofActionLabel(missingProofTitle) + '</a>';
+    }
+    return '<button type="button" class="task-action-btn task-next-action task-action-complete" data-complete-task="' + escapeHtml(task.id) + '">Complete</button>';
+  }
+
   function hasPodcastSignal(entity) {
     if (!entity || typeof entity !== 'object') return false;
     if (String(entity.type || '').toLowerCase() === 'podcast') return true;
@@ -2239,7 +2272,7 @@
 
   function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake) {
     var html = '<table class="task-table-compact"><thead><tr>' +
-      '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Required Proof</th><th>Next Action</th>' +
+      '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Next Action</th>' +
       '</tr></thead><tbody>';
     var queueGroupOrder = {
       'Follow-ups due': 0,
@@ -2251,7 +2284,7 @@
     };
     (dueIntake || []).forEach(function (item, index) {
       if (index === 0) {
-        html += '<tr class="dashboard-queue-group"><td colspan="7">Intake follow-ups due</td></tr>';
+        html += '<tr class="dashboard-queue-group"><td colspan="6">Intake follow-ups due</td></tr>';
       }
       var waitingText = item.waitingFor ? 'Waiting for ' + item.waitingFor : 'Waiting for response';
       var meta = [item.source || 'intake', waitingText, item.followUpAt ? 'follow up ' + formatDateLabel(item.followUpAt) : 'follow-up due'].join(' | ');
@@ -2264,8 +2297,7 @@
         '</div></td>' +
         '<td data-label="Status / Proof"><span class="badge-waiting">' + escapeHtml(meta) + '</span><div class="task-queue-labels"><span class="task-queue-label">Intake follow-up due</span></div></td>' +
         '<td data-label="Assignee">' + (item.assigneeId && usersMap[item.assigneeId] ? '<span class="badge-assignee">' + escapeHtml(usersMap[item.assigneeId].name) + '</span>' : '') + '</td>' +
-        '<td data-label="Required Proof"></td>' +
-        '<td data-label="Next Action"><a class="task-action-btn" href="' + escapeHtml(intakeHash(item.id)) + '">Open intake</a></td>' +
+        '<td data-label="Next Action"><a class="task-action-btn task-next-action" href="' + escapeHtml(intakeHash(item.id)) + '">Open intake</a></td>' +
       '</tr>';
     });
     tasks = tasks.slice().sort(function (a, b) {
@@ -2287,7 +2319,7 @@
       var queueGroup = taskPrimaryQueueGroup(t, taskFiles, todayString(), bundle);
       if (queueGroup !== currentGroup) {
         currentGroup = queueGroup;
-        html += '<tr class="dashboard-queue-group"><td colspan="7">' + escapeHtml(queueGroup) + '</td></tr>';
+        html += '<tr class="dashboard-queue-group"><td colspan="6">' + escapeHtml(queueGroup) + '</td></tr>';
       }
 
       var checkboxDisabled = '';
@@ -2346,64 +2378,13 @@
         assigneeHtml = '<span class="badge-assignee">' + escapeHtml(usersMap[t.assigneeId].name) + '</span>';
       }
 
-      // Required link input
-      var requiredLinkHtml = '';
-      if (t.requiredLinkName) {
-        requiredLinkHtml = '<span class="required-link-wrapper">' +
-          '<span class="required-link-label">' + escapeHtml(t.requiredLinkName) + ':</span>' +
-          '<input type="text" class="required-link-input" data-task-id="' + t.id + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(t.requiredLinkName) + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
-          '</span>';
-      }
-      taskRequiredBundleLinkNames(t).forEach(function (linkName) {
-        if (linkName === t.requiredLinkName) return;
-        if (!t.bundleId || !bundle) {
-          requiredLinkHtml += '<span class="proof-missing">Open a workflow bundle to save ' + escapeHtml(linkName) + ' shared link</span>';
-          return;
-        }
-        requiredLinkHtml += '<span class="required-link-wrapper">' +
-          '<span class="required-link-label">' + escapeHtml(linkName) + ':</span>' +
-          '<input type="text" class="required-bundle-link-input" data-task-id="' + escapeHtml(t.id) + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(linkName) + '" value="' + escapeHtml(bundleLinkUrl(bundle, linkName)) + '" placeholder="URL" />' +
-          '</span>';
-      });
-      if ((t.requiresFile || (taskProofRequirement(t) && taskProofRequirement(t).type === 'file')) && !isDone) {
-        var fileProof = taskProofRequirement(t);
-        var fileLabel = fileProof && fileProof.label ? fileProof.label : 'File evidence';
-        requiredLinkHtml += '<span class="required-file-wrapper" data-required-file-wrapper="' + escapeHtml(t.id) + '">' +
-          '<span class="required-link-label">' + escapeHtml(fileLabel) + ':</span>' +
-          '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' +
-          '<button type="button" class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' +
-          (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>') +
-          '</span>';
-      }
-      var actionsHtml = renderDashboardTaskActions(t);
-      if (taskNeedsCompletionProofControls(t) && !isDone) {
-        var proof = taskProofRequirement(t);
-        var skipStatuses = taskAllowedSkipStatuses(t);
-        actionsHtml += '<div class="completion-proof-wrapper" data-completion-proof-wrapper="' + escapeHtml(t.id) + '">';
-        if (proof && (proof.type === 'comment' || proof.type === 'external-status')) {
-          actionsHtml += '<label class="required-link-label" for="dashboard-completion-proof-' + escapeHtml(t.id) + '">' +
-            escapeHtml((proof.type === 'comment' ? 'Completion note: ' : 'Completion status: ') + (proof.label || 'Completion evidence')) +
-            '</label>' +
-            '<input type="text" id="dashboard-completion-proof-' + escapeHtml(t.id) + '" class="completion-proof-input" data-completion-proof-task="' + escapeHtml(t.id) + '" data-completion-proof-type="' + escapeHtml(proof.type) + '" value="' + escapeHtml(proof.type === 'comment' ? (t.comment || '') : (t.externalStatus || '')) + '" placeholder="' + escapeHtml(proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system or sponsor email') + '" />';
-        }
-        if (skipStatuses.length) {
-          actionsHtml += '<label class="required-link-label" for="dashboard-skip-closure-' + escapeHtml(t.id) + '">Close as:</label>' +
-            '<select id="dashboard-skip-closure-' + escapeHtml(t.id) + '" class="skip-closure-select" data-skip-closure-task="' + escapeHtml(t.id) + '">' +
-            '<option value="">Choose reason</option>' +
-            skipStatuses.map(function (status) {
-              var selected = valueMatchesAllowedSkipStatus(t.comment, [status]) || valueMatchesAllowedSkipStatus(t.externalStatus, [status]) ? ' selected' : '';
-              return '<option value="' + escapeHtml(status) + '"' + selected + '>' + escapeHtml(sentenceCaseStatus(status)) + '</option>';
-            }).join('') +
-            '</select>';
-        }
-        actionsHtml += '<button type="button" class="btn-save-link" data-save-completion-proof="' + escapeHtml(t.id) + '">Save evidence</button>';
-        if (missingProofTitle) {
-          actionsHtml += '<span class="proof-missing">' + escapeHtml(missingProofTitle) + '</span>';
-        }
-        actionsHtml += '</div>';
-      }
-      var fullWidthActionsHtml = t.status === 'waiting' ? actionsHtml : '';
-      var actionsCellHtml = fullWidthActionsHtml ? '<span class="task-action-empty">Follow-up controls</span>' : actionsHtml;
+      // Each row surfaces exactly one primary next-action button. Proof editing
+      // (required links/files, completion note/status, skip closure) is no
+      // longer embedded in the row; missing-proof tasks route to the
+      // task/workflow-detail surface instead (#103).
+      var nextActionHtml = renderDashboardNextAction(t, bundle, missingProofTitle, isDone);
+      // Waiting tasks keep the existing full-width follow-up controls row.
+      var fullWidthActionsHtml = t.status === 'waiting' ? renderDashboardTaskActions(t) : '';
       var taskCellHtml = '<div class="dashboard-task-main">' +
         '<div class="dashboard-task-description">' + renderMarkdownLinks(t.description) + '</div>' +
         '<div class="dashboard-task-workflow">' + bundleBadge + '</div>' +
@@ -2415,12 +2396,11 @@
         '<td class="task-description" data-label="Task">' + taskCellHtml + '</td>' +
         '<td data-label="Status / Proof">' + instructionsHtml + '</td>' +
         '<td data-label="Assignee">' + assigneeHtml + '</td>' +
-        '<td data-label="Required Proof">' + requiredLinkHtml + '</td>' +
-        '<td data-label="Next Action">' + actionsCellHtml + '</td>' +
+        '<td data-label="Next Action">' + nextActionHtml + '</td>' +
         '</tr>';
       if (fullWidthActionsHtml) {
         html += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' +
-          '<td colspan="7">' + fullWidthActionsHtml + '</td>' +
+          '<td colspan="6">' + fullWidthActionsHtml + '</td>' +
           '</tr>';
       }
     });
@@ -2467,142 +2447,30 @@
       });
     });
 
-    // Required link input: save on Enter or blur
-    container.querySelectorAll('.required-link-input').forEach(function (inp) {
-      var saving = false;
-      function saveLink() {
-        if (saving) return;
-        saving = true;
-        var taskId = inp.getAttribute('data-task-id');
-        var linkValue = inp.value.trim();
-        var linkName = inp.getAttribute('data-link-name');
-        var task = tasks.find(function (item) { return item.id === taskId; }) || {};
-        var bundle = task.bundleId ? bundleMap[task.bundleId] : null;
-        var updates = [api.tasks.update(taskId, { link: linkValue })];
-        if (bundle && linkName) {
-          updates.push(api.bundles.update(bundle.id, {
-            bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, linkValue)
-          }));
-        }
-        Promise.all(updates).then(function () {
-          loadDashboardTasks();
-        }).catch(function (err) {
-          showError('Failed to save link: ' + err.message);
-          saving = false;
-        });
-      }
-      inp.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          saveLink();
-        }
-      });
-      inp.addEventListener('blur', function () {
-        saveLink();
-      });
-      inp.addEventListener('click', function (e) {
-        e.stopPropagation();
-      });
-    });
-
-    container.querySelectorAll('.required-bundle-link-input').forEach(function (inp) {
-      var saving = false;
-      function saveBundleLink() {
-        if (saving) return;
-        saving = true;
-        var bundleId = inp.getAttribute('data-bundle-id');
-        var linkName = inp.getAttribute('data-link-name');
-        if (!bundleId || !linkName) {
-          saving = false;
-          showError('Cannot save shared link without a bundle.');
-          return;
-        }
-        var bundle = bundleMap[bundleId] || {};
-        api.bundles.update(bundleId, {
-          bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, inp.value.trim())
-        }).then(function () {
-          loadDashboardTasks();
-        }).catch(function (err) {
-          showError('Failed to save shared link: ' + err.message);
-          saving = false;
-        });
-      }
-      inp.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          saveBundleLink();
-        }
-      });
-      inp.addEventListener('blur', function () {
-        saveBundleLink();
-      });
-      inp.addEventListener('click', function (e) {
-        e.stopPropagation();
-      });
-    });
-
-    container.querySelectorAll('[data-upload-required-file]').forEach(function (btn) {
+    // Ready tasks (no missing proof) complete in place from the queue (#103).
+    container.querySelectorAll('[data-complete-task]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        var taskId = btn.getAttribute('data-upload-required-file');
-        var input = container.querySelector('[data-required-file-task="' + taskId + '"]');
-        if (!input || !input.files || !input.files[0]) {
-          showError('Choose a file to attach.');
-          return;
-        }
-        var formData = new FormData();
-        formData.append('taskId', taskId);
-        formData.append('category', 'document');
-        formData.append('file', input.files[0]);
-        setButtonBusy(btn, true, 'Attach', 'Attaching...');
-        api.files.upload(formData).then(function () {
-          showSuccess('File attached.');
+        var id = btn.getAttribute('data-complete-task');
+        setButtonBusy(btn, true, 'Complete', 'Completing...');
+        api.tasks.update(id, { status: 'done' }).then(function () {
           loadDashboardTasks();
         }).catch(function (err) {
-          showError('Failed to attach file: ' + err.message);
-          setButtonBusy(btn, false, 'Attach');
+          showError('Failed to complete task: ' + err.message);
+          setButtonBusy(btn, false, 'Complete');
         });
       });
     });
 
-    container.querySelectorAll('[data-save-completion-proof]').forEach(function (btn) {
+    // Waiting rows: the "Follow up" next-action brings the operator to the
+    // full-width follow-up controls that already render below the row.
+    container.querySelectorAll('[data-dashboard-follow-up]').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        var taskId = btn.getAttribute('data-save-completion-proof');
-        var wrapper = container.querySelector('[data-completion-proof-wrapper="' + taskId + '"]');
-        if (!wrapper) return;
-
-        var updateData = {};
-        var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
-        var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
-        if (selectedSkipStatus) {
-          var task = tasks.find(function (item) { return item.id === taskId; }) || {};
-          updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
-        } else {
-          var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
-          if (!proofInput || !proofInput.value.trim()) {
-            showError('Add the required evidence before marking done.');
-            return;
-          }
-          var proofType = proofInput.getAttribute('data-completion-proof-type');
-          if (proofType === 'comment') {
-            updateData.comment = proofInput.value.trim();
-          } else if (proofType === 'external-status') {
-            updateData.externalStatus = proofInput.value.trim();
-          }
-        }
-
-        if (Object.keys(updateData).length === 0) {
-          showError('Add the required evidence before marking done.');
-          return;
-        }
-
-        setButtonBusy(btn, true, 'Save evidence', 'Saving...');
-        api.tasks.update(taskId, updateData).then(function () {
-          showSuccess('Evidence saved.');
-          loadDashboardTasks();
-        }).catch(function (err) {
-          showError('Failed to save evidence: ' + err.message);
-          setButtonBusy(btn, false, 'Save evidence');
-        });
+        var id = btn.getAttribute('data-dashboard-follow-up');
+        var actionsRow = container.querySelector('[data-task-actions-row="' + id + '"]');
+        if (!actionsRow) return;
+        actionsRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        var note = actionsRow.querySelector('.follow-up-note');
+        if (note) note.focus({ preventScroll: true });
       });
     });
 

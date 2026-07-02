@@ -117,38 +117,18 @@ function successfulTaskUpdate(page, taskId, fieldName) {
   });
 }
 
-async function saveDashboardCompletionProof(page, taskId, fieldName) {
-  await Promise.all([
-    successfulTaskUpdate(page, taskId, fieldName),
-    taskRow(page, taskId).locator('[data-save-completion-proof="' + taskId + '"]').click(),
-  ]);
-  await expect(taskRow(page, taskId).locator('.task-status-checkbox')).toBeEnabled();
-}
-
-async function attachDashboardRequiredFile(page, taskId, file) {
-  await taskRow(page, taskId).locator('[data-required-file-task="' + taskId + '"]').setInputFiles(file);
-  await Promise.all([
-    page.waitForResponse((response) => (
-      response.url().includes('/api/files')
-      && response.request().method() === 'POST'
-      && response.status() === 201
-    )),
-    taskRow(page, taskId).locator('[data-upload-required-file="' + taskId + '"]').click(),
-  ]);
-  await expect(taskRow(page, taskId).locator('.proof-present')).toContainText('1 file attached');
-  await expect(taskRow(page, taskId).locator('.task-status-checkbox')).toBeEnabled();
-}
-
-async function markDashboardTaskDone(page, taskId) {
-  // Ensure the row is hydrated and the checkbox is present before interacting,
-  // so .check() never races a still-empty/stale queue render.
-  await waitForDashboardTaskRow(page, taskId);
-  const checkbox = taskRow(page, taskId).locator('.task-status-checkbox');
-  await expect(checkbox).toBeEnabled();
-  await Promise.all([
-    successfulTaskUpdate(page, taskId, 'status'),
-    checkbox.check(),
-  ]);
+// A Daily Queue row must present exactly one primary next-action button and no
+// inline completion editor or raw required-link/file inputs (#103).
+async function expectSingleQueueNextAction(row, label) {
+  const nextCell = row.locator('[data-label="Next Action"]');
+  await expect(nextCell.locator('.task-next-action')).toHaveCount(1);
+  if (label) await expect(nextCell.locator('.task-next-action')).toHaveText(label);
+  await expect(row.locator('.required-link-input')).toHaveCount(0);
+  await expect(row.locator('.required-bundle-link-input')).toHaveCount(0);
+  await expect(row.locator('[data-completion-proof-task]')).toHaveCount(0);
+  await expect(row.locator('[data-required-file-task]')).toHaveCount(0);
+  await expect(row.locator('[data-skip-closure-task]')).toHaveCount(0);
+  await expect(row.locator('[data-save-completion-proof]')).toHaveCount(0);
 }
 
 test.describe('Home dashboard (issue #26)', () => {
@@ -859,7 +839,7 @@ test.describe('Home dashboard (issue #26)', () => {
       }
     });
 
-    test('Dashboard task rows save comment evidence from the queue', async ({ page, request }) => {
+    test('Dashboard comment-proof rows route to task detail instead of embedding the editor', async ({ page, request }) => {
       const today = todayString();
       let task;
 
@@ -879,22 +859,26 @@ test.describe('Home dashboard (issue #26)', () => {
 
         const commentRow = taskRow(page, task.id);
         await expect(commentRow).toContainText('Add completion note: Newsletter block updated');
-        await expect(commentRow.locator('.task-status-checkbox')).toBeDisabled();
         await expect(commentRow).toContainText('Missing evidence');
+        // Completion stays blocked and no inline editor is embedded in the row.
+        await expect(commentRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expectSingleQueueNextAction(commentRow, 'Add evidence');
 
-        await commentRow.locator('[data-completion-proof-task="' + task.id + '"]').fill('Newsletter block updated from dashboard');
-        await saveDashboardCompletionProof(page, task.id, 'comment');
-        await markDashboardTaskDone(page, task.id);
-        await expect.poll(async () => {
-          const saved = await (await request.get('/api/tasks/' + task.id)).json();
-          return saved.comment + '|' + saved.status;
-        }).toBe('Newsletter block updated from dashboard|done');
+        // The next-action opens the task detail (no bundle -> task list) where the
+        // proof can be added; the dashboard row never rendered the editor.
+        const nextBtn = commentRow.locator('[data-label="Next Action"] .task-next-action');
+        await expect(nextBtn).toHaveAttribute('href', /#\/tasks\?.*taskId=/);
+        await nextBtn.click();
+        const detailRow = taskRow(page, task.id);
+        await expect(detailRow).toBeVisible({ timeout: 10000 });
+        await expect(detailRow.locator('[data-completion-proof-task="' + task.id + '"]')).toBeVisible();
+        await expect(detailRow.locator('.task-status-checkbox')).toBeDisabled();
       } finally {
         await cleanupTask(request, task);
       }
     });
 
-    test('Dashboard task rows save external status evidence from the queue', async ({ page, request }) => {
+    test('Dashboard external-status rows route to task detail instead of embedding the editor', async ({ page, request }) => {
       const today = todayString();
       let task;
 
@@ -914,31 +898,40 @@ test.describe('Home dashboard (issue #26)', () => {
 
         const statusRow = taskRow(page, task.id);
         await expect(statusRow).toContainText('Add completion status: Mailchimp campaign scheduled');
-        await expect(statusRow.locator('.task-status-checkbox')).toBeDisabled();
         await expect(statusRow).toContainText('Missing evidence');
+        await expect(statusRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expectSingleQueueNextAction(statusRow, 'Add evidence');
 
-        await statusRow.locator('[data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from dashboard');
-        await saveDashboardCompletionProof(page, task.id, 'externalStatus');
-        await markDashboardTaskDone(page, task.id);
-        await expect.poll(async () => {
-          const saved = await (await request.get('/api/tasks/' + task.id)).json();
-          return saved.externalStatus + '|' + saved.status;
-        }).toBe('Mailchimp campaign scheduled from dashboard|done');
+        const nextBtn = statusRow.locator('[data-label="Next Action"] .task-next-action');
+        await expect(nextBtn).toHaveAttribute('href', /#\/tasks\?.*taskId=/);
+        await nextBtn.click();
+        const detailRow = taskRow(page, task.id);
+        await expect(detailRow).toBeVisible({ timeout: 10000 });
+        await expect(detailRow.locator('[data-completion-proof-task="' + task.id + '"]')).toBeVisible();
+        await expect(detailRow.locator('.task-status-checkbox')).toBeDisabled();
       } finally {
         await cleanupTask(request, task);
       }
     });
 
-    test('Dashboard task rows save file proof from the queue', async ({ page, request }) => {
+    test('Dashboard file-proof rows route into the bundle workflow instead of embedding the uploader', async ({ page, request }) => {
       const today = todayString();
       let task;
+      let bundleId;
 
       try {
+        const bundleRes = await request.post('/api/bundles', {
+          data: { title: 'Dashboard file evidence bundle', anchorDate: today, status: 'active' },
+        });
+        bundleId = (await bundleRes.json()).bundle.id;
+
         const fileRes = await request.post('/api/tasks', {
           data: {
             description: 'Dashboard invoice proof newsletter task',
             date: today,
             assigneeId: GRACE_ID,
+            bundleId,
+            source: 'template',
             requiresFile: true,
             proofRequirement: { type: 'file', label: 'Invoice PDF or invoice proof', required: true },
           },
@@ -951,24 +944,61 @@ test.describe('Home dashboard (issue #26)', () => {
         const fileRow = taskRow(page, task.id);
         await expect(fileRow).toContainText('Attach Invoice PDF or invoice proof to complete');
         await expect(fileRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expectSingleQueueNextAction(fileRow, 'Add file');
 
-        await attachDashboardRequiredFile(page, task.id, {
-          name: 'dashboard-invoice-proof.txt',
-          mimeType: 'text/plain',
-          buffer: Buffer.from('dashboard invoice proof'),
+        const nextBtn = fileRow.locator('[data-label="Next Action"] .task-next-action');
+        await expect(nextBtn).toHaveAttribute('href', new RegExp('#/bundles\\?.*taskId=' + task.id));
+        await nextBtn.click();
+
+        // The bundle workflow-detail is where the file evidence can be attached.
+        await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+        const detailRow = page.locator('[data-task-row="' + task.id + '"]');
+        await expect(detailRow).toBeVisible();
+        const toggle = detailRow.locator('[data-task-expand]').first();
+        if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+        await expect(detailRow.locator('[data-required-file-task="' + task.id + '"]')).toBeVisible();
+        await expect(detailRow.locator('.task-status-checkbox')).toBeDisabled();
+      } finally {
+        await cleanupTask(request, task);
+        await cleanupBundle(request, bundleId);
+      }
+    });
+
+    test('Dashboard ready task completes in place via the Complete button', async ({ page, request }) => {
+      const today = todayString();
+      let task;
+
+      try {
+        const res = await request.post('/api/tasks', {
+          data: {
+            description: 'Dashboard ready-to-complete newsletter task',
+            date: today,
+            assigneeId: GRACE_ID,
+          },
         });
-        await markDashboardTaskDone(page, task.id);
+        task = await res.json();
+
+        await page.goto('/#/');
+        await waitForDashboardTasksLoaded(page);
+
+        const row = await waitForDashboardTaskRow(page, task.id);
+        await expectSingleQueueNextAction(row, 'Complete');
+        const completeBtn = row.locator('[data-complete-task="' + task.id + '"]');
+        await expect(completeBtn).toBeEnabled();
+        await Promise.all([
+          successfulTaskUpdate(page, task.id, 'status'),
+          completeBtn.click(),
+        ]);
         await expect.poll(async () => {
-          const taskBody = await (await request.get('/api/tasks/' + task.id)).json();
-          const files = await (await request.get('/api/files?taskId=' + task.id)).json();
-          return taskBody.status + '|' + files.files.length;
-        }).toBe('done|1');
+          const saved = await (await request.get('/api/tasks/' + task.id)).json();
+          return saved.status;
+        }).toBe('done');
       } finally {
         await cleanupTask(request, task);
       }
     });
 
-    test('Dashboard task rows save direct links and fresh skip closures from the queue', async ({ page, request }) => {
+    test('Dashboard required-link rows route into the bundle workflow, not an inline URL input', async ({ page, request }) => {
       const today = todayString();
       const created = [];
       let bundleId;
@@ -1020,33 +1050,25 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await waitForDashboardTasksLoaded(page);
 
+        // Bundle-backed required-link task: routes into the bundle workflow.
         const linkRow = taskRow(page, created[0].id);
         await expect(linkRow).toContainText('Add Sponsorship document link to complete');
         await expect(linkRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expectSingleQueueNextAction(linkRow, 'Add link');
+        await expect(linkRow.locator('[data-label="Next Action"] .task-next-action'))
+          .toHaveAttribute('href', new RegExp('#/bundles\\?.*taskId=' + created[0].id));
 
+        // Ad-hoc skip-closure task: no inline skip dropdown, no Save evidence.
         const skippedRow = taskRow(page, created[1].id);
         await expect(skippedRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expectSingleQueueNextAction(skippedRow, 'Add link');
+        await expect(skippedRow.locator('[data-label="Next Action"] .task-next-action'))
+          .toHaveAttribute('href', /#\/tasks\?.*taskId=/);
 
-        await linkRow.locator('.required-link-input').fill('https://docs.example/sponsorship');
-        await linkRow.locator('.required-link-input').press('Enter');
-        await markDashboardTaskDone(page, created[0].id);
-        await expect.poll(async () => {
-          const task = await (await request.get('/api/tasks/' + created[0].id)).json();
-          const bundle = (await (await request.get('/api/bundles/' + bundleId)).json()).bundle;
-          const sponsorLink = bundle.bundleLinks.find((link) => link.name === 'Sponsorship document');
-          return task.link + '|' + task.status + '|' + sponsorLink.url;
-        }).toBe('https://docs.example/sponsorship|done|https://docs.example/sponsorship');
-
-        await skippedRow.locator('[data-skip-closure-task="' + created[1].id + '"]').selectOption('not sponsored this week');
-        await saveDashboardCompletionProof(page, created[1].id, 'comment');
-        await markDashboardTaskDone(page, created[1].id);
-        await expect.poll(async () => {
-          const task = await (await request.get('/api/tasks/' + created[1].id)).json();
-          return task.status + '|' + task.comment;
-        }).toContain('done|');
-        const skippedTask = await (await request.get('/api/tasks/' + created[1].id)).json();
-        expect(skippedTask.comment).toContain('not sponsored this week');
-        expect(skippedTask.link).toBeUndefined();
+        // Clicking through lands on the bundle workflow-detail context.
+        await linkRow.locator('[data-label="Next Action"] .task-next-action').click();
+        await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+        await expect(page.locator('[data-task-row="' + created[0].id + '"]')).toBeVisible();
       } finally {
         for (const task of created) {
           await cleanupTask(request, task);
@@ -1055,7 +1077,7 @@ test.describe('Home dashboard (issue #26)', () => {
       }
     });
 
-    test('Dashboard task rows save shared bundle links from the queue', async ({ page, request }) => {
+    test('Dashboard shared-bundle-link rows route into the bundle workflow, not an inline URL input', async ({ page, request }) => {
       const today = todayString();
       let task;
       let bundleId;
@@ -1092,19 +1114,13 @@ test.describe('Home dashboard (issue #26)', () => {
         const sharedLinkRow = taskRow(page, task.id);
         await expect(sharedLinkRow).toContainText('Add Mailchimp newsletter shared link to complete');
         await expect(sharedLinkRow.locator('.task-status-checkbox')).toBeDisabled();
+        await expectSingleQueueNextAction(sharedLinkRow, 'Add link');
+        await expect(sharedLinkRow.locator('[data-label="Next Action"] .task-next-action'))
+          .toHaveAttribute('href', new RegExp('#/bundles\\?.*taskId=' + task.id));
 
-        await sharedLinkRow.locator('.required-bundle-link-input').fill('https://mailchimp.example/dashboard-newsletter');
-        await sharedLinkRow.locator('.required-bundle-link-input').press('Enter');
-        await expect(taskRow(page, task.id)).toContainText('Add completion status: Mailchimp campaign scheduled');
-        await taskRow(page, task.id).locator('[data-completion-proof-task="' + task.id + '"]').fill('Mailchimp campaign scheduled from shared link row');
-        await saveDashboardCompletionProof(page, task.id, 'externalStatus');
-        await markDashboardTaskDone(page, task.id);
-        await expect.poll(async () => {
-          const taskBody = await (await request.get('/api/tasks/' + task.id)).json();
-          const bundle = (await (await request.get('/api/bundles/' + bundleId)).json()).bundle;
-          const mailchimpLink = bundle.bundleLinks.find((link) => link.name === 'Mailchimp newsletter');
-          return taskBody.externalStatus + '|' + taskBody.status + '|' + mailchimpLink.url;
-        }).toBe('Mailchimp campaign scheduled from shared link row|done|https://mailchimp.example/dashboard-newsletter');
+        await sharedLinkRow.locator('[data-label="Next Action"] .task-next-action').click();
+        await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+        await expect(page.locator('[data-task-row="' + task.id + '"]')).toBeVisible();
       } finally {
         await cleanupTask(request, task);
         await cleanupBundle(request, bundleId);
@@ -1264,7 +1280,9 @@ test.describe('Home dashboard (issue #26)', () => {
         await page.goto('/#/');
         await waitForDashboardTasksLoaded(page);
 
-        await expect(page.locator('#dashboard-tasks thead')).toContainText('Required Proof');
+        // The queue no longer embeds the completion editor; each row exposes a
+        // single Next Action button and the raw Required Proof column is gone (#103).
+        await expect(page.locator('#dashboard-tasks thead')).not.toContainText('Required Proof');
         await expect(page.locator('#dashboard-tasks thead')).toContainText('Next Action');
 
         for (const group of ['Follow-ups due', 'Overdue', 'At risk', 'Today', 'Waiting']) {
@@ -1288,10 +1306,15 @@ test.describe('Home dashboard (issue #26)', () => {
             }
           });
 
-          root.querySelectorAll('.required-link-input, .required-bundle-link-input').forEach((el) => {
-            const rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.width < 110) {
-              problems.push('required proof input collapsed to ' + Math.round(rect.width) + 'px');
+          // No raw required-link/file inputs should be embedded in queue rows.
+          root.querySelectorAll('.required-link-input, .required-bundle-link-input, [data-completion-proof-task], [data-required-file-task], [data-skip-closure-task], [data-save-completion-proof]').forEach((el) => {
+            problems.push('inline proof editor still embedded: ' + (el.getAttribute('class') || el.tagName));
+          });
+
+          // The single next-action button must not truncate its label mid-word.
+          root.querySelectorAll('.task-next-action').forEach((el) => {
+            if (el.scrollWidth > el.clientWidth + 1) {
+              problems.push('next-action label truncated: ' + (el.textContent || '').trim());
             }
           });
 
@@ -1309,7 +1332,7 @@ test.describe('Home dashboard (issue #26)', () => {
 
         await page.setViewportSize({ width: 412, height: 915 });
         await expect(taskRow(page, created[0].id).locator('[data-label="Task"]')).toBeVisible();
-        await expect(taskRow(page, created[1].id).locator('[data-label="Required Proof"]')).toBeVisible();
+        await expect(taskRow(page, created[1].id).locator('[data-label="Status / Proof"]')).toBeVisible();
         await expect(taskRow(page, created[0].id).locator('[data-label="Next Action"]')).toBeVisible();
 
         const mobileLayoutProblems = await page.evaluate(() => {
