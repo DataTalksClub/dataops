@@ -164,14 +164,20 @@ jobs:
             --output text)"
           # The deployed backend should serve /login (200) and redirect / to /login (302).
           # The Function URL event normalization in handler.ts must work for this.
-          code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/")
-          if [ "$code" != "200" ] && [ "$code" != "302" ] && [ "$code" != "301" ]; then
-            echo "Backend smoke test failed: root expected 200/301/302, got $code"
-            exit 1
-          fi
-          login_code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/login")
-          if [ "$login_code" != "200" ]; then
-            echo "Backend smoke test failed: /login expected 200, got $login_code"
-            exit 1
-          fi
-          echo "Backend smoke OK: root=$code login=$login_code"
+          # Retry a few times: immediately after a stack update the Function URL can
+          # briefly return a cold-start/propagation blip before the new code settles.
+          code=""
+          login_code=""
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/")
+            login_code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/login")
+            if { [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; } \
+               && [ "$login_code" = "200" ]; then
+              echo "Backend smoke OK on attempt $attempt: root=$code login=$login_code"
+              exit 0
+            fi
+            echo "Smoke attempt $attempt: root=$code login=$login_code (retrying)"
+            sleep 10
+          done
+          echo "Backend smoke test failed after retries: root expected 200/301/302 got $code; /login expected 200 got $login_code"
+          exit 1
