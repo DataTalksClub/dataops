@@ -589,17 +589,25 @@ test.describe('Home dashboard (issue #26)', () => {
       });
     }
 
-    test('empty dashboard surfaces seeded first-run workflow actions', async ({ page }) => {
+    test('empty dashboard links to the Templates library and hosts no inline start-forms', async ({ page }) => {
       await mockCleanSeededRuntime(page, {});
 
       await page.goto('/#/');
-      await expect(page.locator('[data-testid="first-run-workflows"]')).toBeVisible();
-      await expect(page.locator('#dashboard-bundles')).toContainText('No active production work yet');
-      await expect(page.locator('[data-testid="first-run-template-podcast"]')).toContainText('Podcast');
-      await expect(page.locator('[data-testid="first-run-template-newsletter"]')).toContainText('Newsletter');
-      await expect(page.locator('[data-testid="first-run-start-podcast"]')).toBeVisible();
-      await expect(page.locator('[data-testid="first-run-start-newsletter"]')).toBeVisible();
-      await screenshotIssue69(page, 'first-run-dashboard');
+      // No-active-work state: a CTA to the Templates library, not per-template
+      // start-forms (workflow-start was consolidated into the Templates page).
+      const noWork = page.locator('[data-testid="dashboard-no-active-work"]');
+      await expect(noWork).toBeVisible();
+      await expect(noWork).toContainText('No active production work yet');
+      const cta = noWork.locator('.empty-state-action', { hasText: 'Start a workflow from the Templates library' });
+      await expect(cta).toBeVisible();
+      await expect(cta).toHaveAttribute('href', '#/templates');
+
+      // The scattered per-template start-forms must be gone from the dashboard.
+      await expect(page.locator('[data-testid="first-run-workflows"]')).toHaveCount(0);
+      await expect(page.locator('.first-run-workflow-card')).toHaveCount(0);
+      await expect(page.locator('[data-testid="first-run-start-podcast"]')).toHaveCount(0);
+      await expect(page.locator('[data-testid="first-run-start-newsletter"]')).toHaveCount(0);
+      await screenshotIssue69(page, 'dashboard-no-active-work');
 
       const queueEmpty = page.locator('#dashboard-tasks .empty-state-title');
       await page.locator('#dashboard-tasks .empty-state-title, #dashboard-tasks table').first().waitFor({ state: 'visible' });
@@ -612,59 +620,24 @@ test.describe('Home dashboard (issue #26)', () => {
       }
     });
 
-    test('starting newsletter from first-run creates a real workflow and opens it', async ({ page }) => {
-      const createdState = {};
-      await mockCleanSeededRuntime(page, createdState);
+    test('the no-active-work CTA navigates to the Templates library', async ({ page }) => {
+      await mockCleanSeededRuntime(page, {});
 
       await page.goto('/#/');
-      await expect(page.locator('[data-testid="first-run-template-newsletter"]')).toBeVisible();
-      await page.locator('[data-testid="first-run-title-newsletter"]').fill('First-run Newsletter 2026-07-13');
-      await page.locator('[data-testid="first-run-anchor-newsletter"]').fill('2026-07-13');
+      const cta = page.locator('[data-testid="dashboard-no-active-work"] .empty-state-action', {
+        hasText: 'Start a workflow from the Templates library',
+      });
+      await expect(cta).toBeVisible();
+      await cta.click();
 
-      await Promise.all([
-        page.waitForResponse((response) => (
-          response.url().endsWith('/api/bundles')
-          && response.request().method() === 'POST'
-          && response.status() === 201
-        )),
-        page.locator('[data-testid="first-run-start-newsletter"]').click(),
-      ]);
-
-      await expect(page).toHaveURL(/\/#\/bundles\?bundleId=bundle-first-run-newsletter/);
-      await expect(page.locator('#bundle-detail')).toContainText('First-run Newsletter 2026-07-13');
-      await expect(page.locator('#bundle-detail')).toContainText('Draft newsletter');
-      await expect(page.locator('#bundle-detail')).toContainText('Mailchimp newsletter');
-      expect(createdState.bundle.templateId).toBe('tpl-first-run-newsletter');
-      expect(createdState.tasks[0].source).toBe('template');
-      expect(createdState.tasks[0].proofRequirement.label).toBe('Draft reviewed');
-      await screenshotIssue69(page, 'after-start-newsletter-workflow');
-    });
-
-    test('starting podcast from first-run creates a real workflow and opens it', async ({ page }) => {
-      const createdState = {};
-      await mockCleanSeededRuntime(page, createdState);
-
-      await page.goto('/#/');
-      await expect(page.locator('[data-testid="first-run-template-podcast"]')).toBeVisible();
-      await page.locator('[data-testid="first-run-title-podcast"]').fill('First-run Podcast 2026-08-20');
-      await page.locator('[data-testid="first-run-anchor-podcast"]').fill('2026-08-20');
-
-      await Promise.all([
-        page.waitForResponse((response) => (
-          response.url().endsWith('/api/bundles')
-          && response.request().method() === 'POST'
-          && response.status() === 201
-        )),
-        page.locator('[data-testid="first-run-start-podcast"]').click(),
-      ]);
-
-      await expect(page).toHaveURL(/\/#\/bundles\?bundleId=bundle-first-run-podcast/);
-      await expect(page.locator('#bundle-detail')).toContainText('First-run Podcast 2026-08-20');
-      await expect(page.locator('#bundle-detail')).toContainText('Prepare podcast brief');
-      await expect(page.locator('#bundle-detail')).toContainText('Podcast document');
-      expect(createdState.bundle.templateId).toBe('tpl-first-run-podcast');
-      expect(createdState.tasks[0].source).toBe('template');
-      expect(createdState.tasks[0].proofRequirement.label).toBe('Podcast brief reviewed');
+      await expect(page).toHaveURL(/\/#\/templates/);
+      await page.waitForSelector('.template-card');
+      // The manual Podcast template exposes a Start-workflow action in the library.
+      const podcastCard = page.locator('.template-card', { hasText: 'Podcast' });
+      await expect(podcastCard.locator('.template-start-action')).toBeVisible();
+      // The automatic Newsletter template does NOT offer a manual start action.
+      const newsletterCard = page.locator('.template-card', { hasText: 'Newsletter' });
+      await expect(newsletterCard.locator('.template-start-action')).toHaveCount(0);
     });
   });
 

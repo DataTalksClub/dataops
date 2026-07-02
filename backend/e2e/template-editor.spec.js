@@ -669,3 +669,155 @@ test.describe('Template Editor (issue #29)', () => {
     await request.delete(`/api/templates/${template.id}`);
   });
 });
+
+// ──────────────────────────────────────────────────────────────────
+// Start workflow from the Templates library (issue #104)
+// ──────────────────────────────────────────────────────────────────
+
+const fs = require('fs');
+const path = require('path');
+const UX_AUDIT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'ux-audit');
+
+function todayString() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+async function auditShot(page, name) {
+  fs.mkdirSync(UX_AUDIT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(UX_AUDIT_DIR, name + '.png'), fullPage: true });
+}
+
+async function cleanupBundle(request, bundleId) {
+  if (!bundleId) return;
+  try {
+    await request.put('/api/bundles/' + bundleId + '/archive');
+    await request.delete('/api/bundles/' + bundleId);
+  } catch (err) {
+    // best-effort cleanup
+  }
+}
+
+test.describe('Start workflow from Templates library (issue #104)', () => {
+
+  test('manual template card starts a workflow, generates tasks from offsets, and opens the bundle', async ({ page, request }) => {
+    const suffix = uid();
+    const name = 'Start-' + suffix;
+    const template = await createTemplate(request, {
+      name,
+      type: 'event',
+      emoji: '\u{1F4C5}',
+      triggerType: 'manual',
+      taskDefinitions: [
+        { refId: 'prep', description: 'Prepare materials ' + suffix, offsetDays: -7 },
+        { refId: 'event', description: 'Run event ' + suffix, offsetDays: 0 },
+      ],
+    });
+    let bundleId;
+
+    try {
+      await page.goto('/#/templates');
+      await page.waitForSelector('.template-card');
+      await page.fill('#template-search', name);
+      const card = page.locator('.template-card', { hasText: name });
+      await expect(card).toHaveCount(1);
+
+      // Manual templates expose a "Start workflow" action alongside "Edit template".
+      const startAction = card.locator('.template-start-action');
+      await expect(startAction).toBeVisible();
+      await expect(startAction).toHaveText('Start workflow');
+      await expect(card.locator('.card-action-text')).toHaveText('Edit template');
+
+      // Opening the start flow must not navigate to the editor.
+      await startAction.click();
+      await expect(page).toHaveURL(/\/#\/templates/);
+      const startForm = card.locator('.template-start-form');
+      await expect(startForm).toBeVisible();
+      await auditShot(page, 'issue-104-templates-start-form-open');
+
+      // Sensible default title = "<template name>: <today>", auto-updating when
+      // the anchor date changes and the title is still the default.
+      const titleInput = startForm.locator('.template-start-title');
+      await expect(titleInput).toHaveValue(name + ': ' + todayString());
+      await startForm.locator('.template-start-anchor').fill('2026-09-10');
+      await expect(titleInput).toHaveValue(name + ': 2026-09-10');
+
+      // Override with an explicit title, then start.
+      const workflowTitle = name + ' launch ' + suffix;
+      await titleInput.fill(workflowTitle);
+      const [resp] = await Promise.all([
+        page.waitForResponse((response) => (
+          response.url().endsWith('/api/bundles')
+          && response.request().method() === 'POST'
+          && response.status() === 201
+        )),
+        startForm.locator('.template-start-btn').click(),
+      ]);
+      const created = await resp.json();
+      bundleId = created.bundle.id;
+      expect(created.bundle.templateId).toBe(template.id);
+      expect(created.tasks).toHaveLength(2);
+
+      // Lands on the new bundle detail with the generated tasks.
+      await expect(page).toHaveURL(new RegExp('/#/bundles\\?bundleId=' + bundleId));
+      await page.waitForSelector('[data-testid="workflow-context"]');
+      await expect(page.locator('#bundle-detail')).toContainText(workflowTitle);
+      await expect(page.locator('#bundle-detail')).toContainText('Prepare materials ' + suffix);
+      await expect(page.locator('#bundle-detail')).toContainText('Run event ' + suffix);
+
+      // Tasks are persisted from the template offsets (anchor 2026-09-10).
+      const tasksRes = await request.get('/api/bundles/' + bundleId + '/tasks');
+      expect(tasksRes.status()).toBe(200);
+      const tasksBody = await tasksRes.json();
+      expect(tasksBody.tasks).toHaveLength(2);
+      const byRef = {};
+      tasksBody.tasks.forEach((t) => { byRef[t.templateTaskRef] = t; });
+      expect(byRef.prep.date).toBe('2026-09-03');
+      expect(byRef.event.date).toBe('2026-09-10');
+      tasksBody.tasks.forEach((t) => {
+        expect(t.source).toBe('template');
+        expect(t.bundleId).toBe(bundleId);
+      });
+
+      // The new bundle appears immediately in active workflows on the Bundles page.
+      await page.goto('/#/bundles');
+      await page.waitForSelector('.bundle-card');
+      await expect(page.locator('.bundle-card', { hasText: workflowTitle })).toBeVisible();
+    } finally {
+      await cleanupBundle(request, bundleId);
+      await request.delete('/api/templates/' + template.id);
+    }
+  });
+
+  test('automatic templates do not offer a manual Start workflow action', async ({ page, request }) => {
+    const suffix = uid();
+    const name = 'Auto-' + suffix;
+    const template = await createTemplate(request, {
+      name,
+      type: 'newsletter',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 * * 1',
+      taskDefinitions: [
+        { refId: 'draft', description: 'Draft ' + suffix, offsetDays: -7 },
+        { refId: 'send', description: 'Send ' + suffix, offsetDays: 0 },
+      ],
+    });
+
+    try {
+      await page.goto('/#/templates');
+      await page.waitForSelector('.template-card');
+      await page.fill('#template-search', name);
+      const card = page.locator('.template-card', { hasText: name });
+      await expect(card).toHaveCount(1);
+
+      // Automatic templates show trigger info only, no duplicate manual start.
+      await expect(card.locator('.badge-trigger.automatic')).toBeVisible();
+      await expect(card.locator('.template-start-action')).toHaveCount(0);
+      await expect(card.locator('.card-action-text')).toHaveText('Edit template');
+    } finally {
+      await request.delete('/api/templates/' + template.id);
+    }
+  });
+});
