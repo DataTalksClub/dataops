@@ -23,32 +23,40 @@ async function podcastRow(page, text) {
 }
 
 test.describe('Podcast operator workflow slice (#9)', () => {
-  test('runs the first Podcast workflow through proof, assistant output, waiting, and stage change', async ({ page }) => {
+  test('runs the first Podcast workflow through proof, assistant output, waiting, and stage change', async ({ page, request }) => {
     test.setTimeout(90000);
     const suffix = uid();
     const topic = 'Vector Search Ops ' + suffix;
     const guest = 'Jane Guest ' + suffix;
-    let delayedTemplates = false;
-    await page.route('**/api/templates', async (route) => {
-      if (!delayedTemplates) {
-        delayedTemplates = true;
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-      await route.continue();
-    });
 
-    await page.goto('/#/bundles');
-    await page.waitForSelector('#podcast-start-btn');
-    await expect(page.locator('#podcast-start-btn')).toBeDisabled();
-    await expect(page.locator('#podcast-start-btn')).toHaveText('Loading Podcast...');
-    await expect(page.locator('#podcast-start-btn')).toBeEnabled({ timeout: 15000 });
-    await page.fill('#podcast-topic', topic);
-    await page.fill('#podcast-guest', guest);
-    await page.fill('#podcast-anchor', '2026-08-17');
-    await page.fill('#podcast-email', 'jane-' + suffix + '@example.com');
-    await page.fill('#podcast-source-note', 'Community referral');
+    // Workflow-start now lives in the Templates library: start the Podcast
+    // workflow from the manual Podcast template card's "Start workflow" action.
+    // Resolve the seeded Podcast template by id so the card is unambiguous even
+    // when parallel workers have created other podcast-typed templates.
+    const templatesData = await (await request.get('/api/templates')).json();
+    const podcastTemplate = (templatesData.templates || []).find(
+      (t) => t.name === 'Podcast' && (t.taskDefinitions || []).length >= 40
+    ) || (templatesData.templates || []).find((t) => t.name === 'Podcast');
+    expect(podcastTemplate, 'seeded Podcast template should exist').toBeTruthy();
+
+    await page.goto('/#/templates');
+    await page.waitForSelector('.template-card');
+    const podcastCard = page.locator('.template-card[data-template-id="' + podcastTemplate.id + '"]');
+    await expect(podcastCard).toBeVisible();
+    await podcastCard.locator('.template-start-action').click();
+    const startForm = podcastCard.locator('.template-start-form');
+    await expect(startForm).toBeVisible();
+    await startForm.locator('.template-start-title').fill('Podcast: ' + topic + ' with ' + guest);
+    await startForm.locator('.template-start-anchor').fill('2026-08-17');
     await screenshot(page, `podcast-start-${suffix}`);
-    await page.click('#podcast-start-btn');
+    await Promise.all([
+      page.waitForResponse((response) => (
+        response.url().endsWith('/api/bundles')
+        && response.request().method() === 'POST'
+        && response.status() === 201
+      )),
+      startForm.locator('.template-start-btn').click(),
+    ]);
 
     await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 20000 });
     await expect(page.locator('.bundle-detail-header h2')).toContainText(topic);

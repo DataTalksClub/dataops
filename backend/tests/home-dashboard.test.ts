@@ -42,12 +42,12 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('.dashboard-bundle-card'), 'should have dashboard-bundle-card CSS');
     });
 
-    it('index.html contains first-run workflow launcher CSS', async () => {
+    it('index.html contains Templates-library "Start workflow" form CSS', async () => {
       const event = { httpMethod: 'GET', path: '/' };
       const result = await handler(event, {});
-      assert.ok(result.body.includes('.first-run-workflows'), 'should have first-run launcher shell CSS');
-      assert.ok(result.body.includes('.first-run-workflow-card'), 'should have first-run workflow card CSS');
-      assert.ok(result.body.includes('.first-run-start-btn'), 'should have first-run start button CSS');
+      assert.ok(result.body.includes('.template-start-action'), 'should have Start-workflow action CSS');
+      assert.ok(result.body.includes('.template-start-form'), 'should have inline start form CSS');
+      assert.ok(result.body.includes('.template-start-btn'), 'should have start button CSS');
     });
 
     it('index.html contains badge-anchor-date CSS', async () => {
@@ -214,18 +214,28 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes("b.status === 'active'"), 'should filter bundles by active status');
     });
 
-    it('app.js renders first-run workflow actions when templates exist but active bundles do not', async () => {
+    it('app.js dashboard no-active-work state links to the Templates library instead of hosting start-forms', async () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
       assert.ok(result.body.includes('renderDashboardFirstRunState'), 'should render dashboard first-run state');
       assert.ok(result.body.includes('No active production work yet'), 'should distinguish clean production runtime copy');
-      assert.ok(result.body.includes("type: 'podcast'"), 'should include podcast first-run template spec');
-      assert.ok(result.body.includes("type: 'newsletter'"), 'should include newsletter first-run template spec');
-      assert.ok(result.body.includes("'first-run-template-' + type"), 'should expose template action hooks');
-      assert.ok(result.body.includes("'first-run-start-' + type"), 'should expose start button hooks');
+      assert.ok(result.body.includes('dashboard-no-active-work'), 'should expose the no-active-work empty state hook');
+      assert.ok(result.body.includes('Start a workflow from the Templates library'), 'should CTA to the Templates library');
+      assert.ok(result.body.includes("href: '#/templates'"), 'should link to the Templates library');
+      // The scattered per-template start-forms must be gone from the dashboard.
+      assert.ok(!result.body.includes('renderFirstRunWorkflowCard'), 'should not render per-template start-form cards');
+      assert.ok(!result.body.includes("'first-run-start-' + type"), 'should not expose per-template start button hooks');
+    });
+
+    it('app.js Templates library exposes a "Start workflow" action that reuses api.bundles.create', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('buildTemplateStartForm'), 'should build a Templates-library start form');
+      assert.ok(result.body.includes('template-start-action'), 'should expose the Start-workflow action hook');
+      assert.ok(result.body.includes("triggerType === 'manual' && taskCount > 0"), 'should only start manual templates with tasks');
       assert.ok(result.body.includes('api.bundles.create({'), 'should use existing bundle creation semantics');
-      assert.ok(result.body.includes('templateId: template.id'), 'should start workflows from selected template');
-      assert.ok(result.body.includes('location.hash = bundleHash(currentBundleId)'), 'should navigate to created workflow');
+      assert.ok(result.body.includes('templateId: template.id'), 'should start workflows from the selected template');
+      assert.ok(result.body.includes('location.hash = bundleHash(currentBundleId)'), 'should navigate to the created workflow');
     });
 
     it('app.js renders useful copy when no workflow templates are available', async () => {
