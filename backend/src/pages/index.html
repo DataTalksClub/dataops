@@ -2463,7 +2463,7 @@
     #dashboard-tasks .task-table-compact thead tr,
     #dashboard-tasks .task-table-compact tbody tr[data-task-row] {
       display: grid;
-      grid-template-columns: 34px minmax(92px, 0.6fr) minmax(160px, 1.2fr) minmax(190px, 1.45fr) minmax(86px, 0.6fr) minmax(180px, 1.2fr) minmax(118px, 0.9fr);
+      grid-template-columns: 34px minmax(92px, 0.6fr) minmax(200px, 1.6fr) minmax(220px, 1.7fr) minmax(90px, 0.6fr) minmax(128px, 1fr);
       align-items: start;
     }
 
@@ -2556,6 +2556,23 @@
     #dashboard-tasks .btn-save-link {
       min-height: 32px;
       white-space: nowrap;
+    }
+
+    /* Single primary next-action button per queue row (#103). */
+    #dashboard-tasks .task-next-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 4px 10px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    #dashboard-tasks .task-next-action.task-action-complete {
+      border-color: #b7d8c2;
+      background: #edf8f0;
+      color: #226c36;
     }
 
     #dashboard-tasks .badge-bundle,
