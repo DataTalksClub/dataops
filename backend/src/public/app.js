@@ -1830,140 +1830,8 @@
     return (template && template.taskDefinitions && template.taskDefinitions.length) || 0;
   }
 
-  function templateHasTag(template, tag) {
-    return Array.isArray(template && template.tags) && template.tags.indexOf(tag) !== -1;
-  }
-
-  function templateHasSource(template, sourceDocId) {
-    return Array.isArray(template && template.sourceDocIds) && template.sourceDocIds.indexOf(sourceDocId) !== -1;
-  }
-
   function templateDisplayName(template, fallback) {
     return (template && template.name) || fallback || 'Workflow';
-  }
-
-  function findNewsletterTemplate(templates) {
-    return templates.find(function (template) {
-      return template.type === 'newsletter' && templateTaskCount(template) > 0;
-    }) || templates.find(function (template) {
-      return templateHasSource(template, 'task-template.tasks.newsletter');
-    }) || templates.find(function (template) {
-      return templateHasTag(template, 'newsletter') && templateTaskCount(template) > 0;
-    }) || templates.find(function (template) {
-      return String(template.name || '').trim().toLowerCase() === 'newsletter';
-    }) || null;
-  }
-
-  function firstRunTemplateSpecs() {
-    return [
-      {
-        type: 'podcast',
-        label: 'Podcast',
-        anchorLabel: 'Live stream date',
-        titlePlaceholder: 'Podcast episode title',
-        findTemplate: findPodcastTemplate,
-      },
-      {
-        type: 'newsletter',
-        label: 'Newsletter',
-        anchorLabel: 'Publication date',
-        titlePlaceholder: 'Newsletter issue or sponsor',
-        findTemplate: findNewsletterTemplate,
-      },
-    ];
-  }
-
-  function defaultFirstRunWorkflowTitle(template, spec, anchorDate) {
-    var label = (spec && spec.label) || templateDisplayName(template, 'Workflow');
-    return label + ': ' + anchorDate;
-  }
-
-  function renderFirstRunWorkflowCard(template, spec) {
-    var type = (spec && spec.type) || (template.type || 'workflow');
-    var label = (spec && spec.label) || templateDisplayName(template, 'Workflow');
-    var anchorLabel = (spec && spec.anchorLabel) || 'Anchor date';
-    var anchorDate = todayString();
-    var taskCount = templateTaskCount(template);
-    var card = document.createElement('div');
-    card.className = 'first-run-workflow-card';
-    card.setAttribute('data-testid', 'first-run-template-' + type);
-    card.setAttribute('data-template-id', template.id);
-
-    var title = document.createElement('div');
-    title.className = 'first-run-workflow-title';
-    title.textContent = (template.emoji ? template.emoji + ' ' : '') + label;
-    card.appendChild(title);
-
-    var meta = document.createElement('div');
-    meta.className = 'first-run-workflow-meta';
-    meta.innerHTML =
-      '<span class="badge-type">' + escapeHtml(template.type || type) + '</span>' +
-      '<span class="badge-trigger ' + escapeHtml(template.triggerType || 'manual') + '">' + escapeHtml(template.triggerType || 'manual') + '</span>' +
-      '<span class="template-card-tasks">' + taskCount + ' task' + (taskCount !== 1 ? 's' : '') + '</span>';
-    card.appendChild(meta);
-
-    var form = document.createElement('div');
-    form.className = 'first-run-workflow-form';
-
-    var titleLabel = document.createElement('label');
-    titleLabel.className = 'form-group';
-    titleLabel.textContent = 'Workflow title';
-    var titleInput = document.createElement('input');
-    titleInput.type = 'text';
-    titleInput.value = defaultFirstRunWorkflowTitle(template, spec, anchorDate);
-    titleInput.placeholder = (spec && spec.titlePlaceholder) || 'Workflow title';
-    titleInput.setAttribute('data-testid', 'first-run-title-' + type);
-    titleLabel.appendChild(titleInput);
-    form.appendChild(titleLabel);
-
-    var dateLabel = document.createElement('label');
-    dateLabel.className = 'form-group';
-    dateLabel.textContent = anchorLabel;
-    var dateInput = document.createElement('input');
-    dateInput.type = 'date';
-    dateInput.value = anchorDate;
-    dateInput.setAttribute('data-testid', 'first-run-anchor-' + type);
-    dateInput.addEventListener('change', function () {
-      if (!titleInput.value.trim() || titleInput.value === defaultFirstRunWorkflowTitle(template, spec, anchorDate)) {
-        anchorDate = dateInput.value || todayString();
-        titleInput.value = defaultFirstRunWorkflowTitle(template, spec, anchorDate);
-      }
-    });
-    dateLabel.appendChild(dateInput);
-    form.appendChild(dateLabel);
-
-    var startBtn = document.createElement('button');
-    startBtn.className = 'btn-primary first-run-start-btn';
-    startBtn.type = 'button';
-    startBtn.textContent = 'Start ' + label;
-    startBtn.setAttribute('data-testid', 'first-run-start-' + type);
-    startBtn.addEventListener('click', function () {
-      var workflowTitle = titleInput.value.trim();
-      var workflowAnchorDate = dateInput.value;
-      if (!workflowTitle || !workflowAnchorDate) {
-        showError('Workflow title and anchor date are required.');
-        return;
-      }
-      setButtonBusy(startBtn, true, 'Start ' + label, 'Starting...');
-      api.bundles.create({
-        title: workflowTitle,
-        anchorDate: workflowAnchorDate,
-        templateId: template.id,
-      }).then(function (created) {
-        bundlesCache = null;
-        currentBundleId = created.bundle.id;
-        queueNotice(label + ' workflow started.');
-        location.hash = bundleHash(currentBundleId);
-      }).catch(function (err) {
-        showError('Failed to start ' + label + ' workflow: ' + err.message);
-      }).finally(function () {
-        setButtonBusy(startBtn, false, 'Start ' + label);
-      });
-    });
-    form.appendChild(startBtn);
-    card.appendChild(form);
-
-    return card;
   }
 
   function renderDashboardFirstRunState(container, templates) {
@@ -1971,63 +1839,22 @@
     if (!templates.length) {
       container.innerHTML = renderEmptyState(
         'No workflow templates available',
-        'Seed workflow templates before starting production work, then return here to start the first real workflow.',
-        [{ href: '#/templates', label: 'Open templates' }]
+        'Seed workflow templates before starting production work, then start the first real workflow from the Templates library.',
+        [{ href: '#/templates', label: 'Open Templates library' }]
       );
       container.querySelector('.empty-state').setAttribute('data-testid', 'first-run-no-templates');
       return;
     }
 
-    var shell = document.createElement('div');
-    shell.className = 'first-run-workflows';
-    shell.setAttribute('data-testid', 'first-run-workflows');
-
-    var intro = document.createElement('div');
-    intro.className = 'first-run-workflows-intro';
-    intro.innerHTML =
-      '<div class="empty-state-title">No active production work yet</div>' +
-      '<div class="empty-state-body">Seeded workflow templates are ready. Start a real workflow from a template; no demo bundles or placeholder queue rows will be created.</div>';
-    shell.appendChild(intro);
-
-    var cards = document.createElement('div');
-    cards.className = 'first-run-workflow-grid';
-
-    var seenTemplateIds = {};
-    firstRunTemplateSpecs().forEach(function (spec) {
-      var template = spec.findTemplate(templates);
-      if (!template || seenTemplateIds[template.id]) return;
-      seenTemplateIds[template.id] = true;
-      cards.appendChild(renderFirstRunWorkflowCard(template, spec));
-    });
-
-    var fallbackTemplates = templates.filter(function (template) {
-      return template.id && !seenTemplateIds[template.id] && templateTaskCount(template) > 0;
-    }).sort(function (a, b) {
-      return templateDisplayName(a).localeCompare(templateDisplayName(b));
-    }).slice(0, cards.children.length ? 4 : 6);
-
-    fallbackTemplates.forEach(function (template) {
-      seenTemplateIds[template.id] = true;
-      cards.appendChild(renderFirstRunWorkflowCard(template, {
-        type: template.type || 'workflow',
-        label: templateDisplayName(template, 'Workflow'),
-        anchorLabel: 'Anchor date',
-        titlePlaceholder: 'Workflow title',
-      }));
-    });
-
-    if (!cards.children.length) {
-      shell.appendChild(document.createRange().createContextualFragment(renderEmptyState(
-        'No startable workflow templates',
-        'Templates are present, but none have task definitions to instantiate into real workflow work.',
-        [{ href: '#/templates', label: 'Review templates' }]
-      )));
-      container.appendChild(shell);
-      return;
-    }
-
-    shell.appendChild(cards);
-    container.appendChild(shell);
+    // Workflow-start lives in the Templates library ("Start workflow" on each
+    // manual template card). The dashboard no longer hosts per-template start
+    // forms; the no-active-work state points the operator there instead.
+    container.innerHTML = renderEmptyState(
+      'No active production work yet',
+      'Start a workflow from the Templates library. Every manual template has a "Start workflow" action that creates a real bundle with its tasks.',
+      [{ href: '#/templates', label: 'Start a workflow from the Templates library' }]
+    );
+    container.querySelector('.empty-state').setAttribute('data-testid', 'dashboard-no-active-work');
   }
 
   function loadDashboardBundles() {
@@ -3496,40 +3323,9 @@
       loadBundles();
     });
 
-    // Create form
-    var podcastForm = document.createElement('div');
-    podcastForm.className = 'podcast-start-section';
-    podcastForm.innerHTML =
-      '<h3>Start Podcast Workflow</h3>' +
-      '<div class="form-row">' +
-        '<div class="form-group">' +
-          '<label for="podcast-topic">Topic or title</label>' +
-          '<input type="text" id="podcast-topic" placeholder="Episode topic" style="width:220px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="podcast-guest">Guest</label>' +
-          '<input type="text" id="podcast-guest" placeholder="Guest name" style="width:180px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="podcast-anchor">Live stream date</label>' +
-          '<input type="date" id="podcast-anchor" value="' + todayString() + '" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="podcast-email">Guest email</label>' +
-          '<input type="text" id="podcast-email" placeholder="Optional" style="width:180px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="podcast-source-note">Source note</label>' +
-          '<input type="text" id="podcast-source-note" placeholder="Optional context" style="width:220px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>&nbsp;</label>' +
-          '<button class="btn-primary" id="podcast-start-btn" disabled aria-busy="true">Loading Podcast...</button>' +
-        '</div>' +
-      '</div>';
-    app.appendChild(podcastForm);
-    bindPodcastStartForm();
-
+    // Ad-hoc "New Bundle" create form. Template-driven workflow starts live in
+    // the Templates library ("Start workflow" on each manual template card); the
+    // Podcast-specific launcher that used to sit here has been removed.
     var form = document.createElement('div');
     form.className = 'form-section';
     form.innerHTML =
@@ -3598,123 +3394,6 @@
     app.appendChild(cardsContainer);
 
     loadBundles();
-  }
-
-  function bindPodcastStartForm() {
-    var btn = document.getElementById('podcast-start-btn');
-    if (!btn) return;
-    var podcastTemplate = null;
-    var templateReady = false;
-    function setPodcastStartUnavailable(label) {
-      templateReady = false;
-      btn.disabled = true;
-      btn.textContent = label;
-      btn.removeAttribute('aria-busy');
-    }
-    function setPodcastStartReady(template) {
-      podcastTemplate = template;
-      templateReady = true;
-      btn.disabled = false;
-      btn.textContent = 'Start Podcast';
-      btn.removeAttribute('aria-busy');
-    }
-    api.templates.list().then(function (data) {
-      var templates = data.templates || [];
-      podcastTemplate = findPodcastTemplate(templates);
-      if (!podcastTemplate) {
-        setPodcastStartUnavailable('Podcast template missing');
-      } else {
-        setPodcastStartReady(podcastTemplate);
-      }
-    }).catch(function () {
-      setPodcastStartUnavailable('Podcast template unavailable');
-    });
-
-    btn.addEventListener('click', function () {
-      var topic = document.getElementById('podcast-topic').value.trim();
-      var guest = document.getElementById('podcast-guest').value.trim();
-      var anchorDate = document.getElementById('podcast-anchor').value;
-      var guestEmail = document.getElementById('podcast-email').value.trim();
-      var sourceNote = document.getElementById('podcast-source-note').value.trim();
-      if (!templateReady || !podcastTemplate) {
-        showError('Podcast template is not available.');
-        return;
-      }
-      if (!topic || !guest || !anchorDate) {
-        showError('Topic, guest, and live stream date are required.');
-        return;
-      }
-      var title = 'Podcast: ' + anchorDate + ' - ' + topic + ' - ' + guest;
-      var descriptionParts = ['Guest: ' + guest, 'Topic: ' + topic];
-      if (guestEmail) descriptionParts.push('Guest email: ' + guestEmail);
-      if (sourceNote) descriptionParts.push('Source note: ' + sourceNote);
-
-      setButtonBusy(btn, true, 'Start Podcast', 'Starting...');
-      api.bundles.create({
-        title: title,
-        anchorDate: anchorDate,
-        description: descriptionParts.join('\n'),
-        templateId: podcastTemplate.id,
-      }).then(function (created) {
-        var bundle = created.bundle;
-        var tasks = created.tasks || [];
-        if (!guestEmail) return { bundle: bundle, tasks: tasks };
-        return seedRequiredLinkFromLaunch(bundle, tasks, 'Guest email', guestEmail).then(function () {
-          return { bundle: bundle, tasks: tasks };
-        });
-      }).then(function (created) {
-        bundlesCache = null;
-        currentBundleId = created.bundle.id;
-        showSuccess('Podcast workflow started.');
-        location.hash = bundleHash(currentBundleId);
-      }).catch(function (err) {
-        showError('Failed to start Podcast workflow: ' + err.message);
-      }).finally(function () {
-        if (templateReady && podcastTemplate) {
-          setButtonBusy(btn, false, 'Start Podcast');
-        } else {
-          setPodcastStartUnavailable('Podcast template unavailable');
-        }
-      });
-    });
-  }
-
-  function findPodcastTemplate(templates) {
-    function taskCount(template) {
-      return (template.taskDefinitions && template.taskDefinitions.length) || 0;
-    }
-    function hasPodcastTag(template) {
-      return Array.isArray(template.tags) && template.tags.indexOf('podcast') !== -1;
-    }
-    function hasPodcastSource(template) {
-      return Array.isArray(template.sourceDocIds) && template.sourceDocIds.indexOf('task-template.tasks.podcast') !== -1;
-    }
-    function nameIsPodcast(template) {
-      return String(template.name || '').trim().toLowerCase() === 'podcast';
-    }
-    return templates.find(function (template) {
-      return template.type === 'podcast' && taskCount(template) >= 40;
-    }) || templates.find(hasPodcastSource) || templates.find(function (template) {
-      return nameIsPodcast(template) && taskCount(template) >= 40;
-    }) || templates.find(function (template) {
-      return hasPodcastTag(template) && taskCount(template) >= 40;
-    }) || templates.find(function (template) {
-      return template.type === 'podcast';
-    }) || null;
-  }
-
-  function seedRequiredLinkFromLaunch(bundle, tasks, linkName, url) {
-    var updates = [];
-    var existingLinks = bundle.bundleLinks || [];
-    var nextLinks = updateBundleLinksByName(existingLinks, linkName, url);
-    updates.push(api.bundles.update(bundle.id, { bundleLinks: nextLinks }));
-    var task = (tasks || []).find(function (item) {
-      return item.requiredLinkName === linkName;
-    });
-    if (task) {
-      updates.push(api.tasks.update(task.id, { link: url }));
-    }
-    return Promise.all(updates);
   }
 
   function updateBundleLinksByName(links, name, url) {
@@ -5511,6 +5190,91 @@
     loadTemplateCards();
   }
 
+  function defaultTemplateWorkflowTitle(template, anchorDate) {
+    return templateDisplayName(template, 'Workflow') + ': ' + anchorDate;
+  }
+
+  // Inline "Start workflow" form for a Templates-library card. Collects the
+  // workflow title and anchor date, then reuses api.bundles.create (the same
+  // instantiation path as the ad-hoc create form) to generate a bundle from the
+  // template offsets and navigate to the new bundle detail. Returns an element
+  // plus a focus() helper. All interactions stop propagation so they do not
+  // bubble to the card's click/keydown handlers (which open the editor).
+  function buildTemplateStartForm(template) {
+    var anchorDate = todayString();
+
+    var form = document.createElement('div');
+    form.className = 'template-start-form';
+    form.setAttribute('hidden', '');
+    form.addEventListener('click', function (e) { e.stopPropagation(); });
+    form.addEventListener('keydown', function (e) { e.stopPropagation(); });
+
+    var titleLabel = document.createElement('label');
+    titleLabel.className = 'form-group';
+    titleLabel.textContent = 'Workflow title';
+    var titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.className = 'template-start-title';
+    titleInput.value = defaultTemplateWorkflowTitle(template, anchorDate);
+    titleInput.placeholder = 'Workflow title';
+    titleLabel.appendChild(titleInput);
+    form.appendChild(titleLabel);
+
+    var dateLabel = document.createElement('label');
+    dateLabel.className = 'form-group';
+    dateLabel.textContent = 'Anchor date';
+    var dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'template-start-anchor';
+    dateInput.value = anchorDate;
+    dateInput.addEventListener('change', function () {
+      if (!titleInput.value.trim() || titleInput.value === defaultTemplateWorkflowTitle(template, anchorDate)) {
+        anchorDate = dateInput.value || todayString();
+        titleInput.value = defaultTemplateWorkflowTitle(template, anchorDate);
+      }
+    });
+    dateLabel.appendChild(dateInput);
+    form.appendChild(dateLabel);
+
+    var startBtn = document.createElement('button');
+    startBtn.type = 'button';
+    startBtn.className = 'btn-primary template-start-btn';
+    startBtn.textContent = 'Start workflow';
+    startBtn.addEventListener('click', function () {
+      var workflowTitle = titleInput.value.trim();
+      var workflowAnchorDate = dateInput.value;
+      if (!workflowTitle || !workflowAnchorDate) {
+        showError('Workflow title and anchor date are required.');
+        return;
+      }
+      setButtonBusy(startBtn, true, 'Start workflow', 'Starting...');
+      api.bundles.create({
+        title: workflowTitle,
+        anchorDate: workflowAnchorDate,
+        templateId: template.id,
+      }).then(function (created) {
+        bundlesCache = null;
+        currentBundleId = created.bundle.id;
+        queueNotice(templateDisplayName(template, 'Workflow') + ' workflow started.');
+        location.hash = bundleHash(currentBundleId);
+      }).catch(function (err) {
+        showError('Failed to start workflow: ' + err.message);
+      }).finally(function () {
+        setButtonBusy(startBtn, false, 'Start workflow');
+      });
+    });
+
+    var actions = document.createElement('div');
+    actions.className = 'template-start-actions';
+    actions.appendChild(startBtn);
+    form.appendChild(actions);
+
+    return {
+      element: form,
+      focus: function () { titleInput.focus(); },
+    };
+  }
+
   function loadTemplateCards() {
     var container = document.getElementById('templates-container');
     if (!container) return;
@@ -5611,10 +5375,50 @@
         footerDiv.className = 'template-card-footer';
         footerDiv.appendChild(tasksDiv);
 
+        var actionsWrap = document.createElement('div');
+        actionsWrap.className = 'card-footer-actions';
+
+        // Manual templates are startable from the library; automatic templates
+        // are generated from their cron schedule, so they only show trigger info
+        // (the trigger badge above) and no duplicate manual "Start workflow".
+        var isStartable = triggerType === 'manual' && taskCount > 0;
+        var startForm = null;
+
+        if (isStartable) {
+          var startAction = document.createElement('button');
+          startAction.type = 'button';
+          startAction.className = 'card-action-link template-start-action';
+          startAction.textContent = 'Start workflow';
+          startAction.setAttribute('aria-expanded', 'false');
+          startAction.setAttribute('aria-label', 'Start workflow from template ' + (t.name || 'Unnamed'));
+          startAction.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (!startForm) {
+              startForm = buildTemplateStartForm(t);
+              card.appendChild(startForm.element);
+            }
+            var open = startForm.element.hasAttribute('hidden');
+            if (open) {
+              startForm.element.removeAttribute('hidden');
+              startAction.setAttribute('aria-expanded', 'true');
+              startForm.focus();
+            } else {
+              startForm.element.setAttribute('hidden', '');
+              startAction.setAttribute('aria-expanded', 'false');
+            }
+          });
+          startAction.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          });
+          actionsWrap.appendChild(startAction);
+        }
+
         var actionSpan = document.createElement('span');
         actionSpan.className = 'card-action-text';
         actionSpan.textContent = 'Edit template';
-        footerDiv.appendChild(actionSpan);
+        actionsWrap.appendChild(actionSpan);
+
+        footerDiv.appendChild(actionsWrap);
         card.appendChild(footerDiv);
 
         function openTemplate() {
