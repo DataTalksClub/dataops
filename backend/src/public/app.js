@@ -289,6 +289,8 @@
       if (!row) return;
       row.classList.add('task-target-row');
       row.setAttribute('tabindex', '-1');
+      var expandToggle = row.querySelector('[data-task-expand]');
+      if (expandToggle && expandToggle.getAttribute('aria-expanded') === 'false') expandToggle.click();
       row.scrollIntoView({ block: 'center', behavior: 'smooth' });
       row.focus({ preventScroll: true });
     }, 0);
@@ -641,6 +643,27 @@
 
   function waitingCompletionBlockTitle(task) {
     return task && task.status === 'waiting' ? 'Resolve the wait before completing this task' : '';
+  }
+
+  // Progressive-disclosure helpers for the workflow-detail checklist (#102).
+  // Map a queue label to a status-pill colour modifier.
+  function queuePillModifier(label) {
+    if (label === 'Done') return ' task-queue-label--done';
+    if (label === 'Overdue') return ' task-queue-label--overdue';
+    if (label === 'Waiting' || label === 'Follow-up due') return ' task-queue-label--waiting';
+    return '';
+  }
+
+  // The single primary next-action affordance label shown on a collapsed row.
+  function taskNextActionLabel(task, missingProofTitle) {
+    if (!task || task.status === 'done') return 'Details';
+    if (task.status === 'waiting') return 'Follow up';
+    if (missingProofTitle) {
+      if (/^Attach /.test(missingProofTitle)) return 'Add file';
+      if (/ link to complete$/.test(missingProofTitle)) return 'Add link';
+      return 'Add evidence';
+    }
+    return 'Expand';
   }
 
   function hasPodcastSignal(entity) {
@@ -4312,6 +4335,15 @@
       var body = document.createElement('div');
       body.className = 'task-checklist-body';
 
+      // Summary row (always visible): title/meta on the left, one next-action
+      // disclosure toggle on the right. Everything else lives in `details`,
+      // which is collapsed at rest (#102).
+      var summary = document.createElement('div');
+      summary.className = 'task-checklist-summary';
+
+      var heading = document.createElement('div');
+      heading.className = 'task-checklist-heading';
+
       // Main line: description + instructions icon
       var mainLine = document.createElement('div');
       mainLine.className = 'task-checklist-main-line';
@@ -4324,9 +4356,9 @@
       if (t.instructionDocId) mainLine.insertAdjacentHTML('beforeend', renderInstructionLink(processDocUrl(t.instructionDocId), t.description));
       else if (t.instructionsUrl) mainLine.insertAdjacentHTML('beforeend', renderInstructionLink(t.instructionsUrl, t.description));
 
-      body.appendChild(mainLine);
+      heading.appendChild(mainLine);
 
-      // Meta line: date + assignee
+      // Meta line: date + assignee + status/queue pills
       var metaLine = document.createElement('div');
       metaLine.className = 'task-checklist-meta';
 
@@ -4344,13 +4376,65 @@
         metaLine.appendChild(assigneeBadge);
       }
 
-      if (metaLine.hasChildNodes()) {
-        body.appendChild(metaLine);
+      var queueLabels = isDone ? ['Done'] : dashboardQueueLabels(t, taskFiles, todayString(), bundle);
+      if (queueLabels.length) {
+        var pillsWrap = document.createElement('span');
+        pillsWrap.className = 'task-checklist-pills';
+        queueLabels.forEach(function (label) {
+          var pill = document.createElement('span');
+          pill.className = 'task-queue-label' + queuePillModifier(label);
+          pill.textContent = label;
+          pillsWrap.appendChild(pill);
+        });
+        metaLine.appendChild(pillsWrap);
       }
 
-      body.insertAdjacentHTML('beforeend', renderInstructionContext(t));
-      body.insertAdjacentHTML('beforeend', renderTaskCompletionEvidence(t));
-      body.insertAdjacentHTML('beforeend', renderTaskHistory(t, false));
+      if (metaLine.hasChildNodes()) {
+        heading.appendChild(metaLine);
+      }
+
+      summary.appendChild(heading);
+
+      // Collapsible detail region — hidden at rest, revealed on expand.
+      var details = document.createElement('div');
+      details.className = 'task-checklist-details';
+      details.id = 'task-details-' + t.id;
+      details.hidden = true;
+      details.setAttribute('data-task-details', t.id);
+
+      // One primary next-action disclosure toggle (keyboard-operable button).
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'task-disclosure-toggle';
+      toggle.setAttribute('data-task-expand', t.id);
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-controls', details.id);
+      var caret = document.createElement('span');
+      caret.className = 'task-disclosure-caret';
+      caret.setAttribute('aria-hidden', 'true');
+      caret.textContent = '▸';
+      var toggleLabel = document.createElement('span');
+      toggleLabel.className = 'task-disclosure-label';
+      toggleLabel.textContent = taskNextActionLabel(t, missingProofTitle);
+      toggle.appendChild(caret);
+      toggle.appendChild(toggleLabel);
+      toggle.setAttribute('aria-label', toggleLabel.textContent + ': ' + (t.description || 'task'));
+      function setRowExpanded(expanded) {
+        toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        details.hidden = !expanded;
+        row.classList.toggle('task-row-expanded', expanded);
+        caret.textContent = expanded ? '▾' : '▸';
+      }
+      toggle.addEventListener('click', function () {
+        setRowExpanded(toggle.getAttribute('aria-expanded') !== 'true');
+      });
+      summary.appendChild(toggle);
+
+      body.appendChild(summary);
+
+      details.insertAdjacentHTML('beforeend', renderInstructionContext(t));
+      details.insertAdjacentHTML('beforeend', renderTaskCompletionEvidence(t));
+      details.insertAdjacentHTML('beforeend', renderTaskHistory(t, false));
 
       // Required link input inline under description
       if (hasRequiredLink) {
@@ -4403,7 +4487,7 @@
         })(t));
         wrapper.appendChild(saveReqBtn);
 
-        body.appendChild(wrapper);
+        details.appendChild(wrapper);
       }
 
       if (t.requiresFile) {
@@ -4417,7 +4501,7 @@
           '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' +
           '<button class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' +
           (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>');
-        body.appendChild(fileWrapper);
+        details.appendChild(fileWrapper);
       }
 
       if (taskNeedsCompletionProofControls(t) && !isDone) {
@@ -4488,7 +4572,7 @@
           proofWrapper.appendChild(missingProof);
         }
 
-        body.appendChild(proofWrapper);
+        details.appendChild(proofWrapper);
       }
 
       if (t.status === 'waiting') {
@@ -4497,7 +4581,7 @@
         waitingRow.innerHTML =
           '<span class="badge-waiting">Waiting: ' + escapeHtml(t.waitingFor || 'external reply') + (t.followUpAt ? ' · follow up ' + escapeHtml(formatDateLabel(t.followUpAt)) : '') + '</span>' +
           renderDashboardTaskActions(t);
-        body.appendChild(waitingRow);
+        details.appendChild(waitingRow);
       } else if (!isDone) {
         var waitForm = document.createElement('div');
         waitForm.className = 'waiting-form';
@@ -4507,11 +4591,11 @@
           '<input type="date" class="waiting-followup-input" data-waiting-followup-task="' + escapeHtml(t.id) + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" />' +
           '<input type="text" class="waiting-note-input" data-waiting-note-task="' + escapeHtml(t.id) + '" placeholder="Note" />' +
           '<button type="button" class="task-action-btn" data-mark-waiting-task="' + escapeHtml(t.id) + '">Mark waiting</button>';
-        body.appendChild(waitForm);
+        details.appendChild(waitForm);
       }
 
       if (t.artifactRefs && t.artifactRefs.length) {
-        body.insertAdjacentHTML('beforeend', renderArtifactRefs(t.artifactRefs));
+        details.insertAdjacentHTML('beforeend', renderArtifactRefs(t.artifactRefs));
       }
 
       var assistantRow = document.createElement('div');
@@ -4537,9 +4621,10 @@
         });
         assistantRow.appendChild(requestAssistantBtn);
       }
-      body.appendChild(assistantRow);
-      bindAssistantLinks(body);
+      details.appendChild(assistantRow);
+      bindAssistantLinks(details);
 
+      body.appendChild(details);
       row.appendChild(body);
       return row;
     }

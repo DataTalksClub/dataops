@@ -11,6 +11,14 @@ async function screenshot(page, name) {
 async function podcastRow(page, text) {
   const row = page.locator('.task-checklist-row', { hasText: text }).first();
   await expect(row).toBeVisible({ timeout: 15000 });
+  // Rows collapse to a scannable line at rest (#102); expand to reach controls.
+  const toggle = row.locator('[data-task-expand]').first();
+  if (await toggle.count()) {
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+      await toggle.click();
+    }
+    await expect(row.locator('.task-checklist-details')).toBeVisible();
+  }
   return row;
 }
 
@@ -95,7 +103,9 @@ test.describe('Podcast operator workflow slice (#9)', () => {
       buffer: Buffer.from('podcast banner proof ' + suffix),
     });
     await bannerRow.locator('[data-upload-required-file]').click();
-    await page.waitForSelector('.proof-present', { timeout: 15000 });
+    // The upload reloads the bundle and the row re-collapses, so the proof marker
+    // is present in the DOM but hidden until re-expanded (#102).
+    await page.waitForSelector('.proof-present', { state: 'attached', timeout: 15000 });
     const bannerRowAfter = await podcastRow(page, 'Create a banner for a podcast event in Figma');
     await expect(bannerRowAfter.locator('.task-status-checkbox')).toBeEnabled();
     await bannerRowAfter.locator('.task-status-checkbox').check();
@@ -124,7 +134,8 @@ test.describe('Podcast operator workflow slice (#9)', () => {
     await waitRow.locator('.waiting-followup-input').fill('2000-01-01');
     await waitRow.locator('.waiting-note-input').fill('Waiting for date confirmation');
     await waitRow.locator('[data-mark-waiting-task]').click();
-    await expect(page.locator('.badge-waiting', { hasText: guest })).toBeVisible({ timeout: 15000 });
+    // Row re-collapses after marking waiting; the badge is in the DOM but hidden (#102).
+    await expect(page.locator('.badge-waiting', { hasText: guest })).toBeAttached({ timeout: 15000 });
     await screenshot(page, `podcast-waiting-${suffix}`);
 
     await page.goto('/#/');
