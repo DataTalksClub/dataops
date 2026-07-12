@@ -195,7 +195,9 @@ export async function handleBookkeepingRoutes(
   const ingest = path === "/api/bookkeeping/ingest";
   let machine: { authorized: boolean; credentialId: string } | null = null;
   if (ingest && method === "POST") machine = await machineAuthorized(event);
-  if (!sessionAuthorized && !machine?.authorized)
+  if (ingest && !machine?.authorized)
+    return json(401, { error: "Unauthorized" });
+  if (!ingest && !sessionAuthorized)
     return json(401, { error: "Unauthorized" });
   if (machine?.authorized) {
     const now = Date.now(),
