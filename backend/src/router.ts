@@ -22,6 +22,7 @@ import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
+import { handleCalendarRoutes } from './routes/calendar';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { getSession } from './db/sessions';
 import {
@@ -710,6 +711,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleSponsorCrmRoutes(reqPath, method, event, client);
     }
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
+    if (reqPath.startsWith('/api/calendar-items')) return await handleCalendarRoutes(reqPath,method,event,client);
 
     // POST /api/tasks — Create a task
     if (method === 'POST' && reqPath === '/api/tasks') {
