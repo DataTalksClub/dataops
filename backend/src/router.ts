@@ -19,6 +19,7 @@ import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
+import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { getSession } from './db/sessions';
 import {
@@ -631,10 +632,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = portalUserId;
     }
-    if (portalMode && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    const bookkeepingIngest = method === 'POST' && reqPath === '/api/bookkeeping/ingest';
+    if (portalMode && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath) && !bookkeepingIngest) {
       return jsonResponse(401, { error: 'Unauthorized' });
     }
-    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath) && !bookkeepingIngest) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });
@@ -698,6 +700,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Task routes ────────────────────────────────────────────────
+    if (reqPath.startsWith('/api/bookkeeping')) {
+      return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
+    }
 
     // POST /api/tasks — Create a task
     if (method === 'POST' && reqPath === '/api/tasks') {

@@ -226,6 +226,56 @@ Resources:
                 Action:
                   - secretsmanager:GetRandomPassword
                 Resource: "*"
+              - Sid: SecretsManagerBookkeepingIngestion
+                Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:TagResource
+                  - secretsmanager:UntagResource
+                  - secretsmanager:UpdateSecret
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${FullDocsRegion}:${AWS::AccountId}:secret:${FullDocsStackName}/bookkeeping/ingestion-*
+              - Sid: S3BookkeepingDocumentsInfrastructure
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:GetBucketPolicy
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetBucketVersioning
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetLifecycleConfiguration
+                  - s3:GetBucketOwnershipControls
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:PutBucketVersioning
+                  - s3:PutEncryptionConfiguration
+                  - s3:PutLifecycleConfiguration
+                  - s3:PutBucketOwnershipControls
+                  - s3:PutBucketTagging
+                  - s3:GetBucketTagging
+                Resource: !Sub arn:${AWS::Partition}:s3:::${FullDocsStackName}-*bookkeeping*
+              - Sid: KmsBookkeepingDocumentsInfrastructure
+                Effect: Allow
+                Action:
+                  - kms:CreateKey
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                  - kms:DescribeKey
+                  - kms:EnableKeyRotation
+                  - kms:GetKeyPolicy
+                  - kms:GetKeyRotationStatus
+                  - kms:ListResourceTags
+                  - kms:PutKeyPolicy
+                  - kms:ScheduleKeyDeletion
+                  - kms:TagResource
+                  - kms:UntagResource
+                  - kms:UpdateKeyDescription
+                Resource: "*"
 
 Outputs:
   GitHubActionsDeployRoleArn:

@@ -20,6 +20,7 @@
     "export:templates": "tsx scripts/export-templates-to-content.ts",
     "validate:export": "tsx scripts/validate-execution-export.ts",
     "dry-run:import": "tsx scripts/dry-run-import.ts",
+    "bookkeeping:import": "tsx scripts/import-bookkeeping.ts",
     "restore:drill": "tsx scripts/restore-drill.ts",
     "cron": "IS_LOCAL=true tsx scripts/cron-runner.ts",
     "build:search-index": "tsx scripts/build-search-index.ts",
@@ -31,12 +32,17 @@
     "@aws-sdk/client-s3": "^3.996.0",
     "@aws-sdk/client-secrets-manager": "3.996.0",
     "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-storage": "^3.1085.0",
+    "@aws-sdk/s3-request-presigner": "^3.1085.0",
+    "exceljs": "^4.4.0",
     "gray-matter": "^4.0.3",
+    "yazl": "^3.3.1",
     "zerosearch-node": "file:vendor/zerosearch-node"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "^18.19.130",
+    "@types/yazl": "^2.4.5",
     "dynalite": "^3.2.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
