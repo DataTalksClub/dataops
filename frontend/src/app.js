@@ -773,6 +773,10 @@ function renderOperationsWorkspace(documents) {
     renderUsersSurfaceView();
     return;
   }
+  if (activeWorkspaceView === "bookkeeping") {
+    renderBookkeepingSurface();
+    return;
+  }
   renderOperationsHome(documents);
 }
 
@@ -782,6 +786,7 @@ function operationsViewTitle(view, tasksSection) {
   if (view === "tasks") return tasksSectionTitle(tasksSection);
   if (view === "docs") return "Docs";
   if (view === "users") return "Users";
+  if (view === "bookkeeping") return "Bookkeeping";
   return "Home";
 }
 
@@ -1381,6 +1386,53 @@ function renderSurfaceHeader(titleText, descriptionText) {
   description.textContent = descriptionText;
   header.append(title, description);
   return header;
+}
+
+async function renderBookkeepingSurface() {
+  documentList.replaceChildren();
+  const surface = document.createElement("section");
+  surface.className = "bookkeeping-surface";
+  surface.innerHTML = `
+    <header class="bookkeeping-header"><div><h2>Bookkeeping</h2><p>Private ledger and monthly evidence.</p></div><button class="primary-button" data-bookkeeping-add>Add entry</button></header>
+    <div class="bookkeeping-filters">
+      <label>Year <select data-filter="year"><option value="">All</option></select></label><label>Type <input data-filter="entryType"></label><label>Category <input data-filter="category"></label><label>Provider / payee <input data-filter="counterparty"></label><label>Currency <input data-filter="currency" maxlength="3"></label><label>Search <input data-filter="search" type="search"></label>
+    </div><p class="bookkeeping-totals" aria-live="polite"></p><div class="bookkeeping-ledger" aria-live="polite">Loading ledger…</div>
+    <section class="bookkeeping-evidence"><header><h3>Evidence and monthly package</h3><button class="quiet-button" data-setup-accounts>Set up business accounts</button></header>
+      <div class="bookkeeping-upload"><label>PDF evidence <input type="file" accept="application/pdf,.pdf" data-pdf></label><label>Document type <select data-document-type><option value="invoice">Invoice</option><option value="receipt">Receipt</option><option value="bank-statement">Bank statement</option><option value="private-account-statement">Private account statement</option></select></label><label>Account <select data-account><option value="">No account</option></select></label><label>Statement month <input type="month" data-statement-month></label><label>Link to transaction <select data-transaction><option value="">No transaction</option></select></label><button class="primary-button" data-upload>Upload PDF</button></div>
+      <div class="bookkeeping-documents">Loading documents…</div><fieldset class="bookkeeping-private-statements"><legend>Optional private-account statements</legend><div data-private-statements>No eligible private statements.</div></fieldset><div class="bookkeeping-package"><label>Report month <input type="month" data-report-month></label><button class="primary-button" data-report>Create monthly package</button></div><p data-bookkeeping-status role="status">Private downloads expire after five minutes.</p>
+    </section>
+    <dialog class="bookkeeping-entry-dialog"><form method="dialog" novalidate><h3>Bookkeeping entry</h3><input type="hidden" name="id"><label>Transaction date <input name="transactionDate" type="date"></label><label>Paid date <input name="paidDate" type="date"></label><label>Provider / payee <input name="counterparty"></label><label>Description <input name="description"></label><label>Amount <input name="amount" inputmode="decimal"></label><label>Currency <input name="currency" maxlength="3" value="EUR"></label><label>Category <input name="category"></label><label>Type <input name="entryType"></label><label>Statement / reference <input name="statementRef"></label><p role="alert" data-form-error></p><div class="bookkeeping-actions"><button value="cancel">Cancel</button><button class="primary-button" data-save>Save</button></div></form></dialog>
+    <dialog class="bookkeeping-delete-dialog"><h3>Delete bookkeeping entry?</h3><p>This cannot be undone.</p><button data-delete-cancel>Cancel</button><button class="danger-button" data-delete-confirm>Delete entry</button></dialog>`;
+  documentList.append(surface);
+  setPageTitle("Bookkeeping", "Bookkeeping");
+  let entries = [], documents = [], links = [];
+  const ledger = surface.querySelector(".bookkeeping-ledger"), totals = surface.querySelector(".bookkeeping-totals"), entryDialog = surface.querySelector(".bookkeeping-entry-dialog"), form = entryDialog.querySelector("form"), status = surface.querySelector("[data-bookkeeping-status]");
+  const api = (path, options = {}) => request(workApiUrl(`/api/bookkeeping${path}`), { headers: { "content-type": "application/json", ...(options.headers || {}) }, ...options });
+  async function safeAction(action, fallback) { try { await action(); } catch (error) { status.textContent = `${fallback}: ${error.message}`; } }
+  function openPrivateDownload(url) { const link=document.createElement("a");link.href=url;link.target="_blank";link.rel="noopener";link.click(); }
+  function renderLedger() {
+    const filters = Object.fromEntries([...surface.querySelectorAll("[data-filter]")].map(el => [el.dataset.filter, el.value.trim()]));
+    const shown = entries.filter(e => (!filters.year || e.transactionDate.startsWith(filters.year)) && (!filters.entryType || String(e.entryType || "").toLowerCase().includes(filters.entryType.toLowerCase())) && (!filters.category || String(e.category || "").toLowerCase().includes(filters.category.toLowerCase())) && (!filters.counterparty || e.counterparty.toLowerCase().includes(filters.counterparty.toLowerCase())) && (!filters.currency || e.currency === filters.currency.toUpperCase()) && (!filters.search || [e.counterparty,e.description,e.category,e.entryType].join(" ").toLowerCase().includes(filters.search.toLowerCase())));
+    const sums = {}; shown.forEach(e => sums[e.currency] = (sums[e.currency] || 0) + Number(e.amount)); totals.textContent = Object.entries(sums).map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`).join(" · ") || "No totals";
+    ledger.innerHTML = shown.length ? `<div class="bookkeeping-table-wrap"><table><thead><tr><th>Date</th><th>Paid</th><th>Provider</th><th>Description</th><th>Amount</th><th>Category / type</th><th>Reference</th><th></th></tr></thead><tbody>${shown.map(e => `<tr><td>${escapeHtml(e.transactionDate)}</td><td>${escapeHtml(e.paidDate || "Unpaid")}</td><td>${escapeHtml(e.counterparty)}</td><td>${escapeHtml(e.description)}</td><td>${escapeHtml(`${e.amount} ${e.currency}`)}</td><td>${escapeHtml([e.category,e.entryType].filter(Boolean).join(" / ") || "—")}</td><td>${escapeHtml(e.statementRef ? "Attached" : "Missing")}</td><td><button data-edit="${escapeHtml(e.id)}">Edit</button><button data-delete="${escapeHtml(e.id)}">Delete</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="honest-state"><strong>No bookkeeping entries</strong><p>Adjust filters or add the first entry.</p></div>`;
+  }
+  async function refreshEvidence() {
+    const [docResult, linkResult, accountResult] = await Promise.all([api("/documents"),api("/links"),api("/accounts")]); documents=docResult.items||[];links=linkResult.items||[];
+    surface.querySelector("[data-account]").innerHTML = `<option value="">No account</option>${(accountResult.items||[]).map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.displayName)} (${escapeHtml(a.kind)})</option>`).join("")}`;
+    surface.querySelector(".bookkeeping-documents").innerHTML = documents.length ? documents.map(d=>`<article><strong>${escapeHtml(d.originalFilename)}</strong> <span>${escapeHtml(d.documentType)}</span> <button data-download="${escapeHtml(d.id)}">Download</button>${links.filter(l=>l.documentId===d.id).map(l=>` <button data-unlink="${escapeHtml(l.id)}">Unlink ${escapeHtml(String(l.transactionId).slice(0,8))}</button>`).join("")}</article>`).join("") : "No private documents uploaded.";
+    const privateStatements=documents.filter(d=>d.documentType==="private-account-statement");surface.querySelector("[data-private-statements]").innerHTML=privateStatements.length?privateStatements.map(d=>`<label><input type="checkbox" value="${escapeHtml(d.id)}"> ${escapeHtml(d.originalFilename)}</label>`).join(""):"No eligible private statements.";
+  }
+  try { const result=await api("/transactions");entries=result.items||[];const years=[...new Set(entries.map(e=>e.transactionDate.slice(0,4)))].sort().reverse();surface.querySelector('[data-filter="year"]').insertAdjacentHTML("beforeend",years.map(y=>`<option>${y}</option>`).join(""));surface.querySelector("[data-transaction]").insertAdjacentHTML("beforeend",entries.map(e=>`<option value="${escapeHtml(e.id)}">${escapeHtml(`${e.transactionDate} · ${e.counterparty}`)}</option>`).join(""));renderLedger();await refreshEvidence();} catch (error) { ledger.textContent=`Could not load bookkeeping: ${error.message}`;surface.querySelector(".bookkeeping-documents").textContent="Could not load private documents.";status.textContent="Retry by reopening Bookkeeping."; }
+  surface.querySelectorAll("[data-filter]").forEach(el=>el.addEventListener("input",renderLedger));
+  surface.querySelector("[data-bookkeeping-add]").addEventListener("click",()=>{form.reset();form.elements.currency.value="EUR";entryDialog.showModal();});
+  form.addEventListener("input",event=>{event.target.removeAttribute("aria-invalid");surface.querySelector("[data-form-error]").textContent="";});
+  ledger.addEventListener("click",event=>{const edit=event.target.closest("[data-edit]")?.dataset.edit, del=event.target.closest("[data-delete]")?.dataset.delete;if(edit){const item=entries.find(e=>e.id===edit);Object.keys(item).forEach(k=>{if(form.elements[k])form.elements[k].value=item[k]||""});entryDialog.showModal();}if(del){const dialog=surface.querySelector(".bookkeeping-delete-dialog");dialog.dataset.id=del;dialog.showModal();}});
+  surface.querySelector("[data-save]").addEventListener("click",event=>{event.preventDefault();safeAction(async()=>{const data=Object.fromEntries([...new FormData(form)].filter(([,v])=>v!==""));const missing=["transactionDate","counterparty","description","amount","currency"].find(k=>!data[k]);if(missing){const field=form.elements[missing];field.setAttribute("aria-invalid","true");field.focus();surface.querySelector("[data-form-error]").textContent=`${({transactionDate:"Transaction date",counterparty:"Provider / payee",description:"Description",amount:"Amount",currency:"Currency"})[missing]} is required.`;return;}data.currency=data.currency.toUpperCase();const id=form.elements.id.value;const saved=await api(`/transactions${id?`/${id}`:""}`,{method:id?"PUT":"POST",body:JSON.stringify(data)});entries=id?entries.map(e=>e.id===id?saved:e):[saved,...entries];entryDialog.close();renderLedger();},"Could not save entry");});
+  surface.querySelector("[data-delete-cancel]").addEventListener("click",()=>surface.querySelector(".bookkeeping-delete-dialog").close());surface.querySelector("[data-delete-confirm]").addEventListener("click",()=>safeAction(async()=>{const dialog=surface.querySelector(".bookkeeping-delete-dialog");await api(`/transactions/${dialog.dataset.id}`,{method:"DELETE"});entries=entries.filter(e=>e.id!==dialog.dataset.id);dialog.close();renderLedger();},"Could not delete entry"));
+  surface.querySelector("[data-setup-accounts]").addEventListener("click",()=>safeAction(async()=>{const result=await api("/accounts/setup",{method:"POST"});status.textContent=`${result.accounts.length} business accounts ready.`;await refreshEvidence();},"Could not set up accounts"));
+  surface.querySelector("[data-upload]").addEventListener("click",()=>safeAction(async()=>{const file=surface.querySelector("[data-pdf]").files[0];if(!file){status.textContent="Choose a PDF first.";return;}const prepared=await api("/documents/upload",{method:"POST",body:JSON.stringify({filename:file.name,contentType:file.type,byteSize:file.size,documentType:surface.querySelector("[data-document-type]").value,accountId:surface.querySelector("[data-account]").value||undefined,statementMonth:surface.querySelector("[data-statement-month]").value||undefined})});const uploaded=await fetch(prepared.uploadUrl,{method:"PUT",headers:{"content-type":"application/pdf"},body:file});if(!uploaded.ok)throw new Error("Upload failed");const completed=await api(`/documents/${prepared.document.id}/complete`,{method:"POST"});const transactionId=surface.querySelector("[data-transaction]").value;if(transactionId)await api("/links",{method:"POST",body:JSON.stringify({documentId:completed.document.id,transactionId,coverageType:"evidence"})});status.textContent="PDF uploaded and verified.";await refreshEvidence();},"Could not upload PDF"));
+  surface.querySelector(".bookkeeping-documents").addEventListener("click",event=>safeAction(async()=>{const download=event.target.closest("[data-download]")?.dataset.download,unlink=event.target.closest("[data-unlink]")?.dataset.unlink;if(download){const result=await api(`/documents/${download}/download`);openPrivateDownload(result.downloadUrl);}if(unlink){await api(`/links/${unlink}`,{method:"DELETE"});await refreshEvidence();}},"Could not update document"));
+  surface.querySelector("[data-report]").addEventListener("click",()=>safeAction(async()=>{const month=surface.querySelector("[data-report-month]").value;if(!month){status.textContent="Choose a report month.";return;}const privateDocumentIds=[...surface.querySelectorAll("[data-private-statements] input:checked")].map(input=>input.value);const snapshot=await api("/reports/snapshot",{method:"POST",body:JSON.stringify({month,privateDocumentIds})});status.textContent=snapshot.warnings?.missingEvidence?`${snapshot.warnings.missingEvidence} missing-evidence warning(s).`:"Snapshot ready.";const archive=await api(`/reports/${snapshot.report.id}/archive`,{method:"POST"});openPrivateDownload(archive.downloadUrl);},"Could not create monthly package"));
 }
 
 function renderWorkQueueSurface(model) {
