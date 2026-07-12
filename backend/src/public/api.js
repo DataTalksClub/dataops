@@ -540,6 +540,7 @@
       history: function (id) { return fetch('/api/sponsor-crm/bookings/' + encodeURIComponent(id) + '/history', { headers: getAuthHeaders() }).then(handleResponse); },
       linkSchedule: function (id, data) { return fetch('/api/sponsor-crm/bookings/' + encodeURIComponent(id) + '/schedule-link', { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); }
     },
+    newsletterSlots:{list:function(query){return fetch('/api/newsletter-slots?'+new URLSearchParams(query||{}),{headers:getAuthHeaders()}).then(handleResponse);},create:function(data){return fetch('/api/newsletter-slots',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(data)}).then(handleResponse);},update:function(id,data){return fetch('/api/newsletter-slots/'+encodeURIComponent(id),{method:'PUT',headers:getAuthHeaders(),body:JSON.stringify(data)}).then(handleResponse);}},
 
     files: {
       upload: function (formData) {

@@ -781,6 +781,7 @@ function renderOperationsWorkspace(documents) {
     renderSponsorCrmSurface();
     return;
   }
+  if(activeWorkspaceView==="newsletter"){renderNewsletterSurface();return;}
   renderOperationsHome(documents);
 }
 
@@ -792,6 +793,7 @@ function operationsViewTitle(view, tasksSection) {
   if (view === "users") return "Users";
   if (view === "bookkeeping") return "Bookkeeping";
   if (view === "sponsors") return "Sponsors";
+  if(view==="newsletter")return"Newsletter";
   return "Home";
 }
 
@@ -1391,6 +1393,113 @@ function renderSurfaceHeader(titleText, descriptionText) {
   description.textContent = descriptionText;
   header.append(title, description);
   return header;
+}
+
+async function renderNewsletterSurface() {
+  documentList.replaceChildren();
+  const surface = document.createElement("section");
+  surface.className = "newsletter-surface";
+  surface.innerHTML = `<header><div><h2>Newsletter planner</h2><p>Europe/Berlin · chronological campaign slots.</p></div><button class="primary-button" data-newsletter-add>Add slot</button></header><div class="newsletter-filters"><label>From <input data-from type="date"></label><label>To <input data-to type="date"></label><label>View <select data-view><option value="month">Month</option><option value="week">Week</option></select></label><label>Status <select data-status><option value="">All</option>${["open", "reserved", "drafting", "scheduled", "sent", "cancelled"].map((v) => `<option>${v}</option>`).join("")}</select></label><label>Booking <select data-booked><option value="">All</option><option value="true">Booked</option><option value="false">Unbooked</option></select></label></div><p role="status">Loading newsletter slots…</p><div data-alerts></div><div data-slots>Loading slots…</div><dialog><form method="dialog"><h3>Newsletter slot</h3><input name="id" type="hidden"><input name="version" type="hidden"><label>Publication date <input name="publicationDate" type="date"></label><label>Campaign label <input name="campaignLabel"></label><label>Campaign number <input name="campaignNumber" type="number"></label><label>Status <select name="status">${["open", "reserved", "drafting", "scheduled", "sent", "cancelled"].map((v) => `<option>${v}</option>`).join("")}</select></label><label>Booked by <input name="bookedByDisplayName"></label><label>Sponsor booking ID <input name="sponsorBookingId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Public campaign URL <input name="publicUrl" type="url"></label><label>Planning note <textarea name="planningNote"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-save>Save slot</button></form></dialog>`;
+  documentList.append(surface);
+  setPageTitle("Newsletter", "Newsletter planner");
+  const status = surface.querySelector('[role="status"]'),
+    dialog = surface.querySelector("dialog"),
+    form = dialog.querySelector("form"),
+    api = (path, options = {}) =>
+      request(workApiUrl(`/api/newsletter-slots${path}`), {
+        headers: { "content-type": "application/json" },
+        ...options,
+      });
+  let items = [];
+  const now = new Date().toISOString().slice(0, 10);
+  surface.querySelector("[data-from]").value = now.slice(0, 8) + "01";
+  surface.querySelector("[data-to]").value =
+    `${Number(now.slice(0, 4)) + 1}-12-31`;
+  const isoWeekKey = (date) => {
+      const day = new Date(`${date}T00:00:00Z`);
+      day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
+      const yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1)),
+        week = Math.ceil(((day - yearStart) / 86400000 + 1) / 7);
+      return `${day.getUTCFullYear()} · week ${String(week).padStart(2, "0")}`;
+    },
+    groupKey = (item) =>
+    surface.querySelector("[data-view]").value === "month"
+      ? item.publicationDate.slice(0, 7)
+      : isoWeekKey(item.publicationDate);
+  async function load() {
+    status.textContent = "Loading newsletter slots…";
+    try {
+      const query = new URLSearchParams({
+          from: surface.querySelector("[data-from]").value,
+          to: surface.querySelector("[data-to]").value,
+          status: surface.querySelector("[data-status]").value,
+          booked: surface.querySelector("[data-booked]").value,
+        }),
+        result = await api(`?${query}`);
+      items = result.items || [];
+      surface.querySelector("[data-alerts]").innerHTML = (result.alerts || [])
+        .map(
+          (a) =>
+            `<p class="crm-card"><strong>${escapeHtml(a.reasonCode)}</strong> · ${escapeHtml(a.severity)}</p>`,
+        )
+        .join("");
+      const groups = {};
+      for (const item of items) (groups[groupKey(item)] ||= []).push(item);
+      surface.querySelector("[data-slots]").innerHTML = items.length
+        ? Object.entries(groups)
+            .map(
+              ([period, slots]) =>
+                `<section><h3>${escapeHtml(period)}</h3>${slots.map((item) => `<article class="crm-card"><strong>${escapeHtml(item.publicationDate)} · ${escapeHtml(item.campaignLabel)}</strong> <span>${escapeHtml(item.status)}</span><p>Booked by: ${escapeHtml(item.bookedByDisplayName || item.bookedByUserId || (item.sponsorBookingId ? "Sponsor booking linked" : "Unbooked"))}</p><button data-edit="${escapeHtml(item.id)}">Edit</button></article>`).join("")}</section>`,
+            )
+            .join("")
+        : `<div class="honest-state"><strong>No newsletter slots</strong><p>Create the first slot or adjust filters.</p></div>`;
+      status.textContent = "Newsletter schedule ready.";
+    } catch (error) {
+      status.textContent = `Could not load newsletter schedule: ${error.message}`;
+      surface.querySelector("[data-slots]").textContent =
+        "Retry by reopening Newsletter.";
+    }
+  }
+  surface
+    .querySelectorAll(".newsletter-filters input,.newsletter-filters select")
+    .forEach((el) => (el.onchange = load));
+  surface.querySelector("[data-newsletter-add]").onclick = () => {
+    form.reset();
+    dialog.showModal();
+  };
+  surface.querySelector("[data-slots]").onclick = (event) => {
+    const item = items.find(
+      (value) => value.id === event.target.closest("[data-edit]")?.dataset.edit,
+    );
+    if (!item) return;
+    form.reset();
+    for (const key of Object.keys(item))
+      if (form.elements[key]) form.elements[key].value = item[key] || "";
+    dialog.showModal();
+  };
+  surface.querySelector("[data-save]").onclick = async (event) => {
+    event.preventDefault();
+    const value = Object.fromEntries(
+        [...new FormData(form)].filter(([, v]) => v !== ""),
+      ),
+      id = value.id;
+    delete value.id;
+    if (value.version) value.version = Number(value.version);
+    if (value.campaignNumber)
+      value.campaignNumber = Number(value.campaignNumber);
+    try {
+      await api(id ? `/${id}` : "", {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(value),
+      });
+      dialog.close();
+      await load();
+    } catch (error) {
+      form.querySelector('[role="alert"]').textContent =
+        `Could not save slot: ${error.message}`;
+    }
+  };
+  await load();
 }
 
 async function renderSponsorCrmSurface() {

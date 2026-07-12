@@ -5225,6 +5225,7 @@ body[data-view="create"] #back-button {
   color: var(--do-color-danger, #c0392b);
 }
 /* Private bookkeeping operator surface */
+.document-list:has(.newsletter-surface){width:100%;max-width:none;min-width:0;margin:0}.newsletter-surface{display:grid;gap:18px;width:100%;min-width:0}.newsletter-surface>header,.newsletter-filters{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}.newsletter-surface dialog{width:min(700px,calc(100vw - 32px));border:0;border-radius:12px;padding:20px}.newsletter-surface dialog form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.newsletter-surface dialog label{display:grid;min-width:0}.newsletter-surface dialog input,.newsletter-surface dialog select,.newsletter-surface dialog textarea{width:100%;min-width:0}@media(max-width:720px){.library-view:has(.newsletter-surface){width:100%;min-width:0;padding:18px 14px;overflow-x:hidden}.newsletter-surface dialog form{grid-template-columns:1fr}}
 .document-list:has(.sponsor-crm-surface) { width:100%;max-width:none;min-width:0;margin:0;border-top:0; }
 .sponsor-crm-surface { display:grid;gap:18px;width:100%;max-width:100%;min-width:0;padding:8px 0 40px;background:var(--surface);isolation:isolate; }
 .crm-header,.crm-filters { display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px; }

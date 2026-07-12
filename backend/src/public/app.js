@@ -1565,6 +1565,8 @@
     refresh();
   }
 
+  function renderNewsletter(){clearApp();app.innerHTML='<section class="page-header"><div><h2>Newsletter planner</h2><p class="page-subtitle">Europe/Berlin · chronological campaign slots</p></div><button id="newsletter-add" class="btn btn-primary">Add slot</button></section><section class="form-row"><label>From <input id="newsletter-from" type="date"></label><label>To <input id="newsletter-to" type="date"></label><label>Status <select id="newsletter-status"><option value="">All</option><option>open</option><option>reserved</option><option>drafting</option><option>scheduled</option><option>sent</option><option>cancelled</option></select></label><label>Booking <select id="newsletter-booked"><option value="">All</option><option value="true">Booked</option><option value="false">Unbooked</option></select></label></section><p id="newsletter-message" role="status">Loading newsletter slots…</p><div id="newsletter-alerts"></div><div id="newsletter-list"></div><dialog id="newsletter-dialog"><form method="dialog" class="crm-form"><h3>Newsletter slot</h3><input name="id" type="hidden"><input name="version" type="hidden"><label>Publication date <input name="publicationDate" type="date" required></label><label>Campaign label <input name="campaignLabel" required></label><label>Campaign number <input name="campaignNumber" type="number"></label><label>Status <select name="status"><option>open</option><option>reserved</option><option>drafting</option><option>scheduled</option><option>sent</option><option>cancelled</option></select></label><label>Booked by <input name="bookedByDisplayName"></label><label>Sponsor booking ID <input name="sponsorBookingId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Public campaign URL <input name="publicUrl" type="url"></label><label>Planning note <textarea name="planningNote"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="btn btn-primary" value="default">Save slot</button></form></dialog>';var items=[],message=document.getElementById('newsletter-message'),dialog=document.getElementById('newsletter-dialog'),form=dialog.querySelector('form');var today=new Date().toISOString().slice(0,10);document.getElementById('newsletter-from').value=today.slice(0,8)+'01';document.getElementById('newsletter-to').value=String(Number(today.slice(0,4))+1)+'-12-31';function load(){message.textContent='Loading newsletter slots…';var query={from:document.getElementById('newsletter-from').value,to:document.getElementById('newsletter-to').value,status:document.getElementById('newsletter-status').value,booked:document.getElementById('newsletter-booked').value};api.newsletterSlots.list(query).then(function(result){items=result.items||[];document.getElementById('newsletter-alerts').innerHTML=(result.alerts||[]).map(function(a){return'<p class="error-banner">'+escapeHtml(a.reasonCode)+' · '+escapeHtml(a.severity)+'</p>';}).join('');var groups={};items.forEach(function(item){var month=item.publicationDate.slice(0,7);(groups[month]||(groups[month]=[])).push(item);});document.getElementById('newsletter-list').innerHTML=items.length?Object.keys(groups).sort().map(function(month){return'<section><h3>'+escapeHtml(month)+'</h3>'+groups[month].map(function(item){var booked=item.bookedByDisplayName||item.bookedByUserId||(item.sponsorBookingId?'Sponsor booking linked':'Unbooked');return'<article class="crm-item"><strong>'+escapeHtml(item.publicationDate)+' · '+escapeHtml(item.campaignLabel)+'</strong><span class="crm-badge">'+escapeHtml(item.status)+'</span><p>Booked by: '+escapeHtml(booked)+'</p><button data-newsletter-edit="'+escapeHtml(item.id)+'">Edit</button></article>';}).join('')+'</section>';}).join(''):'<div class="empty-state"><h3>No newsletter slots</h3><p>Create the first slot or adjust filters.</p></div>';message.textContent='Newsletter schedule ready.';}).catch(function(error){message.textContent='Could not load newsletter schedule: '+error.message;document.getElementById('newsletter-list').innerHTML='<div class="error-state">Retry by reopening Newsletter.</div>';});}document.querySelectorAll('#newsletter-from,#newsletter-to,#newsletter-status,#newsletter-booked').forEach(function(el){el.onchange=load;});document.getElementById('newsletter-add').onclick=function(){form.reset();dialog.showModal();};document.getElementById('newsletter-list').onclick=function(event){var id=event.target.getAttribute('data-newsletter-edit'),item=items.find(function(value){return value.id===id;});if(!item)return;form.reset();Object.keys(item).forEach(function(key){if(form.elements[key])form.elements[key].value=item[key]||'';});dialog.showModal();};form.onsubmit=function(event){event.preventDefault();var value=Object.fromEntries(Array.from(new FormData(form)).filter(function(pair){return pair[1]!=='';})),id=value.id;delete value.id;if(value.version)value.version=Number(value.version);if(value.campaignNumber)value.campaignNumber=Number(value.campaignNumber);(id?api.newsletterSlots.update(id,value):api.newsletterSlots.create(value)).then(function(){dialog.close();load();}).catch(function(error){form.querySelector('[role="alert"]').textContent='Could not save slot: '+error.message;});};load();}
+
   // ── Router ──────────────────────────────────────────────────────
 
   var routes = {
@@ -1577,7 +1579,8 @@
     '#/recurring': renderRecurring,
     '#/notifications': renderNotifications,
     '#/bookkeeping': renderBookkeeping,
-    '#/sponsors': renderSponsors
+    '#/sponsors': renderSponsors,
+    '#/newsletter': renderNewsletter
   };
 
   function navigate() {
@@ -6642,4 +6645,56 @@
     return escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
       '<a href="$2" target="_blank" rel="noopener">$1</a>');
   }
+
+  function newsletterPeriodKey(date, view) {
+    if (view !== 'week') return date.slice(0, 7);
+    var day = new Date(date + 'T00:00:00Z');
+    day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
+    var yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1));
+    return day.getUTCFullYear() + ' · week ' + String(Math.ceil((((day - yearStart) / 86400000) + 1) / 7)).padStart(2, '0');
+  }
+
+  function applyNewsletterPeriodView(list, selector) {
+    var articles = Array.prototype.slice.call(list.querySelectorAll('article'));
+    if (!articles.length) return;
+    var groups = {};
+    articles.forEach(function (article) {
+      var strong = article.querySelector('strong');
+      var date = strong && (strong.textContent.match(/\d{4}-\d{2}-\d{2}/) || [])[0];
+      if (!date) return;
+      var key = newsletterPeriodKey(date, selector.value);
+      (groups[key] || (groups[key] = [])).push(article);
+    });
+    var desired = Object.keys(groups).sort();
+    var current = Array.prototype.map.call(list.querySelectorAll(':scope > section > h3'), function (heading) { return heading.textContent; });
+    if (desired.join('|') === current.join('|')) return;
+    list.replaceChildren.apply(list, desired.map(function (key) {
+      var section = document.createElement('section'), heading = document.createElement('h3');
+      heading.textContent = key;
+      section.appendChild(heading);
+      groups[key].forEach(function (article) { section.appendChild(article); });
+      return section;
+    }));
+  }
+
+  function installNewsletterPeriodView() {
+    var list = document.getElementById('newsletter-list');
+    if (!list) return;
+    var selector = document.getElementById('newsletter-view');
+    if (selector) {
+      applyNewsletterPeriodView(list, selector);
+      return;
+    }
+    var status = document.getElementById('newsletter-status');
+    if (!status || !status.parentElement) return;
+    var label = document.createElement('label');
+    label.textContent = 'View ';
+    label.innerHTML += '<select id="newsletter-view"><option value="month">Month</option><option value="week">Week</option></select>';
+    status.parentElement.parentElement.insertBefore(label, status.parentElement);
+    selector = document.getElementById('newsletter-view');
+    selector.onchange = function () {
+      applyNewsletterPeriodView(list, selector);
+    };
+  }
+  new MutationObserver(installNewsletterPeriodView).observe(document.getElementById('app'), { childList: true, subtree: true });
 })();
