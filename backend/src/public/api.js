@@ -541,6 +541,7 @@
       linkSchedule: function (id, data) { return fetch('/api/sponsor-crm/bookings/' + encodeURIComponent(id) + '/schedule-link', { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); }
     },
     newsletterSlots:{list:function(query){return fetch('/api/newsletter-slots?'+new URLSearchParams(query||{}),{headers:getAuthHeaders()}).then(handleResponse);},create:function(data){return fetch('/api/newsletter-slots',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(data)}).then(handleResponse);},update:function(id,data){return fetch('/api/newsletter-slots/'+encodeURIComponent(id),{method:'PUT',headers:getAuthHeaders(),body:JSON.stringify(data)}).then(handleResponse);}},
+    calendar:{list:function(query){return fetch('/api/calendar-items?'+new URLSearchParams(query||{}),{headers:getAuthHeaders()}).then(handleResponse);},create:function(data){return fetch('/api/calendar-items',{method:'POST',headers:getAuthHeaders(),body:JSON.stringify(data)}).then(handleResponse);},update:function(id,data){return fetch('/api/calendar-items/'+encodeURIComponent(id),{method:'PUT',headers:getAuthHeaders(),body:JSON.stringify(data)}).then(handleResponse);},remove:function(id,version){return fetch('/api/calendar-items/'+encodeURIComponent(id),{method:'DELETE',headers:getAuthHeaders(),body:JSON.stringify({version:version})}).then(handleResponse);}},
 
     files: {
       upload: function (formData) {

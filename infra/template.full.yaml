@@ -71,6 +71,29 @@ Globals:
       - x86_64
 
 Resources:
+  DataOpsCalendarTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-calendar
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: rangeMonth, AttributeType: S }
+        - { AttributeName: rangeStart, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Range
+          KeySchema:
+            - { AttributeName: rangeMonth, KeyType: HASH }
+            - { AttributeName: rangeStart, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
   DataOpsNewsletterSlotsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -690,6 +713,8 @@ Resources:
               - !GetAtt DataOpsSponsorCrmTable.Arn
               - !GetAtt DataOpsNewsletterSlotsTable.Arn
               - !Sub ${DataOpsNewsletterSlotsTable.Arn}/index/*
+              - !GetAtt DataOpsCalendarTable.Arn
+              - !Sub ${DataOpsCalendarTable.Arn}/index/*
         - Statement:
             Effect: Allow
             Action:
@@ -731,6 +756,7 @@ Resources:
           DATAOPS_BOOKKEEPING_TABLE: !Ref DataOpsBookkeepingTable
           DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
           DATAOPS_NEWSLETTER_SLOTS_TABLE: !Ref DataOpsNewsletterSlotsTable
+          DATAOPS_CALENDAR_TABLE: !Ref DataOpsCalendarTable
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
