@@ -317,10 +317,29 @@ export async function inspectCalendarImport(
 }
 export async function writeCalendarImport(
   rows: ImportItem[],
-  options: { api: string; token: string; confirm: string },
+  options: {
+    api: string;
+    token?: string;
+    confirm: string;
+    portalUsername?: string;
+    portalPassword?: string;
+    fetcher?: typeof fetch;
+  },
 ) {
   if (!options.api || options.confirm !== options.api)
     throw new Error("Explicit target confirmation must equal API URL");
+  if (Boolean(options.portalUsername) !== Boolean(options.portalPassword))
+    throw new Error("Portal username and password must be provided together");
+  if (!options.portalUsername && !options.token)
+    throw new Error("Import requires portal credentials or a session token");
+  const authorization = options.portalUsername
+      ? `Basic ${Buffer.from(`${options.portalUsername}:${options.portalPassword}`).toString("base64")}`
+      : `Bearer ${options.token}`,
+    fetcher = options.fetcher || fetch,
+    api = options.api.replace(/\/$/, ""),
+    route = options.portalUsername
+      ? "/work/api/calendar-items"
+      : "/api/calendar-items";
   let created = 0,
     duplicates = 0;
   const backoff = (attempt: number) =>
@@ -329,10 +348,10 @@ export async function writeCalendarImport(
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        response = await fetch(`${options.api}/api/calendar-items`, {
+        response = await fetcher(`${api}${route}`, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${options.token}`,
+            authorization,
             "content-type": "application/json",
             "idempotency-key": row.sourceKey,
           },
@@ -359,9 +378,9 @@ export async function writeCalendarImport(
       row,
     ]);
   for (const [year, expected] of byYear) {
-    const verify = await fetch(
-      `${options.api}/api/calendar-items?from=${year}-01-01&to=${year}-12-31`,
-      { headers: { authorization: `Bearer ${options.token}` } },
+    const verify = await fetcher(
+      `${api}${route}?from=${year}-01-01&to=${year}-12-31`,
+      { headers: { authorization } },
     );
     if (!verify.ok) throw new Error("Import verification failed");
     const body: any = await verify.json();
@@ -384,6 +403,8 @@ if (require.main === module) {
           ...(await writeCalendarImport(rows, {
             api: process.env.CALENDAR_IMPORT_API || "",
             token: process.env.CALENDAR_IMPORT_TOKEN || "",
+            portalUsername: process.env.CALENDAR_IMPORT_PORTAL_USERNAME,
+            portalPassword: process.env.CALENDAR_IMPORT_PORTAL_PASSWORD,
             confirm: process.env.CALENDAR_IMPORT_CONFIRM || "",
           })),
         }),
