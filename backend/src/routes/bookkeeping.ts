@@ -203,8 +203,11 @@ export async function handleBookkeepingRoutes(
       window = ingestionWindows.get(machine.credentialId);
     if (!window || now - window.started >= 60000)
       ingestionWindows.set(machine.credentialId, { started: now, count: 1 });
-    else if (++window.count > limit)
-      return json(429, { error: "Rate limit exceeded" });
+    else if (++window.count > limit) {
+      const limited = json(429, { error: "Rate limit exceeded" });
+      limited.headers = { ...limited.headers, "Retry-After": "60" };
+      return limited;
+    }
     console.info(
       JSON.stringify({
         event: "bookkeeping_ingest",
