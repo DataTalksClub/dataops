@@ -156,20 +156,36 @@ export async function inspectNewsletterSlots(file: string) {
 }
 export async function writeNewsletterSlots(
   rows: ImportSlot[],
-  options: { api: string; token: string; confirm: string },
+  options: {
+    api: string;
+    token?: string;
+    confirm: string;
+    portalUsername?: string;
+    portalPassword?: string;
+  },
 ) {
   if (options.confirm !== options.api)
     throw new Error("Explicit target confirmation must equal API URL");
+  if (Boolean(options.portalUsername) !== Boolean(options.portalPassword))
+    throw new Error("Portal username and password must be provided together");
+  if (!options.token && !options.portalUsername)
+    throw new Error("Import requires portal credentials or a session token");
+  const authorization =
+      options.portalUsername && options.portalPassword
+        ? `Basic ${Buffer.from(`${options.portalUsername}:${options.portalPassword}`).toString("base64")}`
+        : `Bearer ${options.token}`,
+    api = options.api.replace(/\/$/, ""),
+    headers = { authorization };
   let created = 0,
     duplicates = 0;
   for (const row of rows) {
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        response = await fetch(`${options.api}/api/newsletter-slots`, {
+        response = await fetch(`${api}/api/newsletter-slots`, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${options.token}`,
+            ...headers,
             "content-type": "application/json",
             "idempotency-key": row.sourceKey,
           },
@@ -187,18 +203,21 @@ export async function writeNewsletterSlots(
       );
     response.status === 201 ? created++ : duplicates++;
   }
-  const verification = await fetch(
-    `${options.api}/api/newsletter-slots?from=1900-01-01&to=9999-12-31`,
-    { headers: { authorization: `Bearer ${options.token}` } },
-  );
-  if (!verification.ok) throw new Error("Import verification failed");
-  const verified = (await verification.json()) as any;
+  const verifiedKeys = new Set<string>();
+  for (const year of [
+    ...new Set(rows.map((row) => row.publicationDate.slice(0, 4))),
+  ].sort()) {
+    const verification = await fetch(
+      `${api}/api/newsletter-slots?from=${year}-01-01&to=${year}-12-31`,
+      { headers },
+    );
+    if (!verification.ok) throw new Error("Import verification failed");
+    const result = (await verification.json()) as any;
+    for (const item of result.items || [])
+      if (typeof item.sourceKey === "string") verifiedKeys.add(item.sourceKey);
+  }
   for (const row of rows)
-    if (
-      !(verified.items || []).some(
-        (item: any) => item.sourceKey === row.sourceKey,
-      )
-    )
+    if (!verifiedKeys.has(row.sourceKey))
       throw new Error("Import verification missing row key");
   return { accepted: rows.length, created, duplicates, verified: rows.length };
 }
@@ -213,11 +232,19 @@ if (require.main === module) {
       }
       const api = process.env.NEWSLETTER_IMPORT_API || "",
         token = process.env.NEWSLETTER_IMPORT_TOKEN || "",
-        confirm = process.env.NEWSLETTER_IMPORT_CONFIRM || "";
+        confirm = process.env.NEWSLETTER_IMPORT_CONFIRM || "",
+        portalUsername = process.env.NEWSLETTER_IMPORT_PORTAL_USERNAME,
+        portalPassword = process.env.NEWSLETTER_IMPORT_PORTAL_PASSWORD;
       console.log(
         JSON.stringify({
           mode: "write",
-          ...(await writeNewsletterSlots(rows, { api, token, confirm })),
+          ...(await writeNewsletterSlots(rows, {
+            api,
+            token,
+            confirm,
+            portalUsername,
+            portalPassword,
+          })),
         }),
       );
     })

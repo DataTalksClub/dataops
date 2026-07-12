@@ -401,6 +401,34 @@ describe("newsletter slots", () => {
       delete process.env.NEWSLETTER_OPEN_ALERT_LEAD_DAYS;
     }
   });
+  it("accepts deployed portal Basic auth while rejecting an unauthenticated write", async () => {
+    process.env.DATAOPS_DOCS_DOMAIN = "1";
+    process.env.BASIC_AUTH_USERNAME = "newsletter-importer";
+    process.env.BASIC_AUTH_PASSWORD = "synthetic-portal-password";
+    process.env.SKIP_AUTH = "false";
+    const body = {
+        ...valid,
+        sourceKey: "portal-basic-import",
+        publicationDate: "2027-02-05",
+      },
+      basic = `Basic ${Buffer.from("newsletter-importer:synthetic-portal-password").toString("base64")}`;
+    try {
+      assert.equal(
+        (await invoke("POST", "/api/newsletter-slots", body)).statusCode,
+        401,
+      );
+      const accepted = await invoke("POST", "/api/newsletter-slots", body, {
+        authorization: basic,
+      });
+      assert.equal(accepted.statusCode, 201, accepted.body);
+      assert.ok(!accepted.body.includes("synthetic-portal-password"));
+    } finally {
+      delete process.env.DATAOPS_DOCS_DOMAIN;
+      delete process.env.BASIC_AUTH_USERNAME;
+      delete process.env.BASIC_AUTH_PASSWORD;
+      process.env.SKIP_AUTH = "true";
+    }
+  });
   it("dry-runs offline and writes only synthetic allowlisted Newsletter fields through HTTP", async () => {
     const workbook = new ExcelJS.Workbook(),
       sheet = workbook.addWorksheet("Newsletter");
@@ -448,13 +476,21 @@ describe("newsletter slots", () => {
       "sourceType",
       "status",
     ]);
-    let calls = 0;
+    let calls = 0,
+      posts = 0;
+    const requests: Array<{ url: string; authorization: string }> = [];
     const original = global.fetch;
-    global.fetch = async (_url, options) => {
+    global.fetch = async (url, options) => {
       calls++;
-      return options?.method === "POST"
-        ? new Response("{}", { status: calls === 1 ? 201 : 200 })
-        : new Response(JSON.stringify({ items: rows }), { status: 200 });
+      requests.push({
+        url: String(url),
+        authorization: new Headers(options?.headers).get("authorization") || "",
+      });
+      if (options?.method === "POST") {
+        posts++;
+        return new Response("{}", { status: posts === 1 ? 201 : 200 });
+      }
+      return new Response(JSON.stringify({ items: rows }), { status: 200 });
     };
     try {
       assert.deepEqual(
@@ -466,6 +502,11 @@ describe("newsletter slots", () => {
         { accepted: 1, created: 1, duplicates: 0, verified: 1 },
       );
       assert.equal(calls, 2);
+      assert.equal(
+        requests[1].url,
+        "https://api.example.invalid/api/newsletter-slots?from=2026-01-01&to=2026-12-31",
+      );
+      assert.ok(!requests.some((request) => request.url.includes("9999")));
       assert.deepEqual(
         await writeNewsletterSlots(rows, {
           api: "https://api.example.invalid",
@@ -473,6 +514,32 @@ describe("newsletter slots", () => {
           confirm: "https://api.example.invalid",
         }),
         { accepted: 1, created: 0, duplicates: 1, verified: 1 },
+      );
+      const beforeBasic = requests.length;
+      assert.deepEqual(
+        await writeNewsletterSlots(rows, {
+          api: "https://api.example.invalid",
+          confirm: "https://api.example.invalid",
+          portalUsername: "portal-user",
+          portalPassword: "portal-password",
+        }),
+        { accepted: 1, created: 0, duplicates: 1, verified: 1 },
+      );
+      const basic = `Basic ${Buffer.from("portal-user:portal-password").toString("base64")}`;
+      assert.ok(
+        requests
+          .slice(beforeBasic)
+          .every((request) => request.authorization === basic),
+      );
+      assert.ok(
+        !JSON.stringify(
+          await writeNewsletterSlots([], {
+            api: "https://api.example.invalid",
+            confirm: "https://api.example.invalid",
+            portalUsername: "portal-user",
+            portalPassword: "portal-password",
+          }),
+        ).includes("portal-password"),
       );
       await assert.rejects(() =>
         writeNewsletterSlots(rows, {
