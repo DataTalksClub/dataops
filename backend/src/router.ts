@@ -20,6 +20,7 @@ import { handleEmailWebhook } from './routes/email';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
+import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { getSession } from './db/sessions';
 import {
@@ -702,6 +703,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Task routes ────────────────────────────────────────────────
     if (reqPath.startsWith('/api/bookkeeping')) {
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
+    }
+
+    if (reqPath.startsWith('/api/sponsor-crm')) {
+      return await handleSponsorCrmRoutes(reqPath, method, event, client);
     }
 
     // POST /api/tasks — Create a task

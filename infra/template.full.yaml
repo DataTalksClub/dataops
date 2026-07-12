@@ -61,6 +61,22 @@ Globals:
       - x86_64
 
 Resources:
+  DataOpsSponsorCrmTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-sponsor-crm
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+
   DataOpsBookkeepingTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -621,6 +637,7 @@ Resources:
               - dynamodb:Query
               - dynamodb:Scan
               - dynamodb:UpdateItem
+              - dynamodb:TransactWriteItems
             Resource:
               - !GetAtt DataOpsTasksTable.Arn
               - !Sub ${DataOpsTasksTable.Arn}/index/*
@@ -637,6 +654,7 @@ Resources:
               - !GetAtt DataOpsNotificationsTable.Arn
               - !GetAtt DataOpsSessionsTable.Arn
               - !GetAtt DataOpsBookkeepingTable.Arn
+              - !GetAtt DataOpsSponsorCrmTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -676,6 +694,7 @@ Resources:
           DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
           DATAOPS_BOOKKEEPING_TABLE: !Ref DataOpsBookkeepingTable
+          DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !GetAtt BookkeepingDocumentsKey.Arn
           BOOKKEEPING_INGESTION_SECRET_NAME: !Ref BookkeepingIngestionSecret

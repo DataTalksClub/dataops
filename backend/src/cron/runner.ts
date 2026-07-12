@@ -5,6 +5,7 @@ import { createBundle, listBundles } from '../db/bundles';
 import { createNotification } from '../db/notifications';
 import { generateRecurringTasks, cronMatchesDate } from '../db/recurring';
 import type { Template, Bundle } from '../types';
+import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 
 export interface CronRunnerResult {
   created: string[];
@@ -56,6 +57,13 @@ async function runCron(client: DynamoDBDocumentClient, now?: Date): Promise<Cron
   let failures = 0;
   const recurringGenerated: string[] = [];
   let recurringSkipped = 0;
+
+  try {
+    await evaluateSponsorBookingAlerts(client, todayDate);
+  } catch (err: unknown) {
+    failures++;
+    await createNotification(client, { type: 'automation-failure', message: `Sponsor booking alert evaluation failed for ${todayDate}`, dueAt: todayDate });
+  }
 
   try {
     const recurringResult = await generateRecurringTasks(client, todayDate, todayDate);

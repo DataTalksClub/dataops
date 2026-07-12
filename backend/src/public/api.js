@@ -531,6 +531,15 @@
       archiveReport: function (id) { return fetch('/api/bookkeeping/reports/' + encodeURIComponent(id) + '/archive', { method: 'POST', headers: getAuthHeaders() }).then(handleResponse); },
       setupAccounts: function () { return fetch('/api/bookkeeping/accounts/setup', { method: 'POST', headers: getAuthHeaders() }).then(handleResponse); },
     },
+    sponsorCrm: {
+      list: function (resource, query) { return fetch('/api/sponsor-crm/' + resource + (query ? '?' + new URLSearchParams(query) : ''), { headers: getAuthHeaders() }).then(handleResponse); },
+      get: function (resource, id) { return fetch('/api/sponsor-crm/' + resource + '/' + encodeURIComponent(id), { headers: getAuthHeaders() }).then(handleResponse); },
+      create: function (resource, data) { return fetch('/api/sponsor-crm/' + resource, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      update: function (resource, id, data) { return fetch('/api/sponsor-crm/' + resource + '/' + encodeURIComponent(id), { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      archive: function (resource, id) { return fetch('/api/sponsor-crm/' + resource + '/' + encodeURIComponent(id), { method: 'DELETE', headers: getAuthHeaders() }).then(handleResponse); },
+      history: function (id) { return fetch('/api/sponsor-crm/bookings/' + encodeURIComponent(id) + '/history', { headers: getAuthHeaders() }).then(handleResponse); },
+      linkSchedule: function (id, data) { return fetch('/api/sponsor-crm/bookings/' + encodeURIComponent(id) + '/schedule-link', { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); }
+    },
 
     files: {
       upload: function (formData) {

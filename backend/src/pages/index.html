@@ -3961,6 +3961,17 @@
       #bookkeeping-pdf { width: 100%; }
     }
     @media (max-width: 600px) { #bookkeeping-dialog { padding: 16px; } #bookkeeping-form { grid-template-columns: 1fr; } }
+    .crm-grid { display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,2fr);gap:18px; }
+    .crm-list { display:grid;gap:8px; }
+    .crm-item { border:1px solid var(--border-soft);border-radius:8px;padding:12px;background:var(--surface);overflow-wrap:anywhere; }
+    .crm-item header { display:flex;justify-content:space-between;gap:10px;align-items:start; }
+    .crm-badge { display:inline-block;padding:2px 7px;border-radius:999px;background:var(--primary-soft);font-size:12px; }
+    .crm-timeline { border-left:2px solid var(--border);margin-left:8px;padding-left:14px;display:grid;gap:10px; }
+    .crm-form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+    .crm-form label { display:grid;gap:5px;min-width:0; }
+    .crm-form input,.crm-form select,.crm-form textarea { width:100%;min-width:0; }
+    .crm-form .form-actions,.crm-form [role="alert"] { grid-column:1/-1; }
+    @media(max-width:700px){.crm-grid,.crm-form{grid-template-columns:1fr}.crm-grid>*{min-width:0}.crm-item header{display:grid}}
   </style>
 </head>
 <body>
@@ -3977,6 +3988,7 @@
       <a href="#/templates" class="nav-link" style="display:none;">Templates</a>
       <a href="#/recurring" class="nav-link" style="display:none;">Recurring</a>
       <a href="#/bookkeeping" class="nav-link" style="display:none;">Bookkeeping</a>
+      <a href="#/sponsors" class="nav-link" style="display:none;">Sponsors</a>
       <div class="notif-bell-wrapper nav-link" id="notif-bell-wrapper" style="display:none;margin-left:auto;">
         <button class="notif-bell" id="notif-bell" type="button" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notif-dropdown"><span aria-hidden="true">&#x1F514;</span><span class="notif-badge" id="notif-badge" aria-hidden="true" style="display:none">0</span></button>
         <div class="notif-dropdown" id="notif-dropdown" role="region" aria-label="Notifications" style="display:none"></div>

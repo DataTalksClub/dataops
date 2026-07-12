@@ -30,6 +30,7 @@ const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems');
 const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications');
 const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions');
 const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping');
+const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm');
 
 /**
  * Create all application tables (Tasks, Bundles, Templates) with GSIs.
@@ -37,6 +38,12 @@ const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping');
  */
 async function createTables(client: DynamoDBDocumentClient): Promise<void> {
   const tableDefinitions = [
+    {
+      TableName: TABLE_SPONSOR_CRM,
+      KeySchema: [{ AttributeName: 'PK', KeyType: 'HASH' as const }, { AttributeName: 'SK', KeyType: 'RANGE' as const }],
+      AttributeDefinitions: [{ AttributeName: 'PK', AttributeType: 'S' as const }, { AttributeName: 'SK', AttributeType: 'S' as const }],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
     {
       TableName: TABLE_BOOKKEEPING,
       KeySchema: [{ AttributeName: 'PK', KeyType: 'HASH' as const }, { AttributeName: 'SK', KeyType: 'RANGE' as const }],
@@ -303,6 +310,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_NOTIFICATIONS,
     TABLE_SESSIONS,
     TABLE_BOOKKEEPING,
+    TABLE_SPONSOR_CRM,
   ];
 
   for (const tableName of tableNames) {
@@ -333,4 +341,5 @@ export {
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
   TABLE_BOOKKEEPING,
+  TABLE_SPONSOR_CRM,
 };
