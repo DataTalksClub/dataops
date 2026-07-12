@@ -3928,6 +3928,38 @@
     #bookkeeping-form h3, #bookkeeping-form .form-error, #bookkeeping-form .form-actions { grid-column: 1 / -1; }
     #bookkeeping-form label { display: grid; gap: 6px; min-width: 0; }
     #bookkeeping-form input { width: 100%; min-width: 0; }
+    /* The authenticated production portal serves this fallback shell. Keep the
+       bookkeeping page itself bounded while allowing only its wide ledger to
+       scroll horizontally. */
+    #app:has(#bookkeeping-list),
+    #app:has(#bookkeeping-list) > *,
+    #bookkeeping-list,
+    #bookkeeping-documents {
+      min-width: 0;
+      max-width: 100%;
+    }
+    #bookkeeping-list .table-wrap {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+    }
+    #bookkeeping-list .table-wrap table { min-width: 820px; }
+    #app:has(#bookkeeping-list) .form-row > *,
+    #app:has(#bookkeeping-list) .form-row input,
+    #app:has(#bookkeeping-list) .form-row select {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .bookkeeping-document { overflow-wrap: anywhere; }
+    @media (max-width: 600px) {
+      #app:has(#bookkeeping-list) { width: 100%; overflow-x: clip; }
+      #app:has(#bookkeeping-list) .card { width: 100%; max-width: 100%; min-width: 0; }
+      #app:has(#bookkeeping-list) .form-row > label,
+      #app:has(#bookkeeping-list) .form-row > button { width: 100%; }
+      #bookkeeping-pdf { width: 100%; }
+    }
     @media (max-width: 600px) { #bookkeeping-dialog { padding: 16px; } #bookkeeping-form { grid-template-columns: 1fr; } }
   </style>
 </head>
