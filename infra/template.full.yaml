@@ -46,6 +46,16 @@ Parameters:
   TypefullySocialSetDataTalksClub:
     Type: Number
     Default: 0
+  NewsletterOpenAlertLeadDays:
+    Type: Number
+    Default: 14
+    MinValue: 0
+    MaxValue: 365
+  NewsletterWorkflowAlertLeadDays:
+    Type: Number
+    Default: 10
+    MinValue: 0
+    MaxValue: 365
 
 
   WorkEngineTypefullyApiTokenSecretArn:
@@ -61,6 +71,29 @@ Globals:
       - x86_64
 
 Resources:
+  DataOpsNewsletterSlotsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-newsletter-slots
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: rangeKey, AttributeType: S }
+        - { AttributeName: publicationKey, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Date
+          KeySchema:
+            - { AttributeName: rangeKey, KeyType: HASH }
+            - { AttributeName: publicationKey, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
   DataOpsSponsorCrmTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -655,6 +688,8 @@ Resources:
               - !GetAtt DataOpsSessionsTable.Arn
               - !GetAtt DataOpsBookkeepingTable.Arn
               - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !GetAtt DataOpsNewsletterSlotsTable.Arn
+              - !Sub ${DataOpsNewsletterSlotsTable.Arn}/index/*
         - Statement:
             Effect: Allow
             Action:
@@ -695,6 +730,9 @@ Resources:
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
           DATAOPS_BOOKKEEPING_TABLE: !Ref DataOpsBookkeepingTable
           DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
+          DATAOPS_NEWSLETTER_SLOTS_TABLE: !Ref DataOpsNewsletterSlotsTable
+          NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
+          NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !GetAtt BookkeepingDocumentsKey.Arn
           BOOKKEEPING_INGESTION_SECRET_NAME: !Ref BookkeepingIngestionSecret
