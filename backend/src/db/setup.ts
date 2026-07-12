@@ -29,6 +29,7 @@ const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents'
 const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems');
 const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications');
 const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions');
+const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping');
 
 /**
  * Create all application tables (Tasks, Bundles, Templates) with GSIs.
@@ -36,6 +37,12 @@ const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions');
  */
 async function createTables(client: DynamoDBDocumentClient): Promise<void> {
   const tableDefinitions = [
+    {
+      TableName: TABLE_BOOKKEEPING,
+      KeySchema: [{ AttributeName: 'PK', KeyType: 'HASH' as const }, { AttributeName: 'SK', KeyType: 'RANGE' as const }],
+      AttributeDefinitions: [{ AttributeName: 'PK', AttributeType: 'S' as const }, { AttributeName: 'SK', AttributeType: 'S' as const }],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
     {
       TableName: TABLE_TASKS,
       KeySchema: [
@@ -295,6 +302,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_INTAKE,
     TABLE_NOTIFICATIONS,
     TABLE_SESSIONS,
+    TABLE_BOOKKEEPING,
   ];
 
   for (const tableName of tableNames) {
@@ -324,4 +332,5 @@ export {
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
+  TABLE_BOOKKEEPING,
 };

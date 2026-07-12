@@ -516,6 +516,22 @@
       },
     },
 
+    bookkeeping: {
+      list: function () { return fetch('/api/bookkeeping/transactions', { headers: getAuthHeaders() }).then(handleResponse); },
+      create: function (data) { return fetch('/api/bookkeeping/transactions', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      update: function (id, data) { return fetch('/api/bookkeeping/transactions/' + encodeURIComponent(id), { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      delete: function (id) { return fetch('/api/bookkeeping/transactions/' + encodeURIComponent(id), { method: 'DELETE', headers: getAuthHeaders() }).then(handleResponse); },
+      listResource: function (name) { return fetch('/api/bookkeeping/' + name, { headers: getAuthHeaders() }).then(handleResponse); },
+      createResource: function (name, data) { return fetch('/api/bookkeeping/' + name, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      deleteResource: function (name, id) { return fetch('/api/bookkeeping/' + name + '/' + encodeURIComponent(id), { method: 'DELETE', headers: getAuthHeaders() }).then(handleResponse); },
+      prepareUpload: function (data) { return fetch('/api/bookkeeping/documents/upload', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      completeUpload: function (id) { return fetch('/api/bookkeeping/documents/' + encodeURIComponent(id) + '/complete', { method: 'POST', headers: getAuthHeaders() }).then(handleResponse); },
+      downloadDocument: function (id) { return fetch('/api/bookkeeping/documents/' + encodeURIComponent(id) + '/download', { headers: getAuthHeaders() }).then(handleResponse); },
+      createReport: function (data) { return fetch('/api/bookkeeping/reports/snapshot', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(data) }).then(handleResponse); },
+      archiveReport: function (id) { return fetch('/api/bookkeeping/reports/' + encodeURIComponent(id) + '/archive', { method: 'POST', headers: getAuthHeaders() }).then(handleResponse); },
+      setupAccounts: function () { return fetch('/api/bookkeeping/accounts/setup', { method: 'POST', headers: getAuthHeaders() }).then(handleResponse); },
+    },
+
     files: {
       upload: function (formData) {
         var token = getToken();

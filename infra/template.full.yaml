@@ -61,6 +61,75 @@ Globals:
       - x86_64
 
 Resources:
+  DataOpsBookkeepingTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-bookkeeping
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+
+  BookkeepingDocumentsKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+            Action: "kms:*"
+            Resource: "*"
+
+  BookkeepingDocumentsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: aws:kms, KMSMasterKeyID: !GetAtt BookkeepingDocumentsKey.Arn }
+            BucketKeyEnabled: true
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+          - Id: RetainNoncurrentEvidence
+            Status: Enabled
+            NoncurrentVersionTransitions: [{ StorageClass: GLACIER, TransitionInDays: 90 }]
+
+  BookkeepingDocumentsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BookkeepingDocumentsBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt BookkeepingDocumentsBucket.Arn, !Sub "${BookkeepingDocumentsBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": false } }
+
+  BookkeepingIngestionSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${AWS::StackName}/bookkeeping/ingestion
+      GenerateSecretString: { PasswordLength: 48, ExcludePunctuation: true }
+
   DataOpsTasksTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -567,6 +636,7 @@ Resources:
               - !Sub ${DataOpsIntakeTable.Arn}/index/*
               - !GetAtt DataOpsNotificationsTable.Arn
               - !GetAtt DataOpsSessionsTable.Arn
+              - !GetAtt DataOpsBookkeepingTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -576,12 +646,21 @@ Resources:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BasicAuthPasswordSecretName}-*
               - !Ref WorkEnginePortalSecret
               - !Ref WorkEngineTypefullyApiTokenSecretArn
+              - !Ref BookkeepingIngestionSecret
         - Statement:
             Effect: Allow
             Action:
               - s3:PutObject
             Resource:
               - !Sub ${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:HeadObject]
+            Resource: !Sub ${BookkeepingDocumentsBucket.Arn}/*
+        - Statement:
+            Effect: Allow
+            Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
+            Resource: !GetAtt BookkeepingDocumentsKey.Arn
       Environment:
         Variables:
           DATAOPS_ENV: !Ref DataOpsEnvironment
@@ -596,6 +675,10 @@ Resources:
           DATAOPS_INTAKE_TABLE: !Ref DataOpsIntakeTable
           DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
+          DATAOPS_BOOKKEEPING_TABLE: !Ref DataOpsBookkeepingTable
+          BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
+          BOOKKEEPING_DOCUMENTS_KMS_KEY: !GetAtt BookkeepingDocumentsKey.Arn
+          BOOKKEEPING_INGESTION_SECRET_NAME: !Ref BookkeepingIngestionSecret
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
           GITHUB_OWNER: !Ref GitHubOwner
@@ -641,6 +724,10 @@ Resources:
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}'
 
 Outputs:
+  DataOpsBookkeepingTableName:
+    Value: !Ref DataOpsBookkeepingTable
+  BookkeepingDocumentsBucketName:
+    Value: !Ref BookkeepingDocumentsBucket
   BackendUrl:
     Description: Protected DataOps v1 Lambda Function URL
     Value: !GetAtt BackendFunctionUrl.FunctionUrl

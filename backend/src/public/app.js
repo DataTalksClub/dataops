@@ -1236,6 +1236,309 @@
     app.innerHTML = '';
   }
 
+  function renderBookkeeping() {
+    clearApp();
+    app.innerHTML =
+      '<section class="page-header"><div><h2>Bookkeeping</h2><p class="page-subtitle">Private ledger and monthly evidence</p></div><button class="btn btn-primary" id="bookkeeping-add">Add entry</button></section>' +
+      '<section class="card"><div class="form-row"><label>Year <select id="bookkeeping-year"><option value="">All</option></select></label><label>Type <input id="bookkeeping-type"></label><label>Category <input id="bookkeeping-category"></label><label>Provider / payee <input id="bookkeeping-provider"></label><label>Currency <input id="bookkeeping-currency" maxlength="3"></label><label>Search <input id="bookkeeping-search" type="search" placeholder="Provider, description, category"></label></div><div id="bookkeeping-totals" aria-live="polite"></div><div id="bookkeeping-list" aria-live="polite">Loading bookkeeping…</div></section>' +
+      '<section class="card" aria-labelledby="evidence-heading"><h3 id="evidence-heading">Evidence and monthly package</h3><div class="form-row"><label>PDF evidence <input id="bookkeeping-pdf" type="file" accept="application/pdf,.pdf"></label><label>Document type <select id="bookkeeping-document-type"><option value="invoice">Invoice</option><option value="receipt">Receipt</option><option value="bank-statement">Bank statement</option><option value="private-account-statement">Private account statement</option></select></label><label>Account <select id="bookkeeping-account"><option value="">No account</option></select></label><label>Statement month <input id="bookkeeping-statement-month" type="month"></label><label>Link to transaction <select id="bookkeeping-transaction"><option value="">No transaction</option></select></label><button id="bookkeeping-upload">Upload PDF</button></div><div id="bookkeeping-documents">Loading private documents…</div><div class="form-row"><label>Report month <input id="bookkeeping-month" type="month"></label><button id="bookkeeping-report">Create monthly package</button></div><p id="bookkeeping-coverage" role="status">Choose a month to review statement and evidence coverage.</p><p id="bookkeeping-document-status" role="status">PDFs are private and downloads expire after five minutes.</p></section>' +
+      '<dialog id="bookkeeping-dialog"><form method="dialog" id="bookkeeping-form"><h3>Bookkeeping entry</h3><input type="hidden" name="id"><label>Transaction date <input name="transactionDate" type="date" required></label><label>Paid date <input name="paidDate" type="date"></label><label>Provider / payee <input name="counterparty" maxlength="300" required></label><label>Description <input name="description" maxlength="300" required></label><label>Amount <input name="amount" inputmode="decimal" pattern="[0-9]+(\\.[0-9]{1,4})?" required></label><label>Currency <input name="currency" maxlength="3" pattern="[A-Z]{3}" value="EUR" required></label><label>Category <input name="category" maxlength="300"></label><label>Type <input name="entryType" maxlength="300"></label><label>Statement / reference <input name="statementRef" maxlength="300"></label><p class="form-error" id="bookkeeping-error" role="alert"></p><div class="form-actions"><button value="cancel">Cancel</button><button class="btn btn-primary" value="default" id="bookkeeping-save">Save</button></div></form></dialog>';
+    app.insertAdjacentHTML('beforeend', '<dialog id="bookkeeping-delete-dialog"><h3>Delete bookkeeping entry?</h3><p>This cannot be undone.</p><button id="bookkeeping-delete-cancel">Cancel</button><button id="bookkeeping-delete-confirm" class="btn btn-danger">Delete entry</button></dialog>');
+    document.getElementById('evidence-heading').insertAdjacentHTML('afterend', '<button id="bookkeeping-setup-accounts">Set up business accounts</button>');
+    var items = [];
+    var list = document.getElementById('bookkeeping-list');
+    var year = document.getElementById('bookkeeping-year');
+    var search = document.getElementById('bookkeeping-search');
+    var dialog = document.getElementById('bookkeeping-dialog');
+    var form = document.getElementById('bookkeeping-form');
+    form.noValidate = true;
+    form.addEventListener('input', function (event) {
+      if (event.target && event.target.removeAttribute) event.target.removeAttribute('aria-invalid');
+      document.getElementById('bookkeeping-error').textContent = '';
+    });
+    var documents = [];
+    function refreshDocuments() {
+      Promise.all([api.bookkeeping.listResource('documents'), api.bookkeeping.listResource('links'), api.bookkeeping.listResource('accounts')])
+        .then(function (results) {
+          documents = results[0].items || [];
+          var links = results[1].items || [];
+          var accounts = results[2].items || [];
+          var accountSelect = document.getElementById('bookkeeping-account');
+          accountSelect.innerHTML =
+            '<option value="">No account</option>' +
+            accounts
+              .map(function (a) {
+                return '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.displayName + ' (' + a.kind + ')') + '</option>';
+              })
+              .join('');
+          document.getElementById('bookkeeping-documents').innerHTML = documents.length
+            ? documents
+                .map(function (d) {
+                  var docLinks = links.filter(function (l) {
+                    return l.documentId === d.id;
+                  });
+                  return (
+                    '<div class="bookkeeping-document"><strong>' +
+                    escapeHtml(d.originalFilename) +
+                    '</strong> <span>' +
+                    escapeHtml(d.documentType) +
+                    '</span> <button data-document-download="' +
+                    escapeHtml(d.id) +
+                    '">Download</button>' +
+                    docLinks
+                      .map(function (l) {
+                        return ' <button data-link-delete="' + escapeHtml(l.id) + '">Unlink ' + escapeHtml(String(l.transactionId).slice(0, 8)) + '</button>';
+                      })
+                      .join('') +
+                    '</div>'
+                  );
+                })
+                .join('')
+            : '<div class="empty-state">No private documents uploaded.</div>';
+        })
+        .catch(function () {
+          document.getElementById('bookkeeping-documents').textContent = 'Could not load private documents.';
+        });
+    }
+    refreshDocuments();
+    document.getElementById('bookkeeping-setup-accounts').onclick = function () { api.bookkeeping.setupAccounts().then(refreshDocuments); };
+    document.getElementById('bookkeeping-documents').onclick = function (e) {
+      var download = e.target.getAttribute('data-document-download'),
+        unlink = e.target.getAttribute('data-link-delete');
+      if (download)
+        api.bookkeeping.downloadDocument(download).then(function (r) {
+          window.location.assign(r.downloadUrl);
+        });
+      if (unlink && confirm('Remove this evidence link?')) api.bookkeeping.deleteResource('links', unlink).then(refreshDocuments);
+    };
+    function draw() {
+      var q = search.value.toLowerCase(),
+        y = year.value,
+        type = document.getElementById('bookkeeping-type').value.toLowerCase(),
+        category = document.getElementById('bookkeeping-category').value.toLowerCase(),
+        provider = document.getElementById('bookkeeping-provider').value.toLowerCase(),
+        currency = document.getElementById('bookkeeping-currency').value.toUpperCase();
+      var shown = items.filter(function (i) {
+        return (
+          (!y || i.transactionDate.slice(0, 4) === y) &&
+          (!type ||
+            String(i.entryType || '')
+              .toLowerCase()
+              .includes(type)) &&
+          (!category ||
+            String(i.category || '')
+              .toLowerCase()
+              .includes(category)) &&
+          (!provider ||
+            String(i.counterparty || '')
+              .toLowerCase()
+              .includes(provider)) &&
+          (!currency || i.currency === currency) &&
+          (!q || [i.counterparty, i.description, i.category, i.entryType].join(' ').toLowerCase().includes(q))
+        );
+      });
+      var totals = {};
+      shown.forEach(function (i) {
+        totals[i.currency] = (totals[i.currency] || 0) + Number(i.amount);
+      });
+      document.getElementById('bookkeeping-totals').textContent =
+        Object.keys(totals)
+          .map(function (c) {
+            return c + ' ' + totals[c].toFixed(2);
+          })
+          .join(' · ') || 'No totals';
+      list.innerHTML = shown.length
+        ? '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Paid</th><th>Provider</th><th>Description</th><th>Amount</th><th>Category / type</th><th>Reference</th><th></th></tr></thead><tbody>' +
+          shown
+            .map(function (i) {
+              return '<tr><td>' + escapeHtml(i.transactionDate) + '</td><td>' + escapeHtml(i.paidDate || 'Unpaid') + '</td><td>' + escapeHtml(i.counterparty) + '</td><td>' + escapeHtml(i.description) + '</td><td>' + escapeHtml(i.amount + ' ' + i.currency) + '</td><td>' + escapeHtml([i.category, i.entryType].filter(Boolean).join(' / ') || '—') + '</td><td>' + escapeHtml(i.statementRef ? 'Attached' : 'Missing') + '</td><td><button data-edit="' + escapeHtml(i.id) + '">Edit</button> <button data-delete="' + escapeHtml(i.id) + '">Delete</button></td></tr>';
+            })
+            .join('') +
+          '</tbody></table></div>'
+        : '<div class="empty-state"><h3>No bookkeeping entries</h3><p>Adjust the filters or add the first entry.</p></div>';
+    }
+    api.bookkeeping
+      .list()
+      .then(function (r) {
+        items = r.items || [];
+        document.getElementById('bookkeeping-transaction').innerHTML =
+          '<option value="">No transaction</option>' +
+          items
+            .map(function (i) {
+              return '<option value="' + escapeHtml(i.id) + '">' + escapeHtml(i.transactionDate + ' · ' + i.counterparty) + '</option>';
+            })
+            .join('');
+        Array.from(
+          new Set(
+            items.map(function (i) {
+              return i.transactionDate.slice(0, 4);
+            })
+          )
+        )
+          .sort()
+          .reverse()
+          .forEach(function (y) {
+            year.insertAdjacentHTML('beforeend', '<option>' + escapeHtml(y) + '</option>');
+          });
+        draw();
+      })
+      .catch(function () {
+        list.innerHTML = '<div class="error-state">Could not load bookkeeping. Try again.</div>';
+      });
+    year.onchange = draw;
+    search.oninput = draw;
+    ['bookkeeping-type', 'bookkeeping-category', 'bookkeeping-provider', 'bookkeeping-currency'].forEach(function (id) {
+      document.getElementById(id).oninput = draw;
+    });
+    document.getElementById('bookkeeping-add').onclick = function () {
+      form.reset();
+      form.elements.currency.value = 'EUR';
+      dialog.showModal();
+    };
+    list.onclick = function (e) {
+      var edit = e.target.getAttribute('data-edit'),
+        del = e.target.getAttribute('data-delete');
+      if (edit) {
+        var item = items.find(function (i) {
+          return i.id === edit;
+        });
+        Object.keys(item).forEach(function (k) {
+          if (form.elements[k]) form.elements[k].value = item[k] || '';
+        });
+        dialog.showModal();
+      }
+      if (del) {
+        var deleteDialog = document.getElementById('bookkeeping-delete-dialog');
+        deleteDialog.dataset.entryId = del;
+        deleteDialog.showModal();
+      }
+    };
+    document.getElementById('bookkeeping-delete-cancel').onclick = function () { document.getElementById('bookkeeping-delete-dialog').close(); };
+    document.getElementById('bookkeeping-delete-confirm').onclick = function () {
+      var deleteDialog = document.getElementById('bookkeeping-delete-dialog');
+      var del = deleteDialog.dataset.entryId;
+      api.bookkeeping.delete(del).then(function () {
+          items = items.filter(function (i) {
+            return i.id !== del;
+          });
+          deleteDialog.close();
+          draw();
+        });
+    };
+    document.getElementById('bookkeeping-save').onclick = function (e) {
+      e.preventDefault();
+      var validationError = document.getElementById('bookkeeping-error');
+      Array.prototype.forEach.call(form.elements, function (field) { if (field.removeAttribute) field.removeAttribute('aria-invalid'); });
+      var requiredFields = [
+        ['transactionDate', 'Transaction date is required.'],
+        ['counterparty', 'Provider / payee is required.'],
+        ['description', 'Description is required.'],
+        ['amount', 'Enter a non-negative amount with up to four decimal places.'],
+        ['currency', 'Enter a three-letter currency code.']
+      ];
+      var invalid = requiredFields.find(function (rule) {
+        var field = form.elements[rule[0]];
+        if (!String(field.value || '').trim()) return true;
+        if (rule[0] === 'amount' && !/^[0-9]+(\.[0-9]{1,4})?$/.test(field.value)) return true;
+        if (rule[0] === 'currency' && !/^[A-Za-z]{3}$/.test(field.value)) return true;
+        return false;
+      });
+      if (invalid) {
+        var invalidField = form.elements[invalid[0]];
+        invalidField.setAttribute('aria-invalid', 'true');
+        validationError.textContent = invalid[1];
+        invalidField.focus();
+        return;
+      }
+      validationError.textContent = '';
+      var data = {};
+      new FormData(form).forEach(function (v, k) {
+        if (k !== 'id' && v !== '') data[k] = v;
+      });
+      data.currency = String(data.currency).toUpperCase();
+      var id = form.elements.id.value;
+      var call = id ? api.bookkeeping.update(id, data) : api.bookkeeping.create(data);
+      call
+        .then(function (saved) {
+          if (id)
+            items = items.map(function (i) {
+              return i.id === id ? saved : i;
+            });
+          else items.unshift(saved);
+          dialog.close();
+          draw();
+        })
+        .catch(function (err) {
+          document.getElementById('bookkeeping-error').textContent = err.message || 'Could not save entry';
+        });
+    };
+    document.getElementById('bookkeeping-upload').onclick = function () {
+      var input = document.getElementById('bookkeeping-pdf'),
+        file = input.files[0],
+        status = document.getElementById('bookkeeping-document-status');
+      if (!file) {
+        status.textContent = 'Choose a PDF first.';
+        return;
+      }
+      status.textContent = 'Preparing private upload…';
+      api.bookkeeping
+        .prepareUpload({
+          filename: file.name,
+          contentType: file.type,
+          byteSize: file.size,
+          documentType: document.getElementById('bookkeeping-document-type').value,
+          accountId: document.getElementById('bookkeeping-account').value || undefined,
+          statementMonth: document.getElementById('bookkeeping-statement-month').value || undefined
+        })
+        .then(function (prepared) {
+          return fetch(prepared.uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/pdf' },
+            body: file
+          }).then(function (r) {
+            if (!r.ok) throw new Error('Upload failed');
+            return api.bookkeeping.completeUpload(prepared.document.id);
+          });
+        })
+        .then(function (completed) {
+          var transactionId = document.getElementById('bookkeeping-transaction').value;
+          if (transactionId) return api.bookkeeping.createResource('links', { documentId: completed.document.id, transactionId: transactionId, coverageType: 'evidence' });
+        })
+        .then(function () {
+          status.textContent = 'PDF uploaded and verified.';
+          refreshDocuments();
+        })
+        .catch(function (err) {
+          status.textContent = err.message || 'Could not upload PDF.';
+        });
+    };
+    document.getElementById('bookkeeping-report').onclick = function () {
+      var month = document.getElementById('bookkeeping-month').value,
+        status = document.getElementById('bookkeeping-document-status');
+      if (!month) {
+        status.textContent = 'Choose a report month.';
+        return;
+      }
+      status.textContent = 'Checking statement coverage…';
+      api.bookkeeping
+        .createReport({ month: month })
+        .then(function (result) {
+          status.textContent = result.warnings && result.warnings.missingEvidence ? 'Package ready with ' + result.warnings.missingEvidence + ' missing-evidence warning(s).' : 'Package snapshot ready.';
+          return api.bookkeeping.archiveReport(result.report.id);
+        })
+        .then(function (result) {
+          var a = document.createElement('a');
+          a.href = result.downloadUrl;
+          a.download = 'datatalksclub-' + month + '.zip';
+          a.click();
+          status.textContent = 'Monthly package ready.';
+        })
+        .catch(function (err) {
+          status.textContent = err.message || 'Could not create monthly package.';
+        });
+    };
+  }
+
   // ── Router ──────────────────────────────────────────────────────
 
   var routes = {
@@ -1247,6 +1550,7 @@
     '#/templates': renderTemplates,
     '#/recurring': renderRecurring,
     '#/notifications': renderNotifications,
+    '#/bookkeeping': renderBookkeeping
   };
 
   function navigate() {
