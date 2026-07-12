@@ -5225,6 +5225,18 @@ body[data-view="create"] #back-button {
   color: var(--do-color-danger, #c0392b);
 }
 /* Private bookkeeping operator surface */
+.document-list:has(.sponsor-crm-surface) { width:100%;max-width:none;min-width:0;margin:0;border-top:0; }
+.sponsor-crm-surface { display:grid;gap:18px;width:100%;max-width:100%;min-width:0;padding:8px 0 40px;background:var(--surface);isolation:isolate; }
+.crm-header,.crm-filters { display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px; }
+.crm-header h2 { margin:0; }.crm-header p { margin:4px 0 0;color:var(--muted); }
+.crm-layout { display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,2fr);gap:18px;min-width:0; }
+.crm-layout>section { min-width:0; }.crm-card { border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;overflow-wrap:anywhere; }
+.crm-card small { display:block;color:var(--muted); }.crm-history { border-left:2px solid var(--border);padding-left:14px;display:grid;gap:10px; }
+.sponsor-crm-surface dialog { width:min(700px,calc(100vw - 32px));border:0;border-radius:12px;padding:20px; }
+.sponsor-crm-surface dialog form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.sponsor-crm-surface dialog h3,.sponsor-crm-surface dialog [role="alert"] { grid-column:1/-1; }
+.sponsor-crm-surface dialog label { display:grid;gap:5px;min-width:0; }.sponsor-crm-surface dialog input,.sponsor-crm-surface dialog select,.sponsor-crm-surface dialog textarea { width:100%;min-width:0;box-sizing:border-box; }
+@media(max-width:720px){.library-view:has(.sponsor-crm-surface){width:100%;min-width:0;padding:18px 14px;overflow-x:hidden}.crm-header,.crm-layout,.sponsor-crm-surface dialog form{display:grid;grid-template-columns:1fr}.crm-header>div:last-child{display:grid;gap:8px}}
 .document-list:has(.bookkeeping-surface) { width: 100%; max-width: none; min-width: 0; margin: 0; border-top: 0; }
 .bookkeeping-surface { display: grid; gap: 18px; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; padding: 8px 0 40px; }
 .bookkeeping-surface > *, .bookkeeping-evidence, .bookkeeping-upload, .bookkeeping-package { min-width: 0; max-width: 100%; }
