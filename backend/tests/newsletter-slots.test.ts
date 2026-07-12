@@ -1,6 +1,7 @@
 import { before, after, afterEach, describe, it } from "node:test";
 import assert from "node:assert";
 import path from "path";
+import fs from "fs/promises";
 import ExcelJS from "exceljs";
 import { DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
@@ -434,6 +435,7 @@ describe("newsletter slots", () => {
     hidden.hidden = true;
     workbook.addWorksheet("Contacts").addRow(["private@example.invalid"]);
     const file = path.resolve(".tmp/newsletter-import-synthetic.xlsx");
+    await fs.mkdir(path.dirname(file), { recursive: true });
     await workbook.xlsx.writeFile(file);
     const rows = await readNewsletterSlots(file);
     assert.equal(rows.length, 1);
