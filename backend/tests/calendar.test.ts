@@ -563,4 +563,72 @@ describe("operations calendar", () => {
     );
     await fs.rm(file, { force: true });
   });
+  it("uses deployed portal Basic auth and the single-origin work API for writes and bounded reads", async () => {
+    const requests: { url: string; authorization: string | null }[] = [],
+      row = {
+        activityType: "webinar",
+        title: "Synthetic portal import",
+        status: "confirmed",
+        allDay: true as const,
+        startDate: "2027-03-01",
+        endDate: "2027-03-01",
+        timeZone: "Europe/Berlin" as const,
+        sourceType: "schedule-xlsx" as const,
+        sourceKey: "synthetic-basic-auth-key",
+      },
+      basic = `Basic ${Buffer.from("portal-user:portal-password").toString("base64")}`;
+    const result = await writeCalendarImport([row], {
+      api: "https://calendar.invalid",
+      confirm: "https://calendar.invalid",
+      portalUsername: "portal-user",
+      portalPassword: "portal-password",
+      fetcher: async (input, init) => {
+        requests.push({
+          url: String(input),
+          authorization: new Headers(init?.headers).get("authorization"),
+        });
+        return String(input).includes("?")
+          ? new Response(JSON.stringify({ items: [row] }), { status: 200 })
+          : new Response(JSON.stringify(row), { status: 201 });
+      },
+    });
+    assert.deepEqual(result, {
+      accepted: 1,
+      created: 1,
+      duplicates: 0,
+      verified: 1,
+    });
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests.map((request) => request.url), [
+      "https://calendar.invalid/work/api/calendar-items",
+      "https://calendar.invalid/work/api/calendar-items?from=2027-01-01&to=2027-12-31",
+    ]);
+    assert.deepEqual(requests.map((request) => request.authorization), [
+      basic,
+      basic,
+    ]);
+    assert.equal(JSON.stringify(requests).includes("portal-password"), false);
+  });
+  it("rejects missing or partial importer credentials before network", async () => {
+    let calls = 0;
+    const common = {
+        api: "https://calendar.invalid",
+        confirm: "https://calendar.invalid",
+        fetcher: async () => {
+          calls++;
+          return new Response("{}", { status: 500 });
+        },
+      },
+      attempts = [
+        common,
+        { ...common, portalUsername: "portal-user" },
+        { ...common, portalPassword: "portal-password", token: "session" },
+      ];
+    for (const options of attempts)
+      await assert.rejects(
+        () => writeCalendarImport([], options),
+        /credentials|username and password/i,
+      );
+    assert.equal(calls, 0);
+  });
 });
