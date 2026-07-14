@@ -362,6 +362,30 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
     assert "CognitoClientSecret" not in workflow
 
 
+def test_deploy_workflow_keeps_production_auth_out_of_checks_and_scoped_to_deploy():
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    before_jobs, jobs = workflow.split("\njobs:\n", 1)
+    checks, deploy = jobs.split("\n  deploy:\n", 1)
+    expected_auth = {
+        "AUTH_BASE_URL": "https://auth.dtcdev.click",
+        "AUTH_USER_POOL_ID": "us-east-1_H7nJu52Bs",
+        "AUTH_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs",
+        "AUTH_JWKS_URL": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json",
+        "AUTH_CLIENT_ID": "1kjv61esdjs3003s8u42sgr3hf",
+        "AUTH_CALLBACK_URL": "https://ops.dtcdev.click/auth/callback",
+        "AUTH_LOGOUT_URL": "https://ops.dtcdev.click/",
+        "AUTH_SESSION_LIFETIME_SECONDS": "28800",
+    }
+
+    for variable, value in expected_auth.items():
+        # Workflow-level env reaches every check and every Playwright child
+        # process. Production relying-party config belongs only to deployment.
+        assert f"{variable}:" not in before_jobs
+        assert f"{variable}:" not in checks
+        assert f"      {variable}: {value}" in deploy
+        assert f"ParameterValue=${variable}" in deploy
+
+
 def test_github_deploy_role_can_manage_backend_lambda():
     template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
 

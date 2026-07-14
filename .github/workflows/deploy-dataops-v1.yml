@@ -30,14 +30,6 @@ env:
   DOCS_GITHUB_OWNER: DataTalksClub
   DOCS_GITHUB_REPO: dataops
   DOCS_GITHUB_BRANCH: main
-  AUTH_BASE_URL: https://auth.dtcdev.click
-  AUTH_USER_POOL_ID: us-east-1_H7nJu52Bs
-  AUTH_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
-  AUTH_JWKS_URL: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json
-  AUTH_CLIENT_ID: 1kjv61esdjs3003s8u42sgr3hf
-  AUTH_CALLBACK_URL: https://ops.dtcdev.click/auth/callback
-  AUTH_LOGOUT_URL: https://ops.dtcdev.click/
-  AUTH_SESSION_LIFETIME_SECONDS: 28800
 
 jobs:
   checks:
@@ -104,6 +96,14 @@ jobs:
       contents: read
       id-token: write
     env:
+      AUTH_BASE_URL: https://auth.dtcdev.click
+      AUTH_USER_POOL_ID: us-east-1_H7nJu52Bs
+      AUTH_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
+      AUTH_JWKS_URL: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json
+      AUTH_CLIENT_ID: 1kjv61esdjs3003s8u42sgr3hf
+      AUTH_CALLBACK_URL: https://ops.dtcdev.click/auth/callback
+      AUTH_LOGOUT_URL: https://ops.dtcdev.click/
+      AUTH_SESSION_LIFETIME_SECONDS: 28800
       EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
