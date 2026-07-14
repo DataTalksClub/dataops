@@ -6,7 +6,15 @@
   var LEGACY_TOKEN_KEY = 'datatasks_token';
   var LEGACY_USER_KEY = 'datatasks_user';
 
+  function usesBrowserCookieAuth() {
+    var meta = document.querySelector('meta[name="dataops-auth-mode"]');
+    return Boolean(meta && meta.getAttribute('content') === 'browser-cookie');
+  }
+
   function getToken() {
+    // Production browser auth is carried only by the HttpOnly same-origin
+    // cookie. Never revive or attach historical browser bearer tokens there.
+    if (usesBrowserCookieAuth()) return null;
     var token = localStorage.getItem(TOKEN_KEY);
     if (token !== null) return token;
 

@@ -9,6 +9,11 @@
   var app = document.getElementById('app');
   var nav = document.querySelector('nav');
 
+  function usesBrowserCookieAuth() {
+    var meta = document.querySelector('meta[name="dataops-auth-mode"]');
+    return Boolean(meta && meta.getAttribute('content') === 'browser-cookie');
+  }
+
   // ── Auth helpers ─────────────────────────────────────────────────
 
   function getItemWithLegacyFallback(key, legacyKey) {
@@ -54,6 +59,12 @@
   // ── Sign-in form ────────────────────────────────────────────────
 
   function renderSignIn() {
+    // The production portal owns sign-in. It must never reveal the retired
+    // local password form, including after a cookie expires mid-session.
+    if (usesBrowserCookieAuth()) {
+      window.location.replace('/login');
+      return;
+    }
     // Hide nav links (keep only brand visible)
     var navLinks = nav.querySelectorAll('.nav-link, #signout-btn, #nav-menu-toggle');
     navLinks.forEach(function (el) {
@@ -179,6 +190,11 @@
       signOutBtn.style.background = 'transparent';
     });
     signOutBtn.addEventListener('click', function () {
+      if (usesBrowserCookieAuth()) {
+        clearSession();
+        window.location.assign('/logout');
+        return;
+      }
       api.auth
         .logout()
         .catch(function () {})
@@ -199,7 +215,11 @@
   // Register 401 handler in api.js
   window._onUnauthorized = function () {
     clearSession();
-    renderSignIn();
+    if (usesBrowserCookieAuth()) {
+      window.location.replace('/login');
+    } else {
+      renderSignIn();
+    }
   };
 
   // Test-only seam: force a fresh dashboard-tasks fetch + re-render. Specs use
@@ -2036,6 +2056,20 @@
     initSkipLink();
     initMobileNavKeyboard();
     initBell();
+    if (usesBrowserCookieAuth()) {
+      // Cookie sessions are HttpOnly, so the browser proves its session by
+      // asking the same-origin backend for the mapped local user. Remove stale
+      // browser bearer state left by the retired login before any API request.
+      clearSession();
+      api.me()
+        .then(function (data) {
+          startApp(data.user);
+        })
+        .catch(function () {
+          window.location.replace('/login');
+        });
+      return;
+    }
     var token = getStoredToken();
     var user = getStoredUser();
     if (token && user) {
