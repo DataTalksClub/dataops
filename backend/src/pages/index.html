@@ -4040,6 +4040,13 @@
     .crm-form input,.crm-form select,.crm-form textarea { width:100%;min-width:0; }
     .crm-form .form-actions,.crm-form [role="alert"] { grid-column:1/-1; }
     @media(max-width:700px){.crm-grid,.crm-form{grid-template-columns:1fr}.crm-grid>*{min-width:0}.crm-item header{display:grid}}
+    .mailing-export-grid { display:grid;gap:12px; }
+    .mailing-export-card { border:1px solid var(--border-soft);border-radius:8px;padding:14px;min-width:0;overflow-wrap:anywhere; }
+    .mailing-export-card header,.mailing-export-actions,.mailing-export-history { display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap; }
+    .mailing-export-card dl { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+    .mailing-export-card dt { color:var(--muted);font-size:11px;text-transform:uppercase; }.mailing-export-card dd { margin:2px 0;overflow-wrap:anywhere; }
+    .mailing-export-history { border-bottom:1px solid var(--border-soft);padding:9px 0;overflow-wrap:anywhere; }
+    @media(max-width:600px){.mailing-export-card dl{grid-template-columns:1fr}.mailing-export-actions,.mailing-export-actions button{width:100%}.mailing-export-history{display:grid}}
   </style>
 </head>
 <body>
@@ -4059,6 +4066,7 @@
       <a href="#/sponsors" class="nav-link" style="display:none;">Sponsors</a>
       <a href="#/newsletter" class="nav-link" style="display:none;">Newsletter</a>
       <a href="#/calendar" class="nav-link">Calendar</a>
+      <a href="#/mailing-exports" class="nav-link">Mailing exports</a>
       <div class="notif-bell-wrapper nav-link" id="notif-bell-wrapper" style="display:none;margin-left:auto;">
         <button class="notif-bell" id="notif-bell" type="button" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notif-dropdown"><span aria-hidden="true">&#x1F514;</span><span class="notif-badge" id="notif-badge" aria-hidden="true" style="display:none">0</span></button>
         <div class="notif-dropdown" id="notif-dropdown" role="region" aria-label="Notifications" style="display:none"></div>

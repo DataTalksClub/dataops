@@ -81,6 +81,9 @@ Parameters:
     Default: 60
     MinValue: 1
     MaxValue: 10000
+  MailingExportsConfig:
+    Type: String
+    Default: '[]'
   NewsletterOpenAlertLeadDays:
     Type: Number
     Default: 14
@@ -91,12 +94,16 @@ Parameters:
     Default: 10
     MinValue: 0
     MaxValue: 365
+  MailchimpSecretArn:
+    Type: String
+    Default: ""
 
 
   WorkEngineTypefullyApiTokenSecretArn:
     Type: String
     Description: ARN of the pre-created Typefully API token secret (created out-of-band via aws cli)
 Conditions:
+  HasMailchimpSecret: !Not [!Equals [!Ref MailchimpSecretArn, ""]]
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
 Globals:
@@ -279,6 +286,37 @@ Resources:
             Principal: "*"
             Action: "s3:*"
             Resource: [!GetAtt EmailDocumentsBucket.Arn, !Sub "${EmailDocumentsBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": false } }
+
+  MailingExportsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+          - Id: RetainNoncurrentExports
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 365 }
+
+  MailingExportsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MailingExportsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt MailingExportsBucket.Arn, !Sub "${MailingExportsBucket.Arn}/*"]
             Condition: { Bool: { "aws:SecureTransport": false } }
 
   BookkeepingIngestionSecret:
@@ -814,6 +852,7 @@ Resources:
               - !Ref WorkEngineTypefullyApiTokenSecretArn
               - !Ref BookkeepingIngestionSecret
               - !Ref EmailDocumentIntakeSecretArn
+              - !If [HasMailchimpSecret, !Ref MailchimpSecretArn, !Ref AWS::NoValue]
         - Statement:
             Effect: Allow
             Action:
@@ -824,6 +863,10 @@ Resources:
             Effect: Allow
             Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:HeadObject]
             Resource: !Sub ${BookkeepingDocumentsBucket.Arn}/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject, s3:PutObject]
+            Resource: !Sub ${MailingExportsBucket.Arn}/*
         - Statement:
             Effect: Allow
             Action: [s3:GetObject]
@@ -893,6 +936,8 @@ Resources:
           EMAIL_DOCUMENT_DESTINATION_PREFIX: !Ref EmailDocumentDestinationPrefix
           EMAIL_DOCUMENT_RECIPIENT_ROUTES: !Ref EmailDocumentRecipientRoutes
           EMAIL_DOCUMENT_RATE_LIMIT: !Ref EmailDocumentRateLimit
+          DATAOPS_MAILING_EXPORTS_CONFIG: !Ref MailingExportsConfig
+          DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket
           TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecretArn
           TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
           TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
@@ -925,6 +970,13 @@ Resources:
             Schedule: cron(30 8 * * ? *)
             Enabled: true
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}'
+        DailyMailingExport:
+          Type: Schedule
+          Properties:
+            Description: Request or advance configured mailing-list exports once per day.
+            Schedule: cron(0 9 * * ? *)
+            Enabled: true
+            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
 
 Outputs:
   DataOpsBookkeepingTableName:
