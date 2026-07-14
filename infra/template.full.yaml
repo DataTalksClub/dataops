@@ -889,7 +889,7 @@ Resources:
               - !Sub ${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*
         - Statement:
             Effect: Allow
-            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject, s3:HeadObject]
+            Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion, s3:HeadObject]
             Resource: !Sub ${BookkeepingDocumentsBucket.Arn}/*
         - Statement:
             Effect: Allow
