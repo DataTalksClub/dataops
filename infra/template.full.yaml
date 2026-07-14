@@ -104,6 +104,12 @@ Parameters:
   MailingExportsConfig:
     Type: String
     Default: '[]'
+  DapierCredentialsTableName:
+    Type: String
+    Description: Physical name of the Dapier-owned credentials table.
+  DapierCredentialsTableArn:
+    Type: String
+    Description: ARN of the Dapier-owned credentials table for least-privilege GetItem access.
   NewsletterOpenAlertLeadDays:
     Type: Number
     Default: 14
@@ -114,16 +120,10 @@ Parameters:
     Default: 10
     MinValue: 0
     MaxValue: 365
-  MailchimpSecretArn:
-    Type: String
-    Default: ""
-
-
   WorkEngineTypefullyApiTokenSecretArn:
     Type: String
     Description: ARN of the pre-created Typefully API token secret (created out-of-band via aws cli)
 Conditions:
-  HasMailchimpSecret: !Not [!Equals [!Ref MailchimpSecretArn, ""]]
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
 Globals:
@@ -874,7 +874,13 @@ Resources:
               - !Ref WorkEngineTypefullyApiTokenSecretArn
               - !Ref BookkeepingIngestionSecret
               - !Ref EmailDocumentIntakeSecretArn
-              - !If [HasMailchimpSecret, !Ref MailchimpSecretArn, !Ref AWS::NoValue]
+        - Statement:
+            Effect: Allow
+            Action: [dynamodb:GetItem]
+            Resource: !Ref DapierCredentialsTableArn
+            Condition:
+              ForAllValues:StringEquals:
+                dynamodb:LeadingKeys: [mailchimp]
         - Statement:
             Effect: Allow
             Action:
@@ -966,6 +972,7 @@ Resources:
           EMAIL_DOCUMENT_RATE_LIMIT: !Ref EmailDocumentRateLimit
           DATAOPS_MAILING_EXPORTS_CONFIG: !Ref MailingExportsConfig
           DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket
+          DATAOPS_DAPIER_CREDENTIALS_TABLE: !Ref DapierCredentialsTableName
           TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecretArn
           TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
           TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub

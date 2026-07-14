@@ -1,6 +1,5 @@
 import crypto from 'crypto';
 import path from 'path';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createArtifactIfAbsent, getArtifact } from '../db/artifacts';
@@ -14,6 +13,7 @@ import {
 import { getTask, updateTask } from '../db/tasks';
 import { saveFile } from '../storage';
 import { MailingExportProviderError } from './mailchimp';
+import { readDapierMailchimpCredential, type MailingExportCredentialReader } from './credentials';
 import { defaultMailingExportProviderRegistry, MailingExportProviderRegistry } from './registry';
 import type {
   MailingExportConfig,
@@ -27,7 +27,7 @@ const LEASE_MS = 120_000;
 export interface MailingExportDependencies {
   provider?: MailingExportProvider;
   registry?: MailingExportProviderRegistry;
-  getSecret?: (name: string) => Promise<Record<string, string>>;
+  readCredential?: MailingExportCredentialReader;
   store?: (key: string, body: Buffer) => Promise<string>;
   now?: () => Date;
   log?: (entry: Record<string, unknown>) => void;
@@ -40,29 +40,26 @@ export function loadMailingExportConfigs(): MailingExportConfig[] {
   if (!Array.isArray(parsed)) throw new Error('DATAOPS_MAILING_EXPORTS_CONFIG must be a JSON array');
   return parsed.filter(item => item && typeof item === 'object' && (item as { enabled?: boolean }).enabled !== false).map(item => {
     const value = item as Record<string, unknown>;
-    for (const field of ['id', 'provider', 'account', 'secretName']) {
+    if ('secretName' in value) throw new Error('Mailing export configuration secretName is not supported');
+    for (const field of ['id', 'provider', 'account', 'credentialId']) {
       if (typeof value[field] !== 'string' || !String(value[field]).trim()) throw new Error(`Mailing export configuration ${field} is required`);
+    }
+    if (value.provider === 'mailchimp' && value.credentialId !== 'mailchimp') {
+      throw new Error('Mailchimp mailing export configuration credentialId must be mailchimp');
     }
     const scopeLabel = typeof value.scopeLabel === 'string' && value.scopeLabel.trim()
       ? value.scopeLabel.trim()
       : typeof value.audience === 'string' && value.audience.trim() ? value.audience.trim() : 'All audiences';
     return {
       id: String(value.id), provider: String(value.provider), account: String(value.account), scopeLabel,
-      secretName: String(value.secretName), enabled: true,
+      credentialId: String(value.credentialId), enabled: true,
       taskId: typeof value.taskId === 'string' && value.taskId ? value.taskId : undefined,
     };
   });
 }
 
-export function publicMailingExportConfigs(configs = loadMailingExportConfigs()): Array<Omit<MailingExportConfig, 'secretName'>> {
-  return configs.map(({ secretName: _secretName, ...config }) => config);
-}
-
-async function defaultSecret(name: string): Promise<Record<string, string>> {
-  const result = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: name }));
-  if (!result.SecretString) throw new MailingExportProviderError('authorization', 'The provider secret has no JSON value');
-  try { return JSON.parse(result.SecretString) as Record<string, string>; }
-  catch { throw new MailingExportProviderError('authorization', 'The provider secret is not valid JSON'); }
+export function publicMailingExportConfigs(configs = loadMailingExportConfigs()): Array<Omit<MailingExportConfig, 'credentialId'>> {
+  return configs.map(({ credentialId: _credentialId, ...config }) => config);
 }
 
 async function defaultStore(key: string, body: Buffer): Promise<string> {
@@ -81,7 +78,7 @@ async function defaultStore(key: string, body: Buffer): Promise<string> {
 function classifyFailure(error: unknown): { category: MailingExportErrorCategory; message: string; nextAction: MailingExportJob['nextAction']; retryAfter?: string } {
   if (error instanceof MailingExportProviderError) {
     const messages: Record<string, string> = {
-      authorization: 'Provider authorization failed. Fix the configured secret or account-wide API access.',
+      authorization: 'Provider authorization failed. Fix the configured credential or account-wide API access.',
       'provider-api': 'The provider export API failed. Retry after checking provider availability.',
       'provider-timeout': 'The provider timed out. Retry to continue the durable export run.',
       'provider-concurrency': 'Another account export is active or the 24-hour limit applies. Wait, then retry this run.',
@@ -164,7 +161,7 @@ export async function runMailingExport(
   deps: MailingExportDependencies = {},
 ): Promise<MailingExportJob> {
   if (!runKey.trim() || runKey.length > 120) throw new Error('runKey must be 1-120 characters');
-  const config = { ...inputConfig, scopeLabel: inputConfig.scopeLabel || inputConfig.audience || 'All audiences' };
+  const config = { ...inputConfig, scopeLabel: inputConfig.scopeLabel || 'All audiences' };
   const id = crypto.createHash('sha256').update(`${config.id}:${runKey}`).digest('hex').slice(0, 32);
   const clock = deps.now || (() => new Date());
   const nowDate = clock();
@@ -222,8 +219,8 @@ export async function runMailingExport(
     }
 
     delete job.errorCode; delete job.errorMessage; delete job.retryAfter;
-    const secret = await (deps.getSecret || defaultSecret)(config.secretName);
-    const provider = deps.provider || registry.create(config.provider, secret);
+    const credential = deps.provider ? undefined : await (deps.readCredential || readDapierMailchimpCredential)(config.credentialId);
+    const provider = deps.provider || registry.create(config.provider, credential!);
     const result = job.providerJobId ? await provider.checkExport(job.providerJobId) : await provider.requestExport();
     job.providerJobId = result.providerJobId;
     job.updatedAt = now;
