@@ -29,6 +29,12 @@ function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
   };
 }
 
+function publicArtifact(artifact: ArtifactRecord): ArtifactRecord {
+  if (!artifact.storageUri?.startsWith('s3://')) return artifact;
+  const { storageUri: _storageUri, ...safe } = artifact;
+  return safe as ArtifactRecord;
+}
+
 function parseBody(event: LambdaEvent): Record<string, unknown> | null {
   if (!event.body) return null;
   if (typeof event.body === 'object') return event.body as Record<string, unknown>;
@@ -147,13 +153,14 @@ function validateArtifactFields(fields: Record<string, unknown>, requireCoreFiel
 }
 
 function artifactRef(artifact: ArtifactRecord): ArtifactRef {
-  return {
+  const ref: ArtifactRef = {
     artifactId: artifact.id,
     type: artifact.type,
     title: artifact.title,
-    storageUri: artifact.storageUri,
     status: artifact.status,
   };
+  if (!artifact.storageUri?.startsWith('s3://')) ref.storageUri = artifact.storageUri;
+  return ref;
 }
 
 function mergeArtifactRef(refs: ArtifactRef[] | undefined, ref: ArtifactRef): ArtifactRef[] {
@@ -209,7 +216,7 @@ async function handleCreate(event: LambdaEvent, client: DynamoDBDocumentClient):
   if (relationshipError) return jsonResponse(404, { error: relationshipError });
 
   const artifact = await createArtifact(client, artifactData);
-  return jsonResponse(201, { artifact });
+  return jsonResponse(201, { artifact: publicArtifact(artifact) });
 }
 
 async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -222,7 +229,7 @@ async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): P
     status: params.status,
     type: params.type,
   });
-  return jsonResponse(200, { artifacts });
+  return jsonResponse(200, { artifacts: artifacts.map(publicArtifact) });
 }
 
 async function handleUpdate(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -254,7 +261,7 @@ async function handleUpdate(id: string, event: LambdaEvent, client: DynamoDBDocu
   if (relationshipError) return jsonResponse(404, { error: relationshipError });
 
   const artifact = await updateArtifact(client, id, updates);
-  return jsonResponse(200, { artifact });
+  return jsonResponse(200, { artifact: artifact ? publicArtifact(artifact) : artifact });
 }
 
 async function handleAttach(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -282,23 +289,26 @@ async function handleAttach(id: string, event: LambdaEvent, client: DynamoDBDocu
   }
 
   const artifact = await updateArtifact(client, id, updates);
-  return jsonResponse(200, { artifact });
+  return jsonResponse(200, { artifact: artifact ? publicArtifact(artifact) : artifact });
 }
 
 async function handleArchive(id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const existing = await getArtifact(client, id);
   if (!existing) return jsonResponse(404, { error: 'Artifact not found' });
   const artifact = await updateArtifact(client, id, { status: 'archived' });
-  return jsonResponse(200, { artifact });
+  return jsonResponse(200, { artifact: artifact ? publicArtifact(artifact) : artifact });
 }
 
 async function handlePrivateDownload(id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const artifact = await getArtifact(client, id);
   if (!artifact) return jsonResponse(404, { error: 'Artifact not found' });
-  const bucket = process.env.EMAIL_DOCUMENTS_BUCKET || '';
+  const emailBucket = process.env.EMAIL_DOCUMENTS_BUCKET || '';
+  const mailingBucket = process.env.DATAOPS_MAILING_EXPORTS_BUCKET || '';
   const prefix = (process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX || 'artifacts/').replace(/^\/+|\/+$/g, '');
   const match = /^s3:\/\/([^/]+)\/(.+)$/.exec(artifact.storageUri || '');
-  if (artifact.dataClass !== 'sensitive' || !match || match[1] !== bucket || !match[2].startsWith(`${prefix}/`)) {
+  const emailDocument = artifact.dataClass === 'sensitive' && match?.[1] === emailBucket && match[2].startsWith(`${prefix}/`);
+  const mailingExport = artifact.dataClass === 'private' && match?.[1] === mailingBucket && match[2].startsWith('mailing-exports/');
+  if (!match || (!emailDocument && !mailingExport)) {
     return jsonResponse(409, { error: 'Private download is not available for this artifact' });
   }
   artifactS3Client ||= new S3Client({});
@@ -335,7 +345,7 @@ async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse 
     if (idMatch && method === 'GET') {
       const artifact = await getArtifact(client, idMatch[1]);
       if (!artifact) return jsonResponse(404, { error: 'Artifact not found' });
-      return jsonResponse(200, { artifact });
+      return jsonResponse(200, { artifact: publicArtifact(artifact) });
     }
     if (idMatch && method === 'PUT') return await handleUpdate(idMatch[1], event, client);
 

@@ -211,6 +211,37 @@ def test_email_document_storage_is_private_retained_and_prefix_scoped():
     assert "s3:*" not in backend
 
 
+def test_mailing_export_storage_schedule_and_secret_are_private_and_least_privilege():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    bucket = _resource_block(template, "MailingExportsBucket")
+    policy = _resource_block(template, "MailingExportsBucketPolicy")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert "DeletionPolicy: Retain" in bucket
+    assert "UpdateReplacePolicy: Retain" in bucket
+    assert "SSEAlgorithm: AES256" in bucket
+    assert "BlockPublicAcls: true" in bucket
+    assert "IgnorePublicAcls: true" in bucket
+    assert "BlockPublicPolicy: true" in bucket
+    assert "RestrictPublicBuckets: true" in bucket
+    assert "VersioningConfiguration: { Status: Enabled }" in bucket
+    assert "AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }" in bucket
+    assert "NoncurrentVersionExpiration: { NoncurrentDays: 365 }" in bucket
+    assert '"aws:SecureTransport": false' in policy
+    assert "DATAOPS_MAILING_EXPORTS_CONFIG: !Ref MailingExportsConfig" in backend
+    assert "DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket" in backend
+    assert "Resource: !Sub ${MailingExportsBucket.Arn}/*" in backend
+    assert "Action: [s3:GetObject, s3:PutObject]" in backend
+    assert "!If [HasMailchimpSecret, !Ref MailchimpSecretArn, !Ref AWS::NoValue]" in backend
+    assert "DailyMailingExport" in backend
+    assert '"dataopsAction":"mailing-export"' in backend
+    assert "MAILCHIMP_SECRET_ARN: ${{ secrets.MAILCHIMP_SECRET_ARN }}" in workflow
+    assert "MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}" in workflow
+    assert "ParameterKey=MailchimpSecretArn,ParameterValue=$MAILCHIMP_SECRET_ARN" in workflow
+    assert "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" in workflow
+
+
 def test_no_old_two_function_resources_remain():
     template = TEMPLATE.read_text(encoding="utf-8")
     assert "DocsFullAppFunction:" not in template

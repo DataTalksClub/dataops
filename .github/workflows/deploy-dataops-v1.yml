@@ -101,6 +101,8 @@ jobs:
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN: ${{ secrets.EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN }}
+      MAILCHIMP_SECRET_ARN: ${{ secrets.MAILCHIMP_SECRET_ARN }}
+      MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}
 
     steps:
       - name: Check out repository
@@ -139,6 +141,7 @@ jobs:
             exit 1
           fi
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
+          : "${MAILING_EXPORTS_CONFIG:=[]}"
           sam deploy \
             --config-env full-sandbox \
             --parameter-overrides \
@@ -149,7 +152,9 @@ jobs:
               "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" \
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \
-              "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN"
+              "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN" \
+              "ParameterKey=MailchimpSecretArn,ParameterValue=$MAILCHIMP_SECRET_ARN" \
+              "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG"
 
       - name: Seed runtime users, workflow templates, and recurring configs
         working-directory: ${{ github.workspace }}/backend

@@ -21,6 +21,7 @@ import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
+import { handleMailingExportRoutes } from './routes/mailingExports';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
@@ -721,6 +722,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);
     if (reqPath.startsWith('/api/calendar-items')) return await handleCalendarRoutes(reqPath,method,event,client);
+
+    if (reqPath.startsWith('/api/mailing-exports')) {
+      const result = await handleMailingExportRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
 
     // POST /api/tasks — Create a task
     if (method === 'POST' && reqPath === '/api/tasks') {
