@@ -86,15 +86,13 @@
     var emailGroup = document.createElement('div');
     emailGroup.className = 'form-group';
     emailGroup.style.cssText = 'margin-bottom:16px;';
-    emailGroup.innerHTML = '<label for="signin-email" style="margin-bottom:6px;display:block;">Email</label>' +
-      '<input type="email" id="signin-email" placeholder="Email address" style="width:100%;" autocomplete="username" />';
+    emailGroup.innerHTML = '<label for="signin-email" style="margin-bottom:6px;display:block;">Email</label>' + '<input type="email" id="signin-email" placeholder="Email address" style="width:100%;" autocomplete="username" />';
     card.appendChild(emailGroup);
 
     var passwordGroup = document.createElement('div');
     passwordGroup.className = 'form-group';
     passwordGroup.style.cssText = 'margin-bottom:24px;';
-    passwordGroup.innerHTML = '<label for="signin-password" style="margin-bottom:6px;display:block;">Password</label>' +
-      '<input type="password" id="signin-password" placeholder="Password" style="width:100%;" autocomplete="current-password" />';
+    passwordGroup.innerHTML = '<label for="signin-password" style="margin-bottom:6px;display:block;">Password</label>' + '<input type="password" id="signin-password" placeholder="Password" style="width:100%;" autocomplete="current-password" />';
     card.appendChild(passwordGroup);
 
     var submitBtn = document.createElement('button');
@@ -122,17 +120,20 @@
       btn.textContent = 'Signing in...';
       btn.setAttribute('aria-busy', 'true');
 
-      api.auth.login(email, password).then(function (data) {
-        setSession(data.token, data.user);
-        startApp(data.user);
-      }).catch(function () {
-        loginPending = false;
-        err.textContent = 'Invalid email or password';
-        err.style.display = 'block';
-        btn.disabled = false;
-        btn.textContent = 'Sign in';
-        btn.removeAttribute('aria-busy');
-      });
+      api.auth
+        .login(email, password)
+        .then(function (data) {
+          setSession(data.token, data.user);
+          startApp(data.user);
+        })
+        .catch(function () {
+          loginPending = false;
+          err.textContent = 'Invalid email or password';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Sign in';
+          btn.removeAttribute('aria-busy');
+        });
     }
 
     submitBtn.addEventListener('click', doLogin);
@@ -178,10 +179,13 @@
       signOutBtn.style.background = 'transparent';
     });
     signOutBtn.addEventListener('click', function () {
-      api.auth.logout().catch(function () {}).finally(function () {
-        clearSession();
-        renderSignIn();
-      });
+      api.auth
+        .logout()
+        .catch(function () {})
+        .finally(function () {
+          clearSession();
+          renderSignIn();
+        });
     });
     (document.getElementById('nav-menu') || nav).appendChild(signOutBtn);
 
@@ -212,9 +216,7 @@
 
   function todayString() {
     var d = new Date();
-    return d.getFullYear() + '-' +
-      String(d.getMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
   function showError(msg) {
@@ -227,7 +229,9 @@
 
   function showNotice(msg, type) {
     var existing = app.querySelectorAll('.flash-banner, .error-banner');
-    existing.forEach(function (banner) { banner.remove(); });
+    existing.forEach(function (banner) {
+      banner.remove();
+    });
     var banner = document.createElement('div');
     banner.className = 'flash-banner ' + (type === 'success' ? 'success-banner' : 'error-banner');
     banner.setAttribute('role', type === 'success' ? 'status' : 'alert');
@@ -275,7 +279,11 @@
   }
 
   function taskHash(taskId, date, contextBundleId) {
-    return buildHash('#/tasks', { taskId: taskId, date: date, contextBundleId: contextBundleId });
+    return buildHash('#/tasks', {
+      taskId: taskId,
+      date: date,
+      contextBundleId: contextBundleId
+    });
   }
 
   function intakeHash(intakeId) {
@@ -336,9 +344,12 @@
   }
 
   function taskHasApprovedArtifactRef(task) {
-    return Array.isArray(task && task.artifactRefs) && task.artifactRefs.some(function (ref) {
-      return ref && ref.status === 'approved';
-    });
+    return (
+      Array.isArray(task && task.artifactRefs) &&
+      task.artifactRefs.some(function (ref) {
+        return ref && ref.status === 'approved';
+      })
+    );
   }
 
   function taskArtifactBlockTitle(task) {
@@ -366,13 +377,17 @@
   function taskAllowedSkipStatuses(task) {
     var config = skipClosureConfig(task);
     if (!config || !Array.isArray(config.allowedStatuses)) return [];
-    return config.allowedStatuses.filter(function (status) { return nonEmptyValue(status); });
+    return config.allowedStatuses.filter(function (status) {
+      return nonEmptyValue(status);
+    });
   }
 
   function taskSkipClosureRequires(task) {
     var config = skipClosureConfig(task);
     if (!config || !Array.isArray(config.requires)) return [];
-    return config.requires.filter(function (field) { return nonEmptyValue(field); });
+    return config.requires.filter(function (field) {
+      return nonEmptyValue(field);
+    });
   }
 
   function valueMatchesAllowedSkipStatus(value, statuses) {
@@ -399,9 +414,11 @@
     var requiredFields = taskSkipClosureRequires(task);
     if (requiredFields.indexOf('comment') !== -1 && !commentMatches) return '';
     if (requiredFields.indexOf('externalStatus') !== -1 && !externalStatusMatches) return '';
-    return statuses.find(function (status) {
-      return valueMatchesAllowedSkipStatus(task.comment, [status]) || valueMatchesAllowedSkipStatus(task.externalStatus, [status]);
-    }) || '';
+    return (
+      statuses.find(function (status) {
+        return valueMatchesAllowedSkipStatus(task.comment, [status]) || valueMatchesAllowedSkipStatus(task.externalStatus, [status]);
+      }) || ''
+    );
   }
 
   function taskHasScopedSkipClosure(task) {
@@ -439,9 +456,7 @@
 
   function taskRequiredBundleLinkNames(task) {
     var validation = task && task.validation;
-    var requiredBundleLinks = validation && typeof validation === 'object' && !Array.isArray(validation)
-      ? validation.requiredBundleLinks
-      : null;
+    var requiredBundleLinks = validation && typeof validation === 'object' && !Array.isArray(validation) ? validation.requiredBundleLinks : null;
     return Array.isArray(requiredBundleLinks) ? requiredBundleLinks.filter(nonEmptyValue) : [];
   }
 
@@ -508,9 +523,7 @@
     var names = [];
     if (task && task.requiredLinkName) names.push(task.requiredLinkName);
     var validation = task && task.validation;
-    var requiredBundleLinks = validation && typeof validation === 'object' && !Array.isArray(validation)
-      ? validation.requiredBundleLinks
-      : null;
+    var requiredBundleLinks = validation && typeof validation === 'object' && !Array.isArray(validation) ? validation.requiredBundleLinks : null;
     if (Array.isArray(requiredBundleLinks)) {
       requiredBundleLinks.forEach(function (name) {
         if (nonEmptyValue(name) && names.indexOf(name) === -1) names.push(name);
@@ -565,10 +578,19 @@
   function commentOnlyContainsSkipEvidence(comment, skipEvidence) {
     if (!nonEmptyValue(comment) || !nonEmptyValue(skipEvidence)) return false;
     var normalizedSkip = normalizedProofText(skipEvidence);
-    var lines = comment.trim().split(/\r?\n/).map(function (line) {
-      return normalizedProofText(line.replace(/^\[[^\]]+\]\s*/, ''));
-    }).filter(Boolean);
-    return lines.length > 0 && lines.every(function (line) { return line === normalizedSkip; });
+    var lines = comment
+      .trim()
+      .split(/\r?\n/)
+      .map(function (line) {
+        return normalizedProofText(line.replace(/^\[[^\]]+\]\s*/, ''));
+      })
+      .filter(Boolean);
+    return (
+      lines.length > 0 &&
+      lines.every(function (line) {
+        return line === normalizedSkip;
+      })
+    );
   }
 
   function renderTaskCompletionEvidence(task) {
@@ -593,10 +615,10 @@
       'waiting-started': 'Waiting started',
       'follow-up-sent': 'Follow-up sent',
       'response-received': 'Response received',
-      'unblocked': 'Unblocked',
+      unblocked: 'Unblocked',
       'wait-resolved': 'Wait resolved',
-      'completed': 'Completed',
-      'reopened': 'Reopened'
+      completed: 'Completed',
+      reopened: 'Reopened'
     };
     return labels[action] || sentenceCaseStatus(String(action || '').replace(/-/g, ' '));
   }
@@ -611,8 +633,7 @@
     });
     if (!events.length) return '';
     var shown = compact ? events.slice(0, 3) : events;
-    var html = '<div class="task-history' + (compact ? ' task-history--compact' : '') + '" data-task-history="' + escapeHtml(task.id || '') + '">' +
-      '<div class="task-history-title">Follow-up history</div>';
+    var html = '<div class="task-history' + (compact ? ' task-history--compact' : '') + '" data-task-history="' + escapeHtml(task.id || '') + '">' + '<div class="task-history-title">Follow-up history</div>';
     shown.forEach(function (event) {
       var meta = [];
       if (event.createdAt) meta.push(formatDateLabel(event.createdAt));
@@ -620,12 +641,7 @@
       if (event.channel) meta.push(event.channel);
       if (event.followUpAt) meta.push('next ' + formatDateLabel(event.followUpAt));
       if (event.previousFollowUpAt && !event.followUpAt) meta.push('was ' + formatDateLabel(event.previousFollowUpAt));
-      html += '<div class="task-history-item">' +
-        '<span class="task-history-action">' + escapeHtml(historyActionLabel(event.action)) + '</span>' +
-        (meta.length ? '<span class="task-history-meta">' + escapeHtml(meta.join(' | ')) + '</span>' : '') +
-        (event.waitingFor ? '<span class="task-history-meta">Waiting for ' + escapeHtml(event.waitingFor) + '</span>' : '') +
-        (event.note ? '<span class="task-history-note">' + escapeHtml(event.note) + '</span>' : '') +
-        '</div>';
+      html += '<div class="task-history-item">' + '<span class="task-history-action">' + escapeHtml(historyActionLabel(event.action)) + '</span>' + (meta.length ? '<span class="task-history-meta">' + escapeHtml(meta.join(' | ')) + '</span>' : '') + (event.waitingFor ? '<span class="task-history-meta">Waiting for ' + escapeHtml(event.waitingFor) + '</span>' : '') + (event.note ? '<span class="task-history-note">' + escapeHtml(event.note) + '</span>' : '') + '</div>';
     });
     if (compact && events.length > shown.length) {
       html += '<div class="task-history-more">' + (events.length - shown.length) + ' older events</div>';
@@ -636,9 +652,11 @@
 
   function renderChannelOptions(selected) {
     var channels = ['email', 'telegram', 'slack', 'phone', 'linkedin', 'github', 'other'];
-    return channels.map(function (channel) {
-      return '<option value="' + escapeHtml(channel) + '"' + (channel === selected ? ' selected' : '') + '>' + escapeHtml(channel) + '</option>';
-    }).join('');
+    return channels
+      .map(function (channel) {
+        return '<option value="' + escapeHtml(channel) + '"' + (channel === selected ? ' selected' : '') + '>' + escapeHtml(channel) + '</option>';
+      })
+      .join('');
   }
 
   function waitingCompletionBlockTitle(task) {
@@ -703,7 +721,12 @@
     if (!entity || typeof entity !== 'object') return false;
     if (String(entity.type || '').toLowerCase() === 'podcast') return true;
     var tags = Array.isArray(entity.tags) ? entity.tags : [];
-    if (tags.some(function (tag) { return String(tag || '').toLowerCase() === 'podcast'; })) return true;
+    if (
+      tags.some(function (tag) {
+        return String(tag || '').toLowerCase() === 'podcast';
+      })
+    )
+      return true;
     var sourceDocIds = Array.isArray(entity.sourceDocIds) ? entity.sourceDocIds : [];
     return sourceDocIds.indexOf('task-template.tasks.podcast') !== -1;
   }
@@ -719,9 +742,7 @@
 
   function validationArray(task, field) {
     var validation = task && task.validation;
-    var value = validation && typeof validation === 'object' && !Array.isArray(validation)
-      ? validation[field]
-      : null;
+    var value = validation && typeof validation === 'object' && !Array.isArray(validation) ? validation[field] : null;
     return Array.isArray(value) ? value : [];
   }
 
@@ -767,9 +788,15 @@
 
   function bundleRiskSummary(bundle, tasks, filesByTask) {
     var today = todayString();
-    var active = (tasks || []).filter(function (task) { return task.status !== 'done'; });
-    var overdue = active.filter(function (task) { return task.date && task.date < today; });
-    var waiting = active.filter(function (task) { return task.status === 'waiting'; });
+    var active = (tasks || []).filter(function (task) {
+      return task.status !== 'done';
+    });
+    var overdue = active.filter(function (task) {
+      return task.date && task.date < today;
+    });
+    var waiting = active.filter(function (task) {
+      return task.status === 'waiting';
+    });
     var followUps = waiting.filter(isDueFollowUpTask);
     var missingEvidence = active.filter(function (task) {
       return !!taskMissingProofTitle(task, (filesByTask || {})[task.id] || [], bundle);
@@ -778,8 +805,12 @@
       return (a.date || '').localeCompare(b.date || '');
     })[0];
     var assistantRefs = Array.isArray(bundle && bundle.assistantJobRefs) ? bundle.assistantJobRefs : [];
-    var assistantApproval = assistantRefs.filter(function (ref) { return ref && ref.status === 'waiting_approval'; }).length;
-    var assistantFailed = assistantRefs.filter(function (ref) { return ref && ref.status === 'failed'; }).length;
+    var assistantApproval = assistantRefs.filter(function (ref) {
+      return ref && ref.status === 'waiting_approval';
+    }).length;
+    var assistantFailed = assistantRefs.filter(function (ref) {
+      return ref && ref.status === 'failed';
+    }).length;
     return {
       overdue: overdue.length,
       waiting: waiting.length,
@@ -787,7 +818,7 @@
       missingEvidence: missingEvidence.length,
       assistantApproval: assistantApproval,
       assistantFailed: assistantFailed,
-      nextTask: nextTask || null,
+      nextTask: nextTask || null
     };
   }
 
@@ -841,11 +872,11 @@
 
   function renderAssistantRefs(refs) {
     if (!Array.isArray(refs) || refs.length === 0) return '';
-    return refs.map(function (ref) {
-      return '<a class="assistant-chip" href="#/assistants" data-assistant-job-link="' + escapeHtml(ref.assistantJobId) + '">' +
-        escapeHtml(ref.assistantType || 'assistant') + ' ' + escapeHtml(assistantStatusLabel(ref.status || 'draft')) +
-        '</a>';
-    }).join('');
+    return refs
+      .map(function (ref) {
+        return '<a class="assistant-chip" href="#/assistants" data-assistant-job-link="' + escapeHtml(ref.assistantJobId) + '">' + escapeHtml(ref.assistantType || 'assistant') + ' ' + escapeHtml(assistantStatusLabel(ref.status || 'draft')) + '</a>';
+      })
+      .join('');
   }
 
   function assistantJobActionsHtml(job) {
@@ -891,19 +922,22 @@
       if (!reason || !reason.trim()) return;
       promise = api.assistantJobs.reject(jobId, reason.trim());
     }
-    if (action === 'retry') promise = api.assistantJobs.retry(jobId).then(function (result) {
-      if (result && result.job && result.job.status === 'retrying') return api.assistantJobs.submit(jobId);
-      return result;
-    });
+    if (action === 'retry')
+      promise = api.assistantJobs.retry(jobId).then(function (result) {
+        if (result && result.job && result.job.status === 'retrying') return api.assistantJobs.submit(jobId);
+        return result;
+      });
     if (action === 'cancel') promise = api.assistantJobs.cancel(jobId);
     if (!promise) return;
 
-    promise.then(function () {
-      showSuccess('Assistant job updated.');
-      if (onDone) onDone();
-    }).catch(function (err) {
-      showError('Assistant action failed: ' + err.message);
-    });
+    promise
+      .then(function () {
+        showSuccess('Assistant job updated.');
+        if (onDone) onDone();
+      })
+      .catch(function (err) {
+        showError('Assistant action failed: ' + err.message);
+      });
   }
 
   function bindAssistantActionButtons(scope, onDone, onOpenDetail) {
@@ -923,7 +957,12 @@
     var inputRefs = [];
     if (context.taskId) inputRefs.push({ type: 'task', id: context.taskId });
     if (context.bundleId) inputRefs.push({ type: 'bundle', id: context.bundleId });
-    if (context.instructionDocId) inputRefs.push({ type: 'doc', id: context.instructionDocId, title: 'Process instructions' });
+    if (context.instructionDocId)
+      inputRefs.push({
+        type: 'doc',
+        id: context.instructionDocId,
+        title: 'Process instructions'
+      });
     (context.urls || []).forEach(function (url) {
       if (nonEmptyValue(url)) inputRefs.push({ type: 'url', uri: url.trim() });
     });
@@ -931,26 +970,30 @@
       inputRefs.push({
         type: 'other',
         title: 'Source notes',
-        metadata: { summary: context.sourceNotes.trim().slice(0, 1000) },
+        metadata: { summary: context.sourceNotes.trim().slice(0, 1000) }
       });
     }
-    return api.assistantJobs.create({
-      assistantType: 'podcast',
-      title: title,
-      taskId: context.taskId,
-      bundleId: context.bundleId,
-      inputRefs: inputRefs,
-      approvalRequired: context.approvalRequired !== false,
-      maxAttempts: 2,
-    }).then(function (data) {
-      return api.assistantJobs.submit(data.job.id);
-    }).then(function () {
-      showSuccess('DataOps Assistant podcast job queued.');
-      if (onDone) onDone();
-    }).catch(function (err) {
-      showError('Failed to request assistant help: ' + err.message);
-      throw err;
-    });
+    return api.assistantJobs
+      .create({
+        assistantType: 'podcast',
+        title: title,
+        taskId: context.taskId,
+        bundleId: context.bundleId,
+        inputRefs: inputRefs,
+        approvalRequired: context.approvalRequired !== false,
+        maxAttempts: 2
+      })
+      .then(function (data) {
+        return api.assistantJobs.submit(data.job.id);
+      })
+      .then(function () {
+        showSuccess('DataOps Assistant podcast job queued.');
+        if (onDone) onDone();
+      })
+      .catch(function (err) {
+        showError('Failed to request assistant help: ' + err.message);
+        throw err;
+      });
   }
 
   function showPodcastAssistantRequest(context, onDone) {
@@ -978,22 +1021,26 @@
 
     overlay.innerHTML =
       '<div class="assistant-request-dialog">' +
-        '<div class="assistant-request-header">' +
-          '<div><h3 id="assistant-request-title">Ask DataOps Assistant</h3>' +
-          '<div class="assistant-request-context">' + escapeHtml(contextLines.join(' | ') || 'Podcast skill context') + '</div></div>' +
-          '<button type="button" class="assistant-action-btn" data-assistant-request-close>Close</button>' +
-        '</div>' +
-        '<div class="assistant-request-grid">' +
-          '<label>Assistant skill<input type="text" id="assistant-request-type" value="podcast" disabled /></label>' +
-          '<label>Title<input type="text" id="assistant-request-job-title" value="' + escapeHtml(context.title || context.taskTitle || context.bundleTitle || 'DataOps Assistant podcast prep') + '" /></label>' +
-        '</div>' +
-        '<label class="assistant-request-field">Input URLs or artifact links<textarea id="assistant-request-urls" rows="3" placeholder="One source URL, artifact link, or process reference per line"></textarea></label>' +
-        '<label class="assistant-request-field">Source notes<textarea id="assistant-request-notes" rows="4" placeholder="Guest, topic, outline, missing details, or source-message notes"></textarea></label>' +
-        '<label class="assistant-request-checkbox"><input type="checkbox" id="assistant-request-approval" checked /> Require operator approval before proof is accepted</label>' +
-        '<div class="assistant-request-actions">' +
-          '<button type="button" class="assistant-action-btn" data-assistant-request-close>Cancel</button>' +
-          '<button type="button" class="btn-primary" id="assistant-request-submit">Queue DataOps Assistant job</button>' +
-        '</div>' +
+      '<div class="assistant-request-header">' +
+      '<div><h3 id="assistant-request-title">Ask DataOps Assistant</h3>' +
+      '<div class="assistant-request-context">' +
+      escapeHtml(contextLines.join(' | ') || 'Podcast skill context') +
+      '</div></div>' +
+      '<button type="button" class="assistant-action-btn" data-assistant-request-close>Close</button>' +
+      '</div>' +
+      '<div class="assistant-request-grid">' +
+      '<label>Assistant skill<input type="text" id="assistant-request-type" value="podcast" disabled /></label>' +
+      '<label>Title<input type="text" id="assistant-request-job-title" value="' +
+      escapeHtml(context.title || context.taskTitle || context.bundleTitle || 'DataOps Assistant podcast prep') +
+      '" /></label>' +
+      '</div>' +
+      '<label class="assistant-request-field">Input URLs or artifact links<textarea id="assistant-request-urls" rows="3" placeholder="One source URL, artifact link, or process reference per line"></textarea></label>' +
+      '<label class="assistant-request-field">Source notes<textarea id="assistant-request-notes" rows="4" placeholder="Guest, topic, outline, missing details, or source-message notes"></textarea></label>' +
+      '<label class="assistant-request-checkbox"><input type="checkbox" id="assistant-request-approval" checked /> Require operator approval before proof is accepted</label>' +
+      '<div class="assistant-request-actions">' +
+      '<button type="button" class="assistant-action-btn" data-assistant-request-close>Cancel</button>' +
+      '<button type="button" class="btn-primary" id="assistant-request-submit">Queue DataOps Assistant job</button>' +
+      '</div>' +
       '</div>';
 
     document.body.appendChild(overlay);
@@ -1013,22 +1060,31 @@
     document.getElementById('assistant-request-submit').addEventListener('click', function () {
       var btn = document.getElementById('assistant-request-submit');
       var title = document.getElementById('assistant-request-job-title').value.trim();
-      var urls = document.getElementById('assistant-request-urls').value.split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
+      var urls = document
+        .getElementById('assistant-request-urls')
+        .value.split(/\r?\n/)
+        .map(function (line) {
+          return line.trim();
+        })
+        .filter(Boolean);
       var notes = document.getElementById('assistant-request-notes').value.trim();
       var approval = document.getElementById('assistant-request-approval').checked;
       setButtonBusy(btn, true, 'Queue DataOps Assistant job', 'Queueing...');
-      var request = requestPodcastAssistantForContext({
-        taskId: context.taskId,
-        bundleId: context.bundleId,
-        title: title || context.title || 'DataOps Assistant podcast prep',
-        instructionDocId: context.instructionDocId,
-        urls: urls,
-        sourceNotes: notes,
-        approvalRequired: approval,
-      }, function () {
-        close();
-        if (onDone) onDone();
-      });
+      var request = requestPodcastAssistantForContext(
+        {
+          taskId: context.taskId,
+          bundleId: context.bundleId,
+          title: title || context.title || 'DataOps Assistant podcast prep',
+          instructionDocId: context.instructionDocId,
+          urls: urls,
+          sourceNotes: notes,
+          approvalRequired: approval
+        },
+        function () {
+          close();
+          if (onDone) onDone();
+        }
+      );
       if (request && request.catch) {
         request.catch(function () {
           setButtonBusy(btn, false, 'Queue DataOps Assistant job');
@@ -1046,77 +1102,432 @@
   }
 
   var PROCESS_DOC_REGISTRY = {
-    'reference.overview.newsletter': { title: 'Newsletter', docType: 'reference', path: 'content/overview/reference/newsletter.md', summary: 'Overview of the newsletter cadence, sponsored content state, draft preparation, and send-out workflow.' },
-    'reference.overview.events-slack-book-of-the-week': { title: 'Events (slack) - Book of the Week', docType: 'reference', path: 'content/overview/reference/events-slack-book-of-the-week.md', summary: 'Explains the Slack Book of the Week event, author Q&A format, giveaway copies, and publisher coordination.' },
-    'reference.social-media.posts-book-of-the-week': { title: 'Posts. Book of the Week', docType: 'reference', path: 'content/social-media/reference/posts-book-of-the-week.md', summary: 'Reference for Book of the Week social announcement posts and reusable publication context.' },
-    'sop.community.book-of-the-week.add-books-to-the-airtable-form': { title: 'Add books to the Airtable form', docType: 'sop', path: 'content/community/book-of-the-week/sops/add-books-to-the-airtable-form.md', summary: 'Submit selected Book of the Week title details through Airtable for website follow-up.' },
-    'sop.community.book-of-the-week.add-links-and-edit-description': { title: 'Add links and edit description', docType: 'sop', path: 'content/community/book-of-the-week/sops/add-links-and-edit-description.md', summary: 'Update Book of the Week page links and descriptions after book and author details are ready.' },
-    'sop.community.book-of-the-week.adding-an-author-to-book-of-the-week-pages': { title: 'Adding an author to Book of the Week pages', docType: 'sop', path: 'content/community/book-of-the-week/sops/adding-an-author-to-book-of-the-week-pages.md', summary: 'Add Book of the Week author/person details so the book page can be published.' },
-    'sop.community.book-of-the-week.announce-book-of-the-week-announcement-on-linkedin': { title: 'Announce Book of the Week announcement on LinkedIn', docType: 'sop', path: 'content/community/book-of-the-week/sops/announce-book-of-the-week-announcement-on-linkedin.md', summary: 'Publish or schedule Book of the Week announcements on LinkedIn.' },
-    'sop.community.book-of-the-week.announce-the-book-of-the-week-event': { title: 'Announce the book-of-the-week event', docType: 'sop', path: 'content/community/book-of-the-week/sops/announce-the-book-of-the-week-event.md', summary: 'Share the Book of the Week Slack announcement into the required community channels.' },
-    'sop.community.book-of-the-week.ask-book-authors-to-share-their-the-event-page': { title: 'Ask book authors to share their event page', docType: 'sop', path: 'content/community/book-of-the-week/sops/ask-book-authors-to-share-their-the-event-page.md', summary: 'Ask Book of the Week authors to share the public event page.' },
-    'sop.community.book-of-the-week.change-the-status-to-confirmed': { title: 'Change the status to confirmed', docType: 'sop', path: 'content/community/book-of-the-week/sops/change-the-status-to-confirmed.md', summary: 'Mark a Book of the Week record as confirmed after author or publisher participation is finalized.' },
-    'sop.community.book-of-the-week.have-a-first-contact-with-the-author': { title: 'Have a first contact with the author', docType: 'sop', path: 'content/community/book-of-the-week/sops/have-a-first-contact-with-the-author.md', summary: 'Coordinate first contact and confirm a suitable Book of the Week event date with the author.' },
-    'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form': { title: 'Invite people to Slack from the Airtable form', docType: 'sop', path: 'content/community/book-of-the-week/sops/invite-people-to-slack-from-the-airtable-form.md', summary: 'Invite Book of the Week participants to Slack using Airtable form details.' },
-    'sop.community.book-of-the-week.schedule-the-announcement-in-slack': { title: 'Schedule the announcement in Slack', docType: 'sop', path: 'content/community/book-of-the-week/sops/schedule-the-announcement-in-slack.md', summary: 'Schedule the Book of the Week announcement in Slack with the correct message copy and cover.' },
-    'sop.community.book-of-the-week.select-book-of-the-week-winners': { title: 'Select Book of the Week winners', docType: 'sop', path: 'content/community/book-of-the-week/sops/select-book-of-the-week-winners.md', summary: 'Select giveaway winners, announce them, and collect winner emails.' },
-    'sop.internal-admin.trello.how-to-create-an-event-through-trello': { title: 'How to Create an Event Through Trello', docType: 'sop', path: 'content/internal-admin/trello/sops/how-to-create-an-event-through-trello.md', summary: 'Create an event card from Trello templates and replace placeholders with event-specific details.' },
-    'template.community.book-of-the-week.announce-the-book-of-the-week-winners-in-slack': { title: 'Announce the book-of-the-week winners in Slack', docType: 'template', path: 'content/community/book-of-the-week/templates/announce-the-book-of-the-week-winners-in-slack.md', summary: 'Reusable Slack copy for announcing Book of the Week giveaway winners.' },
-    'template.community.book-of-the-week.asking-books-authors-to-share-their-event-page': { title: 'Asking book authors to share their event page', docType: 'template', path: 'content/community/book-of-the-week/templates/asking-books-authors-to-share-their-event-page.md', summary: 'Email template asking Book of the Week authors to share the public event page.' },
-    'template.community.book-of-the-week.book-of-the-week-linkedin-announcement': { title: 'Book of the Week LinkedIn announcement', docType: 'template', path: 'content/community/book-of-the-week/templates/book-of-the-week-linkedin-announcement.md', summary: 'LinkedIn announcement template for promoting the active Book of the Week.' },
-    'template.community.book-of-the-week.book-of-the-week-linkedin-announcement-a-week-before-the-event': { title: 'Book of the Week LinkedIn announcement a week before the event', docType: 'template', path: 'content/community/book-of-the-week/templates/book-of-the-week-linkedin-announcement-a-week-before-the-event.md', summary: 'LinkedIn announcement template for promoting Book of the Week before event week.' },
-    'template.community.book-of-the-week.book-of-the-week-reaching-out-to-authors': { title: 'Book of the Week reaching out to authors', docType: 'template', path: 'content/community/book-of-the-week/templates/book-of-the-week-reaching-out-to-authors.md', summary: 'Outreach email template for inviting authors to join Book of the Week.' },
-    'template.community.book-of-the-week.book-of-the-week-remind-the-guest-about-the-event-template': { title: 'Book of the Week remind the guest about the event template', docType: 'template', path: 'content/community/book-of-the-week/templates/book-of-the-week-remind-the-guest-about-the-event-template.md', summary: 'Reminder email template for Book of the Week guests before event week.' },
-    'template.community.book-of-the-week.sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent': { title: 'Sending Book of the Week winners to the publisher and author via email', docType: 'template', path: 'content/community/book-of-the-week/templates/sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent.md', summary: 'Email template for sending winner information to the publisher and author.' },
-    'sop.finance.bookkeeping.creating-invoices-in-finom': { title: 'Creating Invoices in Finom', docType: 'sop', path: 'content/finance/bookkeeping/sops/creating-invoices-in-finom.md', summary: 'Create and send sponsor invoices in Finom with the correct billing details and tax handling.' },
-    'sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter': { title: 'Add just published podcast page to the newsletter', docType: 'sop', path: 'content/newsletter/mailchimp/sops/add-just-published-podcast-page-to-the-newsletter.md', summary: 'Add a newly published podcast page link to the podcast block in a Mailchimp newsletter.' },
-    'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block': { title: 'Entering information in the book of the week block', docType: 'sop', path: 'content/newsletter/mailchimp/sops/entering-information-in-the-book-of-the-week-block.md', summary: 'Update or remove the newsletter Book of the Week block.' },
-    'sop.newsletter.mailchimp.filling-newsletter-statistics': { title: 'Filling Newsletter Statistics', docType: 'sop', path: 'content/newsletter/mailchimp/sops/filling-newsletter-statistics.md', summary: 'Collect weekly sponsored newsletter performance statistics from Mailchimp, LinkedIn, and X.' },
-    'sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp': { title: 'Schedule a newsletter on Mailchimp', docType: 'sop', path: 'content/newsletter/mailchimp/sops/schedule-a-newsletter-on-mailchimp.md', summary: 'Schedule a reviewed newsletter campaign in Mailchimp for the intended send time.' },
-    'sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter': { title: 'Creating a document for sponsored content for a newsletter', docType: 'sop', path: 'content/newsletter/sponsorship/sops/creating-a-document-for-sponsored-content-for-a-newsletter.md', summary: 'Create a sponsor content document for newsletter copy, visuals, and links.' },
-    'sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter': { title: 'Fill in the sponsored block in the newsletter', docType: 'sop', path: 'content/newsletter/sponsorship/sops/fill-in-the-sponsored-block-in-the-newsletter.md', summary: 'Fill the newsletter sponsored block in Mailchimp with approved sponsor copy, image, and CTA link.' },
-    'sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content': { title: 'Schedule social media posts with Hootsuite and post about newsletter promotional content', docType: 'sop', path: 'content/social-media/linkedin/sops/schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content.md', summary: 'Schedule sponsored newsletter promotional posts for LinkedIn in Hootsuite.' },
-    'sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content': { title: 'Schedule posts with Twitter and post about newsletter promotional content', docType: 'sop', path: 'content/social-media/twitter/sops/schedule-posts-with-twitter-and-post-about-newsletter-promotional-content.md', summary: 'Schedule newsletter promotional content on Twitter/X and capture the post link.' },
-    'template.newsletter.create-newsletter-draft-from-template-in-mailchimp': { title: 'Create a newsletter draft from a template in Mailchimp', docType: 'template', path: 'content/internal-admin/templates/create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update.md', summary: 'Create a Mailchimp newsletter draft by replicating the existing template and preparing recurring content blocks.' },
-    'template.newsletter.newsletter-performance': { title: 'Newsletter Performance', docType: 'template', path: 'content/newsletter/templates/newsletter-performance.md', summary: 'Email template for sending sponsors newsletter performance results after their campaign runs.' },
-    'template.newsletter.send-sponsorship-document-2-weeks-before': { title: 'Send sponsorship document 2 weeks before', docType: 'template', path: 'content/newsletter/templates/send-sponsorship-document-2-weeks-before.md', summary: 'Email template for sending sponsors the content document and requirements two weeks before publication.' },
-    'template.newsletter.sending-email-on-the-day-of-publication': { title: 'Sending Email on the day of Publication', docType: 'template', path: 'content/newsletter/templates/sending-email-on-the-day-of-publication.md', summary: 'Email template for notifying sponsors that their promotion is live and sharing publication links.' },
-    'reference.social-media.post-podcast-overview-after-the-event': { title: 'Post. Podcast. Overview after the event', docType: 'reference', path: 'content/social-media/reference/post-podcast-overview-after-the-event.md', summary: 'Reference guide for post-event podcast overview copy, assets, examples, and workflow notes.' },
-    'sop.events.announce-event-in-slack-in-announcements': { title: 'Announce event in Slack in #announcements', docType: 'sop', path: 'content/events/sops/announce-event-in-slack-in-announcements.md', summary: 'Announce upcoming events in #announcements so the community has the event context and registration link.' },
-    'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event': { title: 'Create a calendar invite for event guests or speakers', docType: 'sop', path: 'content/events/calendar/sops/create-a-calender-invite-for-the-guests-speaker-for-an-event.md', summary: 'Create Google Calendar invites for event guests or speakers with the correct event details.' },
-    'sop.events.calendar.creating-tentative-event-on-google-calendar': { title: 'Creating Tentative Event on Google Calendar', docType: 'sop', path: 'content/events/calendar/sops/creating-tentative-event-on-google-calendar.md', summary: 'Create a proposed event block on Google Calendar before the date is fully confirmed.' },
-    'sop.events.luma.creating-events-on-google-calendar': { title: 'Creating Events on Google Calendar', docType: 'sop', path: 'content/events/luma/sops/creating-events-on-google-calendar.md', summary: 'Create a Google Calendar entry for a DataTalks.Club event.' },
-    'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma': { title: 'Creating events (Webinar, Workshop and Podcast) on Luma', docType: 'sop', path: 'content/events/luma/sops/creating-events-webinar-workshop-and-podcast-on-luma.md', summary: 'Create Luma event pages with the correct description, timing, and registration details.' },
-    'sop.events.luma.downloading-the-csv-file-on-luma': { title: 'Downloading the CSV File on Luma', docType: 'sop', path: 'content/events/luma/sops/downloading-the-csv-file-on-luma.md', summary: 'Download attendee CSV exports from Luma for follow-up, reporting, or registration imports.' },
-    'sop.events.meetup.create-events-in-meetup-com': { title: 'Create events in Meetup.com', docType: 'sop', path: 'content/events/meetup/sops/create-events-in-meetup-com.md', summary: 'Copy event announcements from Luma to Meetup with the needed public event details.' },
-    'sop.events.outreach.how-to-find-emails-of-previous-guests': { title: 'How to find emails of previous guests', docType: 'sop', path: 'content/events/outreach/sops/how-to-find-emails-of-previous-guests.md', summary: 'Find previous guest email addresses for outreach and event coordination follow-up.' },
-    'sop.events.planning.create-speaker-profiles-via-airtable-form': { title: 'Create speaker profiles via Airtable form', docType: 'sop', path: 'content/events/planning/sops/create-speaker-profiles-via-airtable-form.md', summary: 'Add a new speaker profile to the website through the Airtable form.' },
-    'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website': { title: 'Fill in the event form in Airtable for adding events to our website', docType: 'sop', path: 'content/events/planning/sops/fill-in-the-event-form-in-airtable-for-adding-events-to-our-website.md', summary: 'Fill out event, speaker, and publishing fields for the website event listing.' },
-    'sop.media.podcast.add-a-guest-bio-to-the-podcast-document': { title: 'Add a guest bio to the podcast document', docType: 'sop', path: 'content/media/podcast/sops/add-a-guest-bio-to-the-podcast-document.md', summary: 'Add the guest bio and links to the podcast planning document.' },
-    'sop.media.podcast.add-a-podcast-episode-via-airtable-form': { title: 'Add a podcast episode via Airtable form', docType: 'sop', path: 'content/media/podcast/sops/add-a-podcast-episode-via-airtable-form.md', summary: 'Submit the podcast episode form used to create the DataTalks.Club podcast page.' },
-    'sop.media.podcast.add-links-to-youtube-after-the-stream-is-over': { title: 'Add links to YouTube after the stream is over', docType: 'sop', path: 'content/media/podcast/sops/add-links-to-youtube-after-the-stream-is-over.md', summary: 'Collect guest links and add them to the YouTube video description after the stream.' },
-    'sop.media.podcast.create-podcast-document': { title: 'Create a podcast document', docType: 'sop', path: 'content/media/podcast/sops/create-a-podcast-document.md', summary: 'Create a podcast planning document with event information, guest questions, and announcement details.' },
-    'sop.media.podcast.creating-podcast-transcription-document': { title: 'Creating podcast transcription document', docType: 'sop', path: 'content/media/podcast/sops/creating-podcast-transcription-document.md', summary: 'Transcribe podcast episodes, generate transcripts, and edit them for publishing.' },
-    'sop.media.podcast.generate-timecodes-from-docx-transcriptions': { title: 'Generate Timecodes from docx Transcriptions', docType: 'sop', path: 'content/media/podcast/sops/generate-timecodes-from-docx-transcriptions.md', summary: 'Generate YouTube timecodes from a podcast transcription document.' },
-    'sop.media.podcast.making-event-announcements-when-topic-bio-or-outline-is-missing': { title: 'Making event announcements when topic, bio, or outline is missing', docType: 'sop', path: 'content/media/podcast/sops/making-event-announcements-when-topic-bio-or-outline-is-missing.md', summary: 'Announce a podcast event even when topic, bio, or outline details are incomplete.' },
-    'sop.media.podcast.managing-podcast-workflow': { title: 'Managing Podcast Workflow', docType: 'sop', path: 'content/media/podcast/sops/managing-podcast-workflow.md', summary: 'Manage podcast production from guest coordination through recording, publishing, transcripts, and follow-up.' },
-    'sop.media.podcast.move-podcast-documents-to-archive-in-google-drive': { title: 'Move podcast documents to archive in Google drive', docType: 'sop', path: 'content/media/podcast/sops/move-podcast-documents-to-archive-in-google-drive.md', summary: 'Move podcast documents to the archive folder after production is complete.' },
-    'sop.media.podcast.moving-podcast-audio-in-dropbox': { title: 'Moving Podcast Audio in Dropbox', docType: 'sop', path: 'content/media/podcast/sops/moving-podcast-audio-in-dropbox.md', summary: 'Organize podcast audio in Dropbox so published and unpublished episodes are easy to track.' },
-    'sop.media.podcast.removing-the-beginning-from-the-youtube-stream': { title: 'Removing the beginning from the YouTube stream', docType: 'sop', path: 'content/media/podcast/sops/removing-the-beginning-from-the-youtube-stream.md', summary: 'Trim small talk or setup time from the beginning of a YouTube stream.' },
-    'sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster': { title: 'Schedule podcast episodes with Spotify for podcaster', docType: 'sop', path: 'content/media/podcast/sops/schedule-podcast-episodes-with-spotify-for-podcaster.md', summary: 'Schedule a podcast episode in Spotify for Podcasters.' },
-    'sop.media.podcast.select-and-propose-a-date-for-events': { title: 'Select and propose a date for events', docType: 'sop', path: 'content/media/podcast/sops/select-and-propose-a-date-for-events.md', summary: 'Select and propose event dates using the schedule spreadsheet and Google Calendar.' },
-    'sop.media.podcast.sending-a-podcast-scheduled-email-to-pavel-after-the-event': { title: 'Sending a podcast scheduled email to Pavel (after the event)', docType: 'sop', path: 'content/media/podcast/sops/sending-a-podcast-scheduled-email-to-pavel-after-the-event.md', summary: 'Send Pavel the podcast scheduling and recording details after an episode.' },
-    'sop.media.podcast.update-the-website-with-the-information-from-forms': { title: 'Update the website with the information from forms', docType: 'sop', path: 'content/media/podcast/sops/update-the-website-with-the-information-from-forms.md', summary: 'Publish Airtable event, speaker, and podcast form data to the website.' },
-    'sop.media.podcast.updating-the-cover-of-the-youtube-video': { title: 'Updating the cover of the YouTube video', docType: 'sop', path: 'content/media/podcast/sops/updating-the-cover-of-the-youtube-video.md', summary: 'Update the cover image for a YouTube video.' },
-    'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist': { title: 'Adding videos from other channels to our playlist', docType: 'sop', path: 'content/media/video-youtube/sops/adding-videos-from-other-channels-to-our-playlist.md', summary: 'Add external videos to DataTalks.Club YouTube playlists without reuploading them.' },
-    'sop.social-media.post-podcast-guest-recommendations': { title: 'Post. Podcast. Guest recommendations', docType: 'sop', path: 'content/social-media/sops/post-podcast-guest-recommendations.md', summary: 'Share podcast guest recommendations on LinkedIn and Twitter/X.' },
-    'template.media.podcast.podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker': { title: 'Podcast - Adding Johanna and Sending the podcast link to the speaker', docType: 'template', path: 'content/media/podcast/templates/podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker.md', summary: 'Reusable guest outreach wording for adding Johanna and sending the podcast document link.' },
-    'template.media.podcast.podcast-links-after-the-event-is-over': { title: 'Podcast - Links after the event is over', docType: 'template', path: 'content/media/podcast/templates/podcast-links-after-the-event-is-over.md', summary: 'Reusable wording for collecting links from the guest after the podcast event.' },
-    'template.media.podcast.podcast-remind-about-the-event-in-a-week-share-registration-link-template': { title: 'Podcast - Remind about the event in a week, share registration link - Template', docType: 'template', path: 'content/media/podcast/templates/podcast-remind-about-the-event-in-a-week-share-registration-link-template.md', summary: 'Reusable reminder wording for one week before the podcast event.' },
-    'template.media.podcast.podcast-remind-the-guest-about-the-event-a-day-before-template': { title: 'Podcast - Remind the guest about the event a day before - Template', docType: 'template', path: 'content/media/podcast/templates/podcast-remind-the-guest-about-the-event-a-day-before-template.md', summary: 'Reusable reminder wording for the day before the podcast event.' },
-    'template.media.podcast.podcast-share-the-podcast-page-template': { title: 'Podcast - Share the podcast page - Template', docType: 'template', path: 'content/media/podcast/templates/podcast-share-the-podcast-page-template.md', summary: 'Reusable wording for asking the guest to share the published podcast page.' },
-    'template.media.podcast.sending-podcast-document-on-slack-the-dtc-podcast-help-channel': { title: 'Sending Podcast Document on Slack the DTC podcast help channel', docType: 'template', path: 'content/media/podcast/templates/sending-podcast-document-on-slack-the-dtc-podcast-help-channel.md', summary: 'Reusable Slack message for sharing the podcast document with the DTC podcast help channel.' },
-    'template.social-media.template-new-event-announcements-podcasts-webinars-workshops': { title: 'Template. New event announcements (podcasts, webinars, workshops)', docType: 'template', path: 'content/social-media/templates/template-new-event-announcements-podcasts-webinars-workshops.md', summary: 'Reusable social announcement copy for new podcasts, webinars, and workshops.' }
+    'reference.overview.newsletter': {
+      title: 'Newsletter',
+      docType: 'reference',
+      path: 'content/overview/reference/newsletter.md',
+      summary: 'Overview of the newsletter cadence, sponsored content state, draft preparation, and send-out workflow.'
+    },
+    'reference.overview.events-slack-book-of-the-week': {
+      title: 'Events (slack) - Book of the Week',
+      docType: 'reference',
+      path: 'content/overview/reference/events-slack-book-of-the-week.md',
+      summary: 'Explains the Slack Book of the Week event, author Q&A format, giveaway copies, and publisher coordination.'
+    },
+    'reference.social-media.posts-book-of-the-week': {
+      title: 'Posts. Book of the Week',
+      docType: 'reference',
+      path: 'content/social-media/reference/posts-book-of-the-week.md',
+      summary: 'Reference for Book of the Week social announcement posts and reusable publication context.'
+    },
+    'sop.community.book-of-the-week.add-books-to-the-airtable-form': {
+      title: 'Add books to the Airtable form',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/add-books-to-the-airtable-form.md',
+      summary: 'Submit selected Book of the Week title details through Airtable for website follow-up.'
+    },
+    'sop.community.book-of-the-week.add-links-and-edit-description': {
+      title: 'Add links and edit description',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/add-links-and-edit-description.md',
+      summary: 'Update Book of the Week page links and descriptions after book and author details are ready.'
+    },
+    'sop.community.book-of-the-week.adding-an-author-to-book-of-the-week-pages': {
+      title: 'Adding an author to Book of the Week pages',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/adding-an-author-to-book-of-the-week-pages.md',
+      summary: 'Add Book of the Week author/person details so the book page can be published.'
+    },
+    'sop.community.book-of-the-week.announce-book-of-the-week-announcement-on-linkedin': {
+      title: 'Announce Book of the Week announcement on LinkedIn',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/announce-book-of-the-week-announcement-on-linkedin.md',
+      summary: 'Publish or schedule Book of the Week announcements on LinkedIn.'
+    },
+    'sop.community.book-of-the-week.announce-the-book-of-the-week-event': {
+      title: 'Announce the book-of-the-week event',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/announce-the-book-of-the-week-event.md',
+      summary: 'Share the Book of the Week Slack announcement into the required community channels.'
+    },
+    'sop.community.book-of-the-week.ask-book-authors-to-share-their-the-event-page': {
+      title: 'Ask book authors to share their event page',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/ask-book-authors-to-share-their-the-event-page.md',
+      summary: 'Ask Book of the Week authors to share the public event page.'
+    },
+    'sop.community.book-of-the-week.change-the-status-to-confirmed': {
+      title: 'Change the status to confirmed',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/change-the-status-to-confirmed.md',
+      summary: 'Mark a Book of the Week record as confirmed after author or publisher participation is finalized.'
+    },
+    'sop.community.book-of-the-week.have-a-first-contact-with-the-author': {
+      title: 'Have a first contact with the author',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/have-a-first-contact-with-the-author.md',
+      summary: 'Coordinate first contact and confirm a suitable Book of the Week event date with the author.'
+    },
+    'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form': {
+      title: 'Invite people to Slack from the Airtable form',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/invite-people-to-slack-from-the-airtable-form.md',
+      summary: 'Invite Book of the Week participants to Slack using Airtable form details.'
+    },
+    'sop.community.book-of-the-week.schedule-the-announcement-in-slack': {
+      title: 'Schedule the announcement in Slack',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/schedule-the-announcement-in-slack.md',
+      summary: 'Schedule the Book of the Week announcement in Slack with the correct message copy and cover.'
+    },
+    'sop.community.book-of-the-week.select-book-of-the-week-winners': {
+      title: 'Select Book of the Week winners',
+      docType: 'sop',
+      path: 'content/community/book-of-the-week/sops/select-book-of-the-week-winners.md',
+      summary: 'Select giveaway winners, announce them, and collect winner emails.'
+    },
+    'sop.internal-admin.trello.how-to-create-an-event-through-trello': {
+      title: 'How to Create an Event Through Trello',
+      docType: 'sop',
+      path: 'content/internal-admin/trello/sops/how-to-create-an-event-through-trello.md',
+      summary: 'Create an event card from Trello templates and replace placeholders with event-specific details.'
+    },
+    'template.community.book-of-the-week.announce-the-book-of-the-week-winners-in-slack': {
+      title: 'Announce the book-of-the-week winners in Slack',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/announce-the-book-of-the-week-winners-in-slack.md',
+      summary: 'Reusable Slack copy for announcing Book of the Week giveaway winners.'
+    },
+    'template.community.book-of-the-week.asking-books-authors-to-share-their-event-page': {
+      title: 'Asking book authors to share their event page',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/asking-books-authors-to-share-their-event-page.md',
+      summary: 'Email template asking Book of the Week authors to share the public event page.'
+    },
+    'template.community.book-of-the-week.book-of-the-week-linkedin-announcement': {
+      title: 'Book of the Week LinkedIn announcement',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/book-of-the-week-linkedin-announcement.md',
+      summary: 'LinkedIn announcement template for promoting the active Book of the Week.'
+    },
+    'template.community.book-of-the-week.book-of-the-week-linkedin-announcement-a-week-before-the-event': {
+      title: 'Book of the Week LinkedIn announcement a week before the event',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/book-of-the-week-linkedin-announcement-a-week-before-the-event.md',
+      summary: 'LinkedIn announcement template for promoting Book of the Week before event week.'
+    },
+    'template.community.book-of-the-week.book-of-the-week-reaching-out-to-authors': {
+      title: 'Book of the Week reaching out to authors',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/book-of-the-week-reaching-out-to-authors.md',
+      summary: 'Outreach email template for inviting authors to join Book of the Week.'
+    },
+    'template.community.book-of-the-week.book-of-the-week-remind-the-guest-about-the-event-template': {
+      title: 'Book of the Week remind the guest about the event template',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/book-of-the-week-remind-the-guest-about-the-event-template.md',
+      summary: 'Reminder email template for Book of the Week guests before event week.'
+    },
+    'template.community.book-of-the-week.sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent': {
+      title: 'Sending Book of the Week winners to the publisher and author via email',
+      docType: 'template',
+      path: 'content/community/book-of-the-week/templates/sending-book-of-the-week-winners-to-the-publisher-and-author-via-email-templateent.md',
+      summary: 'Email template for sending winner information to the publisher and author.'
+    },
+    'sop.finance.bookkeeping.creating-invoices-in-finom': {
+      title: 'Creating Invoices in Finom',
+      docType: 'sop',
+      path: 'content/finance/bookkeeping/sops/creating-invoices-in-finom.md',
+      summary: 'Create and send sponsor invoices in Finom with the correct billing details and tax handling.'
+    },
+    'sop.newsletter.mailchimp.add-just-published-podcast-page-to-the-newsletter': {
+      title: 'Add just published podcast page to the newsletter',
+      docType: 'sop',
+      path: 'content/newsletter/mailchimp/sops/add-just-published-podcast-page-to-the-newsletter.md',
+      summary: 'Add a newly published podcast page link to the podcast block in a Mailchimp newsletter.'
+    },
+    'sop.newsletter.mailchimp.entering-information-in-the-book-of-the-week-block': {
+      title: 'Entering information in the book of the week block',
+      docType: 'sop',
+      path: 'content/newsletter/mailchimp/sops/entering-information-in-the-book-of-the-week-block.md',
+      summary: 'Update or remove the newsletter Book of the Week block.'
+    },
+    'sop.newsletter.mailchimp.filling-newsletter-statistics': {
+      title: 'Filling Newsletter Statistics',
+      docType: 'sop',
+      path: 'content/newsletter/mailchimp/sops/filling-newsletter-statistics.md',
+      summary: 'Collect weekly sponsored newsletter performance statistics from Mailchimp, LinkedIn, and X.'
+    },
+    'sop.newsletter.mailchimp.schedule-a-newsletter-on-mailchimp': {
+      title: 'Schedule a newsletter on Mailchimp',
+      docType: 'sop',
+      path: 'content/newsletter/mailchimp/sops/schedule-a-newsletter-on-mailchimp.md',
+      summary: 'Schedule a reviewed newsletter campaign in Mailchimp for the intended send time.'
+    },
+    'sop.newsletter.sponsorship.creating-a-document-for-sponsored-content-for-a-newsletter': {
+      title: 'Creating a document for sponsored content for a newsletter',
+      docType: 'sop',
+      path: 'content/newsletter/sponsorship/sops/creating-a-document-for-sponsored-content-for-a-newsletter.md',
+      summary: 'Create a sponsor content document for newsletter copy, visuals, and links.'
+    },
+    'sop.newsletter.sponsorship.fill-in-the-sponsored-block-in-the-newsletter': {
+      title: 'Fill in the sponsored block in the newsletter',
+      docType: 'sop',
+      path: 'content/newsletter/sponsorship/sops/fill-in-the-sponsored-block-in-the-newsletter.md',
+      summary: 'Fill the newsletter sponsored block in Mailchimp with approved sponsor copy, image, and CTA link.'
+    },
+    'sop.social-media.linkedin.schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content': {
+      title: 'Schedule social media posts with Hootsuite and post about newsletter promotional content',
+      docType: 'sop',
+      path: 'content/social-media/linkedin/sops/schedule-social-media-posts-with-hootsuite-and-post-about-newsletter-promotional-content.md',
+      summary: 'Schedule sponsored newsletter promotional posts for LinkedIn in Hootsuite.'
+    },
+    'sop.social-media.twitter.schedule-posts-with-twitter-and-post-about-newsletter-promotional-content': {
+      title: 'Schedule posts with Twitter and post about newsletter promotional content',
+      docType: 'sop',
+      path: 'content/social-media/twitter/sops/schedule-posts-with-twitter-and-post-about-newsletter-promotional-content.md',
+      summary: 'Schedule newsletter promotional content on Twitter/X and capture the post link.'
+    },
+    'template.newsletter.create-newsletter-draft-from-template-in-mailchimp': {
+      title: 'Create a newsletter draft from a template in Mailchimp',
+      docType: 'template',
+      path: 'content/internal-admin/templates/create-a-newsletter-draft-from-a-template-in-mailchimp-10-01-2024-update.md',
+      summary: 'Create a Mailchimp newsletter draft by replicating the existing template and preparing recurring content blocks.'
+    },
+    'template.newsletter.newsletter-performance': {
+      title: 'Newsletter Performance',
+      docType: 'template',
+      path: 'content/newsletter/templates/newsletter-performance.md',
+      summary: 'Email template for sending sponsors newsletter performance results after their campaign runs.'
+    },
+    'template.newsletter.send-sponsorship-document-2-weeks-before': {
+      title: 'Send sponsorship document 2 weeks before',
+      docType: 'template',
+      path: 'content/newsletter/templates/send-sponsorship-document-2-weeks-before.md',
+      summary: 'Email template for sending sponsors the content document and requirements two weeks before publication.'
+    },
+    'template.newsletter.sending-email-on-the-day-of-publication': {
+      title: 'Sending Email on the day of Publication',
+      docType: 'template',
+      path: 'content/newsletter/templates/sending-email-on-the-day-of-publication.md',
+      summary: 'Email template for notifying sponsors that their promotion is live and sharing publication links.'
+    },
+    'reference.social-media.post-podcast-overview-after-the-event': {
+      title: 'Post. Podcast. Overview after the event',
+      docType: 'reference',
+      path: 'content/social-media/reference/post-podcast-overview-after-the-event.md',
+      summary: 'Reference guide for post-event podcast overview copy, assets, examples, and workflow notes.'
+    },
+    'sop.events.announce-event-in-slack-in-announcements': {
+      title: 'Announce event in Slack in #announcements',
+      docType: 'sop',
+      path: 'content/events/sops/announce-event-in-slack-in-announcements.md',
+      summary: 'Announce upcoming events in #announcements so the community has the event context and registration link.'
+    },
+    'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event': {
+      title: 'Create a calendar invite for event guests or speakers',
+      docType: 'sop',
+      path: 'content/events/calendar/sops/create-a-calender-invite-for-the-guests-speaker-for-an-event.md',
+      summary: 'Create Google Calendar invites for event guests or speakers with the correct event details.'
+    },
+    'sop.events.calendar.creating-tentative-event-on-google-calendar': {
+      title: 'Creating Tentative Event on Google Calendar',
+      docType: 'sop',
+      path: 'content/events/calendar/sops/creating-tentative-event-on-google-calendar.md',
+      summary: 'Create a proposed event block on Google Calendar before the date is fully confirmed.'
+    },
+    'sop.events.luma.creating-events-on-google-calendar': {
+      title: 'Creating Events on Google Calendar',
+      docType: 'sop',
+      path: 'content/events/luma/sops/creating-events-on-google-calendar.md',
+      summary: 'Create a Google Calendar entry for a DataTalks.Club event.'
+    },
+    'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma': {
+      title: 'Creating events (Webinar, Workshop and Podcast) on Luma',
+      docType: 'sop',
+      path: 'content/events/luma/sops/creating-events-webinar-workshop-and-podcast-on-luma.md',
+      summary: 'Create Luma event pages with the correct description, timing, and registration details.'
+    },
+    'sop.events.luma.downloading-the-csv-file-on-luma': {
+      title: 'Downloading the CSV File on Luma',
+      docType: 'sop',
+      path: 'content/events/luma/sops/downloading-the-csv-file-on-luma.md',
+      summary: 'Download attendee CSV exports from Luma for follow-up, reporting, or registration imports.'
+    },
+    'sop.events.meetup.create-events-in-meetup-com': {
+      title: 'Create events in Meetup.com',
+      docType: 'sop',
+      path: 'content/events/meetup/sops/create-events-in-meetup-com.md',
+      summary: 'Copy event announcements from Luma to Meetup with the needed public event details.'
+    },
+    'sop.events.outreach.how-to-find-emails-of-previous-guests': {
+      title: 'How to find emails of previous guests',
+      docType: 'sop',
+      path: 'content/events/outreach/sops/how-to-find-emails-of-previous-guests.md',
+      summary: 'Find previous guest email addresses for outreach and event coordination follow-up.'
+    },
+    'sop.events.planning.create-speaker-profiles-via-airtable-form': {
+      title: 'Create speaker profiles via Airtable form',
+      docType: 'sop',
+      path: 'content/events/planning/sops/create-speaker-profiles-via-airtable-form.md',
+      summary: 'Add a new speaker profile to the website through the Airtable form.'
+    },
+    'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website': {
+      title: 'Fill in the event form in Airtable for adding events to our website',
+      docType: 'sop',
+      path: 'content/events/planning/sops/fill-in-the-event-form-in-airtable-for-adding-events-to-our-website.md',
+      summary: 'Fill out event, speaker, and publishing fields for the website event listing.'
+    },
+    'sop.media.podcast.add-a-guest-bio-to-the-podcast-document': {
+      title: 'Add a guest bio to the podcast document',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/add-a-guest-bio-to-the-podcast-document.md',
+      summary: 'Add the guest bio and links to the podcast planning document.'
+    },
+    'sop.media.podcast.add-a-podcast-episode-via-airtable-form': {
+      title: 'Add a podcast episode via Airtable form',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/add-a-podcast-episode-via-airtable-form.md',
+      summary: 'Submit the podcast episode form used to create the DataTalks.Club podcast page.'
+    },
+    'sop.media.podcast.add-links-to-youtube-after-the-stream-is-over': {
+      title: 'Add links to YouTube after the stream is over',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/add-links-to-youtube-after-the-stream-is-over.md',
+      summary: 'Collect guest links and add them to the YouTube video description after the stream.'
+    },
+    'sop.media.podcast.create-podcast-document': {
+      title: 'Create a podcast document',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/create-a-podcast-document.md',
+      summary: 'Create a podcast planning document with event information, guest questions, and announcement details.'
+    },
+    'sop.media.podcast.creating-podcast-transcription-document': {
+      title: 'Creating podcast transcription document',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/creating-podcast-transcription-document.md',
+      summary: 'Transcribe podcast episodes, generate transcripts, and edit them for publishing.'
+    },
+    'sop.media.podcast.generate-timecodes-from-docx-transcriptions': {
+      title: 'Generate Timecodes from docx Transcriptions',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/generate-timecodes-from-docx-transcriptions.md',
+      summary: 'Generate YouTube timecodes from a podcast transcription document.'
+    },
+    'sop.media.podcast.making-event-announcements-when-topic-bio-or-outline-is-missing': {
+      title: 'Making event announcements when topic, bio, or outline is missing',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/making-event-announcements-when-topic-bio-or-outline-is-missing.md',
+      summary: 'Announce a podcast event even when topic, bio, or outline details are incomplete.'
+    },
+    'sop.media.podcast.managing-podcast-workflow': {
+      title: 'Managing Podcast Workflow',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/managing-podcast-workflow.md',
+      summary: 'Manage podcast production from guest coordination through recording, publishing, transcripts, and follow-up.'
+    },
+    'sop.media.podcast.move-podcast-documents-to-archive-in-google-drive': {
+      title: 'Move podcast documents to archive in Google drive',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/move-podcast-documents-to-archive-in-google-drive.md',
+      summary: 'Move podcast documents to the archive folder after production is complete.'
+    },
+    'sop.media.podcast.moving-podcast-audio-in-dropbox': {
+      title: 'Moving Podcast Audio in Dropbox',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/moving-podcast-audio-in-dropbox.md',
+      summary: 'Organize podcast audio in Dropbox so published and unpublished episodes are easy to track.'
+    },
+    'sop.media.podcast.removing-the-beginning-from-the-youtube-stream': {
+      title: 'Removing the beginning from the YouTube stream',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/removing-the-beginning-from-the-youtube-stream.md',
+      summary: 'Trim small talk or setup time from the beginning of a YouTube stream.'
+    },
+    'sop.media.podcast.schedule-podcast-episodes-with-spotify-for-podcaster': {
+      title: 'Schedule podcast episodes with Spotify for podcaster',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/schedule-podcast-episodes-with-spotify-for-podcaster.md',
+      summary: 'Schedule a podcast episode in Spotify for Podcasters.'
+    },
+    'sop.media.podcast.select-and-propose-a-date-for-events': {
+      title: 'Select and propose a date for events',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/select-and-propose-a-date-for-events.md',
+      summary: 'Select and propose event dates using the schedule spreadsheet and Google Calendar.'
+    },
+    'sop.media.podcast.sending-a-podcast-scheduled-email-to-pavel-after-the-event': {
+      title: 'Sending a podcast scheduled email to Pavel (after the event)',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/sending-a-podcast-scheduled-email-to-pavel-after-the-event.md',
+      summary: 'Send Pavel the podcast scheduling and recording details after an episode.'
+    },
+    'sop.media.podcast.update-the-website-with-the-information-from-forms': {
+      title: 'Update the website with the information from forms',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/update-the-website-with-the-information-from-forms.md',
+      summary: 'Publish Airtable event, speaker, and podcast form data to the website.'
+    },
+    'sop.media.podcast.updating-the-cover-of-the-youtube-video': {
+      title: 'Updating the cover of the YouTube video',
+      docType: 'sop',
+      path: 'content/media/podcast/sops/updating-the-cover-of-the-youtube-video.md',
+      summary: 'Update the cover image for a YouTube video.'
+    },
+    'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist': {
+      title: 'Adding videos from other channels to our playlist',
+      docType: 'sop',
+      path: 'content/media/video-youtube/sops/adding-videos-from-other-channels-to-our-playlist.md',
+      summary: 'Add external videos to DataTalks.Club YouTube playlists without reuploading them.'
+    },
+    'sop.social-media.post-podcast-guest-recommendations': {
+      title: 'Post. Podcast. Guest recommendations',
+      docType: 'sop',
+      path: 'content/social-media/sops/post-podcast-guest-recommendations.md',
+      summary: 'Share podcast guest recommendations on LinkedIn and Twitter/X.'
+    },
+    'template.media.podcast.podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker': {
+      title: 'Podcast - Adding Johanna and Sending the podcast link to the speaker',
+      docType: 'template',
+      path: 'content/media/podcast/templates/podcast-adding-johanna-and-sending-the-podcast-link-to-the-speaker.md',
+      summary: 'Reusable guest outreach wording for adding Johanna and sending the podcast document link.'
+    },
+    'template.media.podcast.podcast-links-after-the-event-is-over': {
+      title: 'Podcast - Links after the event is over',
+      docType: 'template',
+      path: 'content/media/podcast/templates/podcast-links-after-the-event-is-over.md',
+      summary: 'Reusable wording for collecting links from the guest after the podcast event.'
+    },
+    'template.media.podcast.podcast-remind-about-the-event-in-a-week-share-registration-link-template': {
+      title: 'Podcast - Remind about the event in a week, share registration link - Template',
+      docType: 'template',
+      path: 'content/media/podcast/templates/podcast-remind-about-the-event-in-a-week-share-registration-link-template.md',
+      summary: 'Reusable reminder wording for one week before the podcast event.'
+    },
+    'template.media.podcast.podcast-remind-the-guest-about-the-event-a-day-before-template': {
+      title: 'Podcast - Remind the guest about the event a day before - Template',
+      docType: 'template',
+      path: 'content/media/podcast/templates/podcast-remind-the-guest-about-the-event-a-day-before-template.md',
+      summary: 'Reusable reminder wording for the day before the podcast event.'
+    },
+    'template.media.podcast.podcast-share-the-podcast-page-template': {
+      title: 'Podcast - Share the podcast page - Template',
+      docType: 'template',
+      path: 'content/media/podcast/templates/podcast-share-the-podcast-page-template.md',
+      summary: 'Reusable wording for asking the guest to share the published podcast page.'
+    },
+    'template.media.podcast.sending-podcast-document-on-slack-the-dtc-podcast-help-channel': {
+      title: 'Sending Podcast Document on Slack the DTC podcast help channel',
+      docType: 'template',
+      path: 'content/media/podcast/templates/sending-podcast-document-on-slack-the-dtc-podcast-help-channel.md',
+      summary: 'Reusable Slack message for sharing the podcast document with the DTC podcast help channel.'
+    },
+    'template.social-media.template-new-event-announcements-podcasts-webinars-workshops': {
+      title: 'Template. New event announcements (podcasts, webinars, workshops)',
+      docType: 'template',
+      path: 'content/social-media/templates/template-new-event-announcements-podcasts-webinars-workshops.md',
+      summary: 'Reusable social announcement copy for new podcasts, webinars, and workshops.'
+    }
   };
 
   function resolveProcessDocContext(docId) {
@@ -1140,45 +1551,30 @@
       if (task.instructionStepId) detail.push('Step: ' + task.instructionStepId);
       if (Array.isArray(task.systems) && task.systems.length) detail.push(task.systems.join(', '));
       if (doc) {
-        return '<div class="process-doc-context" data-process-doc-context="' + escapeHtml(docId) + '">' +
-          '<span class="process-doc-label">' + escapeHtml(doc.docType || 'doc') + '</span>' +
-          '<a class="process-doc-link" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener" aria-label="Open process doc ' + escapeHtml(doc.title) + '">' + escapeHtml(doc.title) + '</a>' +
-          '<span class="process-doc-summary">' + escapeHtml(doc.summary || doc.path || docId) + '</span>' +
-          (detail.length ? '<span class="process-doc-meta">' + escapeHtml(detail.join(' | ')) + '</span>' : '') +
-          '<a class="process-doc-action" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener">' + escapeHtml(processDocActionLabel(doc)) + '</a>' +
-          '</div>';
+        return '<div class="process-doc-context" data-process-doc-context="' + escapeHtml(docId) + '">' + '<span class="process-doc-label">' + escapeHtml(doc.docType || 'doc') + '</span>' + '<a class="process-doc-link" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener" aria-label="Open process doc ' + escapeHtml(doc.title) + '">' + escapeHtml(doc.title) + '</a>' + '<span class="process-doc-summary">' + escapeHtml(doc.summary || doc.path || docId) + '</span>' + (detail.length ? '<span class="process-doc-meta">' + escapeHtml(detail.join(' | ')) + '</span>' : '') + '<a class="process-doc-action" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener">' + escapeHtml(processDocActionLabel(doc)) + '</a>' + '</div>';
       }
-      return '<div class="process-doc-context process-doc-context--unresolved" data-process-doc-context="' + escapeHtml(docId) + '">' +
-        '<span class="process-doc-label">Process doc</span>' +
-        '<span class="process-doc-link">Unresolved document</span>' +
-        '<span class="process-doc-meta">' + escapeHtml(docId + (detail.length ? ' | ' + detail.join(' | ') : '')) + '</span>' +
-        '<a class="process-doc-action" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener">Try docs resolver</a>' +
-        '</div>';
+      return '<div class="process-doc-context process-doc-context--unresolved" data-process-doc-context="' + escapeHtml(docId) + '">' + '<span class="process-doc-label">Process doc</span>' + '<span class="process-doc-link">Unresolved document</span>' + '<span class="process-doc-meta">' + escapeHtml(docId + (detail.length ? ' | ' + detail.join(' | ') : '')) + '</span>' + '<a class="process-doc-action" href="' + escapeHtml(processDocUrl(docId)) + '" target="_blank" rel="noopener">Try docs resolver</a>' + '</div>';
     }
     if (task.instructionsUrl) {
-      return '<div class="process-doc-context process-doc-context--legacy">' +
-        '<span class="process-doc-label">Instructions</span>' +
-        '<a class="process-doc-link" href="' + escapeHtml(task.instructionsUrl) + '" target="_blank" rel="noopener" aria-label="' + escapeHtml(instructionLabel(task.description)) + '">legacy instructions</a>' +
-        '<span class="process-doc-meta">legacy URL</span>' +
-        '</div>';
+      return '<div class="process-doc-context process-doc-context--legacy">' + '<span class="process-doc-label">Instructions</span>' + '<a class="process-doc-link" href="' + escapeHtml(task.instructionsUrl) + '" target="_blank" rel="noopener" aria-label="' + escapeHtml(instructionLabel(task.description)) + '">legacy instructions</a>' + '<span class="process-doc-meta">legacy URL</span>' + '</div>';
     }
-    return '<div class="process-doc-context process-doc-context--missing">' +
-      '<span class="process-doc-label">Process doc</span>' +
-      '<span class="process-doc-meta">No process document mapped</span>' +
-      '</div>';
+    return '<div class="process-doc-context process-doc-context--missing">' + '<span class="process-doc-label">Process doc</span>' + '<span class="process-doc-meta">No process document mapped</span>' + '</div>';
   }
 
   function renderArtifactRefs(refs) {
     if (!Array.isArray(refs) || refs.length === 0) return '';
-    return '<div class="artifact-ref-list">' + refs.map(function (ref) {
-      var status = ref.status || 'draft';
-      var href = ref.storageUri || '#';
-      var linked = href && href !== '#';
-      return '<a class="artifact-chip artifact-chip--' + escapeHtml(status) + '" href="' + escapeHtml(href) + '"' + (linked ? ' target="_blank" rel="noopener"' : '') + ' data-artifact-ref="' + escapeHtml(ref.artifactId || '') + '">' +
-        escapeHtml(ref.title || ref.type || ref.artifactId || 'Artifact') +
-        '<span>' + escapeHtml(status) + '</span>' +
-        '</a>';
-    }).join('') + '</div>';
+    return (
+      '<div class="artifact-ref-list">' +
+      refs
+        .map(function (ref) {
+          var status = ref.status || 'draft';
+          var href = ref.storageUri || '#';
+          var linked = href && href !== '#';
+          return '<a class="artifact-chip artifact-chip--' + escapeHtml(status) + '" href="' + escapeHtml(href) + '"' + (linked ? ' target="_blank" rel="noopener"' : '') + ' data-artifact-ref="' + escapeHtml(ref.artifactId || '') + '">' + escapeHtml(ref.title || ref.type || ref.artifactId || 'Artifact') + '<span>' + escapeHtml(status) + '</span>' + '</a>';
+        })
+        .join('') +
+      '</div>'
+    );
   }
 
   function renderArtifactPanel(artifacts) {
@@ -1188,21 +1584,14 @@
       return html;
     }
     artifacts.forEach(function (artifact) {
-      html += '<div class="artifact-row" data-artifact-row="' + escapeHtml(artifact.id) + '">' +
-        '<div>' +
-          '<div class="artifact-title">' + escapeHtml(artifact.title || artifact.type || 'Artifact') + '</div>' +
-          '<div class="artifact-meta">' + escapeHtml(artifact.type || 'artifact') + ' · ' + escapeHtml(artifact.status || 'draft') + ' · ' + escapeHtml(artifact.storageProvider || 'unknown') + '</div>' +
-        '</div>' +
-        '<a class="card-action-link" href="' + escapeHtml(artifact.storageUri || '#') + '" target="_blank" rel="noopener">Open output</a>' +
-      '</div>';
+      html += '<div class="artifact-row" data-artifact-row="' + escapeHtml(artifact.id) + '">' + '<div>' + '<div class="artifact-title">' + escapeHtml(artifact.title || artifact.type || 'Artifact') + '</div>' + '<div class="artifact-meta">' + escapeHtml(artifact.type || 'artifact') + ' · ' + escapeHtml(artifact.status || 'draft') + ' · ' + escapeHtml(artifact.storageProvider || 'unknown') + '</div>' + '</div>' + '<a class="card-action-link" href="' + escapeHtml(artifact.storageUri || '#') + '" target="_blank" rel="noopener">Open output</a>' + '</div>';
     });
     html += '</div>';
     return html;
   }
 
   function renderEmptyState(title, body, actions) {
-    var html = '<div class="empty-state empty-state-rich">' +
-      '<div class="empty-state-title">' + escapeHtml(title) + '</div>';
+    var html = '<div class="empty-state empty-state-rich">' + '<div class="empty-state-title">' + escapeHtml(title) + '</div>';
     if (body) {
       html += '<div class="empty-state-body">' + escapeHtml(body) + '</div>';
     }
@@ -1670,23 +2059,26 @@
   // ── Bell notification icon ─────────────────────────────────────
 
   function refreshBellBadge() {
-    api.notifications.list().then(function (data) {
-      var count = (data.notifications || []).length;
-      var badge = document.getElementById('notif-badge');
-      var bell = document.getElementById('notif-bell');
-      if (!badge) return;
-      if (count > 0) {
-        badge.textContent = count;
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
-      }
-      if (bell) {
-        bell.setAttribute('aria-label', count > 0 ? 'Notifications, ' + count + ' unread' : 'Notifications');
-      }
-    }).catch(function () {
-      // silently ignore
-    });
+    api.notifications
+      .list()
+      .then(function (data) {
+        var count = (data.notifications || []).length;
+        var badge = document.getElementById('notif-badge');
+        var bell = document.getElementById('notif-bell');
+        if (!badge) return;
+        if (count > 0) {
+          badge.textContent = count;
+          badge.style.display = '';
+        } else {
+          badge.style.display = 'none';
+        }
+        if (bell) {
+          bell.setAttribute('aria-label', count > 0 ? 'Notifications, ' + count + ' unread' : 'Notifications');
+        }
+      })
+      .catch(function () {
+        // silently ignore
+      });
   }
 
   function closeNotifDropdown() {
@@ -1705,48 +2097,51 @@
     dropdown.style.display = 'block';
     dropdown.innerHTML = '<div class="notif-dropdown-header">Notifications</div><div class="notif-dropdown-empty">Loading...</div>';
 
-    api.notifications.list().then(function (data) {
-      var notifications = (data.notifications || []).slice(0, 3);
-      dropdown.innerHTML = '';
+    api.notifications
+      .list()
+      .then(function (data) {
+        var notifications = (data.notifications || []).slice(0, 3);
+        dropdown.innerHTML = '';
 
-      var header = document.createElement('div');
-      header.className = 'notif-dropdown-header';
-      header.textContent = 'Notifications';
-      dropdown.appendChild(header);
+        var header = document.createElement('div');
+        header.className = 'notif-dropdown-header';
+        header.textContent = 'Notifications';
+        dropdown.appendChild(header);
 
-      if (notifications.length === 0) {
-        var empty = document.createElement('div');
-        empty.className = 'notif-dropdown-empty';
-        empty.textContent = 'No new notifications';
-        dropdown.appendChild(empty);
-      } else {
-        notifications.forEach(function (n) {
-          var item = document.createElement('div');
-          item.className = 'notif-dropdown-item';
-          var msg = document.createElement('div');
-          msg.textContent = n.message;
-          item.appendChild(msg);
-          var time = document.createElement('div');
-          time.className = 'notif-dropdown-time';
-          time.textContent = formatRelativeTime(n.createdAt);
-          item.appendChild(time);
-          dropdown.appendChild(item);
+        if (notifications.length === 0) {
+          var empty = document.createElement('div');
+          empty.className = 'notif-dropdown-empty';
+          empty.textContent = 'No new notifications';
+          dropdown.appendChild(empty);
+        } else {
+          notifications.forEach(function (n) {
+            var item = document.createElement('div');
+            item.className = 'notif-dropdown-item';
+            var msg = document.createElement('div');
+            msg.textContent = n.message;
+            item.appendChild(msg);
+            var time = document.createElement('div');
+            time.className = 'notif-dropdown-time';
+            time.textContent = formatRelativeTime(n.createdAt);
+            item.appendChild(time);
+            dropdown.appendChild(item);
+          });
+        }
+
+        var footer = document.createElement('div');
+        footer.className = 'notif-dropdown-footer';
+        var seeAll = document.createElement('a');
+        seeAll.href = '#/notifications';
+        seeAll.textContent = 'See all notifications';
+        seeAll.addEventListener('click', function () {
+          closeNotifDropdown();
         });
-      }
-
-      var footer = document.createElement('div');
-      footer.className = 'notif-dropdown-footer';
-      var seeAll = document.createElement('a');
-      seeAll.href = '#/notifications';
-      seeAll.textContent = 'See all notifications';
-      seeAll.addEventListener('click', function () {
-        closeNotifDropdown();
+        footer.appendChild(seeAll);
+        dropdown.appendChild(footer);
+      })
+      .catch(function () {
+        dropdown.innerHTML = '<div class="notif-dropdown-empty">Failed to load notifications</div>';
       });
-      footer.appendChild(seeAll);
-      dropdown.appendChild(footer);
-    }).catch(function () {
-      dropdown.innerHTML = '<div class="notif-dropdown-empty">Failed to load notifications</div>';
-    });
   }
 
   function initBell() {
@@ -1811,7 +2206,7 @@
   var dashboardState = {
     assignedToMe: true,
     currentUserId: '',
-    bundleSortMode: 'date', // 'date' | 'stage' | 'template'
+    bundleSortMode: 'date' // 'date' | 'stage' | 'template'
   };
 
   function renderDashboard() {
@@ -1841,7 +2236,7 @@
     var sortModes = [
       { mode: 'date', label: 'Date', testid: 'sort-btn-date' },
       { mode: 'stage', label: 'Stage', testid: 'sort-btn-stage' },
-      { mode: 'template', label: 'Template', testid: 'sort-btn-template' },
+      { mode: 'template', label: 'Template', testid: 'sort-btn-template' }
     ];
 
     sortModes.forEach(function (item) {
@@ -1872,16 +2267,8 @@
     // Right column header with assigned-to-me toggle and user picker
     var rightHeader = document.createElement('div');
     rightHeader.className = 'dashboard-header';
-    var currentUserOption = dashboardState.currentUserId
-      ? '<option value="' + escapeHtml(dashboardState.currentUserId) + '" selected>Loading user...</option>'
-      : '';
-    rightHeader.innerHTML =
-      '<h3>Daily Queue</h3>' +
-      '<select id="dashboard-user-picker" class="user-picker">' + currentUserOption + '</select>' +
-      '<label class="assigned-toggle">' +
-        '<input type="checkbox" id="assigned-to-me" ' + (dashboardState.assignedToMe ? 'checked' : '') + ' />' +
-        'Assigned to me' +
-      '</label>';
+    var currentUserOption = dashboardState.currentUserId ? '<option value="' + escapeHtml(dashboardState.currentUserId) + '" selected>Loading user...</option>' : '';
+    rightHeader.innerHTML = '<h3>Daily Queue</h3>' + '<select id="dashboard-user-picker" class="user-picker">' + currentUserOption + '</select>' + '<label class="assigned-toggle">' + '<input type="checkbox" id="assigned-to-me" ' + (dashboardState.assignedToMe ? 'checked' : '') + ' />' + 'Assigned to me' + '</label>';
     rightCol.appendChild(rightHeader);
 
     var tasksContainer = document.createElement('div');
@@ -1898,8 +2285,7 @@
     // the primary place to work intake.
     var intakeStrip = document.createElement('div');
     intakeStrip.className = 'dashboard-intake-strip';
-    intakeStrip.innerHTML = '<span class="dashboard-intake-strip-label">Intake</span>' +
-      '<div id="dashboard-intake-risk"><div class="intake-dashboard-risk"><a href="#/inbox"><span>Untriaged intake</span><strong>...</strong></a><a href="#/inbox"><span>Blocked intake</span><strong>...</strong></a><a href="#/inbox"><span>Assistant-ready</span><strong>...</strong></a></div></div>';
+    intakeStrip.innerHTML = '<span class="dashboard-intake-strip-label">Intake</span>' + '<div id="dashboard-intake-risk">' + '<div class="intake-dashboard-risk"><a href="#/inbox"><span>Untriaged intake</span><strong>...</strong></a><a href="#/inbox"><span>Blocked intake</span><strong>...</strong></a><a href="#/inbox"><span>Assistant-ready</span><strong>...</strong></a></div>' + '</div>';
     app.appendChild(intakeStrip);
     loadDashboardIntakeRisk();
 
@@ -1950,23 +2336,16 @@
   function loadDashboardIntakeRisk() {
     var container = document.getElementById('dashboard-intake-risk');
     if (!container || !window.api || !api.intake) return;
-    Promise.all([
-      api.intake.list({ status: 'new' }),
-      api.intake.list({ status: 'blocked' }),
-      api.intake.list({ assistantReadinessStatus: 'ready' }),
-    ]).then(function (results) {
-      var untriaged = (results[0].items || []).length;
-      var blocked = (results[1].items || []).length;
-      var ready = (results[2].items || []).length;
-      container.innerHTML =
-        '<div class="intake-dashboard-risk" data-testid="dashboard-intake-risk">' +
-          '<a href="#/inbox"><span>Untriaged intake</span><strong>' + untriaged + '</strong></a>' +
-          '<a href="#/inbox"><span>Blocked intake</span><strong>' + blocked + '</strong></a>' +
-          '<a href="#/inbox"><span>Assistant-ready</span><strong>' + ready + '</strong></a>' +
-        '</div>';
-    }).catch(function () {
-      container.innerHTML = '';
-    });
+    Promise.all([api.intake.list({ status: 'new' }), api.intake.list({ status: 'blocked' }), api.intake.list({ assistantReadinessStatus: 'ready' })])
+      .then(function (results) {
+        var untriaged = (results[0].items || []).length;
+        var blocked = (results[1].items || []).length;
+        var ready = (results[2].items || []).length;
+        container.innerHTML = '<div class="intake-dashboard-risk" data-testid="dashboard-intake-risk">' + '<a href="#/inbox"><span>Untriaged intake</span><strong>' + untriaged + '</strong></a>' + '<a href="#/inbox"><span>Blocked intake</span><strong>' + blocked + '</strong></a>' + '<a href="#/inbox"><span>Assistant-ready</span><strong>' + ready + '</strong></a>' + '</div>';
+      })
+      .catch(function () {
+        container.innerHTML = '';
+      });
   }
 
   // ── Notifications Page ─────────────────────────────────────────
@@ -1994,100 +2373,110 @@
 
     function loadNotifList() {
       listContainer.innerHTML = '<p>Loading...</p>';
-      api.notifications.listAll().then(function (data) {
-        var notifications = data.notifications || [];
-        listContainer.innerHTML = '';
+      api.notifications
+        .listAll()
+        .then(function (data) {
+          var notifications = data.notifications || [];
+          listContainer.innerHTML = '';
 
-        if (notifications.length === 0) {
-          listContainer.innerHTML = '<div class="empty-state">No notifications</div>';
-          return;
-        }
-
-        notifications.forEach(function (n) {
-          var item = document.createElement('div');
-          item.className = 'notif-list-item' + (n.dismissed ? ' dismissed' : '');
-          item.setAttribute('data-notif-item', n.id);
-
-          var body = document.createElement('div');
-          body.className = 'notif-list-item-body';
-
-          var msg = document.createElement('div');
-          msg.className = 'notif-list-item-msg';
-          msg.textContent = n.message;
-          body.appendChild(msg);
-          if (n.metadata && n.metadata.href && String(n.metadata.href).indexOf('#/sponsors') === 0) {
-            var bookingLink = document.createElement('a');
-            bookingLink.href = n.metadata.href;
-            bookingLink.textContent = 'Open booking';
-            body.appendChild(bookingLink);
+          if (notifications.length === 0) {
+            listContainer.innerHTML = '<div class="empty-state">No notifications</div>';
+            return;
           }
 
-          var timeDiv = document.createElement('div');
-          timeDiv.className = 'notif-list-item-time' + (n.dismissed ? ' dismissed' : '');
-          timeDiv.textContent = formatRelativeTime(n.createdAt) + (n.dismissed ? ' \u2014 dismissed' : '');
-          body.appendChild(timeDiv);
+          notifications.forEach(function (n) {
+            var item = document.createElement('div');
+            item.className = 'notif-list-item' + (n.dismissed ? ' dismissed' : '');
+            item.setAttribute('data-notif-item', n.id);
 
-          item.appendChild(body);
+            var body = document.createElement('div');
+            body.className = 'notif-list-item-body';
 
-          if (!n.dismissed) {
-            var dismissBtn = document.createElement('button');
-            dismissBtn.className = 'btn-dismiss-notif';
-            dismissBtn.textContent = '\u00D7';
-            dismissBtn.title = 'Dismiss';
-            dismissBtn.setAttribute('aria-label', 'Dismiss notification: ' + n.message);
-            dismissBtn.addEventListener('click', function () {
-              dismissBtn.disabled = true;
-              dismissBtn.textContent = '...';
-              dismissBtn.setAttribute('aria-busy', 'true');
-              dismissBtn.setAttribute('aria-label', 'Dismissing notification: ' + n.message);
-              api.notifications.dismiss(n.id).then(function () {
-                item.className = 'notif-list-item dismissed';
-                timeDiv.className = 'notif-list-item-time dismissed';
-                timeDiv.textContent = formatRelativeTime(n.createdAt) + ' \u2014 dismissed';
-                dismissBtn.remove();
-                refreshBellBadge();
-              }).catch(function (err) {
-                showError('Failed to dismiss: ' + err.message);
-                dismissBtn.disabled = false;
-                dismissBtn.textContent = '\u00D7';
-                dismissBtn.removeAttribute('aria-busy');
-                dismissBtn.setAttribute('aria-label', 'Dismiss notification: ' + n.message);
+            var msg = document.createElement('div');
+            msg.className = 'notif-list-item-msg';
+            msg.textContent = n.message;
+            body.appendChild(msg);
+            if (n.metadata && n.metadata.href && String(n.metadata.href).indexOf('#/sponsors') === 0) {
+              var bookingLink = document.createElement('a');
+              bookingLink.href = n.metadata.href;
+              bookingLink.textContent = 'Open booking';
+              body.appendChild(bookingLink);
+            }
+
+            var timeDiv = document.createElement('div');
+            timeDiv.className = 'notif-list-item-time' + (n.dismissed ? ' dismissed' : '');
+            timeDiv.textContent = formatRelativeTime(n.createdAt) + (n.dismissed ? ' \u2014 dismissed' : '');
+            body.appendChild(timeDiv);
+
+            item.appendChild(body);
+
+            if (!n.dismissed) {
+              var dismissBtn = document.createElement('button');
+              dismissBtn.className = 'btn-dismiss-notif';
+              dismissBtn.textContent = '\u00D7';
+              dismissBtn.title = 'Dismiss';
+              dismissBtn.setAttribute('aria-label', 'Dismiss notification: ' + n.message);
+              dismissBtn.addEventListener('click', function () {
+                dismissBtn.disabled = true;
+                dismissBtn.textContent = '...';
+                dismissBtn.setAttribute('aria-busy', 'true');
+                dismissBtn.setAttribute('aria-label', 'Dismissing notification: ' + n.message);
+                api.notifications
+                  .dismiss(n.id)
+                  .then(function () {
+                    item.className = 'notif-list-item dismissed';
+                    timeDiv.className = 'notif-list-item-time dismissed';
+                    timeDiv.textContent = formatRelativeTime(n.createdAt) + ' \u2014 dismissed';
+                    dismissBtn.remove();
+                    refreshBellBadge();
+                  })
+                  .catch(function (err) {
+                    showError('Failed to dismiss: ' + err.message);
+                    dismissBtn.disabled = false;
+                    dismissBtn.textContent = '\u00D7';
+                    dismissBtn.removeAttribute('aria-busy');
+                    dismissBtn.setAttribute('aria-label', 'Dismiss notification: ' + n.message);
+                  });
               });
-            });
-            item.appendChild(dismissBtn);
-          }
+              item.appendChild(dismissBtn);
+            }
 
-          listContainer.appendChild(item);
+            listContainer.appendChild(item);
+          });
+        })
+        .catch(function (err) {
+          listContainer.innerHTML = '';
+          showError('Failed to load notifications: ' + err.message);
         });
-      }).catch(function (err) {
-        listContainer.innerHTML = '';
-        showError('Failed to load notifications: ' + err.message);
-      });
     }
 
     loadNotifList();
 
     dismissAllBtn.addEventListener('click', function () {
       setButtonBusy(dismissAllBtn, true, 'Dismiss all', 'Dismissing...');
-      api.notifications.dismissAll().then(function () {
-        loadNotifList();
-        refreshBellBadge();
-        showSuccess('Notifications dismissed.');
-      }).catch(function (err) {
-        showError('Failed to dismiss all: ' + err.message);
-      }).finally(function () {
-        setButtonBusy(dismissAllBtn, false, 'Dismiss all');
-      });
+      api.notifications
+        .dismissAll()
+        .then(function () {
+          loadNotifList();
+          refreshBellBadge();
+          showSuccess('Notifications dismissed.');
+        })
+        .catch(function (err) {
+          showError('Failed to dismiss all: ' + err.message);
+        })
+        .finally(function () {
+          setButtonBusy(dismissAllBtn, false, 'Dismiss all');
+        });
     });
   }
 
   // Stage display labels (for stage mode headings)
   var STAGE_ORDER = ['preparation', 'announced', 'after-event', 'done'];
   var STAGE_LABELS = {
-    'preparation': 'Preparation',
-    'announced': 'Announced',
+    preparation: 'Preparation',
+    announced: 'Announced',
     'after-event': 'After Event',
-    'done': 'Done',
+    done: 'Done'
   };
 
   // Sort helper: ascending by anchorDate, no-date sorts to end
@@ -2102,7 +2491,9 @@
 
   function renderBundleCard(b, taskMap, filesByTask) {
     var tasks = taskMap[b.id] || [];
-    var doneCount = tasks.filter(function (t) { return t.status === 'done'; }).length;
+    var doneCount = tasks.filter(function (t) {
+      return t.status === 'done';
+    }).length;
     var totalCount = tasks.length;
     var risk = bundleRiskSummary(b, tasks, filesByTask || {});
 
@@ -2258,11 +2649,7 @@
   function renderDashboardFirstRunState(container, templates) {
     container.innerHTML = '';
     if (!templates.length) {
-      container.innerHTML = renderEmptyState(
-        'No workflow templates available',
-        'Seed workflow templates before starting production work, then start the first real workflow from the Templates library.',
-        [{ href: '#/templates', label: 'Open Templates library' }]
-      );
+      container.innerHTML = renderEmptyState('No workflow templates available', 'Seed workflow templates before starting production work, then start the first real workflow from the Templates library.', [{ href: '#/templates', label: 'Open Templates library' }]);
       container.querySelector('.empty-state').setAttribute('data-testid', 'first-run-no-templates');
       return;
     }
@@ -2270,11 +2657,12 @@
     // Workflow-start lives in the Templates library ("Start workflow" on each
     // manual template card). The dashboard no longer hosts per-template start
     // forms; the no-active-work state points the operator there instead.
-    container.innerHTML = renderEmptyState(
-      'No active production work yet',
-      'Start a workflow from the Templates library. Every manual template has a "Start workflow" action that creates a real bundle with its tasks.',
-      [{ href: '#/templates', label: 'Start a workflow from the Templates library' }]
-    );
+    container.innerHTML = renderEmptyState('No active production work yet', 'Start a workflow from the Templates library. Every manual template has a "Start workflow" action that creates a real bundle with its tasks.', [
+      {
+        href: '#/templates',
+        label: 'Start a workflow from the Templates library'
+      }
+    ]);
     container.querySelector('.empty-state').setAttribute('data-testid', 'dashboard-no-active-work');
   }
 
@@ -2282,80 +2670,85 @@
     var container = document.getElementById('dashboard-bundles');
     if (!container) return;
 
-    Promise.all([
-      api.bundles.list(),
-      api.templates.list()
-    ]).then(function (results) {
-      var allBundles = results[0].bundles || [];
-      var templates = results[1].templates || [];
+    Promise.all([api.bundles.list(), api.templates.list()])
+      .then(function (results) {
+        var allBundles = results[0].bundles || [];
+        var templates = results[1].templates || [];
 
-      // Filter to active bundles
-      var bundles = allBundles.filter(function (b) {
-        return b.status === 'active';
-      });
-
-      if (bundles.length === 0) {
-        renderDashboardFirstRunState(container, templates);
-        return;
-      }
-
-      // Build template map
-      var templateMap = {};
-      templates.forEach(function (t) {
-        templateMap[t.id] = t;
-      });
-
-      // Fetch tasks for progress calculation
-      var taskPromises = bundles.map(function (b) {
-        return api.bundles.tasks(b.id).then(function (taskData) {
-          return { bundleId: b.id, tasks: taskData.tasks || [] };
-        }).catch(function () {
-          return { bundleId: b.id, tasks: [] };
-        });
-      });
-
-      Promise.all(taskPromises).then(function (taskResults) {
-        var taskMap = {};
-        var allTasks = [];
-        taskResults.forEach(function (r) {
-          taskMap[r.bundleId] = r.tasks;
-          allTasks = allTasks.concat(r.tasks || []);
+        // Filter to active bundles
+        var bundles = allBundles.filter(function (b) {
+          return b.status === 'active';
         });
 
-        var fileTasks = allTasks.filter(function (task) {
-          var proof = taskProofRequirement(task);
-          return task.requiresFile || (proof && proof.type === 'file');
-        });
-        var filePromises = fileTasks.map(function (task) {
-          return api.files.list({ taskId: task.id }).then(function (fileData) {
-            return { taskId: task.id, files: fileData.files || [] };
-          }).catch(function () {
-            return { taskId: task.id, files: [] };
-          });
+        if (bundles.length === 0) {
+          renderDashboardFirstRunState(container, templates);
+          return;
+        }
+
+        // Build template map
+        var templateMap = {};
+        templates.forEach(function (t) {
+          templateMap[t.id] = t;
         });
 
-        return Promise.all(filePromises).then(function (fileResults) {
-          var filesByTask = {};
-          fileResults.forEach(function (result) {
-            filesByTask[result.taskId] = result.files;
+        // Fetch tasks for progress calculation
+        var taskPromises = bundles.map(function (b) {
+          return api.bundles
+            .tasks(b.id)
+            .then(function (taskData) {
+              return { bundleId: b.id, tasks: taskData.tasks || [] };
+            })
+            .catch(function () {
+              return { bundleId: b.id, tasks: [] };
+            });
+        });
+
+        Promise.all(taskPromises).then(function (taskResults) {
+          var taskMap = {};
+          var allTasks = [];
+          taskResults.forEach(function (r) {
+            taskMap[r.bundleId] = r.tasks;
+            allTasks = allTasks.concat(r.tasks || []);
           });
 
-          container.innerHTML = '';
+          var fileTasks = allTasks.filter(function (task) {
+            var proof = taskProofRequirement(task);
+            return task.requiresFile || (proof && proof.type === 'file');
+          });
+          var filePromises = fileTasks.map(function (task) {
+            return api.files
+              .list({ taskId: task.id })
+              .then(function (fileData) {
+                return { taskId: task.id, files: fileData.files || [] };
+              })
+              .catch(function () {
+                return { taskId: task.id, files: [] };
+              });
+          });
 
-          var mode = dashboardState.bundleSortMode || 'date';
-          if (mode === 'date') {
-            renderBundlesDate(container, bundles, taskMap, filesByTask);
-          } else if (mode === 'stage') {
-            renderBundlesStage(container, bundles, taskMap, filesByTask);
-          } else {
-            renderBundlesTemplate(container, bundles, taskMap, templateMap, filesByTask);
-          }
+          return Promise.all(filePromises).then(function (fileResults) {
+            var filesByTask = {};
+            fileResults.forEach(function (result) {
+              filesByTask[result.taskId] = result.files;
+            });
+
+            container.innerHTML = '';
+
+            var mode = dashboardState.bundleSortMode || 'date';
+            if (mode === 'date') {
+              renderBundlesDate(container, bundles, taskMap, filesByTask);
+            } else if (mode === 'stage') {
+              renderBundlesStage(container, bundles, taskMap, filesByTask);
+            } else {
+              renderBundlesTemplate(container, bundles, taskMap, templateMap, filesByTask);
+            }
+          });
         });
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        showError('Failed to load bundles: ' + err.message);
       });
-    }).catch(function (err) {
-      container.innerHTML = '';
-      showError('Failed to load bundles: ' + err.message);
-    });
   }
 
   function loadDashboardTasks() {
@@ -2369,90 +2762,102 @@
     Promise.all([
       api.tasks.list({ status: 'todo' }),
       api.tasks.list({ status: 'waiting' }),
-      api.intake.list({ status: 'blocked', standaloneOnly: 'true', dueFollowUpAt: today }),
+      api.intake.list({
+        status: 'blocked',
+        standaloneOnly: 'true',
+        dueFollowUpAt: today
+      }),
       loadUsersOnce()
-    ]).then(function (results) {
-      var todoData = results[0];
-      var waitingData = results[1];
-      var intakeData = results[2];
-      var usersMap = results[3];
-      var todoTasks = todoData.tasks || [];
-      var waitingTasks = waitingData.tasks || [];
-      var dueIntake = intakeData.items || [];
-      var tasks = dedupeTasksById(todoTasks.concat(waitingTasks));
+    ])
+      .then(function (results) {
+        var todoData = results[0];
+        var waitingData = results[1];
+        var intakeData = results[2];
+        var usersMap = results[3];
+        var todoTasks = todoData.tasks || [];
+        var waitingTasks = waitingData.tasks || [];
+        var dueIntake = intakeData.items || [];
+        var tasks = dedupeTasksById(todoTasks.concat(waitingTasks));
 
-      // Apply assigned-to-me filter
-      if (dashboardState.assignedToMe && dashboardState.currentUserId && usersMap[dashboardState.currentUserId]) {
-        tasks = tasks.filter(function (t) {
-          return !t.assigneeId || t.assigneeId === dashboardState.currentUserId;
-        });
-        dueIntake = dueIntake.filter(function (item) {
-          return !item.assigneeId || item.assigneeId === dashboardState.currentUserId;
-        });
-      }
-
-      // Sort by date ascending
-      tasks.sort(function (a, b) {
-        if (a.date < b.date) return -1;
-        if (a.date > b.date) return 1;
-        return 0;
-      });
-
-      var fileTasks = tasks.filter(function (task) {
-        var proof = taskProofRequirement(task);
-        return task.requiresFile || (proof && proof.type === 'file');
-      });
-      var filePromises = fileTasks.map(function (task) {
-        return api.files.list({ taskId: task.id }).then(function (fileData) {
-          return { taskId: task.id, files: fileData.files || [] };
-        }).catch(function () {
-          return { taskId: task.id, files: [] };
-        });
-      });
-
-      Promise.all(filePromises).then(function (fileResults) {
-        var filesByTask = {};
-        fileResults.forEach(function (result) {
-          filesByTask[result.taskId] = result.files;
-        });
-        // Collect unique bundleIds
-        var bundleIds = [];
-        tasks.forEach(function (t) {
-          if (t.bundleId && bundleIds.indexOf(t.bundleId) === -1) {
-            bundleIds.push(t.bundleId);
-          }
-        });
-
-        var bundlePromises = bundleIds.map(function (bid) {
-          return api.bundles.get(bid).then(function (d) {
-            return d.bundle || { id: bid, title: 'Untitled' };
-          }).catch(function () {
-            return { id: bid, title: 'Unknown' };
+        // Apply assigned-to-me filter
+        if (dashboardState.assignedToMe && dashboardState.currentUserId && usersMap[dashboardState.currentUserId]) {
+          tasks = tasks.filter(function (t) {
+            return !t.assigneeId || t.assigneeId === dashboardState.currentUserId;
           });
+          dueIntake = dueIntake.filter(function (item) {
+            return !item.assigneeId || item.assigneeId === dashboardState.currentUserId;
+          });
+        }
+
+        // Sort by date ascending
+        tasks.sort(function (a, b) {
+          if (a.date < b.date) return -1;
+          if (a.date > b.date) return 1;
+          return 0;
         });
 
-        return Promise.all(bundlePromises).then(function (bundleResults) {
-          var bundleMap = {};
-          bundleResults.forEach(function (b) {
-            bundleMap[b.id] = b;
+        var fileTasks = tasks.filter(function (task) {
+          var proof = taskProofRequirement(task);
+          return task.requiresFile || (proof && proof.type === 'file');
+        });
+        var filePromises = fileTasks.map(function (task) {
+          return api.files
+            .list({ taskId: task.id })
+            .then(function (fileData) {
+              return { taskId: task.id, files: fileData.files || [] };
+            })
+            .catch(function () {
+              return { taskId: task.id, files: [] };
+            });
+        });
+
+        Promise.all(filePromises).then(function (fileResults) {
+          var filesByTask = {};
+          fileResults.forEach(function (result) {
+            filesByTask[result.taskId] = result.files;
           });
-          tasks = tasks.filter(function (task) {
-            return dashboardQueueLabels(task, filesByTask[task.id] || [], today, bundleMap[task.bundleId]).length > 0;
+          // Collect unique bundleIds
+          var bundleIds = [];
+          tasks.forEach(function (t) {
+            if (t.bundleId && bundleIds.indexOf(t.bundleId) === -1) {
+              bundleIds.push(t.bundleId);
+            }
           });
 
-          // The four core sections always render (each with an explicit empty
-          // state) so a clear question reads as clear rather than disappearing
-          // confusingly (#105).
-          // Compatibility marker for frontend asset tests: renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask)
-          renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake);
-          container.setAttribute('data-loaded', 'true');
+          var bundlePromises = bundleIds.map(function (bid) {
+            return api.bundles
+              .get(bid)
+              .then(function (d) {
+                return d.bundle || { id: bid, title: 'Untitled' };
+              })
+              .catch(function () {
+                return { id: bid, title: 'Unknown' };
+              });
+          });
+
+          return Promise.all(bundlePromises).then(function (bundleResults) {
+            var bundleMap = {};
+            bundleResults.forEach(function (b) {
+              bundleMap[b.id] = b;
+            });
+            tasks = tasks.filter(function (task) {
+              return dashboardQueueLabels(task, filesByTask[task.id] || [], today, bundleMap[task.bundleId]).length > 0;
+            });
+
+            // The four core sections always render (each with an explicit empty
+            // state) so a clear question reads as clear rather than disappearing
+            // confusingly (#105).
+            // Compatibility marker for frontend asset tests: renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask)
+            renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake);
+            container.setAttribute('data-loaded', 'true');
+          });
         });
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        container.setAttribute('data-loaded', 'true');
+        showError('Failed to load tasks: ' + err.message);
       });
-    }).catch(function (err) {
-      container.innerHTML = '';
-      container.setAttribute('data-loaded', 'true');
-      showError('Failed to load tasks: ' + err.message);
-    });
   }
 
   function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake) {
@@ -2462,12 +2867,12 @@
     // questions — Today, Overdue, Follow-ups due, At-risk workflows — can lead the
     // page as explicit, labelled sections in priority order (#105).
     var buckets = {
-      'Today': [],
-      'Overdue': [],
+      Today: [],
+      Overdue: [],
       'Follow-ups due': [],
       'At-risk workflows': [],
-      'Waiting': [],
-      'Other': [],
+      Waiting: [],
+      Other: []
     };
     (tasks || []).forEach(function (t) {
       var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
@@ -2490,6 +2895,7 @@
       var checked = isDone ? ' checked' : '';
       var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
       var taskFiles = (filesByTask || {})[t.id] || [];
+
       var checkboxDisabled = '';
       var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
       var waitingBlockTitle = waitingCompletionBlockTitle(t);
@@ -2530,14 +2936,16 @@
       }
       var queueLabels = dashboardQueueLabels(t, taskFiles, today, bundle);
       if (queueLabels.length) {
-        instructionsHtml += '<div class="task-queue-labels">' + queueLabels.map(function (label) {
-          return '<span class="task-queue-label">' + escapeHtml(label) + '</span>';
-        }).join('') + '</div>';
+        instructionsHtml +=
+          '<div class="task-queue-labels">' +
+          queueLabels
+            .map(function (label) {
+              return '<span class="task-queue-label">' + escapeHtml(label) + '</span>';
+            })
+            .join('') +
+          '</div>';
       }
-      instructionsHtml += '<div class="assistant-context-row">' +
-        renderAssistantRefs(t.assistantJobRefs) +
-        renderPodcastAssistantButton(t) +
-        '</div>';
+      instructionsHtml += '<div class="assistant-context-row">' + renderAssistantRefs(t.assistantJobRefs) + renderPodcastAssistantButton(t) + '</div>';
       instructionsHtml += renderTaskHistory(t, true);
 
       // Assignee name
@@ -2553,23 +2961,11 @@
       var nextActionHtml = renderDashboardNextAction(t, bundle, missingProofTitle, isDone);
       // Waiting tasks keep the existing full-width follow-up controls row.
       var fullWidthActionsHtml = t.status === 'waiting' ? renderDashboardTaskActions(t) : '';
-      var taskCellHtml = '<div class="dashboard-task-main">' +
-        '<div class="dashboard-task-description">' + renderMarkdownLinks(t.description) + '</div>' +
-        '<div class="dashboard-task-workflow">' + bundleBadge + '</div>' +
-        '</div>';
+      var taskCellHtml = '<div class="dashboard-task-main">' + '<div class="dashboard-task-description">' + renderMarkdownLinks(t.description) + '</div>' + '<div class="dashboard-task-workflow">' + bundleBadge + '</div>' + '</div>';
 
-      rowHtml += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
-        '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' +
-        '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
-        '<td class="task-description" data-label="Task">' + taskCellHtml + '</td>' +
-        '<td data-label="Status / Proof">' + instructionsHtml + '</td>' +
-        '<td data-label="Assignee">' + assigneeHtml + '</td>' +
-        '<td data-label="Next Action">' + nextActionHtml + '</td>' +
-        '</tr>';
+      rowHtml += '<tr' + rowClass + ' data-task-row="' + t.id + '">' + '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' + '<td data-label="Date">' + escapeHtml(t.date) + '</td>' + '<td class="task-description" data-label="Task">' + taskCellHtml + '</td>' + '<td data-label="Status / Proof">' + instructionsHtml + '</td>' + '<td data-label="Assignee">' + assigneeHtml + '</td>' + '<td data-label="Next Action">' + nextActionHtml + '</td>' + '</tr>';
       if (fullWidthActionsHtml) {
-        rowHtml += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' +
-          '<td colspan="6">' + fullWidthActionsHtml + '</td>' +
-          '</tr>';
+        rowHtml += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' + '<td colspan="6">' + fullWidthActionsHtml + '</td>' + '</tr>';
       }
       return rowHtml;
     }
@@ -2578,30 +2974,43 @@
     function intakeRowHtml(item) {
       var waitingText = item.waitingFor ? 'Waiting for ' + item.waitingFor : 'Waiting for response';
       var meta = [item.source || 'intake', waitingText, item.followUpAt ? 'follow up ' + formatDateLabel(item.followUpAt) : 'follow-up due'].join(' | ');
-      return '<tr data-intake-follow-up-row="' + escapeHtml(item.id) + '">' +
+      return (
+        '<tr data-intake-follow-up-row="' +
+        escapeHtml(item.id) +
+        '">' +
         '<td class="task-status"></td>' +
-        '<td data-label="Date">' + escapeHtml((item.followUpAt || '').slice(0, 10)) + '</td>' +
+        '<td data-label="Date">' +
+        escapeHtml((item.followUpAt || '').slice(0, 10)) +
+        '</td>' +
         '<td class="task-description" data-label="Task"><div class="dashboard-task-main">' +
-          '<div class="dashboard-task-description">Intake follow-up due: ' + escapeHtml(item.title || 'Untitled intake') + '</div>' +
-          '<div class="dashboard-task-workflow"><span class="badge-adhoc">' + escapeHtml(item.source || 'intake') + '</span></div>' +
+        '<div class="dashboard-task-description">Intake follow-up due: ' +
+        escapeHtml(item.title || 'Untitled intake') +
+        '</div>' +
+        '<div class="dashboard-task-workflow"><span class="badge-adhoc">' +
+        escapeHtml(item.source || 'intake') +
+        '</span></div>' +
         '</div></td>' +
-        '<td data-label="Status / Proof"><span class="badge-waiting">' + escapeHtml(meta) + '</span><div class="task-queue-labels"><span class="task-queue-label">Intake follow-up due</span></div></td>' +
-        '<td data-label="Assignee">' + (item.assigneeId && usersMap[item.assigneeId] ? '<span class="badge-assignee">' + escapeHtml(usersMap[item.assigneeId].name) + '</span>' : '') + '</td>' +
-        '<td data-label="Next Action"><a class="task-action-btn task-next-action" href="' + escapeHtml(intakeHash(item.id)) + '">Open intake</a></td>' +
-      '</tr>';
+        '<td data-label="Status / Proof"><span class="badge-waiting">' +
+        escapeHtml(meta) +
+        '</span><div class="task-queue-labels"><span class="task-queue-label">Intake follow-up due</span></div></td>' +
+        '<td data-label="Assignee">' +
+        (item.assigneeId && usersMap[item.assigneeId] ? '<span class="badge-assignee">' + escapeHtml(usersMap[item.assigneeId].name) + '</span>' : '') +
+        '</td>' +
+        '<td data-label="Next Action"><a class="task-action-btn task-next-action" href="' +
+        escapeHtml(intakeHash(item.id)) +
+        '">Open intake</a></td>' +
+        '</tr>'
+      );
     }
 
     function groupHeaderHtml(label) {
       return '<tr class="dashboard-queue-group"><td colspan="6">' + escapeHtml(label) + '</td></tr>';
     }
-
     function emptyRowHtml(message) {
       return '<tr class="dashboard-queue-empty"><td colspan="6">' + escapeHtml(message) + '</td></tr>';
     }
 
-    var html = '<table class="task-table-compact"><thead><tr>' +
-      '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Next Action</th>' +
-      '</tr></thead><tbody>';
+    var html = '<table class="task-table-compact"><thead><tr>' + '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Next Action</th>' + '</tr></thead><tbody>';
 
     // The four core questions always lead the queue, in priority order, each with
     // an explicit empty state so a clear question reads as clear (#105).
@@ -2609,12 +3018,12 @@
       { group: 'Today', empty: 'Nothing due today' },
       { group: 'Overdue', empty: 'No overdue tasks' },
       { group: 'Follow-ups due', empty: 'No follow-ups due' },
-      { group: 'At-risk workflows', empty: 'No at-risk workflows' },
+      { group: 'At-risk workflows', empty: 'No at-risk workflows' }
     ];
     coreSections.forEach(function (section) {
       html += groupHeaderHtml(section.group);
       var rows = buckets[section.group] || [];
-      var intakeRows = section.group === 'Follow-ups due' ? (dueIntake || []) : [];
+      var intakeRows = section.group === 'Follow-ups due' ? dueIntake || [] : [];
       if (rows.length === 0 && intakeRows.length === 0) {
         html += emptyRowHtml(section.empty);
       } else {
@@ -2658,12 +3067,15 @@
         var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
         var row = btn.closest('[data-task-row]');
         var title = row ? row.querySelector('.task-description').textContent : 'DataOps Assistant';
-        showPodcastAssistantRequest({
-          taskId: taskId,
-          bundleId: bundleId,
-          taskTitle: title,
-          title: title,
-        }, loadDashboardTasks);
+        showPodcastAssistantRequest(
+          {
+            taskId: taskId,
+            bundleId: bundleId,
+            taskTitle: title,
+            title: title
+          },
+          loadDashboardTasks
+        );
       });
     });
 
@@ -2673,11 +3085,14 @@
         var id = cb.getAttribute('data-task-id');
         var current = cb.getAttribute('data-status');
         var next = current === 'done' ? 'todo' : 'done';
-        api.tasks.update(id, { status: next }).then(function () {
-          loadDashboardTasks();
-        }).catch(function (err) {
-          showError('Failed to update task: ' + err.message);
-        });
+        api.tasks
+          .update(id, { status: next })
+          .then(function () {
+            loadDashboardTasks();
+          })
+          .catch(function (err) {
+            showError('Failed to update task: ' + err.message);
+          });
       });
     });
 
@@ -2686,12 +3101,15 @@
       btn.addEventListener('click', function () {
         var id = btn.getAttribute('data-complete-task');
         setButtonBusy(btn, true, 'Complete', 'Completing...');
-        api.tasks.update(id, { status: 'done' }).then(function () {
-          loadDashboardTasks();
-        }).catch(function (err) {
-          showError('Failed to complete task: ' + err.message);
-          setButtonBusy(btn, false, 'Complete');
-        });
+        api.tasks
+          .update(id, { status: 'done' })
+          .then(function () {
+            loadDashboardTasks();
+          })
+          .catch(function (err) {
+            showError('Failed to complete task: ' + err.message);
+            setButtonBusy(btn, false, 'Complete');
+          });
       });
     });
 
@@ -2726,14 +3144,32 @@
   function renderDashboardTaskActions(task) {
     if (!task || task.status !== 'waiting') return '<span class="task-action-empty">-</span>';
     var selectedChannel = task.followUpChannel || 'email';
-    return '<div class="task-action-group">' +
-      '<label class="follow-up-next-label">Channel <select class="follow-up-channel" data-follow-up-channel-task="' + escapeHtml(task.id) + '">' + renderChannelOptions(selectedChannel) + '</select></label>' +
-      '<label class="follow-up-note-label">Note <input type="text" class="follow-up-note" data-follow-up-note-task="' + escapeHtml(task.id) + '" placeholder="Short operational note" /></label>' +
-      '<button type="button" class="task-action-btn" data-follow-up-action="response-received" data-task-id="' + task.id + '">Response received</button>' +
-      '<label class="follow-up-next-label">Next <input type="date" class="follow-up-next-date" data-task-id="' + task.id + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" /></label>' +
-      '<button type="button" class="task-action-btn" data-follow-up-action="follow-up-sent" data-task-id="' + task.id + '">Follow-up sent</button>' +
-      '<button type="button" class="task-action-btn" data-follow-up-action="resolve-done" data-task-id="' + task.id + '">Resolve done</button>' +
-      '</div>';
+    return (
+      '<div class="task-action-group">' +
+      '<label class="follow-up-next-label">Channel <select class="follow-up-channel" data-follow-up-channel-task="' +
+      escapeHtml(task.id) +
+      '">' +
+      renderChannelOptions(selectedChannel) +
+      '</select></label>' +
+      '<label class="follow-up-note-label">Note <input type="text" class="follow-up-note" data-follow-up-note-task="' +
+      escapeHtml(task.id) +
+      '" placeholder="Short operational note" /></label>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="response-received" data-task-id="' +
+      task.id +
+      '">Response received</button>' +
+      '<label class="follow-up-next-label">Next <input type="date" class="follow-up-next-date" data-task-id="' +
+      task.id +
+      '" value="' +
+      escapeHtml(defaultNextFollowUpDate()) +
+      '" /></label>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="follow-up-sent" data-task-id="' +
+      task.id +
+      '">Follow-up sent</button>' +
+      '<button type="button" class="task-action-btn" data-follow-up-action="resolve-done" data-task-id="' +
+      task.id +
+      '">Resolve done</button>' +
+      '</div>'
+    );
   }
 
   function actionNote(container, taskId) {
@@ -2760,17 +3196,20 @@
     var note = requireActionNote(container, taskId);
     if (!note) return;
     setButtonBusy(btn, true, 'Response received', 'Saving...');
-    api.tasks.responseReceived(taskId, {
-      note: note,
-      channel: actionChannel(container, taskId)
-    }).then(function () {
-      showSuccess('Task moved back to todo.');
-      refreshBellBadge();
-      if (onDone) onDone();
-    }).catch(function (err) {
-      showError('Failed to update task: ' + err.message);
-      setButtonBusy(btn, false, 'Response received');
-    });
+    api.tasks
+      .responseReceived(taskId, {
+        note: note,
+        channel: actionChannel(container, taskId)
+      })
+      .then(function () {
+        showSuccess('Task moved back to todo.');
+        refreshBellBadge();
+        if (onDone) onDone();
+      })
+      .catch(function (err) {
+        showError('Failed to update task: ' + err.message);
+        setButtonBusy(btn, false, 'Response received');
+      });
   }
 
   function recordFollowUpSent(taskId, btn, container, onDone) {
@@ -2789,18 +3228,21 @@
       return;
     }
     setButtonBusy(btn, true, 'Follow-up sent', 'Saving...');
-    api.tasks.followUpSent(taskId, {
-      channel: channel,
-      note: note,
-      nextFollowUpAt: nextDate
-    }).then(function () {
-      showSuccess('Follow-up recorded.');
-      refreshBellBadge();
-      if (onDone) onDone();
-    }).catch(function (err) {
-      showError('Failed to record follow-up: ' + err.message);
-      setButtonBusy(btn, false, 'Follow-up sent');
-    });
+    api.tasks
+      .followUpSent(taskId, {
+        channel: channel,
+        note: note,
+        nextFollowUpAt: nextDate
+      })
+      .then(function () {
+        showSuccess('Follow-up recorded.');
+        refreshBellBadge();
+        if (onDone) onDone();
+      })
+      .catch(function (err) {
+        showError('Failed to record follow-up: ' + err.message);
+        setButtonBusy(btn, false, 'Follow-up sent');
+      });
   }
 
   function resolveWaitingDone(taskId, btn, container, onDone) {
@@ -2808,17 +3250,20 @@
     var note = requireActionNote(container, taskId);
     if (!note) return;
     setButtonBusy(btn, true, 'Resolve done', 'Saving...');
-    api.tasks.resolveDone(taskId, {
-      note: note,
-      channel: actionChannel(container, taskId)
-    }).then(function () {
-      showSuccess('Waiting task resolved and completed.');
-      refreshBellBadge();
-      if (onDone) onDone();
-    }).catch(function (err) {
-      showError('Failed to resolve task: ' + err.message);
-      setButtonBusy(btn, false, 'Resolve done');
-    });
+    api.tasks
+      .resolveDone(taskId, {
+        note: note,
+        channel: actionChannel(container, taskId)
+      })
+      .then(function () {
+        showSuccess('Waiting task resolved and completed.');
+        refreshBellBadge();
+        if (onDone) onDone();
+      })
+      .catch(function (err) {
+        showError('Failed to resolve task: ' + err.message);
+        setButtonBusy(btn, false, 'Resolve done');
+      });
   }
 
   function appendTaskEventComment(existing, eventText) {
@@ -2854,9 +3299,7 @@
   function defaultNextFollowUpDate() {
     var d = new Date();
     d.setDate(d.getDate() + 2);
-    return d.getFullYear() + '-' +
-      String(d.getMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
   // ── Tasks View ──────────────────────────────────────────────────
@@ -2881,30 +3324,36 @@
     if (usersCache) {
       return Promise.resolve(usersCache);
     }
-    return api.users.list().then(function (data) {
-      var map = {};
-      (data.users || []).forEach(function (u) {
-        map[u.id] = u;
+    return api.users
+      .list()
+      .then(function (data) {
+        var map = {};
+        (data.users || []).forEach(function (u) {
+          map[u.id] = u;
+        });
+        usersCache = map;
+        return map;
+      })
+      .catch(function () {
+        usersCache = {};
+        return {};
       });
-      usersCache = map;
-      return map;
-    }).catch(function () {
-      usersCache = {};
-      return {};
-    });
   }
 
   function loadBundlesOnce() {
     if (bundlesCache) {
       return Promise.resolve(bundlesCache);
     }
-    return api.bundles.list().then(function (data) {
-      bundlesCache = data.bundles || [];
-      return bundlesCache;
-    }).catch(function () {
-      bundlesCache = [];
-      return [];
-    });
+    return api.bundles
+      .list()
+      .then(function (data) {
+        bundlesCache = data.bundles || [];
+        return bundlesCache;
+      })
+      .catch(function () {
+        bundlesCache = [];
+        return [];
+      });
   }
 
   function renderTasks() {
@@ -2927,33 +3376,13 @@
     // Date filter bar
     var header = document.createElement('div');
     header.className = 'task-toolbar';
-    header.innerHTML = '<h2>Tasks</h2>' +
-      '<input type="date" id="task-date" value="' + taskState.date + '" />' +
-      '<button class="btn-today" id="btn-today">Today</button>' +
-      '<label class="range-toggle">' +
-        '<input type="checkbox" id="range-toggle" />' +
-        'Range' +
-      '</label>' +
-      '<span id="range-end-container" class="task-toolbar-range" style="display:none;">' +
-        '<span style="font-size:13px;color:#555;">to</span> ' +
-        '<input type="date" id="task-date-end" value="' + taskState.endDate + '" />' +
-      '</span>';
+    header.innerHTML = '<h2>Tasks</h2>' + '<input type="date" id="task-date" value="' + taskState.date + '" />' + '<button class="btn-today" id="btn-today">Today</button>' + '<label class="range-toggle">' + '<input type="checkbox" id="range-toggle" />' + 'Range' + '</label>' + '<span id="range-end-container" class="task-toolbar-range" style="display:none;">' + '<span style="font-size:13px;color:#555;">to</span> ' + '<input type="date" id="task-date-end" value="' + taskState.endDate + '" />' + '</span>';
     app.appendChild(header);
 
     // Filter bar
     var filterBar = document.createElement('div');
     filterBar.className = 'filter-bar';
-    filterBar.innerHTML =
-      '<label for="filter-status">Status</label>' +
-      '<select id="filter-status">' +
-        '<option value="all">All</option>' +
-        '<option value="todo">Todo</option>' +
-        '<option value="done">Done</option>' +
-      '</select>' +
-      '<label for="filter-assignee">Assignee</label>' +
-      '<select id="filter-assignee"><option value="">All</option></select>' +
-      '<label for="filter-bundle">Bundle</label>' +
-      '<select id="filter-bundle"><option value="">All (by date)</option></select>';
+    filterBar.innerHTML = '<label for="filter-status">Status</label>' + '<select id="filter-status">' + '<option value="all">All</option>' + '<option value="todo">Todo</option>' + '<option value="done">Done</option>' + '</select>' + '<label for="filter-assignee">Assignee</label>' + '<select id="filter-assignee"><option value="">All</option></select>' + '<label for="filter-bundle">Bundle</label>' + '<select id="filter-bundle"><option value="">All (by date)</option></select>';
     app.appendChild(filterBar);
 
     if (routeContextBundleId) {
@@ -2962,11 +3391,14 @@
       contextBanner.setAttribute('data-testid', 'task-workflow-context');
       contextBanner.innerHTML = 'Workflow context: <a href="' + escapeHtml(bundleHash(routeContextBundleId)) + '" data-nav-bundle="' + escapeHtml(routeContextBundleId) + '">' + escapeHtml(routeContextBundleId) + '</a>';
       app.appendChild(contextBanner);
-      api.bundles.get(routeContextBundleId).then(function (data) {
-        var bundle = data.bundle || {};
-        var link = contextBanner.querySelector('[data-nav-bundle]');
-        if (link) link.textContent = bundle.title || routeContextBundleId;
-      }).catch(function () {});
+      api.bundles
+        .get(routeContextBundleId)
+        .then(function (data) {
+          var bundle = data.bundle || {};
+          var link = contextBanner.querySelector('[data-nav-bundle]');
+          if (link) link.textContent = bundle.title || routeContextBundleId;
+        })
+        .catch(function () {});
     }
 
     var dateInput = document.getElementById('task-date');
@@ -3060,26 +3492,7 @@
     // Create form (no comment field, with assignee dropdown)
     var form = document.createElement('div');
     form.className = 'form-section';
-    form.innerHTML =
-      '<h3>New Task</h3>' +
-      '<div class="form-row">' +
-        '<div class="form-group">' +
-          '<label for="task-desc">Description</label>' +
-          '<input type="text" id="task-desc" placeholder="What needs to be done?" style="width:300px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="task-date-input">Date</label>' +
-          '<input type="date" id="task-date-input" value="' + taskState.date + '" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="task-assignee">Assignee</label>' +
-          '<select id="task-assignee"><option value="">None</option></select>' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>&nbsp;</label>' +
-          '<button class="btn-primary" id="task-create-btn">Create</button>' +
-        '</div>' +
-      '</div>';
+    form.innerHTML = '<h3>New Task</h3>' + '<div class="form-row">' + '<div class="form-group">' + '<label for="task-desc">Description</label>' + '<input type="text" id="task-desc" placeholder="What needs to be done?" style="width:300px;" />' + '</div>' + '<div class="form-group">' + '<label for="task-date-input">Date</label>' + '<input type="date" id="task-date-input" value="' + taskState.date + '" />' + '</div>' + '<div class="form-group">' + '<label for="task-assignee">Assignee</label>' + '<select id="task-assignee"><option value="">None</option></select>' + '</div>' + '<div class="form-group">' + '<label>&nbsp;</label>' + '<button class="btn-primary" id="task-create-btn">Create</button>' + '</div>' + '</div>';
     app.appendChild(form);
 
     function populateCreateFormAssignee(users) {
@@ -3106,15 +3519,19 @@
       if (assigneeId) data.assigneeId = assigneeId;
 
       btn.disabled = true;
-      api.tasks.create(data).then(function () {
-        document.getElementById('task-desc').value = '';
-        document.getElementById('task-assignee').value = '';
-        reloadTasks();
-      }).catch(function (err) {
-        showError('Failed to create task: ' + err.message);
-      }).finally(function () {
-        btn.disabled = false;
-      });
+      api.tasks
+        .create(data)
+        .then(function () {
+          document.getElementById('task-desc').value = '';
+          document.getElementById('task-assignee').value = '';
+          reloadTasks();
+        })
+        .catch(function (err) {
+          showError('Failed to create task: ' + err.message);
+        })
+        .finally(function () {
+          btn.disabled = false;
+        });
     });
 
     // Table container
@@ -3143,22 +3560,25 @@
     }
 
     if (routeTaskId && !routeDate && !routeBundleId) {
-      api.tasks.get(routeTaskId).then(function (task) {
-        if (task && task.bundleId) {
-          taskState.bundleFilter = task.bundleId;
-          if (bundleFilterEl) bundleFilterEl.value = task.bundleId;
-        } else if (task && task.date) {
-          taskState.date = task.date;
-          taskState.startDate = task.date;
-          taskState.endDate = task.date;
-          if (dateInput) dateInput.value = task.date;
-          if (dateEndInput) dateEndInput.value = task.date;
-        }
-        syncFormDate();
-        reloadTasks();
-      }).catch(function () {
-        reloadTasks();
-      });
+      api.tasks
+        .get(routeTaskId)
+        .then(function (task) {
+          if (task && task.bundleId) {
+            taskState.bundleFilter = task.bundleId;
+            if (bundleFilterEl) bundleFilterEl.value = task.bundleId;
+          } else if (task && task.date) {
+            taskState.date = task.date;
+            taskState.startDate = task.date;
+            taskState.endDate = task.date;
+            if (dateInput) dateInput.value = task.date;
+            if (dateEndInput) dateEndInput.value = task.date;
+          }
+          syncFormDate();
+          reloadTasks();
+        })
+        .catch(function () {
+          reloadTasks();
+        });
     } else {
       reloadTasks();
     }
@@ -3171,417 +3591,425 @@
 
     // Remove old error banners
     var banners = app.querySelectorAll('.error-banner');
-    banners.forEach(function (b) { b.remove(); });
+    banners.forEach(function (b) {
+      b.remove();
+    });
 
     var isBundleQuery = !!params.bundleId;
     var isRange = params.startDate !== undefined;
 
     // Load tasks and users in parallel
-    Promise.all([
-      api.tasks.list(params),
-      loadUsersOnce()
-    ]).then(function (results) {
-      var data = results[0];
-      var usersMap = results[1];
-      var tasks = data.tasks || [];
+    Promise.all([api.tasks.list(params), loadUsersOnce()])
+      .then(function (results) {
+        var data = results[0];
+        var usersMap = results[1];
+        var tasks = data.tasks || [];
 
-      // Apply client-side status filter
-      if (taskState.statusFilter && taskState.statusFilter !== 'all') {
-        tasks = tasks.filter(function (t) {
-          return t.status === taskState.statusFilter;
-        });
-      }
-
-      // Apply client-side assignee filter
-      if (taskState.assigneeFilter) {
-        tasks = tasks.filter(function (t) {
-          return t.assigneeId === taskState.assigneeFilter;
-        });
-      }
-
-      if (tasks.length === 0) {
-        var msg = isBundleQuery
-          ? 'No tasks found for this bundle.'
-          : isRange
-            ? 'No tasks found for this date range.'
-            : 'No tasks found for this date.';
-        container.innerHTML = renderEmptyState(
-          msg,
-          isRange ? 'Try a wider date range or adjust the filters.' : 'Adjust the filters or create a task for this date.',
-          []
-        );
-        return;
-      }
-
-      // Sort by date ascending
-      tasks.sort(function (a, b) {
-        if (a.date < b.date) return -1;
-        if (a.date > b.date) return 1;
-        return 0;
-      });
-
-      // Collect unique bundleIds and fetch bundle titles
-      var bundleIds = [];
-      tasks.forEach(function (t) {
-        if (t.bundleId && bundleIds.indexOf(t.bundleId) === -1) {
-          bundleIds.push(t.bundleId);
+        // Apply client-side status filter
+        if (taskState.statusFilter && taskState.statusFilter !== 'all') {
+          tasks = tasks.filter(function (t) {
+            return t.status === taskState.statusFilter;
+          });
         }
-      });
 
-      var bundlePromises = bundleIds.map(function (bid) {
-        return api.bundles.get(bid).then(function (data) {
-          return data.bundle || { id: bid, title: 'Untitled' };
-        }).catch(function () {
-          return { id: bid, title: 'Unknown' };
+        // Apply client-side assignee filter
+        if (taskState.assigneeFilter) {
+          tasks = tasks.filter(function (t) {
+            return t.assigneeId === taskState.assigneeFilter;
+          });
+        }
+
+        if (tasks.length === 0) {
+          var msg = isBundleQuery ? 'No tasks found for this bundle.' : isRange ? 'No tasks found for this date range.' : 'No tasks found for this date.';
+          container.innerHTML = renderEmptyState(msg, isRange ? 'Try a wider date range or adjust the filters.' : 'Adjust the filters or create a task for this date.', []);
+          return;
+        }
+
+        // Sort by date ascending
+        tasks.sort(function (a, b) {
+          if (a.date < b.date) return -1;
+          if (a.date > b.date) return 1;
+          return 0;
         });
-      });
 
-      Promise.all(bundlePromises).then(function (bundleResults) {
-        var bundleMap = {};
-        bundleResults.forEach(function (b) {
-          bundleMap[b.id] = b;
+        // Collect unique bundleIds and fetch bundle titles
+        var bundleIds = [];
+        tasks.forEach(function (t) {
+          if (t.bundleId && bundleIds.indexOf(t.bundleId) === -1) {
+            bundleIds.push(t.bundleId);
+          }
         });
 
-        renderTaskTable(tasks, bundleMap, usersMap, container, params);
-        focusTaskRow(container, taskState.targetTaskId);
+        var bundlePromises = bundleIds.map(function (bid) {
+          return api.bundles
+            .get(bid)
+            .then(function (data) {
+              return data.bundle || { id: bid, title: 'Untitled' };
+            })
+            .catch(function () {
+              return { id: bid, title: 'Unknown' };
+            });
+        });
+
+        Promise.all(bundlePromises).then(function (bundleResults) {
+          var bundleMap = {};
+          bundleResults.forEach(function (b) {
+            bundleMap[b.id] = b;
+          });
+
+          renderTaskTable(tasks, bundleMap, usersMap, container, params);
+          focusTaskRow(container, taskState.targetTaskId);
+        });
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        showError('Failed to load tasks: ' + err.message);
       });
-    }).catch(function (err) {
-      container.innerHTML = '';
-      showError('Failed to load tasks: ' + err.message);
-    });
   }
 
   function renderTaskTable(tasks, bundleMap, usersMap, container, params) {
-      var html = '<table class="task-table-compact"><thead><tr>' +
-        '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th>' +
-        '</tr></thead><tbody>';
-      tasks.forEach(function (t) {
-        var isDone = t.status === 'done';
-        var rowClass = isDone ? ' class="task-done"' : '';
-        var checked = isDone ? ' checked' : '';
-        var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
+    var html = '<table class="task-table-compact"><thead><tr>' + '<th></th><th>Date</th><th>Description</th><th>Bundle</th><th>Info</th><th>Assignee</th><th>Required Link</th>' + '</tr></thead><tbody>';
+    tasks.forEach(function (t) {
+      var isDone = t.status === 'done';
+      var rowClass = isDone ? ' class="task-done"' : '';
+      var checked = isDone ? ' checked' : '';
+      var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
 
-        var checkboxDisabled = '';
-        var missingProofTitle = taskMissingProofTitle(t, [], bundle);
-        var waitingBlockTitle = waitingCompletionBlockTitle(t);
-        if (waitingBlockTitle || missingProofTitle) {
-          checkboxDisabled = ' disabled title="' + escapeHtml(waitingBlockTitle || missingProofTitle) + '"';
-        }
+      var checkboxDisabled = '';
+      var missingProofTitle = taskMissingProofTitle(t, [], bundle);
+      var waitingBlockTitle = waitingCompletionBlockTitle(t);
+      if (waitingBlockTitle || missingProofTitle) {
+        checkboxDisabled = ' disabled title="' + escapeHtml(waitingBlockTitle || missingProofTitle) + '"';
+      }
 
-        // Bundle badge
-        var bundleBadge;
-        if (t.bundleId && bundle) {
-          bundleBadge = renderBundleBadgeLink(t.bundleId, bundle.title || 'Untitled');
-        } else {
-          bundleBadge = '<span class="badge-adhoc">ad hoc</span>';
-        }
+      // Bundle badge
+      var bundleBadge;
+      if (t.bundleId && bundle) {
+        bundleBadge = renderBundleBadgeLink(t.bundleId, bundle.title || 'Untitled');
+      } else {
+        bundleBadge = '<span class="badge-adhoc">ad hoc</span>';
+      }
 
-        // Instructions link icon
-        var instructionsHtml = '';
-        if (t.instructionDocId) {
-          instructionsHtml = renderInstructionLink(processDocUrl(t.instructionDocId), t.description);
-        } else if (t.instructionsUrl) {
-          instructionsHtml = renderInstructionLink(t.instructionsUrl, t.description);
-        }
-        var assistantHtml = '<div class="assistant-context-row">' +
-          renderAssistantRefs(t.assistantJobRefs) +
-          renderPodcastAssistantButton(t) +
-          '</div>';
+      // Instructions link icon
+      var instructionsHtml = '';
+      if (t.instructionDocId) {
+        instructionsHtml = renderInstructionLink(processDocUrl(t.instructionDocId), t.description);
+      } else if (t.instructionsUrl) {
+        instructionsHtml = renderInstructionLink(t.instructionsUrl, t.description);
+      }
+      var assistantHtml = '<div class="assistant-context-row">' + renderAssistantRefs(t.assistantJobRefs) + renderPodcastAssistantButton(t) + '</div>';
 
-        // Assignee name
-        var assigneeHtml = '';
-        if (t.assigneeId && usersMap[t.assigneeId]) {
-          assigneeHtml = '<span class="badge-assignee">' + escapeHtml(usersMap[t.assigneeId].name) + '</span>';
-        }
+      // Assignee name
+      var assigneeHtml = '';
+      if (t.assigneeId && usersMap[t.assigneeId]) {
+        assigneeHtml = '<span class="badge-assignee">' + escapeHtml(usersMap[t.assigneeId].name) + '</span>';
+      }
 
-        // Required link input
-        var requiredLinkHtml = '';
-        if (t.requiredLinkName) {
-          requiredLinkHtml = '<span class="required-link-wrapper">' +
-            '<span class="required-link-label">' + escapeHtml(t.requiredLinkName) + ':</span>' +
-            '<input type="text" class="required-link-input" data-task-id="' + t.id + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(t.requiredLinkName) + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' +
-            '</span>';
+      // Required link input
+      var requiredLinkHtml = '';
+      if (t.requiredLinkName) {
+        requiredLinkHtml = '<span class="required-link-wrapper">' + '<span class="required-link-label">' + escapeHtml(t.requiredLinkName) + ':</span>' + '<input type="text" class="required-link-input" data-task-id="' + t.id + '" data-bundle-id="' + escapeHtml(t.bundleId || '') + '" data-link-name="' + escapeHtml(t.requiredLinkName) + '" value="' + escapeHtml(t.link || '') + '" placeholder="URL" />' + '</span>';
+      }
+      taskRequiredBundleLinkNames(t).forEach(function (linkName) {
+        if (linkName === t.requiredLinkName) return;
+        if (!t.bundleId || !bundle) {
+          requiredLinkHtml += '<span class="proof-missing">Open a workflow bundle to save ' + escapeHtml(linkName) + ' shared link</span>';
+          return;
         }
-        taskRequiredBundleLinkNames(t).forEach(function (linkName) {
-          if (linkName === t.requiredLinkName) return;
-          if (!t.bundleId || !bundle) {
-            requiredLinkHtml += '<span class="proof-missing">Open a workflow bundle to save ' + escapeHtml(linkName) + ' shared link</span>';
-            return;
-          }
-          requiredLinkHtml += '<span class="required-link-wrapper">' +
-            '<span class="required-link-label">' + escapeHtml(linkName) + ':</span>' +
-            '<input type="text" class="required-bundle-link-input" data-task-id="' + escapeHtml(t.id) + '" data-bundle-id="' + escapeHtml(t.bundleId) + '" data-link-name="' + escapeHtml(linkName) + '" value="' + escapeHtml(bundleLinkUrl(bundle, linkName)) + '" placeholder="URL" />' +
-            '</span>';
-        });
-        if (taskNeedsCompletionProofControls(t) && !isDone) {
-          var proof = taskProofRequirement(t);
-          var skipStatuses = taskAllowedSkipStatuses(t);
-          requiredLinkHtml += '<span class="completion-proof-wrapper" data-completion-proof-wrapper="' + escapeHtml(t.id) + '">';
-          if (proof && (proof.type === 'comment' || proof.type === 'external-status')) {
-            requiredLinkHtml += '<label class="required-link-label" for="task-list-completion-proof-' + escapeHtml(t.id) + '">' +
-              escapeHtml((proof.type === 'comment' ? 'Completion note: ' : 'Completion status: ') + (proof.label || 'Completion evidence')) +
-              '</label>' +
-              '<input type="text" id="task-list-completion-proof-' + escapeHtml(t.id) + '" class="completion-proof-input" data-completion-proof-task="' + escapeHtml(t.id) + '" data-completion-proof-type="' + escapeHtml(proof.type) + '" value="' + escapeHtml(proof.type === 'comment' ? (t.comment || '') : (t.externalStatus || '')) + '" placeholder="' + escapeHtml(proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system') + '" />';
-          }
-          if (skipStatuses.length) {
-            requiredLinkHtml += '<label class="required-link-label" for="task-list-skip-closure-' + escapeHtml(t.id) + '">Close as:</label>' +
-              '<select id="task-list-skip-closure-' + escapeHtml(t.id) + '" class="skip-closure-select" data-skip-closure-task="' + escapeHtml(t.id) + '">' +
-              '<option value="">Choose reason</option>' +
-              skipStatuses.map(function (status) {
+        requiredLinkHtml += '<span class="required-link-wrapper">' + '<span class="required-link-label">' + escapeHtml(linkName) + ':</span>' + '<input type="text" class="required-bundle-link-input" data-task-id="' + escapeHtml(t.id) + '" data-bundle-id="' + escapeHtml(t.bundleId) + '" data-link-name="' + escapeHtml(linkName) + '" value="' + escapeHtml(bundleLinkUrl(bundle, linkName)) + '" placeholder="URL" />' + '</span>';
+      });
+      if (taskNeedsCompletionProofControls(t) && !isDone) {
+        var proof = taskProofRequirement(t);
+        var skipStatuses = taskAllowedSkipStatuses(t);
+        requiredLinkHtml += '<span class="completion-proof-wrapper" data-completion-proof-wrapper="' + escapeHtml(t.id) + '">';
+        if (proof && (proof.type === 'comment' || proof.type === 'external-status')) {
+          requiredLinkHtml += '<label class="required-link-label" for="task-list-completion-proof-' + escapeHtml(t.id) + '">' + escapeHtml((proof.type === 'comment' ? 'Completion note: ' : 'Completion status: ') + (proof.label || 'Completion evidence')) + '</label>' + '<input type="text" id="task-list-completion-proof-' + escapeHtml(t.id) + '" class="completion-proof-input" data-completion-proof-task="' + escapeHtml(t.id) + '" data-completion-proof-type="' + escapeHtml(proof.type) + '" value="' + escapeHtml(proof.type === 'comment' ? t.comment || '' : t.externalStatus || '') + '" placeholder="' + escapeHtml(proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system') + '" />';
+        }
+        if (skipStatuses.length) {
+          requiredLinkHtml +=
+            '<label class="required-link-label" for="task-list-skip-closure-' +
+            escapeHtml(t.id) +
+            '">Close as:</label>' +
+            '<select id="task-list-skip-closure-' +
+            escapeHtml(t.id) +
+            '" class="skip-closure-select" data-skip-closure-task="' +
+            escapeHtml(t.id) +
+            '">' +
+            '<option value="">Choose reason</option>' +
+            skipStatuses
+              .map(function (status) {
                 var selected = valueMatchesAllowedSkipStatus(t.comment, [status]) || valueMatchesAllowedSkipStatus(t.externalStatus, [status]) ? ' selected' : '';
                 return '<option value="' + escapeHtml(status) + '"' + selected + '>' + escapeHtml(sentenceCaseStatus(status)) + '</option>';
-              }).join('') +
-              '</select>';
-          }
-          requiredLinkHtml += '<button type="button" class="btn-save-link" data-save-completion-proof="' + escapeHtml(t.id) + '">Save evidence</button>';
-          if (missingProofTitle) {
-            requiredLinkHtml += '<span class="proof-missing">' + escapeHtml(missingProofTitle) + '</span>';
-          }
-          requiredLinkHtml += '</span>';
+              })
+              .join('') +
+            '</select>';
         }
+        requiredLinkHtml += '<button type="button" class="btn-save-link" data-save-completion-proof="' + escapeHtml(t.id) + '">Save evidence</button>';
+        if (missingProofTitle) {
+          requiredLinkHtml += '<span class="proof-missing">' + escapeHtml(missingProofTitle) + '</span>';
+        }
+        requiredLinkHtml += '</span>';
+      }
 
-        html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
-          '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' +
-          '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
-          '<td class="task-description editable" data-label="Description" data-field="description" data-task-id="' + t.id + '">' + renderMarkdownLinks(t.description) + '</td>' +
-          '<td data-label="Bundle">' + bundleBadge + '</td>' +
-          '<td data-label="Info">' + instructionsHtml + assistantHtml + renderTaskHistory(t, true) + '</td>' +
-          '<td data-label="Assignee">' + assigneeHtml + '</td>' +
-          '<td data-label="Required Link">' + requiredLinkHtml + '</td>' +
-          '</tr>';
+      html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' + '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' + '<td data-label="Date">' + escapeHtml(t.date) + '</td>' + '<td class="task-description editable" data-label="Description" data-field="description" data-task-id="' + t.id + '">' + renderMarkdownLinks(t.description) + '</td>' + '<td data-label="Bundle">' + bundleBadge + '</td>' + '<td data-label="Info">' + instructionsHtml + assistantHtml + renderTaskHistory(t, true) + '</td>' + '<td data-label="Assignee">' + assigneeHtml + '</td>' + '<td data-label="Required Link">' + requiredLinkHtml + '</td>' + '</tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    // Bundle navigation links
+    container.querySelectorAll('[data-nav-bundle]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        currentBundleId = el.getAttribute('data-nav-bundle');
+        location.hash = bundleHash(currentBundleId);
       });
-      html += '</tbody></table>';
-      container.innerHTML = html;
+    });
+    bindAssistantLinks(container);
 
-      // Bundle navigation links
-      container.querySelectorAll('[data-nav-bundle]').forEach(function (el) {
-        el.addEventListener('click', function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          currentBundleId = el.getAttribute('data-nav-bundle');
-          location.hash = bundleHash(currentBundleId);
-        });
-      });
-      bindAssistantLinks(container);
-
-      container.querySelectorAll('[data-request-assistant-task]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var taskId = btn.getAttribute('data-request-assistant-task');
-          var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
-          var row = btn.closest('[data-task-row]');
-          var title = row ? row.querySelector('.task-description').textContent : 'DataOps Assistant';
-          showPodcastAssistantRequest({
+    container.querySelectorAll('[data-request-assistant-task]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-request-assistant-task');
+        var bundleId = btn.getAttribute('data-request-assistant-bundle') || undefined;
+        var row = btn.closest('[data-task-row]');
+        var title = row ? row.querySelector('.task-description').textContent : 'DataOps Assistant';
+        showPodcastAssistantRequest(
+          {
             taskId: taskId,
             bundleId: bundleId,
             taskTitle: title,
-            title: title,
-          }, function () {
+            title: title
+          },
+          function () {
             loadTasks(params);
-          });
-        });
+          }
+        );
       });
+    });
 
-      // Status toggle via checkboxes
-      container.querySelectorAll('.task-status-checkbox').forEach(function (cb) {
-        cb.addEventListener('change', function () {
-          var id = cb.getAttribute('data-task-id');
-          var current = cb.getAttribute('data-status');
-          var next = current === 'done' ? 'todo' : 'done';
-          api.tasks.update(id, { status: next }).then(function () {
+    // Status toggle via checkboxes
+    container.querySelectorAll('.task-status-checkbox').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var id = cb.getAttribute('data-task-id');
+        var current = cb.getAttribute('data-status');
+        var next = current === 'done' ? 'todo' : 'done';
+        api.tasks
+          .update(id, { status: next })
+          .then(function () {
             loadTasks(params);
-          }).catch(function (err) {
+          })
+          .catch(function (err) {
             showError('Failed to update task: ' + err.message);
           });
-        });
       });
+    });
 
-      // Required link input: save on Enter or blur
-      container.querySelectorAll('.required-link-input').forEach(function (inp) {
-        var saving = false;
-        function saveLink() {
-          if (saving) return;
-          saving = true;
-          var taskId = inp.getAttribute('data-task-id');
-          var linkValue = inp.value.trim();
-          var linkName = inp.getAttribute('data-link-name');
-          var task = tasks.find(function (item) { return item.id === taskId; }) || {};
-          var bundle = task.bundleId ? bundleMap[task.bundleId] : null;
-          var updates = [api.tasks.update(taskId, { link: linkValue })];
-          if (bundle && linkName) {
-            updates.push(api.bundles.update(bundle.id, {
+    // Required link input: save on Enter or blur
+    container.querySelectorAll('.required-link-input').forEach(function (inp) {
+      var saving = false;
+      function saveLink() {
+        if (saving) return;
+        saving = true;
+        var taskId = inp.getAttribute('data-task-id');
+        var linkValue = inp.value.trim();
+        var linkName = inp.getAttribute('data-link-name');
+        var task =
+          tasks.find(function (item) {
+            return item.id === taskId;
+          }) || {};
+        var bundle = task.bundleId ? bundleMap[task.bundleId] : null;
+        var updates = [api.tasks.update(taskId, { link: linkValue })];
+        if (bundle && linkName) {
+          updates.push(
+            api.bundles.update(bundle.id, {
               bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, linkValue)
-            }));
-          }
-          Promise.all(updates).then(function () {
+            })
+          );
+        }
+        Promise.all(updates)
+          .then(function () {
             loadTasks(params);
-          }).catch(function (err) {
+          })
+          .catch(function (err) {
             showError('Failed to save link: ' + err.message);
             saving = false;
           });
-        }
-        inp.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            saveLink();
-          }
-        });
-        inp.addEventListener('blur', function () {
+      }
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
           saveLink();
-        });
-        // Prevent click from triggering row editable behavior
-        inp.addEventListener('click', function (e) {
-          e.stopPropagation();
-        });
+        }
       });
+      inp.addEventListener('blur', function () {
+        saveLink();
+      });
+      // Prevent click from triggering row editable behavior
+      inp.addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+    });
 
-      container.querySelectorAll('.required-bundle-link-input').forEach(function (inp) {
-        var saving = false;
-        function saveBundleLink() {
-          if (saving) return;
-          saving = true;
-          var bundleId = inp.getAttribute('data-bundle-id');
-          var linkName = inp.getAttribute('data-link-name');
-          if (!bundleId || !linkName) {
-            saving = false;
-            showError('Open the workflow bundle before saving shared links.');
-            return;
-          }
-          var bundle = bundleMap[bundleId] || {};
-          api.bundles.update(bundleId, {
+    container.querySelectorAll('.required-bundle-link-input').forEach(function (inp) {
+      var saving = false;
+      function saveBundleLink() {
+        if (saving) return;
+        saving = true;
+        var bundleId = inp.getAttribute('data-bundle-id');
+        var linkName = inp.getAttribute('data-link-name');
+        if (!bundleId || !linkName) {
+          saving = false;
+          showError('Open the workflow bundle before saving shared links.');
+          return;
+        }
+        var bundle = bundleMap[bundleId] || {};
+        api.bundles
+          .update(bundleId, {
             bundleLinks: updateBundleLinksByName(bundle.bundleLinks || [], linkName, inp.value.trim())
-          }).then(function () {
+          })
+          .then(function () {
             loadTasks(params);
-          }).catch(function (err) {
+          })
+          .catch(function (err) {
             showError('Failed to save shared link: ' + err.message);
             saving = false;
           });
-        }
-        inp.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            saveBundleLink();
-          }
-        });
-        inp.addEventListener('blur', function () {
+      }
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
           saveBundleLink();
-        });
-        inp.addEventListener('click', function (e) {
-          e.stopPropagation();
-        });
+        }
       });
+      inp.addEventListener('blur', function () {
+        saveBundleLink();
+      });
+      inp.addEventListener('click', function (e) {
+        e.stopPropagation();
+      });
+    });
 
-      container.querySelectorAll('[data-save-completion-proof]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var taskId = btn.getAttribute('data-save-completion-proof');
-          var wrapper = container.querySelector('[data-completion-proof-wrapper="' + taskId + '"]');
-          if (!wrapper) return;
+    container.querySelectorAll('[data-save-completion-proof]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-save-completion-proof');
+        var wrapper = container.querySelector('[data-completion-proof-wrapper="' + taskId + '"]');
+        if (!wrapper) return;
 
-          var updateData = {};
-          var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
-          var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
-          if (selectedSkipStatus) {
-            var task = tasks.find(function (item) { return item.id === taskId; }) || {};
-            updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
-          } else {
-            var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
-            if (!proofInput || !proofInput.value.trim()) {
-              showError('Add the required evidence before marking done.');
-              return;
-            }
-            var proofType = proofInput.getAttribute('data-completion-proof-type');
-            if (proofType === 'comment') {
-              updateData.comment = proofInput.value.trim();
-            } else if (proofType === 'external-status') {
-              updateData.externalStatus = proofInput.value.trim();
-            }
-          }
-
-          if (Object.keys(updateData).length === 0) {
+        var updateData = {};
+        var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
+        var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
+        if (selectedSkipStatus) {
+          var task =
+            tasks.find(function (item) {
+              return item.id === taskId;
+            }) || {};
+          updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
+        } else {
+          var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
+          if (!proofInput || !proofInput.value.trim()) {
             showError('Add the required evidence before marking done.');
             return;
           }
+          var proofType = proofInput.getAttribute('data-completion-proof-type');
+          if (proofType === 'comment') {
+            updateData.comment = proofInput.value.trim();
+          } else if (proofType === 'external-status') {
+            updateData.externalStatus = proofInput.value.trim();
+          }
+        }
 
-          setButtonBusy(btn, true, 'Save evidence', 'Saving...');
-          api.tasks.update(taskId, updateData).then(function () {
+        if (Object.keys(updateData).length === 0) {
+          showError('Add the required evidence before marking done.');
+          return;
+        }
+
+        setButtonBusy(btn, true, 'Save evidence', 'Saving...');
+        api.tasks
+          .update(taskId, updateData)
+          .then(function () {
             showSuccess('Evidence saved.');
             loadTasks(params);
-          }).catch(function (err) {
+          })
+          .catch(function (err) {
             showError('Failed to save evidence: ' + err.message);
             setButtonBusy(btn, false, 'Save evidence');
           });
-        });
       });
+    });
 
-      // Inline editing for description
-      container.querySelectorAll('td.editable').forEach(function (cell) {
-        cell.addEventListener('click', function () {
-          // Prevent opening a second editor
-          if (cell.querySelector('input')) return;
+    // Inline editing for description
+    container.querySelectorAll('td.editable').forEach(function (cell) {
+      cell.addEventListener('click', function () {
+        // Prevent opening a second editor
+        if (cell.querySelector('input')) return;
 
-          var field = cell.getAttribute('data-field');
-          var taskId = cell.getAttribute('data-task-id');
-          var originalValue = cell.textContent;
+        var field = cell.getAttribute('data-field');
+        var taskId = cell.getAttribute('data-task-id');
+        var originalValue = cell.textContent;
 
-          var input = document.createElement('input');
-          input.type = 'text';
-          input.className = 'inline-edit-input';
-          input.value = originalValue;
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'inline-edit-input';
+        input.value = originalValue;
 
-          cell.textContent = '';
-          cell.appendChild(input);
-          input.focus();
-          input.select();
+        cell.textContent = '';
+        cell.appendChild(input);
+        input.focus();
+        input.select();
 
-          var saving = false;
+        var saving = false;
 
-          function save() {
-            if (saving) return;
-            var newValue = input.value.trim();
+        function save() {
+          if (saving) return;
+          var newValue = input.value.trim();
 
-            // Description cannot be empty
-            if (field === 'description' && newValue === '') {
-              cancel();
-              return;
-            }
+          // Description cannot be empty
+          if (field === 'description' && newValue === '') {
+            cancel();
+            return;
+          }
 
-            // If unchanged, just cancel
-            if (newValue === originalValue) {
-              cancel();
-              return;
-            }
+          // If unchanged, just cancel
+          if (newValue === originalValue) {
+            cancel();
+            return;
+          }
 
-            saving = true;
-            var updateData = {};
-            updateData[field] = newValue;
-            api.tasks.update(taskId, updateData).then(function () {
+          saving = true;
+          var updateData = {};
+          updateData[field] = newValue;
+          api.tasks
+            .update(taskId, updateData)
+            .then(function () {
               loadTasks(params);
-            }).catch(function (err) {
+            })
+            .catch(function (err) {
               showError('Failed to update task: ' + err.message);
               cancel();
             });
+        }
+
+        function cancel() {
+          cell.textContent = originalValue;
+        }
+
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            save();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
           }
+        });
 
-          function cancel() {
-            cell.textContent = originalValue;
+        input.addEventListener('blur', function () {
+          if (!saving) {
+            save();
           }
-
-          input.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              save();
-            } else if (e.key === 'Escape') {
-              e.preventDefault();
-              cancel();
-            }
-          });
-
-          input.addEventListener('blur', function () {
-            if (!saving) {
-              save();
-            }
-          });
         });
       });
+    });
   }
 
   // ── Bundles View ───────────────────────────────────────────────
@@ -3606,14 +4034,7 @@
 
     var header = document.createElement('div');
     header.className = 'page-header';
-    header.innerHTML =
-      '<div>' +
-        '<h2>Bundles</h2>' +
-        '<div class="page-subtitle" id="bundle-count">Active and archived work packages</div>' +
-      '</div>' +
-      '<div class="page-actions">' +
-        '<input type="search" id="bundle-search" class="search-input" placeholder="Search bundles" value="' + escapeHtml(bundleState.search) + '" />' +
-      '</div>';
+    header.innerHTML = '<div>' + '<h2>Bundles</h2>' + '<div class="page-subtitle" id="bundle-count">Active and archived work packages</div>' + '</div>' + '<div class="page-actions">' + '<input type="search" id="bundle-search" class="search-input" placeholder="Search bundles" value="' + escapeHtml(bundleState.search) + '" />' + '</div>';
     app.appendChild(header);
 
     document.getElementById('bundle-search').addEventListener('input', function (e) {
@@ -3626,30 +4047,7 @@
     // Podcast-specific launcher that used to sit here has been removed.
     var form = document.createElement('div');
     form.className = 'form-section';
-    form.innerHTML =
-      '<h3>New Bundle</h3>' +
-      '<div class="form-row">' +
-        '<div class="form-group">' +
-          '<label for="bundle-title">Title</label>' +
-          '<input type="text" id="bundle-title" placeholder="Bundle title" style="width:250px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="bundle-anchor">Anchor Date</label>' +
-          '<input type="date" id="bundle-anchor" value="' + todayString() + '" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="bundle-desc">Description</label>' +
-          '<input type="text" id="bundle-desc" placeholder="Optional" style="width:250px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="bundle-template">Template</label>' +
-          '<select id="bundle-template"><option value="">No template</option></select>' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>&nbsp;</label>' +
-          '<button class="btn-primary" id="bundle-create-btn">Create</button>' +
-        '</div>' +
-      '</div>';
+    form.innerHTML = '<h3>New Bundle</h3>' + '<div class="form-row">' + '<div class="form-group">' + '<label for="bundle-title">Title</label>' + '<input type="text" id="bundle-title" placeholder="Bundle title" style="width:250px;" />' + '</div>' + '<div class="form-group">' + '<label for="bundle-anchor">Anchor Date</label>' + '<input type="date" id="bundle-anchor" value="' + todayString() + '" />' + '</div>' + '<div class="form-group">' + '<label for="bundle-desc">Description</label>' + '<input type="text" id="bundle-desc" placeholder="Optional" style="width:250px;" />' + '</div>' + '<div class="form-group">' + '<label for="bundle-template">Template</label>' + '<select id="bundle-template"><option value="">No template</option></select>' + '</div>' + '<div class="form-group">' + '<label>&nbsp;</label>' + '<button class="btn-primary" id="bundle-create-btn">Create</button>' + '</div>' + '</div>';
     app.appendChild(form);
 
     // Populate template dropdown
@@ -3671,20 +4069,24 @@
       setButtonBusy(btn, true, 'Create', 'Creating...');
       var cardsContainer = document.getElementById('bundles-table');
       if (cardsContainer) cardsContainer.innerHTML = '<p>Creating bundle...</p>';
-      api.bundles.create(data).then(function () {
-        document.getElementById('bundle-title').value = '';
-        document.getElementById('bundle-desc').value = '';
-        document.getElementById('bundle-template').value = '';
-        bundleState.search = title.toLowerCase();
-        var search = document.getElementById('bundle-search');
-        if (search) search.value = bundleState.search;
-        showSuccess('Bundle created.');
-        loadBundles();
-      }).catch(function (err) {
-        showError('Failed to create bundle: ' + err.message);
-      }).finally(function () {
-        setButtonBusy(btn, false, 'Create');
-      });
+      api.bundles
+        .create(data)
+        .then(function () {
+          document.getElementById('bundle-title').value = '';
+          document.getElementById('bundle-desc').value = '';
+          document.getElementById('bundle-template').value = '';
+          bundleState.search = title.toLowerCase();
+          var search = document.getElementById('bundle-search');
+          if (search) search.value = bundleState.search;
+          showSuccess('Bundle created.');
+          loadBundles();
+        })
+        .catch(function (err) {
+          showError('Failed to create bundle: ' + err.message);
+        })
+        .finally(function () {
+          setButtonBusy(btn, false, 'Create');
+        });
     });
 
     var cardsContainer = document.createElement('div');
@@ -3710,18 +4112,21 @@
   function loadTemplateDropdown() {
     var select = document.getElementById('bundle-template');
     if (!select) return;
-    api.templates.list().then(function (data) {
-      var templates = data.templates || [];
-      templates.forEach(function (t) {
-        var taskCount = (t.taskDefinitions && t.taskDefinitions.length) || 0;
-        var option = document.createElement('option');
-        option.value = t.id;
-        option.textContent = (t.name || 'Unnamed') + ' (' + taskCount + ' tasks)';
-        select.appendChild(option);
+    api.templates
+      .list()
+      .then(function (data) {
+        var templates = data.templates || [];
+        templates.forEach(function (t) {
+          var taskCount = (t.taskDefinitions && t.taskDefinitions.length) || 0;
+          var option = document.createElement('option');
+          option.value = t.id;
+          option.textContent = (t.name || 'Unnamed') + ' (' + taskCount + ' tasks)';
+          select.appendChild(option);
+        });
+      })
+      .catch(function () {
+        // Gracefully handle — dropdown just shows "No template"
       });
-    }).catch(function () {
-      // Gracefully handle — dropdown just shows "No template"
-    });
   }
 
   function loadBundles() {
@@ -3730,146 +4135,134 @@
     container.innerHTML = '<p>Loading...</p>';
 
     var banners = app.querySelectorAll('.error-banner');
-    banners.forEach(function (b) { b.remove(); });
+    banners.forEach(function (b) {
+      b.remove();
+    });
 
-    api.bundles.list().then(function (data) {
-      var bundles = data.bundles || [];
-      var totalCount = bundles.length;
-      var countEl = document.getElementById('bundle-count');
-      if (countEl) {
-        countEl.textContent = totalCount + ' bundle' + (totalCount !== 1 ? 's' : '') + ' available';
-      }
-      if (bundles.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No bundles yet',
-          'Use the form above to create a bundle from scratch or instantiate one from a template.',
-          []
-        );
-        return;
-      }
+    api.bundles
+      .list()
+      .then(function (data) {
+        var bundles = data.bundles || [];
+        var totalCount = bundles.length;
+        var countEl = document.getElementById('bundle-count');
+        if (countEl) {
+          countEl.textContent = totalCount + ' bundle' + (totalCount !== 1 ? 's' : '') + ' available';
+        }
+        if (bundles.length === 0) {
+          container.innerHTML = renderEmptyState('No bundles yet', 'Use the form above to create a bundle from scratch or instantiate one from a template.', []);
+          return;
+        }
 
-      if (bundleState.search) {
-        bundles = bundles.filter(function (b) {
-          var haystack = [
-            b.title || '',
-            b.description || '',
-            b.anchorDate || '',
-            b.status || '',
-            b.stage || '',
-            (b.tags || []).join(' ')
-          ].join(' ').toLowerCase();
-          return haystack.indexOf(bundleState.search) !== -1;
-        });
-      }
-
-      if (countEl) {
-        countEl.textContent = bundles.length + ' of ' + totalCount + ' bundle' + (totalCount !== 1 ? 's' : '') + ' shown';
-      }
-
-      if (bundles.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No bundles match your search',
-          'Clear or broaden the search to see more bundles.',
-          []
-        );
-        return;
-      }
-
-      // Fetch tasks for each bundle to compute progress
-      var taskPromises = bundles.map(function (b) {
-        return api.bundles.tasks(b.id).then(function (taskData) {
-          return { bundleId: b.id, tasks: taskData.tasks || [] };
-        }).catch(function () {
-          return { bundleId: b.id, tasks: [] };
-        });
-      });
-
-      Promise.all(taskPromises).then(function (taskResults) {
-        var taskMap = {};
-        taskResults.forEach(function (r) {
-          taskMap[r.bundleId] = r.tasks;
-        });
-
-        container.innerHTML = '';
-        var cardsDiv = document.createElement('div');
-        cardsDiv.className = 'bundle-cards';
-
-        bundles.forEach(function (b) {
-          var tasks = taskMap[b.id] || [];
-          var doneCount = tasks.filter(function (t) { return t.status === 'done'; }).length;
-          var totalCount = tasks.length;
-          var badgeClass = 'progress-badge' + (totalCount > 0 && doneCount === totalCount ? ' all-done' : '');
-
-          var descText = b.description || '';
-          var truncatedDesc = descText.length > 100 ? descText.substring(0, 100) + '...' : descText;
-
-          var card = document.createElement('div');
-          card.className = 'bundle-card';
-          card.setAttribute('data-card-bundle-id', b.id);
-          card.innerHTML =
-            '<a class="bundle-card-title" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '" aria-label="Open bundle ' + escapeHtml(b.title || 'Untitled') + '">' + escapeHtml(b.title) + '</a>' +
-            '<div class="bundle-card-date">' + escapeHtml(b.anchorDate || '') + '</div>' +
-            (truncatedDesc ? '<div class="bundle-card-desc">' + escapeHtml(truncatedDesc) + '</div>' : '') +
-            '<div class="bundle-card-footer">' +
-              '<span class="' + badgeClass + '">' + doneCount + ' / ' + totalCount + ' done</span>' +
-              '<div class="card-footer-actions">' +
-                '<a class="card-action-link" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '">Open bundle</a>' +
-                '<button class="btn-danger" data-delete-bundle="' + b.id + '">Delete</button>' +
-              '</div>' +
-            '</div>';
-          cardsDiv.appendChild(card);
-        });
-
-        container.appendChild(cardsDiv);
-
-        container.querySelectorAll('.bundle-card').forEach(function (cardEl) {
-          cardEl.addEventListener('click', function (e) {
-            if (e.target.closest('button')) return;
-            if (e.target.closest('[data-bundle-id]')) return;
-            currentBundleId = cardEl.getAttribute('data-card-bundle-id');
-            location.hash = bundleHash(currentBundleId);
+        if (bundleState.search) {
+          bundles = bundles.filter(function (b) {
+            var haystack = [b.title || '', b.description || '', b.anchorDate || '', b.status || '', b.stage || '', (b.tags || []).join(' ')].join(' ').toLowerCase();
+            return haystack.indexOf(bundleState.search) !== -1;
           });
+        }
+
+        if (countEl) {
+          countEl.textContent = bundles.length + ' of ' + totalCount + ' bundle' + (totalCount !== 1 ? 's' : '') + ' shown';
+        }
+
+        if (bundles.length === 0) {
+          container.innerHTML = renderEmptyState('No bundles match your search', 'Clear or broaden the search to see more bundles.', []);
+          return;
+        }
+
+        // Fetch tasks for each bundle to compute progress
+        var taskPromises = bundles.map(function (b) {
+          return api.bundles
+            .tasks(b.id)
+            .then(function (taskData) {
+              return { bundleId: b.id, tasks: taskData.tasks || [] };
+            })
+            .catch(function () {
+              return { bundleId: b.id, tasks: [] };
+            });
         });
 
-        // Click on bundle title -> detail view
-        container.querySelectorAll('[data-bundle-id]').forEach(function (el) {
-          el.addEventListener('click', function (e) {
-            e.preventDefault();
-            currentBundleId = el.getAttribute('data-bundle-id');
-            location.hash = bundleHash(currentBundleId);
+        Promise.all(taskPromises).then(function (taskResults) {
+          var taskMap = {};
+          taskResults.forEach(function (r) {
+            taskMap[r.bundleId] = r.tasks;
           });
-        });
 
-        // Delete bundle
-        container.querySelectorAll('[data-delete-bundle]').forEach(function (btn) {
-          btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            var id = btn.getAttribute('data-delete-bundle');
-            var titleEl = btn.closest('.bundle-card').querySelector('.bundle-card-title');
-            var title = titleEl ? titleEl.textContent : 'this bundle';
-            if (!confirm('Delete bundle: "' + title + '"?')) return;
-            setButtonBusy(btn, true, 'Delete', 'Deleting...');
-            api.bundles.delete(id).then(function () {
-              showSuccess('Bundle deleted.');
-              loadBundles();
-            }).catch(function (err) {
-              showError('Failed to delete bundle: ' + err.message);
-              setButtonBusy(btn, false, 'Delete');
+          container.innerHTML = '';
+          var cardsDiv = document.createElement('div');
+          cardsDiv.className = 'bundle-cards';
+
+          bundles.forEach(function (b) {
+            var tasks = taskMap[b.id] || [];
+            var doneCount = tasks.filter(function (t) {
+              return t.status === 'done';
+            }).length;
+            var totalCount = tasks.length;
+            var badgeClass = 'progress-badge' + (totalCount > 0 && doneCount === totalCount ? ' all-done' : '');
+
+            var descText = b.description || '';
+            var truncatedDesc = descText.length > 100 ? descText.substring(0, 100) + '...' : descText;
+
+            var card = document.createElement('div');
+            card.className = 'bundle-card';
+            card.setAttribute('data-card-bundle-id', b.id);
+            card.innerHTML = '<a class="bundle-card-title" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '" aria-label="Open bundle ' + escapeHtml(b.title || 'Untitled') + '">' + escapeHtml(b.title) + '</a>' + '<div class="bundle-card-date">' + escapeHtml(b.anchorDate || '') + '</div>' + (truncatedDesc ? '<div class="bundle-card-desc">' + escapeHtml(truncatedDesc) + '</div>' : '') + '<div class="bundle-card-footer">' + '<span class="' + badgeClass + '">' + doneCount + ' / ' + totalCount + ' done</span>' + '<div class="card-footer-actions">' + '<a class="card-action-link" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '">Open bundle</a>' + '<button class="btn-danger" data-delete-bundle="' + b.id + '">Delete</button>' + '</div>' + '</div>';
+            cardsDiv.appendChild(card);
+          });
+
+          container.appendChild(cardsDiv);
+
+          container.querySelectorAll('.bundle-card').forEach(function (cardEl) {
+            cardEl.addEventListener('click', function (e) {
+              if (e.target.closest('button')) return;
+              if (e.target.closest('[data-bundle-id]')) return;
+              currentBundleId = cardEl.getAttribute('data-card-bundle-id');
+              location.hash = bundleHash(currentBundleId);
+            });
+          });
+
+          // Click on bundle title -> detail view
+          container.querySelectorAll('[data-bundle-id]').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+              e.preventDefault();
+              currentBundleId = el.getAttribute('data-bundle-id');
+              location.hash = bundleHash(currentBundleId);
+            });
+          });
+
+          // Delete bundle
+          container.querySelectorAll('[data-delete-bundle]').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+              e.stopPropagation();
+              var id = btn.getAttribute('data-delete-bundle');
+              var titleEl = btn.closest('.bundle-card').querySelector('.bundle-card-title');
+              var title = titleEl ? titleEl.textContent : 'this bundle';
+              if (!confirm('Delete bundle: "' + title + '"?')) return;
+              setButtonBusy(btn, true, 'Delete', 'Deleting...');
+              api.bundles
+                .delete(id)
+                .then(function () {
+                  showSuccess('Bundle deleted.');
+                  loadBundles();
+                })
+                .catch(function (err) {
+                  showError('Failed to delete bundle: ' + err.message);
+                  setButtonBusy(btn, false, 'Delete');
+                });
             });
           });
         });
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        showError('Failed to load bundles: ' + err.message);
       });
-    }).catch(function (err) {
-      container.innerHTML = '';
-      showError('Failed to load bundles: ' + err.message);
-    });
   }
 
   // Stage transition map: current stage -> { label, nextStage }
   var stageTransitions = {
-    'preparation': { label: 'Mark Announced', nextStage: 'announced' },
-    'announced': { label: 'Mark After-Event', nextStage: 'after-event' },
-    'after-event': { label: 'Mark Done', nextStage: 'done' },
+    preparation: { label: 'Mark Announced', nextStage: 'announced' },
+    announced: { label: 'Mark After-Event', nextStage: 'after-event' },
+    'after-event': { label: 'Mark Done', nextStage: 'done' }
   };
 
   function renderBundleDetail(bundleId, targetTaskId) {
@@ -3895,329 +4288,396 @@
     if (!container) return;
 
     var banners = app.querySelectorAll('.error-banner');
-    banners.forEach(function (b) { b.remove(); });
+    banners.forEach(function (b) {
+      b.remove();
+    });
 
     // Load bundle, tasks, and users in parallel
-    Promise.all([
-      api.bundles.get(bundleId),
-      api.bundles.tasks(bundleId),
-      loadUsersOnce(),
-      api.assistantJobs.list({ bundleId: bundleId }),
-      api.artifacts.list({ bundleId: bundleId })
-    ]).then(function (results) {
-      var bundle = results[0].bundle;
-      var tasks = results[1].tasks || [];
-      var usersMap = results[2];
-      var assistantJobs = results[3].jobs || [];
-      var artifacts = results[4].artifacts || [];
+    Promise.all([api.bundles.get(bundleId), api.bundles.tasks(bundleId), loadUsersOnce(), api.assistantJobs.list({ bundleId: bundleId }), api.artifacts.list({ bundleId: bundleId })])
+      .then(function (results) {
+        var bundle = results[0].bundle;
+        var tasks = results[1].tasks || [];
+        var usersMap = results[2];
+        var assistantJobs = results[3].jobs || [];
+        var artifacts = results[4].artifacts || [];
 
-      // Sort tasks by date ascending
-      tasks.sort(function (a, b) {
-        return (a.date || '').localeCompare(b.date || '');
-      });
-
-      var doneCount = tasks.filter(function (t) { return t.status === 'done'; }).length;
-      var totalCount = tasks.length;
-      var fileTasks = tasks.filter(function (task) { return task.requiresFile; });
-      return Promise.all(fileTasks.map(function (task) {
-        return api.files.list({ taskId: task.id }).then(function (data) {
-          return { taskId: task.id, files: data.files || [] };
-        }).catch(function () {
-          return { taskId: task.id, files: [] };
-        });
-      })).then(function (fileResults) {
-        var filesByTask = {};
-        fileResults.forEach(function (result) {
-          filesByTask[result.taskId] = result.files;
-        });
-        return {
-          bundle: bundle,
-          tasks: tasks,
-          usersMap: usersMap,
-          assistantJobs: assistantJobs,
-          artifacts: artifacts,
-          doneCount: doneCount,
-          totalCount: totalCount,
-          filesByTask: filesByTask,
-        };
-      });
-    }).then(function (detail) {
-      var bundle = detail.bundle;
-      var tasks = detail.tasks;
-      var usersMap = detail.usersMap;
-      var assistantJobs = detail.assistantJobs;
-      var artifacts = detail.artifacts;
-      var doneCount = detail.doneCount;
-      var totalCount = detail.totalCount;
-      var filesByTask = detail.filesByTask;
-
-      container.innerHTML = '';
-
-      // ── Header: emoji + title ──
-      var headerDiv = document.createElement('div');
-      headerDiv.className = 'bundle-detail-header';
-
-      var titleEl = document.createElement('h2');
-      titleEl.textContent = (bundle.emoji ? bundle.emoji + ' ' : '') + (bundle.title || '');
-      headerDiv.appendChild(titleEl);
-      container.appendChild(headerDiv);
-
-      // ── Badges row: anchor date, stage, status, progress ──
-      var badgesDiv = document.createElement('div');
-      badgesDiv.className = 'bundle-detail-badges';
-
-      if (bundle.anchorDate) {
-        var anchorBadge = document.createElement('span');
-        anchorBadge.className = 'badge-anchor-date';
-        anchorBadge.textContent = bundle.anchorDate;
-        badgesDiv.appendChild(anchorBadge);
-      }
-
-      var stage = bundle.stage || 'preparation';
-      var stageBadge = document.createElement('span');
-      stageBadge.className = 'badge-stage ' + stage;
-      stageBadge.textContent = stage === 'after-event' ? 'after-event' : stage;
-      stageBadge.setAttribute('data-testid', 'stage-badge');
-      badgesDiv.appendChild(stageBadge);
-
-      // Stage transition button
-      var transition = stageTransitions[stage];
-      if (transition) {
-        var stageBtn = document.createElement('button');
-        stageBtn.className = 'btn-stage';
-        stageBtn.textContent = transition.label;
-        stageBtn.setAttribute('data-testid', 'stage-transition-btn');
-        stageBtn.addEventListener('click', function () {
-          api.bundles.update(bundleId, { stage: transition.nextStage }).then(function () {
-            loadBundleDetail(bundleId);
-          }).catch(function (err) {
-            showError('Failed to update stage: ' + err.message);
-          });
-        });
-        badgesDiv.appendChild(stageBtn);
-      }
-
-      var statusBadge = document.createElement('span');
-      statusBadge.className = 'badge-status ' + (bundle.status || 'active');
-      statusBadge.textContent = bundle.status || 'active';
-      badgesDiv.appendChild(statusBadge);
-
-      var progressBadgeClass = 'progress-badge' + (totalCount > 0 && doneCount === totalCount ? ' all-done' : '');
-      var progressBadge = document.createElement('span');
-      progressBadge.className = progressBadgeClass;
-      progressBadge.textContent = doneCount + '/' + totalCount + ' done';
-      progressBadge.setAttribute('data-testid', 'progress-badge');
-      badgesDiv.appendChild(progressBadge);
-
-      container.appendChild(badgesDiv);
-
-      // ── Description ──
-      if (bundle.description) {
-        var descDiv = document.createElement('div');
-        descDiv.className = 'bundle-detail-desc';
-        descDiv.innerHTML = renderMarkdownLinks(bundle.description);
-        container.appendChild(descDiv);
-      }
-
-      var contextSection = document.createElement('div');
-      contextSection.className = 'workflow-context-panel';
-      contextSection.setAttribute('data-testid', 'workflow-context');
-      contextSection.innerHTML = renderWorkflowContext(bundle, tasks, filesByTask, assistantJobs);
-      container.appendChild(contextSection);
-
-      // ── References section (read-only) ──
-      var refs = bundle.references || [];
-      if (refs.length > 0) {
-        var refsSection = document.createElement('div');
-        refsSection.className = 'references-section';
-        var refsHeader = document.createElement('h3');
-        refsHeader.textContent = 'References';
-        refsSection.appendChild(refsHeader);
-
-        refs.forEach(function (ref) {
-          var a = document.createElement('a');
-          a.className = 'reference-link';
-          a.href = ref.url || '#';
-          a.target = '_blank';
-          a.rel = 'noopener';
-          a.textContent = ref.name || ref.url;
-          refsSection.appendChild(a);
+        // Sort tasks by date ascending
+        tasks.sort(function (a, b) {
+          return (a.date || '').localeCompare(b.date || '');
         });
 
-        container.appendChild(refsSection);
-      }
-
-      // ── Bundle Links section (editable) ──
-      var bundleLinksSection = document.createElement('div');
-      bundleLinksSection.className = 'bundle-links-editable';
-      var blHeader = document.createElement('h3');
-      blHeader.textContent = 'Bundle Links';
-      bundleLinksSection.appendChild(blHeader);
-
-      var currentBundleLinks = bundle.bundleLinks || [];
-
-      currentBundleLinks.forEach(function (bl, idx) {
-        var row = document.createElement('div');
-        var isEmpty = isBundleLinkMissing(bl, tasks);
-        row.className = 'bundle-link-row' + (isEmpty ? ' bundle-link-row--empty' : '');
-
-        var label = document.createElement('span');
-        label.className = 'bundle-link-label';
-        label.textContent = bl.name;
-        row.appendChild(label);
-
-        var urlInput = document.createElement('input');
-        urlInput.type = 'text';
-        urlInput.className = 'bundle-link-url-input';
-        urlInput.placeholder = 'https://...';
-        urlInput.value = bl.url || '';
-        urlInput.setAttribute('data-link-index', idx);
-        row.appendChild(urlInput);
-
-        var saveBtn = document.createElement('button');
-        saveBtn.className = 'btn-save-link';
-        saveBtn.textContent = 'Save';
-        saveBtn.setAttribute('data-link-save-index', idx);
-        saveBtn.addEventListener('click', function () {
-          var newUrl = urlInput.value.trim();
-          var updatedLinks = currentBundleLinks.map(function (link, i) {
-            if (i === idx) {
-              return { name: link.name, url: newUrl };
-            }
-            return { name: link.name, url: link.url };
-          });
-          api.bundles.update(bundleId, { bundleLinks: updatedLinks }).then(function () {
-            loadBundleDetail(bundleId);
-          }).catch(function (err) {
-            showError('Failed to save link: ' + err.message);
-          });
+        var doneCount = tasks.filter(function (t) {
+          return t.status === 'done';
+        }).length;
+        var totalCount = tasks.length;
+        var fileTasks = tasks.filter(function (task) {
+          return task.requiresFile;
         });
-        row.appendChild(saveBtn);
-
-        bundleLinksSection.appendChild(row);
-      });
-
-      // Add link form
-      var addLinkForm = document.createElement('div');
-      addLinkForm.className = 'add-link-form';
-      addLinkForm.innerHTML =
-        '<input type="text" id="add-bl-name" placeholder="Link name" style="width:130px;" />' +
-        '<input type="text" id="add-bl-url" placeholder="https://..." style="width:250px;" />' +
-        '<button class="btn-primary" id="add-bl-btn" style="padding:5px 12px;font-size:12px;">Add</button>';
-      bundleLinksSection.appendChild(addLinkForm);
-      container.appendChild(bundleLinksSection);
-
-      var assistantContainer = document.createElement('div');
-      assistantContainer.id = 'bundle-assistant-jobs';
-      container.appendChild(assistantContainer);
-      var bundleContextMap = {};
-      var taskContextMap = {};
-      bundleContextMap[bundle.id] = bundle;
-      tasks.forEach(function (task) { taskContextMap[task.id] = task; });
-      renderAssistantJobsList(assistantContainer, assistantJobs, {
-        title: 'Assistant support for this workflow',
-        bundleMap: bundleContextMap,
-        taskMap: taskContextMap,
-        onDone: function () { loadBundleDetail(bundleId); },
-        onOpenDetail: function (jobId) {
-          renderAssistantJobDetail(assistantContainer, jobId, {
-            bundleMap: bundleContextMap,
-            taskMap: taskContextMap,
-            onDone: function () { loadBundleDetail(bundleId); },
+        return Promise.all(
+          fileTasks.map(function (task) {
+            return api.files
+              .list({ taskId: task.id })
+              .then(function (data) {
+                return { taskId: task.id, files: data.files || [] };
+              })
+              .catch(function () {
+                return { taskId: task.id, files: [] };
+              });
+          })
+        ).then(function (fileResults) {
+          var filesByTask = {};
+          fileResults.forEach(function (result) {
+            filesByTask[result.taskId] = result.files;
           });
-        },
-      });
-      if (supportsPodcastAssistant(null, bundle) || tasks.some(function (task) { return supportsPodcastAssistant(task, bundle); })) {
-        var askWorkflowBtn = document.createElement('button');
-        askWorkflowBtn.className = 'btn-primary assistant-workflow-request';
-        askWorkflowBtn.type = 'button';
-        askWorkflowBtn.textContent = 'Ask DataOps Assistant for workflow';
-        askWorkflowBtn.addEventListener('click', function () {
-          showPodcastAssistantRequest({
-            bundleId: bundle.id,
-            bundleTitle: bundle.title,
-            anchorDate: bundle.anchorDate,
-            title: bundle.title || 'DataOps Assistant podcast workflow support',
-          }, function () {
-            loadBundleDetail(bundleId);
-          });
+          return {
+            bundle: bundle,
+            tasks: tasks,
+            usersMap: usersMap,
+            assistantJobs: assistantJobs,
+            artifacts: artifacts,
+            doneCount: doneCount,
+            totalCount: totalCount,
+            filesByTask: filesByTask
+          };
         });
-        var renderedAssistantPanel = assistantContainer.querySelector('.assistant-panel');
-        if (renderedAssistantPanel) renderedAssistantPanel.insertBefore(askWorkflowBtn, renderedAssistantPanel.children[1] || null);
-      }
+      })
+      .then(function (detail) {
+        var bundle = detail.bundle;
+        var tasks = detail.tasks;
+        var usersMap = detail.usersMap;
+        var assistantJobs = detail.assistantJobs;
+        var artifacts = detail.artifacts;
+        var doneCount = detail.doneCount;
+        var totalCount = detail.totalCount;
+        var filesByTask = detail.filesByTask;
 
-      var artifactsContainer = document.createElement('div');
-      artifactsContainer.innerHTML = renderArtifactPanel(artifacts);
-      container.appendChild(artifactsContainer);
+        container.innerHTML = '';
 
-      // Add link handler
-      setTimeout(function () {
-        var addBtn = document.getElementById('add-bl-btn');
-        if (addBtn) {
-          addBtn.addEventListener('click', function () {
-            var name = document.getElementById('add-bl-name').value.trim();
-            var url = document.getElementById('add-bl-url').value.trim();
-            if (!name) {
-              showError('Link name is required.');
-              return;
-            }
-            var updatedLinks = currentBundleLinks.map(function (l) {
-              return { name: l.name, url: l.url };
-            });
-            updatedLinks.push({ name: name, url: url || '' });
-            api.bundles.update(bundleId, { bundleLinks: updatedLinks }).then(function () {
-              loadBundleDetail(bundleId);
-            }).catch(function (err) {
-              showError('Failed to add link: ' + err.message);
-            });
-          });
+        // ── Header: emoji + title ──
+        var headerDiv = document.createElement('div');
+        headerDiv.className = 'bundle-detail-header';
+
+        var titleEl = document.createElement('h2');
+        titleEl.textContent = (bundle.emoji ? bundle.emoji + ' ' : '') + (bundle.title || '');
+        headerDiv.appendChild(titleEl);
+        container.appendChild(headerDiv);
+
+        // ── Badges row: anchor date, stage, status, progress ──
+        var badgesDiv = document.createElement('div');
+        badgesDiv.className = 'bundle-detail-badges';
+
+        if (bundle.anchorDate) {
+          var anchorBadge = document.createElement('span');
+          anchorBadge.className = 'badge-anchor-date';
+          anchorBadge.textContent = bundle.anchorDate;
+          badgesDiv.appendChild(anchorBadge);
         }
-      }, 0);
 
-      // ── Tasks table ──
-      var tasksHeader = document.createElement('h3');
-      tasksHeader.textContent = 'Tasks';
-      tasksHeader.style.marginBottom = '12px';
-      container.appendChild(tasksHeader);
+        var stage = bundle.stage || 'preparation';
+        var stageBadge = document.createElement('span');
+        stageBadge.className = 'badge-stage ' + stage;
+        stageBadge.textContent = stage === 'after-event' ? 'after-event' : stage;
+        stageBadge.setAttribute('data-testid', 'stage-badge');
+        badgesDiv.appendChild(stageBadge);
 
-      var tasksContainer = document.createElement('div');
-      tasksContainer.id = 'bundle-tasks-table';
-      container.appendChild(tasksContainer);
+        // Stage transition button
+        var transition = stageTransitions[stage];
+        if (transition) {
+          var stageBtn = document.createElement('button');
+          stageBtn.className = 'btn-stage';
+          stageBtn.textContent = transition.label;
+          stageBtn.setAttribute('data-testid', 'stage-transition-btn');
+          stageBtn.addEventListener('click', function () {
+            api.bundles
+              .update(bundleId, { stage: transition.nextStage })
+              .then(function () {
+                loadBundleDetail(bundleId);
+              })
+              .catch(function (err) {
+                showError('Failed to update stage: ' + err.message);
+              });
+          });
+          badgesDiv.appendChild(stageBtn);
+        }
 
-      renderBundleTasksTable(bundleId, tasks, usersMap, bundle, filesByTask);
-      focusTaskRow(tasksContainer, targetTaskId);
-    }).catch(function (err) {
-      container.innerHTML = '';
-      showError('Failed to load bundle: ' + err.message);
-    });
+        var statusBadge = document.createElement('span');
+        statusBadge.className = 'badge-status ' + (bundle.status || 'active');
+        statusBadge.textContent = bundle.status || 'active';
+        badgesDiv.appendChild(statusBadge);
+
+        var progressBadgeClass = 'progress-badge' + (totalCount > 0 && doneCount === totalCount ? ' all-done' : '');
+        var progressBadge = document.createElement('span');
+        progressBadge.className = progressBadgeClass;
+        progressBadge.textContent = doneCount + '/' + totalCount + ' done';
+        progressBadge.setAttribute('data-testid', 'progress-badge');
+        badgesDiv.appendChild(progressBadge);
+
+        container.appendChild(badgesDiv);
+
+        // ── Description ──
+        if (bundle.description) {
+          var descDiv = document.createElement('div');
+          descDiv.className = 'bundle-detail-desc';
+          descDiv.innerHTML = renderMarkdownLinks(bundle.description);
+          container.appendChild(descDiv);
+        }
+
+        var contextSection = document.createElement('div');
+        contextSection.className = 'workflow-context-panel';
+        contextSection.setAttribute('data-testid', 'workflow-context');
+        contextSection.innerHTML = renderWorkflowContext(bundle, tasks, filesByTask, assistantJobs);
+        container.appendChild(contextSection);
+
+        // ── References section (read-only) ──
+        var refs = bundle.references || [];
+        if (refs.length > 0) {
+          var refsSection = document.createElement('div');
+          refsSection.className = 'references-section';
+          var refsHeader = document.createElement('h3');
+          refsHeader.textContent = 'References';
+          refsSection.appendChild(refsHeader);
+
+          refs.forEach(function (ref) {
+            var a = document.createElement('a');
+            a.className = 'reference-link';
+            a.href = ref.url || '#';
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.textContent = ref.name || ref.url;
+            refsSection.appendChild(a);
+          });
+
+          container.appendChild(refsSection);
+        }
+
+        // ── Bundle Links section (editable) ──
+        var bundleLinksSection = document.createElement('div');
+        bundleLinksSection.className = 'bundle-links-editable';
+        var blHeader = document.createElement('h3');
+        blHeader.textContent = 'Bundle Links';
+        bundleLinksSection.appendChild(blHeader);
+
+        var currentBundleLinks = bundle.bundleLinks || [];
+
+        currentBundleLinks.forEach(function (bl, idx) {
+          var row = document.createElement('div');
+          var isEmpty = isBundleLinkMissing(bl, tasks);
+          row.className = 'bundle-link-row' + (isEmpty ? ' bundle-link-row--empty' : '');
+
+          var label = document.createElement('span');
+          label.className = 'bundle-link-label';
+          label.textContent = bl.name;
+          row.appendChild(label);
+
+          var urlInput = document.createElement('input');
+          urlInput.type = 'text';
+          urlInput.className = 'bundle-link-url-input';
+          urlInput.placeholder = 'https://...';
+          urlInput.value = bl.url || '';
+          urlInput.setAttribute('data-link-index', idx);
+          row.appendChild(urlInput);
+
+          var saveBtn = document.createElement('button');
+          saveBtn.className = 'btn-save-link';
+          saveBtn.textContent = 'Save';
+          saveBtn.setAttribute('data-link-save-index', idx);
+          saveBtn.addEventListener('click', function () {
+            var newUrl = urlInput.value.trim();
+            var updatedLinks = currentBundleLinks.map(function (link, i) {
+              if (i === idx) {
+                return { name: link.name, url: newUrl };
+              }
+              return { name: link.name, url: link.url };
+            });
+            api.bundles
+              .update(bundleId, { bundleLinks: updatedLinks })
+              .then(function () {
+                loadBundleDetail(bundleId);
+              })
+              .catch(function (err) {
+                showError('Failed to save link: ' + err.message);
+              });
+          });
+          row.appendChild(saveBtn);
+
+          bundleLinksSection.appendChild(row);
+        });
+
+        // Add link form
+        var addLinkForm = document.createElement('div');
+        addLinkForm.className = 'add-link-form';
+        addLinkForm.innerHTML = '<input type="text" id="add-bl-name" placeholder="Link name" style="width:130px;" />' + '<input type="text" id="add-bl-url" placeholder="https://..." style="width:250px;" />' + '<button class="btn-primary" id="add-bl-btn" style="padding:5px 12px;font-size:12px;">Add</button>';
+        bundleLinksSection.appendChild(addLinkForm);
+        container.appendChild(bundleLinksSection);
+
+        var assistantContainer = document.createElement('div');
+        assistantContainer.id = 'bundle-assistant-jobs';
+        container.appendChild(assistantContainer);
+        var bundleContextMap = {};
+        var taskContextMap = {};
+        bundleContextMap[bundle.id] = bundle;
+        tasks.forEach(function (task) {
+          taskContextMap[task.id] = task;
+        });
+        renderAssistantJobsList(assistantContainer, assistantJobs, {
+          title: 'Assistant support for this workflow',
+          bundleMap: bundleContextMap,
+          taskMap: taskContextMap,
+          onDone: function () {
+            loadBundleDetail(bundleId);
+          },
+          onOpenDetail: function (jobId) {
+            renderAssistantJobDetail(assistantContainer, jobId, {
+              bundleMap: bundleContextMap,
+              taskMap: taskContextMap,
+              onDone: function () {
+                loadBundleDetail(bundleId);
+              }
+            });
+          }
+        });
+        if (
+          supportsPodcastAssistant(null, bundle) ||
+          tasks.some(function (task) {
+            return supportsPodcastAssistant(task, bundle);
+          })
+        ) {
+          var askWorkflowBtn = document.createElement('button');
+          askWorkflowBtn.className = 'btn-primary assistant-workflow-request';
+          askWorkflowBtn.type = 'button';
+          askWorkflowBtn.textContent = 'Ask DataOps Assistant for workflow';
+          askWorkflowBtn.addEventListener('click', function () {
+            showPodcastAssistantRequest(
+              {
+                bundleId: bundle.id,
+                bundleTitle: bundle.title,
+                anchorDate: bundle.anchorDate,
+                title: bundle.title || 'DataOps Assistant podcast workflow support'
+              },
+              function () {
+                loadBundleDetail(bundleId);
+              }
+            );
+          });
+          var renderedAssistantPanel = assistantContainer.querySelector('.assistant-panel');
+          if (renderedAssistantPanel) renderedAssistantPanel.insertBefore(askWorkflowBtn, renderedAssistantPanel.children[1] || null);
+        }
+
+        var artifactsContainer = document.createElement('div');
+        artifactsContainer.innerHTML = renderArtifactPanel(artifacts);
+        container.appendChild(artifactsContainer);
+
+        // Add link handler
+        setTimeout(function () {
+          var addBtn = document.getElementById('add-bl-btn');
+          if (addBtn) {
+            addBtn.addEventListener('click', function () {
+              var name = document.getElementById('add-bl-name').value.trim();
+              var url = document.getElementById('add-bl-url').value.trim();
+              if (!name) {
+                showError('Link name is required.');
+                return;
+              }
+              var updatedLinks = currentBundleLinks.map(function (l) {
+                return { name: l.name, url: l.url };
+              });
+              updatedLinks.push({ name: name, url: url || '' });
+              api.bundles
+                .update(bundleId, { bundleLinks: updatedLinks })
+                .then(function () {
+                  loadBundleDetail(bundleId);
+                })
+                .catch(function (err) {
+                  showError('Failed to add link: ' + err.message);
+                });
+            });
+          }
+        }, 0);
+
+        // ── Tasks table ──
+        var tasksHeader = document.createElement('h3');
+        tasksHeader.textContent = 'Tasks';
+        tasksHeader.style.marginBottom = '12px';
+        container.appendChild(tasksHeader);
+
+        var tasksContainer = document.createElement('div');
+        tasksContainer.id = 'bundle-tasks-table';
+        container.appendChild(tasksContainer);
+
+        renderBundleTasksTable(bundleId, tasks, usersMap, bundle, filesByTask);
+        focusTaskRow(tasksContainer, targetTaskId);
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        showError('Failed to load bundle: ' + err.message);
+      });
   }
 
   function renderWorkflowContext(bundle, tasks, filesByTask, assistantJobs) {
     var today = todayString();
-    var active = tasks.filter(function (task) { return task.status !== 'done'; });
-    var overdue = active.filter(function (task) { return task.date && task.date < today; });
-    var waiting = active.filter(function (task) { return task.status === 'waiting'; });
+    var active = tasks.filter(function (task) {
+      return task.status !== 'done';
+    });
+    var overdue = active.filter(function (task) {
+      return task.date && task.date < today;
+    });
+    var waiting = active.filter(function (task) {
+      return task.status === 'waiting';
+    });
     var followUps = waiting.filter(isDueFollowUpTask);
-    var missingLinks = (bundle.bundleLinks || []).filter(function (link) { return isBundleLinkMissing(link, tasks); });
+    var missingLinks = (bundle.bundleLinks || []).filter(function (link) {
+      return isBundleLinkMissing(link, tasks);
+    });
     var missingFiles = active.filter(function (task) {
       return task.requiresFile && (!filesByTask[task.id] || filesByTask[task.id].length === 0);
     });
     var jobs = assistantJobs || [];
-    var assistantApproval = jobs.filter(function (job) { return job.status === 'waiting_approval'; });
-    var assistantFailed = jobs.filter(function (job) { return job.status === 'failed'; });
-    var nextTasks = active.slice().sort(function (a, b) {
-      return (a.date || '').localeCompare(b.date || '');
-    }).slice(0, 3);
-    return '<div class="workflow-context-grid">' +
-      '<div class="workflow-context-metric"><span>Next due</span><strong>' + escapeHtml(nextTasks.map(function (task) { return task.date + ' · ' + task.description; }).join(' | ') || 'None') + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Overdue</span><strong>' + overdue.length + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Waiting</span><strong>' + waiting.length + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Follow-ups due</span><strong>' + followUps.length + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Missing links</span><strong>' + missingLinks.length + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Missing files</span><strong>' + missingFiles.length + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Assistant approvals</span><strong>' + assistantApproval.length + '</strong></div>' +
-      '<div class="workflow-context-metric"><span>Assistant failed</span><strong>' + assistantFailed.length + '</strong></div>' +
-    '</div>';
+    var assistantApproval = jobs.filter(function (job) {
+      return job.status === 'waiting_approval';
+    });
+    var assistantFailed = jobs.filter(function (job) {
+      return job.status === 'failed';
+    });
+    var nextTasks = active
+      .slice()
+      .sort(function (a, b) {
+        return (a.date || '').localeCompare(b.date || '');
+      })
+      .slice(0, 3);
+    return (
+      '<div class="workflow-context-grid">' +
+      '<div class="workflow-context-metric"><span>Next due</span><strong>' +
+      escapeHtml(
+        nextTasks
+          .map(function (task) {
+            return task.date + ' · ' + task.description;
+          })
+          .join(' | ') || 'None'
+      ) +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Overdue</span><strong>' +
+      overdue.length +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Waiting</span><strong>' +
+      waiting.length +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Follow-ups due</span><strong>' +
+      followUps.length +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Missing links</span><strong>' +
+      missingLinks.length +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Missing files</span><strong>' +
+      missingFiles.length +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Assistant approvals</span><strong>' +
+      assistantApproval.length +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Assistant failed</span><strong>' +
+      assistantFailed.length +
+      '</strong></div>' +
+      '</div>'
+    );
   }
 
   function renderBundleTasksTable(bundleId, tasks, usersMap, bundle, filesByTask) {
@@ -4235,8 +4695,12 @@
     container.className = 'bundle-tasks-table task-checklist';
 
     // Split tasks: active (not done) sorted by date, done at the bottom
-    var activeTasks = tasks.filter(function (t) { return t.status !== 'done'; });
-    var doneTasks = tasks.filter(function (t) { return t.status === 'done'; });
+    var activeTasks = tasks.filter(function (t) {
+      return t.status !== 'done';
+    });
+    var doneTasks = tasks.filter(function (t) {
+      return t.status === 'done';
+    });
 
     function buildTaskRow(t) {
       var isDone = t.status === 'done';
@@ -4274,12 +4738,15 @@
       checkbox.setAttribute('data-task-checkbox', t.id);
       checkbox.addEventListener('change', function () {
         var newStatus = checkbox.checked ? 'done' : 'todo';
-        api.tasks.update(t.id, { status: newStatus }).then(function () {
-          loadBundleDetail(bundleId);
-        }).catch(function (err) {
-          showError('Failed to update task: ' + err.message);
-          checkbox.checked = !checkbox.checked;
-        });
+        api.tasks
+          .update(t.id, { status: newStatus })
+          .then(function () {
+            loadBundleDetail(bundleId);
+          })
+          .catch(function (err) {
+            showError('Failed to update task: ' + err.message);
+            checkbox.checked = !checkbox.checked;
+          });
       });
       checkboxTarget.appendChild(checkbox);
       checkboxCol.appendChild(checkboxTarget);
@@ -4415,30 +4882,39 @@
         saveReqBtn.style.fontSize = '11px';
         saveReqBtn.style.padding = '2px 8px';
         saveReqBtn.setAttribute('data-save-required-link', t.id);
-        saveReqBtn.addEventListener('click', (function (task) {
-          return function () {
-            var input = container.querySelector('[data-required-link-task="' + task.id + '"]');
-            var newUrl = input ? input.value.trim() : '';
+        saveReqBtn.addEventListener(
+          'click',
+          (function (task) {
+            return function () {
+              var input = container.querySelector('[data-required-link-task="' + task.id + '"]');
+              var newUrl = input ? input.value.trim() : '';
 
-            // Update task link
-            var taskUpdatePromise = api.tasks.update(task.id, { link: newUrl });
+              // Update task link
+              var taskUpdatePromise = api.tasks.update(task.id, {
+                link: newUrl
+              });
 
-            // Also update the bundle's bundleLinks entry
-            var currentLinks = (bundle.bundleLinks || []).map(function (bl) {
-              if (bl.name === task.requiredLinkName) {
-                return { name: bl.name, url: newUrl };
-              }
-              return { name: bl.name, url: bl.url };
-            });
-            var bundleUpdatePromise = api.bundles.update(bundleId, { bundleLinks: currentLinks });
+              // Also update the bundle's bundleLinks entry
+              var currentLinks = (bundle.bundleLinks || []).map(function (bl) {
+                if (bl.name === task.requiredLinkName) {
+                  return { name: bl.name, url: newUrl };
+                }
+                return { name: bl.name, url: bl.url };
+              });
+              var bundleUpdatePromise = api.bundles.update(bundleId, {
+                bundleLinks: currentLinks
+              });
 
-            Promise.all([taskUpdatePromise, bundleUpdatePromise]).then(function () {
-              loadBundleDetail(bundleId);
-            }).catch(function (err) {
-              showError('Failed to save link: ' + err.message);
-            });
-          };
-        })(t));
+              Promise.all([taskUpdatePromise, bundleUpdatePromise])
+                .then(function () {
+                  loadBundleDetail(bundleId);
+                })
+                .catch(function (err) {
+                  showError('Failed to save link: ' + err.message);
+                });
+            };
+          })(t)
+        );
         wrapper.appendChild(saveReqBtn);
 
         details.appendChild(wrapper);
@@ -4450,11 +4926,7 @@
         fileWrapper.setAttribute('data-required-file-wrapper', t.id);
         var fileProof = taskProofRequirement(t);
         var fileLabel = fileProof && fileProof.label ? fileProof.label : 'File evidence';
-        fileWrapper.innerHTML =
-          '<span class="required-link-label">' + escapeHtml(fileLabel) + ':</span>' +
-          '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' +
-          '<button class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' +
-          (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>');
+        fileWrapper.innerHTML = '<span class="required-link-label">' + escapeHtml(fileLabel) + ':</span>' + '<input type="file" class="required-file-input" data-required-file-task="' + escapeHtml(t.id) + '" />' + '<button class="btn-save-link" data-upload-required-file="' + escapeHtml(t.id) + '">Attach</button>' + (taskFiles.length ? '<span class="proof-present">' + taskFiles.length + ' file' + (taskFiles.length !== 1 ? 's' : '') + ' attached</span>' : '<span class="proof-missing">Missing file</span>');
         details.appendChild(fileWrapper);
       }
 
@@ -4477,7 +4949,7 @@
           proofInput.id = 'completion-proof-' + t.id;
           proofInput.className = 'completion-proof-input';
           proofInput.placeholder = proof.type === 'comment' ? 'What changed or why this is complete' : 'Status from the external system or sponsor email';
-          proofInput.value = proof.type === 'comment' ? (t.comment || '') : (t.externalStatus || '');
+          proofInput.value = proof.type === 'comment' ? t.comment || '' : t.externalStatus || '';
           proofInput.setAttribute('data-completion-proof-task', t.id);
           proofInput.setAttribute('data-completion-proof-type', proof.type);
           proofWrapper.appendChild(proofInput);
@@ -4532,19 +5004,12 @@
       if (t.status === 'waiting') {
         var waitingRow = document.createElement('div');
         waitingRow.className = 'waiting-task-row';
-        waitingRow.innerHTML =
-          '<span class="badge-waiting">Waiting: ' + escapeHtml(t.waitingFor || 'external reply') + (t.followUpAt ? ' · follow up ' + escapeHtml(formatDateLabel(t.followUpAt)) : '') + '</span>' +
-          renderDashboardTaskActions(t);
+        waitingRow.innerHTML = '<span class="badge-waiting">Waiting: ' + escapeHtml(t.waitingFor || 'external reply') + (t.followUpAt ? ' · follow up ' + escapeHtml(formatDateLabel(t.followUpAt)) : '') + '</span>' + renderDashboardTaskActions(t);
         details.appendChild(waitingRow);
       } else if (!isDone) {
         var waitForm = document.createElement('div');
         waitForm.className = 'waiting-form';
-        waitForm.innerHTML =
-          '<input type="text" class="waiting-for-input" data-waiting-for-task="' + escapeHtml(t.id) + '" placeholder="Waiting for" />' +
-          '<select class="waiting-channel-input" data-waiting-channel-task="' + escapeHtml(t.id) + '">' + renderChannelOptions('email') + '</select>' +
-          '<input type="date" class="waiting-followup-input" data-waiting-followup-task="' + escapeHtml(t.id) + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" />' +
-          '<input type="text" class="waiting-note-input" data-waiting-note-task="' + escapeHtml(t.id) + '" placeholder="Note" />' +
-          '<button type="button" class="task-action-btn" data-mark-waiting-task="' + escapeHtml(t.id) + '">Mark waiting</button>';
+        waitForm.innerHTML = '<input type="text" class="waiting-for-input" data-waiting-for-task="' + escapeHtml(t.id) + '" placeholder="Waiting for" />' + '<select class="waiting-channel-input" data-waiting-channel-task="' + escapeHtml(t.id) + '">' + renderChannelOptions('email') + '</select>' + '<input type="date" class="waiting-followup-input" data-waiting-followup-task="' + escapeHtml(t.id) + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" />' + '<input type="text" class="waiting-note-input" data-waiting-note-task="' + escapeHtml(t.id) + '" placeholder="Note" />' + '<button type="button" class="task-action-btn" data-mark-waiting-task="' + escapeHtml(t.id) + '">Mark waiting</button>';
         details.appendChild(waitForm);
       }
 
@@ -4561,17 +5026,20 @@
         requestAssistantBtn.type = 'button';
         requestAssistantBtn.textContent = 'Ask DataOps Assistant for task';
         requestAssistantBtn.addEventListener('click', function () {
-          showPodcastAssistantRequest({
-            taskId: t.id,
-            bundleId: bundleId,
-            bundleTitle: bundle.title,
-            taskTitle: t.description,
-            anchorDate: bundle.anchorDate,
-            instructionDocId: t.instructionDocId,
-            title: t.description || bundle.title || 'DataOps Assistant podcast help',
-          }, function () {
-            loadBundleDetail(bundleId);
-          });
+          showPodcastAssistantRequest(
+            {
+              taskId: t.id,
+              bundleId: bundleId,
+              bundleTitle: bundle.title,
+              taskTitle: t.description,
+              anchorDate: bundle.anchorDate,
+              instructionDocId: t.instructionDocId,
+              title: t.description || bundle.title || 'DataOps Assistant podcast help'
+            },
+            function () {
+              loadBundleDetail(bundleId);
+            }
+          );
         });
         assistantRow.appendChild(requestAssistantBtn);
       }
@@ -4613,13 +5081,16 @@
         formData.append('category', 'document');
         formData.append('file', input.files[0]);
         setButtonBusy(btn, true, 'Attach', 'Attaching...');
-        api.files.upload(formData).then(function () {
-          showSuccess('File attached.');
-          loadBundleDetail(bundleId);
-        }).catch(function (err) {
-          showError('Failed to attach file: ' + err.message);
-          setButtonBusy(btn, false, 'Attach');
-        });
+        api.files
+          .upload(formData)
+          .then(function () {
+            showSuccess('File attached.');
+            loadBundleDetail(bundleId);
+          })
+          .catch(function (err) {
+            showError('Failed to attach file: ' + err.message);
+            setButtonBusy(btn, false, 'Attach');
+          });
       });
     });
 
@@ -4633,7 +5104,10 @@
         var skipSelect = wrapper.querySelector('[data-skip-closure-task="' + taskId + '"]');
         var selectedSkipStatus = skipSelect ? skipSelect.value.trim() : '';
         if (selectedSkipStatus) {
-          var task = tasks.find(function (item) { return item.id === taskId; }) || {};
+          var task =
+            tasks.find(function (item) {
+              return item.id === taskId;
+            }) || {};
           updateData.comment = appendTaskEventComment(task.comment || '', selectedSkipStatus);
         } else {
           var proofInput = wrapper.querySelector('[data-completion-proof-task="' + taskId + '"]');
@@ -4655,13 +5129,16 @@
         }
 
         setButtonBusy(btn, true, 'Save evidence', 'Saving...');
-        api.tasks.update(taskId, updateData).then(function () {
-          showSuccess('Evidence saved.');
-          loadBundleDetail(bundleId);
-        }).catch(function (err) {
-          showError('Failed to save evidence: ' + err.message);
-          setButtonBusy(btn, false, 'Save evidence');
-        });
+        api.tasks
+          .update(taskId, updateData)
+          .then(function () {
+            showSuccess('Evidence saved.');
+            loadBundleDetail(bundleId);
+          })
+          .catch(function (err) {
+            showError('Failed to save evidence: ' + err.message);
+            setButtonBusy(btn, false, 'Save evidence');
+          });
       });
     });
 
@@ -4680,19 +5157,22 @@
           return;
         }
         setButtonBusy(btn, true, 'Mark waiting', 'Saving...');
-        api.tasks.markWaiting(taskId, {
-          waitingFor: waitingFor,
-          channel: channel,
-          followUpAt: followUpAt,
-          note: note
-        }).then(function () {
-          showSuccess('Task marked waiting.');
-          refreshBellBadge();
-          loadBundleDetail(bundleId);
-        }).catch(function (err) {
-          showError('Failed to mark waiting: ' + err.message);
-          setButtonBusy(btn, false, 'Mark waiting');
-        });
+        api.tasks
+          .markWaiting(taskId, {
+            waitingFor: waitingFor,
+            channel: channel,
+            followUpAt: followUpAt,
+            note: note
+          })
+          .then(function () {
+            showSuccess('Task marked waiting.');
+            refreshBellBadge();
+            loadBundleDetail(bundleId);
+          })
+          .catch(function (err) {
+            showError('Failed to mark waiting: ' + err.message);
+            setButtonBusy(btn, false, 'Mark waiting');
+          });
       });
     });
 
@@ -4701,11 +5181,17 @@
         var action = btn.getAttribute('data-follow-up-action');
         var taskId = btn.getAttribute('data-task-id');
         if (action === 'response-received') {
-          recordResponseReceived(taskId, btn, container, function () { loadBundleDetail(bundleId); });
+          recordResponseReceived(taskId, btn, container, function () {
+            loadBundleDetail(bundleId);
+          });
         } else if (action === 'follow-up-sent') {
-          recordFollowUpSent(taskId, btn, container, function () { loadBundleDetail(bundleId); });
+          recordFollowUpSent(taskId, btn, container, function () {
+            loadBundleDetail(bundleId);
+          });
         } else if (action === 'resolve-done') {
-          resolveWaitingDone(taskId, btn, container, function () { loadBundleDetail(bundleId); });
+          resolveWaitingDone(taskId, btn, container, function () {
+            loadBundleDetail(bundleId);
+          });
         }
       });
     });
@@ -4714,17 +5200,20 @@
   function recordResponseReceivedFromWorkflow(taskId, btn, bundleId) {
     if (!taskId) return;
     setButtonBusy(btn, true, 'Response received', 'Saving...');
-    api.tasks.update(taskId, {
-      status: 'todo',
-      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Response received')
-    }).then(function () {
-      showSuccess('Task moved back to todo.');
-      refreshBellBadge();
-      loadBundleDetail(bundleId);
-    }).catch(function (err) {
-      showError('Failed to update task: ' + err.message);
-      setButtonBusy(btn, false, 'Response received');
-    });
+    api.tasks
+      .update(taskId, {
+        status: 'todo',
+        comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Response received')
+      })
+      .then(function () {
+        showSuccess('Task moved back to todo.');
+        refreshBellBadge();
+        loadBundleDetail(bundleId);
+      })
+      .catch(function (err) {
+        showError('Failed to update task: ' + err.message);
+        setButtonBusy(btn, false, 'Response received');
+      });
   }
 
   function recordFollowUpSentFromWorkflow(taskId, btn, container, bundleId) {
@@ -4736,18 +5225,21 @@
       return;
     }
     setButtonBusy(btn, true, 'Follow-up sent', 'Saving...');
-    api.tasks.update(taskId, {
-      status: 'waiting',
-      followUpAt: nextDate,
-      comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Follow-up sent; next follow-up ' + nextDate)
-    }).then(function () {
-      showSuccess('Follow-up recorded.');
-      refreshBellBadge();
-      loadBundleDetail(bundleId);
-    }).catch(function (err) {
-      showError('Failed to record follow-up: ' + err.message);
-      setButtonBusy(btn, false, 'Follow-up sent');
-    });
+    api.tasks
+      .update(taskId, {
+        status: 'waiting',
+        followUpAt: nextDate,
+        comment: appendTaskEventComment(btn.getAttribute('data-existing-note') || '', 'Follow-up sent; next follow-up ' + nextDate)
+      })
+      .then(function () {
+        showSuccess('Follow-up recorded.');
+        refreshBellBadge();
+        loadBundleDetail(bundleId);
+      })
+      .catch(function (err) {
+        showError('Failed to record follow-up: ' + err.message);
+        setButtonBusy(btn, false, 'Follow-up sent');
+      });
   }
 
   function assistantLinkedContextHtml(job, options) {
@@ -4767,7 +5259,9 @@
 
   function assistantOutputSummary(job, artifacts) {
     var count = Array.isArray(job && job.outputArtifactIds) ? job.outputArtifactIds.length : 0;
-    var approved = (artifacts || []).filter(function (artifact) { return artifact.status === 'approved'; }).length;
+    var approved = (artifacts || []).filter(function (artifact) {
+      return artifact.status === 'approved';
+    }).length;
     if (approved) return approved + ' approved proof artifact' + (approved !== 1 ? 's' : '');
     if (count) return count + ' output artifact' + (count !== 1 ? 's' : '') + ' pending review';
     return job && assistantIsTerminal(job) ? 'No output artifact attached' : 'Output pending';
@@ -4786,62 +5280,94 @@
 
   function renderAssistantJobDetail(container, jobId, options) {
     container.innerHTML = '<div class="assistant-panel"><h3>Assistant job detail</h3><p>Loading...</p></div>';
-    api.assistantJobs.get(jobId).then(function (data) {
-      var job = data.job;
-      var artifacts = data.artifacts || [];
-      var events = data.events || [];
-      var visibleEvents = events.slice(-12);
-      var eventsHtml = visibleEvents.length ? visibleEvents.map(function (event) {
-        return '<div class="assistant-event-row">' +
-          '<span>' + escapeHtml(event.createdAt || '') + '</span>' +
-          '<strong>' + escapeHtml(assistantStatusLabel(event.action || 'event')) + '</strong>' +
-          '<em>' + escapeHtml(event.summary || '') + '</em>' +
-        '</div>';
-      }).join('') : '<div class="empty-state">No run events have been recorded yet.</div>';
-      var inputRefsHtml = Array.isArray(job.inputRefs) && job.inputRefs.length ? job.inputRefs.map(function (ref) {
-        return '<span class="assistant-ref-pill">' + escapeHtml(ref.title || ref.uri || ref.id || ref.type || 'input') + '</span>';
-      }).join('') : '<span class="assistant-job-next">No input references recorded.</span>';
-      var artifactsHtml = artifacts.length ? artifacts.map(function (artifact) {
-        return '<div class="artifact-row" data-artifact-row="' + escapeHtml(artifact.id) + '">' +
-          '<div><div class="artifact-title">' + escapeHtml(artifact.title || artifact.type || 'Artifact') + '</div>' +
-          '<div class="artifact-meta">' + escapeHtml(artifact.type || 'artifact') + ' | ' + escapeHtml(artifact.status || 'draft') + ' | ' + escapeHtml(artifact.storageProvider || 'unknown') + '</div></div>' +
-          '<a class="card-action-link" href="' + escapeHtml(artifact.storageUri || '#') + '" target="_blank" rel="noopener">Open artifact</a>' +
-        '</div>';
-      }).join('') : '<div class="empty-state">No output artifacts are attached yet.</div>';
-      var approvalHtml = job.approval ? '<div class="assistant-detail-section"><h4>Review history</h4><p>' +
-        escapeHtml(job.approval.status || 'pending') +
-        (job.approval.reason ? ': ' + escapeHtml(job.approval.reason) : '') +
-        (job.approval.decidedAt ? ' | ' + escapeHtml(job.approval.decidedAt) : '') +
-        '</p></div>' : '';
-      var errorHtml = job.lastError ? '<div class="assistant-error-summary"><strong>' + escapeHtml(job.lastError.code || 'runner-error') + '</strong><span>' + escapeHtml(job.lastError.summary || 'Assistant runner failed') + '</span></div>' : '';
-      var retryHtml = (job.status === 'failed' || job.status === 'rejected') && !assistantCanRetry(job)
-        ? '<div class="assistant-action-note assistant-action-note--block">Retry limit reached for this job.</div>'
-        : '';
-      container.innerHTML =
-        '<div class="assistant-panel assistant-detail-panel" data-testid="assistant-job-detail">' +
+    api.assistantJobs
+      .get(jobId)
+      .then(function (data) {
+        var job = data.job;
+        var artifacts = data.artifacts || [];
+        var events = data.events || [];
+        var visibleEvents = events.slice(-12);
+        var eventsHtml = visibleEvents.length
+          ? visibleEvents
+              .map(function (event) {
+                return '<div class="assistant-event-row">' + '<span>' + escapeHtml(event.createdAt || '') + '</span>' + '<strong>' + escapeHtml(assistantStatusLabel(event.action || 'event')) + '</strong>' + '<em>' + escapeHtml(event.summary || '') + '</em>' + '</div>';
+              })
+              .join('')
+          : '<div class="empty-state">No run events have been recorded yet.</div>';
+        var inputRefsHtml =
+          Array.isArray(job.inputRefs) && job.inputRefs.length
+            ? job.inputRefs
+                .map(function (ref) {
+                  return '<span class="assistant-ref-pill">' + escapeHtml(ref.title || ref.uri || ref.id || ref.type || 'input') + '</span>';
+                })
+                .join('')
+            : '<span class="assistant-job-next">No input references recorded.</span>';
+        var artifactsHtml = artifacts.length
+          ? artifacts
+              .map(function (artifact) {
+                return '<div class="artifact-row" data-artifact-row="' + escapeHtml(artifact.id) + '">' + '<div><div class="artifact-title">' + escapeHtml(artifact.title || artifact.type || 'Artifact') + '</div>' + '<div class="artifact-meta">' + escapeHtml(artifact.type || 'artifact') + ' | ' + escapeHtml(artifact.status || 'draft') + ' | ' + escapeHtml(artifact.storageProvider || 'unknown') + '</div></div>' + '<a class="card-action-link" href="' + escapeHtml(artifact.storageUri || '#') + '" target="_blank" rel="noopener">Open artifact</a>' + '</div>';
+              })
+              .join('')
+          : '<div class="empty-state">No output artifacts are attached yet.</div>';
+        var approvalHtml = job.approval ? '<div class="assistant-detail-section"><h4>Review history</h4><p>' + escapeHtml(job.approval.status || 'pending') + (job.approval.reason ? ': ' + escapeHtml(job.approval.reason) : '') + (job.approval.decidedAt ? ' | ' + escapeHtml(job.approval.decidedAt) : '') + '</p></div>' : '';
+        var errorHtml = job.lastError ? '<div class="assistant-error-summary"><strong>' + escapeHtml(job.lastError.code || 'runner-error') + '</strong><span>' + escapeHtml(job.lastError.summary || 'Assistant runner failed') + '</span></div>' : '';
+        var retryHtml = (job.status === 'failed' || job.status === 'rejected') && !assistantCanRetry(job) ? '<div class="assistant-action-note assistant-action-note--block">Retry limit reached for this job.</div>' : '';
+        container.innerHTML =
+          '<div class="assistant-panel assistant-detail-panel" data-testid="assistant-job-detail">' +
           '<div class="assistant-detail-header">' +
-            '<div><h3>' + escapeHtml(job.title || 'Assistant job') + '</h3>' +
-            '<div class="assistant-job-meta">' + escapeHtml(job.assistantType || 'assistant') + ' | Attempt ' + escapeHtml(String(job.attemptCount || 0)) + '/' + escapeHtml(String(job.maxAttempts || 1)) + ' | Updated ' + escapeHtml(job.updatedAt || '') + '</div>' +
-            assistantLinkedContextHtml(job, options) + '</div>' +
-            '<div>' + renderAssistantStatus(job.status) + '<div class="assistant-job-next">' + escapeHtml(assistantNextAction(job)) + '</div></div>' +
+          '<div><h3>' +
+          escapeHtml(job.title || 'Assistant job') +
+          '</h3>' +
+          '<div class="assistant-job-meta">' +
+          escapeHtml(job.assistantType || 'assistant') +
+          ' | Attempt ' +
+          escapeHtml(String(job.attemptCount || 0)) +
+          '/' +
+          escapeHtml(String(job.maxAttempts || 1)) +
+          ' | Updated ' +
+          escapeHtml(job.updatedAt || '') +
+          '</div>' +
+          assistantLinkedContextHtml(job, options) +
+          '</div>' +
+          '<div>' +
+          renderAssistantStatus(job.status) +
+          '<div class="assistant-job-next">' +
+          escapeHtml(assistantNextAction(job)) +
+          '</div></div>' +
           '</div>' +
           errorHtml +
-          '<div class="assistant-detail-actions">' + assistantJobActionsHtml(job) + retryHtml + '</div>' +
-          '<div class="assistant-detail-section"><h4>Input references</h4><div class="assistant-ref-list">' + inputRefsHtml + '</div></div>' +
-          '<div class="assistant-detail-section"><h4>Output artifacts and proof</h4><div class="assistant-job-next">' + escapeHtml(assistantOutputSummary(job, artifacts)) + '</div>' + artifactsHtml + '</div>' +
+          '<div class="assistant-detail-actions">' +
+          assistantJobActionsHtml(job) +
+          retryHtml +
+          '</div>' +
+          '<div class="assistant-detail-section"><h4>Input references</h4><div class="assistant-ref-list">' +
+          inputRefsHtml +
+          '</div></div>' +
+          '<div class="assistant-detail-section"><h4>Output artifacts and proof</h4><div class="assistant-job-next">' +
+          escapeHtml(assistantOutputSummary(job, artifacts)) +
+          '</div>' +
+          artifactsHtml +
+          '</div>' +
           approvalHtml +
-          '<div class="assistant-detail-section"><h4>Run log and status history</h4><div class="assistant-timeline">' + eventsHtml + '</div></div>' +
-        '</div>';
-      bindAssistantActionButtons(container, function () {
-        renderAssistantJobDetail(container, jobId, options);
-        if (options && options.onDone) options.onDone();
-      }, function (id) {
-        renderAssistantJobDetail(container, id, options);
+          '<div class="assistant-detail-section"><h4>Run log and status history</h4><div class="assistant-timeline">' +
+          eventsHtml +
+          '</div></div>' +
+          '</div>';
+        bindAssistantActionButtons(
+          container,
+          function () {
+            renderAssistantJobDetail(container, jobId, options);
+            if (options && options.onDone) options.onDone();
+          },
+          function (id) {
+            renderAssistantJobDetail(container, id, options);
+          }
+        );
+        bindAssistantBundleLinks(container);
+      })
+      .catch(function (err) {
+        container.innerHTML = '<div class="assistant-panel"><h3>Assistant job detail</h3><div class="error-banner">Failed to load assistant job: ' + escapeHtml(err.message) + '</div></div>';
       });
-      bindAssistantBundleLinks(container);
-    }).catch(function (err) {
-      container.innerHTML = '<div class="assistant-panel"><h3>Assistant job detail</h3><div class="error-banner">Failed to load assistant job: ' + escapeHtml(err.message) + '</div></div>';
-    });
   }
 
   function renderAssistantJobsList(container, jobs, options) {
@@ -4856,30 +5382,28 @@
       container.innerHTML = html;
       return;
     }
-    var rows = grouped ? ASSISTANT_GROUP_ORDER.reduce(function (acc, group) {
-      var groupedJobs = jobs.filter(function (job) { return assistantJobGroup(job) === group; });
-      if (groupedJobs.length) acc.push({ group: group, jobs: groupedJobs });
-      return acc;
-    }, []) : [{ group: '', jobs: jobs }];
+    var rows = grouped
+      ? ASSISTANT_GROUP_ORDER.reduce(function (acc, group) {
+          var groupedJobs = jobs.filter(function (job) {
+            return assistantJobGroup(job) === group;
+          });
+          if (groupedJobs.length) acc.push({ group: group, jobs: groupedJobs });
+          return acc;
+        }, [])
+      : [{ group: '', jobs: jobs }];
     rows.forEach(function (section) {
       if (section.group) {
         html += '<div class="assistant-group-heading">' + escapeHtml(section.group) + ' <span>' + section.jobs.length + '</span></div>';
       }
       section.jobs.forEach(function (job) {
-      var updated = job.updatedAt ? 'Updated ' + job.updatedAt : '';
-      var attempts = 'Attempt ' + (job.attemptCount || 0) + '/' + (job.maxAttempts || 1);
-      var artifacts = (job.outputArtifactIds || []).map(function (id) { return artifactMap[id]; }).filter(Boolean);
-      html += '<div class="assistant-job-row" data-assistant-job-row="' + escapeHtml(job.id) + '">' +
-        '<div>' +
-          '<div class="assistant-job-title">' + escapeHtml(job.title || job.assistantType || 'Assistant job') + '</div>' +
-          '<div class="assistant-job-meta">' + escapeHtml(job.assistantType || 'assistant') + ' &middot; ' + escapeHtml(attempts) + (updated ? ' &middot; ' + escapeHtml(updated) : '') + '</div>' +
-          assistantLinkedContextHtml(job, options) +
-          '<div class="assistant-job-next">' + escapeHtml(assistantOutputSummary(job, artifacts)) + '</div>' +
-          (job.lastError ? '<div class="assistant-job-next">Error: ' + escapeHtml(job.lastError.summary || job.lastError.code || 'Assistant failed') + '</div>' : '') +
-        '</div>' +
-        '<div>' + renderAssistantStatus(job.status) + '<div class="assistant-job-next">' + escapeHtml(assistantNextAction(job)) + '</div></div>' +
-        '<div class="assistant-job-actions">' + assistantJobActionsHtml(job) + '</div>' +
-      '</div>';
+        var updated = job.updatedAt ? 'Updated ' + job.updatedAt : '';
+        var attempts = 'Attempt ' + (job.attemptCount || 0) + '/' + (job.maxAttempts || 1);
+        var artifacts = (job.outputArtifactIds || [])
+          .map(function (id) {
+            return artifactMap[id];
+          })
+          .filter(Boolean);
+        html += '<div class="assistant-job-row" data-assistant-job-row="' + escapeHtml(job.id) + '">' + '<div>' + '<div class="assistant-job-title">' + escapeHtml(job.title || job.assistantType || 'Assistant job') + '</div>' + '<div class="assistant-job-meta">' + escapeHtml(job.assistantType || 'assistant') + ' &middot; ' + escapeHtml(attempts) + (updated ? ' &middot; ' + escapeHtml(updated) : '') + '</div>' + assistantLinkedContextHtml(job, options) + '<div class="assistant-job-next">' + escapeHtml(assistantOutputSummary(job, artifacts)) + '</div>' + (job.lastError ? '<div class="assistant-job-next">Error: ' + escapeHtml(job.lastError.summary || job.lastError.code || 'Assistant failed') + '</div>' : '') + '</div>' + '<div>' + renderAssistantStatus(job.status) + '<div class="assistant-job-next">' + escapeHtml(assistantNextAction(job)) + '</div></div>' + '<div class="assistant-job-actions">' + assistantJobActionsHtml(job) + '</div>' + '</div>';
       });
     });
     html += '</div>';
@@ -4890,7 +5414,7 @@
 
   var assistantQueueState = {
     filter: 'podcast',
-    selectedJobId: null,
+    selectedJobId: null
   };
 
   function assistantMatchesFilter(job, filter) {
@@ -4908,31 +5432,17 @@
 
     var header = document.createElement('div');
     header.className = 'page-header';
-    header.innerHTML =
-      '<div><h2>DataOps Assistant</h2><div class="page-subtitle">Workflow support jobs that are running, failed, or need review</div></div>';
+    header.innerHTML = '<div><h2>DataOps Assistant</h2><div class="page-subtitle">Workflow support jobs that are running, failed, or need review</div></div>';
     app.appendChild(header);
 
     var createPanel = document.createElement('div');
     createPanel.className = 'assistant-panel';
-    createPanel.innerHTML =
-      '<h3>Request DataOps Assistant help</h3>' +
-      '<div class="assistant-create-grid">' +
-        '<div class="form-group"><label for="assistant-bundle-select">Workflow</label><select id="assistant-bundle-select"><option value="">Select workflow</option></select></div>' +
-        '<div class="form-group"><label for="assistant-task-select">Task</label><select id="assistant-task-select"><option value="">Workflow-level job</option></select></div>' +
-        '<div class="form-group"><label for="assistant-title-input">Title</label><input type="text" id="assistant-title-input" placeholder="DataOps Assistant podcast prep" /></div>' +
-        '<button class="btn-primary" id="assistant-create-btn">Ask DataOps Assistant</button>' +
-      '</div>';
+    createPanel.innerHTML = '<h3>Request DataOps Assistant help</h3>' + '<div class="assistant-create-grid">' + '<div class="form-group"><label for="assistant-bundle-select">Workflow</label><select id="assistant-bundle-select"><option value="">Select workflow</option></select></div>' + '<div class="form-group"><label for="assistant-task-select">Task</label><select id="assistant-task-select"><option value="">Workflow-level job</option></select></div>' + '<div class="form-group"><label for="assistant-title-input">Title</label><input type="text" id="assistant-title-input" placeholder="DataOps Assistant podcast prep" /></div>' + '<button class="btn-primary" id="assistant-create-btn">Ask DataOps Assistant</button>' + '</div>';
     app.appendChild(createPanel);
 
     var filters = document.createElement('div');
     filters.className = 'assistant-filter-bar';
-    filters.innerHTML =
-      '<button type="button" data-assistant-filter="podcast">Podcast jobs</button>' +
-      '<button type="button" data-assistant-filter="needs-approval">Needs approval</button>' +
-      '<button type="button" data-assistant-filter="failed">Failed</button>' +
-      '<button type="button" data-assistant-filter="running">Running/queued</button>' +
-      '<button type="button" data-assistant-filter="completed">Completed history</button>' +
-      '<button type="button" data-assistant-filter="all">All</button>';
+    filters.innerHTML = '<button type="button" data-assistant-filter="podcast">Podcast jobs</button>' + '<button type="button" data-assistant-filter="needs-approval">Needs approval</button>' + '<button type="button" data-assistant-filter="failed">Failed</button>' + '<button type="button" data-assistant-filter="running">Running/queued</button>' + '<button type="button" data-assistant-filter="completed">Completed history</button>' + '<button type="button" data-assistant-filter="all">All</button>';
     app.appendChild(filters);
 
     var queueContainer = document.createElement('div');
@@ -4944,7 +5454,13 @@
     detailContainer.id = 'assistant-job-detail-container';
     app.appendChild(detailContainer);
 
-    var contextCache = { bundleMap: {}, taskMap: {}, artifactMap: {}, bundles: [], tasks: [] };
+    var contextCache = {
+      bundleMap: {},
+      taskMap: {},
+      artifactMap: {},
+      bundles: [],
+      tasks: []
+    };
 
     function renderFilterButtons() {
       filters.querySelectorAll('[data-assistant-filter]').forEach(function (btn) {
@@ -4954,96 +5470,128 @@
 
     function reloadQueue() {
       renderFilterButtons();
-      Promise.all([
-        api.assistantJobs.list(),
-        api.bundles.list(),
-        api.artifacts.list(),
-      ]).then(function (results) {
-        var jobs = results[0].jobs || [];
-        var bundles = results[1].bundles || [];
-        var artifacts = results[2].artifacts || [];
-        contextCache.bundles = bundles;
-        contextCache.bundleMap = {};
-        contextCache.taskMap = {};
-        contextCache.artifactMap = {};
-        bundles.forEach(function (bundle) { contextCache.bundleMap[bundle.id] = bundle; });
-        artifacts.forEach(function (artifact) { contextCache.artifactMap[artifact.id] = artifact; });
-        var taskIds = Array.from(new Set(jobs.map(function (job) { return job.taskId; }).filter(Boolean)));
-        return Promise.all(taskIds.map(function (taskId) {
-          return api.tasks.get(taskId).then(function (task) { return task; }).catch(function () { return null; });
-        })).then(function (tasks) {
-          contextCache.tasks = tasks.filter(Boolean);
-          contextCache.tasks.forEach(function (task) { contextCache.taskMap[task.id] = task; });
-          return jobs;
-        });
-      }).then(function (jobs) {
-        var filtered = jobs.filter(function (job) { return assistantMatchesFilter(job, assistantQueueState.filter); });
-        var orderedJobs = filtered.sort(function (a, b) {
-          var groupDiff = ASSISTANT_GROUP_ORDER.indexOf(assistantJobGroup(a)) - ASSISTANT_GROUP_ORDER.indexOf(assistantJobGroup(b));
-          if (groupDiff !== 0) return groupDiff;
-          return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
-        }).slice(0, 60);
-        renderAssistantJobsList(queueContainer, orderedJobs, {
-          title: 'Operational assistant queue',
-          emptyMessage: assistantQueueState.filter === 'needs-approval' ? 'No assistant jobs need approval.' : 'No assistant jobs match this filter.',
-          grouped: true,
-          bundleMap: contextCache.bundleMap,
-          taskMap: contextCache.taskMap,
-          artifactMap: contextCache.artifactMap,
-          onDone: reloadQueue,
-          onOpenDetail: function (jobId) {
-            assistantQueueState.selectedJobId = jobId;
-            renderAssistantJobDetail(detailContainer, jobId, {
-              bundleMap: contextCache.bundleMap,
-              taskMap: contextCache.taskMap,
-              artifactMap: contextCache.artifactMap,
-              onDone: reloadQueue,
+      Promise.all([api.assistantJobs.list(), api.bundles.list(), api.artifacts.list()])
+        .then(function (results) {
+          var jobs = results[0].jobs || [];
+          var bundles = results[1].bundles || [];
+          var artifacts = results[2].artifacts || [];
+          contextCache.bundles = bundles;
+          contextCache.bundleMap = {};
+          contextCache.taskMap = {};
+          contextCache.artifactMap = {};
+          bundles.forEach(function (bundle) {
+            contextCache.bundleMap[bundle.id] = bundle;
+          });
+          artifacts.forEach(function (artifact) {
+            contextCache.artifactMap[artifact.id] = artifact;
+          });
+          var taskIds = Array.from(
+            new Set(
+              jobs
+                .map(function (job) {
+                  return job.taskId;
+                })
+                .filter(Boolean)
+            )
+          );
+          return Promise.all(
+            taskIds.map(function (taskId) {
+              return api.tasks
+                .get(taskId)
+                .then(function (task) {
+                  return task;
+                })
+                .catch(function () {
+                  return null;
+                });
+            })
+          ).then(function (tasks) {
+            contextCache.tasks = tasks.filter(Boolean);
+            contextCache.tasks.forEach(function (task) {
+              contextCache.taskMap[task.id] = task;
             });
-          },
-        });
-        if (assistantQueueState.selectedJobId) {
-          renderAssistantJobDetail(detailContainer, assistantQueueState.selectedJobId, {
+            return jobs;
+          });
+        })
+        .then(function (jobs) {
+          var filtered = jobs.filter(function (job) {
+            return assistantMatchesFilter(job, assistantQueueState.filter);
+          });
+          var orderedJobs = filtered
+            .sort(function (a, b) {
+              var groupDiff = ASSISTANT_GROUP_ORDER.indexOf(assistantJobGroup(a)) - ASSISTANT_GROUP_ORDER.indexOf(assistantJobGroup(b));
+              if (groupDiff !== 0) return groupDiff;
+              return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+            })
+            .slice(0, 60);
+          renderAssistantJobsList(queueContainer, orderedJobs, {
+            title: 'Operational assistant queue',
+            emptyMessage: assistantQueueState.filter === 'needs-approval' ? 'No assistant jobs need approval.' : 'No assistant jobs match this filter.',
+            grouped: true,
             bundleMap: contextCache.bundleMap,
             taskMap: contextCache.taskMap,
             artifactMap: contextCache.artifactMap,
             onDone: reloadQueue,
+            onOpenDetail: function (jobId) {
+              assistantQueueState.selectedJobId = jobId;
+              renderAssistantJobDetail(detailContainer, jobId, {
+                bundleMap: contextCache.bundleMap,
+                taskMap: contextCache.taskMap,
+                artifactMap: contextCache.artifactMap,
+                onDone: reloadQueue
+              });
+            }
           });
-        } else {
-          detailContainer.innerHTML = '<div class="assistant-panel"><h3>Assistant job detail</h3><div class="empty-state">Select a job to review logs, output artifacts, errors, and approval history.</div></div>';
-        }
-      }).catch(function (err) {
-        queueContainer.innerHTML = '<div class="assistant-panel"><h3>Operational assistant queue</h3><div class="error-banner">Failed to load assistant jobs: ' + escapeHtml(err.message) + '</div></div>';
-      });
+          if (assistantQueueState.selectedJobId) {
+            renderAssistantJobDetail(detailContainer, assistantQueueState.selectedJobId, {
+              bundleMap: contextCache.bundleMap,
+              taskMap: contextCache.taskMap,
+              artifactMap: contextCache.artifactMap,
+              onDone: reloadQueue
+            });
+          } else {
+            detailContainer.innerHTML = '<div class="assistant-panel"><h3>Assistant job detail</h3><div class="empty-state">Select a job to review logs, output artifacts, errors, and approval history.</div></div>';
+          }
+        })
+        .catch(function (err) {
+          queueContainer.innerHTML = '<div class="assistant-panel"><h3>Operational assistant queue</h3><div class="error-banner">Failed to load assistant jobs: ' + escapeHtml(err.message) + '</div></div>';
+        });
     }
 
     function loadTaskOptions(bundleId) {
       var taskSelect = document.getElementById('assistant-task-select');
       taskSelect.innerHTML = '<option value="">Workflow-level job</option>';
       if (!bundleId) return;
-      api.bundles.tasks(bundleId).then(function (data) {
-        (data.tasks || []).forEach(function (task) {
-          contextCache.taskMap[task.id] = task;
-          var opt = document.createElement('option');
-          opt.value = task.id;
-          opt.textContent = task.description || task.id;
-          taskSelect.appendChild(opt);
-        });
-      }).catch(function () {});
+      api.bundles
+        .tasks(bundleId)
+        .then(function (data) {
+          (data.tasks || []).forEach(function (task) {
+            contextCache.taskMap[task.id] = task;
+            var opt = document.createElement('option');
+            opt.value = task.id;
+            opt.textContent = task.description || task.id;
+            taskSelect.appendChild(opt);
+          });
+        })
+        .catch(function () {});
     }
 
-    api.bundles.list().then(function (data) {
-      var bundleSelect = document.getElementById('assistant-bundle-select');
-      (data.bundles || []).forEach(function (bundle) {
-        contextCache.bundleMap[bundle.id] = bundle;
-        var opt = document.createElement('option');
-        opt.value = bundle.id;
-        opt.textContent = bundle.title || bundle.id;
-        bundleSelect.appendChild(opt);
-      });
-      bundleSelect.addEventListener('change', function () {
-        loadTaskOptions(bundleSelect.value);
-      });
-    }).catch(function () {});
+    api.bundles
+      .list()
+      .then(function (data) {
+        var bundleSelect = document.getElementById('assistant-bundle-select');
+        (data.bundles || []).forEach(function (bundle) {
+          contextCache.bundleMap[bundle.id] = bundle;
+          var opt = document.createElement('option');
+          opt.value = bundle.id;
+          opt.textContent = bundle.title || bundle.id;
+          bundleSelect.appendChild(opt);
+        });
+        bundleSelect.addEventListener('change', function () {
+          loadTaskOptions(bundleSelect.value);
+        });
+      })
+      .catch(function () {});
 
     document.getElementById('assistant-create-btn').addEventListener('click', function () {
       var bundleId = document.getElementById('assistant-bundle-select').value;
@@ -5055,15 +5603,18 @@
       }
       var bundle = contextCache.bundleMap[bundleId] || {};
       var task = contextCache.taskMap[taskId] || {};
-      showPodcastAssistantRequest({
-        bundleId: bundleId || undefined,
-        taskId: taskId || undefined,
-        bundleTitle: bundle.title,
-        taskTitle: task.description,
-        anchorDate: bundle.anchorDate,
-        instructionDocId: task.instructionDocId,
-        title: title || 'DataOps Assistant podcast prep',
-      }, reloadQueue);
+      showPodcastAssistantRequest(
+        {
+          bundleId: bundleId || undefined,
+          taskId: taskId || undefined,
+          bundleTitle: bundle.title,
+          taskTitle: task.description,
+          anchorDate: bundle.anchorDate,
+          instructionDocId: task.instructionDocId,
+          title: title || 'DataOps Assistant podcast prep'
+        },
+        reloadQueue
+      );
     });
 
     filters.querySelectorAll('[data-assistant-filter]').forEach(function (btn) {
@@ -5082,7 +5633,7 @@
   var intakeState = {
     filter: 'actionable',
     selectedId: null,
-    bundleMap: {},
+    bundleMap: {}
   };
 
   function intakeStatusHtml(item) {
@@ -5106,7 +5657,7 @@
   function intakeMatchesFilter(item, filter) {
     if (filter === 'new') return item.status === 'new';
     if (filter === 'blocked') return item.status === 'blocked';
-    if (filter === 'due') return item.status === 'blocked' && !((item.taskIds || []).length) && item.followUpAt && String(item.followUpAt).slice(0, 10) <= todayString();
+    if (filter === 'due') return item.status === 'blocked' && !(item.taskIds || []).length && item.followUpAt && String(item.followUpAt).slice(0, 10) <= todayString();
     if (filter === 'future') return item.status === 'blocked' && item.followUpAt && String(item.followUpAt).slice(0, 10) > todayString();
     if (filter === 'assistant-ready') return item.assistantReadiness && item.assistantReadiness.status === 'ready';
     if (filter === 'resolved') return ['attached', 'converted', 'ignored', 'duplicate', 'archived'].indexOf(item.status) !== -1;
@@ -5121,14 +5672,7 @@
     }
     var html = '<div class="intake-panel" data-testid="inbox-queue"><h3>Inbox queue</h3>';
     items.forEach(function (item) {
-      html += '<div class="intake-row" data-intake-row="' + escapeHtml(item.id) + '">' +
-        '<div>' +
-          '<div class="intake-row-title">' + escapeHtml(item.title || 'Untitled intake') + '</div>' +
-          '<div class="intake-row-meta">' + escapeHtml(intakeMeta(item)) + '</div>' +
-          '<div class="intake-next">' + escapeHtml((item.summary || '').slice(0, 180)) + '</div>' +
-        '</div>' +
-        '<div>' + intakeStatusHtml(item) + '<div><button class="intake-action-btn" data-intake-select="' + escapeHtml(item.id) + '">Open</button></div></div>' +
-      '</div>';
+      html += '<div class="intake-row" data-intake-row="' + escapeHtml(item.id) + '">' + '<div>' + '<div class="intake-row-title">' + escapeHtml(item.title || 'Untitled intake') + '</div>' + '<div class="intake-row-meta">' + escapeHtml(intakeMeta(item)) + '</div>' + '<div class="intake-next">' + escapeHtml((item.summary || '').slice(0, 180)) + '</div>' + '</div>' + '<div>' + intakeStatusHtml(item) + '<div><button class="intake-action-btn" data-intake-select="' + escapeHtml(item.id) + '">Open</button></div></div>' + '</div>';
     });
     html += '</div>';
     container.innerHTML = html;
@@ -5142,9 +5686,15 @@
 
   function refPills(items, prefix) {
     if (!items || !items.length) return '<span class="intake-next">None</span>';
-    return '<div class="intake-ref-list">' + items.map(function (item) {
-      return '<span class="intake-ref-pill">' + escapeHtml(prefix ? prefix + ' ' + item : item) + '</span>';
-    }).join('') + '</div>';
+    return (
+      '<div class="intake-ref-list">' +
+      items
+        .map(function (item) {
+          return '<span class="intake-ref-pill">' + escapeHtml(prefix ? prefix + ' ' + item : item) + '</span>';
+        })
+        .join('') +
+      '</div>'
+    );
   }
 
   function refGroup(label, items, prefix) {
@@ -5162,45 +5712,33 @@
 
   function taskRelationshipHtml(taskId, fallbackBundleId) {
     var fallbackLabel = intakeRelationshipLabel('', taskId);
-    return '<div class="intake-relationship-card" data-intake-task-ref="' + escapeHtml(taskId) + '" data-fallback-bundle-id="' + escapeHtml(fallbackBundleId || '') + '">' +
-      '<div class="intake-relationship-copy">' +
-        '<strong data-intake-task-title="' + escapeHtml(taskId) + '">' + escapeHtml(fallbackLabel) + '</strong>' +
-        '<span data-intake-task-meta="' + escapeHtml(taskId) + '">Task ID ' + escapeHtml(taskId) + '</span>' +
-      '</div>' +
-      '<a class="intake-relationship-action" data-intake-task-link="' + escapeHtml(taskId) + '" href="' + escapeHtml(intakeTaskRelationshipHref(null, taskId, fallbackBundleId)) + '">Open task</a>' +
-    '</div>';
+    return '<div class="intake-relationship-card" data-intake-task-ref="' + escapeHtml(taskId) + '" data-fallback-bundle-id="' + escapeHtml(fallbackBundleId || '') + '">' + '<div class="intake-relationship-copy">' + '<strong data-intake-task-title="' + escapeHtml(taskId) + '">' + escapeHtml(fallbackLabel) + '</strong>' + '<span data-intake-task-meta="' + escapeHtml(taskId) + '">Task ID ' + escapeHtml(taskId) + '</span>' + '</div>' + '<a class="intake-relationship-action" data-intake-task-link="' + escapeHtml(taskId) + '" href="' + escapeHtml(intakeTaskRelationshipHref(null, taskId, fallbackBundleId)) + '">Open task</a>' + '</div>';
   }
 
   function workflowRelationshipHtml(bundleId) {
     var bundle = intakeState.bundleMap[bundleId] || {};
     var label = intakeRelationshipLabel(bundle.title, bundleId);
-    return '<div class="intake-relationship-card" data-intake-workflow-ref="' + escapeHtml(bundleId) + '">' +
-      '<div class="intake-relationship-copy">' +
-        '<strong>' + escapeHtml(label) + '</strong>' +
-        '<span>Workflow ID ' + escapeHtml(bundleId) + '</span>' +
-      '</div>' +
-      '<a class="intake-relationship-action" data-intake-workflow-link="' + escapeHtml(bundleId) + '" href="' + escapeHtml(bundleHash(bundleId)) + '">Open workflow</a>' +
-    '</div>';
+    return '<div class="intake-relationship-card" data-intake-workflow-ref="' + escapeHtml(bundleId) + '">' + '<div class="intake-relationship-copy">' + '<strong>' + escapeHtml(label) + '</strong>' + '<span>Workflow ID ' + escapeHtml(bundleId) + '</span>' + '</div>' + '<a class="intake-relationship-action" data-intake-workflow-link="' + escapeHtml(bundleId) + '" href="' + escapeHtml(bundleHash(bundleId)) + '">Open workflow</a>' + '</div>';
   }
 
   function relationshipGroup(label, html) {
-    return '<div class="intake-relationship-group"><strong>' + escapeHtml(label) + '</strong>' +
-      (html ? '<div class="intake-relationship-list">' + html + '</div>' : '<span class="intake-next">None</span>') +
-    '</div>';
+    return '<div class="intake-relationship-group"><strong>' + escapeHtml(label) + '</strong>' + (html ? '<div class="intake-relationship-list">' + html + '</div>' : '<span class="intake-next">None</span>') + '</div>';
   }
 
   function renderIntakeRelationships(item) {
     var bundleIds = item.bundleIds || [];
     var fallbackBundleId = bundleIds.length === 1 ? bundleIds[0] : '';
-    var taskHtml = (item.taskIds || []).map(function (taskId) {
-      return taskRelationshipHtml(taskId, fallbackBundleId);
-    }).join('');
-    var workflowHtml = bundleIds.map(function (bundleId) {
-      return workflowRelationshipHtml(bundleId);
-    }).join('');
-    return relationshipGroup('Tasks', taskHtml) +
-      relationshipGroup('Workflows', workflowHtml) +
-      refGroup('Assistant jobs', item.assistantJobIds || [], 'assistant');
+    var taskHtml = (item.taskIds || [])
+      .map(function (taskId) {
+        return taskRelationshipHtml(taskId, fallbackBundleId);
+      })
+      .join('');
+    var workflowHtml = bundleIds
+      .map(function (bundleId) {
+        return workflowRelationshipHtml(bundleId);
+      })
+      .join('');
+    return relationshipGroup('Tasks', taskHtml) + relationshipGroup('Workflows', workflowHtml) + refGroup('Assistant jobs', item.assistantJobIds || [], 'assistant');
   }
 
   function hydrateIntakeTaskRelationships(container, item) {
@@ -5208,30 +5746,33 @@
     var bundleIds = item.bundleIds || [];
     var fallbackBundleId = bundleIds.length === 1 ? bundleIds[0] : '';
     taskIds.forEach(function (taskId) {
-      api.tasks.get(taskId).then(function (task) {
-        var card = container.querySelector('[data-intake-task-ref="' + CSS.escape(taskId) + '"]');
-        if (!card) return;
-        var title = card.querySelector('[data-intake-task-title]');
-        var meta = card.querySelector('[data-intake-task-meta]');
-        var link = card.querySelector('[data-intake-task-link]');
-        if (title) title.textContent = intakeRelationshipLabel(task.description, task.id || taskId);
-        if (meta) {
-          var metaParts = ['Task ID ' + (task.id || taskId)];
-          if (task.date) metaParts.push(formatDateLabel(task.date));
-          if (task.bundleId) {
-            var bundle = intakeState.bundleMap[task.bundleId] || {};
-            metaParts.push('Workflow ' + (bundle.title || task.bundleId));
-          } else if (fallbackBundleId) {
-            var fallbackBundle = intakeState.bundleMap[fallbackBundleId] || {};
-            metaParts.push('Context ' + (fallbackBundle.title || fallbackBundleId));
+      api.tasks
+        .get(taskId)
+        .then(function (task) {
+          var card = container.querySelector('[data-intake-task-ref="' + CSS.escape(taskId) + '"]');
+          if (!card) return;
+          var title = card.querySelector('[data-intake-task-title]');
+          var meta = card.querySelector('[data-intake-task-meta]');
+          var link = card.querySelector('[data-intake-task-link]');
+          if (title) title.textContent = intakeRelationshipLabel(task.description, task.id || taskId);
+          if (meta) {
+            var metaParts = ['Task ID ' + (task.id || taskId)];
+            if (task.date) metaParts.push(formatDateLabel(task.date));
+            if (task.bundleId) {
+              var bundle = intakeState.bundleMap[task.bundleId] || {};
+              metaParts.push('Workflow ' + (bundle.title || task.bundleId));
+            } else if (fallbackBundleId) {
+              var fallbackBundle = intakeState.bundleMap[fallbackBundleId] || {};
+              metaParts.push('Context ' + (fallbackBundle.title || fallbackBundleId));
+            }
+            meta.textContent = metaParts.join(' | ');
           }
-          meta.textContent = metaParts.join(' | ');
-        }
-        if (link) link.setAttribute('href', intakeTaskRelationshipHref(task, taskId, fallbackBundleId));
-      }).catch(function () {
-        var card = container.querySelector('[data-intake-task-ref="' + CSS.escape(taskId) + '"]');
-        if (card) card.classList.add('intake-relationship-card--fallback');
-      });
+          if (link) link.setAttribute('href', intakeTaskRelationshipHref(task, taskId, fallbackBundleId));
+        })
+        .catch(function () {
+          var card = container.querySelector('[data-intake-task-ref="' + CSS.escape(taskId) + '"]');
+          if (card) card.classList.add('intake-relationship-card--fallback');
+        });
     });
   }
 
@@ -5240,57 +5781,97 @@
       container.innerHTML = '<div class="intake-panel"><h3>Intake detail</h3><div class="empty-state">Select an intake item to triage it into workflow context.</div></div>';
       return;
     }
-    var bundleOptions = '<option value="">No workflow</option>' + Object.keys(intakeState.bundleMap).map(function (bundleId) {
-      var bundle = intakeState.bundleMap[bundleId];
-      return '<option value="' + escapeHtml(bundleId) + '">' + escapeHtml(bundle.title || bundleId) + '</option>';
-    }).join('');
-    var linkLabels = (item.linkRefs || []).map(function (link) { return link.title || link.normalizedUrl || link.url; });
-    var fileLabels = (item.fileRefs || []).map(function (file) { return file.title || file.filename || file.fileId || 'file ref'; });
-    var artifactLabels = (item.artifactRefs || []).map(function (artifact) { return artifact.title || artifact.artifactId; });
-    var history = (item.history || []).slice(-5).reverse().map(function (event) {
-      return '<div class="assistant-event-row"><strong>' + escapeHtml(event.action || 'event') + '</strong><span>' + escapeHtml(event.createdAt || '') + '</span>' + (event.reason ? '<em>' + escapeHtml(event.reason) + '</em>' : '') + '</div>';
-    }).join('');
+    var bundleOptions =
+      '<option value="">No workflow</option>' +
+      Object.keys(intakeState.bundleMap)
+        .map(function (bundleId) {
+          var bundle = intakeState.bundleMap[bundleId];
+          return '<option value="' + escapeHtml(bundleId) + '">' + escapeHtml(bundle.title || bundleId) + '</option>';
+        })
+        .join('');
+    var linkLabels = (item.linkRefs || []).map(function (link) {
+      return link.title || link.normalizedUrl || link.url;
+    });
+    var fileLabels = (item.fileRefs || []).map(function (file) {
+      return file.title || file.filename || file.fileId || 'file ref';
+    });
+    var artifactLabels = (item.artifactRefs || []).map(function (artifact) {
+      return artifact.title || artifact.artifactId;
+    });
+    var history = (item.history || [])
+      .slice(-5)
+      .reverse()
+      .map(function (event) {
+        return '<div class="assistant-event-row"><strong>' + escapeHtml(event.action || 'event') + '</strong><span>' + escapeHtml(event.createdAt || '') + '</span>' + (event.reason ? '<em>' + escapeHtml(event.reason) + '</em>' : '') + '</div>';
+      })
+      .join('');
 
     container.innerHTML =
       '<div class="intake-panel" data-testid="inbox-detail">' +
-        '<div class="assistant-detail-header">' +
-          '<div><h3>' + escapeHtml(item.title || 'Untitled intake') + '</h3><div class="intake-detail-meta">' + escapeHtml(intakeMeta(item)) + '</div></div>' +
-          '<div>' + intakeStatusHtml(item) + '</div>' +
-        '</div>' +
-        '<div class="intake-detail-section"><h4>Raw intake excerpt</h4><p>' + escapeHtml(item.summary || '') + '</p><div class="intake-next">Raw bodies and binaries stay behind storage refs; this item is not task proof.</div></div>' +
-        '<div class="intake-detail-section"><h4>Relationships</h4>' +
-          renderIntakeRelationships(item) +
-        '</div>' +
-        '<div class="intake-detail-section"><h4>Links, files, and artifacts</h4>' +
-          refGroup('Links', linkLabels, '') + refGroup('Files', fileLabels, '') + refGroup('Artifacts', artifactLabels, '') +
-        '</div>' +
-        '<div class="intake-detail-section">' +
-          '<h4>Triage actions</h4>' +
-          '<div class="intake-action-grid">' +
-            '<label class="form-group">Task ID<input type="text" id="intake-task-id" placeholder="Existing task id" /></label>' +
-            '<label class="form-group">Workflow<select id="intake-bundle-id">' + bundleOptions + '</select></label>' +
-            '<button class="intake-action-btn" id="intake-attach-btn">Attach</button>' +
-            '<label class="form-group">Task date<input type="date" id="intake-task-date" value="' + todayString() + '" /></label>' +
-            '<label class="form-group">Assignee<input type="text" id="intake-assignee-id" placeholder="User id" value="' + escapeHtml(item.assigneeId || '') + '" /></label>' +
-            '<button class="btn-primary" id="intake-convert-btn">Convert to task</button>' +
-            '<label class="form-group">Duplicate of<input type="text" id="intake-duplicate-id" placeholder="Intake item id" /></label>' +
-            '<label class="form-group">Reason<input type="text" id="intake-reason" placeholder="Required for resolved states" /></label>' +
-            '<button class="intake-action-btn" id="intake-duplicate-btn">Duplicate</button>' +
-            '<label class="form-group">Waiting for<input type="text" id="intake-waiting-for" placeholder="Person or system" value="' + escapeHtml(item.waitingFor || '') + '" /></label>' +
-            '<label class="form-group">Follow up<input type="date" id="intake-follow-up-at" value="' + escapeHtml(item.followUpAt ? String(item.followUpAt).slice(0, 10) : '') + '" /></label>' +
-            '<button class="intake-action-btn" id="intake-block-btn">Block</button>' +
-            '<label class="form-group">Next follow-up<input type="date" id="intake-next-follow-up-at" value="' + escapeHtml(defaultNextFollowUpDate()) + '" /></label>' +
-            '<label class="form-group wide">Follow-up note<input type="text" id="intake-follow-up-note" placeholder="Short operational note" /></label>' +
-            '<button class="intake-action-btn" id="intake-follow-up-sent-btn">Follow-up sent</button>' +
-            '<button class="intake-action-btn" id="intake-response-btn">Response received</button>' +
-            '<label class="form-group">Assistant skill<input type="text" id="intake-assistant-type" value="' + escapeHtml((item.assistantReadiness && item.assistantReadiness.assistantType) || 'podcast') + '" /></label>' +
-            '<label class="form-group">Create job<select id="intake-create-job"><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label>' +
-            '<button class="intake-action-btn" id="intake-assistant-btn">Prepare DataOps Assistant</button>' +
-            '<button class="intake-action-btn" id="intake-ignore-btn">Ignore</button>' +
-            '<button class="intake-action-btn" id="intake-archive-btn">Archive</button>' +
-          '</div>' +
-        '</div>' +
-        '<div class="intake-detail-section"><h4>History</h4><div class="assistant-timeline">' + (history || '<div class="intake-next">No triage history recorded.</div>') + '</div></div>' +
+      '<div class="assistant-detail-header">' +
+      '<div><h3>' +
+      escapeHtml(item.title || 'Untitled intake') +
+      '</h3><div class="intake-detail-meta">' +
+      escapeHtml(intakeMeta(item)) +
+      '</div></div>' +
+      '<div>' +
+      intakeStatusHtml(item) +
+      '</div>' +
+      '</div>' +
+      '<div class="intake-detail-section"><h4>Raw intake excerpt</h4><p>' +
+      escapeHtml(item.summary || '') +
+      '</p><div class="intake-next">Raw bodies and binaries stay behind storage refs; this item is not task proof.</div></div>' +
+      '<div class="intake-detail-section"><h4>Relationships</h4>' +
+      renderIntakeRelationships(item) +
+      '</div>' +
+      '<div class="intake-detail-section"><h4>Links, files, and artifacts</h4>' +
+      refGroup('Links', linkLabels, '') +
+      refGroup('Files', fileLabels, '') +
+      refGroup('Artifacts', artifactLabels, '') +
+      '</div>' +
+      '<div class="intake-detail-section">' +
+      '<h4>Triage actions</h4>' +
+      '<div class="intake-action-grid">' +
+      '<label class="form-group">Task ID<input type="text" id="intake-task-id" placeholder="Existing task id" /></label>' +
+      '<label class="form-group">Workflow<select id="intake-bundle-id">' +
+      bundleOptions +
+      '</select></label>' +
+      '<button class="intake-action-btn" id="intake-attach-btn">Attach</button>' +
+      '<label class="form-group">Task date<input type="date" id="intake-task-date" value="' +
+      todayString() +
+      '" /></label>' +
+      '<label class="form-group">Assignee<input type="text" id="intake-assignee-id" placeholder="User id" value="' +
+      escapeHtml(item.assigneeId || '') +
+      '" /></label>' +
+      '<button class="btn-primary" id="intake-convert-btn">Convert to task</button>' +
+      '<label class="form-group">Duplicate of<input type="text" id="intake-duplicate-id" placeholder="Intake item id" /></label>' +
+      '<label class="form-group">Reason<input type="text" id="intake-reason" placeholder="Required for resolved states" /></label>' +
+      '<button class="intake-action-btn" id="intake-duplicate-btn">Duplicate</button>' +
+      '<label class="form-group">Waiting for<input type="text" id="intake-waiting-for" placeholder="Person or system" value="' +
+      escapeHtml(item.waitingFor || '') +
+      '" /></label>' +
+      '<label class="form-group">Follow up<input type="date" id="intake-follow-up-at" value="' +
+      escapeHtml(item.followUpAt ? String(item.followUpAt).slice(0, 10) : '') +
+      '" /></label>' +
+      '<button class="intake-action-btn" id="intake-block-btn">Block</button>' +
+      '<label class="form-group">Next follow-up<input type="date" id="intake-next-follow-up-at" value="' +
+      escapeHtml(defaultNextFollowUpDate()) +
+      '" /></label>' +
+      '<label class="form-group wide">Follow-up note<input type="text" id="intake-follow-up-note" placeholder="Short operational note" /></label>' +
+      '<button class="intake-action-btn" id="intake-follow-up-sent-btn">Follow-up sent</button>' +
+      '<button class="intake-action-btn" id="intake-response-btn">Response received</button>' +
+      '<label class="form-group">Assistant skill<input type="text" id="intake-assistant-type" value="' +
+      escapeHtml((item.assistantReadiness && item.assistantReadiness.assistantType) || 'podcast') +
+      '" /></label>' +
+      '<label class="form-group">Create job<select id="intake-create-job"><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label>' +
+      '<button class="intake-action-btn" id="intake-assistant-btn">Prepare DataOps Assistant</button>' +
+      '<button class="intake-action-btn" id="intake-ignore-btn">Ignore</button>' +
+      '<button class="intake-action-btn" id="intake-archive-btn">Archive</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="intake-detail-section"><h4>History</h4><div class="assistant-timeline">' +
+      (history || '<div class="intake-next">No triage history recorded.</div>') +
+      '</div></div>' +
       '</div>';
 
     hydrateIntakeTaskRelationships(container, item);
@@ -5322,12 +5903,15 @@
       var taskId = fallbackTaskId || taskIds[taskIds.length - 1] || '';
       var bundleId = fallbackBundleId || bundleIds[bundleIds.length - 1] || '';
       if (taskId) {
-        api.tasks.get(taskId).then(function (task) {
-          openTaskContext(task, bundleId, 'Intake attached to task context.');
-        }).catch(function () {
-          queueNotice('Intake attached to task context.');
-          location.hash = taskHash(taskId, '', bundleId);
-        });
+        api.tasks
+          .get(taskId)
+          .then(function (task) {
+            openTaskContext(task, bundleId, 'Intake attached to task context.');
+          })
+          .catch(function () {
+            queueNotice('Intake attached to task context.');
+            location.hash = taskHash(taskId, '', bundleId);
+          });
         return;
       }
       if (bundleId) {
@@ -5339,62 +5923,121 @@
     document.getElementById('intake-attach-btn').addEventListener('click', function () {
       var taskId = document.getElementById('intake-task-id').value.trim();
       var bundleId = document.getElementById('intake-bundle-id').value;
-      api.intake.attach(item.id, {
-        taskIds: taskId ? [taskId] : [],
-        bundleIds: bundleId ? [bundleId] : [],
-        note: document.getElementById('intake-follow-up-note').value.trim() || undefined,
-      }).then(function (result) {
-        openAttachedContext(result, taskId, bundleId);
-      }).catch(function (err) { showError(err.message); });
+      api.intake
+        .attach(item.id, {
+          taskIds: taskId ? [taskId] : [],
+          bundleIds: bundleId ? [bundleId] : [],
+          note: document.getElementById('intake-follow-up-note').value.trim() || undefined
+        })
+        .then(function (result) {
+          openAttachedContext(result, taskId, bundleId);
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-convert-btn').addEventListener('click', function () {
-      api.intake.convertTask(item.id, {
-        date: document.getElementById('intake-task-date').value,
-        assigneeId: document.getElementById('intake-assignee-id').value.trim() || undefined,
-        bundleId: document.getElementById('intake-bundle-id').value || undefined,
-        waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
-        followUpAt: document.getElementById('intake-follow-up-at').value || undefined,
-        note: document.getElementById('intake-follow-up-note').value.trim() || undefined,
-      }).then(function (result) {
-        openTaskContext(result && result.task, '', 'Task created from intake.');
-      }).catch(function (err) { showError(err.message); });
+      api.intake
+        .convertTask(item.id, {
+          date: document.getElementById('intake-task-date').value,
+          assigneeId: document.getElementById('intake-assignee-id').value.trim() || undefined,
+          bundleId: document.getElementById('intake-bundle-id').value || undefined,
+          waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
+          followUpAt: document.getElementById('intake-follow-up-at').value || undefined,
+          note: document.getElementById('intake-follow-up-note').value.trim() || undefined
+        })
+        .then(function (result) {
+          openTaskContext(result && result.task, '', 'Task created from intake.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-duplicate-btn').addEventListener('click', function () {
-      api.intake.markDuplicate(item.id, {
-        duplicateOfIntakeItemId: document.getElementById('intake-duplicate-id').value.trim(),
-        reason: reason(),
-      }).then(function () { reloadDone('Duplicate marked.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .markDuplicate(item.id, {
+          duplicateOfIntakeItemId: document.getElementById('intake-duplicate-id').value.trim(),
+          reason: reason()
+        })
+        .then(function () {
+          reloadDone('Duplicate marked.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-block-btn').addEventListener('click', function () {
-      api.intake.block(item.id, {
-        reason: reason(),
-        waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
-        followUpAt: document.getElementById('intake-follow-up-at').value || undefined,
-      }).then(function () { reloadDone('Intake blocked for follow-up.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .block(item.id, {
+          reason: reason(),
+          waitingFor: document.getElementById('intake-waiting-for').value.trim() || undefined,
+          followUpAt: document.getElementById('intake-follow-up-at').value || undefined
+        })
+        .then(function () {
+          reloadDone('Intake blocked for follow-up.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-follow-up-sent-btn').addEventListener('click', function () {
-      api.intake.followUpSent(item.id, {
-        note: document.getElementById('intake-follow-up-note').value.trim(),
-        nextFollowUpAt: document.getElementById('intake-next-follow-up-at').value,
-        channel: 'intake',
-      }).then(function () { reloadDone('Intake follow-up rescheduled.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .followUpSent(item.id, {
+          note: document.getElementById('intake-follow-up-note').value.trim(),
+          nextFollowUpAt: document.getElementById('intake-next-follow-up-at').value,
+          channel: 'intake'
+        })
+        .then(function () {
+          reloadDone('Intake follow-up rescheduled.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-response-btn').addEventListener('click', function () {
-      api.intake.responseReceived(item.id, {
-        note: document.getElementById('intake-follow-up-note').value.trim(),
-      }).then(function () { reloadDone('Intake unblocked.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .responseReceived(item.id, {
+          note: document.getElementById('intake-follow-up-note').value.trim()
+        })
+        .then(function () {
+          reloadDone('Intake unblocked.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-assistant-btn').addEventListener('click', function () {
-      api.intake.prepareAssistant(item.id, {
-        assistantType: document.getElementById('intake-assistant-type').value.trim(),
-        createJob: document.getElementById('intake-create-job').value === 'true',
-      }).then(function () { reloadDone('Assistant input refs prepared.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .prepareAssistant(item.id, {
+          assistantType: document.getElementById('intake-assistant-type').value.trim(),
+          createJob: document.getElementById('intake-create-job').value === 'true'
+        })
+        .then(function () {
+          reloadDone('Assistant input refs prepared.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-ignore-btn').addEventListener('click', function () {
-      api.intake.ignore(item.id, reason()).then(function () { reloadDone('Intake ignored.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .ignore(item.id, reason())
+        .then(function () {
+          reloadDone('Intake ignored.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
     document.getElementById('intake-archive-btn').addEventListener('click', function () {
-      api.intake.archive(item.id, reason()).then(function () { reloadDone('Intake archived.'); }).catch(function (err) { showError(err.message); });
+      api.intake
+        .archive(item.id, reason())
+        .then(function () {
+          reloadDone('Intake archived.');
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
   }
 
@@ -5412,28 +6055,12 @@
 
     var createPanel = document.createElement('div');
     createPanel.className = 'intake-panel';
-    createPanel.innerHTML =
-      '<h3>Manual intake</h3>' +
-      '<div class="intake-create-grid" data-testid="manual-intake-form">' +
-        '<label class="form-group wide">Note<textarea id="intake-create-note" placeholder="Paste the request, context, and safe links"></textarea></label>' +
-        '<label class="form-group">Title<input type="text" id="intake-create-title" placeholder="Short subject" /></label>' +
-        '<label class="form-group">Data class<select id="intake-create-data-class"><option>internal</option><option>public</option><option>private</option><option>sensitive</option></select></label>' +
-        '<label class="form-group">Tags<input type="text" id="intake-create-tags" placeholder="comma,separated" /></label>' +
-        '<button class="btn-primary" id="intake-create-btn">Capture intake</button>' +
-      '</div>';
+    createPanel.innerHTML = '<h3>Manual intake</h3>' + '<div class="intake-create-grid" data-testid="manual-intake-form">' + '<label class="form-group wide">Note<textarea id="intake-create-note" placeholder="Paste the request, context, and safe links"></textarea></label>' + '<label class="form-group">Title<input type="text" id="intake-create-title" placeholder="Short subject" /></label>' + '<label class="form-group">Data class<select id="intake-create-data-class"><option>internal</option><option>public</option><option>private</option><option>sensitive</option></select></label>' + '<label class="form-group">Tags<input type="text" id="intake-create-tags" placeholder="comma,separated" /></label>' + '<button class="btn-primary" id="intake-create-btn">Capture intake</button>' + '</div>';
     app.appendChild(createPanel);
 
     var filters = document.createElement('div');
     filters.className = 'intake-filter-bar';
-    filters.innerHTML =
-      '<button type="button" data-intake-filter="actionable">Actionable</button>' +
-      '<button type="button" data-intake-filter="new">New</button>' +
-      '<button type="button" data-intake-filter="blocked">Blocked</button>' +
-      '<button type="button" data-intake-filter="due">Due</button>' +
-      '<button type="button" data-intake-filter="future">Future</button>' +
-      '<button type="button" data-intake-filter="assistant-ready">Assistant-ready</button>' +
-      '<button type="button" data-intake-filter="resolved">Resolved</button>' +
-      '<button type="button" data-intake-filter="all">All</button>';
+    filters.innerHTML = '<button type="button" data-intake-filter="actionable">Actionable</button>' + '<button type="button" data-intake-filter="new">New</button>' + '<button type="button" data-intake-filter="blocked">Blocked</button>' + '<button type="button" data-intake-filter="due">Due</button>' + '<button type="button" data-intake-filter="future">Future</button>' + '<button type="button" data-intake-filter="assistant-ready">Assistant-ready</button>' + '<button type="button" data-intake-filter="resolved">Resolved</button>' + '<button type="button" data-intake-filter="all">All</button>';
     app.appendChild(filters);
 
     var layout = document.createElement('div');
@@ -5455,49 +6082,70 @@
 
     function reloadInbox() {
       renderFilterButtons();
-      Promise.all([
-        api.intake.list(),
-        api.bundles.list(),
-      ]).then(function (results) {
-        var items = results[0].items || [];
-        var bundles = results[1].bundles || [];
-        intakeState.bundleMap = {};
-        bundles.forEach(function (bundle) { intakeState.bundleMap[bundle.id] = bundle; });
-        var filtered = items.filter(function (item) { return intakeMatchesFilter(item, intakeState.filter); });
-        renderIntakeRows(queue, filtered, function (id) {
-          var selected = items.find(function (item) { return item.id === id; });
+      Promise.all([api.intake.list(), api.bundles.list()])
+        .then(function (results) {
+          var items = results[0].items || [];
+          var bundles = results[1].bundles || [];
+          intakeState.bundleMap = {};
+          bundles.forEach(function (bundle) {
+            intakeState.bundleMap[bundle.id] = bundle;
+          });
+          var filtered = items.filter(function (item) {
+            return intakeMatchesFilter(item, intakeState.filter);
+          });
+          renderIntakeRows(queue, filtered, function (id) {
+            var selected = items.find(function (item) {
+              return item.id === id;
+            });
+            renderIntakeDetail(detail, selected, { onDone: reloadInbox });
+          });
+          var selected =
+            items.find(function (item) {
+              return item.id === intakeState.selectedId;
+            }) ||
+            filtered[0] ||
+            null;
+          intakeState.selectedId = selected ? selected.id : null;
           renderIntakeDetail(detail, selected, { onDone: reloadInbox });
+        })
+        .catch(function (err) {
+          queue.innerHTML = '<div class="intake-panel"><div class="error-banner">Failed to load inbox: ' + escapeHtml(err.message) + '</div></div>';
         });
-        var selected = items.find(function (item) { return item.id === intakeState.selectedId; }) || filtered[0] || null;
-        intakeState.selectedId = selected ? selected.id : null;
-        renderIntakeDetail(detail, selected, { onDone: reloadInbox });
-      }).catch(function (err) {
-        queue.innerHTML = '<div class="intake-panel"><div class="error-banner">Failed to load inbox: ' + escapeHtml(err.message) + '</div></div>';
-      });
     }
 
     document.getElementById('intake-create-btn').addEventListener('click', function () {
       var note = document.getElementById('intake-create-note').value.trim();
       var title = document.getElementById('intake-create-title').value.trim();
-      var tags = document.getElementById('intake-create-tags').value.split(',').map(function (tag) { return tag.trim(); }).filter(Boolean);
+      var tags = document
+        .getElementById('intake-create-tags')
+        .value.split(',')
+        .map(function (tag) {
+          return tag.trim();
+        })
+        .filter(Boolean);
       if (!note && !title) {
         showError('Add a note or title before capturing intake.');
         return;
       }
-      api.intake.create({
-        source: 'manual',
-        title: title || note.split(/\r?\n/)[0],
-        note: note || title,
-        dataClass: document.getElementById('intake-create-data-class').value,
-        tags: tags,
-      }).then(function () {
-        document.getElementById('intake-create-note').value = '';
-        document.getElementById('intake-create-title').value = '';
-        document.getElementById('intake-create-tags').value = '';
-        showSuccess('Manual intake captured.');
-        intakeState.filter = 'actionable';
-        reloadInbox();
-      }).catch(function (err) { showError(err.message); });
+      api.intake
+        .create({
+          source: 'manual',
+          title: title || note.split(/\r?\n/)[0],
+          note: note || title,
+          dataClass: document.getElementById('intake-create-data-class').value,
+          tags: tags
+        })
+        .then(function () {
+          document.getElementById('intake-create-note').value = '';
+          document.getElementById('intake-create-title').value = '';
+          document.getElementById('intake-create-tags').value = '';
+          showSuccess('Manual intake captured.');
+          intakeState.filter = 'actionable';
+          reloadInbox();
+        })
+        .catch(function (err) {
+          showError(err.message);
+        });
     });
 
     filters.querySelectorAll('[data-intake-filter]').forEach(function (btn) {
@@ -5528,14 +6176,7 @@
 
     var header = document.createElement('div');
     header.className = 'page-header';
-    header.innerHTML =
-      '<div>' +
-        '<h2>Templates</h2>' +
-        '<div class="page-subtitle" id="template-count">Reusable task blueprints</div>' +
-      '</div>' +
-      '<div class="page-actions">' +
-        '<input type="search" id="template-search" class="search-input" placeholder="Search templates" value="' + escapeHtml(templateState.search) + '" />' +
-      '</div>';
+    header.innerHTML = '<div>' + '<h2>Templates</h2>' + '<div class="page-subtitle" id="template-count">Reusable task blueprints</div>' + '</div>' + '<div class="page-actions">' + '<input type="search" id="template-search" class="search-input" placeholder="Search templates" value="' + escapeHtml(templateState.search) + '" />' + '</div>';
     app.appendChild(header);
 
     document.getElementById('template-search').addEventListener('input', function (e) {
@@ -5566,8 +6207,12 @@
     var form = document.createElement('div');
     form.className = 'template-start-form';
     form.setAttribute('hidden', '');
-    form.addEventListener('click', function (e) { e.stopPropagation(); });
-    form.addEventListener('keydown', function (e) { e.stopPropagation(); });
+    form.addEventListener('click', function (e) {
+      e.stopPropagation();
+    });
+    form.addEventListener('keydown', function (e) {
+      e.stopPropagation();
+    });
 
     var titleLabel = document.createElement('label');
     titleLabel.className = 'form-group';
@@ -5609,19 +6254,22 @@
       }
       setButtonBusy(startBtn, true, 'Start workflow', 'Starting...');
       api.bundles.create({
-        title: workflowTitle,
-        anchorDate: workflowAnchorDate,
-        templateId: template.id,
-      }).then(function (created) {
-        bundlesCache = null;
-        currentBundleId = created.bundle.id;
-        queueNotice(templateDisplayName(template, 'Workflow') + ' workflow started.');
-        location.hash = bundleHash(currentBundleId);
-      }).catch(function (err) {
-        showError('Failed to start workflow: ' + err.message);
-      }).finally(function () {
-        setButtonBusy(startBtn, false, 'Start workflow');
-      });
+          title: workflowTitle,
+          anchorDate: workflowAnchorDate,
+          templateId: template.id
+        })
+        .then(function (created) {
+          bundlesCache = null;
+          currentBundleId = created.bundle.id;
+          queueNotice(templateDisplayName(template, 'Workflow') + ' workflow started.');
+          location.hash = bundleHash(currentBundleId);
+        })
+        .catch(function (err) {
+          showError('Failed to start workflow: ' + err.message);
+        })
+        .finally(function () {
+          setButtonBusy(startBtn, false, 'Start workflow');
+        });
     });
 
     var actions = document.createElement('div');
@@ -5631,7 +6279,9 @@
 
     return {
       element: form,
-      focus: function () { titleInput.focus(); },
+      focus: function () {
+        titleInput.focus();
+      }
     };
   }
 
@@ -5641,162 +6291,154 @@
     container.innerHTML = '<p>Loading...</p>';
 
     var banners = app.querySelectorAll('.error-banner');
-    banners.forEach(function (b) { b.remove(); });
-
-    api.templates.list().then(function (data) {
-      var templates = data.templates || [];
-      var totalCount = templates.length;
-      var countEl = document.getElementById('template-count');
-      if (countEl) {
-        countEl.textContent = totalCount + ' template' + (totalCount !== 1 ? 's' : '') + ' available';
-      }
-      if (templates.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No templates yet',
-          'Seed or create templates to turn repeatable work into reusable task plans.',
-          []
-        );
-        return;
-      }
-
-      if (templateState.search) {
-        templates = templates.filter(function (t) {
-          var haystack = [
-            t.name || '',
-            t.type || '',
-            t.triggerType || '',
-            (t.tags || []).join(' ')
-          ].join(' ').toLowerCase();
-          return haystack.indexOf(templateState.search) !== -1;
-        });
-      }
-
-      if (countEl) {
-        countEl.textContent = templates.length + ' of ' + totalCount + ' template' + (totalCount !== 1 ? 's' : '') + ' shown';
-      }
-
-      if (templates.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No templates match your search',
-          'Clear or broaden the search to see more templates.',
-          []
-        );
-        return;
-      }
-
-      container.innerHTML = '';
-      var cardsDiv = document.createElement('div');
-      cardsDiv.className = 'template-cards';
-
-      templates.forEach(function (t) {
-        var taskCount = (t.taskDefinitions && t.taskDefinitions.length) || 0;
-        var triggerType = t.triggerType || 'manual';
-        var tags = t.tags || [];
-
-        var card = document.createElement('div');
-        card.className = 'template-card';
-        card.setAttribute('data-template-id', t.id);
-
-        var titleText = (t.emoji ? t.emoji + ' ' : '') + escapeHtml(t.name || 'Unnamed');
-        var titleDiv = document.createElement('div');
-        titleDiv.className = 'template-card-title';
-        titleDiv.innerHTML = titleText;
-        card.appendChild(titleDiv);
-
-        var metaDiv = document.createElement('div');
-        metaDiv.className = 'template-card-meta';
-
-        if (t.type) {
-          var typeBadge = document.createElement('span');
-          typeBadge.className = 'badge-type';
-          typeBadge.textContent = t.type;
-          metaDiv.appendChild(typeBadge);
-        }
-
-        tags.forEach(function (tag) {
-          var tagBadge = document.createElement('span');
-          tagBadge.className = 'badge-tag';
-          tagBadge.textContent = tag;
-          metaDiv.appendChild(tagBadge);
-        });
-
-        var triggerBadge = document.createElement('span');
-        triggerBadge.className = 'badge-trigger ' + triggerType;
-        triggerBadge.textContent = triggerType;
-        metaDiv.appendChild(triggerBadge);
-
-        card.appendChild(metaDiv);
-
-        var tasksDiv = document.createElement('div');
-        tasksDiv.className = 'template-card-tasks';
-        tasksDiv.textContent = taskCount + ' task' + (taskCount !== 1 ? 's' : '');
-
-        var footerDiv = document.createElement('div');
-        footerDiv.className = 'template-card-footer';
-        footerDiv.appendChild(tasksDiv);
-
-        var actionsWrap = document.createElement('div');
-        actionsWrap.className = 'card-footer-actions';
-
-        // Manual templates are startable from the library; automatic templates
-        // are generated from their cron schedule, so they only show trigger info
-        // (the trigger badge above) and no duplicate manual "Start workflow".
-        var isStartable = triggerType === 'manual' && taskCount > 0;
-        var startForm = null;
-
-        if (isStartable) {
-          var startAction = document.createElement('button');
-          startAction.type = 'button';
-          startAction.className = 'card-action-link template-start-action';
-          startAction.textContent = 'Start workflow';
-          startAction.setAttribute('aria-expanded', 'false');
-          startAction.setAttribute('aria-label', 'Start workflow from template ' + (t.name || 'Unnamed'));
-          startAction.addEventListener('click', function (e) {
-            e.stopPropagation();
-            if (!startForm) {
-              startForm = buildTemplateStartForm(t);
-              card.appendChild(startForm.element);
-            }
-            var open = startForm.element.hasAttribute('hidden');
-            if (open) {
-              startForm.element.removeAttribute('hidden');
-              startAction.setAttribute('aria-expanded', 'true');
-              startForm.focus();
-            } else {
-              startForm.element.setAttribute('hidden', '');
-              startAction.setAttribute('aria-expanded', 'false');
-            }
-          });
-          startAction.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
-          });
-          actionsWrap.appendChild(startAction);
-        }
-
-        var actionSpan = document.createElement('span');
-        actionSpan.className = 'card-action-text';
-        actionSpan.textContent = 'Edit template';
-        actionsWrap.appendChild(actionSpan);
-
-        footerDiv.appendChild(actionsWrap);
-        card.appendChild(footerDiv);
-
-        function openTemplate() {
-          currentTemplateId = t.id;
-          renderTemplates();
-        }
-
-        card.addEventListener('click', openTemplate);
-        makeKeyboardCard(card, 'Open template ' + (t.name || 'Unnamed'), openTemplate);
-
-        cardsDiv.appendChild(card);
-      });
-
-      container.appendChild(cardsDiv);
-    }).catch(function (err) {
-      container.innerHTML = '';
-      showError('Failed to load templates: ' + err.message);
+    banners.forEach(function (b) {
+      b.remove();
     });
+
+    api.templates
+      .list()
+      .then(function (data) {
+        var templates = data.templates || [];
+        var totalCount = templates.length;
+        var countEl = document.getElementById('template-count');
+        if (countEl) {
+          countEl.textContent = totalCount + ' template' + (totalCount !== 1 ? 's' : '') + ' available';
+        }
+        if (templates.length === 0) {
+          container.innerHTML = renderEmptyState('No templates yet', 'Seed or create templates to turn repeatable work into reusable task plans.', []);
+          return;
+        }
+
+        if (templateState.search) {
+          templates = templates.filter(function (t) {
+            var haystack = [t.name || '', t.type || '', t.triggerType || '', (t.tags || []).join(' ')].join(' ').toLowerCase();
+            return haystack.indexOf(templateState.search) !== -1;
+          });
+        }
+
+        if (countEl) {
+          countEl.textContent = templates.length + ' of ' + totalCount + ' template' + (totalCount !== 1 ? 's' : '') + ' shown';
+        }
+
+        if (templates.length === 0) {
+          container.innerHTML = renderEmptyState('No templates match your search', 'Clear or broaden the search to see more templates.', []);
+          return;
+        }
+
+        container.innerHTML = '';
+        var cardsDiv = document.createElement('div');
+        cardsDiv.className = 'template-cards';
+
+        templates.forEach(function (t) {
+          var taskCount = (t.taskDefinitions && t.taskDefinitions.length) || 0;
+          var triggerType = t.triggerType || 'manual';
+          var tags = t.tags || [];
+
+          var card = document.createElement('div');
+          card.className = 'template-card';
+          card.setAttribute('data-template-id', t.id);
+
+          var titleText = (t.emoji ? t.emoji + ' ' : '') + escapeHtml(t.name || 'Unnamed');
+          var titleDiv = document.createElement('div');
+          titleDiv.className = 'template-card-title';
+          titleDiv.innerHTML = titleText;
+          card.appendChild(titleDiv);
+
+          var metaDiv = document.createElement('div');
+          metaDiv.className = 'template-card-meta';
+
+          if (t.type) {
+            var typeBadge = document.createElement('span');
+            typeBadge.className = 'badge-type';
+            typeBadge.textContent = t.type;
+            metaDiv.appendChild(typeBadge);
+          }
+
+          tags.forEach(function (tag) {
+            var tagBadge = document.createElement('span');
+            tagBadge.className = 'badge-tag';
+            tagBadge.textContent = tag;
+            metaDiv.appendChild(tagBadge);
+          });
+
+          var triggerBadge = document.createElement('span');
+          triggerBadge.className = 'badge-trigger ' + triggerType;
+          triggerBadge.textContent = triggerType;
+          metaDiv.appendChild(triggerBadge);
+
+          card.appendChild(metaDiv);
+
+          var tasksDiv = document.createElement('div');
+          tasksDiv.className = 'template-card-tasks';
+          tasksDiv.textContent = taskCount + ' task' + (taskCount !== 1 ? 's' : '');
+
+          var footerDiv = document.createElement('div');
+          footerDiv.className = 'template-card-footer';
+          footerDiv.appendChild(tasksDiv);
+
+          var actionsWrap = document.createElement('div');
+          actionsWrap.className = 'card-footer-actions';
+
+          // Manual templates are startable from the library; automatic templates
+          // are generated from their cron schedule, so they only show trigger info
+          // (the trigger badge above) and no duplicate manual "Start workflow".
+          var isStartable = triggerType === 'manual' && taskCount > 0;
+          var startForm = null;
+
+          if (isStartable) {
+            var startAction = document.createElement('button');
+            startAction.type = 'button';
+            startAction.className = 'card-action-link template-start-action';
+            startAction.textContent = 'Start workflow';
+            startAction.setAttribute('aria-expanded', 'false');
+            startAction.setAttribute('aria-label', 'Start workflow from template ' + (t.name || 'Unnamed'));
+            startAction.addEventListener('click', function (e) {
+              e.stopPropagation();
+              if (!startForm) {
+                startForm = buildTemplateStartForm(t);
+                card.appendChild(startForm.element);
+              }
+              var open = startForm.element.hasAttribute('hidden');
+              if (open) {
+                startForm.element.removeAttribute('hidden');
+                startAction.setAttribute('aria-expanded', 'true');
+                startForm.focus();
+              } else {
+                startForm.element.setAttribute('hidden', '');
+                startAction.setAttribute('aria-expanded', 'false');
+              }
+            });
+            startAction.addEventListener('keydown', function (e) {
+              if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+            });
+            actionsWrap.appendChild(startAction);
+          }
+
+          var actionSpan = document.createElement('span');
+          actionSpan.className = 'card-action-text';
+          actionSpan.textContent = 'Edit template';
+          actionsWrap.appendChild(actionSpan);
+
+          footerDiv.appendChild(actionsWrap);
+          card.appendChild(footerDiv);
+
+          function openTemplate() {
+            currentTemplateId = t.id;
+            renderTemplates();
+          }
+
+          card.addEventListener('click', openTemplate);
+          makeKeyboardCard(card, 'Open template ' + (t.name || 'Unnamed'), openTemplate);
+
+          cardsDiv.appendChild(card);
+        });
+
+        container.appendChild(cardsDiv);
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        showError('Failed to load templates: ' + err.message);
+      });
   }
 
   function renderTemplateEditor(templateId) {
@@ -5815,17 +6457,16 @@
     app.appendChild(editorContainer);
 
     // Load template and users in parallel
-    Promise.all([
-      api.templates.get(templateId),
-      api.users.list()
-    ]).then(function (results) {
-      var template = results[0].template;
-      var users = (results[1] && results[1].users) || [];
-      buildTemplateEditorForm(template, users, editorContainer);
-    }).catch(function (err) {
-      editorContainer.innerHTML = '';
-      showError('Failed to load template: ' + err.message);
-    });
+    Promise.all([api.templates.get(templateId), api.users.list()])
+      .then(function (results) {
+        var template = results[0].template;
+        var users = (results[1] && results[1].users) || [];
+        buildTemplateEditorForm(template, users, editorContainer);
+      })
+      .catch(function (err) {
+        editorContainer.innerHTML = '';
+        showError('Failed to load template: ' + err.message);
+      });
   }
 
   function buildTemplateEditorForm(template, users, container) {
@@ -5836,18 +6477,12 @@
 
     var editorHeader = document.createElement('div');
     editorHeader.className = 'template-editor-header';
-    editorHeader.innerHTML =
-      '<div>' +
-        '<h2>' + escapeHtml(template.name || 'Untitled template') + '</h2>' +
-        '<div class="page-subtitle" id="template-editor-summary">Template editor</div>' +
-      '</div>';
+    editorHeader.innerHTML = '<div>' + '<h2>' + escapeHtml(template.name || 'Untitled template') + '</h2>' + '<div class="page-subtitle" id="template-editor-summary">Template editor</div>' + '</div>';
     editor.appendChild(editorHeader);
 
     var saveBar = document.createElement('div');
     saveBar.className = 'save-bar template-save-bar';
-    saveBar.innerHTML =
-      '<button class="btn-primary" id="tpl-save-btn">Save</button>' +
-      '<span class="save-feedback" id="tpl-save-feedback">No unsaved changes</span>';
+    saveBar.innerHTML = '<button class="btn-primary" id="tpl-save-btn">Save</button>' + '<span class="save-feedback" id="tpl-save-feedback">No unsaved changes</span>';
     editor.appendChild(saveBar);
 
     // ---- Basic Info Section ----
@@ -5857,27 +6492,7 @@
 
     var basicRow = document.createElement('div');
     basicRow.className = 'editor-row';
-    basicRow.innerHTML =
-      '<div class="editor-group">' +
-        '<label for="tpl-name">Name</label>' +
-        '<input type="text" id="tpl-name" value="' + escapeHtml(template.name || '') + '" style="width:200px;" />' +
-      '</div>' +
-      '<div class="editor-group">' +
-        '<label for="tpl-type">Type</label>' +
-        '<input type="text" id="tpl-type" value="' + escapeHtml(template.type || '') + '" style="width:150px;" />' +
-      '</div>' +
-      '<div class="editor-group">' +
-        '<label for="tpl-emoji">Emoji</label>' +
-        '<input type="text" id="tpl-emoji" value="' + escapeHtml(template.emoji || '') + '" style="width:60px;" />' +
-      '</div>' +
-      '<div class="editor-group">' +
-        '<label for="tpl-tags">Tags (comma-separated)</label>' +
-        '<input type="text" id="tpl-tags" value="' + escapeHtml((template.tags || []).join(', ')) + '" style="width:200px;" />' +
-      '</div>' +
-      '<div class="editor-group">' +
-        '<label for="tpl-assignee">Default Assignee</label>' +
-        '<select id="tpl-assignee"></select>' +
-      '</div>';
+    basicRow.innerHTML = '<div class="editor-group">' + '<label for="tpl-name">Name</label>' + '<input type="text" id="tpl-name" value="' + escapeHtml(template.name || '') + '" style="width:200px;" />' + '</div>' + '<div class="editor-group">' + '<label for="tpl-type">Type</label>' + '<input type="text" id="tpl-type" value="' + escapeHtml(template.type || '') + '" style="width:150px;" />' + '</div>' + '<div class="editor-group">' + '<label for="tpl-emoji">Emoji</label>' + '<input type="text" id="tpl-emoji" value="' + escapeHtml(template.emoji || '') + '" style="width:60px;" />' + '</div>' + '<div class="editor-group">' + '<label for="tpl-tags">Tags (comma-separated)</label>' + '<input type="text" id="tpl-tags" value="' + escapeHtml((template.tags || []).join(', ')) + '" style="width:200px;" />' + '</div>' + '<div class="editor-group">' + '<label for="tpl-assignee">Default Assignee</label>' + '<select id="tpl-assignee"></select>' + '</div>';
     editor.appendChild(basicRow);
 
     // Populate assignee dropdown after DOM insertion
@@ -5904,21 +6519,31 @@
     var isAutomatic = template.triggerType === 'automatic';
     triggerDiv.innerHTML =
       '<div class="radio-group">' +
-        '<label><input type="radio" name="tpl-trigger" value="manual"' + (!isAutomatic ? ' checked' : '') + ' /> Manual</label>' +
-        '<label><input type="radio" name="tpl-trigger" value="automatic"' + (isAutomatic ? ' checked' : '') + ' /> Automatic</label>' +
+      '<label><input type="radio" name="tpl-trigger" value="manual"' +
+      (!isAutomatic ? ' checked' : '') +
+      ' /> Manual</label>' +
+      '<label><input type="radio" name="tpl-trigger" value="automatic"' +
+      (isAutomatic ? ' checked' : '') +
+      ' /> Automatic</label>' +
       '</div>' +
-      '<div class="trigger-fields" id="trigger-auto-fields" style="display:' + (isAutomatic ? 'block' : 'none') + ';">' +
-        '<div class="editor-row">' +
-          '<div class="editor-group">' +
-            '<label for="tpl-cron">Cron Expression</label>' +
-            '<input type="text" id="tpl-cron" value="' + escapeHtml(template.triggerSchedule || '') + '" style="width:200px;" placeholder="0 9 * * 1" />' +
-          '</div>' +
-          '<div class="editor-group">' +
-            '<label for="tpl-lead-days">Lead Days</label>' +
-            '<input type="number" id="tpl-lead-days" value="' + (template.triggerLeadDays != null ? template.triggerLeadDays : '') + '" style="width:100px;" />' +
-          '</div>' +
-        '</div>' +
-        '<div style="font-size:12px;color:#888;margin-top:4px;">Example: 0 9 * * 1 = Every Monday at 9am</div>' +
+      '<div class="trigger-fields" id="trigger-auto-fields" style="display:' +
+      (isAutomatic ? 'block' : 'none') +
+      ';">' +
+      '<div class="editor-row">' +
+      '<div class="editor-group">' +
+      '<label for="tpl-cron">Cron Expression</label>' +
+      '<input type="text" id="tpl-cron" value="' +
+      escapeHtml(template.triggerSchedule || '') +
+      '" style="width:200px;" placeholder="0 9 * * 1" />' +
+      '</div>' +
+      '<div class="editor-group">' +
+      '<label for="tpl-lead-days">Lead Days</label>' +
+      '<input type="number" id="tpl-lead-days" value="' +
+      (template.triggerLeadDays != null ? template.triggerLeadDays : '') +
+      '" style="width:100px;" />' +
+      '</div>' +
+      '</div>' +
+      '<div style="font-size:12px;color:#888;margin-top:4px;">Example: 0 9 * * 1 = Every Monday at 9am</div>' +
       '</div>';
     editor.appendChild(triggerDiv);
 
@@ -5986,11 +6611,15 @@
     addTdBtn.textContent = '+ Add Task';
     addTdBtn.addEventListener('click', function () {
       var count = tdContainer.querySelectorAll('.task-def-item').length;
-      addTaskDefItem(tdContainer, {
-        refId: 'task-' + (count + 1),
-        description: '',
-        offsetDays: 0
-      }, users);
+      addTaskDefItem(
+        tdContainer,
+        {
+          refId: 'task-' + (count + 1),
+          description: '',
+          offsetDays: 0
+        },
+        users
+      );
       notifyTemplateEditorChanged(tdContainer);
     });
     editor.appendChild(addTdBtn);
@@ -6029,9 +6658,7 @@
       var taskCount = tdContainer.querySelectorAll('.task-def-item').length;
       var refCount = refsContainer.querySelectorAll('.ref-row').length;
       var linkCount = bldContainer.querySelectorAll('.bld-row').length;
-      summary.textContent = taskCount + ' task' + (taskCount !== 1 ? 's' : '') +
-        ' · ' + refCount + ' reference' + (refCount !== 1 ? 's' : '') +
-        ' · ' + linkCount + ' bundle link' + (linkCount !== 1 ? 's' : '');
+      summary.textContent = taskCount + ' task' + (taskCount !== 1 ? 's' : '') + ' · ' + refCount + ' reference' + (refCount !== 1 ? 's' : '') + ' · ' + linkCount + ' bundle link' + (linkCount !== 1 ? 's' : '');
     }
 
     function markDirty() {
@@ -6058,9 +6685,7 @@
   function addReferenceRow(container, name, url) {
     var row = document.createElement('div');
     row.className = 'list-item-row ref-row';
-    row.innerHTML =
-      '<input type="text" class="ref-name" placeholder="Name" value="' + escapeHtml(name) + '" style="width:150px;" />' +
-      '<input type="url" class="ref-url" placeholder="https://..." value="' + escapeHtml(url) + '" style="width:300px;" />';
+    row.innerHTML = '<input type="text" class="ref-name" placeholder="Name" value="' + escapeHtml(name) + '" style="width:150px;" />' + '<input type="url" class="ref-url" placeholder="https://..." value="' + escapeHtml(url) + '" style="width:300px;" />';
 
     var removeBtn = document.createElement('button');
     removeBtn.className = 'btn-remove';
@@ -6076,8 +6701,7 @@
   function addBundleLinkRow(container, name) {
     var row = document.createElement('div');
     row.className = 'list-item-row bld-row';
-    row.innerHTML =
-      '<input type="text" class="bld-name" placeholder="Link name" value="' + escapeHtml(name) + '" style="width:200px;" />';
+    row.innerHTML = '<input type="text" class="bld-name" placeholder="Link name" value="' + escapeHtml(name) + '" style="width:200px;" />';
 
     var removeBtn = document.createElement('button');
     removeBtn.className = 'btn-remove';
@@ -6133,15 +6757,7 @@
     fieldsDiv.className = 'task-def-fields';
 
     // Description
-    fieldsDiv.innerHTML =
-      '<div class="editor-group">' +
-        '<label>Description</label>' +
-        '<input type="text" class="td-description" value="' + escapeHtml(td.description || '') + '" style="width:250px;" />' +
-      '</div>' +
-      '<div class="editor-group">' +
-        '<label>Offset Days</label>' +
-        '<input type="number" class="td-offset" value="' + (td.offsetDays != null ? td.offsetDays : 0) + '" style="width:80px;" />' +
-      '</div>';
+    fieldsDiv.innerHTML = '<div class="editor-group">' + '<label>Description</label>' + '<input type="text" class="td-description" value="' + escapeHtml(td.description || '') + '" style="width:250px;" />' + '</div>' + '<div class="editor-group">' + '<label>Offset Days</label>' + '<input type="number" class="td-offset" value="' + (td.offsetDays != null ? td.offsetDays : 0) + '" style="width:80px;" />' + '</div>';
 
     // Assignee dropdown
     var assigneeGroup = document.createElement('div');
@@ -6163,17 +6779,13 @@
     // Instructions URL
     var instrGroup = document.createElement('div');
     instrGroup.className = 'editor-group';
-    instrGroup.innerHTML =
-      '<label>Instructions URL</label>' +
-      '<input type="text" class="td-instructions" value="' + escapeHtml(td.instructionsUrl || '') + '" style="width:250px;" />';
+    instrGroup.innerHTML = '<label>Instructions URL</label>' + '<input type="text" class="td-instructions" value="' + escapeHtml(td.instructionsUrl || '') + '" style="width:250px;" />';
     fieldsDiv.appendChild(instrGroup);
 
     // Required link name
     var rlnGroup = document.createElement('div');
     rlnGroup.className = 'editor-group';
-    rlnGroup.innerHTML =
-      '<label>Required Link Name</label>' +
-      '<input type="text" class="td-required-link" value="' + escapeHtml(td.requiredLinkName || '') + '" style="width:150px;" />';
+    rlnGroup.innerHTML = '<label>Required Link Name</label>' + '<input type="text" class="td-required-link" value="' + escapeHtml(td.requiredLinkName || '') + '" style="width:150px;" />';
     fieldsDiv.appendChild(rlnGroup);
 
     item.appendChild(fieldsDiv);
@@ -6296,7 +6908,16 @@
     var tagsStr = document.getElementById('tpl-tags').value.trim();
     var assigneeId = document.getElementById('tpl-assignee').value;
 
-    var tags = tagsStr ? tagsStr.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s; }) : [];
+    var tags = tagsStr
+      ? tagsStr
+          .split(',')
+          .map(function (s) {
+            return s.trim();
+          })
+          .filter(function (s) {
+            return s;
+          })
+      : [];
 
     // Trigger config
     var triggerRadio = document.querySelector('input[name="tpl-trigger"]:checked');
@@ -6370,16 +6991,18 @@
       if (triggerLeadDays !== undefined && !isNaN(triggerLeadDays)) updateData.triggerLeadDays = triggerLeadDays;
     }
 
-    api.templates.update(templateId, updateData).then(function () {
-      feedback.textContent = 'Saved successfully!';
-      feedback.className = 'save-feedback success';
-      showSuccess('Template saved.');
-    }).catch(function (err) {
-      feedback.textContent = 'Save failed: ' + err.message;
-      feedback.className = 'save-feedback error';
-    });
+    api.templates
+      .update(templateId, updateData)
+      .then(function () {
+        feedback.textContent = 'Saved successfully!';
+        feedback.className = 'save-feedback success';
+        showSuccess('Template saved.');
+      })
+      .catch(function (err) {
+        feedback.textContent = 'Save failed: ' + err.message;
+        feedback.className = 'save-feedback error';
+      });
   }
-
 
   // ── Recurring View ──────────────────────────────────────────────
 
@@ -6395,7 +7018,7 @@
         if (parts[2] === '*' && parts[3] === '*' && parts[4] === '*') return 'Daily';
         if (parts[2] === '*' && parts[3] === '*' && parts[4] !== '*') {
           var dayIndex = parseInt(parts[4], 10);
-          return 'Weekly (' + (DAY_NAMES[dayIndex] || ('day ' + parts[4])) + ')';
+          return 'Weekly (' + (DAY_NAMES[dayIndex] || 'day ' + parts[4]) + ')';
         }
         if (parts[2] !== '*' && parts[3] === '*' && parts[4] === '*') return 'Monthly (day ' + parts[2] + ')';
       }
@@ -6427,33 +7050,33 @@
     form.innerHTML =
       '<h3>New Recurring Config</h3>' +
       '<div class="form-row">' +
-        '<div class="form-group">' +
-          '<label for="rec-desc">Description</label>' +
-          '<input type="text" id="rec-desc" placeholder="Task description" style="width:300px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="rec-schedule">Schedule</label>' +
-          '<select id="rec-schedule">' +
-            '<option value="daily">Daily</option>' +
-            '<option value="weekly">Weekly</option>' +
-            '<option value="monthly">Monthly</option>' +
-          '</select>' +
-        '</div>' +
-        '<div class="form-group" id="rec-day-group" style="display:none;">' +
-          '<label for="rec-day" id="rec-day-label">Day</label>' +
-          '<input type="number" id="rec-day" min="0" max="31" style="width:80px;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:14px;" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>State</label>' +
-          '<label class="inline-checkbox">' +
-            '<input type="checkbox" id="rec-enabled" checked />' +
-            'Enabled' +
-          '</label>' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>&nbsp;</label>' +
-          '<button class="btn-primary" id="rec-create-btn">Create</button>' +
-        '</div>' +
+      '<div class="form-group">' +
+      '<label for="rec-desc">Description</label>' +
+      '<input type="text" id="rec-desc" placeholder="Task description" style="width:300px;" />' +
+      '</div>' +
+      '<div class="form-group">' +
+      '<label for="rec-schedule">Schedule</label>' +
+      '<select id="rec-schedule">' +
+      '<option value="daily">Daily</option>' +
+      '<option value="weekly">Weekly</option>' +
+      '<option value="monthly">Monthly</option>' +
+      '</select>' +
+      '</div>' +
+      '<div class="form-group" id="rec-day-group" style="display:none;">' +
+      '<label for="rec-day" id="rec-day-label">Day</label>' +
+      '<input type="number" id="rec-day" min="0" max="31" style="width:80px;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:14px;" />' +
+      '</div>' +
+      '<div class="form-group">' +
+      '<label>State</label>' +
+      '<label class="inline-checkbox">' +
+      '<input type="checkbox" id="rec-enabled" checked />' +
+      'Enabled' +
+      '</label>' +
+      '</div>' +
+      '<div class="form-group">' +
+      '<label>&nbsp;</label>' +
+      '<button class="btn-primary" id="rec-create-btn">Create</button>' +
+      '</div>' +
       '</div>';
     app.appendChild(form);
 
@@ -6498,7 +7121,10 @@
         showError('Choose a day for this recurring schedule.');
         return;
       }
-      var data = { description: desc, cronExpression: cronForSchedule(schedule, dayValue) };
+      var data = {
+        description: desc,
+        cronExpression: cronForSchedule(schedule, dayValue)
+      };
       if (schedule === 'weekly') {
         var dayOfWeek = parseInt(dayValue, 10);
         if (Number.isNaN(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
@@ -6514,41 +7140,29 @@
       }
       data.enabled = enabled;
       setButtonBusy(btn, true, 'Create', 'Creating...');
-      api.recurring.create(data).then(function () {
-        document.getElementById('rec-desc').value = '';
-        document.getElementById('rec-enabled').checked = true;
-        scheduleSelect.value = 'daily';
-        dayInput.value = '';
-        updateDayField();
-        showSuccess('Recurring config created.');
-        loadRecurring();
-      }).catch(function (err) {
-        showError('Failed to create recurring config: ' + err.message);
-      }).finally(function () {
-        setButtonBusy(btn, false, 'Create');
-      });
+      api.recurring
+        .create(data)
+        .then(function () {
+          document.getElementById('rec-desc').value = '';
+          document.getElementById('rec-enabled').checked = true;
+          scheduleSelect.value = 'daily';
+          dayInput.value = '';
+          updateDayField();
+          showSuccess('Recurring config created.');
+          loadRecurring();
+        })
+        .catch(function (err) {
+          showError('Failed to create recurring config: ' + err.message);
+        })
+        .finally(function () {
+          setButtonBusy(btn, false, 'Create');
+        });
     });
 
     // Generate section
     var genSection = document.createElement('div');
     genSection.className = 'form-section';
-    genSection.innerHTML =
-      '<h3>Generate Tasks</h3>' +
-      '<div class="form-row">' +
-        '<div class="form-group">' +
-          '<label for="gen-start">Start Date</label>' +
-          '<input type="date" id="gen-start" value="' + todayString() + '" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label for="gen-end">End Date</label>' +
-          '<input type="date" id="gen-end" value="' + todayString() + '" />' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>&nbsp;</label>' +
-          '<button class="btn-primary" id="gen-btn">Generate</button>' +
-        '</div>' +
-      '</div>' +
-      '<div id="gen-result" style="margin-top:12px;font-size:14px;"></div>';
+    genSection.innerHTML = '<h3>Generate Tasks</h3>' + '<div class="form-row">' + '<div class="form-group">' + '<label for="gen-start">Start Date</label>' + '<input type="date" id="gen-start" value="' + todayString() + '" />' + '</div>' + '<div class="form-group">' + '<label for="gen-end">End Date</label>' + '<input type="date" id="gen-end" value="' + todayString() + '" />' + '</div>' + '<div class="form-group">' + '<label>&nbsp;</label>' + '<button class="btn-primary" id="gen-btn">Generate</button>' + '</div>' + '</div>' + '<div id="gen-result" style="margin-top:12px;font-size:14px;"></div>';
     app.appendChild(genSection);
 
     document.getElementById('gen-btn').addEventListener('click', function () {
@@ -6558,17 +7172,21 @@
       var resultDiv = document.getElementById('gen-result');
       setButtonBusy(btn, true, 'Generate', 'Generating...');
       resultDiv.textContent = 'Generating...';
-      api.recurring.generate({ startDate: startDate, endDate: endDate }).then(function (data) {
-        var count = (data.generated || []).length;
-        var skipped = data.skipped || 0;
-        resultDiv.textContent = 'Generated ' + count + ' task(s), skipped ' + skipped + ' duplicate(s).';
-        showSuccess('Tasks generated.');
-      }).catch(function (err) {
-        resultDiv.textContent = '';
-        showError('Failed to generate tasks: ' + err.message);
-      }).finally(function () {
-        setButtonBusy(btn, false, 'Generate');
-      });
+      api.recurring
+        .generate({ startDate: startDate, endDate: endDate })
+        .then(function (data) {
+          var count = (data.generated || []).length;
+          var skipped = data.skipped || 0;
+          resultDiv.textContent = 'Generated ' + count + ' task(s), skipped ' + skipped + ' duplicate(s).';
+          showSuccess('Tasks generated.');
+        })
+        .catch(function (err) {
+          resultDiv.textContent = '';
+          showError('Failed to generate tasks: ' + err.message);
+        })
+        .finally(function () {
+          setButtonBusy(btn, false, 'Generate');
+        });
     });
 
     // Table container
@@ -6578,9 +7196,7 @@
 
     var listToolbar = document.createElement('div');
     listToolbar.className = 'list-toolbar';
-    listToolbar.innerHTML =
-      '<div class="section-summary" id="recurring-count">Recurring configs</div>' +
-      '<input type="search" id="recurring-search" class="search-input" placeholder="Search recurring tasks" value="' + escapeHtml(recurringState.search) + '" />';
+    listToolbar.innerHTML = '<div class="section-summary" id="recurring-count">Recurring configs</div>' + '<input type="search" id="recurring-search" class="search-input" placeholder="Search recurring tasks" value="' + escapeHtml(recurringState.search) + '" />';
     app.insertBefore(listToolbar, tableContainer);
 
     document.getElementById('recurring-search').addEventListener('input', function (e) {
@@ -6597,122 +7213,113 @@
     container.innerHTML = '<p>Loading...</p>';
 
     var banners = app.querySelectorAll('.error-banner');
-    banners.forEach(function (b) { b.remove(); });
-
-    api.recurring.list().then(function (data) {
-      var configs = data.recurringConfigs || [];
-      var totalCount = configs.length;
-      var countEl = document.getElementById('recurring-count');
-      if (countEl) {
-        countEl.textContent = totalCount + ' recurring config' + (totalCount !== 1 ? 's' : '');
-      }
-      if (configs.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No recurring configs yet',
-          'Create a schedule above to generate repeatable tasks automatically.',
-          []
-        );
-        return;
-      }
-
-      if (recurringState.search) {
-        configs = configs.filter(function (c) {
-          var haystack = [c.description || '', scheduleSummary(c), c.enabled ? 'enabled' : 'disabled'].join(' ').toLowerCase();
-          return haystack.indexOf(recurringState.search) !== -1;
-        });
-      }
-
-      if (countEl) {
-        countEl.textContent = configs.length + ' of ' + totalCount + ' recurring config' + (totalCount !== 1 ? 's' : '') + ' shown';
-      }
-
-      if (configs.length === 0) {
-        container.innerHTML = renderEmptyState(
-          'No recurring configs match your search',
-          'Clear or broaden the search to see more recurring configs.',
-          []
-        );
-        return;
-      }
-
-      var html = '<table class="responsive-table"><thead><tr>' +
-        '<th>Description</th><th>Schedule</th><th>Enabled</th><th>Actions</th>' +
-        '</tr></thead><tbody>';
-      configs.forEach(function (c) {
-        var enabledText = c.enabled ? 'Yes' : 'No';
-        var pauseResumeText = c.enabled ? 'Pause' : 'Resume';
-        html += '<tr>' +
-          '<td data-label="Description">' + escapeHtml(c.description) + '</td>' +
-          '<td data-label="Schedule">' + escapeHtml(scheduleSummary(c)) + '</td>' +
-          '<td data-label="Enabled">' + enabledText + '</td>' +
-          '<td data-label="Actions">' +
-            '<button class="task-action-btn" data-toggle-recurring="' + c.id + '" data-rec-enabled="' + (c.enabled ? 'true' : 'false') + '">' + pauseResumeText + '</button> ' +
-            '<button class="btn-danger" data-delete-recurring="' + c.id + '" data-rec-desc="' + escapeHtml(c.description) + '">Delete</button>' +
-          '</td>' +
-          '</tr>';
-      });
-      html += '</tbody></table>';
-      container.innerHTML = html;
-
-      container.querySelectorAll('[data-toggle-recurring]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var id = btn.getAttribute('data-toggle-recurring');
-          var enabled = btn.getAttribute('data-rec-enabled') === 'true';
-          var nextEnabled = !enabled;
-          setButtonBusy(btn, true, enabled ? 'Pause' : 'Resume', 'Saving...');
-          api.recurring.update(id, { enabled: nextEnabled }).then(function () {
-            showSuccess(nextEnabled ? 'Recurring config resumed.' : 'Recurring config paused.');
-            loadRecurring();
-          }).catch(function (err) {
-            showError('Failed to update recurring config: ' + err.message);
-            setButtonBusy(btn, false, enabled ? 'Pause' : 'Resume');
-          });
-        });
-      });
-
-      // Delete handlers
-      container.querySelectorAll('[data-delete-recurring]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var id = btn.getAttribute('data-delete-recurring');
-          var desc = btn.getAttribute('data-rec-desc');
-          if (!confirm('Delete recurring config: "' + desc + '"?')) return;
-          setButtonBusy(btn, true, 'Delete', 'Deleting...');
-          api.recurring.delete(id).then(function () {
-            showSuccess('Recurring config deleted.');
-            loadRecurring();
-          }).catch(function (err) {
-            if (err.message && err.message.indexOf('generated history') !== -1) {
-              showError(err.message);
-            } else {
-              showError('Failed to delete recurring config: ' + err.message);
-            }
-            setButtonBusy(btn, false, 'Delete');
-          });
-        });
-      });
-    }).catch(function (err) {
-      container.innerHTML = '';
-      showError('Failed to load recurring configs: ' + err.message);
+    banners.forEach(function (b) {
+      b.remove();
     });
+
+    api.recurring
+      .list()
+      .then(function (data) {
+        var configs = data.recurringConfigs || [];
+        var totalCount = configs.length;
+        var countEl = document.getElementById('recurring-count');
+        if (countEl) {
+          countEl.textContent = totalCount + ' recurring config' + (totalCount !== 1 ? 's' : '');
+        }
+        if (configs.length === 0) {
+          container.innerHTML = renderEmptyState('No recurring configs yet', 'Create a schedule above to generate repeatable tasks automatically.', []);
+          return;
+        }
+
+        if (recurringState.search) {
+          configs = configs.filter(function (c) {
+            var haystack = [c.description || '', scheduleSummary(c), c.enabled ? 'enabled' : 'disabled'].join(' ').toLowerCase();
+            return haystack.indexOf(recurringState.search) !== -1;
+          });
+        }
+
+        if (countEl) {
+          countEl.textContent = configs.length + ' of ' + totalCount + ' recurring config' + (totalCount !== 1 ? 's' : '') + ' shown';
+        }
+
+        if (configs.length === 0) {
+          container.innerHTML = renderEmptyState('No recurring configs match your search', 'Clear or broaden the search to see more recurring configs.', []);
+          return;
+        }
+
+        var html = '<table class="responsive-table"><thead><tr>' + '<th>Description</th><th>Schedule</th><th>Enabled</th><th>Actions</th>' + '</tr></thead><tbody>';
+        configs.forEach(function (c) {
+          var enabledText = c.enabled ? 'Yes' : 'No';
+          var pauseResumeText = c.enabled ? 'Pause' : 'Resume';
+          html += '<tr>' + '<td data-label="Description">' + escapeHtml(c.description) + '</td>' + '<td data-label="Schedule">' + escapeHtml(scheduleSummary(c)) + '</td>' + '<td data-label="Enabled">' + enabledText + '</td>' + '<td data-label="Actions">' + '<button class="task-action-btn" data-toggle-recurring="' + c.id + '" data-rec-enabled="' + (c.enabled ? 'true' : 'false') + '">' + pauseResumeText + '</button> ' + '<button class="btn-danger" data-delete-recurring="' + c.id + '" data-rec-desc="' + escapeHtml(c.description) + '">Delete</button>' + '</td>' + '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+        container.querySelectorAll('[data-toggle-recurring]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var id = btn.getAttribute('data-toggle-recurring');
+            var enabled = btn.getAttribute('data-rec-enabled') === 'true';
+            var nextEnabled = !enabled;
+            setButtonBusy(btn, true, enabled ? 'Pause' : 'Resume', 'Saving...');
+            api.recurring
+              .update(id, { enabled: nextEnabled })
+              .then(function () {
+                showSuccess(nextEnabled ? 'Recurring config resumed.' : 'Recurring config paused.');
+                loadRecurring();
+              })
+              .catch(function (err) {
+                showError('Failed to update recurring config: ' + err.message);
+                setButtonBusy(btn, false, enabled ? 'Pause' : 'Resume');
+              });
+          });
+        });
+
+        // Delete handlers
+        container.querySelectorAll('[data-delete-recurring]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var id = btn.getAttribute('data-delete-recurring');
+            var desc = btn.getAttribute('data-rec-desc');
+            if (!confirm('Delete recurring config: "' + desc + '"?')) return;
+            setButtonBusy(btn, true, 'Delete', 'Deleting...');
+            api.recurring
+              .delete(id)
+              .then(function () {
+                showSuccess('Recurring config deleted.');
+                loadRecurring();
+              })
+              .catch(function (err) {
+                if (err.message && err.message.indexOf('generated history') !== -1) {
+                  showError(err.message);
+                } else {
+                  showError('Failed to delete recurring config: ' + err.message);
+                }
+                setButtonBusy(btn, false, 'Delete');
+              });
+          });
+        });
+      })
+      .catch(function (err) {
+        container.innerHTML = '';
+        showError('Failed to load recurring configs: ' + err.message);
+      });
   }
 
   // ── Utility ─────────────────────────────────────────────────────
 
   function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function renderMarkdownLinks(str) {
     if (!str) return '';
     var escaped = escapeHtml(str);
-    return escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   }
 
+  // Keep the standalone fallback planner equivalent to the production portal
+  // without coupling its renderer to the portal shell.
   function newsletterPeriodKey(date, view) {
     if (view !== 'week') return date.slice(0, 7);
     var day = new Date(date + 'T00:00:00Z');
