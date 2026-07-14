@@ -1517,25 +1517,233 @@ async function renderNewsletterSurface() {
 }
 
 async function renderSponsorCrmSurface() {
-  documentList.replaceChildren();const surface=document.createElement("section");surface.className="sponsor-crm-surface";surface.innerHTML=`<header class="crm-header"><div><h2>Sponsor CRM</h2><p>Organizations, contacts, bookings, and next actions.</p></div><div><button data-add-org>Add sponsor</button><button class="primary-button" data-add-booking>Add booking</button></div></header><div class="crm-filters"><label>Search sponsors <input data-crm-search type="search"></label><label>Show <select data-crm-active><option value="true">Active</option><option value="false">Archived</option><option value="">All</option></select></label><label>Booking status <select data-crm-status><option value="">All</option>${["inquiry","held","confirmed","materials-pending","materials-ready","scheduled","published","performance-due","complete","cancelled"].map(value=>`<option>${value}</option>`).join("")}</select></label></div><p data-crm-message role="status">Loading sponsor CRM…</p><div class="crm-layout"><section><h3>Sponsors</h3><div data-crm-orgs>Loading sponsors…</div></section><section><h3>Bookings</h3><div data-crm-bookings>Loading bookings…</div><div data-crm-detail></div></section></div>
+  documentList.replaceChildren();
+  const surface = document.createElement("section");
+  surface.className = "sponsor-crm-surface";
+  surface.innerHTML = `<header class="crm-header"><div><h2>Sponsor CRM</h2><p>Organizations, contacts, bookings, and next actions.</p></div><div><button data-add-org>Add sponsor</button><button class="primary-button" data-add-booking>Add booking</button></div></header><div class="crm-filters"><label>Search sponsors <input data-crm-search type="search"></label><label>Show <select data-crm-active><option value="true">Active</option><option value="false">Archived</option><option value="">All</option></select></label><label>Booking status <select data-crm-status><option value="">All</option>${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label></div><p data-crm-message role="status">Loading sponsor CRM…</p><div class="crm-layout"><section><h3>Sponsors</h3><div data-crm-orgs>Loading sponsors…</div></section><section><h3>Bookings</h3><div data-crm-bookings>Loading bookings…</div><div data-crm-detail></div></section></div>
   <dialog data-org-dialog><form method="dialog"><h3>Sponsor organization</h3><label>Name <input name="displayName"></label><label>Private notes <textarea name="notes"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-org-save>Save sponsor</button></form></dialog>
   <dialog data-contact-dialog><form method="dialog"><h3>Contact</h3><input name="organizationId" type="hidden"><label>Name <input name="name"></label><label>Email <input name="email" type="email"></label><label>Role <input name="role"></label><label><input name="primary" type="checkbox"> Primary contact</label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-contact-save>Save contact</button></form></dialog>
-  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry","held","confirmed","materials-pending","materials-ready","scheduled","published","performance-due","complete","cancelled"].map(value=>`<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>`;documentList.append(surface);setPageTitle("Sponsors","Sponsor CRM");
-  surface.querySelector(".crm-layout").insertAdjacentHTML("afterend",'<section><h3>Booking alerts</h3><div data-crm-alerts>Loading alerts…</div></section>');
-  const api=(path,options={})=>request(workApiUrl(`/api/sponsor-crm${path}`),{headers:{"content-type":"application/json",...(options.headers||{})},...options}),message=surface.querySelector("[data-crm-message]");let organizations=[],contacts=[],bookings=[];
-  const safe=async(action,label)=>{try{await action();}catch(error){message.textContent=`${label}: ${error.message}`;}};
-  function orgOptions(){surface.querySelector('[data-booking-dialog] [name="organizationId"]').innerHTML=organizations.filter(item=>!item.archivedAt).map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName)}</option>`).join("");}
-  function draw(){const search=surface.querySelector("[data-crm-search]").value.toLowerCase(),active=surface.querySelector("[data-crm-active]").value,status=surface.querySelector("[data-crm-status]").value,shown=organizations.filter(item=>(!search||item.displayName.toLowerCase().includes(search))&&(!active||String(!item.archivedAt)===active));surface.querySelector("[data-crm-orgs]").innerHTML=shown.length?shown.map(item=>`<article class="crm-card"><strong>${escapeHtml(item.displayName)}</strong><p>${item.archivedAt?"Archived":"Active"}</p><button data-contact-org="${escapeHtml(item.id)}">Add contact</button>${item.archivedAt?"":` <button data-archive-org="${escapeHtml(item.id)}">Archive</button>`}</article>`).join(""):`<div class="honest-state"><strong>No sponsors found</strong><p>Adjust filters or add the first sponsor.</p></div>`;const visible=bookings.filter(item=>!status||item.status===status);surface.querySelector("[data-crm-bookings]").innerHTML=visible.length?visible.map(item=>{const org=organizations.find(value=>value.id===item.organizationId);return`<article class="crm-card"><strong>${escapeHtml(org?.displayName||"Unknown sponsor")}</strong> <span>${escapeHtml(item.status)}</span><p>${escapeHtml(item.plannedPublicationDate||"Date not set")} · next action ${escapeHtml(item.nextActionDate||"not set")}</p><button data-open-booking="${escapeHtml(item.id)}">Open booking</button> <button data-edit-booking="${escapeHtml(item.id)}">Edit</button></article>`}).join(""):`<div class="honest-state"><strong>No bookings</strong><p>Create a booking or adjust filters.</p></div>`;}
-  async function refresh(){message.textContent="Loading sponsor CRM…";const results=await Promise.all([api("/organizations"),api("/contacts"),api("/bookings"),request(workApiUrl("/api/notifications"))]);organizations=results[0].items||[];contacts=results[1].items||[];bookings=results[2].items||[];const alerts=(results[3].notifications||[]).filter(item=>item.metadata?.sponsorBookingId&&!item.dismissed);surface.querySelector("[data-crm-alerts]").innerHTML=alerts.length?alerts.map(item=>`<article class="crm-card"><strong>${escapeHtml(item.message)}</strong><p>Due ${escapeHtml(item.dueAt||"now")}</p><button data-alert-booking="${escapeHtml(item.metadata.sponsorBookingId)}">Open booking</button></article>`).join(""):"No active sponsor booking alerts.";orgOptions();draw();message.textContent="Sponsor CRM ready.";}
-  function openBooking(item){const dialog=surface.querySelector("[data-booking-dialog]"),form=dialog.querySelector("form");form.reset();for(const field of form.elements)if(item&&field.name&&item[field.name]!=null)field.value=Array.isArray(item[field.name])?item[field.name].join("\n"):item[field.name];form.elements.bookingId.value=item?.id||"";const orgId=item?.organizationId||form.elements.organizationId.value;form.elements.primaryContactId.innerHTML=`<option value="">No contact</option>${contacts.filter(value=>value.organizationId===orgId&&!value.archivedAt).map(value=>`<option value="${escapeHtml(value.id)}">${escapeHtml(value.name)}</option>`).join("")}`;if(item?.primaryContactId)form.elements.primaryContactId.value=item.primaryContactId;dialog.showModal();}
-  surface.querySelectorAll("[data-crm-search],[data-crm-active],[data-crm-status]").forEach(input=>input.addEventListener("input",draw));surface.querySelector("[data-add-org]").onclick=()=>surface.querySelector("[data-org-dialog]").showModal();surface.querySelector("[data-add-booking]").onclick=()=>openBooking(null);
-  surface.querySelector("[data-crm-orgs]").onclick=event=>{const contact=event.target.closest("[data-contact-org]")?.dataset.contactOrg,archive=event.target.closest("[data-archive-org]")?.dataset.archiveOrg;if(contact){const form=surface.querySelector("[data-contact-dialog] form");form.reset();form.elements.organizationId.value=contact;surface.querySelector("[data-contact-dialog]").showModal();}if(archive)safe(async()=>{await api(`/organizations/${archive}`,{method:"DELETE"});await refresh();},"Could not archive sponsor");};
-  surface.querySelector("[data-crm-bookings]").onclick=event=>{const edit=event.target.closest("[data-edit-booking]")?.dataset.editBooking,open=event.target.closest("[data-open-booking]")?.dataset.openBooking;if(edit)openBooking(bookings.find(item=>item.id===edit));if(open)safe(async()=>{const booking=bookings.find(item=>item.id===open),history=await api(`/bookings/${open}/history`),org=organizations.find(item=>item.id===booking.organizationId);surface.querySelector("[data-crm-detail]").innerHTML=`<article class="crm-card"><h3>Booking detail</h3><p><strong>${escapeHtml(org?.displayName||"Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate||"not set")} · material deadline ${escapeHtml(booking.materialDeadline||"not set")} · next action ${escapeHtml(booking.nextActionDate||"not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId||"Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId||"Not linked")}</p><div class="crm-history">${(history.items||[]).map(item=>`<div><strong>${escapeHtml(item.oldStatus||"created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note?`<p>${escapeHtml(item.note)}</p>`:""}</div>`).join("")}</div></article>`;},"Could not load booking history");};
-  for(const dialog of surface.querySelectorAll("dialog"))dialog.querySelector('[value="cancel"]').onclick=()=>dialog.close();
-  surface.querySelector("[data-org-save]").onclick=event=>{event.preventDefault();const dialog=surface.querySelector("[data-org-dialog]"),form=dialog.querySelector("form");safe(async()=>{const data=Object.fromEntries(new FormData(form));if(!data.displayName)throw new Error("Name is required");await api("/organizations",{method:"POST",body:JSON.stringify(data)});dialog.close();await refresh();},"Could not save sponsor");};
-  surface.querySelector("[data-contact-save]").onclick=event=>{event.preventDefault();const dialog=surface.querySelector("[data-contact-dialog]"),form=dialog.querySelector("form");safe(async()=>{const data=Object.fromEntries(new FormData(form));if(!data.name||!data.email)throw new Error("Name and email are required");data.emails=[data.email];delete data.email;data.primary=form.elements.primary.checked;await api("/contacts",{method:"POST",body:JSON.stringify(data)});dialog.close();await refresh();},"Could not save contact");};
-  surface.querySelector("[data-booking-save]").onclick=event=>{event.preventDefault();const dialog=surface.querySelector("[data-booking-dialog]"),form=dialog.querySelector("form");safe(async()=>{const data=Object.fromEntries([...new FormData(form)].filter(([,value])=>value!==""));if(data.version)data.version=Number(data.version);if(data.artifactUrls)data.artifactUrls=data.artifactUrls.split("\n").filter(Boolean);const id=data.bookingId;delete data.bookingId;await api(`/bookings${id?`/${id}`:""}`,{method:id?"PUT":"POST",body:JSON.stringify(data)});dialog.close();await refresh();},"Could not save booking");};
-  try{await refresh();}catch(error){surface.querySelector("[data-crm-orgs]").textContent="Could not load sponsors.";surface.querySelector("[data-crm-bookings]").textContent="Could not load bookings.";message.textContent=`Permission or API error: ${error.message}. Reopen Sponsors to retry.`;}
+  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>`;
+  documentList.append(surface);
+  setPageTitle("Sponsors", "Sponsor CRM");
+  surface
+    .querySelector(".crm-layout")
+    .insertAdjacentHTML(
+      "afterend",
+      "<section><h3>Booking alerts</h3><div data-crm-alerts>Loading alerts…</div></section>",
+    );
+  const api = (path, options = {}) =>
+      request(workApiUrl(`/api/sponsor-crm${path}`), {
+        headers: {
+          "content-type": "application/json",
+          ...(options.headers || {}),
+        },
+        ...options,
+      }),
+    message = surface.querySelector("[data-crm-message]");
+  let organizations = [],
+    contacts = [],
+    bookings = [];
+  const safe = async (action, label) => {
+    try {
+      await action();
+    } catch (error) {
+      message.textContent = `${label}: ${error.message}`;
+    }
+  };
+  function orgOptions() {
+    surface.querySelector(
+      '[data-booking-dialog] [name="organizationId"]',
+    ).innerHTML = organizations
+      .filter((item) => !item.archivedAt)
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName)}</option>`,
+      )
+      .join("");
+  }
+  function draw() {
+    const search = surface
+        .querySelector("[data-crm-search]")
+        .value.toLowerCase(),
+      active = surface.querySelector("[data-crm-active]").value,
+      status = surface.querySelector("[data-crm-status]").value,
+      shown = organizations.filter(
+        (item) =>
+          (!search || item.displayName.toLowerCase().includes(search)) &&
+          (!active || String(!item.archivedAt) === active),
+      );
+    surface.querySelector("[data-crm-orgs]").innerHTML = shown.length
+      ? shown
+          .map(
+            (item) =>
+              `<article class="crm-card"><strong>${escapeHtml(item.displayName)}</strong><p>${item.archivedAt ? "Archived" : "Active"}</p><button data-contact-org="${escapeHtml(item.id)}">Add contact</button>${item.archivedAt ? "" : ` <button data-archive-org="${escapeHtml(item.id)}">Archive</button>`}</article>`,
+          )
+          .join("")
+      : `<div class="honest-state"><strong>No sponsors found</strong><p>Adjust filters or add the first sponsor.</p></div>`;
+    const visible = bookings.filter(
+      (item) => !status || item.status === status,
+    );
+    surface.querySelector("[data-crm-bookings]").innerHTML = visible.length
+      ? visible
+          .map((item) => {
+            const org = organizations.find(
+              (value) => value.id === item.organizationId,
+            );
+            return `<article class="crm-card"><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> <span>${escapeHtml(item.status)}</span><p>${escapeHtml(item.plannedPublicationDate || "Date not set")} · next action ${escapeHtml(item.nextActionDate || "not set")}</p><button data-open-booking="${escapeHtml(item.id)}">Open booking</button> <button data-edit-booking="${escapeHtml(item.id)}">Edit</button></article>`;
+          })
+          .join("")
+      : `<div class="honest-state"><strong>No bookings</strong><p>Create a booking or adjust filters.</p></div>`;
+  }
+  async function refresh() {
+    message.textContent = "Loading sponsor CRM…";
+    const results = await Promise.all([
+      api("/organizations"),
+      api("/contacts"),
+      api("/bookings"),
+      request(workApiUrl("/api/notifications")),
+    ]);
+    organizations = results[0].items || [];
+    contacts = results[1].items || [];
+    bookings = results[2].items || [];
+    const alerts = (results[3].notifications || []).filter(
+      (item) => item.metadata?.sponsorBookingId && !item.dismissed,
+    );
+    surface.querySelector("[data-crm-alerts]").innerHTML = alerts.length
+      ? alerts
+          .map(
+            (item) =>
+              `<article class="crm-card"><strong>${escapeHtml(item.message)}</strong><p>Due ${escapeHtml(item.dueAt || "now")}</p><button data-alert-booking="${escapeHtml(item.metadata.sponsorBookingId)}">Open booking</button></article>`,
+          )
+          .join("")
+      : "No active sponsor booking alerts.";
+    orgOptions();
+    draw();
+    message.textContent = "Sponsor CRM ready.";
+  }
+  function openBooking(item) {
+    const dialog = surface.querySelector("[data-booking-dialog]"),
+      form = dialog.querySelector("form");
+    form.reset();
+    for (const field of form.elements)
+      if (item && field.name && item[field.name] != null)
+        field.value = Array.isArray(item[field.name])
+          ? item[field.name].join("\n")
+          : item[field.name];
+    form.elements.bookingId.value = item?.id || "";
+    const orgId = item?.organizationId || form.elements.organizationId.value;
+    form.elements.primaryContactId.innerHTML = `<option value="">No contact</option>${contacts
+      .filter((value) => value.organizationId === orgId && !value.archivedAt)
+      .map(
+        (value) =>
+          `<option value="${escapeHtml(value.id)}">${escapeHtml(value.name)}</option>`,
+      )
+      .join("")}`;
+    if (item?.primaryContactId)
+      form.elements.primaryContactId.value = item.primaryContactId;
+    dialog.showModal();
+  }
+  surface
+    .querySelectorAll("[data-crm-search],[data-crm-active],[data-crm-status]")
+    .forEach((input) => input.addEventListener("input", draw));
+  surface.querySelector("[data-add-org]").onclick = () =>
+    surface.querySelector("[data-org-dialog]").showModal();
+  surface.querySelector("[data-add-booking]").onclick = () => openBooking(null);
+  surface.querySelector("[data-crm-orgs]").onclick = (event) => {
+    const contact =
+        event.target.closest("[data-contact-org]")?.dataset.contactOrg,
+      archive = event.target.closest("[data-archive-org]")?.dataset.archiveOrg;
+    if (contact) {
+      const form = surface.querySelector("[data-contact-dialog] form");
+      form.reset();
+      form.elements.organizationId.value = contact;
+      surface.querySelector("[data-contact-dialog]").showModal();
+    }
+    if (archive)
+      safe(async () => {
+        await api(`/organizations/${archive}`, { method: "DELETE" });
+        await refresh();
+      }, "Could not archive sponsor");
+  };
+  surface.querySelector("[data-crm-bookings]").onclick = (event) => {
+    const edit = event.target.closest("[data-edit-booking]")?.dataset
+        .editBooking,
+      open = event.target.closest("[data-open-booking]")?.dataset.openBooking;
+    if (edit) openBooking(bookings.find((item) => item.id === edit));
+    if (open)
+      safe(async () => {
+        const booking = bookings.find((item) => item.id === open),
+          history = await api(`/bookings/${open}/history`),
+          org = organizations.find(
+            (item) => item.id === booking.organizationId,
+          );
+        surface.querySelector("[data-crm-detail]").innerHTML =
+          `<article class="crm-card"><h3>Booking detail</h3><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+      }, "Could not load booking history");
+  };
+  for (const dialog of surface.querySelectorAll("dialog"))
+    dialog.querySelector('[value="cancel"]').onclick = () => dialog.close();
+  surface.querySelector("[data-org-save]").onclick = (event) => {
+    event.preventDefault();
+    const dialog = surface.querySelector("[data-org-dialog]"),
+      form = dialog.querySelector("form");
+    safe(async () => {
+      const data = Object.fromEntries(new FormData(form));
+      if (!data.displayName) throw new Error("Name is required");
+      await api("/organizations", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      dialog.close();
+      await refresh();
+    }, "Could not save sponsor");
+  };
+  surface.querySelector("[data-contact-save]").onclick = (event) => {
+    event.preventDefault();
+    const dialog = surface.querySelector("[data-contact-dialog]"),
+      form = dialog.querySelector("form");
+    safe(async () => {
+      const data = Object.fromEntries(new FormData(form));
+      if (!data.name || !data.email)
+        throw new Error("Name and email are required");
+      data.emails = [data.email];
+      delete data.email;
+      data.primary = form.elements.primary.checked;
+      await api("/contacts", { method: "POST", body: JSON.stringify(data) });
+      dialog.close();
+      await refresh();
+    }, "Could not save contact");
+  };
+  surface.querySelector("[data-booking-save]").onclick = (event) => {
+    event.preventDefault();
+    const dialog = surface.querySelector("[data-booking-dialog]"),
+      form = dialog.querySelector("form");
+    safe(async () => {
+      const data = Object.fromEntries(
+        [...new FormData(form)].filter(([, value]) => value !== ""),
+      );
+      if (data.version) data.version = Number(data.version);
+      if (data.artifactUrls)
+        data.artifactUrls = data.artifactUrls.split("\n").filter(Boolean);
+      const id = data.bookingId;
+      delete data.bookingId;
+      await api(`/bookings${id ? `/${id}` : ""}`, {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(data),
+      });
+      dialog.close();
+      await refresh();
+    }, "Could not save booking");
+  };
+  try {
+    await refresh();
+  } catch (error) {
+    surface.querySelector("[data-crm-orgs]").textContent =
+      "Could not load sponsors.";
+    surface.querySelector("[data-crm-bookings]").textContent =
+      "Could not load bookings.";
+    message.textContent = `Permission or API error: ${error.message}. Reopen Sponsors to retry.`;
+  }
 }
 
 async function renderMailingExportsSurface() {
