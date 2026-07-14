@@ -16,10 +16,8 @@ export interface MailingExportConfig {
   account: string;
   /** Operator-facing label. Mailchimp exports the audiences stage account-wide. */
   scopeLabel: string;
-  /** Legacy configuration alias retained for existing deployments. */
-  audience?: string;
   taskId?: string;
-  secretName: string;
+  credentialId: string;
   enabled?: boolean;
 }
 
@@ -67,4 +65,4 @@ export interface MailingExportProvider {
   download(url: string): Promise<Buffer>;
 }
 
-export type MailingExportProviderFactory = (secret: Record<string, string>) => MailingExportProvider;
+export type MailingExportProviderFactory = (credential: Record<string, string>) => MailingExportProvider;

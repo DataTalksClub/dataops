@@ -222,7 +222,7 @@ def test_email_document_storage_is_private_retained_and_prefix_scoped():
     assert "s3:*" not in backend
 
 
-def test_mailing_export_storage_schedule_and_secret_are_private_and_least_privilege():
+def test_mailing_export_storage_schedule_and_dapier_credential_are_private_and_least_privilege():
     template = TEMPLATE.read_text(encoding="utf-8")
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     bucket = _resource_block(template, "MailingExportsBucket")
@@ -244,12 +244,20 @@ def test_mailing_export_storage_schedule_and_secret_are_private_and_least_privil
     assert "DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket" in backend
     assert "Resource: !Sub ${MailingExportsBucket.Arn}/*" in backend
     assert "Action: [s3:GetObject, s3:PutObject]" in backend
-    assert "!If [HasMailchimpSecret, !Ref MailchimpSecretArn, !Ref AWS::NoValue]" in backend
+    assert "DATAOPS_DAPIER_CREDENTIALS_TABLE: !Ref DapierCredentialsTableName" in backend
+    assert "Action: [dynamodb:GetItem]" in backend
+    assert "Resource: !Ref DapierCredentialsTableArn" in backend
+    assert "dynamodb:LeadingKeys: [mailchimp]" in backend
+    assert "MailchimpSecretArn" not in template
+    assert "HasMailchimpSecret" not in template
     assert "DailyMailingExport" in backend
     assert '"dataopsAction":"mailing-export"' in backend
-    assert "MAILCHIMP_SECRET_ARN: ${{ secrets.MAILCHIMP_SECRET_ARN }}" in workflow
+    assert "DAPIER_CREDENTIALS_TABLE_NAME: ${{ vars.DAPIER_CREDENTIALS_TABLE_NAME }}" in workflow
+    assert "DAPIER_CREDENTIALS_TABLE_ARN: ${{ vars.DAPIER_CREDENTIALS_TABLE_ARN }}" in workflow
+    assert 'if [ -z "$DAPIER_CREDENTIALS_TABLE_NAME" ] || [ -z "$DAPIER_CREDENTIALS_TABLE_ARN" ]' in workflow
     assert "MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}" in workflow
-    assert "ParameterKey=MailchimpSecretArn,ParameterValue=$MAILCHIMP_SECRET_ARN" in workflow
+    assert "ParameterKey=DapierCredentialsTableName,ParameterValue=$DAPIER_CREDENTIALS_TABLE_NAME" in workflow
+    assert "ParameterKey=DapierCredentialsTableArn,ParameterValue=$DAPIER_CREDENTIALS_TABLE_ARN" in workflow
     assert "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" in workflow
 
 

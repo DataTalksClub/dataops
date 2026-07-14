@@ -1,13 +1,15 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
+import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { getClient, startLocal, stopLocal } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createTask, getTask, updateTask } from '../src/db/tasks';
 import { createBundle, updateBundle } from '../src/db/bundles';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { MailchimpProvider, MailingExportProviderError } from '../src/mailingExports/mailchimp';
+import { readDapierMailchimpCredential } from '../src/mailingExports/credentials';
 import { MailingExportProviderRegistry } from '../src/mailingExports/registry';
-import { runConfiguredMailingExports, runMailingExport } from '../src/mailingExports/service';
+import { loadMailingExportConfigs, publicMailingExportConfigs, runConfiguredMailingExports, runMailingExport } from '../src/mailingExports/service';
 import { setArtifactDownloadSignerForTests } from '../src/routes/artifacts';
 import { route } from '../src/router';
 import type { MailingExportConfig, MailingExportProvider, ProviderExportResult } from '../src/mailingExports/types';
@@ -16,7 +18,7 @@ const ZIP = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0, 0, 0]);
 let sequence = 0;
 const config = (suffix: string, extra: Partial<MailingExportConfig> = {}): MailingExportConfig => ({
   id: `mailchimp-${suffix}-${++sequence}`, provider: 'mailchimp', account: 'Synthetic account',
-  scopeLabel: 'All audiences (account export)', secretName: 'placeholder/mailchimp', ...extra,
+  scopeLabel: 'All audiences (account export)', credentialId: 'mailchimp', ...extra,
 });
 
 class FakeProvider implements MailingExportProvider {
@@ -61,7 +63,7 @@ describe('mailing-list export service', () => {
     provider: MailingExportProvider,
     store = async (key: string) => `s3://mailing-private/${key}`,
     now = () => new Date('2026-07-12T09:00:00Z'),
-  ) => ({ provider, store, getSecret: async () => ({ apiKey: 'placeholder-us1' }), now, log: () => undefined });
+  ) => ({ provider, store, now, log: () => undefined });
 
   it('stores a valid ZIP as one deterministic private artifact with complete metadata', async () => {
     const cfg = config('success');
@@ -130,6 +132,14 @@ describe('mailing-list export service', () => {
     assert.strictEqual(auth.nextAction, 'fix-authorization');
     assert.ok(!JSON.stringify(auth).includes('private api key'));
 
+    const credentialAuth = await runMailingExport(client, config('credential-auth'), 'credential-auth', {
+      readCredential: async () => { throw new MailingExportProviderError('authorization', 'private table and item details'); },
+      log: () => undefined,
+    });
+    assert.strictEqual(credentialAuth.errorCode, 'authorization');
+    assert.strictEqual(credentialAuth.nextAction, 'fix-authorization');
+    assert.ok(!JSON.stringify(credentialAuth).includes('private table'));
+
     const integrity = await runMailingExport(client, config('integrity'), 'integrity', deps(new FakeProvider(false, undefined, Buffer.from('not zip'))));
     assert.strictEqual(integrity.errorCode, 'download-integrity');
 
@@ -178,7 +188,7 @@ describe('mailing-list export service', () => {
 
     const listed = await route({ httpMethod: 'GET', path: '/api/mailing-exports' }, client);
     assert.strictEqual(listed.statusCode, 200);
-    assert.ok(!listed.body.includes('placeholder/mailchimp'));
+    assert.ok(!listed.body.includes('credentialId'));
     assert.ok(!listed.body.includes('leaseOwner'));
     const replay = await route({ httpMethod: 'POST', path: '/api/mailing-exports/run', body: JSON.stringify({ configId: cfg.id, runKey: 'api-key' }) }, client);
     assert.strictEqual(replay.statusCode, 200);
@@ -225,6 +235,86 @@ describe('mailing-list export service', () => {
     assert.strictEqual((await route({ httpMethod: 'POST', path: '/api/mailing-exports/run', body: '{}' }, client)).statusCode, 401);
     assert.strictEqual((await route({ httpMethod: 'GET', path: `/api/artifacts/${completed.artifactId}/download` }, client)).statusCode, 401);
     process.env.SKIP_AUTH = 'true';
+  });
+});
+
+describe('Dapier Mailchimp credential reader', () => {
+  const item = (overrides: Record<string, unknown> = {}) => ({
+    credential_id: { S: 'mailchimp' }, provider: { S: 'mailchimp' },
+    value: { M: { apiKey: { S: 'obvious-placeholder-us19' }, server: { S: 'us19' } } },
+    updated_at: { S: '2026-07-14T08:00:00Z' }, ...overrides,
+  });
+
+  function fakeClient(result: unknown, calls: GetItemCommand[] = []): Pick<DynamoDBClient, 'send'> {
+    return {
+      send: (async (command: GetItemCommand) => { calls.push(command); return result; }) as DynamoDBClient['send'],
+    };
+  }
+
+  it('requires credentialId, rejects legacy secretName, and keeps public config credential-free', () => {
+    process.env.DATAOPS_MAILING_EXPORTS_CONFIG = JSON.stringify([{ ...config('config'), credentialId: '' }]);
+    assert.throws(() => loadMailingExportConfigs(), /credentialId is required/);
+    process.env.DATAOPS_MAILING_EXPORTS_CONFIG = JSON.stringify([{ ...config('legacy'), secretName: 'legacy-secret' }]);
+    assert.throws(() => loadMailingExportConfigs(), /secretName is not supported/);
+    process.env.DATAOPS_MAILING_EXPORTS_CONFIG = JSON.stringify([config('public')]);
+    const publicConfig = publicMailingExportConfigs();
+    assert.strictEqual('credentialId' in publicConfig[0], false);
+    assert.strictEqual(JSON.stringify(publicConfig).includes('credential'), false);
+    delete process.env.DATAOPS_MAILING_EXPORTS_CONFIG;
+  });
+
+  it('performs exactly one consistent GetItem and returns only provider inputs', async () => {
+    process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE = 'placeholder-dapier-credentials';
+    const calls: GetItemCommand[] = [];
+    const credential = await readDapierMailchimpCredential('mailchimp', fakeClient({ Item: item() }, calls));
+    assert.deepStrictEqual(credential, { apiKey: 'obvious-placeholder-us19', server: 'us19' });
+    assert.strictEqual(calls.length, 1);
+    assert.ok(calls[0] instanceof GetItemCommand);
+    assert.deepStrictEqual(calls[0].input, {
+      TableName: 'placeholder-dapier-credentials', Key: { credential_id: { S: 'mailchimp' } }, ConsistentRead: true,
+    });
+    delete process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE;
+  });
+
+  it('rejects absent configuration, missing and malformed records, and read failures uniformly', async () => {
+    const cases: Array<{ name: string; table?: string; result?: unknown; error?: Error }> = [
+      { name: 'missing table', result: { Item: item() } },
+      { name: 'missing item', table: 'table', result: {} },
+      { name: 'key mismatch', table: 'table', result: { Item: item({ credential_id: { S: 'other' } }) } },
+      { name: 'provider mismatch', table: 'table', result: { Item: item({ provider: { S: 'other' } }) } },
+      { name: 'malformed value', table: 'table', result: { Item: item({ value: { S: 'not-a-map' } }) } },
+      { name: 'missing api key', table: 'table', result: { Item: item({ value: { M: { server: { S: 'us19' } } } }) } },
+      { name: 'non-string api key', table: 'table', result: { Item: item({ value: { M: { apiKey: { N: '123' } } } }) } },
+      { name: 'non-string server', table: 'table', result: { Item: item({ value: { M: { apiKey: { S: 'placeholder-us19' }, server: { N: '19' } } } }) } },
+      { name: 'read denied', table: 'table', error: new Error('denied for private-table-name with key contents') },
+    ];
+    for (const testCase of cases) {
+      if (testCase.table) process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE = testCase.table;
+      else delete process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE;
+      const client = testCase.error
+        ? { send: (async () => { throw testCase.error; }) as DynamoDBClient['send'] }
+        : fakeClient(testCase.result);
+      await assert.rejects(
+        readDapierMailchimpCredential('mailchimp', client),
+        (error: MailingExportProviderError) => error.category === 'authorization'
+          && !error.message.includes('private-table-name') && !error.message.includes('contents'),
+        testCase.name,
+      );
+    }
+    delete process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE;
+  });
+
+  it('supplies a valid placeholder credential to the provider registry without exposing it publicly', async () => {
+    process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE = 'placeholder-dapier-credentials';
+    let providerInput: Record<string, string> | undefined;
+    const registry = new MailingExportProviderRegistry().register('mailchimp', credential => {
+      providerInput = credential;
+      return new FakeProvider();
+    });
+    const credential = await readDapierMailchimpCredential('mailchimp', fakeClient({ Item: item() }));
+    assert.ok(registry.create('mailchimp', credential) instanceof FakeProvider);
+    assert.deepStrictEqual(providerInput, { apiKey: 'obvious-placeholder-us19', server: 'us19' });
+    delete process.env.DATAOPS_DAPIER_CREDENTIALS_TABLE;
   });
 });
 

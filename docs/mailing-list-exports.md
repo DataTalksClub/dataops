@@ -4,10 +4,11 @@ DataOps can request an asynchronous provider export, retain its ZIP in private S
 
 ## Configuration
 
-The stack defaults to no enabled exports. A credentialed operator supplies both deployment parameters through the approved secret/deploy mechanism:
+The stack defaults to no enabled exports. Deployment supplies these parameters:
 
-- `MailchimpSecretArn`: ARN of a pre-created Secrets Manager secret. The Lambda role receives `secretsmanager:GetSecretValue` only for that ARN.
-- `MailingExportsConfig`: a JSON array whose `secretName` references that same secret. Configuration IDs, account names, and scope labels are operator-facing labels; use no contact data.
+- `DapierCredentialsTableName`: physical name of the dedicated credentials table owned and populated by Dapier.
+- `DapierCredentialsTableArn`: ARN used only in the DataOps runtime IAM policy.
+- `MailingExportsConfig`: a JSON array whose `credentialId` is `mailchimp`. Configuration IDs, account names, and scope labels are operator-facing labels; use no contact data.
 
 Placeholder configuration:
 
@@ -19,19 +20,26 @@ Placeholder configuration:
     "account": "Example account",
     "scopeLabel": "All audiences (account export)",
     "taskId": "optional-recurring-task-id",
-    "secretName": "placeholder/provider-secret",
+    "credentialId": "mailchimp",
     "enabled": true
   }
 ]
 ```
 
-The secret is JSON:
+The Dapier-owned DynamoDB item contract is:
 
 ```json
-{ "apiKey": "placeholder-api-key-server", "server": "server" }
+{
+  "credential_id": "mailchimp",
+  "provider": "mailchimp",
+  "value": { "apiKey": "placeholder-api-key-server", "server": "server" },
+  "updated_at": "2026-07-14T08:00:00Z"
+}
 ```
 
-`server` is optional because DataOps derives it from the API-key suffix. If both are present they must match. Mailchimp Marketing API keys are account-wide; Mailchimp does not offer a narrower key permission for this account-export operation. Limit access to the secret and DataOps operator role, rotate it out of band, and do not paste it into configuration, logs, tasks, issues, or documentation.
+Dapier is the only writer. DataOps performs one consistent `GetItem` for the `mailchimp` key and never scans, writes, migrates, or deletes credentials. DynamoDB transparent encryption at rest protects stored data, but an IAM principal authorized for `GetItem` receives the plaintext attributes. The DataOps role is therefore restricted to `GetItem` on the supplied table ARN and leading key `mailchimp`.
+
+`server` is optional because DataOps derives it from the API-key suffix. If both are present they must match. Rotate the credential in Dapier by replacing the same item; no DataOps configuration change is needed. Missing, unreadable, wrong-provider, and malformed records all become the same sanitized `authorization` failure with `fix-authorization`. Credential identifiers and values are excluded from jobs, artifacts, task links, logs, and APIs.
 
 ## Mailchimp behavior
 
@@ -57,6 +65,8 @@ Safe failure categories are `authorization`, `provider-api`, `provider-timeout`,
 
 Implement `MailingExportProvider` from `backend/src/mailingExports/types.ts` and register its factory and any minimum completed-export interval in `backend/src/mailingExports/registry.ts`. Request, status polling, signed-download handling, and provider constraints stay behind that extension boundary. Scheduling, persistence, idempotency, ZIP validation, storage, artifacts, task attachment, API responses, and portal behavior do not change.
 
-## Disable and rollback
+## Deployment, disable, and rollback
 
-Set a configuration's `enabled` value to `false` or remove it, then redeploy the parameter. This stops new scheduled/manual runs without deleting history or retained archives. To roll back application code, deploy the prior revision while leaving the bucket and artifact table intact. Do not remove the legacy Zapier/Google Drive flow until a credentialed operator has verified one real DataOps export and its intended task attachment.
+Deploy Dapier's table and writer first, then save or re-save the Mailchimp credential so the stable item exists. Deploy DataOps second with the table name/ARN and `credentialId: "mailchimp"` configuration, then verify one export without inspecting or copying the value. Only after that verification may Dapier remove an obsolete credential copy under its own change.
+
+Set a configuration's `enabled` value to `false` or remove it to stop new runs without deleting history. If the reader switch fails, roll DataOps back to its previous stack version while leaving the Dapier table/item, export bucket, and artifact table intact. Never paste the credential into deployment or rollback commands.
