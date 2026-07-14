@@ -4,7 +4,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
-import { createUser, createUserWithId, getUser, listUsers } from '../src/db/users';
+import { createUser, createUserWithId, getUser, getUsersByNormalizedEmail, listUsers } from '../src/db/users';
 
 describe('DB — Users', () => {
   let client: DynamoDBDocumentClient;
@@ -79,6 +79,51 @@ describe('DB — Users', () => {
         assert.strictEqual((user as any).PK, undefined);
         assert.strictEqual((user as any).SK, undefined);
       }
+    });
+  });
+
+  describe('getUsersByNormalizedEmail pagination', () => {
+    it('continues scanning until a unique normalized match on a later page', async () => {
+      const calls: Array<Record<string, unknown>> = [];
+      const pages = [
+        {
+          Items: [{ PK: 'USER#other', SK: 'USER#other', id: 'other', name: 'Other', email: 'other@datatalks.club', createdAt: '2026-01-01T00:00:00.000Z' }],
+          LastEvaluatedKey: { PK: 'USER#cursor', SK: 'USER#cursor' },
+        },
+        {
+          Items: [{ PK: 'USER#target', SK: 'USER#target', id: 'target', name: 'Target', email: 'Target@DataTalks.Club', createdAt: '2026-01-01T00:00:00.000Z' }],
+        },
+      ];
+      const pagedClient = {
+        send: async (command: { input: Record<string, unknown> }) => {
+          calls.push(command.input);
+          return pages[calls.length - 1];
+        },
+      } as unknown as DynamoDBDocumentClient;
+
+      const users = await getUsersByNormalizedEmail(pagedClient, ' target@datatalks.club ');
+      assert.deepStrictEqual(users.map((user) => user.id), ['target']);
+      assert.strictEqual(calls.length, 2);
+      assert.strictEqual(calls[0].ExclusiveStartKey, undefined);
+      assert.deepStrictEqual(calls[1].ExclusiveStartKey, pages[0].LastEvaluatedKey);
+    });
+
+    it('returns duplicates split across scan pages so callback mapping can fail closed', async () => {
+      let page = 0;
+      const pagedClient = {
+        send: async () => page++ === 0
+          ? {
+              Items: [{ PK: 'USER#first', SK: 'USER#first', id: 'first', name: 'First', email: 'duplicate@datatalks.club', createdAt: '2026-01-01T00:00:00.000Z' }],
+              LastEvaluatedKey: { PK: 'USER#cursor', SK: 'USER#cursor' },
+            }
+          : {
+              Items: [{ PK: 'USER#second', SK: 'USER#second', id: 'second', name: 'Second', email: 'DUPLICATE@DataTalks.Club', createdAt: '2026-01-01T00:00:00.000Z' }],
+            },
+      } as unknown as DynamoDBDocumentClient;
+
+      const users = await getUsersByNormalizedEmail(pagedClient, 'duplicate@datatalks.club');
+      assert.deepStrictEqual(users.map((user) => user.id), ['first', 'second']);
+      assert.strictEqual(page, 2);
     });
   });
 });
