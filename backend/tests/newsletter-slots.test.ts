@@ -401,31 +401,39 @@ describe("newsletter slots", () => {
       delete process.env.NEWSLETTER_OPEN_ALERT_LEAD_DAYS;
     }
   });
-  it("accepts deployed portal Basic auth while rejecting an unauthenticated write", async () => {
-    process.env.DATAOPS_DOCS_DOMAIN = "1";
-    process.env.BASIC_AUTH_USERNAME = "newsletter-importer";
-    process.env.BASIC_AUTH_PASSWORD = "synthetic-portal-password";
-    process.env.SKIP_AUTH = "false";
+  it("accepts an existing bearer session while rejecting unauthenticated and Basic writes", async () => {
+    Object.assign(process.env, {
+      DATAOPS_DOCS_DOMAIN: "1",
+      WORK_ENGINE_AUTH_MODE: "portal",
+      AUTH_BASE_URL: "https://auth.example.test",
+      AUTH_ISSUER: "https://issuer.example.test/pool",
+      AUTH_CLIENT_ID: "dataops-client",
+      AUTH_CALLBACK_URL: "https://ops.example.test/auth/callback",
+      AUTH_LOGOUT_URL: "https://ops.example.test/",
+      SKIP_AUTH: "false",
+    });
     const body = {
         ...valid,
         sourceKey: "portal-basic-import",
         publicationDate: "2027-02-05",
       },
-      basic = `Basic ${Buffer.from("newsletter-importer:synthetic-portal-password").toString("base64")}`;
+      basic = `Basic ${Buffer.from("newsletter-importer:synthetic-portal-password").toString("base64")}`,
+      session = await createSession(client, "newsletter-importer"),
+      bearer = `Bearer ${session.token}`;
     try {
       assert.equal(
         (await invoke("POST", "/api/newsletter-slots", body)).statusCode,
         401,
       );
+      assert.equal((await invoke("POST", "/api/newsletter-slots", body, { authorization: basic })).statusCode, 401);
       const accepted = await invoke("POST", "/api/newsletter-slots", body, {
-        authorization: basic,
+        authorization: bearer,
       });
       assert.equal(accepted.statusCode, 201, accepted.body);
       assert.ok(!accepted.body.includes("synthetic-portal-password"));
     } finally {
       delete process.env.DATAOPS_DOCS_DOMAIN;
-      delete process.env.BASIC_AUTH_USERNAME;
-      delete process.env.BASIC_AUTH_PASSWORD;
+      for (const key of ["WORK_ENGINE_AUTH_MODE", "AUTH_BASE_URL", "AUTH_ISSUER", "AUTH_CLIENT_ID", "AUTH_CALLBACK_URL", "AUTH_LOGOUT_URL"]) delete process.env[key];
       process.env.SKIP_AUTH = "true";
     }
   });
@@ -515,32 +523,10 @@ describe("newsletter slots", () => {
         }),
         { accepted: 1, created: 0, duplicates: 1, verified: 1 },
       );
-      const beforeBasic = requests.length;
-      assert.deepEqual(
-        await writeNewsletterSlots(rows, {
-          api: "https://api.example.invalid",
-          confirm: "https://api.example.invalid",
-          portalUsername: "portal-user",
-          portalPassword: "portal-password",
-        }),
-        { accepted: 1, created: 0, duplicates: 1, verified: 1 },
-      );
-      const basic = `Basic ${Buffer.from("portal-user:portal-password").toString("base64")}`;
-      assert.ok(
-        requests
-          .slice(beforeBasic)
-          .every((request) => request.authorization === basic),
-      );
-      assert.ok(
-        !JSON.stringify(
-          await writeNewsletterSlots([], {
-            api: "https://api.example.invalid",
-            confirm: "https://api.example.invalid",
-            portalUsername: "portal-user",
-            portalPassword: "portal-password",
-          }),
-        ).includes("portal-password"),
-      );
+      await assert.rejects(() => writeNewsletterSlots(rows, {
+        api: "https://api.example.invalid",
+        confirm: "https://api.example.invalid",
+      }), /session token/i);
       await assert.rejects(() =>
         writeNewsletterSlots(rows, {
           api: "https://api.example.invalid",

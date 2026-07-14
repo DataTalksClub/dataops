@@ -160,20 +160,13 @@ export async function writeNewsletterSlots(
     api: string;
     token?: string;
     confirm: string;
-    portalUsername?: string;
-    portalPassword?: string;
   },
 ) {
   if (options.confirm !== options.api)
     throw new Error("Explicit target confirmation must equal API URL");
-  if (Boolean(options.portalUsername) !== Boolean(options.portalPassword))
-    throw new Error("Portal username and password must be provided together");
-  if (!options.token && !options.portalUsername)
-    throw new Error("Import requires portal credentials or a session token");
-  const authorization =
-      options.portalUsername && options.portalPassword
-        ? `Basic ${Buffer.from(`${options.portalUsername}:${options.portalPassword}`).toString("base64")}`
-        : `Bearer ${options.token}`,
+  if (!options.token)
+    throw new Error("Import requires a session token");
+  const authorization = `Bearer ${options.token}`,
     api = options.api.replace(/\/$/, ""),
     headers = { authorization };
   let created = 0,
@@ -232,9 +225,7 @@ if (require.main === module) {
       }
       const api = process.env.NEWSLETTER_IMPORT_API || "",
         token = process.env.NEWSLETTER_IMPORT_TOKEN || "",
-        confirm = process.env.NEWSLETTER_IMPORT_CONFIRM || "",
-        portalUsername = process.env.NEWSLETTER_IMPORT_PORTAL_USERNAME,
-        portalPassword = process.env.NEWSLETTER_IMPORT_PORTAL_PASSWORD;
+        confirm = process.env.NEWSLETTER_IMPORT_CONFIRM || "";
       console.log(
         JSON.stringify({
           mode: "write",
@@ -242,8 +233,6 @@ if (require.main === module) {
             api,
             token,
             confirm,
-            portalUsername,
-            portalPassword,
           })),
         }),
       );

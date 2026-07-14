@@ -227,11 +227,10 @@ from GitHub.
    This makes migration from sandbox to the production AWS account reproducible:
    deploy the OIDC stack, deploy runtime secrets, then deploy the full app stack.
 
-5. Revisit stronger access control when needed.
-   Basic auth is lightweight and cheap. If the docs become broader or more
-   sensitive, the next step is usually CloudFront plus auth at the edge, an
-   identity-aware proxy, or a private network path. That adds cost and moving
-   parts, so it should be a deliberate upgrade.
+5. Keep shared authentication configuration aligned.
+   The DataOps relying-party client, callback/logout URLs, issuer, and JWKS URL
+   are non-secret deployment parameters. Cognito and Google provider ownership
+   remains in the shared `aws-infra/sandbox/auth` stack.
 
 ## Migration Checklist for a New AWS Account
 
@@ -241,8 +240,9 @@ from GitHub.
    credentialed AWS operator must apply the `dataops-github-actions`
    CloudFormation stack after this template changes.
 
-2. Deploy `infra/template.runtime-secrets.yaml`.
-   Provide the GitHub token and basic-auth password as parameters.
+2. Provision the GitHub content token used by the application. The historical
+   Basic-auth secret template is retained only for old stacks and is not part
+   of browser authentication.
 
 3. Update workflow role ARN if the deploy role ARN changes.
 
@@ -262,5 +262,5 @@ from GitHub.
 - Whether content-only CI should call a refresh endpoint automatically.
 - Whether document saves should commit directly to `main` forever, or move to a
   branch and pull-request model.
-- Whether basic auth is enough for production, or access should move behind a
-  stronger identity layer.
+- How local DataOps user lifecycle should eventually integrate with the shared
+  identity lifecycle without auto-provisioning accounts.

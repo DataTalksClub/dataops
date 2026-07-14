@@ -30,7 +30,14 @@ env:
   DOCS_GITHUB_OWNER: DataTalksClub
   DOCS_GITHUB_REPO: dataops
   DOCS_GITHUB_BRANCH: main
-  BASIC_AUTH_USERNAME: admin
+  AUTH_BASE_URL: https://auth.dtcdev.click
+  AUTH_USER_POOL_ID: us-east-1_H7nJu52Bs
+  AUTH_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
+  AUTH_JWKS_URL: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json
+  AUTH_CLIENT_ID: 1kjv61esdjs3003s8u42sgr3hf
+  AUTH_CALLBACK_URL: https://ops.dtcdev.click/auth/callback
+  AUTH_LOGOUT_URL: https://ops.dtcdev.click/
+  AUTH_SESSION_LIFETIME_SECONDS: 28800
 
 jobs:
   checks:
@@ -148,7 +155,14 @@ jobs:
               "ParameterKey=GitHubOwner,ParameterValue=$DOCS_GITHUB_OWNER" \
               "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
-              "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME" \
+              "ParameterKey=AuthBaseUrl,ParameterValue=$AUTH_BASE_URL" \
+              "ParameterKey=AuthUserPoolId,ParameterValue=$AUTH_USER_POOL_ID" \
+              "ParameterKey=AuthIssuer,ParameterValue=$AUTH_ISSUER" \
+              "ParameterKey=AuthJwksUrl,ParameterValue=$AUTH_JWKS_URL" \
+              "ParameterKey=AuthClientId,ParameterValue=$AUTH_CLIENT_ID" \
+              "ParameterKey=AuthCallbackUrl,ParameterValue=$AUTH_CALLBACK_URL" \
+              "ParameterKey=AuthLogoutUrl,ParameterValue=$AUTH_LOGOUT_URL" \
+              "ParameterKey=AuthSessionLifetimeSeconds,ParameterValue=$AUTH_SESSION_LIFETIME_SECONDS" \
               "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" \
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \
@@ -184,7 +198,7 @@ jobs:
           # The Function URL output ends with a trailing slash; strip it so we hit
           # "/" and "/login" instead of malformed double-slash paths ("//", "//login").
           backend_url="${backend_url%/}"
-          # The deployed backend should serve /login (200) and redirect / to /login (302).
+          # /login redirects to the shared Cognito authorize endpoint and root redirects locally.
           # The Function URL event normalization in handler.ts must work for this.
           # Retry a few times: immediately after a stack update the Function URL can
           # briefly return a cold-start/propagation blip before the new code settles.
@@ -193,13 +207,12 @@ jobs:
           for attempt in 1 2 3 4 5; do
             code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/")
             login_code=$(curl -sS -o /dev/null -w "%{http_code}" "$backend_url/login")
-            if { [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ]; } \
-               && [ "$login_code" = "200" ]; then
+            if [ "$code" = "302" ] && [ "$login_code" = "302" ]; then
               echo "Backend smoke OK on attempt $attempt: root=$code login=$login_code"
               exit 0
             fi
             echo "Smoke attempt $attempt: root=$code login=$login_code (retrying)"
             sleep 10
           done
-          echo "Backend smoke test failed after retries: root expected 200/301/302 got $code; /login expected 200 got $login_code"
+          echo "Backend smoke test failed after retries: root expected 302 got $code; /login expected 302 got $login_code"
           exit 1
