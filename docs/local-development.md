@@ -156,12 +156,16 @@ until a durable storage adapter is configured, and artifact records should use
 stable `s3://`, Dropbox, Google Drive, GitHub, or public/external URLs rather
 than temporary signed URLs.
 
-Production uses one browser-facing login path: `/login`, `/logout`, and the
-portal `dtc_auth` cookie. The frontend calls same-origin `/work/api/*` and does
-not use a standalone work-engine sign-in or localStorage bearer token. The
-deployed work-engine runs with `WORK_ENGINE_AUTH_MODE=portal`, remains private,
-and accepts protected `/api/*` calls only when the portal broker forwards valid
-trusted headers and the shared portal secret.
+Production uses the shared Cognito browser flow at `auth.dtcdev.click` through
+`/login`, `/auth/callback`, and `/logout`. The browser receives only the opaque,
+HTTP-only `dataops_session` cookie; OAuth transaction data and sessions remain
+server-side. Callback failures redirect before rendering to the clean
+`/auth/error` route, which is non-cacheable and sends a no-referrer policy; the
+authorization code and state therefore do not remain in the rendered page URL.
+Post-login return paths are canonicalized against the exact configured callback
+origin. The frontend calls same-origin `/work/api/*` without a standalone password
+form or a localStorage bearer token. Existing non-browser bearer sessions remain
+available to dedicated clients and are validated independently.
 
 ## Changed Area Matrix
 

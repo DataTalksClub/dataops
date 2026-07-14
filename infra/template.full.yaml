@@ -15,12 +15,32 @@ Parameters:
   GitHubTokenSecretName:
     Type: String
     Default: dataops-v1/full-app/github-token
-  BasicAuthUsername:
+  AuthBaseUrl:
     Type: String
-    Default: admin
-  BasicAuthPasswordSecretName:
+    Default: https://auth.dtcdev.click
+  AuthUserPoolId:
     Type: String
-    Default: dataops-v1/full-app/basic-auth-password
+    Default: us-east-1_H7nJu52Bs
+  AuthIssuer:
+    Type: String
+    Default: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
+  AuthJwksUrl:
+    Type: String
+    Default: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json
+  AuthClientId:
+    Type: String
+    Default: 1kjv61esdjs3003s8u42sgr3hf
+  AuthCallbackUrl:
+    Type: String
+    Default: https://ops.dtcdev.click/auth/callback
+  AuthLogoutUrl:
+    Type: String
+    Default: https://ops.dtcdev.click/
+  AuthSessionLifetimeSeconds:
+    Type: Number
+    Default: 28800
+    MinValue: 300
+    MaxValue: 86400
   DataOpsEnvironment:
     Type: String
     Default: prod
@@ -732,6 +752,9 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S
@@ -847,7 +870,6 @@ Resources:
               - secretsmanager:GetSecretValue
             Resource:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
-              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${BasicAuthPasswordSecretName}-*
               - !Ref WorkEnginePortalSecret
               - !Ref WorkEngineTypefullyApiTokenSecretArn
               - !Ref BookkeepingIngestionSecret
@@ -922,8 +944,14 @@ Resources:
           GITHUB_REPO: !Ref GitHubRepo
           GITHUB_BRANCH: !Ref GitHubBranch
           GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
-          BASIC_AUTH_USERNAME: !Ref BasicAuthUsername
-          BASIC_AUTH_PASSWORD_SECRET_NAME: !Ref BasicAuthPasswordSecretName
+          AUTH_BASE_URL: !Ref AuthBaseUrl
+          AUTH_USER_POOL_ID: !Ref AuthUserPoolId
+          AUTH_ISSUER: !Ref AuthIssuer
+          AUTH_JWKS_URL: !Ref AuthJwksUrl
+          AUTH_CLIENT_ID: !Ref AuthClientId
+          AUTH_CALLBACK_URL: !Ref AuthCallbackUrl
+          AUTH_LOGOUT_URL: !Ref AuthLogoutUrl
+          AUTH_SESSION_LIFETIME_SECONDS: !Ref AuthSessionLifetimeSeconds
           DATAOPS_DOCS_DOMAIN: "1"
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret

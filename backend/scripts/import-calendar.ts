@@ -321,25 +321,17 @@ export async function writeCalendarImport(
     api: string;
     token?: string;
     confirm: string;
-    portalUsername?: string;
-    portalPassword?: string;
     fetcher?: typeof fetch;
   },
 ) {
   if (!options.api || options.confirm !== options.api)
     throw new Error("Explicit target confirmation must equal API URL");
-  if (Boolean(options.portalUsername) !== Boolean(options.portalPassword))
-    throw new Error("Portal username and password must be provided together");
-  if (!options.portalUsername && !options.token)
-    throw new Error("Import requires portal credentials or a session token");
-  const authorization = options.portalUsername
-      ? `Basic ${Buffer.from(`${options.portalUsername}:${options.portalPassword}`).toString("base64")}`
-      : `Bearer ${options.token}`,
+  if (!options.token)
+    throw new Error("Import requires a session token");
+  const authorization = `Bearer ${options.token}`,
     fetcher = options.fetcher || fetch,
     api = options.api.replace(/\/$/, ""),
-    route = options.portalUsername
-      ? "/work/api/calendar-items"
-      : "/api/calendar-items";
+    route = "/api/calendar-items";
   let created = 0,
     duplicates = 0;
   const backoff = (attempt: number) =>
@@ -403,8 +395,6 @@ if (require.main === module) {
           ...(await writeCalendarImport(rows, {
             api: process.env.CALENDAR_IMPORT_API || "",
             token: process.env.CALENDAR_IMPORT_TOKEN || "",
-            portalUsername: process.env.CALENDAR_IMPORT_PORTAL_USERNAME,
-            portalPassword: process.env.CALENDAR_IMPORT_PORTAL_PASSWORD,
             confirm: process.env.CALENDAR_IMPORT_CONFIRM || "",
           })),
         }),

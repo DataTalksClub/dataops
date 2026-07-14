@@ -57,6 +57,8 @@ def test_dataops_sessions_table_is_retained_session_state_not_durable_execution_
     assert "UpdateReplacePolicy: Retain" in sessions
     assert "BillingMode: PAY_PER_REQUEST" in sessions
     assert "SSEEnabled: true" in sessions
+    assert "AttributeName: ttl" in sessions
+    assert "Enabled: true" in sessions
     assert "PointInTimeRecoveryEnabled: true" not in sessions
     assert "Value: SessionState" in sessions
     assert "Value: ExecutionState" not in sessions
@@ -116,7 +118,16 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "WORK_ENGINE_AUTH_MODE: portal" in backend
     assert "DATAOPS_DOCS_DOMAIN: " in backend
     assert "GITHUB_OWNER: !Ref GitHubOwner" in backend
-    assert "BASIC_AUTH_PASSWORD_SECRET_NAME: !Ref BasicAuthPasswordSecretName" in backend
+    assert "AUTH_BASE_URL: !Ref AuthBaseUrl" in backend
+    assert "AUTH_USER_POOL_ID: !Ref AuthUserPoolId" in backend
+    assert "AUTH_ISSUER: !Ref AuthIssuer" in backend
+    assert "AUTH_JWKS_URL: !Ref AuthJwksUrl" in backend
+    assert "AUTH_CLIENT_ID: !Ref AuthClientId" in backend
+    assert "AUTH_CALLBACK_URL: !Ref AuthCallbackUrl" in backend
+    assert "AUTH_LOGOUT_URL: !Ref AuthLogoutUrl" in backend
+    assert "AUTH_SESSION_LIFETIME_SECONDS: !Ref AuthSessionLifetimeSeconds" in backend
+    assert "BASIC_AUTH_USERNAME" not in backend
+    assert "BASIC_AUTH_PASSWORD_SECRET_NAME" not in backend
     assert "DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable" in backend
     assert "DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable" in backend
     assert "DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable" in backend
@@ -324,6 +335,31 @@ def test_deploy_workflow_seeds_and_verifies_runtime_templates():
     assert workflow.index("scripts/seed-templates.ts") < workflow.index("scripts/seed-recurring.ts")
     assert "Smoke test deployed single-origin backend" in workflow
     assert "backend_url" in workflow
+
+
+def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    expected = {
+        "AuthBaseUrl": "AUTH_BASE_URL",
+        "AuthUserPoolId": "AUTH_USER_POOL_ID",
+        "AuthIssuer": "AUTH_ISSUER",
+        "AuthJwksUrl": "AUTH_JWKS_URL",
+        "AuthClientId": "AUTH_CLIENT_ID",
+        "AuthCallbackUrl": "AUTH_CALLBACK_URL",
+        "AuthLogoutUrl": "AUTH_LOGOUT_URL",
+        "AuthSessionLifetimeSeconds": "AUTH_SESSION_LIFETIME_SECONDS",
+    }
+
+    assert "id-token: write" in workflow
+    assert "aws-actions/configure-aws-credentials@" in workflow
+    assert "role-to-assume: ${{ env.AWS_ROLE_ARN }}" in workflow
+    assert "sam deploy" in workflow
+    assert "--config-env full-sandbox" in workflow
+    for parameter, variable in expected.items():
+        assert f"ParameterKey={parameter},ParameterValue=${variable}" in workflow
+    assert "dtcdev-shared-auth" not in workflow
+    assert "GoogleClientSecret" not in workflow
+    assert "CognitoClientSecret" not in workflow
 
 
 def test_github_deploy_role_can_manage_backend_lambda():

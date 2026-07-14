@@ -5,6 +5,7 @@ import { handler } from '../src/handler';
 import { getClient, startLocal, stopLocal } from '../src/db/client';
 import { createNotification } from '../src/db/notifications';
 import { createSession } from '../src/db/sessions';
+import { createUserWithId } from '../src/db/users';
 
 describe('Portal broker authentication', () => {
   const originalSkipAuth = process.env.SKIP_AUTH;
@@ -16,6 +17,9 @@ describe('Portal broker authentication', () => {
     await startLocal();
     const warmUp = await handler({ httpMethod: 'GET', path: '/api/health' }, {});
     assert.strictEqual(warmUp.statusCode, 200);
+    const client = await getClient();
+    await createUserWithId(client, 'ops-manager', { name: 'Ops Manager', email: 'ops-manager@datatalks.club', role: 'operator' });
+    await createUserWithId(client, 'legacy-user', { name: 'Legacy client', email: 'legacy@datatalks.club', role: 'operator' });
   });
 
   after(async () => {
@@ -125,7 +129,7 @@ describe('Portal broker authentication', () => {
     assert.deepStrictEqual(JSON.parse(response.body), { error: 'Not found' });
   });
 
-  it('does not accept bearer sessions for /api/me in portal mode', async () => {
+  it('preserves existing bearer sessions for /api/me in portal mode', async () => {
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';
     process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
@@ -142,8 +146,56 @@ describe('Portal broker authentication', () => {
       {},
     );
 
+    assert.strictEqual(response.statusCode, 200);
+    assert.strictEqual(JSON.parse(response.body).user.id, 'legacy-user');
+  });
+
+  it('rejects a fabricated bearer even when a raw x-user-id names an existing admin', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const response = await handler({
+      httpMethod: 'GET',
+      path: '/api/me',
+      headers: { Authorization: 'Bearer fabricated-token', 'X-User-Id': 'ops-manager' },
+    }, {});
+
     assert.strictEqual(response.statusCode, 401);
     assert.deepStrictEqual(JSON.parse(response.body), { error: 'Unauthorized' });
+  });
+
+  it('ignores a mismatched raw x-user-id and resolves a valid bearer to its session user', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+    const client = await getClient();
+    const session = await createSession(client, 'legacy-user');
+
+    const response = await handler({
+      httpMethod: 'GET',
+      path: '/api/me',
+      headers: { authorization: `Bearer ${session.token}`, 'x-user-id': 'ops-manager' },
+    }, {});
+
+    assert.strictEqual(response.statusCode, 200);
+    assert.strictEqual(JSON.parse(response.body).user.id, 'legacy-user');
+    assert.strictEqual(JSON.parse(response.body).user.role, 'operator');
+  });
+
+  it('does not let raw x-user-id authorize other protected API routes', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const response = await handler({
+      httpMethod: 'POST',
+      path: '/api/tasks',
+      body: JSON.stringify({ description: 'Must not be created', date: '2028-10-03' }),
+      headers: { authorization: 'Bearer fabricated-token', 'x-user-id': 'ops-manager' },
+    }, {});
+
+    assert.strictEqual(response.statusCode, 401);
   });
 
   it('accepts portal broker headers without a bearer session', async () => {
@@ -190,7 +242,10 @@ describe('Portal broker authentication', () => {
     );
 
     assert.strictEqual(response.statusCode, 200);
-    assert.deepStrictEqual(JSON.parse(response.body), { user: { id: 'ops-manager', name: 'Portal user' } });
+    const body = JSON.parse(response.body);
+    assert.strictEqual(body.user.id, 'ops-manager');
+    assert.strictEqual(body.user.name, 'Ops Manager');
+    assert.strictEqual(body.user.role, 'operator');
   });
 
   it('treats portal-admin notification requests as unscoped so operator-assigned notifications remain visible', async () => {

@@ -14,16 +14,15 @@ Dry-run is the default and makes no network calls:
 npm --prefix backend run calendar:import -- "$HOME/tmp/schedule.xlsx"
 ```
 
-Writing requires an exact target confirmation and either a complete deployed-portal credential pair or a session token. Portal credentials use Basic auth through the single-origin `/work/api` route for both writes and bounded verification reads. A half-configured pair fails before any network request. The script uses only `Time table` and `Extra podcast slots`, deterministic source keys, bounded retries, and API verification:
+Writing requires an exact target confirmation and an existing non-browser bearer session token. The token is validated independently from browser OAuth and is used for both writes and bounded verification reads. The script uses only `Time table` and `Extra podcast slots`, deterministic source keys, bounded retries, and API verification:
 
 ```sh
 CALENDAR_IMPORT_API=https://example.invalid \
 CALENDAR_IMPORT_CONFIRM=https://example.invalid \
-CALENDAR_IMPORT_PORTAL_USERNAME=... \
-CALENDAR_IMPORT_PORTAL_PASSWORD=... \
+CALENDAR_IMPORT_TOKEN=... \
 npm --prefix backend run calendar:import -- "$HOME/tmp/schedule.xlsx" --write
 ```
 
-For a direct API target, set `CALENDAR_IMPORT_TOKEN` instead of the portal username/password pair; this retains Bearer session authentication on `/api/calendar-items`.
+The importer calls `/api/calendar-items`; a browser OAuth cookie is neither accepted nor required by this machine client.
 
 Keep the workbook and import reports in Git-ignored local storage. Output contains coordinates and reason-code counts, never cell contents.

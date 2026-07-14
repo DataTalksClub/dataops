@@ -27,6 +27,7 @@ import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { getSession } from './db/sessions';
+import { getUser } from './db/users';
 import {
   createTask,
   getTask,
@@ -65,6 +66,13 @@ function headerValue(headers: Record<string, string> | null | undefined, name: s
   if (!headers) return '';
   const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
   return match ? String(match[1]) : '';
+}
+
+function deleteHeader(headers: Record<string, string> | null | undefined, name: string): void {
+  if (!headers) return;
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === name.toLowerCase()) delete headers[key];
+  }
 }
 
 async function portalSecret(): Promise<string> {
@@ -593,6 +601,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
   const method = event.httpMethod || 'GET';
   let reqPath = event.path || '/';
   const portalMode = process.env.WORK_ENGINE_AUTH_MODE === 'portal';
+  const skipAuth = process.env.NODE_ENV === 'test' && process.env.SKIP_AUTH === 'true';
 
   try {
     // Machine-to-machine intake has its own rotated secret and must not pass
@@ -605,30 +614,45 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs
-    // content API, and `/content/*`, enforces Basic auth / session cookie, and
+    // content API, and `/content/*`, enforces the opaque browser session, and
     // rewrites the old `/work/api/*` proxy path to `/api/*`. A verified portal
     // session also authorizes the work `/api/*` routes (portalAuthorized).
     let portalAuthorized = false;
+    let browserUserId: string | undefined;
     if (isDocsDomainEnabled()) {
-      const portal = await handlePortal(event);
+      const portal = await handlePortal(event, client);
       if (portal.response) return portal.response;
       portalAuthorized = portal.authorized;
-      if (portalAuthorized) {
-        if (!event.headers) event.headers = {};
-        if (!event.headers['x-user-id']) event.headers['x-user-id'] = 'portal-admin';
-      }
+      browserUserId = portal.userId;
       // The portal may rewrite the path (e.g. /work/api/* -> /api/*).
       reqPath = event.path || '/';
     }
 
     // ── Auth routes (exempt from middleware) ─────────────────────
     const portalUserId = await portalTrustedUserId(event);
+    // x-user-id is an internal identity propagation header, never a client
+    // credential. Preserve it only in the explicit test auth bypass; all real
+    // requests must replace it with an identity established below.
+    if (!skipAuth) deleteHeader(event.headers, 'x-user-id');
+    const verifiedInteractiveUserId = browserUserId || portalUserId;
+    if (verifiedInteractiveUserId) {
+      if (!event.headers) event.headers = {};
+      event.headers['x-user-id'] = verifiedInteractiveUserId;
+    }
     if (portalMode && reqPath.startsWith('/api/auth')) {
       return jsonResponse(404, { error: 'Not found' });
     }
     if (portalMode && reqPath === '/api/me') {
-      if (portalUserId) {
-        return jsonResponse(200, { user: { id: portalUserId, name: 'Portal user' } });
+      if (verifiedInteractiveUserId) {
+        const user = await getUser(client, verifiedInteractiveUserId);
+        return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
+      }
+      // Preserve the existing non-browser bearer-session contract.
+      const bearer = extractToken(event);
+      const session = bearer ? await getSession(client, bearer) : null;
+      if (session) {
+        const user = await getUser(client, session.userId);
+        return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
       }
       return jsonResponse(401, { error: 'Unauthorized' });
     }
@@ -640,16 +664,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Auth middleware ───────────────────────────────────────────
     // All /api/* routes (except exempt ones) require a valid session.
     // In test mode (NODE_ENV=test), auth can be bypassed with SKIP_AUTH=true.
-    const skipAuth = process.env.NODE_ENV === 'test' && process.env.SKIP_AUTH === 'true';
-    if (portalUserId) {
-      if (!event.headers) event.headers = {};
-      event.headers['x-user-id'] = portalUserId;
-    }
     const bookkeepingIngest = method === 'POST' && reqPath === '/api/bookkeeping/ingest';
-    if (portalMode && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath) && !bookkeepingIngest) {
-      return jsonResponse(401, { error: 'Unauthorized' });
-    }
-    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath) && !bookkeepingIngest) {
+    // Portal browser cookies and legacy bearer sessions are independent. The
+    // generic bearer middleware below remains available in portal mode.
+    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath) && (!bookkeepingIngest || portalMode)) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });
