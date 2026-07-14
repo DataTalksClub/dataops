@@ -6,14 +6,31 @@ process.env.IS_LOCAL = 'true';
 import http from 'http';
 import { URL } from 'url';
 import { handler } from '../src/handler';
+import { getClient } from '../src/db/client';
+import { createBrowserSession } from '../src/db/sessions';
 import { seed as seedUsers } from './seed-users';
 import { seed as seedTemplates } from './seed-templates';
 import type { LambdaEvent } from '../src/types';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+let e2eBrowserSessionToken = '';
 
 const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url!, `http://localhost:${PORT}`);
+
+  // Explicit opt-in seam for production-cookie browser E2E. This server is a
+  // test-only executable and the opaque token is never exposed to the test.
+  if (parsed.pathname === '/__e2e__/browser-session') {
+    if (!e2eBrowserSessionToken) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.setHeader('set-cookie', `dataops_session=${e2eBrowserSessionToken}; Path=/; HttpOnly; SameSite=Lax`);
+    res.writeHead(303, { location: '/' });
+    res.end();
+    return;
+  }
 
   // Collect body
   const chunks: Buffer[] = [];
@@ -75,6 +92,11 @@ async function runSeeds() {
   try {
     await seedUsers();
     await seedTemplates();
+    const browserUserId = process.env.E2E_BROWSER_SESSION_USER_ID;
+    if (browserUserId) {
+      const session = await createBrowserSession(await getClient(), browserUserId, { lifetimeSeconds: 3600 });
+      e2eBrowserSessionToken = session.token;
+    }
     console.log('Test server seed data initialized.');
   } catch (err) {
     console.error('Seed error (non-fatal):', err);
