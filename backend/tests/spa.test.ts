@@ -23,6 +23,8 @@ describe('SPA shell and static files', () => {
     assert.ok(result.body.includes('<script src="/public/app.js"></script>'), 'should load app.js');
 
     assert.ok(result.body.includes('id="app"'), 'should have app container');
+    assert.ok(result.body.includes('name="dataops-auth-mode" content="legacy-bearer"'), 'standalone SPA should preserve legacy bearer mode');
+    assert.ok(!result.body.includes('__DATAOPS_AUTH_MODE__'), 'auth mode placeholder should be rendered server-side');
   });
 
   it('GET /public/app.js returns JavaScript', async () => {
