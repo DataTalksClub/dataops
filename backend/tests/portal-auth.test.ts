@@ -150,6 +150,23 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(JSON.parse(response.body).user.id, 'legacy-user');
   });
 
+  it('preserves legacy bearer clients on protected API routes without a browser cookie', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+    const client = await getClient();
+    const session = await createSession(client, 'legacy-user');
+
+    const response = await handler({
+      httpMethod: 'GET',
+      path: '/api/users',
+      headers: { authorization: `Bearer ${session.token}` },
+    }, {});
+
+    assert.strictEqual(response.statusCode, 200);
+    assert.ok(Array.isArray(JSON.parse(response.body).users));
+  });
+
   it('rejects a fabricated bearer even when a raw x-user-id names an existing admin', async () => {
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';

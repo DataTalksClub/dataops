@@ -684,10 +684,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // GET / — serve SPA HTML
     if (method === 'GET' && reqPath === '/') {
       const htmlPath = path.join(__dirname, 'pages', 'index.html');
-      const html = fs.readFileSync(htmlPath, 'utf-8');
+      const authMode = portalMode ? 'browser-cookie' : 'legacy-bearer';
+      const html = fs.readFileSync(htmlPath, 'utf-8').replace('__DATAOPS_AUTH_MODE__', authMode);
       return {
         statusCode: 200,
-        headers: { 'Content-Type': 'text/html' },
+        headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' },
         body: html,
       };
     }
