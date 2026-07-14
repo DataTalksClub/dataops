@@ -21,6 +21,7 @@
     "validate:export": "tsx scripts/validate-execution-export.ts",
     "dry-run:import": "tsx scripts/dry-run-import.ts",
     "bookkeeping:import": "tsx scripts/import-bookkeeping.ts",
+    "bookkeeping:documents:import": "tsx scripts/import-bookkeeping-documents.ts",
     "calendar:import": "tsx scripts/import-calendar.ts",
     "restore:drill": "tsx scripts/restore-drill.ts",
     "cron": "IS_LOCAL=true tsx scripts/cron-runner.ts",
@@ -37,12 +38,14 @@
     "@aws-sdk/s3-request-presigner": "^3.1085.0",
     "exceljs": "^4.4.0",
     "gray-matter": "^4.0.3",
+    "yauzl": "3.4.0",
     "yazl": "^3.3.1",
     "zerosearch-node": "file:vendor/zerosearch-node"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "^18.19.130",
+    "@types/yauzl": "^2.10.3",
     "@types/yazl": "^2.4.5",
     "dynalite": "^3.2.2",
     "tsx": "^4.21.0",
