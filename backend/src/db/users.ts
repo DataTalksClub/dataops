@@ -179,11 +179,32 @@ async function getUserByEmail(client: DynamoDBDocumentClient, email: string): Pr
   return rawItem(items[0] as Record<string, unknown>);
 }
 
+/** Return all users whose normalized email exactly matches the supplied identity. */
+async function getUsersByNormalizedEmail(client: DynamoDBDocumentClient, email: string): Promise<User[]> {
+  const normalized = email.trim().toLowerCase();
+  const items: Record<string, unknown>[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(new ScanCommand({
+      TableName: TABLE_USERS,
+      FilterExpression: 'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'USER#' },
+      ExclusiveStartKey: exclusiveStartKey,
+    }));
+    items.push(...(result.Items || []) as Record<string, unknown>[]);
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  return items
+    .map((item) => cleanItem(item as Record<string, unknown>) as User)
+    .filter((user) => user.email.trim().toLowerCase() === normalized);
+}
+
 export {
   createUser,
   createUserWithId,
   getUser,
   listUsers,
   getUserByEmail,
+  getUsersByNormalizedEmail,
   updateUser,
 };

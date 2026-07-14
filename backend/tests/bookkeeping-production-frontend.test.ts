@@ -2,24 +2,31 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import path from 'path';
 import { handler } from '../src/handler';
-import { stopLocal } from '../src/db/client';
+import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { createTables } from '../src/db/setup';
+import { createBrowserSession } from '../src/db/sessions';
+import { createUserWithId } from '../src/db/users';
 
 const frontendRoot = path.resolve(__dirname, '../../frontend');
-const auth = `Basic ${Buffer.from('synthetic-operator:synthetic-password').toString('base64')}`;
-const invoke = (requestPath: string) => handler({ httpMethod: 'GET', path: requestPath, headers: { authorization: auth } }, {});
+let authCookie = '';
+const invoke = (requestPath: string) => handler({ httpMethod: 'GET', path: requestPath, headers: { cookie: authCookie } }, {});
 
 describe('production portal bookkeeping frontend', () => {
-  before(() => {
+  before(async () => {
     process.env.DATAOPS_DOCS_DOMAIN = '1';
     process.env.FRONTEND_ROOT = frontendRoot;
-    process.env.BASIC_AUTH_USERNAME = 'synthetic-operator';
-    process.env.BASIC_AUTH_PASSWORD = 'synthetic-password';
+    Object.assign(process.env, { AUTH_BASE_URL: 'https://auth.example.test', AUTH_ISSUER: 'https://issuer.example.test/pool', AUTH_CLIENT_ID: 'dataops-client', AUTH_CALLBACK_URL: 'https://ops.example.test/auth/callback', AUTH_LOGOUT_URL: 'https://ops.example.test/' });
+    const port = await startLocal();
+    const client = await getClient(port);
+    await createTables(client);
+    await createUserWithId(client, 'synthetic-operator', { name: 'Synthetic operator', email: 'operator@datatalks.club', role: 'operator' });
+    const session = await createBrowserSession(client, 'synthetic-operator', { lifetimeSeconds: 3600 });
+    authCookie = `dataops_session=${session.token}`;
   });
   after(async () => {
     delete process.env.DATAOPS_DOCS_DOMAIN;
     delete process.env.FRONTEND_ROOT;
-    delete process.env.BASIC_AUTH_USERNAME;
-    delete process.env.BASIC_AUTH_PASSWORD;
+    for (const key of ['AUTH_BASE_URL', 'AUTH_ISSUER', 'AUTH_CLIENT_ID', 'AUTH_CALLBACK_URL', 'AUTH_LOGOUT_URL']) delete process.env[key];
     await stopLocal();
   });
 

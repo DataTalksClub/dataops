@@ -109,26 +109,17 @@ Route behavior:
 
 ## Auth Strategy
 
-V1 keeps the existing portal auth as the outer perimeter.
+The public portal is a relying party for the shared Cognito service at
+`auth.dtcdev.click`. It uses authorization code with S256 PKCE, validates the ID
+token against the issuer JWKS, maps the verified email to exactly one enabled
+DataOps user, and stores an opaque bounded session in DynamoDB. Browser work
+calls use the HTTP-only same-origin cookie and `/api/me` returns the real local
+user used by role checks, assignments, notifications, and audit fields.
 
-Short term:
-
-- current basic-auth/session protects all public surfaces
-- work-engine is private and callable only by `DocsFullAppFunction`
-- the browser session is the portal `dtc_auth` cookie, not a work-engine bearer
-  token
-- browser work calls use same-origin `/work/api/*`; the frontend does not use a
-  separate work-engine URL, localStorage bearer token, CORS flow, or standalone
-  work-engine sign-in
-- initial actor can be `portal-admin` until real portal users are implemented
-- in production portal mode, work-engine hides `/api/auth/*` and `/api/me`
-  returns the portal actor from trusted headers.
-
-Later:
-
-- replace single-user basic auth with real user identity
-- use the same identity for `completedBy`, audit events, task assignments, and
-  assistant jobs.
+The historical password form and password-derived cookie are not production
+authentication paths. Existing bearer sessions and route-specific credentials
+remain separate: a bearer or integration credential does not serve a browser
+page, and a browser session does not bypass additional ingestion credentials.
 
 ## Execution State
 
