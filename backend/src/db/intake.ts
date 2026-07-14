@@ -150,6 +150,54 @@ async function createIntakeItem(
   return cleanItem(item) as IntakeItem;
 }
 
+async function createIntakeItemIfAbsent(
+  client: DynamoDBDocumentClient,
+  data: Record<string, unknown>
+): Promise<{ item: IntakeItem; created: boolean }> {
+  const id = typeof data.id === 'string' && data.id.trim().length > 0 ? data.id : crypto.randomUUID();
+  const now = new Date().toISOString();
+  const item = withoutUndefined({
+    PK: `INTAKE#${id}`,
+    SK: `INTAKE#${id}`,
+    id,
+    source: 'manual',
+    sourceReceivedAt: now,
+    status: 'new',
+    title: 'Untitled intake',
+    summary: '',
+    receivedChannels: [],
+    linkRefs: [],
+    fileRefs: [],
+    artifactRefs: [],
+    taskIds: [],
+    bundleIds: [],
+    assistantJobIds: [],
+    relatedIntakeItemIds: [],
+    tags: [],
+    priority: 'normal',
+    dataClass: 'internal',
+    history: [],
+    createdAt: now,
+    updatedAt: now,
+    ...data,
+  });
+  Object.assign(item, derivedKeys(item));
+
+  try {
+    await client.send(new PutCommand({
+      TableName: TABLE_INTAKE,
+      Item: item,
+      ConditionExpression: 'attribute_not_exists(PK)',
+    }));
+    return { item: cleanItem(item) as IntakeItem, created: true };
+  } catch (error) {
+    if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') throw error;
+    const existing = await getIntakeItem(client, id);
+    if (!existing) throw error;
+    return { item: existing, created: false };
+  }
+}
+
 async function getIntakeItem(client: DynamoDBDocumentClient, id: string): Promise<IntakeItem | null> {
   const result = await client.send(new GetCommand({
     TableName: TABLE_INTAKE,
@@ -368,6 +416,7 @@ async function listIntakeItems(
 
 export {
   createIntakeItem,
+  createIntakeItemIfAbsent,
   findIntakeBySourceMessage,
   getIntakeItem,
   listIntakeItems,
