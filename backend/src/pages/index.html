@@ -2521,9 +2521,20 @@
     }
 
     #dashboard-tasks .dashboard-queue-group,
+    #dashboard-tasks .dashboard-queue-empty,
     #dashboard-tasks .dashboard-task-actions-row {
       display: grid;
       grid-template-columns: 1fr;
+    }
+
+    #dashboard-tasks .dashboard-queue-empty td {
+      display: block;
+      grid-column: 1 / -1;
+      width: 100%;
+      color: var(--muted);
+      font-size: 13px;
+      font-style: italic;
+      padding: 8px 12px;
     }
 
     #dashboard-tasks .task-table-compact th,
@@ -3081,6 +3092,7 @@
       #dashboard-tasks .task-table-compact tbody,
       #dashboard-tasks .task-table-compact tbody tr[data-task-row],
       #dashboard-tasks .dashboard-queue-group,
+      #dashboard-tasks .dashboard-queue-empty,
       #dashboard-tasks .dashboard-task-actions-row {
         display: block;
         width: 100%;
@@ -3894,6 +3906,62 @@
       display: block;
       font-size: 22px;
       margin-top: 2px;
+    }
+
+    /* Demoted intake counters: a small secondary strip below the core queue
+       sections, not the lead of the dashboard (#105). */
+    .dashboard-intake-strip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 24px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border-soft, #e5e7eb);
+    }
+
+    .dashboard-intake-strip-label {
+      flex: 0 0 auto;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted, #6b7280);
+    }
+
+    .dashboard-intake-strip #dashboard-intake-risk {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .dashboard-intake-strip .intake-dashboard-risk {
+      margin-bottom: 0;
+      gap: 8px;
+    }
+
+    .dashboard-intake-strip .intake-dashboard-risk a {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 12px;
+      box-shadow: none;
+    }
+
+    .dashboard-intake-strip .intake-dashboard-risk span {
+      font-size: 12px;
+    }
+
+    .dashboard-intake-strip .intake-dashboard-risk strong {
+      display: inline;
+      font-size: 15px;
+      margin-top: 0;
+    }
+
+    @media (max-width: 760px) {
+      .dashboard-intake-strip {
+        flex-direction: column;
+        align-items: stretch;
+      }
     }
 
     @media (max-width: 760px) {

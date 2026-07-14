@@ -750,12 +750,17 @@
     return labels;
   }
 
+  // Route a task to exactly one of the dashboard's core queue sections. Genuinely
+  // due-today work resolves to "Today" before "At-risk workflows" so it is not
+  // swallowed into at-risk solely because evidence is still missing (#105);
+  // overdue and follow-up-due still take precedence over Today. The at-risk
+  // classification itself is refined separately (#106).
   function taskPrimaryQueueGroup(task, taskFiles, today, bundle) {
     var labels = dashboardQueueLabels(task, taskFiles, today, bundle);
-    if (labels.indexOf('Follow-up due') !== -1) return 'Follow-ups due';
     if (labels.indexOf('Overdue') !== -1) return 'Overdue';
-    if (labels.indexOf('Missing evidence') !== -1 || labels.indexOf('At risk') !== -1) return 'At risk';
+    if (labels.indexOf('Follow-up due') !== -1) return 'Follow-ups due';
     if (labels.indexOf('Today') !== -1) return 'Today';
+    if (labels.indexOf('Missing evidence') !== -1 || labels.indexOf('At risk') !== -1) return 'At-risk workflows';
     if (labels.indexOf('Waiting') !== -1) return 'Waiting';
     return 'Other';
   }
@@ -1798,12 +1803,6 @@
   function renderDashboard() {
     clearApp();
 
-    var intakeRisk = document.createElement('div');
-    intakeRisk.id = 'dashboard-intake-risk';
-    intakeRisk.innerHTML = '<div class="intake-dashboard-risk"><a href="#/inbox"><span>Untriaged intake</span><strong>...</strong></a><a href="#/inbox"><span>Blocked intake</span><strong>...</strong></a><a href="#/inbox"><span>Assistant-ready</span><strong>...</strong></a></div>';
-    app.appendChild(intakeRisk);
-    loadDashboardIntakeRisk();
-
     // Two-column layout
     var layout = document.createElement('div');
     layout.className = 'dashboard-layout';
@@ -1879,6 +1878,16 @@
     layout.appendChild(leftCol);
     layout.appendChild(rightCol);
     app.appendChild(layout);
+
+    // Intake counters are a demoted secondary strip below the four core queue
+    // sections — they no longer lead the dashboard (#105). The Inbox tab remains
+    // the primary place to work intake.
+    var intakeStrip = document.createElement('div');
+    intakeStrip.className = 'dashboard-intake-strip';
+    intakeStrip.innerHTML = '<span class="dashboard-intake-strip-label">Intake</span>' +
+      '<div id="dashboard-intake-risk"><div class="intake-dashboard-risk"><a href="#/inbox"><span>Untriaged intake</span><strong>...</strong></a><a href="#/inbox"><span>Blocked intake</span><strong>...</strong></a><a href="#/inbox"><span>Assistant-ready</span><strong>...</strong></a></div></div>';
+    app.appendChild(intakeStrip);
+    loadDashboardIntakeRisk();
 
     // Populate user picker
     loadUsersOnce().then(function (usersMap) {
@@ -2417,16 +2426,9 @@
             return dashboardQueueLabels(task, filesByTask[task.id] || [], today, bundleMap[task.bundleId]).length > 0;
           });
 
-          if (tasks.length === 0 && dueIntake.length === 0) {
-            container.innerHTML = renderEmptyState(
-              'No queue tasks',
-              'Use the task list to review upcoming dates or create an ad-hoc task.',
-              [{ href: '#/tasks', label: 'Open tasks' }]
-            );
-            container.setAttribute('data-loaded', 'true');
-            return null;
-          }
-
+          // The four core sections always render (each with an explicit empty
+          // state) so a clear question reads as clear rather than disappearing
+          // confusingly (#105).
           // Compatibility marker for frontend asset tests: renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask)
           renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake);
           container.setAttribute('data-loaded', 'true');
@@ -2440,57 +2442,40 @@
   }
 
   function renderDashboardTaskTable(tasks, bundleMap, usersMap, container, filesByTask, dueIntake) {
-    var html = '<table class="task-table-compact"><thead><tr>' +
-      '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Next Action</th>' +
-      '</tr></thead><tbody>';
-    var queueGroupOrder = {
-      'Follow-ups due': 0,
-      'Overdue': 1,
-      'At risk': 2,
-      'Today': 3,
-      'Waiting': 4,
-      'Other': 5,
+    var today = todayString();
+
+    // Bucket every queue task into exactly one section so the four core operator
+    // questions — Today, Overdue, Follow-ups due, At-risk workflows — can lead the
+    // page as explicit, labelled sections in priority order (#105).
+    var buckets = {
+      'Today': [],
+      'Overdue': [],
+      'Follow-ups due': [],
+      'At-risk workflows': [],
+      'Waiting': [],
+      'Other': [],
     };
-    (dueIntake || []).forEach(function (item, index) {
-      if (index === 0) {
-        html += '<tr class="dashboard-queue-group"><td colspan="6">Intake follow-ups due</td></tr>';
-      }
-      var waitingText = item.waitingFor ? 'Waiting for ' + item.waitingFor : 'Waiting for response';
-      var meta = [item.source || 'intake', waitingText, item.followUpAt ? 'follow up ' + formatDateLabel(item.followUpAt) : 'follow-up due'].join(' | ');
-      html += '<tr data-intake-follow-up-row="' + escapeHtml(item.id) + '">' +
-        '<td class="task-status"></td>' +
-        '<td data-label="Date">' + escapeHtml((item.followUpAt || '').slice(0, 10)) + '</td>' +
-        '<td class="task-description" data-label="Task"><div class="dashboard-task-main">' +
-          '<div class="dashboard-task-description">Intake follow-up due: ' + escapeHtml(item.title || 'Untitled intake') + '</div>' +
-          '<div class="dashboard-task-workflow"><span class="badge-adhoc">' + escapeHtml(item.source || 'intake') + '</span></div>' +
-        '</div></td>' +
-        '<td data-label="Status / Proof"><span class="badge-waiting">' + escapeHtml(meta) + '</span><div class="task-queue-labels"><span class="task-queue-label">Intake follow-up due</span></div></td>' +
-        '<td data-label="Assignee">' + (item.assigneeId && usersMap[item.assigneeId] ? '<span class="badge-assignee">' + escapeHtml(usersMap[item.assigneeId].name) + '</span>' : '') + '</td>' +
-        '<td data-label="Next Action"><a class="task-action-btn task-next-action" href="' + escapeHtml(intakeHash(item.id)) + '">Open intake</a></td>' +
-      '</tr>';
+    (tasks || []).forEach(function (t) {
+      var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
+      var group = taskPrimaryQueueGroup(t, (filesByTask || {})[t.id] || [], today, bundle);
+      if (!buckets[group]) buckets[group] = [];
+      buckets[group].push(t);
     });
-    tasks = tasks.slice().sort(function (a, b) {
-      var aGroup = taskPrimaryQueueGroup(a, (filesByTask || {})[a.id] || [], todayString(), a.bundleId ? bundleMap[a.bundleId] : null);
-      var bGroup = taskPrimaryQueueGroup(b, (filesByTask || {})[b.id] || [], todayString(), b.bundleId ? bundleMap[b.bundleId] : null);
-      var aOrder = Object.prototype.hasOwnProperty.call(queueGroupOrder, aGroup) ? queueGroupOrder[aGroup] : 99;
-      var bOrder = Object.prototype.hasOwnProperty.call(queueGroupOrder, bGroup) ? queueGroupOrder[bGroup] : 99;
-      var groupDelta = aOrder - bOrder;
-      if (groupDelta !== 0) return groupDelta;
-      return (a.date || '').localeCompare(b.date || '');
+    Object.keys(buckets).forEach(function (group) {
+      buckets[group].sort(function (a, b) {
+        return (a.date || '').localeCompare(b.date || '');
+      });
     });
-    var currentGroup = '';
-    tasks.forEach(function (t) {
+
+    // Render a single queue task row (plus the full-width follow-up controls row
+    // for waiting tasks). Row internals are unchanged from #103.
+    function taskRowHtml(t) {
+      var rowHtml = '';
       var isDone = t.status === 'done';
       var rowClass = isDone ? ' class="task-done"' : '';
       var checked = isDone ? ' checked' : '';
       var bundle = t.bundleId ? bundleMap[t.bundleId] : null;
       var taskFiles = (filesByTask || {})[t.id] || [];
-      var queueGroup = taskPrimaryQueueGroup(t, taskFiles, todayString(), bundle);
-      if (queueGroup !== currentGroup) {
-        currentGroup = queueGroup;
-        html += '<tr class="dashboard-queue-group"><td colspan="6">' + escapeHtml(queueGroup) + '</td></tr>';
-      }
-
       var checkboxDisabled = '';
       var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
       var waitingBlockTitle = waitingCompletionBlockTitle(t);
@@ -2529,7 +2514,7 @@
       if (missingProofTitle) {
         instructionsHtml += '<div class="task-missing-proof">' + escapeHtml(missingProofTitle) + '</div>';
       }
-      var queueLabels = dashboardQueueLabels(t, taskFiles, todayString(), bundle);
+      var queueLabels = dashboardQueueLabels(t, taskFiles, today, bundle);
       if (queueLabels.length) {
         instructionsHtml += '<div class="task-queue-labels">' + queueLabels.map(function (label) {
           return '<span class="task-queue-label">' + escapeHtml(label) + '</span>';
@@ -2559,7 +2544,7 @@
         '<div class="dashboard-task-workflow">' + bundleBadge + '</div>' +
         '</div>';
 
-      html += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
+      rowHtml += '<tr' + rowClass + ' data-task-row="' + t.id + '">' +
         '<td class="task-status"><label class="task-status-hit-target"><input type="checkbox" class="task-status-checkbox" aria-label="Toggle task completion" data-task-id="' + t.id + '" data-status="' + (t.status || 'todo') + '"' + checked + checkboxDisabled + ' /></label></td>' +
         '<td data-label="Date">' + escapeHtml(t.date) + '</td>' +
         '<td class="task-description" data-label="Task">' + taskCellHtml + '</td>' +
@@ -2568,11 +2553,77 @@
         '<td data-label="Next Action">' + nextActionHtml + '</td>' +
         '</tr>';
       if (fullWidthActionsHtml) {
-        html += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' +
+        rowHtml += '<tr class="dashboard-task-actions-row" data-task-actions-row="' + escapeHtml(t.id) + '">' +
           '<td colspan="6">' + fullWidthActionsHtml + '</td>' +
           '</tr>';
       }
+      return rowHtml;
+    }
+
+    // Intake items whose follow-up is due render inside the Follow-ups due section.
+    function intakeRowHtml(item) {
+      var waitingText = item.waitingFor ? 'Waiting for ' + item.waitingFor : 'Waiting for response';
+      var meta = [item.source || 'intake', waitingText, item.followUpAt ? 'follow up ' + formatDateLabel(item.followUpAt) : 'follow-up due'].join(' | ');
+      return '<tr data-intake-follow-up-row="' + escapeHtml(item.id) + '">' +
+        '<td class="task-status"></td>' +
+        '<td data-label="Date">' + escapeHtml((item.followUpAt || '').slice(0, 10)) + '</td>' +
+        '<td class="task-description" data-label="Task"><div class="dashboard-task-main">' +
+          '<div class="dashboard-task-description">Intake follow-up due: ' + escapeHtml(item.title || 'Untitled intake') + '</div>' +
+          '<div class="dashboard-task-workflow"><span class="badge-adhoc">' + escapeHtml(item.source || 'intake') + '</span></div>' +
+        '</div></td>' +
+        '<td data-label="Status / Proof"><span class="badge-waiting">' + escapeHtml(meta) + '</span><div class="task-queue-labels"><span class="task-queue-label">Intake follow-up due</span></div></td>' +
+        '<td data-label="Assignee">' + (item.assigneeId && usersMap[item.assigneeId] ? '<span class="badge-assignee">' + escapeHtml(usersMap[item.assigneeId].name) + '</span>' : '') + '</td>' +
+        '<td data-label="Next Action"><a class="task-action-btn task-next-action" href="' + escapeHtml(intakeHash(item.id)) + '">Open intake</a></td>' +
+      '</tr>';
+    }
+
+    function groupHeaderHtml(label) {
+      return '<tr class="dashboard-queue-group"><td colspan="6">' + escapeHtml(label) + '</td></tr>';
+    }
+
+    function emptyRowHtml(message) {
+      return '<tr class="dashboard-queue-empty"><td colspan="6">' + escapeHtml(message) + '</td></tr>';
+    }
+
+    var html = '<table class="task-table-compact"><thead><tr>' +
+      '<th></th><th>Date</th><th>Task</th><th>Status / Proof</th><th>Assignee</th><th>Next Action</th>' +
+      '</tr></thead><tbody>';
+
+    // The four core questions always lead the queue, in priority order, each with
+    // an explicit empty state so a clear question reads as clear (#105).
+    var coreSections = [
+      { group: 'Today', empty: 'Nothing due today' },
+      { group: 'Overdue', empty: 'No overdue tasks' },
+      { group: 'Follow-ups due', empty: 'No follow-ups due' },
+      { group: 'At-risk workflows', empty: 'No at-risk workflows' },
+    ];
+    coreSections.forEach(function (section) {
+      html += groupHeaderHtml(section.group);
+      var rows = buckets[section.group] || [];
+      var intakeRows = section.group === 'Follow-ups due' ? (dueIntake || []) : [];
+      if (rows.length === 0 && intakeRows.length === 0) {
+        html += emptyRowHtml(section.empty);
+      } else {
+        rows.forEach(function (t) {
+          html += taskRowHtml(t);
+        });
+        intakeRows.forEach(function (item) {
+          html += intakeRowHtml(item);
+        });
+      }
     });
+
+    // Overflow groups (waiting-not-yet-due, other) render only when populated,
+    // after the four core sections.
+    ['Waiting', 'Other'].forEach(function (group) {
+      var rows = buckets[group] || [];
+      if (!rows.length) return;
+      html += groupHeaderHtml(group);
+      rows.forEach(function (t) {
+        html += taskRowHtml(t);
+      });
+    });
+
     html += '</tbody></table>';
     container.innerHTML = html;
 

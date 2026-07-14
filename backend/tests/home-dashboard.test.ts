@@ -283,7 +283,13 @@ describe('Home dashboard (issue #26)', () => {
       const result = await handler(event, {});
       assert.ok(result.body.includes('taskPrimaryQueueGroup'), 'should assign queue groups');
       assert.ok(result.body.includes('dashboard-queue-group'), 'should render queue group rows');
-      assert.ok(result.body.includes('hasOwnProperty.call(queueGroupOrder'), 'should preserve zero-priority follow-up sorting');
+      // The four core operator questions lead the queue as explicit, labelled
+      // sections in priority order, each with an empty state (#105).
+      assert.ok(result.body.includes("{ group: 'Today', empty: 'Nothing due today' }"), 'should lead with a Today section');
+      assert.ok(result.body.includes("{ group: 'Overdue', empty: 'No overdue tasks' }"), 'should include an Overdue section');
+      assert.ok(result.body.includes("{ group: 'Follow-ups due', empty: 'No follow-ups due' }"), 'should include a Follow-ups due section with empty state');
+      assert.ok(result.body.includes("{ group: 'At-risk workflows', empty: 'No at-risk workflows' }"), 'should include an At-risk workflows section');
+      assert.ok(result.body.includes('dashboard-queue-empty'), 'should render empty-state rows for empty core sections');
       assert.ok(result.body.includes('badge-recurring'), 'should label recurring tasks');
       assert.ok(result.body.includes('badge-template-source'), 'should label template-generated tasks');
     });
