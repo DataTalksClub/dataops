@@ -1,4 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { getClient } from '../db/client';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
@@ -16,6 +18,8 @@ const DATA_CLASSES = new Set(['public', 'internal', 'private', 'sensitive']);
 const SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
 const SECRET_KEY_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
 const SIGNED_URL_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=)/i;
+let signArtifactUrl = getSignedUrl;
+let artifactS3Client: S3Client | null = null;
 
 function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
   return {
@@ -288,6 +292,24 @@ async function handleArchive(id: string, client: DynamoDBDocumentClient): Promis
   return jsonResponse(200, { artifact });
 }
 
+async function handlePrivateDownload(id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  const artifact = await getArtifact(client, id);
+  if (!artifact) return jsonResponse(404, { error: 'Artifact not found' });
+  const bucket = process.env.EMAIL_DOCUMENTS_BUCKET || '';
+  const prefix = (process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX || 'artifacts/').replace(/^\/+|\/+$/g, '');
+  const match = /^s3:\/\/([^/]+)\/(.+)$/.exec(artifact.storageUri || '');
+  if (artifact.dataClass !== 'sensitive' || !match || match[1] !== bucket || !match[2].startsWith(`${prefix}/`)) {
+    return jsonResponse(409, { error: 'Private download is not available for this artifact' });
+  }
+  artifactS3Client ||= new S3Client({});
+  const downloadUrl = await signArtifactUrl(artifactS3Client, new GetObjectCommand({ Bucket: match[1], Key: match[2] }), { expiresIn: 300 });
+  return jsonResponse(200, { downloadUrl, expiresIn: 300 });
+}
+
+function setArtifactDownloadSignerForTests(signer: typeof getSignedUrl): void {
+  signArtifactUrl = signer;
+}
+
 async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse | null> {
   const method = event.httpMethod || 'GET';
   const reqPath = event.path || '/';
@@ -306,6 +328,9 @@ async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse 
     const archiveMatch = suffix.match(/^\/([^/]+)\/archive\/?$/);
     if (archiveMatch && method === 'PUT') return await handleArchive(archiveMatch[1], client);
 
+    const downloadMatch = suffix.match(/^\/([^/]+)\/download\/?$/);
+    if (downloadMatch && method === 'GET') return await handlePrivateDownload(downloadMatch[1], client);
+
     const idMatch = suffix.match(/^\/([^/]+)\/?$/);
     if (idMatch && method === 'GET') {
       const artifact = await getArtifact(client, idMatch[1]);
@@ -323,5 +348,6 @@ async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse 
 
 export {
   handleArtifactRoutes,
+  setArtifactDownloadSignerForTests,
   validateArtifactFields,
 };

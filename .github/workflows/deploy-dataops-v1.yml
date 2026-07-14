@@ -96,6 +96,11 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}
+      EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
+      EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
+      EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN: ${{ secrets.EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN }}
 
     steps:
       - name: Check out repository
@@ -129,13 +134,22 @@ jobs:
 
       - name: Deploy DataOps v1 stack
         run: |
+          if [ -z "$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" ]; then
+            echo "Required email-document intake secret ARN is not configured" >&2
+            exit 1
+          fi
+          : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
           sam deploy \
             --config-env full-sandbox \
             --parameter-overrides \
               "ParameterKey=GitHubOwner,ParameterValue=$DOCS_GITHUB_OWNER" \
               "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
-              "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME"
+              "ParameterKey=BasicAuthUsername,ParameterValue=$BASIC_AUTH_USERNAME" \
+              "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" \
+              "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
+              "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \
+              "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN"
 
       - name: Seed runtime users, workflow templates, and recurring configs
         working-directory: ${{ github.workspace }}/backend

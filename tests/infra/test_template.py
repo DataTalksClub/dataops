@@ -91,6 +91,7 @@ def test_dataops_table_outputs_are_available_for_backend_env_wiring():
         "DataOpsSessionsTableName",
         "DataOpsExportArchiveBucketName",
         "DataOpsExportArchivePrefix",
+        "BackendFunctionRoleArn",
     ]
 
     for output in expected_outputs:
@@ -143,8 +144,71 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "DailyBackendExport" in backend
     assert '"dataopsAction":"export"' in backend
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret" in backend
+    assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
+    assert "!Ref EmailDocumentIntakeSecretArn" in backend
     # No cross-function invocation — the old two-Lambda proxy is gone.
     assert "lambda:InvokeFunction" not in template
+
+
+def test_email_document_intake_uses_a_precreated_rotatable_secret():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+    assert "EmailDocumentIntakeSecretArn:" in template
+    assert "ARN of the pre-created email document intake secret" in template
+    assert "EmailDocumentIntakeSecretName:" in template
+    assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
+    assert "EMAIL_DOCUMENT_RATE_LIMIT: !Ref EmailDocumentRateLimit" in backend
+    assert "EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}" in workflow
+    assert "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" in workflow
+    assert 'if [ -z "$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" ]' in workflow
+    intake_secret_parameter = template.split("  EmailDocumentIntakeSecretArn:", 1)[1].split("\n  EmailDocumentSourcePrefix:", 1)[0]
+    assert "Default:" not in intake_secret_parameter
+    assert "Default: arn:" not in template
+
+
+def test_email_document_storage_is_private_retained_and_prefix_scoped():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    bucket = _resource_block(template, "EmailDocumentsBucket")
+    policy = _resource_block(template, "EmailDocumentsBucketPolicy")
+    key = _resource_block(template, "EmailDocumentsKey")
+    backend = _resource_block(template, "BackendFunction")
+    audit_table = _resource_block(template, "DataOpsAuditEventsTable")
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "DeletionPolicy: Retain" in bucket
+    assert "UpdateReplacePolicy: Retain" in bucket
+    assert "SSEAlgorithm: aws:kms" in bucket
+    assert "KMSMasterKeyID: !GetAtt EmailDocumentsKey.Arn" in bucket
+    assert "BlockPublicAcls: true" in bucket
+    assert "IgnorePublicAcls: true" in bucket
+    assert "BlockPublicPolicy: true" in bucket
+    assert "RestrictPublicBuckets: true" in bucket
+    assert "VersioningConfiguration: { Status: Enabled }" in bucket
+    assert "OwnershipControls" in bucket
+    assert "DeletionPolicy: Retain" in key
+    assert "UpdateReplacePolicy: Retain" in key
+    assert "EnableKeyRotation: true" in key
+    assert '"aws:SecureTransport": false' in policy
+    assert "${EmailDocumentsBucket.Arn}/${EmailDocumentSourcePrefix}*" in backend
+    assert "${EmailDocumentsBucket.Arn}/${EmailDocumentDestinationPrefix}*" in backend
+    assert "EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket" in backend
+    assert "EMAIL_DOCUMENTS_KMS_KEY: !GetAtt EmailDocumentsKey.Arn" in backend
+    assert "EMAIL_DOCUMENT_SOURCE_PREFIX: !Ref EmailDocumentSourcePrefix" in backend
+    assert "EMAIL_DOCUMENT_DESTINATION_PREFIX: !Ref EmailDocumentDestinationPrefix" in backend
+    assert "EMAIL_DOCUMENT_RECIPIENT_ROUTES: !Ref EmailDocumentRecipientRoutes" in backend
+    assert "TimeToLiveSpecification:" in audit_table
+    assert "AttributeName: expiresAt" in audit_table
+    assert "EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: !Ref EmailDocumentExternalSourceBucketName" in backend
+    assert "EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: !Ref EmailDocumentExternalSourcePrefix" in backend
+    assert "${EmailDocumentExternalSourceBucketName}/${EmailDocumentExternalSourcePrefix}*" in backend
+    assert "Resource: !Ref EmailDocumentExternalSourceKmsKeyArn" in backend
+    assert "HasEmailDocumentExternalSource" in template
+    assert "HasEmailDocumentExternalSourceKms" in template
+    assert "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" in workflow
+    assert "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" in workflow
+    assert "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN" in workflow
+    assert "s3:*" not in backend
 
 
 def test_no_old_two_function_resources_remain():

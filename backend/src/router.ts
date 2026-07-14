@@ -17,6 +17,7 @@ import { handlePortal } from './docs/portal';
 import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
+import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
@@ -53,6 +54,7 @@ const AUTH_EXEMPT_PATHS = new Set([
 
 function isAuthExempt(method: string, path: string): boolean {
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
+  if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   // Static assets
   if (method === 'GET' && path.startsWith('/public/')) return true;
   return false;
@@ -590,9 +592,16 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
   const method = event.httpMethod || 'GET';
   let reqPath = event.path || '/';
   const portalMode = process.env.WORK_ENGINE_AUTH_MODE === 'portal';
-  decodeBase64Body(event);
 
   try {
+    // Machine-to-machine intake has its own rotated secret and must not pass
+    // through interactive session or portal authentication.
+    if (method === 'POST' && reqPath === '/api/v1/intake/email-documents') {
+      return await handleEmailDocumentIntake(event, client);
+    }
+
+    decodeBase64Body(event);
+
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs
     // content API, and `/content/*`, enforces Basic auth / session cookie, and
