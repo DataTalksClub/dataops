@@ -57,6 +57,23 @@ function taskRow(page, taskId) {
   return page.locator('[data-task-row="' + taskId + '"]');
 }
 
+// Resolve which labelled queue section a task row sits under by walking back to
+// the nearest preceding .dashboard-queue-group header (#105).
+function queueSectionForRow(page, taskId) {
+  return page.evaluate((id) => {
+    const row = document.querySelector('[data-task-row="' + id + '"]');
+    if (!row) return null;
+    let node = row.previousElementSibling;
+    while (node) {
+      if (node.classList && node.classList.contains('dashboard-queue-group')) {
+        return (node.textContent || '').trim();
+      }
+      node = node.previousElementSibling;
+    }
+    return null;
+  }, taskId);
+}
+
 // The dashboard's task table loads through a chain of async fetches (tasks,
 // files, bundles) in loadDashboardTasks. #dashboard-tasks carries a
 // data-loaded attribute that flips to "true" only at the terminal render
@@ -620,6 +637,25 @@ test.describe('Home dashboard (issue #26)', () => {
       }
     });
 
+    test('empty queue still leads with the four core sections and clear empty states (#105)', async ({ page }) => {
+      await mockCleanSeededRuntime(page, {});
+
+      await page.goto('/#/');
+      await page.waitForSelector('#dashboard-tasks table', { timeout: 15000 });
+
+      // All four core operator questions render as labelled sections, in order,
+      // even when the operator has nothing in them.
+      const groupHeadings = await page.locator('#dashboard-tasks .dashboard-queue-group').allTextContents();
+      expect(groupHeadings.slice(0, 4)).toEqual(['Today', 'Overdue', 'Follow-ups due', 'At-risk workflows']);
+
+      // Each empty core section states what is clear rather than disappearing.
+      const emptyRows = await page.locator('#dashboard-tasks .dashboard-queue-empty').allTextContents();
+      expect(emptyRows).toContain('Nothing due today');
+      expect(emptyRows).toContain('No overdue tasks');
+      expect(emptyRows).toContain('No follow-ups due');
+      expect(emptyRows).toContain('No at-risk workflows');
+    });
+
     test('the no-active-work CTA navigates to the Templates library', async ({ page }) => {
       await mockCleanSeededRuntime(page, {});
 
@@ -1151,10 +1187,16 @@ test.describe('Home dashboard (issue #26)', () => {
         const todayRow = page.locator('[data-task-row="' + created[2].id + '"]');
         await expect(todayRow).toContainText('Today');
 
+        // The four core operator questions lead the queue in priority order:
+        // Today, Overdue, Follow-ups due, At-risk workflows (#105).
         const groupHeadings = await page.locator('#dashboard-tasks .dashboard-queue-group').allTextContents();
-        expect(groupHeadings.indexOf('Follow-ups due')).toBeGreaterThanOrEqual(0);
         expect(groupHeadings.indexOf('Today')).toBeGreaterThanOrEqual(0);
-        expect(groupHeadings.indexOf('Follow-ups due')).toBeLessThan(groupHeadings.indexOf('Today'));
+        expect(groupHeadings.indexOf('Overdue')).toBeGreaterThanOrEqual(0);
+        expect(groupHeadings.indexOf('Follow-ups due')).toBeGreaterThanOrEqual(0);
+        expect(groupHeadings.indexOf('At-risk workflows')).toBeGreaterThanOrEqual(0);
+        expect(groupHeadings.indexOf('Today')).toBeLessThan(groupHeadings.indexOf('Overdue'));
+        expect(groupHeadings.indexOf('Overdue')).toBeLessThan(groupHeadings.indexOf('Follow-ups due'));
+        expect(groupHeadings.indexOf('Follow-ups due')).toBeLessThan(groupHeadings.indexOf('At-risk workflows'));
 
         await page.setViewportSize({ width: 1440, height: 1000 });
         const hasOverflow = await page.evaluate(() => (
@@ -1165,6 +1207,103 @@ test.describe('Home dashboard (issue #26)', () => {
         for (const task of created) {
           await cleanupTask(request, task);
         }
+      }
+    });
+
+    test('Dashboard leads with the four core sections in order and demotes intake counters (#105)', async ({ page, request }) => {
+      const today = todayString();
+      const created = [];
+
+      try {
+        const todayRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Core IA today task',
+            date: today,
+            assigneeId: GRACE_ID,
+            validation: { dashboardStates: ['today'] },
+          },
+        });
+        created.push(await todayRes.json());
+
+        const overdueRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Core IA overdue task',
+            date: offsetDateString(-1),
+            assigneeId: GRACE_ID,
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        created.push(await overdueRes.json());
+
+        const followUpRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Core IA follow-up task',
+            date: offsetDateString(-2),
+            assigneeId: GRACE_ID,
+            status: 'waiting',
+            waitingFor: 'Sponsor reply',
+            followUpAt: today,
+            comment: 'Waiting for sponsor reply',
+            validation: { dashboardStates: ['waiting', 'follow-up-due'] },
+          },
+        });
+        created.push(await followUpRes.json());
+
+        await page.goto('/#/');
+        await waitForDashboardTasksLoaded(page);
+
+        // The four core questions are the first, labelled top-level sections, in
+        // priority order, and always present.
+        const groupHeadings = await page.locator('#dashboard-tasks .dashboard-queue-group').allTextContents();
+        expect(groupHeadings.slice(0, 4)).toEqual(['Today', 'Overdue', 'Follow-ups due', 'At-risk workflows']);
+
+        // Intake counters are demoted to a small strip below the queue, not the
+        // top of the dashboard.
+        const strip = page.locator('.dashboard-intake-strip');
+        await expect(strip).toBeVisible();
+        await expect(strip.locator('[data-testid="dashboard-intake-risk"]')).toContainText('Untriaged intake');
+        const stripBelowQueue = await page.evaluate(() => {
+          const layout = document.querySelector('.dashboard-layout');
+          const stripEl = document.querySelector('.dashboard-intake-strip');
+          if (!layout || !stripEl) return false;
+          // Node.DOCUMENT_POSITION_FOLLOWING (4) => strip comes after the layout.
+          return (layout.compareDocumentPosition(stripEl) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        });
+        expect(stripBelowQueue).toBe(true);
+      } finally {
+        for (const task of created) {
+          await cleanupTask(request, task);
+        }
+      }
+    });
+
+    test('A due-today, not-at-risk task appears under Today, not At-risk workflows (#105)', async ({ page, request }) => {
+      const today = todayString();
+      let task;
+
+      try {
+        // Genuinely due today, not overdue, no missing required proof.
+        const res = await request.post('/api/tasks', {
+          data: {
+            description: 'Due today ready task',
+            date: today,
+            assigneeId: GRACE_ID,
+            validation: { dashboardStates: ['today'] },
+          },
+        });
+        task = await res.json();
+
+        await page.goto('/#/');
+        await waitForDashboardTaskRow(page, task.id);
+
+        const row = taskRow(page, task.id);
+        await expect(row).toContainText('Today');
+
+        const section = await queueSectionForRow(page, task.id);
+        expect(section).toBe('Today');
+        expect(section).not.toBe('At-risk workflows');
+      } finally {
+        await cleanupTask(request, task);
       }
     });
 
@@ -1258,8 +1397,8 @@ test.describe('Home dashboard (issue #26)', () => {
         await expect(page.locator('#dashboard-tasks thead')).not.toContainText('Required Proof');
         await expect(page.locator('#dashboard-tasks thead')).toContainText('Next Action');
 
-        for (const group of ['Follow-ups due', 'Overdue', 'At risk', 'Today', 'Waiting']) {
-          await expect(page.locator('#dashboard-tasks .dashboard-queue-group', { hasText: group })).toBeVisible();
+        for (const group of ['Today', 'Overdue', 'Follow-ups due', 'At-risk workflows', 'Waiting']) {
+          await expect(page.locator('#dashboard-tasks .dashboard-queue-group', { hasText: group }).first()).toBeVisible();
         }
 
         const desktopLayoutProblems = await page.evaluate(() => {
