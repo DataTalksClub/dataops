@@ -237,7 +237,9 @@ describe('Telegram integration', () => {
 
     it('accepts the Telegram-signed webhook without interactive portal authentication', async () => {
       const previousSkipAuth = process.env.SKIP_AUTH;
+      const previousDocsDomain = process.env.DATAOPS_DOCS_DOMAIN;
       delete process.env.SKIP_AUTH;
+      process.env.DATAOPS_DOCS_DOMAIN = '1';
       try {
         const client = await getClient();
         const res = await route({
@@ -251,6 +253,8 @@ describe('Telegram integration', () => {
       } finally {
         if (previousSkipAuth === undefined) delete process.env.SKIP_AUTH;
         else process.env.SKIP_AUTH = previousSkipAuth;
+        if (previousDocsDomain === undefined) delete process.env.DATAOPS_DOCS_DOMAIN;
+        else process.env.DATAOPS_DOCS_DOMAIN = previousDocsDomain;
       }
     });
 

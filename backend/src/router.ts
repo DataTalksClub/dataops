@@ -613,6 +613,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     decodeBase64Body(event);
 
+    // Telegram authenticates with its own rotated webhook secret and must be
+    // handled before the interactive single-origin portal middleware.
+    if (method === 'POST' && reqPath === '/api/webhook/telegram') {
+      return await handleTelegramWebhook(event);
+    }
+
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs
     // content API, and `/content/*`, enforces the opaque browser session, and
@@ -1282,12 +1288,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/cron')) {
       const result = await handleCronRoutes(reqPath, method);
       if (result) return result;
-    }
-
-    // ── Telegram webhook ────────────────────────────────────────
-
-    if (method === 'POST' && reqPath === '/api/webhook/telegram') {
-      return handleTelegramWebhook(event);
     }
 
     // ── Email webhook ───────────────────────────────────────────
