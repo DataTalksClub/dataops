@@ -17,11 +17,7 @@ from groq import Groq
 from telegram import MessageEntity, Update
 from telegram.constants import MessageEntityType
 from telegram.ext import (
-    Application,
-    CommandHandler,
     ContextTypes,
-    MessageHandler,
-    filters,
 )
 
 from heru_runner import DEFAULT_ENGINE
@@ -30,8 +26,10 @@ from session_retrier import SessionRetrier
 
 load_dotenv()
 
-TELEGRAM_BOT_API_KEY = os.getenv("TELEGRAM_BOT_API_KEY")
-TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", "0") or 0)
+# Kept only for compatibility with the imported handler unit tests. The
+# production Telegram allowlist and bot credentials live in the shared backend
+# webhook; this module no longer starts an independent polling bot.
+TELEGRAM_CHAT_ID = 0
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 HERU_ENGINE = os.getenv("HERU_ENGINE", DEFAULT_ENGINE)
 HERU_MODEL = os.getenv("HERU_MODEL")
@@ -515,24 +513,10 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def main() -> None:
-    ensure_directories()
-    if not TELEGRAM_BOT_API_KEY:
-        raise RuntimeError("TELEGRAM_BOT_API_KEY is required")
-    if not TELEGRAM_CHAT_ID:
-        raise RuntimeError("TELEGRAM_CHAT_ID is required")
-
-    application = Application.builder().token(TELEGRAM_BOT_API_KEY).build()
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CommandHandler("process", process_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
-    application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
-    application.add_handler(MessageHandler(filters.AUDIO, handle_audio_message))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
-    application.add_handler(MessageHandler(filters.VIDEO | filters.ANIMATION, handle_video_message))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_document_message))
-    application.add_error_handler(error_handler)
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    raise RuntimeError(
+        "The podcast module no longer starts a Telegram bot. "
+        "Use the shared DataOps /api/webhook/telegram integration and /podcast route."
+    )
 
 
 if __name__ == "__main__":

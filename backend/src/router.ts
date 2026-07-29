@@ -57,6 +57,7 @@ const AUTH_EXEMPT_PATHS = new Set([
 function isAuthExempt(method: string, path: string): boolean {
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
+  if (method === 'POST' && path === '/api/webhook/telegram') return true;
   // Static assets
   if (method === 'GET' && path.startsWith('/public/')) return true;
   return false;

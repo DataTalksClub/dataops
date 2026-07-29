@@ -123,6 +123,10 @@ Parameters:
   WorkEngineTypefullyApiTokenSecretArn:
     Type: String
     Description: ARN of the pre-created Typefully API token secret (created out-of-band via aws cli)
+  TelegramIntegrationSecretName:
+    Type: String
+    Default: dataops-v1/telegram-integration
+    Description: Name of the out-of-band shared Telegram JSON secret containing botToken, webhookSecret, and allowedChatIds
 Conditions:
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
@@ -874,6 +878,7 @@ Resources:
               - !Ref WorkEngineTypefullyApiTokenSecretArn
               - !Ref BookkeepingIngestionSecret
               - !Ref EmailDocumentIntakeSecretArn
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
         - Statement:
             Effect: Allow
             Action: [dynamodb:GetItem]
@@ -976,6 +981,7 @@ Resources:
           TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecretArn
           TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
           TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
+          TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -1078,3 +1084,6 @@ Outputs:
   WorkEngineTypefullyApiTokenSecretName:
     Description: Typefully API token secret consumed by the work engine for saved-draft creation
     Value: !Ref TypefullyApiTokenSecretName
+  TelegramIntegrationSecretName:
+    Description: Shared Telegram bot/webhook configuration secret name
+    Value: !Ref TelegramIntegrationSecretName
