@@ -1,7 +1,7 @@
 # DataOps Assistant: Podcast Skill
 
-Podcast skill module for DataOps Assistant. It collects podcast prep material
-from Telegram and local inputs, then generates podcast guest documents.
+Podcast skill module for DataOps Assistant. It processes podcast prep material
+routed from the shared DataOps intake and generates podcast guest documents.
 
 This directory is the canonical in-repo implementation for the podcast skill:
 `assistants/podcast/`. The operator-facing assistant is DataOps Assistant;
@@ -10,10 +10,12 @@ workflow templates, and dry-run tests. The old root-level `podcast-assistant/`
 import name is retained here only as migration history; active development uses
 this module path.
 
-Telegram is a DataOps Assistant intake/progress channel. This module is copied
-from the Telegram Writing Assistant shape, but the agent execution boundary uses
-Heru instead of calling Claude directly. Set `HERU_ENGINE=codex` or
-`HERU_ENGINE=claude` to choose which coding agent processes the inbox.
+Telegram is a shared DataOps intake channel, not a bot owned by this module.
+The deployed backend owns the single Telegram webhook, bot credentials,
+allowlist, and command routing. `/podcast` requests are represented as podcast
+assistant jobs and are then processed by this module's Heru boundary. Set
+`HERU_ENGINE=codex` or `HERU_ENGINE=claude` to choose which coding agent
+processes a local assistant run.
 
 ## Setup
 
@@ -23,17 +25,17 @@ From the DataOps checkout:
 cd assistants/podcast
 uv sync
 cp .env.example .env
-uv run python main.py
 ```
 
-Required `.env` values:
+Optional local processing `.env` values:
 
 ```bash
-TELEGRAM_BOT_API_KEY=...
-TELEGRAM_CHAT_ID=...
 GROQ_API_KEY=...
 HERU_ENGINE=codex
 ```
+
+Do not configure or start a separate Telegram polling bot from this directory.
+Shared Telegram configuration belongs to the deployed backend integration.
 
 `HERU_ENGINE` can be `codex` or `claude`. The DataOps checkout expects the local
 Heru source at `../heru` relative to the repo root for live processing. Heru is
@@ -45,12 +47,11 @@ running `/process` or `process_request.py`:
 uv pip install -e ../../../heru
 ```
 
-## Commands
+## Shared Telegram route
 
-- `/start` - show bot help
-- `/status` - show inbox and document counts
-- `/process` - process with the default `HERU_ENGINE`
-- `/process codex` or `/process claude` - process with a specific Heru engine
+The shared DataOps bot exposes `/podcast <notes>` alongside other capabilities
+such as `/social` and general operations intake. The podcast module does not
+own `/start`, `/status`, polling, webhook registration, or Telegram secrets.
 
 ## Layout
 

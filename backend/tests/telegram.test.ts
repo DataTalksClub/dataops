@@ -4,6 +4,10 @@ import assert from 'node:assert';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables, deleteTables } from '../src/db/setup';
 import { parseMessage, handleTelegramWebhook } from '../src/routes/telegram';
+import { getAssistantJob } from '../src/db/assistantJobs';
+import { getIntakeItem } from '../src/db/intake';
+import { setSocialDraftAssistantClients } from '../src/assistant/socialDraftAssistant';
+import { route } from '../src/router';
 
 describe('Telegram integration', () => {
   let port: number;
@@ -12,6 +16,7 @@ describe('Telegram integration', () => {
     port = await startLocal();
     process.env.IS_LOCAL = 'true';
     process.env.TELEGRAM_WEBHOOK_SECRET = 'test-secret';
+    process.env.TELEGRAM_ALLOWED_CHAT_IDS = '12345';
     delete process.env.TELEGRAM_BOT_TOKEN;
   });
 
@@ -19,6 +24,7 @@ describe('Telegram integration', () => {
     await stopLocal();
     delete process.env.IS_LOCAL;
     delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    delete process.env.TELEGRAM_ALLOWED_CHAT_IDS;
   });
 
   // ── parseMessage ─────────────────────────────────────────────────
@@ -106,7 +112,7 @@ describe('Telegram integration', () => {
         assert.strictEqual(res.statusCode, 200);
         const body = JSON.parse(res.body);
         assert.ok(body.taskId);
-        assert.strictEqual(body.intakeItemId, undefined);
+        assert.ok(body.intakeItemId);
 
         const { getTask } = await import('../src/db/tasks');
         const client = await getClient();
@@ -147,8 +153,9 @@ describe('Telegram integration', () => {
         assert.strictEqual(body.taskId, undefined);
         assert.strictEqual(replies.length, 1);
         assert.strictEqual(replies[0].chat_id, 12345);
-        assert.ok(replies[0].text.includes('DataOps operations intake'));
-        assert.ok(replies[0].text.includes('capture raw operations intake'));
+        assert.ok(replies[0].text.includes('DataOps Telegram'));
+        assert.ok(replies[0].text.includes('/podcast'));
+        assert.ok(replies[0].text.includes('/social'));
         assert.ok(!replies[0].text.includes('DataTasks Bot'));
       } finally {
         globalThis.fetch = originalFetch;
@@ -190,6 +197,161 @@ describe('Telegram integration', () => {
       assert.strictEqual(res.statusCode, 401);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.error, 'Unauthorized');
+    });
+
+    it('fails closed when the webhook secret is not configured', async () => {
+      delete process.env.TELEGRAM_WEBHOOK_SECRET;
+      try {
+        const res = await handleTelegramWebhook({
+          headers: {},
+          body: JSON.stringify({ message: { message_id: 50, chat: { id: 12345 }, text: 'test' } })
+        } as any);
+        assert.strictEqual(res.statusCode, 503);
+      } finally {
+        process.env.TELEGRAM_WEBHOOK_SECRET = 'test-secret';
+      }
+    });
+
+    it('fails closed when the shared chat allowlist is not configured', async () => {
+      delete process.env.TELEGRAM_ALLOWED_CHAT_IDS;
+      try {
+        const res = await handleTelegramWebhook({
+          headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+          body: JSON.stringify({ message: { message_id: 56, chat: { id: 12345 }, text: 'test' } })
+        } as any);
+        assert.strictEqual(res.statusCode, 503);
+        assert.strictEqual(JSON.parse(res.body).error, 'Telegram chat allowlist is not configured');
+      } finally {
+        process.env.TELEGRAM_ALLOWED_CHAT_IDS = '12345';
+      }
+    });
+
+    it('rejects a chat outside the shared allowlist', async () => {
+      const res = await handleTelegramWebhook({
+        headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+        body: JSON.stringify({ message: { message_id: 51, chat: { id: 99999 }, text: 'test' } })
+      } as any);
+      assert.strictEqual(res.statusCode, 403);
+      assert.strictEqual(JSON.parse(res.body).error, 'Chat is not allowed');
+    });
+
+    it('accepts the Telegram-signed webhook without interactive portal authentication', async () => {
+      const previousSkipAuth = process.env.SKIP_AUTH;
+      delete process.env.SKIP_AUTH;
+      try {
+        const client = await getClient();
+        const res = await route({
+          httpMethod: 'POST',
+          path: '/api/webhook/telegram',
+          headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+          body: JSON.stringify({ message: { message_id: 55, chat: { id: 12345 }, text: '/status' } })
+        } as any, client);
+        assert.strictEqual(res.statusCode, 200);
+        assert.strictEqual(JSON.parse(res.body).route, 'status');
+      } finally {
+        if (previousSkipAuth === undefined) delete process.env.SKIP_AUTH;
+        else process.env.SKIP_AUTH = previousSkipAuth;
+      }
+    });
+
+    it('routes /podcast through the shared bot into a podcast assistant job', async () => {
+      const res = await handleTelegramWebhook({
+        headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+        body: JSON.stringify({
+          message: {
+            message_id: 52,
+            chat: { id: 12345 },
+            from: { id: 42, username: 'operator' },
+            text: '/podcast Prepare questions for the next guest'
+          }
+        })
+      } as any);
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.route, 'podcast');
+      const client = await getClient();
+      const item = await getIntakeItem(client, body.intakeItemId);
+      assert.strictEqual(item!.assistantReadiness?.assistantType, 'podcast');
+      assert.strictEqual(item!.assistantJobIds.length, 1);
+      const job = await getAssistantJob(client, item!.assistantJobIds[0]);
+      assert.strictEqual(job!.assistantType, 'podcast');
+      assert.strictEqual(job!.requestedBy, 'telegram:42');
+      assert.strictEqual(job!.status, 'draft');
+    });
+
+    it('routes /social through the same bot and records the resulting assistant job', async () => {
+      process.env.TYPEFULLY_SOCIAL_SET_ALEXEY = '188312';
+      setSocialDraftAssistantClients({
+        zai: {
+          async generateDraft() {
+            return {
+              draftTitle: 'Workshop draft',
+              scratchpadText: 'Shared Telegram route test',
+              xPosts: ['X draft'],
+              linkedinPosts: ['LinkedIn draft'],
+            };
+          },
+        },
+        typefully: {
+          async createSavedDraft(input) {
+            return {
+              id: 'mock-shared-route',
+              status: 'draft',
+              privateUrl: 'https://typefully.example/draft/mock-shared-route',
+              shareUrl: null,
+              socialSetId: input.socialSetId,
+              platforms: input.platforms,
+              preview: input.draft.xPosts[0],
+            };
+          },
+        },
+      });
+      try {
+        const res = await handleTelegramWebhook({
+          headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+          body: JSON.stringify({
+            message: {
+              message_id: 54,
+              chat: { id: 12345 },
+              from: { id: 42, username: 'operator' },
+              text: '/social Alexey post about the next workshop'
+            }
+          })
+        } as any);
+        assert.strictEqual(res.statusCode, 200);
+        const body = JSON.parse(res.body);
+        assert.strictEqual(body.route, 'social-draft');
+        const client = await getClient();
+        const item = await getIntakeItem(client, body.intakeItemId);
+        assert.strictEqual(item!.assistantReadiness?.assistantType, 'social-draft');
+        assert.strictEqual(item!.assistantJobIds.length, 1);
+        const job = await getAssistantJob(client, item!.assistantJobIds[0]);
+        assert.strictEqual(job!.assistantType, 'social-draft');
+        assert.strictEqual(job!.status, 'waiting_approval');
+      } finally {
+        setSocialDraftAssistantClients(null);
+        delete process.env.TYPEFULLY_SOCIAL_SET_ALEXEY;
+      }
+    });
+
+    it('captures Telegram attachments through the same intake route', async () => {
+      const res = await handleTelegramWebhook({
+        headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+        body: JSON.stringify({
+          message: {
+            message_id: 53,
+            chat: { id: 12345 },
+            caption: 'Podcast guest brief',
+            document: { file_id: 'telegram-file-id', file_name: 'brief.pdf' }
+          }
+        })
+      } as any);
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      const client = await getClient();
+      const item = await getIntakeItem(client, body.intakeItemId);
+      assert.deepStrictEqual(item!.receivedChannels, ['telegram', 'document']);
+      assert.strictEqual(item!.metadata?.hasAttachments, true);
     });
 
     it('returns 200 ok for non-message updates', async () => {

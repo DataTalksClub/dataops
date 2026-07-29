@@ -52,11 +52,38 @@ npm run seed
 From the repository root, `npm run seed:backend` runs both default user and
 template seeders.
 
-### Social draft assistant configuration
+### Shared Telegram and assistant configuration
 
-The first social drafting slice is covered by local tests with mocked external
-services. A real local route call uses configured z.ai and Typefully credentials
-when the target account is unambiguous:
+DataOps has one Telegram bot and one webhook:
+
+```text
+POST /api/webhook/telegram
+```
+
+The webhook routes ordinary messages and attachments to intake, `/podcast` to
+the podcast assistant job flow, and `/social` to social drafting. Assistant
+modules do not own separate Telegram tokens, polling processes, or webhooks.
+
+Local development can use `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_WEBHOOK_SECRET`, and comma-separated
+`TELEGRAM_ALLOWED_CHAT_IDS`. Production uses one out-of-band AWS Secrets
+Manager JSON secret named by `TELEGRAM_INTEGRATION_SECRET_NAME`:
+
+```json
+{
+  "botToken": "...",
+  "webhookSecret": "...",
+  "allowedChatIds": ["..."]
+}
+```
+
+Do not commit real values. The webhook fails closed when its configuration is
+missing, rejects a wrong Telegram secret header, and rejects chats outside the
+allowlist.
+
+The social drafting path is covered by local tests with mocked external
+services. A direct local route call can still exercise the assistant without
+Telegram:
 
 ```bash
 curl -X POST http://localhost:3000/api/assistant-social-drafts/mock-telegram \
@@ -75,8 +102,10 @@ Production-style external calls require managed credentials and account config:
 | `TYPEFULLY_API_KEY` | Typefully API key for saved draft creation |
 | `TYPEFULLY_SOCIAL_SET_ALEXEY` | Typefully social set id for Alexey / `Al_Grigor` |
 | `TYPEFULLY_SOCIAL_SET_DATATALKSCLUB` | Typefully social set id for DataTalksClub |
-| `TELEGRAM_WEBHOOK_SECRET` | Telegram webhook secret token for real webhook delivery |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token for optional replies |
+| `TELEGRAM_INTEGRATION_SECRET_NAME` | Production shared Telegram JSON secret name |
+| `TELEGRAM_WEBHOOK_SECRET` | Local-only webhook secret fallback |
+| `TELEGRAM_BOT_TOKEN` | Local-only bot token fallback for replies |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Local-only comma-separated chat allowlist fallback |
 
 The assistant route creates Typefully saved drafts only. It does not schedule or
 publish posts. Automated tests use mocked z.ai and Typefully clients; real z.ai,

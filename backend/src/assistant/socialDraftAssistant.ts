@@ -383,15 +383,15 @@ async function runSocialDraftAssistant(
     requestedBy: actorId,
     inputRefs: [{
       type: 'source-message',
-      title: 'Mock Telegram social drafting request',
+      title: 'Telegram social drafting request',
       id: source.messageId,
-      metadata: {
+      metadata: Object.fromEntries(Object.entries({
         source: 'telegram',
         chatId: source.chatId,
         chatTitle: source.chatTitle,
         senderHandle: source.senderHandle,
         text: source.text,
-      },
+      }).filter(([, value]) => value !== undefined)),
     }],
     approvalRequired: true,
     approval: { status: 'pending' },
