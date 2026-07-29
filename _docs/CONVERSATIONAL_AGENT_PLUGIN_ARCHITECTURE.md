@@ -1020,3 +1020,103 @@ but they should not be exposed through plugin skills.
   immediately, or should cross-channel continuation be deferred?
 - Which channel-neutral interaction components are required for the first
   plugin release?
+
+## Appendix: External Architecture Review Prompt
+
+The architecture to review is included above in this document. Use the
+following prompt when passing this file to another model or reviewer:
+
+> Act as a principal software architect and adversarial design reviewer.
+>
+> I am designing a channel-independent conversational agent for DataOps. It
+> will initially work through Telegram and later through a web portal. Its
+> capabilities are registered as plugins such as SOP creation, podcast
+> preparation, todos, and Typefully social drafts.
+>
+> Read the complete architecture in this document. Challenge it rather than
+> merely summarizing or agreeing with it.
+>
+> Important current decisions:
+>
+> - Use a small, explicit TypeScript plugin registry.
+> - Do not support arbitrary runtime plugin installation.
+> - The agent sees a compact plugin catalog.
+> - `skill_load` loads one plugin's instructions and schema.
+> - A separate model turn uses `skill_invoke`.
+> - Only one mutation plugin is active at a time.
+> - Read-only knowledge and history lookup may support the active plugin.
+> - Do not build a general flow-definition DSL yet.
+> - Agent-requested mutations create immutable proposals.
+> - Trusted backend executors apply exact approved proposals.
+> - `/todo` is an explicit audited direct-command exception.
+> - Typefully approval creates only an unscheduled draft; it does not publish.
+> - Authentication sessions and conversations are separate.
+> - Conversation events, summaries, retrieval, and context budgeting are core
+>   runtime services.
+> - Durable personal memory is opt-in, not extracted automatically.
+> - A narrow memory plugin may later support remember, list, correct, and
+>   forget.
+>
+> Review the design from these perspectives:
+>
+> 1. Plugin API and registration
+>    - Is `skill_load` followed by `skill_invoke` workable?
+>    - What is the smallest useful plugin contract?
+>    - Which abstractions should be deferred?
+>    - How should plugin versions and upgrades affect active proposals?
+> 2. Session management
+>    - Conversation identity and lifecycle
+>    - Telegram private chats, groups, and topics
+>    - Web conversations
+>    - Cross-channel continuation
+>    - Concurrent messages, retries, and out-of-order events
+>    - Pausing, resuming, expiration, retention, and deletion
+> 3. Memory and context management
+>    - Working memory versus conversation history
+>    - Summary checkpoints and summarization drift
+>    - Resolving vague references such as “that thing”
+>    - Long-term facts and preferences
+>    - Privacy scopes for personal, group, organization, and resource memory
+>    - Context-window budgeting and retrieval
+>    - Whether memory should be core infrastructure, a plugin, or both
+> 4. Proposal and approval safety
+>    - Immutable proposal versions
+>    - Exact preview-to-execution binding
+>    - Atomic approval claims
+>    - Duplicate button presses
+>    - Provider timeouts after a possible successful write
+>    - Idempotency, reconciliation, and outcome-unknown states
+>    - Authorization at approval and execution time
+> 5. Telegram and web interaction design
+>    - Channel-neutral events and semantic actions
+>    - Telegram inline buttons and callback tokens
+>    - Web forms, previews, and diffs
+>    - Plugin-specific clarification choices
+>    - Preventing channel adapters from developing different business behavior
+> 6. Security and privacy
+>    - Telegram identity linking
+>    - Group information leakage
+>    - Prompt injection from uploaded or retrieved documents
+>    - Plugin and executor permissions
+>    - Attachment processing
+>    - Private/public knowledge boundaries
+>    - Auditability and credential leakage
+>
+> Produce:
+>
+> A. The ten most important architecture gaps, prioritized P0/P1/P2.
+> B. A simpler recommended MVP architecture.
+> C. The minimum persistent data model.
+> D. Exact flows for:
+>    - creating a social post and adding the approved draft to Typefully;
+>    - creating or updating an SOP;
+>    - “How about that thing we discussed?”;
+>    - continuing a Telegram conversation on the web;
+>    - an external write that times out after possibly succeeding.
+> E. Components or abstractions that should be deferred.
+> F. Decisions that need explicit product input.
+>
+> For every finding, explain the concrete failure scenario and the smallest
+> reasonable correction. Prefer simplicity, explicit state, and
+> recoverability. Do not introduce infrastructure unless it addresses a
+> demonstrated risk.
