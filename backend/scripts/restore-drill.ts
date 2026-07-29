@@ -1,6 +1,7 @@
 import path from 'path';
 
 import { writeRestoreEvidence } from '../src/export/archive';
+import { REPOSITORY_ROOT, resolveProjectPath } from './project-path';
 
 function readArg(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -9,18 +10,23 @@ function readArg(name: string): string | undefined {
 }
 
 async function main(): Promise<void> {
-  const archiveUri = readArg('--archive') || process.argv[2];
+  const archiveArg = readArg('--archive') || process.argv[2];
   const targetEnvironment = readArg('--target-environment') || 'local-drill';
-  const outputDir = readArg('--output-dir') || path.join(process.cwd(), '..', '.tmp', 'exports', 'restore-drill');
+  const expectedArchiveChecksum = readArg('--archive-checksum');
+  const outputDir = resolveProjectPath(
+    readArg('--output-dir') || path.join(REPOSITORY_ROOT, '.tmp', 'exports', 'restore-drill')
+  );
   const smokeChecksPassed = process.argv.includes('--smoke-checks-passed');
 
-  if (!archiveUri) {
-    console.error('Usage: npm run restore:drill -- --archive <file-or-s3-uri> [--target-environment staging] [--output-dir .tmp/exports/restore-drill]');
+  if (!archiveArg || !expectedArchiveChecksum) {
+    console.error('Usage: npm run restore:drill -- --archive <file-or-s3-uri> --archive-checksum sha256:<hex> [--target-environment staging] [--output-dir .tmp/exports/restore-drill]');
     process.exit(2);
   }
+  const archiveUri = resolveProjectPath(archiveArg);
 
   const result = await writeRestoreEvidence({
     archiveUri,
+    expectedArchiveChecksum,
     outputDir,
     targetEnvironment,
     smokeChecksPassed,

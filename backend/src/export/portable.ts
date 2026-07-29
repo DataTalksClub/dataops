@@ -16,6 +16,11 @@ import {
   TABLE_TEMPLATES,
   TABLE_USERS,
 } from '../db/setup';
+import {
+  CONVERSATIONAL_ENTITY_SPECS,
+  restoredRecord,
+  validateConversationalEntities,
+} from '../conversation/portable';
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonRecord = Record<string, JsonValue>;
@@ -24,8 +29,10 @@ interface EntitySpec {
   name: ExportEntityName;
   filename: string;
   tableName: string;
-  prefix: string;
+  prefix?: string;
+  recordType?: string;
   map: (item: Record<string, unknown>) => JsonRecord;
+  sortKey?: (record: JsonRecord) => string;
 }
 
 interface Manifest {
@@ -65,12 +72,29 @@ type ExportEntityName =
   | 'assistant_jobs'
   | 'audit_events'
   | 'intake_items'
-  | 'notifications';
+  | 'notifications'
+  | 'identity_bindings'
+  | 'conversations'
+  | 'channel_bindings'
+  | 'conversation_events'
+  | 'summary_checkpoints'
+  | 'plugin_drafts'
+  | 'proposal_versions'
+  | 'proposal_presentations'
+  | 'execution_attempts'
+  | 'conversation_audit_events'
+  | 'conversational_private_payloads';
 
 const SCHEMA_VERSION = 'dataops.execution.v1';
 const EXPORT_FORMAT_VERSION = 1;
-const OMITTED_ENTITIES = ['sessions'];
-const REDACTIONS = ['users.password_hash', 'sessions'];
+const OMITTED_ENTITIES = ['sessions', 'media_bytes', 'provider_credentials'];
+const REDACTIONS = [
+  'users.password_hash',
+  'sessions',
+  'proposal_presentations.action_token_hash',
+  'callback_tokens',
+  'signed_urls',
+];
 const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
 const VALID_TASK_HISTORY_ACTIONS = new Set([
   'waiting-started',
@@ -184,6 +208,7 @@ const ENTITY_SPECS: EntitySpec[] = [
     prefix: 'NOTIFICATION#',
     map: mapNotification,
   },
+  ...(CONVERSATIONAL_ENTITY_SPECS as EntitySpec[]),
 ];
 
 function optionalString(value: unknown): string | null {
@@ -485,7 +510,8 @@ function mapNotification(item: Record<string, unknown>): JsonRecord {
 async function scanByPrefix(
   client: DynamoDBDocumentClient,
   tableName: string,
-  prefix: string
+  prefix?: string,
+  recordType?: string
 ): Promise<Record<string, unknown>[]> {
   const items: Record<string, unknown>[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
@@ -494,8 +520,16 @@ async function scanByPrefix(
     const result = await client.send(
       new ScanCommand({
         TableName: tableName,
-        FilterExpression: 'begins_with(PK, :prefix)',
-        ExpressionAttributeValues: { ':prefix': prefix },
+        ...(recordType
+          ? {
+            FilterExpression: '#recordType = :recordType',
+            ExpressionAttributeNames: { '#recordType': 'recordType' },
+            ExpressionAttributeValues: { ':recordType': recordType },
+          }
+          : {
+            FilterExpression: 'begins_with(PK, :prefix)',
+            ExpressionAttributeValues: { ':prefix': prefix },
+          }),
         ExclusiveStartKey: lastEvaluatedKey,
       })
     );
@@ -537,12 +571,18 @@ async function writePortableExport(
   const checksums: Record<string, string> = {};
 
   for (const spec of ENTITY_SPECS) {
-    const rawItems = await scanByPrefix(client, spec.tableName, spec.prefix);
-    const records = rawItems.map(spec.map).sort((a, b) => {
-      const left = Object.values(a)[0] || '';
-      const right = Object.values(b)[0] || '';
-      return String(left).localeCompare(String(right));
-    });
+    const rawItems = await scanByPrefix(client, spec.tableName, spec.prefix, spec.recordType);
+    const generatedAt = options.generatedAt || new Date().toISOString();
+    const records = rawItems
+      .filter((item) => (
+        typeof item.expiresAt !== 'string'
+        || Date.parse(item.expiresAt) > Date.parse(generatedAt)
+      ))
+      .map(spec.map).sort((a, b) => {
+        const left = spec.sortKey ? spec.sortKey(a) : (Object.values(a)[0] || '');
+        const right = spec.sortKey ? spec.sortKey(b) : (Object.values(b)[0] || '');
+        return String(left).localeCompare(String(right));
+      });
     const content = records.map(stableStringify).join('\n') + (records.length > 0 ? '\n' : '');
 
     await fs.writeFile(path.join(outputDir, spec.filename), content, 'utf8');
@@ -1466,6 +1506,12 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateNoSecretPayload(notification, errors, context);
   }
 
+  validateConversationalEntities(
+    recordsByEntity as Record<string, JsonRecord[]>,
+    errors,
+    manifest.generated_at
+  );
+
   const manifestRedactions = new Set(manifest.redactions || []);
   for (const redaction of REDACTIONS) {
     if (!manifestRedactions.has(redaction)) {
@@ -1493,6 +1539,9 @@ interface DryRunImportResult {
   totalRecords: number;
   wouldWrite: Record<string, number>;
   skipped: Record<string, number>;
+  wouldInsert: Record<string, number>;
+  wouldUpdateForRestoreSafety: Record<string, number>;
+  effectsExecuted: 0;
   followUpSummary: {
     blockedIntakeItems: number;
     standaloneBlockedIntakeItems: number;
@@ -1510,6 +1559,8 @@ async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
   const validation = await validatePortableExport(exportDir);
   const wouldWrite: Record<string, number> = {};
   const skipped: Record<string, number> = {};
+  const wouldInsert: Record<string, number> = {};
+  const wouldUpdateForRestoreSafety: Record<string, number> = {};
   const recordsByEntity: Partial<Record<ExportEntityName, JsonRecord[]>> = {};
   let totalRecords = 0;
 
@@ -1530,6 +1581,11 @@ async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
     }
     recordsByEntity[spec.name] = records;
     wouldWrite[spec.name] = records.length;
+    const adjusted = records.filter((record) => (
+      JSON.stringify(restoredRecord(spec.name, record)) !== JSON.stringify(record)
+    )).length;
+    wouldUpdateForRestoreSafety[spec.name] = adjusted;
+    wouldInsert[spec.name] = records.length - adjusted;
     totalRecords += records.length;
   }
 
@@ -1562,6 +1618,9 @@ async function dryRunImport(exportDir: string): Promise<DryRunImportResult> {
     totalRecords,
     wouldWrite,
     skipped,
+    wouldInsert,
+    wouldUpdateForRestoreSafety,
+    effectsExecuted: 0,
     followUpSummary: {
       blockedIntakeItems,
       standaloneBlockedIntakeItems,

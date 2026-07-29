@@ -36,6 +36,7 @@ interface ExportArchiveResult extends PortableExportResult {
 
 interface RestoreEvidenceOptions {
   archiveUri: string;
+  expectedArchiveChecksum: string;
   outputDir: string;
   targetEnvironment: string;
   appGitSha?: string;
@@ -48,6 +49,8 @@ interface RestoreEvidenceReport {
   schema_version: string;
   archive_uri: string;
   archive_key: string;
+  expected_archive_checksum: string;
+  calculated_archive_checksum: string;
   app_git_sha: string;
   export_generated_at: string;
   manifest_checksum_summary: Record<string, string>;
@@ -171,6 +174,7 @@ async function extractExportArchive(archiveBuffer: Buffer, outputDir: string): P
     const header = tar.subarray(offset, offset + TAR_BLOCK_SIZE);
     offset += TAR_BLOCK_SIZE;
     if (header.every((byte) => byte === 0)) break;
+    validateTarHeaderChecksum(header);
 
     const rawName = header.subarray(0, 100).toString('utf8').replace(/\0.*$/, '');
     const filename = path.basename(rawName);
@@ -183,6 +187,9 @@ async function extractExportArchive(archiveBuffer: Buffer, outputDir: string): P
     if (!Number.isFinite(size) || size < 0) {
       throw new Error(`Archive contains invalid size for ${filename}`);
     }
+    if (offset + size > tar.length) {
+      throw new Error(`Archive member ${filename} is truncated`);
+    }
 
     const content = tar.subarray(offset, offset + size);
     await fs.writeFile(path.join(outputDir, filename), content);
@@ -190,6 +197,17 @@ async function extractExportArchive(archiveBuffer: Buffer, outputDir: string): P
     const padding = (TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
     offset += padding;
   }
+}
+
+function validateTarHeaderChecksum(header: Buffer): void {
+  const storedText = header.subarray(148, 156).toString('ascii').replace(/\0.*$/, '').trim();
+  const stored = Number.parseInt(storedText || '', 8);
+  if (!Number.isFinite(stored)) throw new Error('Archive contains an invalid tar header checksum');
+  const copy = Buffer.from(header);
+  copy.fill(' ', 148, 156);
+  let calculated = 0;
+  for (const byte of copy) calculated += byte;
+  if (stored !== calculated) throw new Error('Archive tar header checksum mismatch');
 }
 
 async function readArchiveUri(uri: string, s3Client: Pick<S3Client, 'send'> = new S3Client({})): Promise<Buffer> {
@@ -278,10 +296,16 @@ async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<Re
   if (!options.targetEnvironment || options.targetEnvironment === 'production' || options.targetEnvironment === 'prod') {
     throw new Error('Restore evidence targetEnvironment must be a non-production environment');
   }
-
+  if (!/^sha256:[a-f0-9]{64}$/.test(options.expectedArchiveChecksum)) {
+    throw new Error('Restore evidence requires an expected sha256 archive checksum');
+  }
+  const archiveBuffer = await readArchiveUri(options.archiveUri, options.s3Client);
+  const calculatedArchiveChecksum = sha256Bytes(archiveBuffer);
+  if (calculatedArchiveChecksum !== options.expectedArchiveChecksum) {
+    throw new Error('Archive checksum mismatch');
+  }
   await fs.mkdir(options.outputDir, { recursive: true });
   const timestamp = options.timestamp || new Date().toISOString();
-  const archiveBuffer = await readArchiveUri(options.archiveUri, options.s3Client);
   const extractedDir = path.join(options.outputDir, `extracted-${timestamp.replace(/[:.]/g, '-')}`);
   await extractExportArchive(archiveBuffer, extractedDir);
 
@@ -292,6 +316,8 @@ async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<Re
     schema_version: 'dataops.restore-evidence.v1',
     archive_uri: options.archiveUri,
     archive_key: archiveKeyFromUri(options.archiveUri),
+    expected_archive_checksum: options.expectedArchiveChecksum,
+    calculated_archive_checksum: calculatedArchiveChecksum,
     app_git_sha: options.appGitSha || process.env.GITHUB_SHA || process.env.APP_GIT_SHA || 'unknown',
     export_generated_at: manifest.generated_at,
     manifest_checksum_summary: manifest.checksums,

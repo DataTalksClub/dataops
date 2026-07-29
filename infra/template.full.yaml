@@ -139,6 +139,46 @@ Globals:
       - x86_64
 
 Resources:
+  DataOpsConversationalStateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-conversational-state
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+        - { AttributeName: GSI2PK, AttributeType: S }
+        - { AttributeName: GSI2SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: GSI2
+          KeySchema:
+            - { AttributeName: GSI2PK, KeyType: HASH }
+            - { AttributeName: GSI2SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateExecutionState }
+
   DataOpsCalendarTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -868,6 +908,8 @@ Resources:
               - !Sub ${DataOpsNewsletterSlotsTable.Arn}/index/*
               - !GetAtt DataOpsCalendarTable.Arn
               - !Sub ${DataOpsCalendarTable.Arn}/index/*
+              - !GetAtt DataOpsConversationalStateTable.Arn
+              - !Sub ${DataOpsConversationalStateTable.Arn}/index/*
         - Statement:
             Effect: Allow
             Action:
@@ -944,6 +986,7 @@ Resources:
           DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
           DATAOPS_NEWSLETTER_SLOTS_TABLE: !Ref DataOpsNewsletterSlotsTable
           DATAOPS_CALENDAR_TABLE: !Ref DataOpsCalendarTable
+          DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
@@ -1020,6 +1063,9 @@ Resources:
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
 
 Outputs:
+  DataOpsConversationalStateTableName:
+    Description: Retained DynamoDB table for private conversational state
+    Value: !Ref DataOpsConversationalStateTable
   DataOpsBookkeepingTableName:
     Value: !Ref DataOpsBookkeepingTable
   BookkeepingDocumentsBucketName:
