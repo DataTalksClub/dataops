@@ -3,9 +3,12 @@ import path from 'path';
 import { getClient, stopLocal } from '../src/db/client';
 import { createTables, shouldAutoCreateTables } from '../src/db/setup';
 import { writePortableExport } from '../src/export/portable';
+import { REPOSITORY_ROOT, resolveProjectPath } from './project-path';
 
 async function main(): Promise<void> {
-  const outputDir = process.argv[2] || path.join(process.cwd(), 'exports', `dataops-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  const outputDir = process.argv[2]
+    ? resolveProjectPath(process.argv[2])
+    : path.join(REPOSITORY_ROOT, '.tmp', 'exports', `dataops-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   const client = await getClient();
   const shouldStopLocal = shouldAutoCreateTables();
   try {

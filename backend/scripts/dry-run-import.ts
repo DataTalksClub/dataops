@@ -1,4 +1,5 @@
 import { dryRunImport } from '../src/export/portable';
+import { resolveProjectPath } from './project-path';
 
 async function main(): Promise<void> {
   const exportDir = process.argv[2];
@@ -7,7 +8,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const result = await dryRunImport(exportDir);
+  const result = await dryRunImport(resolveProjectPath(exportDir));
   console.log(JSON.stringify(result, null, 2));
   if (!result.valid) {
     process.exit(1);

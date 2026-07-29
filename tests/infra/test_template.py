@@ -80,6 +80,30 @@ def test_dataops_execution_tables_match_backend_access_patterns():
     assert "AttributeName: taskId" in files
 
 
+def test_conversational_state_table_is_retained_private_stream_ready_state():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    table = _resource_block(template, "DataOpsConversationalStateTable")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert "Type: AWS::DynamoDB::Table" in table
+    assert "DeletionPolicy: Retain" in table
+    assert "UpdateReplacePolicy: Retain" in table
+    assert "BillingMode: PAY_PER_REQUEST" in table
+    assert "SSEEnabled: true" in table
+    assert "PointInTimeRecoveryEnabled: true" in table
+    assert "AttributeName: ttl" in table
+    assert "Enabled: true" in table
+    assert "StreamViewType: NEW_AND_OLD_IMAGES" in table
+    assert "IndexName: GSI1" in table
+    assert "IndexName: GSI2" in table
+    assert "Value: PrivateExecutionState" in table
+    assert "DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable" in backend
+    assert "!GetAtt DataOpsConversationalStateTable.Arn" in backend
+    assert "${DataOpsConversationalStateTable.Arn}/index/*" in backend
+    assert "DataOpsConversationalStateTableName:" in template
+    assert "DynamoDBEvent" not in table
+
+
 def test_dataops_table_outputs_are_available_for_backend_env_wiring():
     template = TEMPLATE.read_text(encoding="utf-8")
     expected_outputs = [

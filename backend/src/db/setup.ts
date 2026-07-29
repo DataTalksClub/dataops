@@ -33,6 +33,10 @@ const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping');
 const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm');
 const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'NewsletterSlots');
 const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar');
+const TABLE_CONVERSATIONAL_STATE = tableName(
+  'DATAOPS_CONVERSATIONAL_STATE_TABLE',
+  'ConversationalState'
+);
 
 /**
  * Create all application tables (Tasks, Bundles, Templates) with GSIs.
@@ -40,6 +44,40 @@ const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar');
  */
 async function createTables(client: DynamoDBDocumentClient): Promise<void> {
   const tableDefinitions = [
+    {
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      KeySchema: [
+        { AttributeName: 'PK', KeyType: 'HASH' as const },
+        { AttributeName: 'SK', KeyType: 'RANGE' as const },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: 'PK', AttributeType: 'S' as const },
+        { AttributeName: 'SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI1PK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI1SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI2PK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI2SK', AttributeType: 'S' as const },
+      ],
+      GlobalSecondaryIndexes: [
+        {
+          IndexName: 'GSI1',
+          KeySchema: [
+            { AttributeName: 'GSI1PK', KeyType: 'HASH' as const },
+            { AttributeName: 'GSI1SK', KeyType: 'RANGE' as const },
+          ],
+          Projection: { ProjectionType: 'ALL' as const },
+        },
+        {
+          IndexName: 'GSI2',
+          KeySchema: [
+            { AttributeName: 'GSI2PK', KeyType: 'HASH' as const },
+            { AttributeName: 'GSI2SK', KeyType: 'RANGE' as const },
+          ],
+          Projection: { ProjectionType: 'ALL' as const },
+        },
+      ],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
     {TableName:TABLE_CALENDAR,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeMonth',AttributeType:'S' as const},{AttributeName:'rangeStart',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Range',KeySchema:[{AttributeName:'rangeMonth',KeyType:'HASH' as const},{AttributeName:'rangeStart',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {TableName:TABLE_NEWSLETTER_SLOTS,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeKey',AttributeType:'S' as const},{AttributeName:'publicationKey',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Date',KeySchema:[{AttributeName:'rangeKey',KeyType:'HASH' as const},{AttributeName:'publicationKey',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {
@@ -317,6 +355,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_SPONSOR_CRM,
     TABLE_NEWSLETTER_SLOTS,
     TABLE_CALENDAR,
+    TABLE_CONVERSATIONAL_STATE,
   ];
 
   for (const tableName of tableNames) {
@@ -350,4 +389,5 @@ export {
   TABLE_SPONSOR_CRM,
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
+  TABLE_CONVERSATIONAL_STATE,
 };
