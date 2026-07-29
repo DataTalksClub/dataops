@@ -27,6 +27,33 @@ Examples include:
 Podcast support is one capability of the shared bot, not a separate Telegram
 bot.
 
+## MVP Decisions
+
+The first implementation should optimize for clarity and reversibility rather
+than maximum plugin flexibility.
+
+- Plugins are registered explicitly in TypeScript at build time.
+- The runtime does not discover or execute arbitrary plugin packages.
+- The agent uses `skill_load`, then a separate model turn uses
+  `skill_invoke`.
+- One mutation plugin may be active at a time. Read-only knowledge or history
+  lookup may support it.
+- Plugins provide typed actions, validation, proposal rendering, and execution.
+- Conversational collection stays in skill instructions. There is no general
+  flow-definition language in the MVP.
+- Every agent-requested mutation becomes an immutable proposal.
+- `/todo` is the one explicit, audited direct-command exception.
+- Authentication sessions and conversation sessions remain separate.
+- Conversation events and summaries are core runtime services, not plugins.
+- Durable personal memory is opt-in. The system does not automatically turn
+  conversation text into permanent facts.
+- Telegram and web use the same runtime contracts, even if the first release
+  delivers one interface before the other.
+
+More dynamic plugin loading, a reusable flow DSL, automatic durable memory,
+multi-plugin plans, and collaborative group sessions should be added only when
+real usage demonstrates a need.
+
 ## Channel-Independent Architecture
 
 The conversational runtime, plugin system, sessions, proposals, and approval
@@ -72,6 +99,23 @@ Plugins describe semantic interactions such as “select account,” “choose a
 time,” “approve this proposal,” or “request changes.” They do not contain
 Telegram callback formatting or web HTML. Channel adapters decide how to
 render those interactions.
+
+### Minimum Trust Boundaries
+
+- Telegram chat allowlisting is not user authorization. Mutations and private
+  retrieval require a verified link to an enabled DataOps user.
+- Authorization is checked again by the executor for the exact action, target,
+  and account. The model and plugin input cannot grant permissions.
+- Messages, uploaded documents, search results, and remembered prose are
+  untrusted data. They cannot override system policy, select permissions, or
+  bypass approval.
+- Executors receive only a server-stored immutable execution envelope. They do
+  not execute parameters resubmitted by Telegram or the browser.
+- Retrieved and rendered content is filtered by audience and data
+  classification before it enters model context or a group response.
+- Attachment parsing requires a bounded, quarantined pipeline. Rich attachment
+  processing may be deferred from the first release rather than implemented
+  unsafely.
 
 ## Core Interaction Model
 
@@ -194,6 +238,29 @@ proposal content submitted by the browser.
 Repeated button presses must be idempotent. They should return the existing
 result and must not execute the plugin twice.
 
+### Proposal and Execution States
+
+Use one small canonical state machine:
+
+```text
+draft
+  -> presented
+  -> executing
+  -> succeeded
+
+presented -> canceled | expired | superseded | conflicted
+executing -> failed_safe | outcome_unknown
+```
+
+Approval atomically claims `presented -> executing`; it is not a separate
+mutable flag. The claimed record contains the immutable payload hash, target,
+base revision, plugin version, policy version, actor, and idempotency key.
+
+`failed_safe` means no external change happened and a controlled retry may be
+offered. `outcome_unknown` means the provider may have applied the change
+before a timeout or crash. It must be reconciled or resolved by an operator,
+not blindly retried.
+
 ## Plugin and Skill Framework
 
 The agent should not permanently receive every domain tool, schema, and
@@ -228,10 +295,10 @@ actions, strict input schemas, and short examples. `skill_invoke` validates the
 request against the registered action schema and runs it through the shared
 proposal and approval framework.
 
-The preferred implementation may dynamically mount the selected plugin's
-strict action schema after `skill_load`. This preserves native schema-guided
-tool calling while ensuring the model sees only the currently relevant plugin,
-not every schema in the system.
+`skill_load` ends the current model step. The runtime stores the loaded plugin
+and starts a second model step with that plugin's instructions and schema in
+context. The next `skill_invoke` is validated deterministically. Validation
+errors are returned to the agent for a bounded correction attempt.
 
 If the plugin catalog eventually becomes too large for the base prompt, the
 framework can add semantic catalog search. It is unnecessary while a compact
@@ -268,31 +335,31 @@ plugin cannot grant itself broader permissions or bypass approval.
 
 ### Plugin Package and Registration
 
-A plugin should be a self-contained registered package with a conventional
-shape:
+A plugin is a trusted TypeScript object imported into an explicit registry:
 
 ```text
-plugins/<plugin-id>/
-  manifest
-  skill instructions
-  action schemas
-  flow definition
-  validators
-  renderers
-  executor
-  tests
+Plugin
+  id
+  version
+  summary
+  activation_hints
+  skill_instructions
+  actions
+  validate
+  render_proposal
+  execute
+  permissions
 ```
 
-Registration should happen through trusted application configuration or code,
-not by allowing the model to load arbitrary executable packages. At startup or
-deployment, the registry should:
+The application owns a static list such as:
 
-1. discover explicitly enabled plugins;
-2. validate manifests and unique plugin/action names;
-3. validate action and interaction schemas;
-4. verify that declared executors and renderers exist;
-5. build the compact catalog for the agent;
-6. expose only plugins allowed for the current environment and user.
+```text
+PLUGINS = [todo, sop, podcast, typefully]
+```
+
+Build and startup validation should reject duplicate IDs, invalid schemas, or
+missing handlers. Deployment configuration may enable or disable a registered
+plugin and restrict it by role or channel.
 
 Configuration should allow a plugin to be enabled, disabled, or restricted
 without changing the core agent:
@@ -312,57 +379,34 @@ Sessions and proposals should record the plugin version used to create them.
 An incompatible plugin upgrade should require a proposal to be regenerated
 rather than executed with different behavior.
 
-### Plugin Flow Definition
+Runtime package discovery, independently distributed plugins, and arbitrary
+plugin code loading are out of scope for the MVP.
 
-A plugin may describe its conversational flow declaratively:
+### Conversational Flow in the MVP
 
-```text
-flow
-  entry_action
-  required_fields
-  optional_fields
-  clarification_rules
-  states
-  transitions
-  interaction_actions
-  proposal_renderer
-  completion_result
-```
+The plugin skill instructions explain which fields are required and what the
+agent should clarify. Plugin-specific draft state is stored as validated JSON
+on the conversation.
 
-The flow is a guardrail and interface contract, not a rigid script. The model
-can converse naturally and fill fields in any reasonable order, while the
-runtime enforces required information and legal transitions.
-
-Interaction actions have stable semantic IDs, labels, and payload schemas:
+The framework standardizes only a few UI/session actions:
 
 ```text
-select_account
-select_platforms
-select_time
+select_option
+submit_input
 approve
 request_changes
 cancel
 ```
 
-A plugin can suggest channel-neutral presentation hints:
+Buttons use these stable action kinds plus plugin-validated payloads. Telegram
+may render them as inline keyboards; the web portal may render forms or richer
+controls.
 
-```text
-single_choice
-multiple_choice
-date_time
-text_input
-document_preview
-diff_preview
-confirmation
-```
+Only `approve` may claim a proposal for consequential execution.
+Clarification actions update draft/session state without calling an executor.
 
-Telegram may render these as inline keyboard buttons followed by messages. The
-web portal may render the same actions as buttons, selectors, forms, and a
-side-by-side diff.
-
-Only an approved proposal action can call a consequential plugin executor.
-Clarification and selection buttons update session or proposal-draft state;
-they do not mutate canonical resources.
+A reusable flow language should be introduced only after several plugins show
+the same state and transition patterns.
 
 Different plugins may expose different interaction actions:
 
@@ -467,6 +511,54 @@ receiving everything.
 
 This keeps the base prompt stable as plugins are added and prevents unrelated
 schemas from competing for the model's attention.
+
+### Memory and History
+
+Memory is primarily a core runtime service because every conversation and
+plugin depends on consistent identity, privacy, retrieval, retention, and
+context budgeting.
+
+The MVP distinguishes:
+
+- **working memory:** active objective, plugin draft state, proposal reference,
+  recent events, and unresolved questions;
+- **conversation history:** immutable ordered events with actor, channel,
+  audience, and provenance;
+- **summary checkpoints:** replaceable context optimizations that point to the
+  events they summarize;
+- **resource references:** stable links to canonical SOPs, podcasts, todos, and
+  workflows.
+
+Summaries are never authoritative. They cannot approve an action, replace
+structured plugin state, or become durable facts without provenance.
+
+For a question such as “How about that thing?” the runtime should:
+
+1. resolve references from active structured state and recent events;
+2. search the user's authorized conversation history if still unresolved;
+3. continue with an explicit interpretation when one result is clear;
+4. otherwise show two or three privacy-safe candidates and ask the user to
+   choose;
+5. attach the selected history explicitly rather than silently blending
+   conversations.
+
+The first version should not automatically create long-term personal facts.
+A narrow first-party `memory` plugin may be added later for explicit requests:
+
+```text
+remember
+list
+correct
+forget
+```
+
+Domain plugins may read context selected by the core runtime but may not write
+durable memory directly. Personal memory must not be injected into a group
+conversation. Shared memory requires an explicit audience and confirmation.
+
+Context should be budgeted by tokens, not only by message count. Each turn
+should retain a small receipt identifying the summary, event range, resource
+revisions, and plugin version that were supplied to the model.
 
 ### Internal Capabilities, Not Plugins
 
@@ -612,7 +704,7 @@ action: propose_draft
   destination: typefully
 ```
 
-Example flow:
+Example conversational sequence (not a framework DSL):
 
 ```text
 collect_request
@@ -718,6 +810,32 @@ A session should contain:
 - unresolved clarification questions;
 - pending approval reference;
 - status and timestamps.
+
+The minimal persistent records are:
+
+```text
+IdentityBinding
+  DataOps user <-> verified channel user
+
+Conversation
+  owner, audience, status, active plugin/draft/proposal, revision
+
+ChannelBinding
+  conversation <-> Telegram chat/topic or web conversation
+
+ConversationEvent
+  ordered immutable input/output/action event with provenance
+
+SummaryCheckpoint
+  replaceable summary through a specific event sequence
+
+Proposal
+  immutable version, execution envelope, state, result
+```
+
+Conversation updates use an optimistic revision and channel events use stable
+idempotency keys. This prevents Telegram retries, concurrent web actions, or
+double button presses from committing the same turn twice.
 
 After approximately 20 minutes of inactivity, a session should become paused,
 not deleted. An ordinary later message can start a new session while noting
@@ -838,6 +956,10 @@ this interaction model:
 - Telegram currently routes several feature commands directly.
 - There is no persistent conversational-session model separate from
   authentication sessions.
+- The current `Sessions` records contain authentication tokens and user IDs;
+  they are not suitable for conversation history or memory.
+- Telegram chat allowlisting does not link a Telegram sender to an authorized
+  DataOps user.
 - Telegram callback queries are not yet part of the webhook update contract.
 - There is no channel-neutral interaction contract or shared Telegram/web
   conversational runtime.
@@ -856,24 +978,30 @@ but they should not be exposed through plugin skills.
 
 ## Suggested Delivery Order
 
-1. Define the channel-neutral event, interaction, session, proposal, and action
-   contracts.
-2. Add persistent conversation sessions, including Telegram group activation
-   rules and explicit web conversations.
-3. Add a generic internal proposal record, versioning, expiry, idempotent
-   action handling, and trusted approval execution.
-4. Add the plugin registry, manifest validation, compact catalog,
-   `skill_load`, and `skill_invoke` framework.
-5. Implement Telegram and web adapters over the shared runtime.
-6. Register the `todo` plugin and deterministic `/todo` shortcut as the
+1. Define the small shared event, conversation, proposal, and action contracts.
+2. Add verified channel identity bindings and persistent conversations with
+   ordered events, optimistic revisions, and checkpoint summaries.
+3. Add the immutable proposal/execution state machine, idempotent approval
+   handling, and `outcome_unknown` recovery.
+4. Disable legacy model-accessible mutation paths that bypass exact proposal
+   approval, especially the current Typefully write path.
+5. Add the static TypeScript plugin registry, compact catalog, `skill_load`,
+   and `skill_invoke`.
+6. Implement the Telegram adapter and callback handling over the shared
+   runtime.
+7. Register the `todo` plugin and deterministic `/todo` shortcut as the
    smallest end-to-end path.
-7. Register the structured `sop` plugin and staged GitHub executor.
-8. Define `PodcastDocument` and register the `podcast` plugin.
-9. Register the `typefully` plugin and change social drafting to stage locally,
+8. Register the `typefully` plugin and change social drafting to stage locally,
    then create an unscheduled Typefully draft only after approval.
-10. Register workflow and recurring-todo plugins.
-11. Add later plugins only when their schemas and safety rules are
-   clear.
+9. Register the structured `sop` plugin and staged GitHub executor.
+10. Define `PodcastDocument` and register the `podcast` plugin.
+11. Add the web adapter using the same runtime only after the Telegram slice
+    proves the contracts.
+12. Add authorized conversation-history search for ambiguous references such
+    as “that thing.”
+13. Add workflow and recurring-todo plugins as demonstrated needs.
+14. Consider an explicit `memory` plugin and richer flow abstractions only
+    after real usage.
 
 ## Open Questions
 
