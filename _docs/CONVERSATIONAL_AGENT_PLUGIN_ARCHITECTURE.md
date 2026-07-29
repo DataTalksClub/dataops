@@ -1,8 +1,7 @@
 # Conversational Agent Plugin Architecture
 
-Status: work in progress  
-Purpose: capture product suggestions for discussion; this is not yet an
-implementation specification or a final decision.
+Status: accepted MVP architecture; implementation is tracked through GitHub
+issues.
 
 ## Goal
 
@@ -32,27 +31,36 @@ bot.
 The first implementation should optimize for clarity and reversibility rather
 than maximum plugin flexibility.
 
+- The first release supports verified users in Telegram private chats using
+  text, voice notes, and photos.
+- The first complete mutation is one conversational todo per proposal.
+- Typefully create-only support follows after the todo path proves approval and
+  crash recovery. It creates an unscheduled, unpublished draft.
+- Groups, generic file uploads, the web adapter, SOP and podcast mutation, workflow
+  execution, recurring work, cross-channel continuation, durable personal
+  memory, and the direct `/todo` shortcut are post-MVP.
 - Plugins are registered explicitly in TypeScript at build time.
 - The runtime does not discover or execute arbitrary plugin packages.
 - The agent uses `skill_load`, then a separate model turn uses
   `skill_invoke`.
 - One mutation plugin may be active at a time. Read-only knowledge or history
   lookup may support it.
-- Plugins provide typed actions, validation, proposal rendering, and execution.
+- Plugins provide typed actions, validation, deterministic proposal rendering,
+  and capability-scoped execution.
 - Conversational collection stays in skill instructions. There is no general
   flow-definition language in the MVP.
 - Every agent-requested mutation becomes an immutable proposal.
-- `/todo` is the one explicit, audited direct-command exception.
+- Every MVP mutation, including todo creation, requires exact approval.
 - Authentication sessions and conversation sessions remain separate.
 - Conversation events and summaries are core runtime services, not plugins.
 - Durable personal memory is opt-in. The system does not automatically turn
   conversation text into permanent facts.
-- Telegram and web use the same runtime contracts, even if the first release
-  delivers one interface before the other.
+- Runtime contracts remain channel-neutral, but only Telegram private chat is
+  delivered in the MVP.
 
-More dynamic plugin loading, a reusable flow DSL, automatic durable memory,
-multi-plugin plans, and collaborative group sessions should be added only when
-real usage demonstrates a need.
+This scope is intentionally narrow. It proves one internal mutation and one
+external mutation without simultaneously solving group privacy, document
+ingestion, multi-effect workflows, or cross-channel presentation.
 
 ## Channel-Independent Architecture
 
@@ -77,7 +85,8 @@ Normalized incoming events include:
 
 ```text
 message
-attachment
+voice_note
+photo
 button_action
 form_submission
 session_command
@@ -91,14 +100,16 @@ clarification
 proposal_preview
 choice
 approval_request
+execution_pending
+status_update
 result
 error
 ```
 
-Plugins describe semantic interactions such as “select account,” “choose a
-time,” “approve this proposal,” or “request changes.” They do not contain
-Telegram callback formatting or web HTML. Channel adapters decide how to
-render those interactions.
+Plugins supply domain choices, validation results, and presentation hints.
+The core supplies approval, revision, cancellation, and session actions.
+Plugins do not contain Telegram callback formatting or web HTML. Channel
+adapters decide how to render the core interactions.
 
 ### Minimum Trust Boundaries
 
@@ -113,9 +124,8 @@ render those interactions.
   not execute parameters resubmitted by Telegram or the browser.
 - Retrieved and rendered content is filtered by audience and data
   classification before it enters model context or a group response.
-- Attachment parsing requires a bounded, quarantined pipeline. Rich attachment
-  processing may be deferred from the first release rather than implemented
-  unsafely.
+- Voice and photo preprocessing is bounded and isolated from domain plugins.
+  Generic file and rich-document processing remains deferred.
 
 ## Core Interaction Model
 
@@ -187,35 +197,33 @@ The default buttons are:
 
 The approval label should describe the actual effect when useful, for example:
 
-- **Approve and create SOP**
+- **Approve and open SOP pull request**
 - **Approve todo**
 - **Approve and add to Typefully**
 
 ## Interaction and Approval Action Handling
 
-Plugins should define semantic actions rather than channel-specific buttons.
-For example, a Typefully flow may expose:
+Plugins define domain inputs rather than channel-specific buttons or flow
+transitions. For example, Typefully may accept:
 
 ```text
 choose_account
 choose_platforms
-choose_preferred_time
-approve_draft
-request_changes
-cancel
 ```
 
-Each action declares:
+Each plugin action declares:
 
-- the states in which it is available;
-- its label and optional presentation hint;
 - its input payload schema;
-- whether it only updates conversation state or requests execution;
-- the next flow state;
-- the result that should be rendered.
+- its core-defined permission reference;
+- its validation and missing-field results;
+- optional presentation hints;
+- its pure proposal result.
 
-Telegram and the web portal render these actions differently but send the same
-normalized action to the core runtime.
+The core owns `select_option`, `submit_input`, `approve`, `request_changes`,
+`cancel_proposal`, `discard_draft`, and conversation transitions. Plugins cannot
+define `next_state`, approval, cancellation, or execution policy. Telegram and
+future adapters render these core actions differently but send the same
+normalized action to the runtime.
 
 When an approval action is received, the core runtime should:
 
@@ -224,11 +232,13 @@ When an approval action is received, the core runtime should:
 3. verify authorization, state, expiry, and channel binding;
 4. reject stale, already-used, or mismatched actions;
 5. verify that the canonical target still matches its base revision;
-6. call the registered plugin executor with an idempotency key;
-7. record the result and audit event;
-8. advance the plugin flow and session state;
-9. ask the channel adapter to replace or disable obsolete controls;
-10. render the completed result or a recoverable error.
+6. use one DynamoDB transaction to consume the action token, claim the
+   proposal, and create a queued `ExecutionAttempt` with an idempotency key;
+7. return `execution_pending` and disable obsolete controls;
+8. let a durable worker lease the attempt and call the capability-scoped
+   executor outside the approval request;
+9. record the result and audit event using conditional writes;
+10. render success, a safe failure, or an explicit uncertain-outcome status.
 
 Telegram callback data should contain only a short opaque action token. The
 proposal content, provider parameters, permissions, and executable action stay
@@ -238,28 +248,64 @@ proposal content submitted by the browser.
 Repeated button presses must be idempotent. They should return the existing
 result and must not execute the plugin twice.
 
-### Proposal and Execution States
+### Proposal and Execution Records
 
-Use one small canonical state machine:
+Keep four small records instead of overloading one status field:
 
 ```text
-draft
-  -> presented
-  -> executing
-  -> succeeded
+PluginDraft
+  collecting | ready | abandoned
 
-presented -> canceled | expired | superseded | conflicted
-executing -> failed_safe | outcome_unknown
+ProposalVersion
+  presented | superseded | expired | canceled | claimed | conflicted
+
+ProposalPresentation
+  active | consumed | revoked | expired
+
+ExecutionAttempt
+  queued | executing | succeeded | failed_safe | outcome_unknown
+  | manually_resolved
 ```
 
-Approval atomically claims `presented -> executing`; it is not a separate
-mutable flag. The claimed record contains the immutable payload hash, target,
-base revision, plugin version, policy version, actor, and idempotency key.
+`PluginDraft` is mutable working state. `ProposalVersion` is an immutable
+candidate effect. `ProposalPresentation` owns channel-specific controls and
+opaque token hashes. `ExecutionAttempt` is the durable job and attempt history.
 
-`failed_safe` means no external change happened and a controlled retry may be
-offered. `outcome_unknown` means the provider may have applied the change
-before a timeout or crash. It must be reconciled or resolved by an operator,
-not blindly retried.
+Approval uses one DynamoDB transaction to validate and consume the presentation,
+atomically claim the proposal, and insert the queued attempt. A DynamoDB
+Stream-triggered worker leases queued attempts; a scheduled recovery scan
+re-enqueues attempts whose delivery or lease was interrupted. The approval
+handler never performs the external write directly.
+
+Every attempt declares one delivery mode:
+
+```text
+provider_idempotency
+correlation_lookup
+operator_reconciliation_only
+```
+
+`failed_safe` means the worker can prove no change occurred. `outcome_unknown`
+means the provider may have applied the change, so automatic retry is forbidden.
+The plugin must reconcile by provider idempotency/correlation lookup or provide
+an accepted manual reconciliation procedure before the feature is enabled.
+
+### Exact Preview-to-Execution Binding
+
+The immutable `ProposalVersion` contains a normalized `ProposalSpec` with every
+semantically relevant field:
+
+- plugin ID and exact build digest;
+- action, operation, effect, target, and destination account reference;
+- complete normalized proposed content and base revision;
+- source references/revisions and data classifications;
+- core permission, policy version, schema digest, and expiration.
+
+The preview is rendered deterministically from this spec. Store both the
+canonical payload hash and rendered-view hash. Executors accept only the stored
+spec. They may resolve secrets and serialize provider requests, but they may not
+rewrite content, change destination, schedule work, or add a new effect. Any
+semantic change creates and presents a new proposal version.
 
 ## Plugin and Skill Framework
 
@@ -320,18 +366,20 @@ actions
   description
   input_schema
   effect: read | proposal
-  approval_policy
+  core_permission
 renderer
 validator
 executor
-permissions
+reconciler
+build_digest
 ```
 
 The manifest summary and activation hints are safe for the compact base
 catalog. Full instructions and action schemas are loaded only when selected.
 
 Plugin instructions are lower priority than core system and approval rules. A
-plugin cannot grant itself broader permissions or bypass approval.
+plugin references a permission defined by the core; it cannot define policy,
+grant itself broader permissions, or bypass approval.
 
 ### Plugin Package and Registration
 
@@ -341,6 +389,7 @@ A plugin is a trusted TypeScript object imported into an explicit registry:
 Plugin
   id
   version
+  build_digest
   summary
   activation_hints
   skill_instructions
@@ -348,18 +397,19 @@ Plugin
   validate
   render_proposal
   execute
-  permissions
+  reconcile
 ```
 
 The application owns a static list such as:
 
 ```text
-PLUGINS = [todo, sop, podcast, typefully]
+PLUGINS = [todo, typefully]
 ```
 
-Build and startup validation should reject duplicate IDs, invalid schemas, or
-missing handlers. Deployment configuration may enable or disable a registered
-plugin and restrict it by role or channel.
+Build and startup validation should reject duplicate IDs, invalid schemas,
+unknown core permissions, missing handlers, or external mutation actions
+without a declared reconciliation mode. Deployment configuration may enable or
+disable a registered plugin and restrict it by role or channel.
 
 Configuration should allow a plugin to be enabled, disabled, or restricted
 without changing the core agent:
@@ -375,9 +425,14 @@ settings_ref: managed runtime configuration
 Secrets and provider identifiers are runtime configuration. They must not be
 placed in the manifest, skill instructions, proposal, or model context.
 
-Sessions and proposals should record the plugin version used to create them.
-An incompatible plugin upgrade should require a proposal to be regenerated
-rather than executed with different behavior.
+Sessions and proposals record the exact plugin build digest, not only a semantic
+version. A deployment must retain the executor build for claimed attempts.
+Unclaimed proposals whose build is unavailable are superseded and regenerated.
+
+The core injects only the narrow executor capability authorized for the stored
+target, such as a todo writer for the actor's scope or a Typefully draft creator
+for one account. Plugins never receive generic database access, credential
+stores, or unrestricted provider clients.
 
 Runtime package discovery, independently distributed plugins, and arbitrary
 plugin code loading are out of scope for the MVP.
@@ -395,7 +450,9 @@ select_option
 submit_input
 approve
 request_changes
-cancel
+cancel_proposal
+discard_draft
+end_conversation
 ```
 
 Buttons use these stable action kinds plus plugin-validated payloads. Telegram
@@ -408,33 +465,28 @@ Clarification actions update draft/session state without calling an executor.
 A reusable flow language should be introduced only after several plugins show
 the same state and transition patterns.
 
-Different plugins may expose different interaction actions:
+The core renders its actions using plugin-supplied labels and hints:
 
 | Plugin state | Example actions |
 |---|---|
 | SOP clarification | **Create new SOP**, **Update existing SOP**, **Choose document** |
-| SOP review | **View full document**, **View diff**, **Request changes**, **Approve SOP**, **Cancel** |
+| SOP review | **View full document**, **View diff**, **Request changes**, **Approve and open SOP pull request**, **Cancel proposal** |
 | Podcast clarification | **Choose audience**, **Choose duration**, **Add source** |
-| Podcast review | **Review questions**, **Request changes**, **Approve podcast document**, **Cancel** |
-| Typefully clarification | **Alexey**, **DataTalksClub**, **X**, **LinkedIn**, **Choose preferred time** |
-| Typefully review | **Approve and add to Typefully**, **Request changes**, **Cancel** |
+| Podcast review | **Review questions**, **Request changes**, **Approve podcast document**, **Cancel proposal** |
+| Typefully clarification | **Alexey**, **DataTalksClub**, **X**, **LinkedIn** |
+| Typefully review | **Approve and add to Typefully**, **Request changes**, **Cancel proposal** |
 | Todo clarification | **Today**, **Tomorrow**, **Choose date**, **No time** |
-| Todo review | **Approve todo**, **Request changes**, **Cancel** |
+| Todo review | **Approve todo**, **Request changes**, **Cancel proposal** |
 
-These labels are presentation defaults. The stable semantic action IDs and
-schemas, not the displayed text, drive runtime behavior.
+These are presentation hints for core-owned actions. The stable core action IDs
+and plugin input schemas, not the displayed text, drive runtime behavior.
 
 ### Initial Plugins
 
 | Plugin | Responsibility |
 |---|---|
-| `knowledge-search` | Search approved knowledge and load documents. Read-only. |
-| `sop` | Create or update a structured SOP proposal. |
-| `podcast` | Create or update a podcast preparation document proposal. |
-| `todo` | Create or update a todo proposal. |
-| `workflow` | Start or update an operational workflow proposal, usually from a workflow template. |
-| `recurring-todo` | Create or update a recurring work proposal. |
-| `typefully` | Prepare social copy and propose creating an unscheduled Typefully draft. |
+| `todo` | Propose creating one todo in the actor's own scope. |
+| `typefully` | Propose creating one unscheduled, unpublished Typefully draft. |
 
 ### Possible Later Plugins
 
@@ -449,10 +501,18 @@ approval boundaries are designed:
 | `calendar` | Create or update a calendar item. |
 | `newsletter` | Create or update newsletter scheduling data. |
 | `sponsor` | Create or update sponsor CRM information. |
+| `sop` | Create or update a structured SOP through a reviewed pull request. |
+| `podcast` | Create or update a podcast preparation document through a reviewed pull request. |
+| `workflow` | Start or update an operational workflow after multi-effect semantics are designed. |
+| `recurring-todo` | Create or update recurring work after partial-failure semantics are designed. |
 
 Bookkeeping should not receive a broad generic mutation tool. Any future
 bookkeeping plugin actions should be narrow, strongly validated, and separately
 approved.
+
+Authorized resource search and loading are core read services, not plugins.
+Their results carry stable source references, revisions, audience, and
+classification without displacing the active mutation skill.
 
 ### Example Plugin Selection
 
@@ -532,15 +592,10 @@ The MVP distinguishes:
 Summaries are never authoritative. They cannot approve an action, replace
 structured plugin state, or become durable facts without provenance.
 
-For a question such as “How about that thing?” the runtime should:
-
-1. resolve references from active structured state and recent events;
-2. search the user's authorized conversation history if still unresolved;
-3. continue with an explicit interpretation when one result is clear;
-4. otherwise show two or three privacy-safe candidates and ask the user to
-   choose;
-5. attach the selected history explicitly rather than silently blending
-   conversations.
+For the MVP, references such as “that thing” resolve only from active structured
+state and bounded recent events. If that is ambiguous, the agent asks the user
+to identify the resource. History-wide search and candidate selection are
+post-MVP.
 
 The first version should not automatically create long-term personal facts.
 A narrow first-party `memory` plugin may be added later for explicit requests:
@@ -578,7 +633,7 @@ plugin catalog. The agent should work in terms of an SOP, podcast document,
 todo, workflow, or social post rather than asking the model to manipulate
 internal job and artifact records.
 
-## SOP Plugin
+## Post-MVP SOP Plugin
 
 SOPs are a core DataOps concept and require a dedicated schema-aware plugin.
 
@@ -610,10 +665,11 @@ The agent should work with this structure rather than manually constructing the
 repository's marker syntax. The backend should render and lint the structured
 proposal as Markdown.
 
-Approval of an SOP proposal is the point at which the executor creates or
-updates the canonical document.
+Approval opens a branch and pull request containing the exact proposed Markdown
+in the private knowledge repository. It never merges or writes directly to the
+canonical branch. The approval label is **Approve and open SOP pull request**.
 
-## Podcast Plugin
+## Post-MVP Podcast Plugin
 
 Podcast documents have a different structure and require a separate plugin.
 
@@ -649,41 +705,20 @@ Question lists are small enough that create and update operations can submit the
 complete podcast document. Stable section and question IDs should still be
 preserved so revisions and diffs are understandable.
 
-## Todo Plugin and Direct Command
-
-Todos need two paths.
-
-### Conversational Path
+## Todo Plugin
 
 An ordinary request such as:
 
 > Remind me to follow up with Jane next Tuesday.
 
 loads the `todo` plugin and invokes its `propose` action. The agent resolves
-missing information, presents the todo, and waits for approval.
+missing information, presents exactly one todo, and waits for approval. Batches
+and partial success are excluded.
 
-### Direct Shortcut
-
-An explicit `/todo` command should bypass the conversational agent and create a
-todo immediately:
-
-```text
-/todo 2026-08-04 10:00 Follow up with Jane
-/todo tomorrow 10:00 Follow up with Jane
-/todo friday Prepare podcast notes
-/todo Follow up with Jane
-```
-
-The command itself is explicit authorization, so it does not need another
-approval button. Parsing must be deterministic. If the input cannot be parsed
-safely, nothing should be created and the bot should show the accepted syntax.
-
-When no time is supplied, the runtime should use a documented default rather
-than asking the language model to guess.
-
-Only deliberately selected operations should receive direct command shortcuts.
-The existence of `/todo` does not imply that SOP, podcast, social, or workflow
-commands should bypass proposals.
+The deterministic `/todo` shortcut is deferred until the conversational path
+has proven the approval system. If later added, it must be private-chat,
+create-only, linked-user-only, idempotent, deterministic, explicit about
+timezone and no-time behavior, and provide a short undo action.
 
 ## Social Media and Typefully
 
@@ -694,13 +729,11 @@ Suggested plugin action:
 ```text
 plugin: typefully
 action: propose_draft
-  operation: create | update
-  proposal_id?: string
+  operation: create
   account: alexey | datatalksclub
   platforms: x[] | linkedin[]
   title?: string
   source_refs?: string[]
-  preferred_publish_at?: string
   destination: typefully
 ```
 
@@ -710,24 +743,18 @@ Example conversational sequence (not a framework DSL):
 collect_request
   -> choose_account when account is missing
   -> choose_platforms when platforms are missing
-  -> choose_preferred_time when timing is useful
   -> compose
   -> review
-       request_changes -> compose
-       cancel -> canceled
-       approve_draft -> executing
+       core request_changes -> compose
+       core cancel_proposal -> canceled
+       core approve -> execution_pending
   -> completed
 ```
 
-The agent should clarify the account, platforms, purpose, and any missing source
-material. The plugin flow may also ask when the operator would like the post to
-go out and offer suggestions such as later today, tomorrow, or choosing a
-specific time. It should then show the complete platform-specific copy and the
-preferred timing.
-
-The preferred time is planning metadata in this version. It can be included in
-the proposal and Typefully draft notes, but it is not sent as a scheduling or
-publishing instruction.
+The agent clarifies the account, platforms, purpose, and missing source
+material, then shows the complete platform-specific copy. Scheduling questions
+are omitted because this action cannot schedule; avoiding non-executable fields
+keeps the preview and effect unambiguous.
 
 Before approval:
 
@@ -746,15 +773,69 @@ After **Approve and add to Typefully**:
 This is the complete Typefully scope for the conversational agent. It does not
 need Typefully scheduling or publishing tools. Scheduling and publication
 remain manual actions in Typefully. The completion message should make that
-boundary explicit even when a preferred time was collected.
+boundary explicit.
 
 The existing `/social` command should not be the primary workflow and should
 not create a Typefully draft directly. Ordinary conversation should drive
 social drafting.
 
+## Telegram Voice and Photo Input
+
+Voice notes and photos are channel inputs, not plugins. They produce normalized
+conversation events before plugin selection:
+
+```text
+Telegram voice note
+  -> authenticated bounded download
+  -> Groq Whisper transcription
+  -> delete audio bytes
+  -> voice_note event with transcript and Telegram provenance
+
+Telegram photo plus optional caption
+  -> authenticated bounded download
+  -> z.ai GLM-4.6V description and OCR
+  -> delete image bytes
+  -> photo event with description, caption, and Telegram provenance
+```
+
+Downstream logic receives text regardless of input modality, and the bot shows
+the transcript or description back to the operator before continuing.
+
+Use Groq `whisper-large-v3` for multilingual voice accuracy. Use z.ai
+`glm-4.6v` for photo understanding through its native multimodal endpoint. The
+conversational model remains z.ai through its Anthropic-compatible Messages
+endpoint. Provider/model IDs are configuration with startup validation; the
+writing assistant's former Groq Llama vision model has been retired.
+
+MVP limits:
+
+- Telegram private chat and verified linked users only;
+- voice/OGG and Telegram photo JPEG only;
+- one media item per event;
+- at most 20 MB and five minutes for voice, and 10 MB/20 megapixels for photos;
+- bounded download and provider timeouts, with no automatic unbounded retry;
+- temporary bytes are sent only to the dedicated media processor; they never
+  enter DynamoDB, logs, audit events, or conversational-model context;
+- a `finally` path deletes temporary bytes after success or failure, and a
+  bounded startup/reaper cleanup removes crash-orphaned temporary objects;
+- derived transcript/description is owner-private, excluded from logs and audit
+  payloads, and follows the 30-day conversation retention;
+- provider output is untrusted text and cannot authorize or execute anything;
+- the bot reports conversion failure and asks for text instead of guessing.
+
+DataOps needs dedicated production secret references and least-privilege
+deployment wiring for both processors. Automated tests use fake Telegram
+download, transcription, and vision clients.
+
 ## Uploaded Documents and Classification
 
-An uploaded document should enter intake before any canonical change.
+Generic uploaded-document handling is post-MVP. It should not be enabled until bounded
+plain-text extraction, quarantine, size limits, classification, and
+prompt-injection handling exist. PDF, office, archive, image, link, and macro
+handling are not one generic capability.
+
+When introduced, an uploaded document should enter intake before any canonical
+change.
 
 The runtime should extract safe text and metadata, then classify the likely
 resource:
@@ -830,16 +911,19 @@ SummaryCheckpoint
   replaceable summary through a specific event sequence
 
 Proposal
-  immutable version, execution envelope, state, result
+  split into PluginDraft, ProposalVersion, ProposalPresentation,
+  and ExecutionAttempt
 ```
 
-Conversation updates use an optimistic revision and channel events use stable
-idempotency keys. This prevents Telegram retries, concurrent web actions, or
-double button presses from committing the same turn twice.
+Conversation events use stable idempotency keys and a monotonic revision. Model
+work runs from revision `N` without holding a lock and may commit only if the
+conversation is still at `N`; otherwise it is discarded and reprocessed. A
+loaded skill is bound to conversation ID/revision, plugin build digest, and a
+one-time load nonce. New input invalidates stale model work.
 
-After approximately 20 minutes of inactivity, a session should become paused,
-not deleted. An ordinary later message can start a new session while noting
-that paused work exists. `/continue` should resume a selected paused session.
+Inactivity does not silently change conversation identity in the MVP.
+Conversations change only through explicit session actions. Approval tokens
+expire independently after 30 minutes and are never revived.
 
 Resuming a session must not revive an expired approval. The agent may restore
 context, but the system must generate a fresh approval for any pending action.
@@ -854,15 +938,9 @@ two channel identities belong to the same person.
 In a private chat, the bot may treat each ordinary message as conversational
 input.
 
-In a group, the bot should respond only when:
-
-- it is mentioned;
-- a user replies to one of its messages; or
-- the same user is already in an active conversation with the bot in that
-  thread.
-
-This prevents the bot from interpreting unrelated group conversation as work
-requests.
+Group conversation is disabled in the MVP. A mention may return a static,
+public-safe prompt to continue in private chat, but it must not retrieve private
+context, invoke the model, present private preview links, or mutate anything.
 
 Telegram should render:
 
@@ -883,11 +961,11 @@ Suggested commands:
 
 | Command | Behavior |
 |---|---|
-| `/new` | Pause the current conversation and start a new one. |
+| `/new` | End the current conversation and start a new one; executing attempts continue to status. |
 | `/continue` | Resume a paused conversation. |
 | `/sessions` | List resumable conversations. |
-| `/cancel` | Cancel the active proposal or conversation. |
-| `/todo ...` | Deterministically create a todo immediately. |
+| `/cancel` | Revoke the active unexecuted proposal presentations; keep the draft and conversation. |
+| `/discard` | Abandon the active draft; do not affect an executing attempt or end the conversation. |
 | `/help` | Explain conversational usage and available session controls. |
 
 The existing `/podcast` and `/social` feature-command behavior should be
@@ -914,8 +992,9 @@ Web controls corresponding to Telegram commands can be ordinary UI actions:
 | New conversation | Same session transition as `/new`. |
 | Continue | Same session transition as `/continue`. |
 | Conversation list | Same data as `/sessions`. |
-| Cancel proposal | Same transition as `/cancel`. |
-| Quick todo | Same deterministic parser and direct executor as `/todo`. |
+| Cancel proposal | Revoke the active unexecuted proposal presentations. |
+| Discard draft | Abandon working state without ending the conversation. |
+| End conversation | Close the conversation; executing attempts remain visible by status. |
 
 This keeps behavior consistent while allowing each interface to use controls
 that feel natural for that channel.
@@ -978,145 +1057,44 @@ but they should not be exposed through plugin skills.
 
 ## Suggested Delivery Order
 
-1. Define the small shared event, conversation, proposal, and action contracts.
-2. Add verified channel identity bindings and persistent conversations with
-   ordered events, optimistic revisions, and checkpoint summaries.
-3. Add the immutable proposal/execution state machine, idempotent approval
-   handling, and `outcome_unknown` recovery.
-4. Disable legacy model-accessible mutation paths that bypass exact proposal
-   approval, especially the current Typefully write path.
-5. Add the static TypeScript plugin registry, compact catalog, `skill_load`,
-   and `skill_invoke`.
-6. Implement the Telegram adapter and callback handling over the shared
-   runtime.
-7. Register the `todo` plugin and deterministic `/todo` shortcut as the
-   smallest end-to-end path.
-8. Register the `typefully` plugin and change social drafting to stage locally,
-   then create an unscheduled Typefully draft only after approval.
-9. Register the structured `sop` plugin and staged GitHub executor.
-10. Define `PodcastDocument` and register the `podcast` plugin.
-11. Add the web adapter using the same runtime only after the Telegram slice
-    proves the contracts.
-12. Add authorized conversation-history search for ambiguous references such
-    as “that thing.”
-13. Add workflow and recurring-todo plugins as demonstrated needs.
-14. Consider an explicit `memory` plugin and richer flow abstractions only
-    after real usage.
+1. Define event, identity, conversation, proposal, presentation, attempt, and
+   audit contracts in DynamoDB.
+2. Implement event deduplication, single-writer revisions, and stale-turn
+   rejection.
+3. Implement exact proposal specs, 30-minute presentation tokens, transactional
+   approval claims, durable worker leasing, and reconciliation.
+4. Add the static registry, compact catalog, `skill_load`, and `skill_invoke`.
+5. Implement the verified private-Telegram adapter and callback handling.
+6. Register conversational todo create and prove conflict, duplicate-click,
+   revocation, crash, and recovery behavior.
+7. Remove the premature Typefully write, register Typefully create-only, and
+   enable it only after its reconciliation mode is accepted.
+8. Roll out with kill switches, redacted monitoring, and real-account smoke
+   checks.
+9. Consider SOP, podcast, web, history search, commands, groups, uploads,
+   workflows, recurring work, and memory only after the MVP is stable.
 
-## Open Questions
+## Resolved Product Decisions
 
-- Should a new ordinary message after the inactivity timeout automatically
-  start a new session, or should the bot ask whether to resume?
-- What default date and time should `/todo` use when either is omitted?
-- Should a proposal be allowed to contain multiple todos with one approval, or
-  should each todo require a separate approval?
-- What should be the initial canonical storage format and location for podcast
-  documents?
-- Which uploaded file formats should be supported first?
-- Which reference and content-template schemas need first-class plugins in the
-  first release?
-- What proposal and approval expiration periods are appropriate?
-- Should linked users be able to continue a Telegram conversation on the web
-  immediately, or should cross-channel continuation be deferred?
-- Which channel-neutral interaction components are required for the first
-  plugin release?
+These choices favor the smallest safe system. They can be revisited with usage
+evidence.
 
-## Appendix: External Architecture Review Prompt
-
-The architecture to review is included above in this document. Use the
-following prompt when passing this file to another model or reviewer:
-
-> Act as a principal software architect and adversarial design reviewer.
->
-> I am designing a channel-independent conversational agent for DataOps. It
-> will initially work through Telegram and later through a web portal. Its
-> capabilities are registered as plugins such as SOP creation, podcast
-> preparation, todos, and Typefully social drafts.
->
-> Read the complete architecture in this document. Challenge it rather than
-> merely summarizing or agreeing with it.
->
-> Important current decisions:
->
-> - Use a small, explicit TypeScript plugin registry.
-> - Do not support arbitrary runtime plugin installation.
-> - The agent sees a compact plugin catalog.
-> - `skill_load` loads one plugin's instructions and schema.
-> - A separate model turn uses `skill_invoke`.
-> - Only one mutation plugin is active at a time.
-> - Read-only knowledge and history lookup may support the active plugin.
-> - Do not build a general flow-definition DSL yet.
-> - Agent-requested mutations create immutable proposals.
-> - Trusted backend executors apply exact approved proposals.
-> - `/todo` is an explicit audited direct-command exception.
-> - Typefully approval creates only an unscheduled draft; it does not publish.
-> - Authentication sessions and conversations are separate.
-> - Conversation events, summaries, retrieval, and context budgeting are core
->   runtime services.
-> - Durable personal memory is opt-in, not extracted automatically.
-> - A narrow memory plugin may later support remember, list, correct, and
->   forget.
->
-> Review the design from these perspectives:
->
-> 1. Plugin API and registration
->    - Is `skill_load` followed by `skill_invoke` workable?
->    - What is the smallest useful plugin contract?
->    - Which abstractions should be deferred?
->    - How should plugin versions and upgrades affect active proposals?
-> 2. Session management
->    - Conversation identity and lifecycle
->    - Telegram private chats, groups, and topics
->    - Web conversations
->    - Cross-channel continuation
->    - Concurrent messages, retries, and out-of-order events
->    - Pausing, resuming, expiration, retention, and deletion
-> 3. Memory and context management
->    - Working memory versus conversation history
->    - Summary checkpoints and summarization drift
->    - Resolving vague references such as “that thing”
->    - Long-term facts and preferences
->    - Privacy scopes for personal, group, organization, and resource memory
->    - Context-window budgeting and retrieval
->    - Whether memory should be core infrastructure, a plugin, or both
-> 4. Proposal and approval safety
->    - Immutable proposal versions
->    - Exact preview-to-execution binding
->    - Atomic approval claims
->    - Duplicate button presses
->    - Provider timeouts after a possible successful write
->    - Idempotency, reconciliation, and outcome-unknown states
->    - Authorization at approval and execution time
-> 5. Telegram and web interaction design
->    - Channel-neutral events and semantic actions
->    - Telegram inline buttons and callback tokens
->    - Web forms, previews, and diffs
->    - Plugin-specific clarification choices
->    - Preventing channel adapters from developing different business behavior
-> 6. Security and privacy
->    - Telegram identity linking
->    - Group information leakage
->    - Prompt injection from uploaded or retrieved documents
->    - Plugin and executor permissions
->    - Attachment processing
->    - Private/public knowledge boundaries
->    - Auditability and credential leakage
->
-> Produce:
->
-> A. The ten most important architecture gaps, prioritized P0/P1/P2.
-> B. A simpler recommended MVP architecture.
-> C. The minimum persistent data model.
-> D. Exact flows for:
->    - creating a social post and adding the approved draft to Typefully;
->    - creating or updating an SOP;
->    - “How about that thing we discussed?”;
->    - continuing a Telegram conversation on the web;
->    - an external write that times out after possibly succeeding.
-> E. Components or abstractions that should be deferred.
-> F. Decisions that need explicit product input.
->
-> For every finding, explain the concrete failure scenario and the smallest
-> reasonable correction. Prefer simplicity, explicit state, and
-> recoverability. Do not introduce infrastructure unless it addresses a
-> demonstrated risk.
+| Decision | MVP choice | Why |
+|---|---|---|
+| SOP effect | Open a branch and pull request in the private knowledge repository; never merge directly. | Git review is a second safety boundary and matches the knowledge boundary. |
+| Document source of truth | Markdown with strict front matter, stable IDs, and a lossless parser/renderer for both SOP and podcast documents. | One human-readable canonical format avoids dual-write synchronization. |
+| Telegram groups | No conversational group mode; only a static invitation to continue privately. | This removes audience and private-context leakage from the first release. |
+| `/todo` | Defer it. | Conversational todo must first prove the universal approval path. |
+| Approval expiry | One configurable 30-minute default for every MVP proposal. | One policy is understandable and avoids plugin-specific timing rules. |
+| Cross-channel approval | Deferred with the web adapter. Later, each presentation gets a token and one global claim wins. | The MVP has only one channel, while the data model remains future-safe. |
+| Typefully data egress | Public source material only. Organization, user-private, and restricted source documents are blocked. | A saved third-party draft is still external disclosure. |
+| External-write guarantee | Provider idempotency, reliable correlation lookup, or an explicitly accepted manual reconciliation procedure is a release gate. | Unknown outcomes must never trigger blind retries. |
+| Typefully operations | Create one unscheduled, unpublished draft only. | Update, schedule, and publish require additional conflict and effect semantics. |
+| Todo batching | Exactly one todo per proposal. | This removes transaction batches and partial-success behavior. |
+| Conversation inactivity | No automatic pause or new conversation. Session changes are explicit. | Timer-driven identity changes are surprising and unnecessary. |
+| Retention | Raw messages, derived voice/photo text, summaries, proposal payloads, and redacted provider results: 30 days. Minimal audit metadata and effect receipts: 1 year. Temporary media bytes are deleted after processing. | Short payload retention limits exposure while preserving operational evidence. |
+| Model-provider egress | Public and ordinary operator-entered task text may be sent; operational source documents classified organization, user-private, or restricted are blocked. Prompt/completion bodies are not logged by default. | This permits the MVP without silently exporting private knowledge. |
+| Voice/photo provider egress | Voice bytes go only to Groq Whisper; photo bytes go only to z.ai vision. The bot shows derived text before it becomes conversational input. | A narrow declared route makes third-party processing visible and testable. |
+| Generic upload formats | None in the MVP. Plain text may be the first later format after the intake boundary exists. | Rich “attachments” otherwise introduce several unrelated security problems at once. |
+| Identity lifecycle | Admin creates/revokes an audited binding between a DataOps user and immutable Telegram numeric user ID; linking occurs only in private chat. Authorization is rechecked at read, approval, and worker execution. | This avoids building a self-service portal flow while still supporting revocation safely. |
+| Cancel semantics | Cancel proposal revokes presentations; discard draft abandons working state; end conversation closes the session. An executing attempt cannot be canceled unless the provider supports it. | Separate verbs prevent a UI action from promising an impossible rollback. |
