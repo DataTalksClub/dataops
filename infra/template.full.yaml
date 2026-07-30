@@ -127,9 +127,26 @@ Parameters:
     Type: String
     Default: dataops-v1/telegram-integration
     Description: Name of the out-of-band shared Telegram JSON secret containing botToken, webhookSecret, and allowedChatIds
+  ConversationalAgentEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ZaiConversationalApiKeySecretArn:
+    Type: String
+    Default: ""
+    Description: Optional ARN of the out-of-band z.ai JSON secret containing apiKey
+    AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
+Rules:
+  ConversationalAgentRequiresZaiSecret:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref ConversationalAgentEnabled, "false"]
+          - !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
+        AssertDescription: Enabling the conversational agent requires a z.ai secret ARN
 Conditions:
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
+  HasZaiConversationalSecret: !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -921,6 +938,10 @@ Resources:
               - !Ref BookkeepingIngestionSecret
               - !Ref EmailDocumentIntakeSecretArn
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
+              - !If
+                - HasZaiConversationalSecret
+                - !Ref ZaiConversationalApiKeySecretArn
+                - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action: [dynamodb:GetItem]
@@ -1025,6 +1046,8 @@ Resources:
           TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
           TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
+          CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled
+          ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn
       FunctionUrlConfig:
         AuthType: NONE
         Cors:

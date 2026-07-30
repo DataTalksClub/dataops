@@ -111,6 +111,25 @@ The assistant route creates Typefully saved drafts only. It does not schedule or
 publish posts. Automated tests use mocked z.ai and Typefully clients; real z.ai,
 Typefully, and Telegram checks are human-gated.
 
+### Conversational runtime boundary
+
+The channel-independent conversational runtime is disabled by default. Its
+production plugin registry is a static TypeScript list and is intentionally
+empty until domain plugins are added. A request can make at most two model
+calls: one `skill_load` call followed by one separate `skill_invoke` call.
+Neither call can approve or execute domain work.
+
+Non-empty registries require a trusted build-artifact loader. Generated
+metadata hashes the compiled plugin module and canonical manifest; startup
+loads the compiled artifact independently and rejects missing, stale, or
+tampered build/schema digests.
+
+When the runtime is enabled, `ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN` must name a
+pre-created Secrets Manager JSON value with an `apiKey` field. The Lambda
+receives only that ARN and resolves the value at runtime; do not place the key
+in environment variables or deployment parameters. The default provider is the
+z.ai Anthropic-compatible Messages endpoint with model `glm-5.2`.
+
 ## Repository-root commands
 
 Use these from the DataOps repo root after `npm ci`:
