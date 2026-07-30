@@ -1544,13 +1544,242 @@ async function renderSponsorCrmSurface() {
   let organizations = [],
     contacts = [],
     bookings = [];
+  const pendingFinanceKeys = new Map();
+  const financeApi = async (bookingId, suffix = "", options = {}) => {
+    const response = await fetch(
+      workApiUrl(`/api/sponsor-crm/bookings/${encodeURIComponent(bookingId)}/finance${suffix}`),
+      {
+        headers: { "content-type": "application/json", ...(options.headers || {}) },
+        ...options,
+      },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.outcome = payload.outcome;
+      throw error;
+    }
+    return payload;
+  };
+  const financeDialog = document.createElement("dialog");
+  financeDialog.dataset.financeDialog = "";
+  financeDialog.innerHTML = `<form><h3>Classify sponsor finance</h3><label>Invoice requirement <select name="invoiceRequirement"><option value="required">Invoice required</option><option value="not-required">Invoice not required</option></select></label><label data-money>Amount due <input name="amountDue" inputmode="decimal" placeholder="2500.00"></label><label data-money>Currency <input name="currency" maxlength="3" placeholder="EUR"></label><label data-money>Tax treatment <select name="taxMode"><option value="unknown">Unknown</option><option value="included">Included</option><option value="added">Added</option><option value="not-applicable">Not applicable</option></select></label><label data-money>Tax amount <input name="taxAmount" inputmode="decimal"></label><label data-money>Request by <input name="requestBy" type="date"></label><label data-money>Expected invoice by <input name="expectedInvoiceBy" type="date"></label><p role="alert"></p><button type="button" data-cancel>Cancel</button><button class="primary-button">Save classification</button></form>`;
+  const financeCandidateDialog = document.createElement("dialog");
+  financeCandidateDialog.dataset.financeCandidateDialog = "";
+  financeCandidateDialog.innerHTML = `<form><h3 data-title>Link finance evidence</h3><div data-candidates></div><div data-invoice-dates hidden><label>Issued on <input name="issuedOn" type="date"></label><label>Due on <input name="dueOn" type="date"></label></div><p role="alert"></p><button type="button" data-cancel>Cancel</button><button class="primary-button">Link selected evidence</button></form>`;
+  surface.append(financeDialog, financeCandidateDialog);
+  let lastFinanceRetry = null;
+  let currentFinanceBooking = null;
   const safe = async (action, label) => {
     try {
       await action();
     } catch (error) {
+      if (error.outcome === "outcome_unknown" || error.status === 409)
+        surface.querySelector("dialog[open]")?.close();
       message.textContent = `${label}: ${error.message}`;
+      if (error.outcome === "outcome_unknown" && lastFinanceRetry) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.textContent = "Retry same operation";
+        retry.dataset.financeRetryUnknown = "";
+        retry.addEventListener("click", () => safe(lastFinanceRetry, "Could not recover finance operation"), { once: true });
+        message.append(" ", retry);
+      } else if (error.status === 409) {
+        const reload = document.createElement("button");
+        reload.type = "button";
+        reload.textContent = "Reload current finance state";
+        reload.addEventListener("click", () => safe(
+          () => currentFinanceBooking ? reopenBookingDetail(currentFinanceBooking) : Promise.resolve(),
+          "Could not reload finance state",
+        ), { once: true });
+        message.append(" ", reload);
+      }
     }
   };
+  const financeMutation = async (booking, suffix, method, body) => {
+    const requestBody = { bookingVersion: booking.version, ...body };
+    const scope = `${booking.id}:${method}:${suffix}:${JSON.stringify(requestBody)}`;
+    const idempotencyKey = pendingFinanceKeys.get(scope) || crypto.randomUUID();
+    pendingFinanceKeys.set(scope, idempotencyKey);
+    const attempt = async () => {
+      const result = await financeApi(booking.id, suffix, {
+        method,
+        headers: { "idempotency-key": idempotencyKey },
+        body: JSON.stringify(requestBody),
+      });
+      pendingFinanceKeys.delete(scope);
+      lastFinanceRetry = null;
+      return result;
+    };
+    lastFinanceRetry = async () => {
+      await attempt();
+      await reopenBookingDetail(booking);
+      message.textContent = "Finance operation recovered with the original idempotency key.";
+    };
+    try {
+      return await attempt();
+    } catch (error) {
+      if (error.status !== 503) pendingFinanceKeys.delete(scope);
+      if (error.status !== 503) lastFinanceRetry = null;
+      throw error;
+    }
+  };
+  function financeMarkup(projection) {
+    const admin = projection.role === "admin";
+    if (!projection.classified) {
+      return `<section class="finance-panel" data-finance-panel><header><div><h3>Finance follow-through</h3><p>This booking has not been classified.</p></div>${admin ? '<button class="primary-button" data-finance-classify>Classify</button>' : ""}</header></section>`;
+    }
+    const finance = projection.finance;
+    const actions = admin && !finance.voidedAt
+      ? `<div class="finance-actions">
+          <button data-finance-classify>Update classification</button>
+          ${finance.invoiceRequirement === "required" && !finance.invoiceRequestedAt ? '<button data-finance-request>Record invoice request</button>' : ""}
+          ${finance.invoiceRequirement === "required" && finance.invoiceRequestedAt && !projection.invoice && finance.taxMode !== "unknown" ? '<button data-finance-invoice>Link invoice</button>' : ""}
+          ${projection.invoice && projection.reconciliationStatus === "coherent" && projection.paymentLinkCount < projection.paymentLinkLimit ? '<button data-finance-payment>Link payment</button>' : ""}
+          <button data-finance-reconcile>Reconcile current evidence</button>
+          ${projection.invoice ? `<button data-finance-unlink-invoice="${escapeHtml(projection.invoice.id)}">Unlink invoice</button>` : ""}
+          ${projection.payments.map((payment) => `<button data-finance-unlink-payment="${escapeHtml(payment.id)}">Unlink payment ${escapeHtml(payment.id.slice(0, 8))}</button>`).join("")}
+          ${!projection.invoice && projection.paymentLinkCount === 0 ? '<button data-finance-void>Void follow-through</button>' : ""}
+        </div>`
+      : "";
+    return `<section class="finance-panel" data-finance-panel><header><div><h3>Finance follow-through</h3><p>${escapeHtml(projection.invoiceState)} · ${escapeHtml(projection.paymentState)} · ${escapeHtml(projection.timingState)}</p></div><span class="finance-status">${escapeHtml(projection.reconciliationStatus)}</span></header>
+      <dl><div><dt>Amount due</dt><dd>${escapeHtml(finance.amountDue ? `${finance.amountDue} ${finance.currency}` : "Not applicable")}</dd></div><div><dt>Outstanding</dt><dd>${escapeHtml(projection.outstanding ? `${projection.outstanding} ${finance.currency}` : "Not applicable")}</dd></div><div><dt>Tax</dt><dd>${escapeHtml(finance.taxMode || "Not applicable")}</dd></div><div><dt>Due</dt><dd>${escapeHtml(finance.dueOn || finance.expectedInvoiceBy || "Not set")}</dd></div></dl>
+      ${projection.invoice ? `<p><strong>${escapeHtml(projection.invoice.label)}</strong> · uploaded ${escapeHtml(projection.invoice.uploadedAt)} <button data-finance-download="${escapeHtml(projection.invoice.id)}">Download invoice</button></p>` : ""}
+      ${projection.reconciliationStatus === "reconciliation-required" ? '<p class="finance-recovery" role="alert">Evidence is unavailable or changed. No payment is counted until an admin reconciles the current records.</p>' : ""}
+      <div class="finance-payments">${projection.payments.length ? projection.payments.map((payment) => `<p>${escapeHtml(payment.effectiveDate)} · ${escapeHtml(payment.amount)} ${escapeHtml(payment.currency)}</p>`).join("") : "<p>No linked payments.</p>"}</div>
+      ${projection.paymentLinkCount >= projection.paymentLinkLimit ? `<p>Payment link limit reached (${escapeHtml(projection.paymentLinkLimit)}). Unlink evidence before adding another payment.</p>` : ""}
+      ${actions}</section>`;
+  }
+  async function loadFinance(booking) {
+    const detail = surface.querySelector("[data-crm-detail]");
+    try {
+      const projection = await financeApi(booking.id);
+      detail.insertAdjacentHTML("beforeend", financeMarkup(projection));
+      bindFinanceActions(booking, projection);
+    } catch (error) {
+      if (error.status !== 404)
+        detail.insertAdjacentHTML("beforeend", '<section class="finance-panel"><h3>Finance follow-through</h3><p>Finance state is unavailable. Reopen this booking to retry.</p></section>');
+    }
+  }
+  function openFinanceClassification(booking, projection) {
+    const form = financeDialog.querySelector("form");
+    form.reset();
+    const finance = projection.finance || {};
+    for (const field of form.elements)
+      if (field.name && finance[field.name] !== undefined) field.value = finance[field.name];
+    const sync = () => form.querySelectorAll("[data-money]").forEach((field) => {
+      field.hidden = form.elements.invoiceRequirement.value === "not-required";
+    });
+    form.elements.invoiceRequirement.onchange = sync;
+    sync();
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      safe(async () => {
+        const body = Object.fromEntries([...new FormData(form)].filter(([, value]) => value !== ""));
+        body.expectedVersion = projection.finance?.version;
+        await financeMutation(booking, "", "PUT", body);
+        financeDialog.close();
+        await reopenBookingDetail(booking);
+      }, "Could not save finance classification");
+    };
+    financeDialog.showModal();
+  }
+  async function openFinanceCandidates(booking, projection, kind) {
+    const suffix = kind === "invoice" ? "/candidates/invoices" : "/candidates/payments";
+    const result = await financeApi(booking.id, `${suffix}?limit=25`);
+    let candidateItems = result.items;
+    let nextCursor = result.nextCursor;
+    const form = financeCandidateDialog.querySelector("form");
+    form.reset();
+    form.dataset.kind = kind;
+    form.querySelector("[data-title]").textContent = kind === "invoice" ? "Link an invoice" : "Link a payment";
+    form.querySelector("[data-invoice-dates]").hidden = kind !== "invoice";
+    const renderCandidates = () => {
+      form.querySelector("[data-candidates]").innerHTML = candidateItems.length
+        ? `${candidateItems.map((item, index) => `<label class="finance-candidate"><input type="radio" name="candidate" value="${index}" ${index === 0 ? "checked" : ""}><span>${kind === "invoice" ? `${escapeHtml(item.label)} · ${escapeHtml(item.uploadedAt)}` : `${escapeHtml(item.effectiveDate)} · ${escapeHtml(item.amount)} ${escapeHtml(item.currency)}`}</span></label>`).join("")}${nextCursor ? '<button type="button" data-finance-more>Load more eligible evidence</button>' : ""}`
+        : "<p>No eligible unclaimed evidence is available. Upload or import evidence in Bookkeeping, then retry.</p>";
+      form.querySelector('button.primary-button').disabled = candidateItems.length === 0;
+      form.querySelector("[data-finance-more]")?.addEventListener("click", () => safe(async () => {
+        const next = await financeApi(booking.id, `${suffix}?limit=25&cursor=${encodeURIComponent(nextCursor)}`);
+        candidateItems = [...candidateItems, ...next.items];
+        nextCursor = next.nextCursor;
+        renderCandidates();
+      }, "Could not load more finance evidence"));
+    };
+    renderCandidates();
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      safe(async () => {
+        const index = Number(new FormData(form).get("candidate"));
+        const candidate = candidateItems[index];
+        if (!candidate) throw new Error("Select eligible evidence");
+        const body = {
+          expectedVersion: projection.finance.version,
+          sourceId: candidate.id,
+          identityToken: candidate.identityToken,
+          ...(kind === "invoice" ? {
+            issuedOn: form.elements.issuedOn.value,
+            dueOn: form.elements.dueOn.value,
+          } : {}),
+        };
+        await financeMutation(booking, kind === "invoice" ? "/invoice" : "/payments", "POST", body);
+        financeCandidateDialog.close();
+        await reopenBookingDetail(booking);
+      }, `Could not link ${kind}`);
+    };
+    financeCandidateDialog.showModal();
+  }
+  function bindFinanceActions(booking, projection) {
+    const panel = surface.querySelector("[data-finance-panel]");
+    if (!panel) return;
+    panel.querySelector("[data-finance-classify]")?.addEventListener("click", () => openFinanceClassification(booking, projection));
+    panel.querySelector("[data-finance-request]")?.addEventListener("click", () => safe(async () => {
+      await financeMutation(booking, "/request", "POST", { expectedVersion: projection.finance.version });
+      await reopenBookingDetail(booking);
+    }, "Could not record invoice request"));
+    panel.querySelector("[data-finance-invoice]")?.addEventListener("click", () => safe(
+      () => openFinanceCandidates(booking, projection, "invoice"), "Could not load invoice candidates",
+    ));
+    panel.querySelector("[data-finance-payment]")?.addEventListener("click", () => safe(
+      () => openFinanceCandidates(booking, projection, "payment"), "Could not load payment candidates",
+    ));
+    panel.querySelector("[data-finance-reconcile]")?.addEventListener("click", () => safe(async () => {
+      await financeApi(booking.id, "/reconcile", { method: "POST", body: "{}" });
+      await reopenBookingDetail(booking);
+    }, "Could not reconcile finance evidence"));
+    panel.querySelector("[data-finance-download]")?.addEventListener("click", (event) => safe(async () => {
+      const result = await request(workApiUrl(`/api/bookkeeping/documents/${encodeURIComponent(event.currentTarget.dataset.financeDownload)}/download`));
+      const link = document.createElement("a");
+      link.href = result.downloadUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.click();
+    }, "Could not prepare the private invoice download"));
+    panel.querySelector("[data-finance-unlink-invoice]")?.addEventListener("click", (event) => safe(async () => {
+      if (!confirm("Unlink this invoice?")) return;
+      await financeMutation(booking, `/invoice/${encodeURIComponent(event.currentTarget.dataset.financeUnlinkInvoice)}`, "DELETE", { expectedVersion: projection.finance.version });
+      await reopenBookingDetail(booking);
+    }, "Could not unlink invoice"));
+    panel.querySelectorAll("[data-finance-unlink-payment]").forEach((button) => button.addEventListener("click", () => safe(async () => {
+      if (!confirm("Unlink this payment?")) return;
+      await financeMutation(booking, `/payments/${encodeURIComponent(button.dataset.financeUnlinkPayment)}`, "DELETE", { expectedVersion: projection.finance.version });
+      await reopenBookingDetail(booking);
+    }, "Could not unlink payment")));
+    panel.querySelector("[data-finance-void]")?.addEventListener("click", () => safe(async () => {
+      if (!confirm("Void finance follow-through for this booking?")) return;
+      await financeMutation(booking, "/void", "POST", { expectedVersion: projection.finance.version });
+      await reopenBookingDetail(booking);
+    }, "Could not void finance follow-through"));
+  }
+  async function reopenBookingDetail(booking) {
+    currentFinanceBooking = booking;
+    const history = await api(`/bookings/${booking.id}/history`);
+    const org = organizations.find((item) => item.id === booking.organizationId);
+    surface.querySelector("[data-crm-detail]").innerHTML =
+      `<article class="crm-card"><h3>Booking detail</h3><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+    await loadFinance(booking);
+  }
   function orgOptions() {
     surface.querySelector(
       '[data-booking-dialog] [name="organizationId"]',
@@ -1607,13 +1836,13 @@ async function renderSponsorCrmSurface() {
     contacts = results[1].items || [];
     bookings = results[2].items || [];
     const alerts = (results[3].notifications || []).filter(
-      (item) => item.metadata?.sponsorBookingId && !item.dismissed,
+      (item) => (item.metadata?.sponsorBookingId || item.metadata?.financeBookingId) && !item.dismissed,
     );
     surface.querySelector("[data-crm-alerts]").innerHTML = alerts.length
       ? alerts
           .map(
             (item) =>
-              `<article class="crm-card"><strong>${escapeHtml(item.message)}</strong><p>Due ${escapeHtml(item.dueAt || "now")}</p><button data-alert-booking="${escapeHtml(item.metadata.sponsorBookingId)}">Open booking</button></article>`,
+              `<article class="crm-card"><strong>${escapeHtml(item.message)}</strong><p>Due ${escapeHtml(item.dueAt || "now")}</p><button data-alert-booking="${escapeHtml(item.metadata.sponsorBookingId || item.metadata.financeBookingId)}">Open booking</button></article>`,
           )
           .join("")
       : "No active sponsor booking alerts.";
@@ -1672,17 +1901,19 @@ async function renderSponsorCrmSurface() {
     if (edit) openBooking(bookings.find((item) => item.id === edit));
     if (open)
       safe(async () => {
-        const booking = bookings.find((item) => item.id === open),
-          history = await api(`/bookings/${open}/history`),
-          org = organizations.find(
-            (item) => item.id === booking.organizationId,
-          );
-        surface.querySelector("[data-crm-detail]").innerHTML =
-          `<article class="crm-card"><h3>Booking detail</h3><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+        const booking = bookings.find((item) => item.id === open);
+        await reopenBookingDetail(booking);
       }, "Could not load booking history");
   };
-  for (const dialog of surface.querySelectorAll("dialog"))
-    dialog.querySelector('[value="cancel"]').onclick = () => dialog.close();
+  surface.querySelector("[data-crm-alerts]").onclick = (event) => {
+    const id = event.target.closest("[data-alert-booking]")?.dataset.alertBooking;
+    const booking = bookings.find((item) => item.id === id);
+    if (booking) safe(() => reopenBookingDetail(booking), "Could not load booking");
+  };
+  for (const dialog of surface.querySelectorAll("dialog")) {
+    const cancel = dialog.querySelector('[value="cancel"],[data-cancel]');
+    if (cancel) cancel.onclick = () => dialog.close();
+  }
   surface.querySelector("[data-org-save]").onclick = (event) => {
     event.preventDefault();
     const dialog = surface.querySelector("[data-org-dialog]"),

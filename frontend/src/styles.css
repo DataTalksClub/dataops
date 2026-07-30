@@ -5238,6 +5238,14 @@ body[data-view="create"] #back-button {
 .sponsor-crm-surface dialog form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
 .sponsor-crm-surface dialog h3,.sponsor-crm-surface dialog [role="alert"] { grid-column:1/-1; }
 .sponsor-crm-surface dialog label { display:grid;gap:5px;min-width:0; }.sponsor-crm-surface dialog input,.sponsor-crm-surface dialog select,.sponsor-crm-surface dialog textarea { width:100%;min-width:0;box-sizing:border-box; }
+.finance-panel { border:1px solid var(--border);border-radius:10px;padding:16px;display:grid;gap:12px;min-width:0; }
+.finance-panel>header,.finance-actions { display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap; }
+.finance-panel h3,.finance-panel p { margin:0; }.finance-panel header p,.finance-payments { color:var(--muted); }
+.finance-panel dl { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0; }
+.finance-panel dl div { min-width:0; }.finance-panel dt { color:var(--muted);font-size:11px;text-transform:uppercase; }
+.finance-panel dd { margin:3px 0 0;overflow-wrap:anywhere; }.finance-status { padding:3px 8px;border-radius:999px;background:var(--accent-soft); }
+.finance-candidate { display:flex!important;grid-column:1/-1;grid-template-columns:auto 1fr!important;align-items:center;gap:8px!important; }
+.finance-candidate input { width:auto!important; }
 @media(max-width:720px){.library-view:has(.sponsor-crm-surface){width:100%;min-width:0;padding:18px 14px;overflow-x:hidden}.crm-header,.crm-layout,.sponsor-crm-surface dialog form{display:grid;grid-template-columns:1fr}.crm-header>div:last-child{display:grid;gap:8px}}
 .document-list:has(.bookkeeping-surface) { width: 100%; max-width: none; min-width: 0; margin: 0; border-top: 0; }
 .bookkeeping-surface { display: grid; gap: 18px; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; padding: 8px 0 40px; }

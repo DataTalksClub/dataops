@@ -66,6 +66,10 @@ Parameters:
     Default: 50
     MinValue: 1
     MaxValue: 100
+  SponsorFinanceEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
   DataOpsEnvironment:
     Type: String
     Default: prod
@@ -1111,7 +1115,6 @@ Resources:
               - dynamodb:Query
               - dynamodb:Scan
               - dynamodb:UpdateItem
-              - dynamodb:TransactWriteItems
             Resource:
               - !GetAtt DataOpsTasksTable.Arn
               - !Sub ${DataOpsTasksTable.Arn}/index/*
@@ -1135,6 +1138,29 @@ Resources:
               - !Sub ${DataOpsCalendarTable.Arn}/index/*
               - !GetAtt DataOpsConversationalStateTable.Arn
               - !Sub ${DataOpsConversationalStateTable.Arn}/index/*
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:TransactGetItems
+            Resource:
+              - !GetAtt DataOpsBookkeepingTable.Arn
+              - !GetAtt DataOpsSponsorCrmTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:TransactWriteItems
+            Resource:
+              - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !GetAtt DataOpsBookkeepingTable.Arn
+              - !GetAtt DataOpsUsersTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:TransactWriteItems
+            Resource:
+              - !GetAtt DataOpsCalendarTable.Arn
+              - !GetAtt DataOpsConversationalStateTable.Arn
+              - !GetAtt DataOpsUsersTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -1221,6 +1247,7 @@ Resources:
           DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
           DATAOPS_BOOKKEEPING_TABLE: !Ref DataOpsBookkeepingTable
           DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
+          SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
           DATAOPS_NEWSLETTER_SLOTS_TABLE: !Ref DataOpsNewsletterSlotsTable
           DATAOPS_CALENDAR_TABLE: !Ref DataOpsCalendarTable
           DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable
