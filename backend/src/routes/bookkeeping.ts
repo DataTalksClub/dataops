@@ -45,6 +45,7 @@ import {
   removeRollbackDocument,
   renewDocumentPrepareLease,
   type BookkeepingItem,
+  updateBookkeepingTransaction,
 } from "../db/bookkeeping";
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -339,10 +340,15 @@ export async function handleBookkeepingRoutes(
       const item = await getBookkeepingItem(client, "bookkeeping", match[1]);
       return item ? json(200, item) : json(404, { error: "Not found" });
     }
-    if (method === "DELETE" && match[1])
-      return (await deleteBookkeepingItem(client, "bookkeeping", match[1]))
-        ? { statusCode: 204, headers: {}, body: "" }
-        : json(404, { error: "Not found" });
+    if (method === "DELETE" && match[1]) {
+      try {
+        return (await deleteBookkeepingItem(client, "bookkeeping", match[1]))
+          ? { statusCode: 204, headers: {}, body: "" }
+          : json(404, { error: "Not found" });
+      } catch {
+        return json(409, { error: "Transaction is locked or changed" });
+      }
+    }
     if ((method === "POST" && !match[1]) || (method === "PUT" && match[1])) {
       const body = parse(event.body || null);
       if (!body) return json(400, { error: "Invalid JSON" });
@@ -358,17 +364,19 @@ export async function handleBookkeepingRoutes(
       const errors = validateTransaction(value);
       if (errors.length)
         return json(400, { error: "Validation failed", fields: errors });
-      if (match[1])
-        await deleteBookkeepingItem(client, "bookkeeping", match[1]);
+      if (match[1]) {
+        try {
+          const updated = await updateBookkeepingTransaction(client, match[1], String(previous!.updatedAt), value);
+          return json(200, updated);
+        } catch {
+          return json(409, { error: "Transaction is locked or changed" });
+        }
+      }
       const result = await putBookkeepingItem(
-        client,
-        "bookkeeping",
-        value,
-        typeof value.sourceKey === "string"
-          ? `source#${value.sourceKey}`
-          : undefined,
+        client, "bookkeeping", value,
+        typeof value.sourceKey === "string" ? `source#${value.sourceKey}` : undefined,
       );
-      return json(match[1] ? 200 : 201, result.item);
+      return json(201, result.item);
     }
   }
   if (ingest && method === "POST") {

@@ -239,6 +239,39 @@ def test_dataops_table_outputs_are_available_for_backend_env_wiring():
         assert f"  {output}:" in template
 
 
+def test_sponsor_finance_is_default_off_and_uses_exact_transaction_resources():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert '  SponsorFinanceEnabled:\n    Type: String\n    Default: "false"' in template
+    assert "SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled" in backend
+    assert "SPONSOR_FINANCE_ENABLED: ${{ vars.SPONSOR_FINANCE_ENABLED }}" in workflow
+    assert ': "${SPONSOR_FINANCE_ENABLED:=false}"' in workflow
+    assert "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" in workflow
+
+    transact_get = """Action:
+              - dynamodb:TransactGetItems
+            Resource:
+              - !GetAtt DataOpsBookkeepingTable.Arn
+              - !GetAtt DataOpsSponsorCrmTable.Arn"""
+    finance_write = """Action:
+              - dynamodb:TransactWriteItems
+            Resource:
+              - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !GetAtt DataOpsBookkeepingTable.Arn
+              - !GetAtt DataOpsUsersTable.Arn"""
+    assert transact_get in backend
+    assert finance_write in backend
+
+    for logical_id in ["DataOpsSponsorCrmTable", "DataOpsBookkeepingTable"]:
+        block = _resource_block(template, logical_id)
+        assert "DeletionPolicy: Retain" in block
+        assert "UpdateReplacePolicy: Retain" in block
+        assert "SSESpecification: { SSEEnabled: true }" in block
+        assert "PointInTimeRecoveryEnabled: true" in block
+
+
 def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     template = TEMPLATE.read_text(encoding="utf-8")
     backend = _resource_block(template, "BackendFunction")

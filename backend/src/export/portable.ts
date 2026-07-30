@@ -31,6 +31,7 @@ interface EntitySpec {
   tableName: string;
   prefix?: string;
   recordType?: string;
+  filter?: (item: Record<string, unknown>) => boolean;
   map: (item: Record<string, unknown>) => JsonRecord;
   sortKey?: (record: JsonRecord) => string;
 }
@@ -87,7 +88,17 @@ type ExportEntityName =
 
 const SCHEMA_VERSION = 'dataops.execution.v1';
 const EXPORT_FORMAT_VERSION = 1;
-const OMITTED_ENTITIES = ['sessions', 'media_bytes', 'provider_credentials'];
+const OMITTED_ENTITIES = [
+  'sessions',
+  'media_bytes',
+  'provider_credentials',
+  'sponsor_finance_state',
+  'sponsor_finance_links',
+  'sponsor_finance_claims',
+  'sponsor_finance_history',
+  'sponsor_finance_receipts',
+  'sponsor_finance_alerts',
+];
 const REDACTIONS = [
   'users.password_hash',
   'sessions',
@@ -206,6 +217,10 @@ const ENTITY_SPECS: EntitySpec[] = [
     filename: 'notifications.jsonl',
     tableName: TABLE_NOTIFICATIONS,
     prefix: 'NOTIFICATION#',
+    filter: (item) => (
+      item.type !== 'sponsor-finance'
+      && !(item.metadata as Record<string, unknown> | undefined)?.financeFingerprint
+    ),
     map: mapNotification,
   },
   ...(CONVERSATIONAL_ENTITY_SPECS as EntitySpec[]),
@@ -575,8 +590,11 @@ async function writePortableExport(
     const generatedAt = options.generatedAt || new Date().toISOString();
     const records = rawItems
       .filter((item) => (
-        typeof item.expiresAt !== 'string'
-        || Date.parse(item.expiresAt) > Date.parse(generatedAt)
+        (!spec.filter || spec.filter(item))
+        && (
+          typeof item.expiresAt !== 'string'
+          || Date.parse(item.expiresAt) > Date.parse(generatedAt)
+        )
       ))
       .map(spec.map).sort((a, b) => {
         const left = spec.sortKey ? spec.sortKey(a) : (Object.values(a)[0] || '');

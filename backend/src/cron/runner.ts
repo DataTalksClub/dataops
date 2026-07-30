@@ -6,6 +6,8 @@ import { createNotification } from '../db/notifications';
 import { generateRecurringTasks, cronMatchesDate } from '../db/recurring';
 import type { Template, Bundle } from '../types';
 import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
+import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
+import { berlinDate } from '../sponsorFinance/core';
 
 export interface CronRunnerResult {
   created: string[];
@@ -40,7 +42,7 @@ function formatAnchorDate(dateStr: string): string {
  */
 async function runCron(client: DynamoDBDocumentClient, now?: Date): Promise<CronRunnerResult> {
   const today = now || new Date();
-  const todayDate = today.toISOString().split('T')[0];
+  const todayDate = berlinDate(today);
 
   // 1. List all templates and filter to automatic triggers
   const allTemplates = await listTemplates(client);
@@ -60,6 +62,7 @@ async function runCron(client: DynamoDBDocumentClient, now?: Date): Promise<Cron
 
   try {
     await evaluateSponsorBookingAlerts(client, todayDate);
+    await evaluateSponsorFinanceAlerts(client, todayDate);
   } catch (err: unknown) {
     failures++;
     await createNotification(client, { type: 'automation-failure', message: `Sponsor booking alert evaluation failed for ${todayDate}`, dueAt: todayDate });
@@ -104,7 +107,7 @@ async function runCron(client: DynamoDBDocumentClient, now?: Date): Promise<Cron
 
       // 4. Calculate anchor date: today + triggerLeadDays
       const leadDays = template.triggerLeadDays || 0;
-      const anchorDateObj = new Date(today);
+      const anchorDateObj = new Date(`${todayDate}T12:00:00.000Z`);
       anchorDateObj.setUTCDate(anchorDateObj.getUTCDate() + leadDays);
       const anchorDate = anchorDateObj.toISOString().split('T')[0];
 
