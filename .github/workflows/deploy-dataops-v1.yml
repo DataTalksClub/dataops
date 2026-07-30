@@ -132,6 +132,12 @@ jobs:
       TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS: ${{ vars.TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS }}
       TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES: ${{ vars.TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES }}
       TELEGRAM_MEDIA_MAX_TEXT_BYTES: ${{ vars.TELEGRAM_MEDIA_MAX_TEXT_BYTES }}
+      SPONSOR_COMMUNICATION_SEND_ENABLED: ${{ vars.SPONSOR_COMMUNICATION_SEND_ENABLED }}
+      SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: ${{ vars.SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN }}
+      SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: ${{ vars.SPONSOR_COMMUNICATION_HMAC_SECRET_ARN }}
+      SPONSOR_SES_IDENTITY_ARN: ${{ vars.SPONSOR_SES_IDENTITY_ARN }}
+      SPONSOR_SES_FROM_ADDRESS: ${{ vars.SPONSOR_SES_FROM_ADDRESS }}
+      SPONSOR_SES_CONFIGURATION_SET_NAME: ${{ vars.SPONSOR_SES_CONFIGURATION_SET_NAME }}
 
     steps:
       - name: Check out repository
@@ -193,6 +199,10 @@ jobs:
           : "${TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS:=18000}"
           : "${TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES:=65536}"
           : "${TELEGRAM_MEDIA_MAX_TEXT_BYTES:=16384}"
+          : "${SPONSOR_COMMUNICATION_SEND_ENABLED:=false}"
+          : "${SPONSOR_SES_IDENTITY_ARN:=arn:aws:ses:eu-west-1:000000000000:identity/example.invalid}"
+          : "${SPONSOR_SES_FROM_ADDRESS:=no-reply@example.invalid}"
+          : "${SPONSOR_SES_CONFIGURATION_SET_NAME:=dataops-sponsor-reviewed-send-disabled}"
           if [ "$CONVERSATIONAL_AGENT_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
             echo "Conversational agent cannot be enabled without its z.ai secret ARN" >&2
             exit 1
@@ -203,6 +213,10 @@ jobs:
           fi
           if [ "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_ENABLED" != "true" ] || [ -z "$ZAI_VISION_API_KEY_SECRET_ARN" ]; }; then
             echo "Telegram photo requires the global adapter and z.ai vision secret ARN" >&2
+            exit 1
+          fi
+          if [ "$SPONSOR_COMMUNICATION_SEND_ENABLED" = "true" ] && { [ -z "$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" ] || [ -z "$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" ]; }; then
+            echo "Sponsor reviewed sending cannot be enabled without separate template and HMAC secret ARNs" >&2
             exit 1
           fi
           sam deploy \
@@ -246,7 +260,13 @@ jobs:
               "ParameterKey=TelegramMediaDownloadTimeoutMs,ParameterValue=$TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS" \
               "ParameterKey=TelegramMediaProviderTimeoutMs,ParameterValue=$TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS" \
               "ParameterKey=TelegramMediaProviderMaxResponseBytes,ParameterValue=$TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES" \
-              "ParameterKey=TelegramMediaMaxTextBytes,ParameterValue=$TELEGRAM_MEDIA_MAX_TEXT_BYTES"
+              "ParameterKey=TelegramMediaMaxTextBytes,ParameterValue=$TELEGRAM_MEDIA_MAX_TEXT_BYTES" \
+              "ParameterKey=SponsorCommunicationSendEnabled,ParameterValue=$SPONSOR_COMMUNICATION_SEND_ENABLED" \
+              "ParameterKey=SponsorCommunicationTemplateSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" \
+              "ParameterKey=SponsorCommunicationHmacSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" \
+              "ParameterKey=SponsorSesIdentityArn,ParameterValue=$SPONSOR_SES_IDENTITY_ARN" \
+              "ParameterKey=SponsorSesFromAddress,ParameterValue=$SPONSOR_SES_FROM_ADDRESS" \
+              "ParameterKey=SponsorSesConfigurationSetName,ParameterValue=$SPONSOR_SES_CONFIGURATION_SET_NAME"
 
       - name: Seed runtime users, workflow templates, and recurring configs
         working-directory: ${{ github.workspace }}/backend

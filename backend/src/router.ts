@@ -24,6 +24,7 @@ import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleMailingExportRoutes } from './routes/mailingExports';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
+import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleConversationalExecutionRoutes } from './routes/conversationalExecution';
@@ -747,6 +748,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     if (reqPath.startsWith('/api/sponsor-crm')) {
+      if (isSponsorCommunicationRoute(reqPath)) {
+        return await handleSponsorCommunicationRoutes(reqPath, method, event, client);
+      }
       const finance = await handleSponsorFinanceRoutes(reqPath, method, event, client);
       if (finance) return finance;
       return await handleSponsorCrmRoutes(reqPath, method, event, client);
@@ -1325,6 +1329,52 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     console.error('Unexpected error:', err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
+}
+
+export function isSponsorCommunicationRoute(pathname: string): boolean {
+  const prefix = '/api/sponsor-crm/';
+  if (!pathname.startsWith(prefix)) return false;
+  const segments = pathname.slice(prefix.length).split('/');
+  if (segments.some((segment) => segment.length === 0)) return false;
+
+  const [family] = segments;
+  if (family === 'bookings') {
+    return segments.length === 3 && segments[2] === 'communications';
+  }
+  if (family === 'communication-suggestions') {
+    return segments.length === 3 && segments[2] === 'drafts';
+  }
+  if (family === 'contacts') {
+    return segments.length === 3 && segments[2] === 'suppressions';
+  }
+  if (family !== 'communications') return false;
+
+  if (
+    segments.length === 2
+    && (segments[1] === 'config' || segments[1] === 'evaluate')
+  ) return true;
+  if (
+    segments[1] === 'suppressions'
+    && (
+      (segments.length === 3
+        && (segments[2] === 'migrate' || segments[2] === 'orphans'))
+      || (segments.length === 5
+        && segments[2] === 'orphans'
+        && segments[4] === 'reconcile')
+    )
+  ) return true;
+  if (
+    segments[1] === 'attempts'
+    && segments.length === 4
+    && (segments[3] === 'cancel' || segments[3] === 'reconcile')
+  ) return true;
+  return (
+    (segments.length === 3
+      && (segments[2] === 'presentations' || segments[2] === 'approve'))
+    || (segments.length === 5
+      && segments[2] === 'presentations'
+      && segments[4] === 'reject')
+  );
 }
 
 export { route };

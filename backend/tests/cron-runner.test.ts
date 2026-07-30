@@ -401,4 +401,63 @@ describe('Cron runner', () => {
     assert.ok(bundle);
     assert.strictEqual(bundle.anchorDate, '2026-06-15'); // Same day as cron fire
   });
+
+  for (const failing of [
+    {
+      key: 'bookingAlerts' as const,
+      name: 'sponsor booking alerts',
+      date: new Date('2044-02-01T09:00:00Z'),
+    },
+    {
+      key: 'financeAlerts' as const,
+      name: 'sponsor finance alerts',
+      date: new Date('2044-02-02T09:00:00Z'),
+    },
+    {
+      key: 'communicationSuggestions' as const,
+      name: 'sponsor communication suggestions',
+      date: new Date('2044-02-03T09:00:00Z'),
+    },
+  ]) {
+    it(`isolates a failure in ${failing.name} and still runs the other evaluators`, async () => {
+      const calls: string[] = [];
+      const logs: string[] = [];
+      const originalError = console.error;
+      console.error = (...values: unknown[]) => logs.push(values.map(String).join(' '));
+      try {
+        const evaluators = {
+          bookingAlerts: async () => { calls.push('bookingAlerts'); },
+          financeAlerts: async () => { calls.push('financeAlerts'); },
+          communicationSuggestions: async () => { calls.push('communicationSuggestions'); },
+        };
+        evaluators[failing.key] = async () => {
+          calls.push(failing.key);
+          throw new Error('injected evaluator failure');
+        };
+
+        const result = await runCron(client, failing.date, evaluators);
+
+        assert.deepEqual(calls, [
+          'bookingAlerts',
+          'financeAlerts',
+          'communicationSuggestions',
+        ]);
+        assert.equal(result.failures, 1);
+        assert.ok(
+          logs.includes(`Sponsor automation evaluator failed: ${failing.name}`),
+          `missing exact evaluator log for ${failing.name}`,
+        );
+        const notifications = await listUndismissedNotifications(client);
+        assert.ok(
+          notifications.some((notification) =>
+            notification.type === 'automation-failure'
+            && notification.message ===
+              `Sponsor automation evaluator failed: ${failing.name} for ${failing.date.toISOString().slice(0, 10)}`),
+          `missing exact evaluator notification for ${failing.name}`,
+        );
+      } finally {
+        console.error = originalError;
+      }
+    });
+  }
 });

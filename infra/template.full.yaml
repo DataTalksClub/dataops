@@ -248,6 +248,34 @@ Parameters:
     Default: 16384
     MinValue: 1
     MaxValue: 16384
+  SponsorCommunicationSendEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Deployment kill switch. Keep false until every human release gate passes.
+  SponsorCommunicationTemplateSecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
+  SponsorCommunicationHmacSecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
+  SponsorSesIdentityArn:
+    Type: String
+    Default: "arn:aws:ses:eu-west-1:000000000000:identity/example.invalid"
+    AllowedPattern: "^arn:[a-z0-9-]+:ses:[a-z0-9-]+:[0-9]{12}:identity/.+$"
+  SponsorSesFromAddress:
+    Type: String
+    Default: no-reply@example.invalid
+  SponsorSesConfigurationSetName:
+    Type: String
+    Default: dataops-sponsor-reviewed-send-disabled
+    AllowedPattern: "^[A-Za-z0-9_-]{1,64}$"
+  SponsorCommunicationPrivateArchivePrefix:
+    Type: String
+    Default: sponsor-communications
+    AllowedPattern: "^[A-Za-z0-9_.\\/-]+$"
 Rules:
   ConversationalAgentRequiresZaiSecret:
     Assertions:
@@ -271,12 +299,23 @@ Rules:
               - !Equals [!Ref ConversationalTelegramEnabled, "true"]
               - !Not [!Equals [!Ref ZaiVisionApiKeySecretArn, ""]]
         AssertDescription: Telegram photo requires the global adapter and z.ai vision secret ARN
+  SponsorSendRequiresPrivateConfiguration:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref SponsorCommunicationSendEnabled, "false"]
+          - !And
+              - !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
+              - !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
+        AssertDescription: Sponsor sending requires separate pre-created template and HMAC secret ARNs
 Conditions:
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
   HasZaiConversationalSecret: !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
   HasGroqTranscriptionSecret: !Not [!Equals [!Ref GroqTranscriptionApiKeySecretArn, ""]]
   HasZaiVisionSecret: !Not [!Equals [!Ref ZaiVisionApiKeySecretArn, ""]]
+  HasSponsorTemplateSecret: !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
+  HasSponsorHmacSecret: !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
+  SponsorCommunicationSendingEnabled: !Equals [!Ref SponsorCommunicationSendEnabled, "true"]
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -381,12 +420,43 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
         - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+        - { AttributeName: GSI2PK, AttributeType: S }
+        - { AttributeName: GSI2SK, AttributeType: S }
+        - { AttributeName: GSI3PK, AttributeType: S }
+        - { AttributeName: GSI3SK, AttributeType: S }
+        - { AttributeName: GSI4PK, AttributeType: S }
+        - { AttributeName: GSI4SK, AttributeType: S }
       KeySchema:
         - { AttributeName: PK, KeyType: HASH }
         - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Communication
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: GSI-SponsorSendDue
+          KeySchema:
+            - { AttributeName: GSI2PK, KeyType: HASH }
+            - { AttributeName: GSI2SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: GSI-SponsorSendLookup
+          KeySchema:
+            - { AttributeName: GSI3PK, KeyType: HASH }
+            - { AttributeName: GSI3SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: GSI-SponsorBookingCommunication
+          KeySchema:
+            - { AttributeName: GSI4PK, KeyType: HASH }
+            - { AttributeName: GSI4SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
 
   DataOpsBookkeepingTable:
     Type: AWS::DynamoDB::Table
@@ -1095,6 +1165,254 @@ Resources:
             Enabled: true
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}'
 
+  SponsorCommunicationFailureQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: SanitizedSponsorCommunicationFailure }
+
+  SponsorCommunicationPrivateArchiveKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
+            Action: "kms:*"
+            Resource: "*"
+
+  SponsorCommunicationPrivateArchiveBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: aws:kms, KMSMasterKeyID: !GetAtt SponsorCommunicationPrivateArchiveKey.Arn }
+            BucketKeyEnabled: true
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainPrivateSponsorCommunicationArchives
+            Status: Enabled
+            Prefix: !Sub ${SponsorCommunicationPrivateArchivePrefix}/
+            NoncurrentVersionExpirationInDays: 365
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateSponsorCommunicationArchive }
+
+  SponsorSesConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Ref SponsorSesConfigurationSetName
+      SendingOptions:
+        SendingEnabled: !If [SponsorCommunicationSendingEnabled, true, false]
+
+  SponsorSesEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref SponsorSesConfigurationSet
+      EventDestination:
+        Enabled: true
+        MatchingEventTypes: [SEND, DELIVERY, DELIVERY_DELAY, REJECT, RENDERING_FAILURE, BOUNCE, COMPLAINT]
+        EventBridgeDestination:
+          EventBusArn: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default
+
+  SponsorSendWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata: { BuildMethod: makefile }
+    Properties:
+      CodeUri: ..
+      Runtime: nodejs24.x
+      Handler: dist/sponsor-send-worker-handler.handler
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
+          DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
+          SPONSOR_COMMUNICATION_SEND_ENABLED: !Ref SponsorCommunicationSendEnabled
+          SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
+          SPONSOR_SEND_TIMEOUT_MS: "8000"
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:TransactWriteItems]
+            Resource:
+              - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-Communication
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendDue
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendLookup
+        - Statement:
+            Effect: Allow
+            Action: dynamodb:GetItem
+            Resource: !GetAtt DataOpsUsersTable.Arn
+        - !If
+          - HasSponsorHmacSecret
+          - Statement:
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref SponsorCommunicationHmacSecretArn
+          - !Ref AWS::NoValue
+        - Statement:
+            Effect: Allow
+            Action: ses:SendEmail
+            Resource: !Ref SponsorSesIdentityArn
+            Condition:
+              StringEquals:
+                ses:FromAddress: !Ref SponsorSesFromAddress
+                ses:ConfigurationSet: !Ref SponsorSesConfigurationSet
+        - Statement:
+            Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt SponsorCommunicationFailureQueue.Arn
+      Events:
+        QueuedSponsorSend:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt DataOpsSponsorCrmTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 1
+            MaximumRetryAttempts: 2
+            BisectBatchOnFunctionError: true
+            DestinationConfig:
+              OnFailure:
+                Type: SQS
+                Destination: !GetAtt SponsorCommunicationFailureQueue.Arn
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"eventName":["INSERT","MODIFY"],"dynamodb":{"NewImage":{"recordType":{"S":["sponsor-send-attempt"]},"status":{"S":["queued"]},"recoveryBlocked":{"BOOL":[false]}}}}'
+        SponsorSendRecovery:
+          Type: Schedule
+          Properties:
+            Description: Recover only indexed pre-dispatch sponsor send work.
+            Schedule: rate(2 minutes)
+            Enabled: true
+            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"sponsor-send-recovery"}}'
+
+  SponsorSesEventFunction:
+    Type: AWS::Serverless::Function
+    Metadata: { BuildMethod: makefile }
+    Properties:
+      CodeUri: ..
+      Runtime: nodejs24.x
+      Handler: dist/sponsor-ses-event-handler.handler
+      Timeout: 20
+      MemorySize: 512
+      Environment:
+        Variables:
+          DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
+          SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt SponsorCommunicationFailureQueue.Arn
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:UpdateItem, dynamodb:TransactWriteItems]
+            Resource:
+              - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendLookup
+        - !If
+          - HasSponsorHmacSecret
+          - Statement:
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref SponsorCommunicationHmacSecretArn
+          - !Ref AWS::NoValue
+        - Statement:
+            Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt SponsorCommunicationFailureQueue.Arn
+
+  SponsorSesEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Project only opaque SES facts before sponsor event Lambda invocation.
+      EventPattern:
+        source: [aws.ses]
+        account: [!Ref AWS::AccountId]
+        region: [!Ref AWS::Region]
+        detail-type: [Email Sent, Email Delivered, Email Bounced, Email Complaint Received, Email Rejected, Email Delivery Delayed, Email Rendering Failed]
+        detail:
+          mail:
+            tags:
+              ses:configuration-set:
+                - !Ref SponsorSesConfigurationSet
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt SponsorSesEventFunction.Arn
+          Id: SanitizedSponsorSesEvent
+          RetryPolicy: { MaximumEventAgeInSeconds: 3600, MaximumRetryAttempts: 2 }
+          InputTransformer:
+            InputPathsMap:
+              eventId: "$.id"
+              eventTime: "$.time"
+              eventType: "$.detail.eventType"
+              messageId: "$.detail.mail.messageId"
+              awsAccount: "$.account"
+              awsRegion: "$.region"
+              configurationSet: "$.detail.mail.tags['ses:configuration-set'][0]"
+              configurationSetGeneration: "$.detail.mail.tags['configuration-set-generation'][0]"
+              attemptCorrelation: "$.detail.mail.tags.attempt[0]"
+              communicationId: "$.detail.mail.tags.communication[0]"
+              configGeneration: "$.detail.mail.tags['config-generation'][0]"
+            InputTemplate: '{"schemaVersion":"1","eventId":<eventId>,"eventTime":<eventTime>,"eventType":<eventType>,"messageId":<messageId>,"awsAccount":<awsAccount>,"awsRegion":<awsRegion>,"configurationSet":<configurationSet>,"configurationSetGeneration":<configurationSetGeneration>,"attemptCorrelation":<attemptCorrelation>,"communicationId":<communicationId>,"configGeneration":<configGeneration>}'
+
+  SponsorSesEventInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SponsorSesEventFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SponsorSesEventRule.Arn
+
+  SponsorPrivateArchiveFunction:
+    Type: AWS::Serverless::Function
+    Metadata: { BuildMethod: makefile }
+    Properties:
+      CodeUri: ..
+      Runtime: nodejs24.x
+      Handler: dist/sponsor-private-archive-handler.handler
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
+          SPONSOR_COMMUNICATION_PRIVATE_ARCHIVE_BUCKET: !Ref SponsorCommunicationPrivateArchiveBucket
+          SPONSOR_COMMUNICATION_PRIVATE_ARCHIVE_PREFIX: !Ref SponsorCommunicationPrivateArchivePrefix
+          SPONSOR_COMMUNICATION_PRIVATE_ARCHIVE_KMS_KEY: !GetAtt SponsorCommunicationPrivateArchiveKey.Arn
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action: [dynamodb:GetItem, dynamodb:Scan]
+            Resource: !GetAtt DataOpsSponsorCrmTable.Arn
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+            Resource: !Sub ${SponsorCommunicationPrivateArchiveBucket.Arn}/${SponsorCommunicationPrivateArchivePrefix}/*
+        - Statement:
+            Effect: Allow
+            Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
+            Resource: !GetAtt SponsorCommunicationPrivateArchiveKey.Arn
+
   BackendFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -1132,6 +1450,10 @@ Resources:
               - !GetAtt DataOpsSessionsTable.Arn
               - !GetAtt DataOpsBookkeepingTable.Arn
               - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-Communication
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendDue
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendLookup
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorBookingCommunication
               - !GetAtt DataOpsNewsletterSlotsTable.Arn
               - !Sub ${DataOpsNewsletterSlotsTable.Arn}/index/*
               - !GetAtt DataOpsCalendarTable.Arn
@@ -1183,6 +1505,14 @@ Resources:
               - !If
                 - HasZaiVisionSecret
                 - !Ref ZaiVisionApiKeySecretArn
+                - !Ref AWS::NoValue
+              - !If
+                - HasSponsorTemplateSecret
+                - !Ref SponsorCommunicationTemplateSecretArn
+                - !Ref AWS::NoValue
+              - !If
+                - HasSponsorHmacSecret
+                - !Ref SponsorCommunicationHmacSecretArn
                 - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
@@ -1311,6 +1641,9 @@ Resources:
           TELEGRAM_MEDIA_MAX_TEXT_BYTES: !Ref TelegramMediaMaxTextBytes
           CONVERSATIONAL_PRESENTATION_TTL_SECONDS: !Ref ConversationalPresentationTtlSeconds
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
+          SPONSOR_COMMUNICATION_SEND_ENABLED: !Ref SponsorCommunicationSendEnabled
+          SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: !Ref SponsorCommunicationTemplateSecretArn
+          SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -1349,6 +1682,14 @@ Resources:
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
 
 Outputs:
+  SponsorSendWorkerFunctionName:
+    Value: !Ref SponsorSendWorkerFunction
+  SponsorSesEventFunctionName:
+    Value: !Ref SponsorSesEventFunction
+  SponsorCommunicationFailureQueueArn:
+    Value: !GetAtt SponsorCommunicationFailureQueue.Arn
+  SponsorCommunicationPrivateArchiveBucketName:
+    Value: !Ref SponsorCommunicationPrivateArchiveBucket
   ConversationalExecutionWorkerFunctionName:
     Value: !Ref ConversationalExecutionWorkerFunction
   ConversationalExecutionFailureQueueArn:

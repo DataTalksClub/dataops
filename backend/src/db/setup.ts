@@ -83,7 +83,24 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
     {
       TableName: TABLE_SPONSOR_CRM,
       KeySchema: [{ AttributeName: 'PK', KeyType: 'HASH' as const }, { AttributeName: 'SK', KeyType: 'RANGE' as const }],
-      AttributeDefinitions: [{ AttributeName: 'PK', AttributeType: 'S' as const }, { AttributeName: 'SK', AttributeType: 'S' as const }],
+      AttributeDefinitions: [
+        { AttributeName: 'PK', AttributeType: 'S' as const },
+        { AttributeName: 'SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI1PK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI1SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI2PK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI2SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI3PK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI3SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI4PK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI4SK', AttributeType: 'S' as const },
+      ],
+      GlobalSecondaryIndexes: [
+        { IndexName: 'GSI-Communication', KeySchema: [{ AttributeName: 'GSI1PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI1SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
+        { IndexName: 'GSI-SponsorSendDue', KeySchema: [{ AttributeName: 'GSI2PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI2SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
+        { IndexName: 'GSI-SponsorSendLookup', KeySchema: [{ AttributeName: 'GSI3PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI3SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
+        { IndexName: 'GSI-SponsorBookingCommunication', KeySchema: [{ AttributeName: 'GSI4PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI4SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
+      ],
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
     {
