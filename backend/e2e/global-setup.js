@@ -6,6 +6,16 @@ const fs = require('fs');
 const TEST_SERVER_PORT = 3001;
 const READY_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 300;
+const READY_PATH = '/api/health';
+
+const DARK_ROLLOUT_ENVIRONMENT = Object.freeze({
+  CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
+  CONVERSATIONAL_EXECUTION_ENABLED: 'false',
+  CONVERSATIONAL_ENABLED_PLUGINS: 'none',
+  CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
+  CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
+  CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
+});
 
 const AUTH_STATE_PATH = path.join(__dirname, '.auth-state.json');
 const GRACE_USER = {
@@ -33,35 +43,97 @@ function writeDefaultAuthState() {
   );
 }
 
+function buildTestServerEnvironment(parentEnvironment = process.env) {
+  return {
+    ...parentEnvironment,
+    NODE_ENV: 'test',
+    IS_LOCAL: 'true',
+    SKIP_AUTH: 'true',
+    PORT: String(TEST_SERVER_PORT),
+    ...DARK_ROLLOUT_ENVIRONMENT,
+  };
+}
+
 /**
- * Poll the test server until it responds or timeout is reached.
+ * Poll the health endpoint until it returns HTTP 200 or timeout is reached.
+ * Diagnostics intentionally include no response body or request details.
  */
-function waitForServer(port, timeoutMs) {
+function waitForServer(port, timeoutMs, options = {}) {
+  const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+  const requestTimeoutMs = options.requestTimeoutMs ?? 1000;
+
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
+    let settled = false;
+    let retryTimer;
+    let lastProbe = 'no response';
+    let lastNonTimeoutProbe;
+
+    function fail() {
+      if (settled) return;
+      settled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      const diagnosticLabel = lastNonTimeoutProbe === undefined
+        ? 'last probe'
+        : 'last non-timeout probe';
+      reject(new Error(
+        `Test server on port ${port} did not return HTTP 200 from ${READY_PATH} `
+        + `within ${timeoutMs}ms (${diagnosticLabel}: ${lastNonTimeoutProbe ?? lastProbe})`
+      ));
+    }
+
+    function retry() {
+      if (settled) return;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        fail();
+        return;
+      }
+      retryTimer = setTimeout(poll, Math.min(pollIntervalMs, remainingMs));
+    }
 
     function poll() {
+      if (Date.now() >= deadline) {
+        fail();
+        return;
+      }
+
+      let completed = false;
       const req = http.get(
-        `http://localhost:${port}/api/tasks?date=2000-01-01`,
+        `http://localhost:${port}${READY_PATH}`,
         (res) => {
+          if (completed || settled) {
+            res.resume();
+            return;
+          }
+          completed = true;
           res.resume(); // discard body
-          resolve();
+          if (res.statusCode === 200) {
+            settled = true;
+            resolve();
+            return;
+          }
+          lastProbe = `HTTP ${res.statusCode ?? 'unknown'}`;
+          lastNonTimeoutProbe = lastProbe;
+          retry();
         }
       );
-      req.on('error', () => {
-        if (Date.now() >= deadline) {
-          reject(new Error(`Test server on port ${port} did not start within ${timeoutMs}ms`));
-          return;
-        }
-        setTimeout(poll, POLL_INTERVAL_MS);
+      req.on('error', (error) => {
+        if (completed || settled) return;
+        completed = true;
+        const code = typeof error.code === 'string' && /^[A-Z0-9_]+$/.test(error.code)
+          ? error.code
+          : 'connection_error';
+        lastProbe = code;
+        lastNonTimeoutProbe = lastProbe;
+        retry();
       });
-      req.setTimeout(1000, () => {
+      req.setTimeout(Math.min(requestTimeoutMs, Math.max(1, deadline - Date.now())), () => {
+        if (completed || settled) return;
+        completed = true;
+        lastProbe = 'request_timeout';
         req.destroy();
-        if (Date.now() >= deadline) {
-          reject(new Error(`Test server on port ${port} did not start within ${timeoutMs}ms`));
-          return;
-        }
-        setTimeout(poll, POLL_INTERVAL_MS);
+        retry();
       });
     }
 
@@ -69,8 +141,12 @@ function waitForServer(port, timeoutMs) {
   });
 }
 
-module.exports = async function globalSetup() {
+async function globalSetup() {
   const serverScript = path.join(__dirname, '..', 'scripts', 'test-server.ts');
+
+  // Playwright specs also launch isolated test-server children. Keep every
+  // process in this test-only tree on the same explicit dark rollout state.
+  Object.assign(process.env, DARK_ROLLOUT_ENVIRONMENT);
 
   // Use detached: true so the child runs in its own process group.
   // This lets us kill the entire group (parent tsx + child node) cleanly.
@@ -78,13 +154,7 @@ module.exports = async function globalSetup() {
     'npx',
     ['tsx', serverScript],
     {
-      env: {
-        ...process.env,
-        NODE_ENV: 'test',
-        IS_LOCAL: 'true',
-        SKIP_AUTH: 'true',
-        PORT: String(TEST_SERVER_PORT),
-      },
+      env: buildTestServerEnvironment(),
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
     }
@@ -116,4 +186,8 @@ module.exports = async function globalSetup() {
   // the shared browser storage state for unrelated UI tests.
   writeDefaultAuthState();
   console.log('[global-setup] Auth state saved with test bypass token for Grace');
-};
+}
+
+module.exports = globalSetup;
+module.exports.buildTestServerEnvironment = buildTestServerEnvironment;
+module.exports.waitForServer = waitForServer;
