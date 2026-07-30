@@ -25,6 +25,7 @@
     "bookkeeping:import": "tsx scripts/import-bookkeeping.ts",
     "bookkeeping:documents:import": "tsx scripts/import-bookkeeping-documents.ts",
     "calendar:import": "tsx scripts/import-calendar.ts",
+    "sponsor-crm:migrate": "tsx scripts/migrate-sponsor-crm.ts",
     "restore:drill": "tsx scripts/restore-drill.ts",
     "cron": "IS_LOCAL=true tsx scripts/cron-runner.ts",
     "build:search-index": "tsx scripts/build-search-index.ts",

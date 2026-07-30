@@ -11,6 +11,7 @@ import {
   updateNewsletterSlot,
   type NewsletterSlot,
 } from "../db/newsletterSlots";
+import { storageSnapshotDigest } from "../db/boundedPagination";
 import { createHash } from "crypto";
 import { getCrmRecord } from "../db/sponsorCrm";
 import { getBundle } from "../db/bundles";
@@ -245,6 +246,17 @@ export async function handleNewsletterSlotRoutes(
           !item.bookedByDisplayName &&
           !item.sponsorBookingId,
       );
+    if (query.migrationSnapshot) {
+      if (query.migrationSnapshot !== "true")
+        return json(400, { error: "Invalid migration snapshot mode" });
+      // Authenticated, side-effect-free read seam for the one-time historical
+      // migration. The normal list route maintains alert occurrences below.
+      return json(200, {
+        items,
+        complete: true,
+        snapshotDigest: storageSnapshotDigest(items),
+      });
+    }
     if (projection)
       return json(200, {
         items: items.map((item) => ({
