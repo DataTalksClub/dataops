@@ -104,6 +104,28 @@ def test_conversational_state_table_is_retained_private_stream_ready_state():
     assert "DynamoDBEvent" not in table
 
 
+def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert "ConversationalAgentEnabled:" in template
+    assert 'Default: "false"' in template
+    assert "ZaiConversationalApiKeySecretArn:" in template
+    assert "Default: \"\"" in template
+    assert "ConversationalAgentRequiresZaiSecret:" in template
+    assert "HasZaiConversationalSecret:" in template
+    assert "CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled" in backend
+    assert "ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn" in backend
+    assert "- !Ref ZaiConversationalApiKeySecretArn" in backend
+    assert "secret:${ZaiConversationalApiKeySecretArn}" not in backend
+    assert "apiKey" not in backend
+    assert "ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}" in workflow
+    assert "Conversational agent cannot be enabled without its z.ai secret ARN" in workflow
+    assert "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" in workflow
+    assert "aws secretsmanager get-secret-value" not in workflow
+
+
 def test_dataops_table_outputs_are_available_for_backend_env_wiring():
     template = TEMPLATE.read_text(encoding="utf-8")
     expected_outputs = [

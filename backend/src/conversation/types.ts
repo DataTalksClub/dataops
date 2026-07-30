@@ -7,6 +7,8 @@ const MAX_PRIVATE_TEXT_BYTES = 32_768;
 const MAX_JSON_BYTES = 65_536;
 const SECRET_FIELD = /(authorization|cookie|credential|password|secret|api[_-]?key|raw[_-]?token|access[_-]?token|signed[_-]?url)/i;
 const SIGNED_VALUE = /(X-Amz-(?:Signature|Credential|Security-Token)=|[?&](?:access_token|token|password|secret|credential|api[_-]?key)=)/i;
+const CONTEXT_BODY_FIELD = /^(system|messages?|prompt|completion|body|content|text)$/i;
+const CONTEXT_SECRET_VALUE = /(?:bearer\s+\S+|arn:[a-z0-9-]+:secretsmanager:[^\s,}"']+|(?:api[_-]?key|secret|token|password|credential|cookie|authorization)\s*[:=]\s*\S+)/i;
 
 type RecordType =
   | 'identity_binding'
@@ -19,7 +21,9 @@ type RecordType =
   | 'proposal_presentation'
   | 'execution_attempt'
   | 'conversation_audit_event'
-  | 'conversational_private_payload';
+  | 'conversational_private_payload'
+  | 'skill_load_receipt'
+  | 'context_receipt';
 
 interface RecordBase {
   id: string;
@@ -183,6 +187,29 @@ interface ConversationalPrivatePayload extends RecordBase {
   content: JsonValue;
 }
 
+interface SkillLoadReceipt extends RecordBase {
+  recordType: 'skill_load_receipt';
+  conversationId: string;
+  conversationRevision: number;
+  actorId: string;
+  role: 'admin' | 'operator';
+  channel: 'telegram' | 'web';
+  pluginId: string;
+  pluginBuildDigest: string;
+  schemaDigest: string;
+  loadNonceHash: string;
+  status: 'active' | 'consumed' | 'invalidated' | 'expired';
+  consumedResult?: JsonValue;
+}
+
+interface StoredContextReceipt extends RecordBase {
+  recordType: 'context_receipt';
+  conversationId: string;
+  conversationRevision: number;
+  algorithmVersion: string;
+  receipt: JsonValue;
+}
+
 type ConversationalRecord =
   | IdentityBinding
   | Conversation
@@ -194,7 +221,9 @@ type ConversationalRecord =
   | ProposalPresentation
   | ExecutionAttempt
   | ConversationAuditEvent
-  | ConversationalPrivatePayload;
+  | ConversationalPrivatePayload
+  | SkillLoadReceipt
+  | StoredContextReceipt;
 
 function assertString(value: unknown, path: string, maximum = MAX_ID_LENGTH): asserts value is string {
   if (typeof value !== 'string' || value.length === 0 || Buffer.byteLength(value, 'utf8') > maximum) {
@@ -251,6 +280,29 @@ function assertSafeJson(value: unknown, path: string, maximum = MAX_JSON_BYTES):
   visit(value, path);
 }
 
+function assertBodyFreeContextReceipt(value: JsonValue, path: string): void {
+  const visit = (candidate: JsonValue, candidatePath: string): void => {
+    if (typeof candidate === 'string') {
+      if (CONTEXT_SECRET_VALUE.test(candidate)) {
+        throw new Error(`${candidatePath} contains forbidden secret-like data`);
+      }
+      return;
+    }
+    if (!candidate || typeof candidate !== 'object') return;
+    if (Array.isArray(candidate)) {
+      candidate.forEach((child, index) => visit(child, `${candidatePath}[${index}]`));
+      return;
+    }
+    for (const [key, child] of Object.entries(candidate)) {
+      if (CONTEXT_BODY_FIELD.test(key) || SECRET_FIELD.test(key)) {
+        throw new Error(`${candidatePath}.${key} is forbidden`);
+      }
+      visit(child, `${candidatePath}.${key}`);
+    }
+  };
+  visit(value, path);
+}
+
 function validateConversationalRecord(
   record: ConversationalRecord,
   options: { portable?: boolean } = {}
@@ -267,6 +319,8 @@ function validateConversationalRecord(
     'execution_attempt',
     'conversation_audit_event',
     'conversational_private_payload',
+    'skill_load_receipt',
+    'context_receipt',
   ], 'recordType');
   assertString(record.id, `${record.recordType}.id`);
   if (record.schemaVersion !== RECORD_SCHEMA_VERSION) {
@@ -403,6 +457,26 @@ function validateConversationalRecord(
       assertEnum(record.classification, ['private', 'sensitive'], 'conversational_private_payload.classification');
       assertSafeJson(record.content, 'conversational_private_payload.content');
       break;
+    case 'skill_load_receipt':
+      assertString(record.conversationId, 'skill_load_receipt.conversationId');
+      assertInteger(record.conversationRevision, 'skill_load_receipt.conversationRevision', 1);
+      assertString(record.actorId, 'skill_load_receipt.actorId');
+      assertEnum(record.role, ['admin', 'operator'], 'skill_load_receipt.role');
+      assertEnum(record.channel, ['telegram', 'web'], 'skill_load_receipt.channel');
+      assertString(record.pluginId, 'skill_load_receipt.pluginId');
+      assertHash(record.pluginBuildDigest, 'skill_load_receipt.pluginBuildDigest');
+      assertHash(record.schemaDigest, 'skill_load_receipt.schemaDigest');
+      assertHash(record.loadNonceHash, 'skill_load_receipt.loadNonceHash');
+      assertEnum(record.status, ['active', 'consumed', 'invalidated', 'expired'], 'skill_load_receipt.status');
+      if (record.consumedResult !== undefined) assertSafeJson(record.consumedResult, 'skill_load_receipt.consumedResult');
+      break;
+    case 'context_receipt':
+      assertString(record.conversationId, 'context_receipt.conversationId');
+      assertInteger(record.conversationRevision, 'context_receipt.conversationRevision', 1);
+      assertString(record.algorithmVersion, 'context_receipt.algorithmVersion');
+      assertSafeJson(record.receipt, 'context_receipt.receipt');
+      assertBodyFreeContextReceipt(record.receipt, 'context_receipt.receipt');
+      break;
   }
 }
 
@@ -411,6 +485,16 @@ function assertRetention(record: ConversationalRecord): void {
     if (record.expiresAt !== undefined || record.ttl !== undefined) {
       throw new Error('identity_binding must not have expiresAt or ttl');
     }
+    return;
+  }
+  if (record.recordType === 'skill_load_receipt') {
+    assertIsoTimestamp(record.expiresAt, 'skill_load_receipt.expiresAt');
+    assertInteger(record.ttl, 'skill_load_receipt.ttl', 1);
+    if (Math.floor(Date.parse(record.expiresAt) / 1000) !== record.ttl) {
+      throw new Error('skill_load_receipt.ttl must match expiresAt');
+    }
+    const duration = Date.parse(record.expiresAt) - Date.parse(record.createdAt);
+    if (duration !== 5 * 60_000) throw new Error('skill_load_receipt must expire after five minutes');
     return;
   }
   assertIsoTimestamp(record.expiresAt, `${record.recordType}.expiresAt`);
@@ -495,5 +579,7 @@ export type {
   ProposalVersion,
   RecordBase,
   RecordType,
+  SkillLoadReceipt,
+  StoredContextReceipt,
   SummaryCheckpoint,
 };

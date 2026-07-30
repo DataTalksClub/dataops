@@ -111,6 +111,8 @@ jobs:
       DAPIER_CREDENTIALS_TABLE_NAME: ${{ vars.DAPIER_CREDENTIALS_TABLE_NAME }}
       DAPIER_CREDENTIALS_TABLE_ARN: ${{ vars.DAPIER_CREDENTIALS_TABLE_ARN }}
       MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}
+      CONVERSATIONAL_AGENT_ENABLED: ${{ vars.CONVERSATIONAL_AGENT_ENABLED }}
+      ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}
 
     steps:
       - name: Check out repository
@@ -154,6 +156,11 @@ jobs:
           fi
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
           : "${MAILING_EXPORTS_CONFIG:=[]}"
+          : "${CONVERSATIONAL_AGENT_ENABLED:=false}"
+          if [ "$CONVERSATIONAL_AGENT_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
+            echo "Conversational agent cannot be enabled without its z.ai secret ARN" >&2
+            exit 1
+          fi
           sam deploy \
             --config-env full-sandbox \
             --parameter-overrides \
@@ -174,7 +181,9 @@ jobs:
               "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN" \
               "ParameterKey=DapierCredentialsTableName,ParameterValue=$DAPIER_CREDENTIALS_TABLE_NAME" \
               "ParameterKey=DapierCredentialsTableArn,ParameterValue=$DAPIER_CREDENTIALS_TABLE_ARN" \
-              "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG"
+              "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" \
+              "ParameterKey=ConversationalAgentEnabled,ParameterValue=$CONVERSATIONAL_AGENT_ENABLED" \
+              "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN"
 
       - name: Seed runtime users, workflow templates, and recurring configs
         working-directory: ${{ github.workspace }}/backend
