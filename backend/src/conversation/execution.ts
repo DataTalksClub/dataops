@@ -32,7 +32,7 @@ import { getUser } from '../db/users';
 
 type DeliveryMode = ExecutionAttempt['deliveryMode'];
 type ReconciliationResult =
-  | { outcome: 'applied'; receipt: SafeExecutionReceipt }
+  | { outcome: 'applied'; receipt: SafeExecutionReceipt; privateResult?: import('./types').JsonValue }
   | { outcome: 'not_applied'; reasonCode: string }
   | { outcome: 'unknown'; reasonCode: string };
 
@@ -44,7 +44,7 @@ interface ExecutorRequest {
 }
 
 type ExecutorResult =
-  | { outcome: 'succeeded'; receipt: SafeExecutionReceipt }
+  | { outcome: 'succeeded'; receipt: SafeExecutionReceipt; privateResult?: import('./types').JsonValue }
   | { outcome: 'failed_safe'; reasonCode: string };
 
 interface CapabilityExecutor {
@@ -83,6 +83,7 @@ interface ProposalPresentationInput {
   proposalId: string;
   version: number;
   conversationId: string;
+  draftId?: string;
   actorId: string;
   identityBindingId: string;
   channelBindingId: string;
@@ -219,6 +220,7 @@ async function presentProposal(
     proposalId: input.proposalId,
     version: input.version,
     conversationId: input.conversationId,
+    ...(input.draftId ? { draftId: input.draftId } : {}),
     status: 'presented',
     spec: normalizedSpec,
     canonicalPayloadHash,
@@ -354,6 +356,10 @@ async function approvePresentation(
     || channelBinding.conversationId !== proposal.conversationId
     || channelBinding.ownerUserId !== provenance.actorId
     || !permission?.enabled
+    || (
+      proposal.spec.permissionRevision !== undefined
+      && permission.revision !== proposal.spec.permissionRevision
+    )
     || !executor
     || executor.permissionRef !== proposal.spec.permissionRef
     || !proposalHashesAreValid(proposal, executor)
@@ -409,11 +415,13 @@ async function approvePresentation(
     conversationId: proposal.conversationId,
     actorId: proposal.actorId,
     identityBindingId: presentation.identityBindingId,
+    identityBindingRevision: binding.revision,
     identityChannel: provenance.channel,
     identityChannelUserId: provenance.channelUserId,
     channelBindingId: presentation.channelBindingId,
     channelConversationKey: provenance.channelConversationKey,
     permissionRef: proposal.spec.permissionRef,
+    permissionRevision: proposal.spec.permissionRevision || permission.revision,
     canonicalPayloadHash: proposal.canonicalPayloadHash,
     renderedViewHash: proposal.renderedViewHash,
     executorBuildDigest: proposal.spec.pluginBuildDigest,

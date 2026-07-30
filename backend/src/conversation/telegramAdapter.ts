@@ -46,6 +46,7 @@ import {
   type VoiceTranscriber,
 } from './telegramMedia';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { createTodoConversationalCoreFromEnv, TODO_GUIDANCE } from './todoCore';
 
 type NormalizedKind = 'message' | 'button_action' | 'session_command' | 'voice_note' | 'photo';
 type InputTrust = 'operator_authored' | 'untrusted_provider_derived';
@@ -964,15 +965,22 @@ function adapterDependenciesFromConfig(
   const voiceArn = process.env.GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN;
   const photoArn = process.env.ZAI_VISION_API_KEY_SECRET_ARN;
   const limits = overrides.limits || mediaLimitsFromEnv();
-  if (!overrides.core) throw new Error('telegram_core_unavailable');
   if (config.voiceEnabled && !voiceArn && !overrides.voice) throw new Error('voice_config_error');
   if (config.photoEnabled && !photoArn && !overrides.photo) throw new Error('photo_config_error');
+  let core = overrides.core;
+  if (!core) {
+    try {
+      core = createTodoConversationalCoreFromEnv(client);
+    } catch {
+      throw new Error('telegram_core_unavailable');
+    }
+  }
   return {
     client,
     telegram: overrides.telegram || new HttpTelegramClient(
       config.botToken, config.telegramApiTimeoutMs, config.telegramMaximumResponseBytes
     ),
-    core: overrides.core,
+    core,
     ...(config.voiceEnabled ? {
       voice: overrides.voice || new GroqWhisperClient(
         voiceArn!, undefined, undefined, limits.providerMaximumResponseBytes
@@ -1200,6 +1208,10 @@ async function handleConversationalTelegramWebhook(
   const text = boundedText(message?.text);
   const parsed = commandFrom(text);
   const supportedCommands = new Set(['new', 'sessions', 'continue', 'cancel', 'discard', 'help']);
+  if (parsed.command === 'todo') {
+    await sendBeforeDeadline(dependencies, chatId, TODO_GUIDANCE, deadlineAt);
+    return response(200, { ok: true, route: 'todo-guidance' });
+  }
   if (parsed.command && !supportedCommands.has(parsed.command)) {
     await sendBeforeDeadline(dependencies, chatId, UNSUPPORTED, deadlineAt);
     return response(200, { ok: true, route: 'unsupported' });

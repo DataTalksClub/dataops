@@ -113,6 +113,9 @@ jobs:
       MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}
       CONVERSATIONAL_AGENT_ENABLED: ${{ vars.CONVERSATIONAL_AGENT_ENABLED }}
       SPONSOR_FINANCE_ENABLED: ${{ vars.SPONSOR_FINANCE_ENABLED }}
+      CONVERSATIONAL_TODO_PLUGIN_ENABLED: ${{ vars.CONVERSATIONAL_TODO_PLUGIN_ENABLED }}
+      CONVERSATIONAL_TODO_EXECUTOR_ENABLED: ${{ vars.CONVERSATIONAL_TODO_EXECUTOR_ENABLED }}
+      CONVERSATIONAL_RESULT_DELIVERY_ENABLED: ${{ vars.CONVERSATIONAL_RESULT_DELIVERY_ENABLED }}
       ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}
       CONVERSATIONAL_TELEGRAM_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_ENABLED }}
       CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED }}
@@ -183,6 +186,9 @@ jobs:
           : "${MAILING_EXPORTS_CONFIG:=[]}"
           : "${CONVERSATIONAL_AGENT_ENABLED:=false}"
           : "${SPONSOR_FINANCE_ENABLED:=false}"
+          : "${CONVERSATIONAL_TODO_PLUGIN_ENABLED:=false}"
+          : "${CONVERSATIONAL_TODO_EXECUTOR_ENABLED:=false}"
+          : "${CONVERSATIONAL_RESULT_DELIVERY_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_VOICE_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED:=false}"
@@ -242,6 +248,9 @@ jobs:
               "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" \
               "ParameterKey=ConversationalAgentEnabled,ParameterValue=$CONVERSATIONAL_AGENT_ENABLED" \
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
+              "ParameterKey=ConversationalTodoPluginEnabled,ParameterValue=$CONVERSATIONAL_TODO_PLUGIN_ENABLED" \
+              "ParameterKey=ConversationalTodoExecutorEnabled,ParameterValue=$CONVERSATIONAL_TODO_EXECUTOR_ENABLED" \
+              "ParameterKey=ConversationalResultDeliveryEnabled,ParameterValue=$CONVERSATIONAL_RESULT_DELIVERY_ENABLED" \
               "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" \
               "ParameterKey=ConversationalTelegramEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_ENABLED" \
               "ParameterKey=ConversationalTelegramVoiceEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" \

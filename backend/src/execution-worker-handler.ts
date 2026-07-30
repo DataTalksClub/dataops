@@ -25,7 +25,7 @@ async function handler(event: Record<string, unknown>): Promise<unknown> {
   client ||= await getClient();
   const dependencies = {
     client,
-    registry: defaultExecutionRegistry(),
+    registry: defaultExecutionRegistry(client),
     config: configFromEnv(),
   };
   const detail = event.detail as Record<string, unknown> | undefined;

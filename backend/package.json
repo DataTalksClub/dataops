@@ -13,6 +13,7 @@
     "test:telegram-transaction": "bash scripts/test-telegram-transaction.sh",
     "test:sponsor-finance-transaction": "bash scripts/test-sponsor-finance-transaction.sh",
     "test:sponsor-communications-transaction": "bash scripts/test-sponsor-communications-transaction.sh",
+    "test:todo-transaction": "bash scripts/test-todo-transaction.sh",
     "test:e2e": "npx playwright test",
     "test:integration": "bash scripts/integration-test.sh",
     "build": "tsc && cp -r src/public dist/public && cp -r src/pages dist/pages",

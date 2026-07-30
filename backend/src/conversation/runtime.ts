@@ -9,6 +9,7 @@ import {
   saveContextReceipt,
   storeSkillLoadResult,
 } from './repository';
+import { getApprovalPermission } from './executionRepository';
 import { expiryFrom, type JsonValue, type SkillLoadReceipt, type StoredContextReceipt } from './types';
 import {
   ContextAssembler,
@@ -39,13 +40,52 @@ interface RuntimeInput {
   conversationId: string;
   conversationRevision: number;
   actor: RuntimeActor;
+  availablePluginIds?: string[];
   context: Omit<ContextInput, 'conversationId' | 'conversationRevision' | 'catalog' | 'pluginContract'>;
+  onPluginSelected?: (
+    selection: RuntimePluginSelection
+  ) => Promise<RuntimePluginSelectionResult>;
 }
 
 type RuntimeResult =
   | { kind: 'clarification'; message: string; providerCalls: 1 }
-  | { kind: 'invocation'; pluginId: string; action: string; result: PluginResult; providerCalls: 2; duplicate: boolean }
+  | {
+    kind: 'invocation';
+    pluginId: string;
+    pluginBuildDigest: string;
+    schemaDigest: string;
+    action: string;
+    result: PluginResult;
+    selectionEvidence?: JsonValue;
+    providerCalls: 2;
+    duplicate: boolean;
+  }
   | { kind: 'rejected'; code: RuntimeErrorCode; message: string; providerCalls: 1 | 2 };
+
+interface RuntimePluginSelection {
+  pluginId: string;
+  pluginBuildDigest: string;
+  schemaDigest: string;
+}
+
+type RuntimeSelectedContext = Pick<
+  ContextInput,
+  'summary' | 'recentEvents' | 'sourceExcerpts' | 'proposalStateReference'
+>;
+
+type RuntimePluginSelectionResult =
+  | {
+    kind: 'ready';
+    evidence?: JsonValue;
+    context?: RuntimeSelectedContext;
+  }
+  | {
+    kind: 'clarification';
+    message: string;
+  }
+  | {
+    kind: 'rejected';
+  };
 
 type RuntimeErrorCode =
   | 'invalid_model_output'
@@ -72,6 +112,7 @@ interface RuntimePersistence {
     result: PluginResult,
     now: Date
   ): Promise<void>;
+  permissionEnabled?(actorId: string, permissionRef: string): Promise<boolean>;
 }
 
 class RuntimeProtocolError extends Error {
@@ -244,6 +285,10 @@ class DynamoRuntimePersistence implements RuntimePersistence {
   ): Promise<void> {
     return storeSkillLoadResult(this.client, conversationId, hash, result, now.toISOString());
   }
+
+  async permissionEnabled(actorId: string, permissionRef: string): Promise<boolean> {
+    return Boolean((await getApprovalPermission(this.client, actorId, permissionRef))?.enabled);
+  }
 }
 
 class ConversationalRuntime {
@@ -262,7 +307,11 @@ class ConversationalRuntime {
     if (await this.persistence.currentRevision(input.conversationId) !== input.conversationRevision) {
       return this.rejected('stale_conversation', 1);
     }
-    const catalog = this.registry.catalog(input.actor.role, input.actor.channel);
+    const availablePluginIds = input.availablePluginIds
+      ? new Set(input.availablePluginIds)
+      : null;
+    const catalog = this.registry.catalog(input.actor.role, input.actor.channel)
+      .filter((entry) => !availablePluginIds || availablePluginIds.has(entry.id));
     const turnOneContext = this.contextAssembler.assemble({
       ...input.context,
       conversationId: input.conversationId,
@@ -283,7 +332,29 @@ class ConversationalRuntime {
       return this.rejected('invalid_model_output', 1);
     }
     const plugin = this.registry.getAvailable(load.input.plugin, input.actor.role, input.actor.channel);
-    if (!plugin) return this.rejected('plugin_unavailable', 1);
+    if (!plugin || (availablePluginIds && !availablePluginIds.has(plugin.id))) {
+      return this.rejected('plugin_unavailable', 1);
+    }
+    if (await this.persistence.currentRevision(input.conversationId) !== input.conversationRevision) {
+      return this.rejected('stale_conversation', 1);
+    }
+    const selected = input.onPluginSelected
+      ? await input.onPluginSelected({
+        pluginId: plugin.id,
+        pluginBuildDigest: plugin.buildDigest,
+        schemaDigest: plugin.schemaDigest,
+      })
+      : { kind: 'ready' as const };
+    if (selected.kind === 'clarification') {
+      return {
+        kind: 'clarification',
+        message: selected.message,
+        providerCalls: 1,
+      };
+    }
+    if (selected.kind === 'rejected') {
+      return this.rejected('plugin_unavailable', 1);
+    }
     if (await this.persistence.currentRevision(input.conversationId) !== input.conversationRevision) {
       return this.rejected('stale_conversation', 1);
     }
@@ -314,6 +385,7 @@ class ConversationalRuntime {
 
     const turnTwoContext = this.contextAssembler.assemble({
       ...input.context,
+      ...(selected.context || {}),
       conversationId: input.conversationId,
       conversationRevision: input.conversationRevision,
       catalog,
@@ -348,7 +420,7 @@ class ConversationalRuntime {
       return this.rejected('invalid_model_output', 2);
     }
     try {
-      return await this.invokeLoaded(
+      const invoked = await this.invokeLoaded(
         input,
         plugin.id,
         plugin.buildDigest,
@@ -356,6 +428,9 @@ class ConversationalRuntime {
         invocation.input,
         2
       );
+      return invoked.kind === 'invocation'
+        ? { ...invoked, selectionEvidence: selected.evidence }
+        : invoked;
     } catch (error) {
       if (error instanceof RuntimeProtocolError) return this.rejected(error.code, 2);
       throw error;
@@ -385,12 +460,21 @@ class ConversationalRuntime {
     const plugin = this.registry.getAvailable(invocation.plugin, input.actor.role, input.actor.channel);
     if (
       !plugin
+      || (
+        input.availablePluginIds !== undefined
+        && !input.availablePluginIds.includes(plugin.id)
+      )
       || plugin.id !== expectedPluginId
       || plugin.buildDigest !== expectedBuildDigest
       || plugin.schemaDigest !== expectedSchemaDigest
     ) throw new RuntimeProtocolError('plugin_unavailable', 'That action is no longer available.');
     const action = plugin.actions.find((candidate) => candidate.name === invocation.action);
     if (!action) throw new RuntimeProtocolError('invalid_plugin_input', 'That action is not available.');
+    if (
+      action.corePermission
+      && this.persistence.permissionEnabled
+      && !await this.persistence.permissionEnabled(input.actor.id, action.corePermission)
+    ) throw new RuntimeProtocolError('plugin_unavailable', 'That action is no longer available.');
     const hash = nonceHash(invocation.load_nonce);
     const receipt = await this.persistence.getSkillLoad(input.conversationId, hash);
     const now = this.now();
@@ -420,6 +504,8 @@ class ConversationalRuntime {
         return {
           kind: 'invocation',
           pluginId: plugin.id,
+          pluginBuildDigest: plugin.buildDigest,
+          schemaDigest: plugin.schemaDigest,
           action: action.name,
           result: consumed.result as PluginResult,
           providerCalls,
@@ -433,6 +519,8 @@ class ConversationalRuntime {
     return {
       kind: 'invocation',
       pluginId: plugin.id,
+      pluginBuildDigest: plugin.buildDigest,
+      schemaDigest: plugin.schemaDigest,
       action: action.name,
       result,
       providerCalls,
@@ -459,6 +547,9 @@ export type {
   RuntimeActor,
   RuntimeErrorCode,
   RuntimeInput,
+  RuntimePluginSelection,
+  RuntimePluginSelectionResult,
+  RuntimeSelectedContext,
   RuntimePersistence,
   RuntimeResult,
 };

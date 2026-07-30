@@ -564,6 +564,26 @@ test('runtime stops after clarification and never makes a second call', async ()
   assert.equal(model.requests.length, 1);
 });
 
+test('runtime can gate the visible and loadable plugin catalog per channel-neutral request', async () => {
+  const model = new RecordingModel(() => ({
+    kind: 'tool',
+    name: 'skill_load',
+    input: { plugin: 'fake.todo' },
+  }));
+  const result = await new ConversationalRuntime(
+    registry([plugin()]),
+    model,
+    new MemoryPersistence()
+  ).handle({
+    ...runtimeInput(),
+    availablePluginIds: [],
+  });
+  assert.equal(result.kind, 'rejected');
+  if (result.kind === 'rejected') assert.equal(result.code, 'plugin_unavailable');
+  assert.equal(model.requests.length, 1);
+  assert.doesNotMatch(model.requests[0].system, /fake\.todo/);
+});
+
 test('runtime rejects unknown actor scope and mismatched returned tool names', async () => {
   const persistence = new MemoryPersistence();
   const neverModel = new RecordingModel(() => {

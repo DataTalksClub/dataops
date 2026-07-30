@@ -1,7 +1,20 @@
 import { StaticPluginRegistry } from './pluginRegistry';
+import { loadTodoPluginArtifact, todoPluginDefinition } from './todoPlugin';
 
-// Domain plugins are registered by later issue slices. Keeping this explicit and
-// empty makes the disabled M2 runtime incapable of proposing or executing work.
-const productionPluginRegistry = new StaticPluginRegistry([]);
+function createProductionPluginRegistry(
+  config: { todoEnabled: boolean } = {
+    todoEnabled: process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED === 'true',
+  }
+): StaticPluginRegistry {
+  return new StaticPluginRegistry(
+    [{ ...todoPluginDefinition, enabled: config.todoEnabled }],
+    loadTodoPluginArtifact
+  );
+}
 
-export { productionPluginRegistry };
+const productionPluginRegistry = createProductionPluginRegistry({ todoEnabled: false });
+
+export {
+  createProductionPluginRegistry,
+  productionPluginRegistry,
+};

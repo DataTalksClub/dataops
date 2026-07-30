@@ -89,6 +89,12 @@ jobs:
       - name: Run planning docs validation
         run: uv run --with pytest python -m pytest tests/planning_docs
 
+      - name: Set up SAM for transform contract tests
+        uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run infra template validation
         run: uv run --with pytest python -m pytest tests/infra
 

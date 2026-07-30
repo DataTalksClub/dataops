@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
+import subprocess
+import textwrap
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -127,8 +131,28 @@ def test_conversational_execution_worker_has_filtered_stream_recovery_and_failur
     assert "dynamodb:Scan" not in worker
     assert "${DataOpsConversationalStateTable.Arn}/index/GSI2" in worker
     assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in worker
+    assert "DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable" in worker
     assert "!GetAtt DataOpsUsersTable.Arn" in worker
     assert worker.count("!GetAtt DataOpsUsersTable.Arn") == 1
+    user_permissions = worker[
+        worker.index("- !GetAtt DataOpsUsersTable.Arn") - 180:
+        worker.index("- !GetAtt DataOpsUsersTable.Arn") + 50
+    ]
+    assert "dynamodb:GetItem" in user_permissions
+    assert "dynamodb:TransactWriteItems" in user_permissions
+    assert "dynamodb:PutItem" not in user_permissions
+    assert "dynamodb:UpdateItem" not in user_permissions
+    task_permissions = worker[
+        worker.index("- !GetAtt DataOpsTasksTable.Arn") - 220:
+        worker.index("- !GetAtt DataOpsTasksTable.Arn") + 50
+    ]
+    assert "dynamodb:GetItem" in task_permissions
+    assert "dynamodb:PutItem" in task_permissions
+    assert "dynamodb:TransactWriteItems" in task_permissions
+    assert "dynamodb:UpdateItem" not in task_permissions
+    assert "dynamodb:DeleteItem" not in task_permissions
+    assert "dynamodb:Query" not in task_permissions
+    assert "dynamodb:Scan" not in task_permissions
     assert "secretsmanager:" not in worker
     assert "s3:" not in worker
     assert "Type: AWS::SQS::Queue" in queue
@@ -138,6 +162,102 @@ def test_conversational_execution_worker_has_filtered_stream_recovery_and_failur
     assert "MessageRetentionPeriod: 1209600" in queue
     assert "QueuedAttemptStream" not in backend
     assert "CONVERSATIONAL_EXECUTION_LEASE_SECONDS" not in backend
+    assert "CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled" in worker
+
+
+def test_conversational_result_dispatcher_is_private_scheduled_and_least_privilege():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    dispatcher = _resource_block(template, "ConversationalResultDispatcherFunction")
+    worker = _resource_block(template, "ConversationalExecutionWorkerFunction")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert "Type: AWS::Serverless::Function" in dispatcher
+    assert "Handler: dist/result-notification-handler.handler" in dispatcher
+    assert "DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable" in dispatcher
+    assert "TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName" in dispatcher
+    assert "Type: Schedule" in dispatcher
+    assert "rate(1 minute)" in dispatcher
+    assert "CONVERSATIONAL_RESULT_DELIVERY_ENABLED: !Ref ConversationalResultDeliveryEnabled" in dispatcher
+    assert "dynamodb:GetItem" in dispatcher
+    assert "dynamodb:Query" in dispatcher
+    assert "dynamodb:UpdateItem" in dispatcher
+    assert "dynamodb:PutItem" not in dispatcher
+    assert "dynamodb:DeleteItem" not in dispatcher
+    assert "dynamodb:Scan" not in dispatcher
+    assert "${DataOpsConversationalStateTable.Arn}/index/GSI2" in dispatcher
+    assert "!GetAtt DataOpsUsersTable.Arn" in dispatcher
+    assert "secretsmanager:GetSecretValue" in dispatcher
+    assert "secret:${TelegramIntegrationSecretName}-*" in dispatcher
+    assert "DATAOPS_TASKS_TABLE" not in dispatcher
+    assert "ZAI_" not in dispatcher
+    assert "TELEGRAM_INTEGRATION_SECRET_NAME" not in worker
+    assert "secretsmanager:" not in worker
+    assert "ResultDelivery" not in backend
+    assert "ConversationalResultDispatcherFunctionName:" in template
+
+
+def test_conversational_result_delivery_schedule_transforms_default_off_and_explicit_on():
+    sam_binary = shutil.which("sam")
+    assert sam_binary, "AWS SAM CLI is required for the transform contract test"
+    sam_interpreter = Path(sam_binary).read_text(encoding="utf-8").splitlines()[0].removeprefix("#!")
+    translator = textwrap.dedent(
+        """
+        import json
+        import sys
+        from pathlib import Path
+
+        from samcli.yamlhelper import yaml_parse
+        from samtranslator.translator.transform import transform
+
+        class EmptyManagedPolicyLoader:
+            def load(self):
+                return {}
+
+        template = yaml_parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
+        for resource in template.get("Resources", {}).values():
+            if resource.get("Type") == "AWS::Serverless::Function":
+                resource.get("Properties", {})["CodeUri"] = "s3://sam-transform-test/function.zip"
+        parameters = {
+            name: definition["Default"]
+            for name, definition in template.get("Parameters", {}).items()
+            if "Default" in definition
+        }
+        parameters.update({
+            "AWS::AccountId": "123456789012",
+            "AWS::Partition": "aws",
+            "AWS::Region": "eu-west-1",
+            "AWS::StackName": "dataops-transform-test",
+        })
+        print(json.dumps(transform(template, parameters, EmptyManagedPolicyLoader())))
+        """
+    )
+    completed = subprocess.run(
+        [sam_interpreter, "-c", translator, str(TEMPLATE)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    transformed = json.loads(completed.stdout)
+    rule = transformed["Resources"]["ConversationalResultDispatcherFunctionResultDelivery"]
+    assert rule["Type"] == "AWS::Events::Rule"
+    state = rule["Properties"]["State"]
+    assert state == {
+        "Fn::If": ["ConversationalResultDeliveryIsEnabled", "ENABLED", "DISABLED"],
+    }
+
+    condition = transformed["Conditions"]["ConversationalResultDeliveryIsEnabled"]
+    assert condition == {
+        "Fn::Equals": [{"Ref": "ConversationalResultDeliveryEnabled"}, "true"],
+    }
+
+    def resolved_state(parameter_value: str) -> str:
+        condition_matches = parameter_value == condition["Fn::Equals"][1]
+        return state["Fn::If"][1 if condition_matches else 2]
+
+    parameter = transformed["Parameters"]["ConversationalResultDeliveryEnabled"]
+    assert parameter["Default"] == "false"
+    assert resolved_state(parameter["Default"]) == "DISABLED"
+    assert resolved_state("true") == "ENABLED"
 
 
 def test_conversational_telegram_media_is_disabled_and_uses_exact_optional_secrets():
@@ -209,6 +329,20 @@ def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
     assert "ConversationalAgentRequiresZaiSecret:" in template
     assert "HasZaiConversationalSecret:" in template
     assert "CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled" in backend
+    for parameter in [
+        "ConversationalTodoPluginEnabled",
+        "ConversationalTodoExecutorEnabled",
+        "ConversationalResultDeliveryEnabled",
+    ]:
+        assert f'  {parameter}:\n    Type: String\n    Default: "false"' in template
+    assert "CONVERSATIONAL_TODO_PLUGIN_ENABLED: !Ref ConversationalTodoPluginEnabled" in backend
+    assert "CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled" in backend
+    assert "CONVERSATIONAL_TODO_PLUGIN_ENABLED: ${{ vars.CONVERSATIONAL_TODO_PLUGIN_ENABLED }}" in workflow
+    assert "CONVERSATIONAL_TODO_EXECUTOR_ENABLED: ${{ vars.CONVERSATIONAL_TODO_EXECUTOR_ENABLED }}" in workflow
+    assert "CONVERSATIONAL_RESULT_DELIVERY_ENABLED: ${{ vars.CONVERSATIONAL_RESULT_DELIVERY_ENABLED }}" in workflow
+    assert "ParameterKey=ConversationalTodoPluginEnabled,ParameterValue=$CONVERSATIONAL_TODO_PLUGIN_ENABLED" in workflow
+    assert "ParameterKey=ConversationalTodoExecutorEnabled,ParameterValue=$CONVERSATIONAL_TODO_EXECUTOR_ENABLED" in workflow
+    assert "ParameterKey=ConversationalResultDeliveryEnabled,ParameterValue=$CONVERSATIONAL_RESULT_DELIVERY_ENABLED" in workflow
     assert "ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn" in backend
     assert "- !Ref ZaiConversationalApiKeySecretArn" in backend
     assert "secret:${ZaiConversationalApiKeySecretArn}" not in backend

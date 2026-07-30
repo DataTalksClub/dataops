@@ -114,10 +114,46 @@ Typefully, and Telegram checks are human-gated.
 ### Conversational runtime boundary
 
 The channel-independent conversational runtime is disabled by default. Its
-production plugin registry is a static TypeScript list and is intentionally
-empty until domain plugins are added. A request can make at most two model
+production plugin registry is a static TypeScript list containing the narrow
+`todo.propose_create` capability for linked admins and operators in private
+Telegram chats. A request can make at most two model
 calls: one `skill_load` call followed by one separate `skill_invoke` call.
 Neither call can approve or execute domain work.
+
+Todo rollout is independently default-off at all three effect boundaries:
+`CONVERSATIONAL_TODO_PLUGIN_ENABLED` controls catalog/proposal visibility,
+`CONVERSATIONAL_TODO_EXECUTOR_ENABLED` controls executor registration, and
+`CONVERSATIONAL_RESULT_DELIVERY_ENABLED` controls the scheduled private-result
+dispatcher. Enabling the global conversational adapter does not enable any of
+these capabilities. An attempt whose executor is disabled fails safely during
+the worker pre-dispatch check; it is never held for a later rollout to execute.
+The authenticated legacy Telegram route also intercepts `/todo`, including
+arguments and bot-username forms, before acquiring a database client. It always
+returns the same bounded static guidance and never creates legacy intake while
+the conversational adapter is default-off.
+
+A shared proposal coordinator maps a loaded plugin action to its strict draft,
+immutable proposal, preview, and approval controls. Channel adapters can supply
+their own bounded context and per-request visible-plugin allowlist without
+copying domain proposal logic. The todo adapter is the first registration; new
+capabilities add an adapter and executor rather than another conversational
+core.
+
+The first model turn receives only the permission-filtered, public-safe catalog
+and current request. Once it selects a plugin, core resolves the one matching
+adapter and checks its build/schema identity and current permission. That
+adapter performs source preflight before any plugin instructions, history, or
+source context are loaded for the second turn. Its typed evidence and policy,
+build, and schema digests are checked again and bound into the draft/proposal,
+so a candidate cannot choose or substitute another adapter's schema or proof.
+
+For todo, selected-plugin preflight classifies the normalized source request.
+List separators or coordinated actions are rejected as multi-todo input. A
+time, alarm, or notification creates a core-owned guard and requires the exact
+`confirm date only` response; detached confirmation is rejected. The resulting
+source-proof hash and confirmation state are stored in the draft and bound into
+the immutable proposal. Candidate validation repeats the time/multi checks, so
+a model cannot silently omit a time or collapse a batch.
 
 Non-empty registries require a trusted build-artifact loader. Generated
 metadata hashes the compiled plugin module and canonical manifest; startup
@@ -226,6 +262,16 @@ approval calls against a fresh transaction-capable DynamoDB Local container:
 npm run test:execution-transaction
 ```
 
+The actor-owned todo proof runs two enabled proposal adapters through
+selection/preflight/revision/approval, then runs the todo proposal, 25
+concurrent approvals, deterministic task transaction, duplicate worker
+delivery, lease/collision checks, and complete confirmed voice/corrected-photo
+journeys against a fresh DynamoDB Local container:
+
+```bash
+npm run test:todo-transaction
+```
+
 ## Build
 
 ```bash
@@ -245,10 +291,30 @@ executor.
 The SAM stack owns the worker, filtered DynamoDB Stream event source, indexed
 recovery schedule, and encrypted retained failure queue. Lease duration,
 deadline, pre-dispatch retry bound, recovery page size, and the 30-minute
-presentation action lifetime are bounded stack parameters. The fake executor
-is disabled in deployed functions by default and requires no provider secrets.
+presentation action lifetime are bounded stack parameters. The production
+worker registers only capability-scoped executors. The test fake executor can
+be enabled only when `NODE_ENV=test`; deployed functions cannot select it.
 Uncertain effects are never blindly requeued: recovery follows the stored
 provider-idempotency, correlation-lookup, or operator-reconciliation-only mode.
+
+The todo executor writes one deterministic actor-owned task in a DynamoDB
+transaction that condition-checks the current execution lease. It cannot
+update, delete, list, or reassign tasks. A committed task is reconciled from its
+deterministic ID after a lost response and is never deleted automatically.
+The same transaction checks the enabled user role, exact permission revision,
+exact active identity binding revision, and exact unexpired channel binding, so
+revocation or rebinding between worker preflight and the effect cannot race a
+task into existence.
+
+Terminal execution state, its owner-private result payload, and a delivery
+notification are finalized atomically. A separate scheduled dispatcher owns
+the Telegram secret, rechecks the current identity and conversation bindings,
+enabled user role, and sends the result once using Telegram's decimal
+destination as a string. Ambiguous transport failures or a crash after the
+delivery lease is claimed become `outcome_unknown` and are never blindly
+resent. Result payloads and notifications expire after 30 days; portable
+exports redact private result text, omit Telegram destinations, and make
+undelivered notifications non-replayable.
 
 ## Project Structure
 

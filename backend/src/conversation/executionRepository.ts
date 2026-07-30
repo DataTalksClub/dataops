@@ -15,6 +15,7 @@ import {
   validateSafeExecutionReceipt,
   type ExecutionAttempt,
   type IdentityBinding,
+  type JsonValue,
   type ProposalPresentation,
   type ProposalVersion,
   type SafeExecutionReceipt,
@@ -108,6 +109,7 @@ async function getApprovalPermission(
   const result = await client.send(new GetCommand({
     TableName: TABLE_CONVERSATIONAL_STATE,
     Key: { PK: `AUTHZ#${userId}#${permissionRef}`, SK: 'STATE' },
+    ConsistentRead: true,
   }));
   return clean<ApprovalPermission>(result.Item as Record<string, unknown> | undefined);
 }
@@ -276,8 +278,13 @@ async function atomicApproval(
       ConditionCheck: {
         TableName: TABLE_USERS,
         Key: { PK: `USER#${presentation.actorId}`, SK: `USER#${presentation.actorId}` },
-        ConditionExpression: 'attribute_exists(PK) AND (attribute_not_exists(disabled) OR disabled = :false)',
-        ExpressionAttributeValues: { ':false': false },
+        ConditionExpression: 'attribute_exists(PK) AND (attribute_not_exists(disabled) OR disabled = :false) AND #role IN (:admin, :operator)',
+        ExpressionAttributeNames: { '#role': 'role' },
+        ExpressionAttributeValues: {
+          ':false': false,
+          ':admin': 'admin',
+          ':operator': 'operator',
+        },
       },
     },
     {
@@ -298,8 +305,11 @@ async function atomicApproval(
       ConditionCheck: {
         TableName: TABLE_CONVERSATIONAL_STATE,
         Key: { PK: `AUTHZ#${presentation.actorId}#${proposal.spec.permissionRef}`, SK: 'STATE' },
-        ConditionExpression: 'enabled = :true',
-        ExpressionAttributeValues: { ':true': true },
+        ConditionExpression: 'enabled = :true AND revision = :revision',
+        ExpressionAttributeValues: {
+          ':true': true,
+          ':revision': attempt.permissionRevision,
+        },
       },
     },
     {
@@ -674,7 +684,11 @@ async function finalizeAttempt(
   attempt: ExecutionAttempt,
   status: Extract<AttemptStatus, 'succeeded' | 'failed_safe' | 'outcome_unknown'>,
   now: string,
-  values: { errorCode?: string; receipt?: SafeExecutionReceipt } = {}
+  values: {
+    errorCode?: string;
+    receipt?: SafeExecutionReceipt;
+    resultNotification?: { privateResult?: JsonValue };
+  } = {}
 ): Promise<ExecutionAttempt | null> {
   const names: Record<string, string> = { '#status': 'status' };
   const expressionValues: Record<string, unknown> = {
@@ -698,16 +712,128 @@ async function finalizeAttempt(
     expressionValues[':receipt'] = values.receipt;
     expressionValues[':receiptRef'] = values.receipt.receiptId;
   }
-  try {
-    const result = await client.send(new UpdateCommand({
-      TableName: TABLE_CONVERSATIONAL_STATE,
+  const update = {
+    TableName: TABLE_CONVERSATIONAL_STATE,
       Key: { PK: `ATTEMPT#${attempt.id}`, SK: 'META' },
       UpdateExpression: `SET ${sets.join(', ')} REMOVE leaseOwner, leaseExpiresAt`,
       ConditionExpression: '#status = :executing AND revision = :revision AND leaseOwner = :owner AND leaseGeneration = :generation AND leaseExpiresAt > :now',
       ExpressionAttributeNames: names,
       ExpressionAttributeValues: expressionValues,
       ReturnValues: 'ALL_NEW',
-    }));
+  } as const;
+  try {
+    if (values.resultNotification) {
+      if (
+        !attempt.actorId
+        || !attempt.identityChannel
+        || !attempt.identityChannelUserId
+        || !attempt.identityBindingId
+        || !attempt.identityBindingRevision
+        || !attempt.channelBindingId
+        || !attempt.channelConversationKey
+      ) throw new Error('Result notification identity is unavailable');
+      const retention = expiryFrom(now, 30);
+      const payloadId = `execution-result-${attempt.id}`;
+      const notificationId = `result-notification-${attempt.id}`;
+      const payload = {
+        id: payloadId,
+        recordType: 'conversational_private_payload' as const,
+        schemaVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        ...retention,
+        conversationId: attempt.conversationId,
+        classification: 'private' as const,
+        content: {
+          kind: 'execution_result',
+          executionAttemptId: attempt.id,
+          status,
+          ...(values.resultNotification.privateResult !== undefined
+            ? { result: values.resultNotification.privateResult }
+            : {}),
+        },
+      };
+      const notification = {
+        id: notificationId,
+        recordType: 'result_notification' as const,
+        schemaVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        ...retention,
+        conversationId: attempt.conversationId,
+        executionAttemptId: attempt.id,
+        actorId: attempt.actorId,
+        channel: attempt.identityChannel,
+        channelConversationKey: attempt.channelConversationKey,
+        identityChannelUserId: attempt.identityChannelUserId,
+        identityBindingId: attempt.identityBindingId,
+        identityBindingRevision: attempt.identityBindingRevision,
+        channelBindingId: attempt.channelBindingId,
+        privatePayloadRef: payloadId,
+        status: 'pending' as const,
+        readyAt: now,
+        revision: 1,
+      };
+      validateConversationalRecord(payload);
+      validateConversationalRecord(notification);
+      const payloadItem = {
+        ...payload,
+        PK: `PRIVATE_PAYLOAD#${payloadId}`,
+        SK: 'META',
+        GSI1PK: `CONVERSATION#${attempt.conversationId}`,
+        GSI1SK: `PRIVATE_PAYLOAD#${payloadId}`,
+      };
+      const notificationItem = {
+        ...notification,
+        PK: `RESULT_NOTIFICATION#${notificationId}`,
+        SK: 'META',
+        GSI1PK: `CONVERSATION#${attempt.conversationId}`,
+        GSI1SK: `RESULT_NOTIFICATION#${now}#${notificationId}`,
+        GSI2PK: 'RESULT_NOTIFICATION_STATE#pending',
+        GSI2SK: `READY#${now}#${notificationId}`,
+      };
+      if (process.env.NODE_ENV !== 'test') {
+        const { ReturnValues: _returnValues, ...transactionUpdate } = update;
+        await client.send(new TransactWriteCommand({
+          TransactItems: [
+            { Update: transactionUpdate },
+            {
+              Put: {
+                TableName: TABLE_CONVERSATIONAL_STATE,
+                Item: payloadItem,
+                ConditionExpression: 'attribute_not_exists(PK)',
+              },
+            },
+            {
+              Put: {
+                TableName: TABLE_CONVERSATIONAL_STATE,
+                Item: notificationItem,
+                ConditionExpression: 'attribute_not_exists(PK)',
+              },
+            },
+          ],
+        }));
+        const stored = await client.send(new GetCommand({
+          TableName: TABLE_CONVERSATIONAL_STATE,
+          Key: { PK: `ATTEMPT#${attempt.id}`, SK: 'META' },
+          ConsistentRead: true,
+        }));
+        return clean<ExecutionAttempt>(stored.Item as Record<string, unknown> | undefined);
+      }
+      const result = await client.send(new UpdateCommand(update));
+      await client.send(new PutCommand({
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Item: payloadItem,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      }));
+      await client.send(new PutCommand({
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Item: notificationItem,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      }));
+      return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
+    }
+    const result = await client.send(new UpdateCommand(update));
     return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
   } catch (error) {
     if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;

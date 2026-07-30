@@ -160,6 +160,18 @@ Parameters:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
+  ConversationalTodoPluginEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ConversationalTodoExecutorEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ConversationalResultDeliveryEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
   ZaiConversationalApiKeySecretArn:
     Type: String
     Default: ""
@@ -316,6 +328,7 @@ Conditions:
   HasSponsorTemplateSecret: !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
   HasSponsorHmacSecret: !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
   SponsorCommunicationSendingEnabled: !Equals [!Ref SponsorCommunicationSendEnabled, "true"]
+  ConversationalResultDeliveryIsEnabled: !Equals [!Ref ConversationalResultDeliveryEnabled, "true"]
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -1110,11 +1123,13 @@ Resources:
           DATAOPS_ENV: !Ref DataOpsEnvironment
           DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable
           DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
+          DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable
           CONVERSATIONAL_EXECUTION_LEASE_SECONDS: !Ref ConversationalExecutionLeaseSeconds
           CONVERSATIONAL_EXECUTION_DEADLINE_MS: !Ref ConversationalExecutionDeadlineMs
           CONVERSATIONAL_EXECUTION_MAX_PRE_DISPATCH_LEASES: !Ref ConversationalExecutionMaxPreDispatchLeases
           CONVERSATIONAL_EXECUTION_RECOVERY_LIMIT: !Ref ConversationalExecutionRecoveryLimit
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
+          CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled
       Policies:
         - Statement:
             Effect: Allow
@@ -1132,8 +1147,17 @@ Resources:
             Effect: Allow
             Action:
               - dynamodb:GetItem
+              - dynamodb:TransactWriteItems
             Resource:
               - !GetAtt DataOpsUsersTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:TransactWriteItems
+            Resource:
+              - !GetAtt DataOpsTasksTable.Arn
         - Statement:
             Effect: Allow
             Action: sqs:SendMessage
@@ -1413,6 +1437,54 @@ Resources:
             Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
             Resource: !GetAtt SponsorCommunicationPrivateArchiveKey.Arn
 
+  ConversationalResultDispatcherFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: ..
+      Runtime: nodejs24.x
+      Handler: dist/result-notification-handler.handler
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          DATAOPS_ENV: !Ref DataOpsEnvironment
+          DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable
+          TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
+          CONVERSATIONAL_RESULT_DISPATCH_LIMIT: "50"
+          CONVERSATIONAL_RESULT_DISPATCH_LEASE_SECONDS: "60"
+          CONVERSATIONAL_RESULT_DELIVERY_ENABLED: !Ref ConversationalResultDeliveryEnabled
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:UpdateItem
+            Resource:
+              - !GetAtt DataOpsConversationalStateTable.Arn
+              - !Sub ${DataOpsConversationalStateTable.Arn}/index/GSI2
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+            Resource:
+              - !GetAtt DataOpsUsersTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
+      Events:
+        ResultDelivery:
+          Type: Schedule
+          Properties:
+            Description: Deliver owner-bound conversational execution results through the shared Telegram channel.
+            Schedule: rate(1 minute)
+            State: !If [ConversationalResultDeliveryIsEnabled, ENABLED, DISABLED]
+
   BackendFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -1620,6 +1692,8 @@ Resources:
           TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
           CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled
+          CONVERSATIONAL_TODO_PLUGIN_ENABLED: !Ref ConversationalTodoPluginEnabled
+          CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled
           ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn
           CONVERSATIONAL_TELEGRAM_ENABLED: !Ref ConversationalTelegramEnabled
           CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled
@@ -1692,6 +1766,8 @@ Outputs:
     Value: !Ref SponsorCommunicationPrivateArchiveBucket
   ConversationalExecutionWorkerFunctionName:
     Value: !Ref ConversationalExecutionWorkerFunction
+  ConversationalResultDispatcherFunctionName:
+    Value: !Ref ConversationalResultDispatcherFunction
   ConversationalExecutionFailureQueueArn:
     Value: !GetAtt ConversationalExecutionFailureQueue.Arn
   DataOpsConversationalStateTableName:
