@@ -32,6 +32,25 @@ async function transact(
   client: DynamoDBDocumentClient,
   input: ConstructorParameters<typeof TransactWriteCommand>[0],
 ) {
+  const guarded = [...(input.TransactItems || [])];
+  const protectedSources = new Set<string>();
+  for (const action of input.TransactItems || []) {
+    const mutation = action.Update || action.Delete;
+    const pk = String(mutation?.Key?.PK || "");
+    const match = pk.match(/^(DOCUMENT|BOOKKEEPING)#(.+)$/);
+    if (!match) continue;
+    const claim = `SPONSOR_FINANCE_CLAIM#${match[1] === "DOCUMENT" ? "document" : "transaction"}#${match[2]}`;
+    if (protectedSources.has(claim)) continue;
+    protectedSources.add(claim);
+    guarded.push({
+      ConditionCheck: {
+        TableName: TABLE_BOOKKEEPING,
+        Key: { PK: claim, SK: claim },
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    });
+  }
+  input = { ...input, TransactItems: guarded };
   try {
     await client.send(new TransactWriteCommand(input));
   } catch (error) {
@@ -62,7 +81,8 @@ async function transact(
               ConsistentRead: true,
             }),
           );
-          if (!result.Item) throw new Error("Conditional check failed");
+          const wantsAbsent = action.ConditionCheck.ConditionExpression?.includes("attribute_not_exists");
+          if (wantsAbsent ? !!result.Item : !result.Item) throw new Error("Conditional check failed");
         } else if (action.Put) await client.send(new PutCommand(action.Put));
         else if (action.Update) await client.send(new UpdateCommand(action.Update));
         else if (action.Delete) await client.send(new DeleteCommand(action.Delete));
@@ -183,13 +203,48 @@ export async function deleteBookkeepingItem(
 ) {
   const existing = await getBookkeepingItem(client, kind, id);
   if (existing)
-    await client.send(
-      new DeleteCommand({
-        TableName: TABLE_BOOKKEEPING,
-        Key: { PK: key(kind, id), SK: key(kind, id) },
-      }),
-    );
+    await transact(client, {
+      TransactItems: [{
+        Delete: {
+          TableName: TABLE_BOOKKEEPING,
+          Key: { PK: key(kind, id), SK: key(kind, id) },
+          ConditionExpression: "updatedAt = :updatedAt",
+          ExpressionAttributeValues: { ":updatedAt": existing.updatedAt },
+        },
+      }],
+    });
   return existing;
+}
+
+export async function updateBookkeepingTransaction(
+  client: DynamoDBDocumentClient,
+  id: string,
+  expectedUpdatedAt: string,
+  value: Record<string, unknown>,
+) {
+  const now = new Date().toISOString();
+  const names: Record<string, string> = {};
+  const values: Record<string, unknown> = { ":expected": expectedUpdatedAt, ":now": now };
+  const sets = Object.entries(value)
+    .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name))
+    .map(([name, child], index) => {
+      names[`#field${index}`] = name;
+      values[`:value${index}`] = child;
+      return `#field${index} = :value${index}`;
+    });
+  await transact(client, {
+    TransactItems: [{
+      Update: {
+        TableName: TABLE_BOOKKEEPING,
+        Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
+        UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
+        ConditionExpression: "updatedAt = :expected",
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      },
+    }],
+  });
+  return getBookkeepingItem(client, "bookkeeping", id);
 }
 
 export type PrepareDocumentInput = {
@@ -382,16 +437,14 @@ export async function markDocumentCleanupRequired(
   idempotencyKey: string,
   runId: string,
 ) {
-  await client.send(
-    new UpdateCommand({
+  await transact(client, { TransactItems: [{ Update: {
       TableName: TABLE_BOOKKEEPING,
       Key: { PK: documentKey(id), SK: documentKey(id) },
       UpdateExpression: "SET #status = :cleanup, updatedAt = :now",
       ConditionExpression: "creatorIdempotencyKey = :owner AND createdByRunId = :run AND #status = :pending",
       ExpressionAttributeNames: { "#status": "status" },
       ExpressionAttributeValues: { ":cleanup": "cleanup-required", ":pending": "pending", ":owner": idempotencyKey, ":run": runId, ":now": new Date().toISOString() },
-    }),
-  );
+    } }] });
 }
 
 export async function removePendingDocumentClaim(
@@ -488,16 +541,14 @@ export async function markDocumentRollbackDeleting(
   id: string,
   runId: string,
 ) {
-  await client.send(
-    new UpdateCommand({
+  await transact(client, { TransactItems: [{ Update: {
       TableName: TABLE_BOOKKEEPING,
       Key: { PK: documentKey(id), SK: documentKey(id) },
       UpdateExpression: "SET #status = :deleting, updatedAt = :now",
       ConditionExpression: "createdByRunId = :run AND (#status = :active OR #status = :deleting) AND uploadAuthorizationExpiresAt < :now AND (attribute_not_exists(linkRefCount) OR linkRefCount = :zero) AND (attribute_not_exists(reportRefCount) OR reportRefCount = :zero)",
       ExpressionAttributeNames: { "#status": "status" },
       ExpressionAttributeValues: { ":run": runId, ":active": "active", ":deleting": "rollback-deleting", ":zero": 0, ":now": new Date().toISOString() },
-    }),
-  );
+    } }] });
 }
 
 export async function removeRollbackDocument(
