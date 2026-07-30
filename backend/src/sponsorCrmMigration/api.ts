@@ -146,7 +146,6 @@ export class SponsorMigrationApi {
     for (let attempt = 0; attempt < attempts; attempt++) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.limits.requestTimeoutMs);
-      timeout.unref?.();
       try {
         const response = await this.requestFetch(`${this.origin}${path}`, {
           method,

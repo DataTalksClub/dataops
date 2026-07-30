@@ -1295,7 +1295,7 @@ describe("sponsor CRM historical migration", () => {
     );
   });
 
-  it("fails closed on incomplete, cyclic, over-limit, and timed-out storage pagination", async () => {
+  it("fails closed on incomplete, cyclic, and over-limit storage pagination", async () => {
     const limits = {
       maxPages: 2, maxItems: 2, maxBytes: 100, deadlineMs: 20,
     };
@@ -1329,12 +1329,27 @@ describe("sponsor CRM historical migration", () => {
     await rejectReason("storage-pagination-failed", async () => {
       throw new Error("synthetic storage failure");
     });
-    await rejectReason(
-      "storage-pagination-timeout",
-      async (_cursor, signal) => new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+  });
+
+  it("keeps the storage deadline live until an in-flight page is aborted", async () => {
+    let observedAbort = false;
+    await assert.rejects(
+      () => collectBoundedPages({
+        limits: {
+          maxPages: 2, maxItems: 2, maxBytes: 100, deadlineMs: 20,
+        },
+        loadPage: async (_cursor, signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener("abort", () => {
+              observedAbort = true;
+              reject(new Error("aborted"));
+            }, { once: true });
+          }),
       }),
+      (error: unknown) => error instanceof StoragePaginationError &&
+        error.reason === "storage-pagination-timeout",
     );
+    assert.equal(observedAbort, true);
   });
 
   it("sends mutations only through authenticated HTTPS and redacts permanent errors", async () => {
@@ -1375,6 +1390,7 @@ describe("sponsor CRM historical migration", () => {
 
   it("bounds fetch deadlines, streamed bodies, and hostile pagination", async () => {
     const token = "synthetic_token_abcdefghijklmnopqrstuvwxyz";
+    let observedRequestAborts = 0;
     const hanging = SponsorMigrationApi.create({
       origin: "https://synthetic.example.invalid",
       bearerToken: token,
@@ -1382,8 +1398,10 @@ describe("sponsor CRM historical migration", () => {
       requestTimeoutMs: 10,
       requestFetch: (async (_request: string | URL | Request, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () =>
-            reject(new DOMException("synthetic abort", "AbortError")), { once: true });
+          init?.signal?.addEventListener("abort", () => {
+            observedRequestAborts += 1;
+            reject(new DOMException("synthetic abort", "AbortError"));
+          }, { once: true });
         })) as typeof fetch,
       sleep: async () => undefined,
     });
@@ -1392,11 +1410,13 @@ describe("sponsor CRM historical migration", () => {
       (error: unknown) => error instanceof MigrationFailure &&
         error.reason === "api-read-unavailable",
     );
+    assert.equal(observedRequestAborts, 3);
     await assert.rejects(
       () => hanging.mutate("POST", "/api/sponsor-crm/organizations", {}),
       (error: unknown) => error instanceof MigrationFailure &&
         error.reason === "api-outcome-unknown",
     );
+    assert.equal(observedRequestAborts, 4);
     const bodyHanging = SponsorMigrationApi.create({
       origin: "https://synthetic.example.invalid",
       bearerToken: token,
