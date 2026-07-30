@@ -161,6 +161,89 @@ Parameters:
     Default: ""
     Description: Optional ARN of the out-of-band z.ai JSON secret containing apiKey
     AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
+  ConversationalTelegramEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ConversationalTelegramVoiceEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ConversationalTelegramPhotoEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  GroqTranscriptionApiKeySecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
+  ZaiVisionApiKeySecretArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
+  ZaiVisionModel:
+    Type: String
+    Default: glm-4.6v
+    AllowedPattern: "^[a-zA-Z0-9_.-]+$"
+  ZaiVisionBaseUrl:
+    Type: String
+    Default: https://api.z.ai/api/paas/v4/chat/completions
+    AllowedPattern: "^https://[^ ]+$"
+  TelegramHandlerDeadlineMs:
+    Type: Number
+    Default: 28000
+    MinValue: 1000
+    MaxValue: 28000
+  TelegramApiTimeoutMs:
+    Type: Number
+    Default: 5000
+    MinValue: 100
+    MaxValue: 10000
+  TelegramApiMaxResponseBytes:
+    Type: Number
+    Default: 65536
+    MinValue: 1024
+    MaxValue: 262144
+  TelegramVoiceMaxBytes:
+    Type: Number
+    Default: 20971520
+    MinValue: 1
+    MaxValue: 20971520
+  TelegramVoiceMaxSeconds:
+    Type: Number
+    Default: 300
+    MinValue: 1
+    MaxValue: 300
+  TelegramPhotoMaxBytes:
+    Type: Number
+    Default: 10485760
+    MinValue: 1
+    MaxValue: 10485760
+  TelegramPhotoMaxPixels:
+    Type: Number
+    Default: 20000000
+    MinValue: 1
+    MaxValue: 20000000
+  TelegramMediaDownloadTimeoutMs:
+    Type: Number
+    Default: 8000
+    MinValue: 100
+    MaxValue: 10000
+  TelegramMediaProviderTimeoutMs:
+    Type: Number
+    Default: 18000
+    MinValue: 100
+    MaxValue: 20000
+  TelegramMediaProviderMaxResponseBytes:
+    Type: Number
+    Default: 65536
+    MinValue: 1024
+    MaxValue: 262144
+  TelegramMediaMaxTextBytes:
+    Type: Number
+    Default: 16384
+    MinValue: 1
+    MaxValue: 16384
 Rules:
   ConversationalAgentRequiresZaiSecret:
     Assertions:
@@ -168,10 +251,28 @@ Rules:
           - !Equals [!Ref ConversationalAgentEnabled, "false"]
           - !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
         AssertDescription: Enabling the conversational agent requires a z.ai secret ARN
+  TelegramVoiceRequiresConfiguration:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref ConversationalTelegramVoiceEnabled, "false"]
+          - !And
+              - !Equals [!Ref ConversationalTelegramEnabled, "true"]
+              - !Not [!Equals [!Ref GroqTranscriptionApiKeySecretArn, ""]]
+        AssertDescription: Telegram voice requires the global adapter and Groq secret ARN
+  TelegramPhotoRequiresConfiguration:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref ConversationalTelegramPhotoEnabled, "false"]
+          - !And
+              - !Equals [!Ref ConversationalTelegramEnabled, "true"]
+              - !Not [!Equals [!Ref ZaiVisionApiKeySecretArn, ""]]
+        AssertDescription: Telegram photo requires the global adapter and z.ai vision secret ARN
 Conditions:
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
   HasZaiConversationalSecret: !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
+  HasGroqTranscriptionSecret: !Not [!Equals [!Ref GroqTranscriptionApiKeySecretArn, ""]]
+  HasZaiVisionSecret: !Not [!Equals [!Ref ZaiVisionApiKeySecretArn, ""]]
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -1049,6 +1150,14 @@ Resources:
                 - HasZaiConversationalSecret
                 - !Ref ZaiConversationalApiKeySecretArn
                 - !Ref AWS::NoValue
+              - !If
+                - HasGroqTranscriptionSecret
+                - !Ref GroqTranscriptionApiKeySecretArn
+                - !Ref AWS::NoValue
+              - !If
+                - HasZaiVisionSecret
+                - !Ref ZaiVisionApiKeySecretArn
+                - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action: [dynamodb:GetItem]
@@ -1155,6 +1264,24 @@ Resources:
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
           CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled
           ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn
+          CONVERSATIONAL_TELEGRAM_ENABLED: !Ref ConversationalTelegramEnabled
+          CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled
+          CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: !Ref ConversationalTelegramPhotoEnabled
+          GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: !Ref GroqTranscriptionApiKeySecretArn
+          ZAI_VISION_API_KEY_SECRET_ARN: !Ref ZaiVisionApiKeySecretArn
+          ZAI_VISION_MODEL: !Ref ZaiVisionModel
+          ZAI_VISION_BASE_URL: !Ref ZaiVisionBaseUrl
+          TELEGRAM_HANDLER_DEADLINE_MS: !Ref TelegramHandlerDeadlineMs
+          TELEGRAM_API_TIMEOUT_MS: !Ref TelegramApiTimeoutMs
+          TELEGRAM_API_MAX_RESPONSE_BYTES: !Ref TelegramApiMaxResponseBytes
+          TELEGRAM_VOICE_MAX_BYTES: !Ref TelegramVoiceMaxBytes
+          TELEGRAM_VOICE_MAX_SECONDS: !Ref TelegramVoiceMaxSeconds
+          TELEGRAM_PHOTO_MAX_BYTES: !Ref TelegramPhotoMaxBytes
+          TELEGRAM_PHOTO_MAX_PIXELS: !Ref TelegramPhotoMaxPixels
+          TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS: !Ref TelegramMediaDownloadTimeoutMs
+          TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS: !Ref TelegramMediaProviderTimeoutMs
+          TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES: !Ref TelegramMediaProviderMaxResponseBytes
+          TELEGRAM_MEDIA_MAX_TEXT_BYTES: !Ref TelegramMediaMaxTextBytes
           CONVERSATIONAL_PRESENTATION_TTL_SECONDS: !Ref ConversationalPresentationTtlSeconds
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
       FunctionUrlConfig:

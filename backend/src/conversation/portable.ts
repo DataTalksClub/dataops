@@ -18,6 +18,7 @@ interface ConversationalEntitySpec {
 
 const CONVERSATIONAL_ENTITY_SPECS: ConversationalEntitySpec[] = [
   ['identity_bindings', 'identity_bindings.jsonl', 'identity_binding'],
+  ['identity_binding_audits', 'identity_binding_audits.jsonl', 'identity_binding_audit'],
   ['conversations', 'conversations.jsonl', 'conversation'],
   ['channel_bindings', 'channel_bindings.jsonl', 'channel_binding'],
   ['conversation_events', 'conversation_events.jsonl', 'conversation_event'],
@@ -44,7 +45,39 @@ function mapConversationalRecord(item: Record<string, unknown>): JsonRecord {
     actionTokenHash: _actionTokenHash,
     ...portable
   } = item;
+  if (
+    portable.recordType === 'conversational_private_payload'
+    && portable.content
+    && typeof portable.content === 'object'
+    && !Array.isArray(portable.content)
+  ) {
+    portable.content = redactPrivateText(portable.content as Record<string, unknown>);
+  }
   return JSON.parse(JSON.stringify(portable)) as JsonRecord;
+}
+
+function redactPrivateText(value: Record<string, unknown>): JsonRecord {
+  const redacted: JsonRecord = {};
+  const removed: string[] = [];
+  for (const [key, entry] of Object.entries(value)) {
+    if (/^(?:text|caption|message|transcript|description)$/i.test(key)) {
+      removed.push(key);
+      continue;
+    }
+    if (Array.isArray(entry)) {
+      redacted[key] = entry.map((item) => (
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? redactPrivateText(item as Record<string, unknown>)
+          : item
+      )) as JsonValue;
+    } else if (entry && typeof entry === 'object') {
+      redacted[key] = redactPrivateText(entry as Record<string, unknown>);
+    } else {
+      redacted[key] = entry as JsonValue;
+    }
+  }
+  if (removed.length > 0) redacted.redactedFields = removed.sort();
+  return redacted;
 }
 
 function conversationalSortKey(record: JsonRecord): string {
