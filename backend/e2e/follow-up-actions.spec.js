@@ -1,21 +1,14 @@
 const { test, expect } = require('./fixtures');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+  offsetBusinessDate,
+} = require('./helpers/business-date');
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
-
-function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
-}
-
-function offsetDateString(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
-}
+const BERLIN_TODAY = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
 async function screenshot(page, name) {
   await page.screenshot({ path: `../.tmp/screenshots/${name}.png`, fullPage: true });
@@ -45,6 +38,11 @@ async function cleanupBundle(request, bundle) {
 }
 
 test.describe('Operator follow-up actions (#56)', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
+  test.beforeEach(async ({ page }) => {
+    await installBerlinBoundaryClock(page);
+  });
+
   test('records follow-up sent, shows workflow history, and unblocks the task', async ({ page, request }) => {
     const suffix = Math.random().toString(36).slice(2, 8);
     let bundle;
@@ -54,7 +52,7 @@ test.describe('Operator follow-up actions (#56)', () => {
       const bundleRes = await request.post('/api/bundles', {
         data: {
           title: 'Follow-up workflow ' + suffix,
-          anchorDate: todayString(),
+          anchorDate: BERLIN_TODAY,
           status: 'active',
         },
       });
@@ -64,12 +62,12 @@ test.describe('Operator follow-up actions (#56)', () => {
       const taskRes = await request.post('/api/tasks', {
         data: {
           description: 'Collect sponsor approval ' + suffix,
-          date: offsetDateString(-2),
+          date: offsetBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT, -2),
           assigneeId: GRACE_ID,
           bundleId: bundle.id,
           status: 'waiting',
           waitingFor: 'Sponsor reply',
-          followUpAt: todayString(),
+          followUpAt: BERLIN_TODAY,
           followUpChannel: 'email',
           comment: 'Waiting for sponsor approval',
           validation: { dashboardStates: ['waiting', 'follow-up-due'] },
@@ -92,7 +90,7 @@ test.describe('Operator follow-up actions (#56)', () => {
 
       await dashboardActionRow.locator('.follow-up-channel').selectOption('email');
       await dashboardActionRow.locator('.follow-up-note').fill('Sent sponsor reminder from Gmail');
-      await dashboardActionRow.locator('.follow-up-next-date').fill(offsetDateString(2));
+      await dashboardActionRow.locator('.follow-up-next-date').fill(offsetBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT, 2));
       await Promise.all([
         page.waitForResponse((response) => (
           response.url().includes('/api/tasks/' + task.id + '/actions/follow-up-sent')

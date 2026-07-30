@@ -1,4 +1,10 @@
 const { test, expect } = require('@playwright/test');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+} = require('./helpers/business-date');
 
 // Helper to create a template via API
 async function createTemplate(request, data) {
@@ -678,12 +684,7 @@ const fs = require('fs');
 const path = require('path');
 const UX_AUDIT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'ux-audit');
 
-function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
-}
+const BERLIN_TODAY = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
 async function auditShot(page, name) {
   fs.mkdirSync(UX_AUDIT_DIR, { recursive: true });
@@ -701,8 +702,14 @@ async function cleanupBundle(request, bundleId) {
 }
 
 test.describe('Start workflow from Templates library (issue #104)', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
+  test.beforeEach(async ({ page }) => {
+    await installBerlinBoundaryClock(page);
+  });
 
   test('manual template card starts a workflow, generates tasks from offsets, and opens the bundle', async ({ page, request }) => {
+    expect(BERLIN_MIDNIGHT_BOUNDARY_INSTANT.slice(0, 10)).toBe('2026-07-30');
+    expect(BERLIN_TODAY).toBe('2026-07-31');
     const suffix = uid();
     const name = 'Start-' + suffix;
     const template = await createTemplate(request, {
@@ -740,7 +747,7 @@ test.describe('Start workflow from Templates library (issue #104)', () => {
       // Sensible default title = "<template name>: <today>", auto-updating when
       // the anchor date changes and the title is still the default.
       const titleInput = startForm.locator('.template-start-title');
-      await expect(titleInput).toHaveValue(name + ': ' + todayString());
+      await expect(titleInput).toHaveValue(name + ': ' + BERLIN_TODAY);
       await startForm.locator('.template-start-anchor').fill('2026-09-10');
       await expect(titleInput).toHaveValue(name + ': 2026-09-10');
 

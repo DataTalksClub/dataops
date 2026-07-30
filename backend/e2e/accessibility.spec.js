@@ -1,16 +1,16 @@
 const { test, expect } = require('@playwright/test');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+} = require('./helpers/business-date');
 
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
+const BERLIN_TODAY = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
 function uid() {
   return Math.random().toString(36).slice(2, 8);
-}
-
-function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
 }
 
 async function createTemplate(request, data) {
@@ -34,6 +34,11 @@ async function archiveAndDeleteBundle(request, bundleId) {
 }
 
 test.describe('Keyboard accessibility', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
+  test.beforeEach(async ({ page }) => {
+    await installBerlinBoundaryClock(page);
+  });
+
   test('task bundle badges are keyboard-focusable links to bundle detail', async ({ page, request }) => {
     const title = 'Keyboard Task Badge Bundle ' + uid();
     const bundle = await createBundle(request, {
@@ -80,7 +85,7 @@ test.describe('Keyboard accessibility', () => {
     const taskRes = await request.post('/api/tasks', {
       data: {
         description: 'Keyboard dashboard badge task ' + uid(),
-        date: todayString(),
+        date: BERLIN_TODAY,
         bundleId: bundle.id,
         assigneeId: GRACE_ID,
       },

@@ -1,24 +1,17 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('./fixtures');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+  offsetBusinessDate,
+} = require('./helpers/business-date');
+const BERLIN_TODAY = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
 function uid() {
   return Math.random().toString(36).slice(2, 8);
-}
-
-function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
-}
-
-function offsetDateString(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
 }
 
 const screenshotDir = path.resolve(__dirname, '..', '..', '.tmp', 'screenshots');
@@ -29,10 +22,15 @@ async function screenshot(page, name) {
 }
 
 test.describe('raw intake inbox workflow', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
+  test.beforeEach(async ({ page }) => {
+    await installBerlinBoundaryClock(page);
+  });
+
   test('routes blocked intake follow-ups through daily queue and waiting tasks', async ({ page, request }) => {
     const suffix = uid();
-    const today = todayString();
-    const future = offsetDateString(7);
+    const today = BERLIN_TODAY;
+    const future = offsetBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT, 7);
 
     const dueItem = (await (await request.post('/api/intake', {
       data: {
@@ -68,7 +66,7 @@ test.describe('raw intake inbox workflow', () => {
     await screenshot(page, 'issue-64-intake-detail-follow-up-actions.png');
 
     await page.locator('#intake-follow-up-note').fill('Sent guest reminder');
-    await page.locator('#intake-next-follow-up-at').fill(offsetDateString(3));
+    await page.locator('#intake-next-follow-up-at').fill(offsetBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT, 3));
     await Promise.all([
       page.waitForResponse((response) => (
         response.url().includes('/api/intake/' + dueItem.id + '/follow-up-sent')

@@ -1,26 +1,56 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+} = require('./helpers/business-date');
+const BERLIN_TODAY = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
 function uid() {
   return Math.random().toString(36).slice(2, 8);
-}
-
-function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
 }
 
 async function screenshot(page, name) {
   await page.screenshot({ path: `../.tmp/screenshots/${name}.png`, fullPage: true });
 }
 
+function auditDefaultSpaBusinessDates() {
+  // Intentional UTC API specs are outside this default-SPA inventory and keep
+  // their server-timestamp contracts unchanged.
+  const defaultSpaSpecs = [
+    'accessibility.spec.js',
+    'follow-up-actions.spec.js',
+    'intake-inbox.spec.js',
+    'operations-smoke.spec.js',
+    'task-list.spec.js',
+    'template-editor.spec.js',
+  ];
+
+  for (const file of defaultSpaSpecs) {
+    const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    expect(source, file + ' should import the shared business-date helper').toContain("require('./helpers/business-date')");
+    expect(source, file + ' should set the browser to the business timezone').toContain('test.use({ timezoneId: BERLIN_TIME_ZONE })');
+    expect(source, file + ' should install the fixed boundary before navigation').toContain('installBerlinBoundaryClock(page)');
+    expect(source, file + ' should not declare an ad hoc today helper').not.toMatch(/function\s+(?:todayString|offsetDateString)\s*\(/);
+    expect(source, file + ' should not derive UI today from the live runner clock').not.toMatch(/new Date\s*\(\s*\)/);
+  }
+}
+
 test.describe('operator operations smoke assistant workflow', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
+  test.beforeEach(async ({ page }) => {
+    await installBerlinBoundaryClock(page);
+  });
+
   test('logs in and keeps dashboard, workflow, proof, assistant, and artifact context connected', async ({ browser, page, request }) => {
     test.setTimeout(90000);
+    auditDefaultSpaBusinessDates();
 
     const suffix = uid();
-    const today = todayString();
+    const today = BERLIN_TODAY;
     const title = 'Operations smoke workflow ' + suffix;
     let bundle;
     let task;
@@ -71,8 +101,10 @@ test.describe('operator operations smoke assistant workflow', () => {
     const loginContext = await browser.newContext({
       baseURL: 'http://localhost:3001',
       storageState: { cookies: [], origins: [] },
+      timezoneId: BERLIN_TIME_ZONE,
     });
     const loginPage = await loginContext.newPage();
+    await installBerlinBoundaryClock(loginPage);
 
     try {
       await loginPage.goto('/#/');

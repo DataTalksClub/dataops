@@ -27,6 +27,10 @@ function offsetBusinessDate(value, days) {
   return date.toISOString().slice(0, 10);
 }
 
+async function installBerlinBoundaryClock(page) {
+  await page.clock.setFixedTime(new Date(BERLIN_MIDNIGHT_BOUNDARY_INSTANT));
+}
+
 async function installBundleCreatedAtOverride(page, bundleId, createdAt) {
   await page.route(
     (url) => url.pathname === '/api/bundles' || url.pathname === '/api/bundles/' + bundleId,
@@ -55,6 +59,7 @@ module.exports = {
   BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
   BERLIN_TIME_ZONE,
   berlinBusinessDate,
+  installBerlinBoundaryClock,
   installBundleCreatedAtOverride,
   offsetBusinessDate,
 };
