@@ -140,6 +140,63 @@ def test_conversational_execution_worker_has_filtered_stream_recovery_and_failur
     assert "CONVERSATIONAL_EXECUTION_LEASE_SECONDS" not in backend
 
 
+def test_conversational_telegram_media_is_disabled_and_uses_exact_optional_secrets():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert 'ConversationalTelegramEnabled:' in template
+    assert 'ConversationalTelegramVoiceEnabled:' in template
+    assert 'ConversationalTelegramPhotoEnabled:' in template
+    for parameter in [
+        "ConversationalTelegramEnabled",
+        "ConversationalTelegramVoiceEnabled",
+        "ConversationalTelegramPhotoEnabled",
+    ]:
+        assert f'  {parameter}:\n    Type: String\n    Default: "false"' in template
+    assert "TelegramVoiceRequiresConfiguration:" in template
+    assert "TelegramPhotoRequiresConfiguration:" in template
+    assert "CONVERSATIONAL_TELEGRAM_ENABLED: !Ref ConversationalTelegramEnabled" in backend
+    assert "CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled" in backend
+    assert "CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: !Ref ConversationalTelegramPhotoEnabled" in backend
+    assert "GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: !Ref GroqTranscriptionApiKeySecretArn" in backend
+    assert "ZAI_VISION_API_KEY_SECRET_ARN: !Ref ZaiVisionApiKeySecretArn" in backend
+    assert "ZAI_VISION_MODEL: !Ref ZaiVisionModel" in backend
+    assert "ZAI_VISION_BASE_URL: !Ref ZaiVisionBaseUrl" in backend
+    bounded_settings = {
+        "TelegramHandlerDeadlineMs": ("28000", "TELEGRAM_HANDLER_DEADLINE_MS"),
+        "TelegramApiTimeoutMs": ("5000", "TELEGRAM_API_TIMEOUT_MS"),
+        "TelegramApiMaxResponseBytes": ("65536", "TELEGRAM_API_MAX_RESPONSE_BYTES"),
+        "TelegramVoiceMaxBytes": ("20971520", "TELEGRAM_VOICE_MAX_BYTES"),
+        "TelegramVoiceMaxSeconds": ("300", "TELEGRAM_VOICE_MAX_SECONDS"),
+        "TelegramPhotoMaxBytes": ("10485760", "TELEGRAM_PHOTO_MAX_BYTES"),
+        "TelegramPhotoMaxPixels": ("20000000", "TELEGRAM_PHOTO_MAX_PIXELS"),
+        "TelegramMediaDownloadTimeoutMs": ("8000", "TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS"),
+        "TelegramMediaProviderTimeoutMs": ("18000", "TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS"),
+        "TelegramMediaProviderMaxResponseBytes": (
+            "65536",
+            "TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES",
+        ),
+        "TelegramMediaMaxTextBytes": ("16384", "TELEGRAM_MEDIA_MAX_TEXT_BYTES"),
+    }
+    for parameter, (default, environment_name) in bounded_settings.items():
+        assert f"  {parameter}:\n    Type: Number\n    Default: {default}" in template
+        assert f"{environment_name}: !Ref {parameter}" in backend
+        assert f"{environment_name}: ${{{{ vars.{environment_name} }}}}" in workflow
+        assert f'ParameterKey={parameter},ParameterValue=${environment_name}' in workflow
+    assert "HasGroqTranscriptionSecret" in backend
+    assert "HasZaiVisionSecret" in backend
+    assert "!Ref GroqTranscriptionApiKeySecretArn" in backend
+    assert "!Ref ZaiVisionApiKeySecretArn" in backend
+    assert "GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: ${{ vars.GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN }}" in workflow
+    assert "ZAI_VISION_API_KEY_SECRET_ARN: ${{ vars.ZAI_VISION_API_KEY_SECRET_ARN }}" in workflow
+    assert "ParameterKey=GroqTranscriptionApiKeySecretArn" in workflow
+    assert "ParameterKey=ZaiVisionApiKeySecretArn" in workflow
+    assert "ParameterKey=ZaiVisionModel,ParameterValue=$ZAI_VISION_MODEL" in workflow
+    assert "ParameterKey=ZaiVisionBaseUrl,ParameterValue=$ZAI_VISION_BASE_URL" in workflow
+    assert "aws secretsmanager get-secret-value" not in workflow
+
+
 def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
     template = TEMPLATE.read_text(encoding="utf-8")
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")

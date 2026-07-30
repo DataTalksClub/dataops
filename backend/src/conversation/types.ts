@@ -12,6 +12,7 @@ const CONTEXT_SECRET_VALUE = /(?:bearer\s+\S+|arn:[a-z0-9-]+:secretsmanager:[^\s
 
 type RecordType =
   | 'identity_binding'
+  | 'identity_binding_audit'
   | 'conversation'
   | 'channel_binding'
   | 'conversation_event'
@@ -47,6 +48,17 @@ interface IdentityBinding extends RecordBase {
   revokedBy?: string;
   revokedAt?: string;
   revision: number;
+}
+
+interface IdentityBindingAudit extends RecordBase {
+  recordType: 'identity_binding_audit';
+  channel: string;
+  channelUserId: string;
+  userId: string;
+  action: 'created' | 'reactivated' | 'revoked';
+  actorId: string;
+  outcome: 'succeeded';
+  bindingRevision: number;
 }
 
 interface Conversation extends RecordBase {
@@ -243,6 +255,7 @@ interface StoredContextReceipt extends RecordBase {
 
 type ConversationalRecord =
   | IdentityBinding
+  | IdentityBindingAudit
   | Conversation
   | ChannelBinding
   | ConversationEvent
@@ -340,6 +353,7 @@ function validateConversationalRecord(
 ): void {
   assertEnum(record.recordType, [
     'identity_binding',
+    'identity_binding_audit',
     'conversation',
     'channel_binding',
     'conversation_event',
@@ -379,6 +393,15 @@ function validateConversationalRecord(
         assertString(record.revokedBy, 'identity_binding.revokedBy');
         assertIsoTimestamp(record.revokedAt, 'identity_binding.revokedAt');
       }
+      break;
+    case 'identity_binding_audit':
+      assertString(record.channel, 'identity_binding_audit.channel');
+      assertString(record.channelUserId, 'identity_binding_audit.channelUserId');
+      assertString(record.userId, 'identity_binding_audit.userId');
+      assertEnum(record.action, ['created', 'reactivated', 'revoked'], 'identity_binding_audit.action');
+      assertString(record.actorId, 'identity_binding_audit.actorId');
+      assertEnum(record.outcome, ['succeeded'], 'identity_binding_audit.outcome');
+      assertInteger(record.bindingRevision, 'identity_binding_audit.bindingRevision', 1);
       break;
     case 'conversation':
       assertString(record.ownerUserId, 'conversation.ownerUserId');
@@ -562,6 +585,7 @@ function assertRetention(record: ConversationalRecord): void {
   const retentionDays = (
     record.recordType === 'execution_attempt'
     || record.recordType === 'conversation_audit_event'
+    || record.recordType === 'identity_binding_audit'
   ) ? 365 : 30;
   const retentionBase = (
     record.recordType === 'conversation_event'
@@ -662,6 +686,7 @@ export type {
   ConversationalRecord,
   ExecutionAttempt,
   IdentityBinding,
+  IdentityBindingAudit,
   JsonValue,
   PluginDraft,
   ProposalPresentation,

@@ -8,6 +8,13 @@ import { updateIntakeItem } from '../db/intake';
 import { createTask } from '../db/tasks';
 import { createTelegramIntake } from './intake';
 import type { IntakeItem, LambdaEvent, LambdaResponse } from '../types';
+import {
+  adapterDependenciesFromConfig,
+  conversationalTelegramConfig,
+  handleConversationalTelegramWebhook,
+  safeEqual,
+  type TelegramAdapterDependencies,
+} from '../conversation/telegramAdapter';
 
 interface TelegramConfig {
   botToken?: string;
@@ -199,7 +206,7 @@ async function handleSocialRoute(
   return 'The social draft request failed safely. Check the DataOps assistant job for details.';
 }
 
-async function handleTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse> {
+async function handleLegacyTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse> {
   let config: TelegramConfig;
   try {
     config = await telegramConfig();
@@ -294,9 +301,50 @@ async function handleTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse
   };
 }
 
+async function handleTelegramWebhook(
+  event: LambdaEvent,
+  dependencyOverrides: Partial<TelegramAdapterDependencies> = {}
+): Promise<LambdaResponse> {
+  if (process.env.CONVERSATIONAL_TELEGRAM_ENABLED !== 'true') {
+    return handleLegacyTelegramWebhook(event);
+  }
+  let config: TelegramConfig;
+  try {
+    config = await telegramConfig();
+  } catch {
+    return { statusCode: 503, body: JSON.stringify({ error: 'Telegram integration is not configured' }) };
+  }
+  const suppliedSecret = headerValue(event.headers, 'x-telegram-bot-api-secret-token');
+  if (!config.webhookSecret) {
+    return { statusCode: 503, body: JSON.stringify({ error: 'Telegram integration is not configured' }) };
+  }
+  if (!safeEqual(suppliedSecret, config.webhookSecret) && process.env.TELEGRAM_INTEGRATION_SECRET_NAME) {
+    try {
+      config = await telegramConfig(true);
+    } catch {
+      return { statusCode: 503, body: JSON.stringify({ error: 'Telegram integration is not configured' }) };
+    }
+  }
+  if (!config.webhookSecret || !safeEqual(suppliedSecret, config.webhookSecret)) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+  }
+  try {
+    const adapterConfig = conversationalTelegramConfig(
+      config.botToken,
+      config.webhookSecret,
+      config.allowedChatIds
+    );
+    const client = dependencyOverrides.client || await getClient();
+    const dependencies = adapterDependenciesFromConfig(adapterConfig, client, dependencyOverrides);
+    return await handleConversationalTelegramWebhook(event, adapterConfig, dependencies);
+  } catch {
+    return { statusCode: 503, body: JSON.stringify({ error: 'Conversational Telegram is unavailable' }) };
+  }
+}
+
 function resetTelegramConfigCache(): void {
   cachedConfig = null;
   secretsClient = null;
 }
 
-export { handleTelegramWebhook, parseMessage, resetTelegramConfigCache };
+export { handleLegacyTelegramWebhook, handleTelegramWebhook, parseMessage, resetTelegramConfigCache };

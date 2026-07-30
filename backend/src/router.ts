@@ -26,6 +26,7 @@ import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleConversationalExecutionRoutes } from './routes/conversationalExecution';
+import { handleConversationalIdentityBindingRoutes } from './routes/conversationalIdentityBindings';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { getSession } from './db/sessions';
 import { getUser } from './db/users';
@@ -757,6 +758,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/conversational/execution-attempts/')) {
       const result = await handleConversationalExecutionRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+    if (reqPath.startsWith('/api/conversational/identity-bindings')) {
+      const result = await handleConversationalIdentityBindingRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 

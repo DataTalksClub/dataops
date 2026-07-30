@@ -113,6 +113,24 @@ jobs:
       MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}
       CONVERSATIONAL_AGENT_ENABLED: ${{ vars.CONVERSATIONAL_AGENT_ENABLED }}
       ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}
+      CONVERSATIONAL_TELEGRAM_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_ENABLED }}
+      CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED }}
+      CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED }}
+      GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: ${{ vars.GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN }}
+      ZAI_VISION_API_KEY_SECRET_ARN: ${{ vars.ZAI_VISION_API_KEY_SECRET_ARN }}
+      ZAI_VISION_MODEL: ${{ vars.ZAI_VISION_MODEL }}
+      ZAI_VISION_BASE_URL: ${{ vars.ZAI_VISION_BASE_URL }}
+      TELEGRAM_HANDLER_DEADLINE_MS: ${{ vars.TELEGRAM_HANDLER_DEADLINE_MS }}
+      TELEGRAM_API_TIMEOUT_MS: ${{ vars.TELEGRAM_API_TIMEOUT_MS }}
+      TELEGRAM_API_MAX_RESPONSE_BYTES: ${{ vars.TELEGRAM_API_MAX_RESPONSE_BYTES }}
+      TELEGRAM_VOICE_MAX_BYTES: ${{ vars.TELEGRAM_VOICE_MAX_BYTES }}
+      TELEGRAM_VOICE_MAX_SECONDS: ${{ vars.TELEGRAM_VOICE_MAX_SECONDS }}
+      TELEGRAM_PHOTO_MAX_BYTES: ${{ vars.TELEGRAM_PHOTO_MAX_BYTES }}
+      TELEGRAM_PHOTO_MAX_PIXELS: ${{ vars.TELEGRAM_PHOTO_MAX_PIXELS }}
+      TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS: ${{ vars.TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS }}
+      TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS: ${{ vars.TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS }}
+      TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES: ${{ vars.TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES }}
+      TELEGRAM_MEDIA_MAX_TEXT_BYTES: ${{ vars.TELEGRAM_MEDIA_MAX_TEXT_BYTES }}
 
     steps:
       - name: Check out repository
@@ -157,8 +175,32 @@ jobs:
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
           : "${MAILING_EXPORTS_CONFIG:=[]}"
           : "${CONVERSATIONAL_AGENT_ENABLED:=false}"
+          : "${CONVERSATIONAL_TELEGRAM_ENABLED:=false}"
+          : "${CONVERSATIONAL_TELEGRAM_VOICE_ENABLED:=false}"
+          : "${CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED:=false}"
+          : "${ZAI_VISION_MODEL:=glm-4.6v}"
+          : "${ZAI_VISION_BASE_URL:=https://api.z.ai/api/paas/v4/chat/completions}"
+          : "${TELEGRAM_HANDLER_DEADLINE_MS:=28000}"
+          : "${TELEGRAM_API_TIMEOUT_MS:=5000}"
+          : "${TELEGRAM_API_MAX_RESPONSE_BYTES:=65536}"
+          : "${TELEGRAM_VOICE_MAX_BYTES:=20971520}"
+          : "${TELEGRAM_VOICE_MAX_SECONDS:=300}"
+          : "${TELEGRAM_PHOTO_MAX_BYTES:=10485760}"
+          : "${TELEGRAM_PHOTO_MAX_PIXELS:=20000000}"
+          : "${TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS:=8000}"
+          : "${TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS:=18000}"
+          : "${TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES:=65536}"
+          : "${TELEGRAM_MEDIA_MAX_TEXT_BYTES:=16384}"
           if [ "$CONVERSATIONAL_AGENT_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
             echo "Conversational agent cannot be enabled without its z.ai secret ARN" >&2
+            exit 1
+          fi
+          if [ "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_ENABLED" != "true" ] || [ -z "$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" ]; }; then
+            echo "Telegram voice requires the global adapter and Groq secret ARN" >&2
+            exit 1
+          fi
+          if [ "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_ENABLED" != "true" ] || [ -z "$ZAI_VISION_API_KEY_SECRET_ARN" ]; }; then
+            echo "Telegram photo requires the global adapter and z.ai vision secret ARN" >&2
             exit 1
           fi
           sam deploy \
@@ -183,7 +225,25 @@ jobs:
               "ParameterKey=DapierCredentialsTableArn,ParameterValue=$DAPIER_CREDENTIALS_TABLE_ARN" \
               "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" \
               "ParameterKey=ConversationalAgentEnabled,ParameterValue=$CONVERSATIONAL_AGENT_ENABLED" \
-              "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN"
+              "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" \
+              "ParameterKey=ConversationalTelegramEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_ENABLED" \
+              "ParameterKey=ConversationalTelegramVoiceEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" \
+              "ParameterKey=ConversationalTelegramPhotoEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" \
+              "ParameterKey=GroqTranscriptionApiKeySecretArn,ParameterValue=$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" \
+              "ParameterKey=ZaiVisionApiKeySecretArn,ParameterValue=$ZAI_VISION_API_KEY_SECRET_ARN" \
+              "ParameterKey=ZaiVisionModel,ParameterValue=$ZAI_VISION_MODEL" \
+              "ParameterKey=ZaiVisionBaseUrl,ParameterValue=$ZAI_VISION_BASE_URL" \
+              "ParameterKey=TelegramHandlerDeadlineMs,ParameterValue=$TELEGRAM_HANDLER_DEADLINE_MS" \
+              "ParameterKey=TelegramApiTimeoutMs,ParameterValue=$TELEGRAM_API_TIMEOUT_MS" \
+              "ParameterKey=TelegramApiMaxResponseBytes,ParameterValue=$TELEGRAM_API_MAX_RESPONSE_BYTES" \
+              "ParameterKey=TelegramVoiceMaxBytes,ParameterValue=$TELEGRAM_VOICE_MAX_BYTES" \
+              "ParameterKey=TelegramVoiceMaxSeconds,ParameterValue=$TELEGRAM_VOICE_MAX_SECONDS" \
+              "ParameterKey=TelegramPhotoMaxBytes,ParameterValue=$TELEGRAM_PHOTO_MAX_BYTES" \
+              "ParameterKey=TelegramPhotoMaxPixels,ParameterValue=$TELEGRAM_PHOTO_MAX_PIXELS" \
+              "ParameterKey=TelegramMediaDownloadTimeoutMs,ParameterValue=$TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS" \
+              "ParameterKey=TelegramMediaProviderTimeoutMs,ParameterValue=$TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS" \
+              "ParameterKey=TelegramMediaProviderMaxResponseBytes,ParameterValue=$TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES" \
+              "ParameterKey=TelegramMediaMaxTextBytes,ParameterValue=$TELEGRAM_MEDIA_MAX_TEXT_BYTES"
 
       - name: Seed runtime users, workflow templates, and recurring configs
         working-directory: ${{ github.workspace }}/backend
