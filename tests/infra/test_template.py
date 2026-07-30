@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
-import textwrap
+import sys
+import tempfile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +28,69 @@ def _resource_block(template: str, resource_name: str) -> str:
         block_lines.append(line)
 
     return "\n".join(block_lines)
+
+
+def _executable_command(executable: str | Path) -> list[str]:
+    executable_path = Path(executable)
+    with executable_path.open("rb") as executable_file:
+        first_line = executable_file.readline(4096)
+
+    if not first_line.startswith(b"#!"):
+        return [str(executable_path)]
+
+    try:
+        shebang = first_line[2:].decode("utf-8").strip()
+    except UnicodeDecodeError as error:
+        raise AssertionError(f"{executable_path} has an invalid UTF-8 shebang") from error
+
+    shebang_parts = shebang.split(maxsplit=1)
+    interpreter = shebang_parts[0] if shebang_parts else ""
+    assert interpreter, f"{executable_path} has an empty shebang"
+    command = [interpreter]
+    if len(shebang_parts) == 2:
+        command.append(shebang_parts[1])
+    command.append(str(executable_path))
+    return command
+
+
+def _translated_template_from_sam(sam_binary: str, template: Path, scratch_dir: Path) -> str:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "AWS_CONFIG_FILE": str(scratch_dir / "aws-config"),
+            "AWS_EC2_METADATA_DISABLED": "true",
+            "AWS_SHARED_CREDENTIALS_FILE": str(scratch_dir / "aws-credentials"),
+            "SAM_CLI_TELEMETRY": "0",
+        }
+    )
+    completed = subprocess.run(
+        [
+            *_executable_command(sam_binary),
+            "validate",
+            "--debug",
+            "--template-file",
+            str(template),
+            "--region",
+            "eu-west-1",
+        ],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    output = f"{completed.stderr}\n{completed.stdout}"
+    marker = " | Translated template is:\n"
+    assert marker in output, "SAM CLI debug output did not include the translated template"
+    return output.partition(marker)[2]
+
+
+def _template_with_parameter_default(template: str, parameter_name: str, value: str) -> str:
+    parameter = _resource_block(template, parameter_name)
+    default_false = '    Default: "false"'
+    assert default_false in parameter
+    updated_parameter = parameter.replace(default_false, f'    Default: "{value}"', 1)
+    assert updated_parameter != parameter
+    return template.replace(parameter, updated_parameter, 1)
 
 
 def test_dataops_execution_tables_have_retention_pitr_and_tags():
@@ -199,65 +264,101 @@ def test_conversational_result_dispatcher_is_private_scheduled_and_least_privile
 def test_conversational_result_delivery_schedule_transforms_default_off_and_explicit_on():
     sam_binary = shutil.which("sam")
     assert sam_binary, "AWS SAM CLI is required for the transform contract test"
-    sam_interpreter = Path(sam_binary).read_text(encoding="utf-8").splitlines()[0].removeprefix("#!")
-    translator = textwrap.dedent(
-        """
-        import json
-        import sys
-        from pathlib import Path
-
-        from samcli.yamlhelper import yaml_parse
-        from samtranslator.translator.transform import transform
-
-        class EmptyManagedPolicyLoader:
-            def load(self):
-                return {}
-
-        template = yaml_parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
-        for resource in template.get("Resources", {}).values():
-            if resource.get("Type") == "AWS::Serverless::Function":
-                resource.get("Properties", {})["CodeUri"] = "s3://sam-transform-test/function.zip"
-        parameters = {
-            name: definition["Default"]
-            for name, definition in template.get("Parameters", {}).items()
-            if "Default" in definition
-        }
-        parameters.update({
-            "AWS::AccountId": "123456789012",
-            "AWS::Partition": "aws",
-            "AWS::Region": "eu-west-1",
-            "AWS::StackName": "dataops-transform-test",
-        })
-        print(json.dumps(transform(template, parameters, EmptyManagedPolicyLoader())))
-        """
+    template = TEMPLATE.read_text(encoding="utf-8")
+    explicit_on_template = _template_with_parameter_default(
+        template,
+        "ConversationalResultDeliveryEnabled",
+        "true",
     )
+    scratch_root = REPO_ROOT / ".tmp"
+    scratch_root.mkdir(exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="sam-transform-", dir=scratch_root) as scratch_name:
+        scratch_dir = Path(scratch_name)
+        default_off_path = scratch_dir / "template-default-off.yaml"
+        explicit_on_path = scratch_dir / "template-explicit-on.yaml"
+        default_off_path.write_text(template, encoding="utf-8")
+        explicit_on_path.write_text(explicit_on_template, encoding="utf-8")
+
+        transformed_off = _translated_template_from_sam(sam_binary, default_off_path, scratch_dir)
+        transformed_on = _translated_template_from_sam(sam_binary, explicit_on_path, scratch_dir)
+
+    expected_condition = "\n".join(
+        [
+            "  ConversationalResultDeliveryIsEnabled:",
+            "    Fn::Equals:",
+            "    - Ref: ConversationalResultDeliveryEnabled",
+            "    - 'true'",
+        ]
+    )
+    expected_state = "\n".join(
+        [
+            "      State:",
+            "        Fn::If:",
+            "        - ConversationalResultDeliveryIsEnabled",
+            "        - ENABLED",
+            "        - DISABLED",
+        ]
+    )
+
+    for transformed in (transformed_off, transformed_on):
+        rule = _resource_block(
+            transformed,
+            "ConversationalResultDispatcherFunctionResultDelivery",
+        )
+        assert "Type: AWS::Events::Rule" in rule
+        assert expected_state in rule
+        assert expected_condition in _resource_block(
+            transformed,
+            "ConversationalResultDeliveryIsEnabled",
+        )
+
+    default_off_parameter = _resource_block(
+        transformed_off,
+        "ConversationalResultDeliveryEnabled",
+    )
+    explicit_on_parameter = _resource_block(
+        transformed_on,
+        "ConversationalResultDeliveryEnabled",
+    )
+    assert "    Default: 'false'" in default_off_parameter
+    assert "    Default: 'true'" in explicit_on_parameter
+
+
+def test_sam_executable_command_invokes_python_shebang_script():
+    scratch_root = REPO_ROOT / ".tmp"
+    scratch_root.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="sam-script-", dir=scratch_root) as scratch_name:
+        script = Path(scratch_name) / "sam"
+        script.write_text(
+            f"#!{sys.executable}\n"
+            "import sys\n"
+            "print(sys.argv[1])\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+
+        completed = subprocess.run(
+            [*_executable_command(script), "script-ok"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    assert completed.stdout.strip() == "script-ok"
+
+
+def test_sam_executable_command_invokes_native_binary():
+    command = _executable_command(sys.executable)
+    assert command == [sys.executable]
+
     completed = subprocess.run(
-        [sam_interpreter, "-c", translator, str(TEMPLATE)],
+        [*command, "--version"],
         check=True,
         capture_output=True,
         text=True,
     )
-    transformed = json.loads(completed.stdout)
-    rule = transformed["Resources"]["ConversationalResultDispatcherFunctionResultDelivery"]
-    assert rule["Type"] == "AWS::Events::Rule"
-    state = rule["Properties"]["State"]
-    assert state == {
-        "Fn::If": ["ConversationalResultDeliveryIsEnabled", "ENABLED", "DISABLED"],
-    }
-
-    condition = transformed["Conditions"]["ConversationalResultDeliveryIsEnabled"]
-    assert condition == {
-        "Fn::Equals": [{"Ref": "ConversationalResultDeliveryEnabled"}, "true"],
-    }
-
-    def resolved_state(parameter_value: str) -> str:
-        condition_matches = parameter_value == condition["Fn::Equals"][1]
-        return state["Fn::If"][1 if condition_matches else 2]
-
-    parameter = transformed["Parameters"]["ConversationalResultDeliveryEnabled"]
-    assert parameter["Default"] == "false"
-    assert resolved_state(parameter["Default"]) == "DISABLED"
-    assert resolved_state("true") == "ENABLED"
+    assert completed.stdout.startswith("Python ")
 
 
 def test_conversational_telegram_media_is_disabled_and_uses_exact_optional_secrets():
