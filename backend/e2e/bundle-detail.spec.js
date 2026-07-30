@@ -1,17 +1,22 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBundleCreatedAtOverride,
+  offsetBusinessDate,
+} = require('./helpers/business-date');
 
 const ISSUE_106_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-106');
 
 function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  return berlinBusinessDate(new Date());
 }
 
 function offsetDateString(days) {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
+  return offsetBusinessDate(new Date(), days);
 }
 
 async function screenshotIssue106(page, name) {
@@ -44,9 +49,13 @@ async function expandRow(row) {
 }
 
 test.describe('Bundle detail view (issue #27)', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
 
   test('fresh template bundle list and detail share scheduled risk semantics and rich summary (#106)', async ({ page, request }) => {
-    const today = todayString();
+    await page.clock.setFixedTime(new Date(BERLIN_MIDNIGHT_BOUNDARY_INSTANT));
+    const today = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
+    expect(BERLIN_MIDNIGHT_BOUNDARY_INSTANT.slice(0, 10)).toBe('2026-07-30');
+    expect(today).toBe('2026-07-31');
     const suffix = uid();
     let templateId;
     let bundleId;
@@ -87,6 +96,7 @@ test.describe('Bundle detail view (issue #27)', () => {
       const body = await bundleRes.json();
       bundleId = body.bundle.id;
       tasks = body.tasks;
+      await installBundleCreatedAtOverride(page, bundleId, BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
       await page.setViewportSize({ width: 1280, height: 1000 });
       await page.goto('/#/bundles');
@@ -119,6 +129,7 @@ test.describe('Bundle detail view (issue #27)', () => {
       await expect(retroactiveRow).not.toContainText('At risk');
       await screenshotIssue106(page, 'bundle-detail-healthy-header-1280');
     } finally {
+      await page.unrouteAll({ behavior: 'wait' });
       for (const task of tasks) {
         await request.delete('/api/tasks/' + task.id);
       }
