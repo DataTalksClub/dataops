@@ -3,9 +3,19 @@
 Utilities for exporting Typefully social-set drafts and turning them into local
 analysis/process-doc drafts.
 
-These scripts read `TYPEFULLY_API_KEY` from `.env` or the environment. They do
-not print the token. Keep exports under `.tmp/` because post archives can
-contain private Typefully URLs, draft text, and unpublished drafts.
+The exporter reads `TYPEFULLY_API_KEY` from `.env` or the environment and does
+not print the token. The analyzer reads only its caller-supplied local JSON file
+and makes no credential or network request. Keep exports under `.tmp/` because
+post archives can contain private Typefully URLs, draft text, and unpublished
+drafts.
+
+Generated analysis and process-document drafts are also private operational
+data and stay under ignored `.tmp/` paths until separately reviewed for
+promotion. The analyzer omits provider private, share, and edit link metadata
+from every generated file. If the same exact private link value appears inside
+otherwise useful post evidence, it is replaced with a fixed neutral omission
+marker. Wrapper punctuation does not suppress omission, while a distinct,
+syntactically valid longer public URL remains unchanged.
 
 ## Export drafts and posts
 
@@ -63,4 +73,3 @@ This creates:
 
 - `analysis.md`
 - `process-doc-drafts/*.md`
-

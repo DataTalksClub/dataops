@@ -1,8 +1,12 @@
 import fs from "node:fs/promises";
+import { isIP } from "node:net";
 import path from "node:path";
 
 const DEFAULT_INPUT = ".tmp/typefully-export/all-drafts.json";
 const DEFAULT_OUTPUT = ".tmp/typefully-analysis";
+const PRIVATE_LINK_OMISSION = "[private provider link omitted]";
+const ANALYZED_PLATFORMS = ["x", "linkedin"];
+const MAX_URL_SUFFIX_CODE_UNITS = 8_192;
 
 function parseArgs(argv) {
   const args = {
@@ -40,21 +44,363 @@ Options:
 `;
 }
 
+function isProviderLinkField(key) {
+  const normalized = key.replaceAll("_", "").replaceAll("-", "").toLowerCase();
+  return /^(private|share|edit)(url|link)$/.test(normalized);
+}
+
+function hasValidPercentEncoding(value) {
+  return !/%(?![0-9a-f]{2})/i.test(value);
+}
+
+function rawHostDetails(value) {
+  const schemeEnd = value.indexOf("://");
+  if (schemeEnd === -1) {
+    return null;
+  }
+
+  const authorityEnd = value.slice(schemeEnd + 3).search(/[/?#]/);
+  const authority = authorityEnd === -1
+    ? value.slice(schemeEnd + 3)
+    : value.slice(schemeEnd + 3, schemeEnd + 3 + authorityEnd);
+  const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
+  if (hostAndPort.startsWith("[")) {
+    const bracketEnd = hostAndPort.indexOf("]");
+    if (bracketEnd === -1) {
+      return null;
+    }
+    const remainder = hostAndPort.slice(bracketEnd + 1);
+    return {
+      hostname: hostAndPort.slice(0, bracketEnd + 1),
+      port: remainder.startsWith(":") ? remainder.slice(1) : null,
+    };
+  }
+  const portSeparator = hostAndPort.lastIndexOf(":");
+  return {
+    hostname: portSeparator === -1 ? hostAndPort : hostAndPort.slice(0, portSeparator),
+    port: portSeparator === -1 ? null : hostAndPort.slice(portSeparator + 1),
+  };
+}
+
+function parseStrictHttpUrl(value) {
+  if (
+    value !== value.trim()
+    || /[\p{White_Space}\p{Cc}]/u.test(value)
+    || value.includes("\\")
+    || !hasValidPercentEncoding(value)
+  ) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) {
+    return null;
+  }
+
+  const hostDetails = rawHostDetails(value);
+  if (
+    !hostDetails
+    || (
+      hostDetails.port !== null
+      && (
+        !/^[0-9]+$/.test(hostDetails.port)
+        || Number(hostDetails.port) > 65_535
+      )
+    )
+  ) {
+    return null;
+  }
+
+  const hostname = parsed.hostname;
+  if (hostname.startsWith("[") || hostname.endsWith("]")) {
+    if (
+      !hostname.startsWith("[")
+      || !hostname.endsWith("]")
+      || isIP(hostname.slice(1, -1)) !== 6
+    ) {
+      return null;
+    }
+    return parsed;
+  }
+
+  if (isIP(hostname) === 4) {
+    return hostDetails.hostname === hostname ? parsed : null;
+  }
+  const dnsHostname = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  if (dnsHostname.length > 253) {
+    return null;
+  }
+
+  const labels = dnsHostname.split(".");
+  if (
+    labels.some(
+      (label) => (
+        label.length < 1
+        || label.length > 63
+        || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label)
+      ),
+    )
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
+function replacementCandidateKind(value) {
+  if (parseStrictHttpUrl(value)) {
+    return "url";
+  }
+
+  const codePoints = [...value];
+  const informationLength = codePoints.filter((character) => /[\p{L}\p{N}]/u.test(character)).length;
+  return codePoints.length >= 16 && informationLength >= 12 ? "opaque" : null;
+}
+
+function collectProviderLinkValues(value, found = new Map()) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectProviderLinkValues(item, found);
+    }
+    return found;
+  }
+  if (!value || typeof value !== "object") {
+    return found;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (isProviderLinkField(key) && typeof nestedValue === "string") {
+      const kind = replacementCandidateKind(nestedValue);
+      if (kind) {
+        found.set(nestedValue, kind);
+      }
+    }
+    collectProviderLinkValues(nestedValue, found);
+  }
+  return found;
+}
+
+function startsAtUrlTokenBoundary(value, matchIndex) {
+  if (matchIndex === 0) {
+    return true;
+  }
+
+  let previousStart = matchIndex - 1;
+  const previousCodeUnit = value.charCodeAt(previousStart);
+  if (
+    previousCodeUnit >= 0xdc00
+    && previousCodeUnit <= 0xdfff
+    && previousStart > 0
+  ) {
+    previousStart -= 1;
+  }
+  const previousCharacter = value.slice(previousStart, matchIndex);
+  return !/[\p{L}\p{N}._~-]/u.test(previousCharacter);
+}
+
+function hasDistinctLongerUrlToken(value, candidate, matchIndex) {
+  if (!startsAtUrlTokenBoundary(value, matchIndex)) {
+    return false;
+  }
+
+  const continuationStart = matchIndex + candidate.length;
+  let continuationEnd = continuationStart;
+  let ipv6BracketOpen = false;
+  while (
+    continuationEnd < value.length
+    && continuationEnd - continuationStart < MAX_URL_SUFFIX_CODE_UNITS
+  ) {
+    const remaining = value.slice(continuationEnd);
+    if (/^https?:\/\//i.test(remaining)) {
+      break;
+    }
+
+    const character = String.fromCodePoint(value.codePointAt(continuationEnd));
+    const continuationSoFar = value.slice(continuationStart, continuationEnd);
+    if (character === "[") {
+      if (ipv6BracketOpen || !continuationSoFar.endsWith("@")) {
+        break;
+      }
+      ipv6BracketOpen = true;
+      continuationEnd += character.length;
+      continue;
+    }
+    if (character === "]") {
+      if (!ipv6BracketOpen) {
+        break;
+      }
+      ipv6BracketOpen = false;
+      continuationEnd += character.length;
+      continue;
+    }
+    if (
+      /[\p{White_Space}\p{Cc}]/u.test(character)
+      || ["<", ">", "\"", "'", "`", "\\", ")", "}", ",", "!", "*", "$", "{"].includes(character)
+      || (character === "(" && continuationEnd === continuationStart)
+    ) {
+      break;
+    }
+    continuationEnd += character.length;
+  }
+
+  const continuation = value.slice(continuationStart, continuationEnd);
+  if (
+    !continuation
+    || ipv6BracketOpen
+    || !/[\p{L}\p{N}]/u.test(continuation)
+    || !hasValidPercentEncoding(continuation)
+  ) {
+    return false;
+  }
+
+  return Boolean(parseStrictHttpUrl(`${candidate}${continuation}`));
+}
+
+function overlapsOmissionMarker(value, start, end) {
+  const markerStart = value.lastIndexOf(PRIVATE_LINK_OMISSION, end - 1);
+  return markerStart !== -1
+    && markerStart < end
+    && markerStart + PRIVATE_LINK_OMISSION.length > start;
+}
+
+function redactionIntervals(value, candidates) {
+  const intervals = [];
+  for (const [candidate, kind] of candidates) {
+    let searchFrom = 0;
+    while (searchFrom < value.length) {
+      const matchIndex = value.indexOf(candidate, searchFrom);
+      if (matchIndex === -1) {
+        break;
+      }
+      if (
+        !overlapsOmissionMarker(value, matchIndex, matchIndex + candidate.length)
+        && (
+          kind === "opaque"
+          || !hasDistinctLongerUrlToken(value, candidate, matchIndex)
+        )
+      ) {
+        intervals.push([matchIndex, matchIndex + candidate.length]);
+      }
+      searchFrom = matchIndex + 1;
+    }
+  }
+
+  intervals.sort(([leftStart, leftEnd], [rightStart, rightEnd]) => (
+    leftStart - rightStart || rightEnd - leftEnd
+  ));
+  const merged = [];
+  for (const interval of intervals) {
+    const previous = merged.at(-1);
+    if (previous && interval[0] < previous[1]) {
+      previous[1] = Math.max(previous[1], interval[1]);
+    } else {
+      merged.push(interval);
+    }
+  }
+  return merged;
+}
+
+function buildPrivateLinkOmitter(exportData) {
+  const candidates = [...collectProviderLinkValues(exportData)].sort(
+    ([left], [right]) => right.length - left.length,
+  );
+
+  return (value) => {
+    if (typeof value !== "string") {
+      return "";
+    }
+
+    // Complexity is O(C*N + M*L): bounded indexOf scans over the original text,
+    // plus at most MAX_URL_SUFFIX_CODE_UNITS of token inspection per URL match.
+    // Intervals are merged once, and inserted markers are never scanned again.
+    const intervals = redactionIntervals(value, candidates);
+    let result = "";
+    let cursor = 0;
+    for (const [start, end] of intervals) {
+      result += `${value.slice(cursor, start)}${PRIVATE_LINK_OMISSION}`;
+      cursor = end;
+    }
+    return `${result}${value.slice(cursor)}`;
+  };
+}
+
+function stringValue(value, omitPrivateLinks) {
+  return typeof value === "string" ? omitPrivateLinks(value) : "";
+}
+
+function stringList(value, omitPrivateLinks) {
+  return Array.isArray(value)
+    ? value
+      .filter((item) => typeof item === "string")
+      .map((item) => omitPrivateLinks(item))
+    : [];
+}
+
+function analyticalDetail(detail, omitPrivateLinks) {
+  const source = detail && typeof detail === "object" ? detail : {};
+  const platforms = {};
+
+  for (const platform of ANALYZED_PLATFORMS) {
+    const sourcePlatform = source.platforms?.[platform];
+    const posts = Array.isArray(sourcePlatform?.posts)
+      ? sourcePlatform.posts
+        .filter((post) => post && typeof post === "object" && typeof post.text === "string")
+        .map((post) => ({ text: omitPrivateLinks(post.text) }))
+      : [];
+    platforms[platform] = {
+      enabled: sourcePlatform?.enabled === true,
+      posts,
+    };
+  }
+
+  return {
+    status: stringValue(source.status, omitPrivateLinks),
+    draftTitle: stringValue(source.draft_title, omitPrivateLinks),
+    tags: stringList(source.tags, omitPrivateLinks),
+    preview: stringValue(source.preview, omitPrivateLinks),
+    publishedAt: stringValue(source.published_at, omitPrivateLinks),
+    createdAt: stringValue(source.created_at, omitPrivateLinks),
+    platforms,
+  };
+}
+
+function analyticalAccount(account, publishedOnly, omitPrivateLinks) {
+  const source = account && typeof account === "object" ? account : {};
+  const rawName = source.social_set?.platforms?.x?.username
+    ?? source.social_set?.name
+    ?? source.target?.label
+    ?? source.social_set?.id;
+  const name = typeof rawName === "number"
+    ? String(rawName)
+    : stringValue(rawName, omitPrivateLinks);
+  const sourceDetails = Array.isArray(source.details)
+    ? source.details.filter((detail) => detail && typeof detail === "object")
+    : [];
+  const details = sourceDetails.map((detail) => analyticalDetail(detail, omitPrivateLinks));
+
+  return {
+    name: omitPrivateLinks(name),
+    details: publishedOnly ? details.filter((detail) => detail.status === "published") : details,
+  };
+}
+
 function enabledPlatforms(detail) {
-  return Object.entries(detail.platforms || {})
-    .filter(([, value]) => value?.enabled)
-    .map(([platform]) => platform);
+  return ANALYZED_PLATFORMS.filter((platform) => detail.platforms[platform].enabled);
 }
 
 function postText(detail, platform) {
-  return (detail.platforms?.[platform]?.posts || [])
+  return detail.platforms[platform].posts
     .map((post) => post.text)
     .join("\n\n---\n\n")
     .trim();
 }
 
 function classify(detail) {
-  const haystack = `${detail.draft_title || ""} ${(detail.tags || []).join(" ")} ${detail.preview || ""}`.toLowerCase();
+  const haystack = `${detail.draftTitle} ${detail.tags.join(" ")} ${detail.preview}`.toLowerCase();
   const tests = [
     ["course-launch-or-reminder", /(zoomcamp|course|cohort|module|homework|project|certificate|leaderboard)/],
     ["workshop-or-webinar", /(workshop|webinar|live|register|lu\.ma|event|q&a|qa)/],
@@ -65,15 +411,6 @@ function classify(detail) {
   ];
   const found = tests.filter(([, regex]) => regex.test(haystack)).map(([name]) => name);
   return found.length ? found : ["general"];
-}
-
-function accountName(account) {
-  return account.social_set?.platforms?.x?.username || account.social_set?.name || account.target?.label || String(account.social_set?.id || "");
-}
-
-function accountDetails(account, publishedOnly) {
-  const details = account.details || [];
-  return publishedOnly ? details.filter((detail) => detail.status === "published") : details;
 }
 
 function addProcessDoc(docs, filename, title, tags, body) {
@@ -159,7 +496,7 @@ ${summary.coverage.map((row) => `- ${row.account}: ${row.count} analyzed draft r
 3. Add 3 to 5 topics, tools, or outcomes.
 4. Add the primary call to action: registration link, course page, submission link, or event link.
 5. Adapt by platform: concise X post or short thread; fuller LinkedIn paragraph plus bullets.
-6. Save the result as a Typefully draft and record the private URL in DataOps.
+6. Save the result as a Typefully draft and record a safe creation receipt in DataOps.
 
 ## Validation
 
@@ -273,7 +610,7 @@ ${summary.coverage.map((row) => `- ${row.account}: ${row.count} analyzed draft r
 3. Add guest credibility only if it helps the audience understand why to attend or listen.
 4. Add 3 to 5 bullets for topics or takeaways.
 5. Add the registration or episode link.
-6. Save as a Typefully draft and record the private URL.
+6. Save as a Typefully draft and record a safe creation receipt.
 
 ## Validation
 
@@ -297,6 +634,10 @@ async function main() {
   const outputDir = path.resolve(process.cwd(), args.output);
   const processDocDir = path.join(outputDir, "process-doc-drafts");
   const exportData = JSON.parse(await fs.readFile(inputPath, "utf8"));
+  const omitPrivateLinks = buildPrivateLinkOmitter(exportData);
+  const accounts = Array.isArray(exportData.accounts)
+    ? exportData.accounts.map((account) => analyticalAccount(account, args.publishedOnly, omitPrivateLinks))
+    : [];
 
   await fs.mkdir(processDocDir, { recursive: true });
 
@@ -313,12 +654,11 @@ async function main() {
   lines.push("| Account | Draft records | Earliest | Latest |");
   lines.push("| - | -: | - | - |");
 
-  for (const account of exportData.accounts || []) {
-    const details = accountDetails(account, args.publishedOnly);
-    const dates = details.map((detail) => detail.published_at || detail.created_at).filter(Boolean).sort();
+  for (const account of accounts) {
+    const dates = account.details.map((detail) => detail.publishedAt || detail.createdAt).filter(Boolean).sort();
     const row = {
-      account: accountName(account),
-      count: details.length,
+      account: account.name,
+      count: account.details.length,
       earliest: dates[0] || "",
       latest: dates.at(-1) || "",
     };
@@ -332,14 +672,14 @@ async function main() {
   lines.push("| Account | Platform mix | Count |");
   lines.push("| - | - | -: |");
 
-  for (const account of exportData.accounts || []) {
+  for (const account of accounts) {
     const counts = new Map();
-    for (const detail of accountDetails(account, args.publishedOnly)) {
+    for (const detail of account.details) {
       const key = enabledPlatforms(detail).join("+") || "none";
       counts.set(key, (counts.get(key) || 0) + 1);
     }
     for (const [key, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
-      lines.push(`| ${accountName(account)} | ${key} | ${count} |`);
+      lines.push(`| ${account.name} | ${key} | ${count} |`);
     }
   }
 
@@ -349,15 +689,15 @@ async function main() {
   lines.push("| Account | Tag | Count |");
   lines.push("| - | - | -: |");
 
-  for (const account of exportData.accounts || []) {
+  for (const account of accounts) {
     const counts = new Map();
-    for (const detail of accountDetails(account, args.publishedOnly)) {
-      for (const tag of detail.tags || []) {
+    for (const detail of account.details) {
+      for (const tag of detail.tags) {
         counts.set(tag, (counts.get(tag) || 0) + 1);
       }
     }
     for (const [tag, count] of [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40)) {
-      lines.push(`| ${accountName(account)} | ${tag} | ${count} |`);
+      lines.push(`| ${account.name} | ${tag} | ${count} |`);
     }
   }
 
@@ -368,26 +708,25 @@ async function main() {
   lines.push("| - | - | -: |");
 
   const examples = new Map();
-  for (const account of exportData.accounts || []) {
+  for (const account of accounts) {
     const counts = new Map();
-    for (const detail of accountDetails(account, args.publishedOnly)) {
+    for (const detail of account.details) {
       for (const category of classify(detail)) {
         counts.set(category, (counts.get(category) || 0) + 1);
-        const key = `${accountName(account)}:${category}`;
+        const key = `${account.name}:${category}`;
         if (!examples.has(key)) {
           examples.set(key, {
-            title: detail.draft_title,
-            tags: detail.tags || [],
+            title: detail.draftTitle,
+            tags: detail.tags,
             preview: detail.preview,
             x: postText(detail, "x"),
             linkedin: postText(detail, "linkedin"),
-            url: detail.private_url,
           });
         }
       }
     }
     for (const [category, count] of [...counts.entries()].sort((a, b) => b[1] - a[1])) {
-      lines.push(`| ${accountName(account)} | ${category} | ${count} |`);
+      lines.push(`| ${account.name} | ${category} | ${count} |`);
     }
   }
 
@@ -399,7 +738,6 @@ async function main() {
     lines.push("");
     lines.push(`- Title: ${example.title || ""}`);
     lines.push(`- Tags: ${example.tags.join(", ")}`);
-    lines.push(`- Private URL: ${example.url || ""}`);
     lines.push(`- Preview: ${example.preview || ""}`);
     if (example.x) {
       lines.push("");
@@ -417,11 +755,11 @@ async function main() {
     }
   }
 
-  await fs.writeFile(path.join(outputDir, "analysis.md"), `${lines.join("\n")}\n`);
+  await fs.writeFile(path.join(outputDir, "analysis.md"), omitPrivateLinks(`${lines.join("\n")}\n`));
 
   const docs = buildProcessDocs(summary);
   for (const [filename, content] of docs.entries()) {
-    await fs.writeFile(path.join(processDocDir, filename), content);
+    await fs.writeFile(path.join(processDocDir, filename), omitPrivateLinks(content));
   }
 
   console.log(`Wrote analysis and ${docs.size} process-doc drafts to ${outputDir}`);
