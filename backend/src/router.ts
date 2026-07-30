@@ -23,6 +23,7 @@ import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleMailingExportRoutes } from './routes/mailingExports';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
+import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleConversationalExecutionRoutes } from './routes/conversationalExecution';
@@ -746,6 +747,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     if (reqPath.startsWith('/api/sponsor-crm')) {
+      if (
+        reqPath.includes('/communications')
+        || reqPath.includes('/communication-suggestions/')
+        || reqPath.includes('/suppressions')
+      ) {
+        return await handleSponsorCommunicationRoutes(reqPath, method, event, client);
+      }
       return await handleSponsorCrmRoutes(reqPath, method, event, client);
     }
     if (reqPath.startsWith('/api/newsletter-slots')) return await handleNewsletterSlotRoutes(reqPath,method,event,client);

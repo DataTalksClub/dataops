@@ -223,6 +223,7 @@ let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
 let operationsUsersSnapshot = { loaded: false, users: [], currentUserId: "", isAdmin: false, errors: [] };
 let operationsQualityFilters = { severity: "", category: "", workflow: "", document: "" };
 let activeWorkspaceView = "home";
+let activeSponsorReviewCleanup = null;
 // Tasks sub-section (Queue / Workflows / Templates / Assistants / Artifacts).
 // Only consulted when activeWorkspaceView === "tasks". The legacy top-level
 // views (queue, workflows, templates, assistants, artifacts) now live behind
@@ -251,8 +252,17 @@ gitCommitBackdrop.addEventListener("click", closeCommitForm);
 document.querySelector("[data-action='cancel-commit']").addEventListener("click", closeCommitForm);
 gitCommitForm.addEventListener("submit", submitCommitForm);
 for (const button of workspaceNavButtons) {
-  button.addEventListener("click", () => showWorkspaceSurface(button.dataset.workspaceView || "home"));
+  button.addEventListener("click", () =>
+    document.dispatchEvent(
+      new CustomEvent("dataops:navigate-workspace", {
+        detail: { view: button.dataset.workspaceView || "home" },
+      }),
+    ),
+  );
 }
+document.addEventListener("dataops:navigate-workspace", (event) =>
+  showWorkspaceSurface(event.detail?.view || "home"),
+);
 newDocumentButton.addEventListener("click", showCreate);
 mobileNewButton.addEventListener("click", showCreate);
 backButton.addEventListener("click", showLibrary);
@@ -1520,10 +1530,15 @@ async function renderSponsorCrmSurface() {
   documentList.replaceChildren();
   const surface = document.createElement("section");
   surface.className = "sponsor-crm-surface";
-  surface.innerHTML = `<header class="crm-header"><div><h2>Sponsor CRM</h2><p>Organizations, contacts, bookings, and next actions.</p></div><div><button data-add-org>Add sponsor</button><button class="primary-button" data-add-booking>Add booking</button></div></header><div class="crm-filters"><label>Search sponsors <input data-crm-search type="search"></label><label>Show <select data-crm-active><option value="true">Active</option><option value="false">Archived</option><option value="">All</option></select></label><label>Booking status <select data-crm-status><option value="">All</option>${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label></div><p data-crm-message role="status">Loading sponsor CRM…</p><div class="crm-layout"><section><h3>Sponsors</h3><div data-crm-orgs>Loading sponsors…</div></section><section><h3>Bookings</h3><div data-crm-bookings>Loading bookings…</div><div data-crm-detail></div></section></div>
+  surface.innerHTML = `<header class="crm-header"><div><h2>Sponsor CRM</h2><p>Organizations, contacts, bookings, and reviewed communications.</p></div><div><button data-evaluate-communications>Refresh suggestions</button> <button data-add-org>Add sponsor</button><button class="primary-button" data-add-booking>Add booking</button></div></header><div class="crm-filters"><label>Search sponsors <input data-crm-search type="search"></label><label>Show <select data-crm-active><option value="true">Active</option><option value="false">Archived</option><option value="">All</option></select></label><label>Booking status <select data-crm-status><option value="">All</option>${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label></div><p data-crm-message role="status">Loading sponsor CRM…</p><div class="crm-layout"><section><h3>Sponsors</h3><div data-crm-orgs>Loading sponsors…</div></section><section><h3>Bookings</h3><div data-crm-bookings>Loading bookings…</div><div data-crm-detail></div></section></div>
+  <section class="crm-communications" aria-labelledby="crm-communications-heading"><h3 id="crm-communications-heading">Reviewed communications</h3><div data-crm-communications><div class="honest-state"><strong>Open a booking</strong><p>Suggestions never send automatically. Open a booking to draft and review a message.</p></div></div></section>
   <dialog data-org-dialog><form method="dialog"><h3>Sponsor organization</h3><label>Name <input name="displayName"></label><label>Private notes <textarea name="notes"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-org-save>Save sponsor</button></form></dialog>
   <dialog data-contact-dialog><form method="dialog"><h3>Contact</h3><input name="organizationId" type="hidden"><label>Name <input name="name"></label><label>Email <input name="email" type="email"></label><label>Role <input name="role"></label><label><input name="primary" type="checkbox"> Primary contact</label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-contact-save>Save contact</button></form></dialog>
-  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>`;
+  <dialog data-suppression-dialog><form method="dialog"><h3>Suppress sponsor email</h3><p>This immediately blocks future review and dispatch for the selected verified address. It cannot recall a message after dispatch starts.</p><label>Recipient <select name="recipient" required></select></label><label>Reason <textarea name="reason" maxlength="240" required></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-save-suppression>Suppress future messages</button></form></dialog>
+  <dialog data-suppression-orphan-dialog><form method="dialog"><h3>Suppression migration exceptions</h3><p>These redacted records need an administrator decision before the retired key can be removed.</p><div data-suppression-orphans></div><button value="cancel">Close</button></form></dialog>
+  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>
+  <dialog data-communication-draft-dialog><form method="dialog"><h3>Draft sponsor message</h3><input name="suggestionId" type="hidden"><label>Recipient <select name="recipient" required></select></label><label>Subject <input name="subject" maxlength="998" required></label><label>Plain-text message <textarea name="body" maxlength="100000" required rows="12"></textarea></label><label>Public link <input name="publicLink" type="url"></label><p class="muted">Choose one verified active contact address. The selection is bound into the immutable preview and cannot change at approval or dispatch.</p><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-create-review>Save draft</button></form></dialog>
+  <dialog data-communication-review-dialog><form method="dialog"><h3>Exact message review</h3><p class="error-banner" data-review-warning></p><dl class="communication-preview" data-review-addresses></dl><h4 data-review-subject></h4><pre data-review-body></pre><div data-review-links></div><p data-review-status role="status"></p><button type="button" data-review-close>Reject / close</button><button type="button" class="primary-button" data-approve-message hidden>Approve and queue</button></form></dialog>`;
   documentList.append(surface);
   setPageTitle("Sponsors", "Sponsor CRM");
   surface
@@ -1543,7 +1558,17 @@ async function renderSponsorCrmSurface() {
     message = surface.querySelector("[data-crm-message]");
   let organizations = [],
     contacts = [],
-    bookings = [];
+    bookings = [],
+    selectedBookingId = "",
+    communicationItems = [],
+    communicationConfig = null,
+    communicationPermissions = {
+      role: "operator",
+      canApprove: false,
+      canCancel: false,
+      canReconcile: false,
+    },
+    currentReview = null;
   const safe = async (action, label) => {
     try {
       await action();
@@ -1595,6 +1620,169 @@ async function renderSponsorCrmSurface() {
           .join("")
       : `<div class="honest-state"><strong>No bookings</strong><p>Create a booking or adjust filters.</p></div>`;
   }
+  function drawCommunications() {
+    const root = surface.querySelector("[data-crm-communications]");
+    if (!selectedBookingId) return;
+    const booking = bookings.find((item) => item.id === selectedBookingId);
+    const hasRecipients = contacts.some((item) => item.organizationId === booking?.organizationId && item.active !== false && !item.archivedAt && item.emails?.length);
+    const isAdmin = communicationPermissions.role === "admin";
+    const controls = hasRecipients ? `<div class="crm-communication-controls"><button data-suppress-address>Suppress sponsor address</button>${isAdmin ? " <button data-list-suppression-orphans>Migration exceptions</button>" : ""}<small>Suppression key: ${escapeHtml(communicationConfig?.hmacActiveVersion || "not configured")} · accepted: ${escapeHtml((communicationConfig?.hmacAcceptedVersions || []).join(", ") || "none")}</small></div>` : "";
+    const disabledBanner = !communicationConfig?.enabled
+      ? `<div class="honest-state" data-communication-state="disabled"><strong>Reviewed sending is disabled</strong><p>History remains visible. A credentialed operator must reconcile private templates, suppression keys, SES identity, and the kill switch before a new preview can be approved.</p></div>`
+      : "";
+    const suggestions = communicationItems.filter(
+      (item) => item.recordType === "communication-suggestion",
+    );
+    const attempts = communicationItems.filter(
+      (item) => item.recordType === "sponsor-send-attempt",
+    );
+    const drafts = communicationItems.filter(
+      (item) => item.recordType === "communication-draft-version",
+    );
+    const draftCards = drafts.map((item) => {
+      const state = item.reviewState || "awaiting_review";
+      const guidance = state === "claimed"
+        ? "This exact version has already been claimed by an immutable send attempt."
+        : state === "abandoned"
+          ? "This draft expired and its private payload is no longer reviewable."
+          : isAdmin
+            ? "Generate a fresh admin-bound exact preview before approval."
+            : "Draft saved. Awaiting administrator review.";
+      const action = isAdmin && item.reviewable && communicationConfig?.enabled
+        ? `<button data-review-draft="${escapeHtml(item.communicationId)}" data-draft-version="${escapeHtml(item.version)}">Review exact draft</button>`
+        : "";
+      return `<article class="crm-card" data-communication-state="${escapeHtml(state)}"><header><strong>Draft version ${escapeHtml(item.version)}</strong><span>${escapeHtml(state.replaceAll("_", " "))}</span></header><p>${guidance}</p>${action}</article>`;
+    }).join("");
+    const suggestionCards = suggestions.length
+      ? suggestions.map((item) => `<article class="crm-card" data-communication-state="${escapeHtml(item.status)}"><header><strong>${escapeHtml(item.communicationType)}</strong><span>${escapeHtml(item.status)}</span></header><p>${escapeHtml(item.safeReason)}</p>${item.status === "open" && communicationConfig?.enabled ? `<button data-draft-suggestion="${escapeHtml(item.id)}">Draft message</button>` : ""}</article>`).join("")
+      : `<div class="honest-state"><strong>No eligible suggestions</strong><p>Milestones only create suggestions. Nothing is drafted or sent automatically.</p></div>`;
+    const attemptCards = attempts.map((item) => {
+      const state = item.derivedStatus || item.status;
+      const guidance = item.status === "outcome_unknown"
+        ? isAdmin
+          ? "Provider outcome is unknown. This attempt will never be resent automatically; reconcile it only after provider investigation."
+          : "Provider outcome is unknown. This attempt will never be resent automatically; an administrator must reconcile it."
+        : state === "delayed"
+          ? "SES accepted the message but delivery is delayed."
+          : state === "rejected"
+            ? "The provider rejected this message. Draft and approve a new version only after resolving the cause."
+            : state === "delivered"
+              ? "Provider delivery fact recorded. This does not prove the recipient read it."
+              : state === "pending_event"
+                ? "Dispatch started. Waiting for a trusted provider fact; this message will not be sent again automatically."
+                : state === "accepted"
+                  ? "SES accepted the immutable message. Awaiting later delivery evidence."
+                  : state === "queued"
+                    ? isAdmin
+                      ? "Approved and queued. You may cancel only before dispatch reaches its point of no return."
+                      : "Approved and queued. An administrator may cancel only before dispatch starts."
+                    : "Current immutable execution history.";
+      const cancel = item.status === "queued" && communicationPermissions.canCancel
+        ? `<button data-cancel-attempt="${escapeHtml(item.id)}">Cancel before dispatch</button>`
+        : "";
+      const reconcile = item.status === "outcome_unknown" && communicationPermissions.canReconcile
+        ? `<button data-reconcile-attempt="${escapeHtml(item.id)}">Reconcile outcome</button>`
+        : "";
+      return `<article class="crm-card" data-communication-state="${escapeHtml(state)}"><header><strong>Reviewed send</strong><span>${escapeHtml(state)}</span></header><p>${guidance}</p>${cancel}${reconcile}</article>`;
+    }).join("");
+    root.innerHTML = `${controls}${disabledBanner}${suggestionCards}${draftCards}${attemptCards}`;
+  }
+  async function loadCommunications(bookingId) {
+    selectedBookingId = bookingId;
+    let cursor = "";
+    let pageCount = 0;
+    const items = [];
+    do {
+      const query = new URLSearchParams({ limit: "50" });
+      if (cursor) query.set("cursor", cursor);
+      const result = await api(`/bookings/${bookingId}/communications?${query}`);
+      items.push(...(result.items || []));
+      communicationConfig = result.config || { enabled: false };
+      communicationPermissions = result.permissions || communicationPermissions;
+      cursor = result.nextCursor || "";
+      pageCount += 1;
+      if (pageCount > 20) throw new Error("Communication history is too large to display safely");
+    } while (cursor);
+    communicationItems = items;
+    drawCommunications();
+  }
+  async function showExactReview(communicationId, version) {
+    const presentation = await api(
+      `/communications/${communicationId}/presentations`,
+      {
+        method: "POST",
+        body: JSON.stringify({ version }),
+      },
+    );
+    currentReview = {
+      communicationId,
+      version,
+      presentationId: presentation.presentationId,
+      token: presentation.token,
+    };
+    activeSponsorReviewCleanup = revokeCurrentReview;
+    const preview = presentation.preview;
+    const reviewDialog = surface.querySelector(
+      "[data-communication-review-dialog]",
+    );
+    reviewDialog.querySelector("[data-review-warning]").textContent =
+      communicationPermissions.canApprove
+        ? "Approval queues exactly this one-recipient plain-text message. It never sends inline; the worker rechecks authority, source revisions, suppression, and the kill switch."
+        : "This is an exact private preview. Save the draft for an administrator; this review cannot approve or send.";
+    reviewDialog.querySelector("[data-review-addresses]").innerHTML =
+      `<dt>From</dt><dd>${escapeHtml(preview.from)}</dd>${preview.replyTo ? `<dt>Reply-To</dt><dd>${escapeHtml(preview.replyTo)}</dd>` : ""}<dt>To</dt><dd>${escapeHtml(preview.to)}</dd><dt>Type</dt><dd>${escapeHtml(preview.communicationType)}</dd>`;
+    reviewDialog.querySelector("[data-review-subject]").textContent =
+      preview.subject;
+    reviewDialog.querySelector("[data-review-body]").textContent = preview.body;
+    reviewDialog.querySelector("[data-review-links]").innerHTML =
+      (preview.publicLinks || [])
+        .map((link) => `<p>${escapeHtml(link)}</p>`)
+        .join("");
+    reviewDialog.querySelector("[data-review-status]").textContent =
+      `Exact preview hash: ${presentation.previewHash}`;
+    reviewDialog.querySelector("[data-approve-message]").hidden =
+      !communicationPermissions.canApprove;
+    reviewDialog.showModal();
+  }
+  async function revokeCurrentReview(reason = "close") {
+    const reviewDialog = surface.querySelector(
+      "[data-communication-review-dialog]",
+    );
+    if (!currentReview) {
+      if (reviewDialog.open) reviewDialog.close();
+      activeSponsorReviewCleanup = null;
+      return true;
+    }
+    const closeButton = reviewDialog.querySelector("[data-review-close]");
+    const approveButton = reviewDialog.querySelector("[data-approve-message]");
+    closeButton.disabled = true;
+    approveButton.disabled = true;
+    reviewDialog.querySelector("[data-review-status]").textContent =
+      "Revoking this one-time review…";
+    try {
+      await api(
+        `/communications/${currentReview.communicationId}/presentations/${currentReview.presentationId}/reject`,
+        { method: "POST", body: "{}" },
+      );
+      currentReview = null;
+      activeSponsorReviewCleanup = null;
+      reviewDialog.close();
+      if (reason !== "navigation")
+        message.textContent =
+          "Exact review revoked. The saved draft remains available for a fresh review.";
+      return true;
+    } catch (error) {
+      reviewDialog.querySelector("[data-review-status]").textContent =
+        `Could not revoke this review: ${error.message}. Retry Reject / close before leaving.`;
+      message.textContent =
+        "The review is still active and visible. Retry revocation before navigating or regenerate after reloading.";
+      return false;
+    } finally {
+      closeButton.disabled = false;
+      approveButton.disabled = false;
+    }
+  }
+  activeSponsorReviewCleanup = revokeCurrentReview;
   async function refresh() {
     message.textContent = "Loading sponsor CRM…";
     const results = await Promise.all([
@@ -1679,10 +1867,140 @@ async function renderSponsorCrmSurface() {
           );
         surface.querySelector("[data-crm-detail]").innerHTML =
           `<article class="crm-card"><h3>Booking detail</h3><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+        await loadCommunications(open);
       }, "Could not load booking history");
   };
+  surface.querySelector("[data-evaluate-communications]").onclick = () =>
+    safe(async () => {
+      const result = await api("/communications/evaluate", {
+        method: "POST",
+        body: "{}",
+      });
+      message.textContent = `Suggestions refreshed: ${result.created.length} new, ${result.existing.length} already known. No messages were drafted or sent.`;
+      if (selectedBookingId) await loadCommunications(selectedBookingId);
+    }, "Could not refresh communication suggestions");
+  surface.querySelector("[data-crm-communications]").onclick = (event) => {
+    if (event.target.closest("[data-list-suppression-orphans]")) {
+      safe(async () => {
+        const result = await api("/communications/suppressions/orphans?limit=20");
+        const dialog = surface.querySelector("[data-suppression-orphan-dialog]");
+        dialog.querySelector("[data-suppression-orphans]").innerHTML = result.items?.length
+          ? result.items.map((item) => `<article class="crm-card"><strong>${escapeHtml(item.keyVersion)} · ${escapeHtml(item.status)}</strong><p>Contact ${escapeHtml(item.contactId)} · organization ${escapeHtml(item.organizationId)}</p>${item.status === "unresolved" ? `<button data-reconcile-suppression-orphan="${escapeHtml(item.id)}">Resolve exception</button>` : ""}</article>`).join("")
+          : "<p>No unresolved migration exceptions.</p>";
+        for (const button of dialog.querySelectorAll("[data-reconcile-suppression-orphan]")) {
+          button.onclick = (click) => {
+            click.preventDefault();
+            const reason = window.prompt("Why is it safe to resolve this redacted suppression exception?");
+            if (!reason) return;
+            safe(async () => {
+              await api(`/communications/suppressions/orphans/${button.dataset.reconcileSuppressionOrphan}/reconcile`, {
+                method: "POST",
+                body: JSON.stringify({ reason }),
+              });
+              dialog.close();
+              message.textContent = "Suppression migration exception resolved.";
+            }, "Could not resolve migration exception");
+          };
+        }
+        dialog.showModal();
+      }, "Could not load migration exceptions");
+      return;
+    }
+    if (event.target.closest("[data-suppress-address]")) {
+      const booking = bookings.find((item) => item.id === selectedBookingId);
+      const recipients = contacts
+        .filter((item) => item.organizationId === booking?.organizationId && item.active !== false && !item.archivedAt)
+        .flatMap((item) => (item.emails || []).map((email) => ({ contactId: item.id, name: item.name, email })));
+      const dialog = surface.querySelector("[data-suppression-dialog]");
+      const form = dialog.querySelector("form");
+      form.reset();
+      form.elements.recipient.innerHTML = recipients
+        .map((item) => `<option value="${escapeHtml(item.email)}" data-contact-id="${escapeHtml(item.contactId)}">${escapeHtml(item.name || "Sponsor contact")} · ${escapeHtml(item.email)}</option>`)
+        .join("");
+      dialog.showModal();
+      return;
+    }
+    const cancelAttempt =
+      event.target.closest("[data-cancel-attempt]")?.dataset.cancelAttempt;
+    if (cancelAttempt) {
+      safe(async () => {
+        await api(`/communications/attempts/${cancelAttempt}/cancel`, {
+          method: "POST",
+          body: "{}",
+        });
+        await loadCommunications(selectedBookingId);
+      }, "Could not cancel before dispatch");
+      return;
+    }
+    const reconcileAttempt =
+      event.target.closest("[data-reconcile-attempt]")?.dataset
+        .reconcileAttempt;
+    if (reconcileAttempt) {
+      const reason = window.prompt(
+        "Record why this provider outcome is considered no effect. This never resends the message.",
+      );
+      if (!reason) return;
+      safe(async () => {
+        await api(`/communications/attempts/${reconcileAttempt}/reconcile`, {
+          method: "POST",
+          body: JSON.stringify({ resolution: "no_effect", reason }),
+        });
+        await loadCommunications(selectedBookingId);
+      }, "Could not reconcile provider uncertainty");
+      return;
+    }
+    const reviewDraft = event.target.closest("[data-review-draft]");
+    if (reviewDraft) {
+      safe(
+        async () =>
+          showExactReview(
+            reviewDraft.dataset.reviewDraft,
+            Number(reviewDraft.dataset.draftVersion),
+          ),
+        "Could not generate a fresh exact review",
+      );
+      return;
+    }
+    const suggestionId =
+      event.target.closest("[data-draft-suggestion]")?.dataset.draftSuggestion;
+    if (!suggestionId) return;
+    const suggestion = communicationItems.find((item) => item.id === suggestionId);
+    const booking = bookings.find((item) => item.id === selectedBookingId);
+    const recipients = contacts
+      .filter((item) => item.organizationId === booking?.organizationId && item.active !== false && !item.archivedAt)
+      .flatMap((item) => (item.emails || []).map((email) => ({ contactId: item.id, name: item.name, email })));
+    if (!suggestion || !recipients.length) {
+      message.textContent = "At least one active contact address in this sponsor organization is required before drafting.";
+      return;
+    }
+    const dialog = surface.querySelector("[data-communication-draft-dialog]");
+    const form = dialog.querySelector("form");
+    form.reset();
+    form.elements.suggestionId.value = suggestionId;
+    form.elements.recipient.innerHTML = recipients
+      .map((item) => `<option value="${escapeHtml(item.email)}" data-contact-id="${escapeHtml(item.contactId)}">${escapeHtml(item.name || "Sponsor contact")} · ${escapeHtml(item.email)}</option>`)
+      .join("");
+    surface.querySelector("[data-create-review]").textContent =
+      communicationPermissions.canApprove
+        ? "Save and review exact message"
+        : "Save draft for admin review";
+    dialog.showModal();
+  };
   for (const dialog of surface.querySelectorAll("dialog"))
-    dialog.querySelector('[value="cancel"]').onclick = () => dialog.close();
+    dialog.querySelector('[value="cancel"]')?.addEventListener("click", () =>
+      dialog.close(),
+    );
+  const reviewDialog = surface.querySelector(
+    "[data-communication-review-dialog]",
+  );
+  reviewDialog.querySelector("[data-review-close]").onclick = (event) => {
+    event.preventDefault();
+    revokeCurrentReview("close");
+  };
+  reviewDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    revokeCurrentReview("escape");
+  });
   surface.querySelector("[data-org-save]").onclick = (event) => {
     event.preventDefault();
     const dialog = surface.querySelector("[data-org-dialog]"),
@@ -1734,6 +2052,93 @@ async function renderSponsorCrmSurface() {
       dialog.close();
       await refresh();
     }, "Could not save booking");
+  };
+  surface.querySelector("[data-save-suppression]").onclick = (event) => {
+    event.preventDefault();
+    const dialog = surface.querySelector("[data-suppression-dialog]");
+    const form = dialog.querySelector("form");
+    safe(async () => {
+      const value = Object.fromEntries(new FormData(form));
+      const selectedRecipient = form.elements.recipient.selectedOptions[0];
+      if (!selectedRecipient) throw new Error("Select one recipient");
+      if (!value.reason) throw new Error("A reason is required");
+      await api(`/contacts/${selectedRecipient.dataset.contactId}/suppressions`, {
+        method: "POST",
+        body: JSON.stringify({ email: value.recipient, reason: value.reason }),
+      });
+      dialog.close();
+      message.textContent =
+        "Future messages to the selected sponsor address are suppressed. In-flight mail cannot be recalled.";
+      await loadCommunications(selectedBookingId);
+    }, "Could not add suppression");
+  };
+  surface.querySelector("[data-create-review]").onclick = (event) => {
+    event.preventDefault();
+    const draftDialog = surface.querySelector(
+      "[data-communication-draft-dialog]",
+    );
+    const form = draftDialog.querySelector("form");
+    safe(async () => {
+      const value = Object.fromEntries(new FormData(form));
+      const selectedRecipient = form.elements.recipient.selectedOptions[0];
+      if (!selectedRecipient) throw new Error("Select one recipient");
+      const publicLinks = value.publicLink ? [value.publicLink] : [];
+      const draft = await api(
+        `/communication-suggestions/${value.suggestionId}/drafts`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            contactId: selectedRecipient.dataset.contactId,
+            recipient: value.recipient,
+            subject: value.subject,
+            body: value.body,
+            publicLinks,
+          }),
+        },
+      );
+      draftDialog.close();
+      await loadCommunications(selectedBookingId);
+      if (communicationPermissions.canApprove) {
+        await showExactReview(draft.communicationId, draft.version);
+      } else {
+        message.textContent = `Draft version ${draft.version} saved. Awaiting administrator review; no message was approved or sent.`;
+      }
+    }, "Could not save sponsor message draft");
+  };
+  surface.querySelector("[data-approve-message]").onclick = (event) => {
+    event.preventDefault();
+    if (!currentReview) return;
+    const reviewDialog = surface.querySelector(
+      "[data-communication-review-dialog]",
+    );
+    safe(async () => {
+      const oneTimeReview = currentReview;
+      if (!oneTimeReview || !communicationPermissions.canApprove)
+        throw new Error("A fresh administrator review is required");
+      let result;
+      try {
+        result = await api(
+          `/communications/${oneTimeReview.communicationId}/approve`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              version: oneTimeReview.version,
+              presentationId: oneTimeReview.presentationId,
+              token: oneTimeReview.token,
+            }),
+          },
+        );
+      } catch (error) {
+        reviewDialog.querySelector("[data-review-status]").textContent =
+          `Approval was not applied: ${error.message}. Keep this review open to retry, or revoke it before leaving.`;
+        throw error;
+      }
+      currentReview = null;
+      activeSponsorReviewCleanup = null;
+      reviewDialog.close();
+      message.textContent = `Approved immutable message queued as ${result.attemptId}. No provider call occurred in this request.`;
+      await loadCommunications(selectedBookingId);
+    }, "Approval was not applied");
   };
   try {
     await refresh();
@@ -6222,6 +6627,11 @@ function flashSaveState(message, duration = 1800) {
 }
 
 async function canLeaveCurrentDocument() {
+  if (
+    activeSponsorReviewCleanup &&
+    !(await activeSponsorReviewCleanup("navigation"))
+  )
+    return false;
   if (!currentDoc || editor.value === lastSavedContent) return true;
   return await confirmDialog("This page has unsaved local changes. Leave it anyway?", { okText: "Leave", danger: true });
 }
