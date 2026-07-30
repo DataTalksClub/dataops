@@ -174,11 +174,13 @@ function validateSchema(schema: Record<string, unknown>, value: unknown): boolea
       ) return false;
       return value.every((child) => validateSchema(schema.items as Record<string, unknown>, child));
     }
-    case 'string':
-      return typeof value === 'string'
-        && (schema.minLength === undefined || value.length >= Number(schema.minLength))
-        && (schema.maxLength === undefined || value.length <= Number(schema.maxLength))
+    case 'string': {
+      if (typeof value !== 'string') return false;
+      const length = [...value].length;
+      return (schema.minLength === undefined || length >= Number(schema.minLength))
+        && (schema.maxLength === undefined || length <= Number(schema.maxLength))
         && (schema.pattern === undefined || new RegExp(String(schema.pattern)).test(value));
+    }
     case 'integer':
       return Number.isInteger(value) && validateNumberConstraints(schema, value as number);
     case 'number':

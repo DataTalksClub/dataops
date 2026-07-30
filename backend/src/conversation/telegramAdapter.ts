@@ -112,10 +112,12 @@ interface ActionContext {
 
 const MAX_UPDATE_BYTES = 256 * 1024;
 const MAX_TEXT_BYTES = 16_384;
+const MAX_OUTBOUND_TEXT_BYTES = 96_000;
 const MAX_CALLBACK_BYTES = 64;
 const PRIVATE_REDIRECT = 'Please continue with the DataOps bot in a private chat.';
 const LINK_GUIDANCE = 'This Telegram account is not linked. Ask a DataOps administrator to link it.';
 const UNSUPPORTED = 'That input is not supported here. Send private text, a voice note, or a photo.';
+const TYPEFULLY_GUIDANCE = 'Send a new typed social request in this private chat. I will ask you to confirm that exact text as public source before preparing a Typefully draft preview.';
 const TELEGRAM_MESSAGE_CHUNK_BYTES = 3_900;
 const GROUP_REDIRECT_INTERVAL_MS = 60_000;
 const groupRedirects = new Map<string, number>();
@@ -173,7 +175,7 @@ function telegramChunks(text: string): string[] {
   const chunks: string[] = [];
   let current = '';
   for (const character of text) {
-    if (Buffer.byteLength(current + character, 'utf8') > TELEGRAM_MESSAGE_CHUNK_BYTES) {
+    if (Buffer.byteLength(current + character, 'utf8') > TELEGRAM_MESSAGE_CHUNK_BYTES - 200) {
       chunks.push(current);
       current = character;
     } else {
@@ -181,7 +183,9 @@ function telegramChunks(text: string): string[] {
     }
   }
   if (current) chunks.push(current);
-  return chunks;
+  return chunks.length <= 1
+    ? chunks
+    : chunks.map((chunk, index) => `Preview ${index + 1}/${chunks.length}\n${chunk}`);
 }
 
 async function sendTelegramText(telegram: TelegramClient, chatId: string, text: string): Promise<void> {
@@ -479,7 +483,7 @@ async function deliverOutbound(
     return true;
   }
   if (content.status !== 'ready') return false;
-  const text = boundedText(content.text);
+  const text = boundedText(content.text, MAX_OUTBOUND_TEXT_BYTES);
   const buttons = Array.isArray(content.buttons)
     ? content.buttons.map(object)
       .filter((button): button is Record<string, unknown> => Boolean(button))
@@ -599,7 +603,7 @@ async function persistInteraction(
   }
   const current = await getConversation(dependencies.client, input.conversationId);
   if (!current || current.revision !== input.conversationRevision) return false;
-  const text = boundedText(interaction.message);
+  const text = boundedText(interaction.message, MAX_OUTBOUND_TEXT_BYTES);
   if (!text) return false;
   const buttons = interaction.buttons?.length
     ? createOpaqueActions({
@@ -1212,6 +1216,10 @@ async function handleConversationalTelegramWebhook(
     await sendBeforeDeadline(dependencies, chatId, TODO_GUIDANCE, deadlineAt);
     return response(200, { ok: true, route: 'todo-guidance' });
   }
+  if (parsed.command === 'social') {
+    await sendBeforeDeadline(dependencies, chatId, TYPEFULLY_GUIDANCE, deadlineAt);
+    return response(200, { ok: true, route: 'social-guidance' });
+  }
   if (parsed.command && !supportedCommands.has(parsed.command)) {
     await sendBeforeDeadline(dependencies, chatId, UNSUPPORTED, deadlineAt);
     return response(200, { ok: true, route: 'unsupported' });
@@ -1395,7 +1403,9 @@ async function handleConversationalTelegramWebhook(
     actor: { id: user.id, role: user.role as 'admin' | 'operator', channel: 'telegram' },
     text,
     inputTrust: 'operator_authored',
-    source: active ? { kind: 'media_correction', payloadRef: active.id } : { kind: 'telegram_text' },
+    source: active
+      ? { kind: 'media_correction', payloadRef: active.id }
+      : { kind: 'telegram_text', payloadRef: stored.id },
     provenance: { updateId, chatId, channelUserId },
   }, actionContext, chatId, deadlineAt);
   return response(200, {

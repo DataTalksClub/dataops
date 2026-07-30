@@ -11,7 +11,9 @@ import {
   reclaimDispatchedAttempt,
   reconcileUnknownAttempt,
   requeueUndispatchedAttempt,
+  type DispatchStateGuard,
 } from './executionRepository';
+import { TYPEFULLY_PERMISSION } from './typefullyPlugin';
 import {
   ExecutorRegistry,
   proposalHashesAreValid,
@@ -147,6 +149,17 @@ async function preDispatchCheck(
     || proposal.spec.permissionRef !== attempt.permissionRef
     || proposal.canonicalPayloadHash !== attempt.canonicalPayloadHash
     || proposal.renderedViewHash !== attempt.renderedViewHash
+    || (proposal.spec.actorId !== undefined && proposal.spec.actorId !== attempt.actorId)
+    || (
+      proposal.spec.conversationId !== undefined
+      && proposal.spec.conversationId !== attempt.conversationId
+    )
+    || (proposal.spec.draftRef !== undefined && proposal.spec.draftRef !== attempt.draftRef)
+    || (proposal.spec.proposalId !== undefined && proposal.spec.proposalId !== attempt.proposalId)
+    || (
+      proposal.spec.proposalVersion !== undefined
+      && proposal.spec.proposalVersion !== attempt.proposalVersion
+    )
   ) return null;
   const executor = dependencies.registry.get(proposal.spec.effect, attempt.executorBuildDigest);
   if (!executor || executor.permissionRef !== attempt.permissionRef || !proposalHashesAreValid(proposal, executor)) {
@@ -178,7 +191,33 @@ async function preDispatchCheck(
     || channelBinding.ownerUserId !== attempt.actorId
   ) return null;
   const permission = await getApprovalPermission(dependencies.client, attempt.actorId, attempt.permissionRef);
-  if (!permission?.enabled) return null;
+  if (
+    !permission?.enabled
+    || permission.revision !== attempt.permissionRevision
+    || (
+      proposal.spec.resourceKey !== undefined
+      && !permission.allowedResourceKeys?.includes(proposal.spec.resourceKey)
+    )
+    || (
+      proposal.spec.accountConfigDigest !== undefined
+      && permission.accountConfigDigest !== proposal.spec.accountConfigDigest
+    )
+    || (
+      proposal.spec.accountScopeDigest !== undefined
+      && permission.accountScopeDigest !== proposal.spec.accountScopeDigest
+    )
+    || (
+      proposal.spec.deliveryModeDigest !== undefined
+      && permission.deliveryModeDigest !== proposal.spec.deliveryModeDigest
+    )
+    || (
+      proposal.spec.deliveryMode !== undefined
+      && (
+        proposal.spec.deliveryMode !== attempt.deliveryMode
+        || executor.deliveryMode !== proposal.spec.deliveryMode
+      )
+    )
+  ) return null;
   if (proposal.spec.targetRef && proposal.spec.baseRevision) {
     const target = await getCanonicalTarget(dependencies.client, proposal.spec.targetRef);
     if (!target || target.revision !== proposal.spec.baseRevision) return null;
@@ -210,9 +249,50 @@ async function executeLeasedAttempt(
     if (failed) await auditAttempt(dependencies.client, failed, 'execution_failed_safe', 'pre_dispatch_check_failed', now.toISOString());
     return failed;
   }
+  let dispatchGuard: DispatchStateGuard | undefined;
+  if (!options.dispatchAlreadyStarted && checked.executor.preflight) {
+    let preflight;
+    try {
+      preflight = await checked.executor.preflight({
+        spec: checked.proposal.spec,
+        attempt: leased,
+        now,
+      });
+    } catch {
+      preflight = { kind: 'failed_safe' as const, reasonCode: 'executor_preflight_failed' };
+    }
+    if (preflight.kind === 'failed_safe') {
+      const failed = await finalizeAttempt(
+        dependencies.client,
+        leased,
+        'failed_safe',
+        now.toISOString(),
+        {
+          errorCode: safeReasonCode(preflight.reasonCode, 'executor_preflight_failed'),
+          resultNotification: {},
+        }
+      );
+      if (failed) {
+        await auditAttempt(
+          dependencies.client,
+          failed,
+          'execution_failed_safe',
+          safeReasonCode(preflight.reasonCode, 'executor_preflight_failed'),
+          now.toISOString()
+        );
+      }
+      return failed;
+    }
+    dispatchGuard = preflight.dispatchGuard;
+  }
   let dispatched = leased;
   if (!options.dispatchAlreadyStarted) {
-    const marked = await markDispatchStarted(dependencies.client, leased, now.toISOString());
+    const marked = await markDispatchStarted(
+      dependencies.client,
+      leased,
+      now.toISOString(),
+      dispatchGuard
+    );
     if (!marked) return null;
     dispatched = marked;
     await auditAttempt(dependencies.client, dispatched, 'dispatch_started', 'executing', now.toISOString());
@@ -329,12 +409,20 @@ async function recoverExecutingAttempt(
   );
   if (!reclaimed) return getExecutionAttempt(dependencies.client, attempt.id, now);
   if (attempt.deliveryMode === 'operator_reconciliation_only') {
+    const resultNotification = attempt.permissionRef === TYPEFULLY_PERMISSION
+      ? {
+        privateResult: {
+          kind: 'typefully_reconciliation_result',
+          message: 'Typefully may have created this draft. Do not retry. An authorized operator must reconcile it in Typefully.',
+        },
+      }
+      : {};
     const unknown = await finalizeAttempt(
       dependencies.client,
       reclaimed,
       'outcome_unknown',
       nowIso,
-      { errorCode: 'operator_reconciliation_required', resultNotification: {} }
+      { errorCode: 'operator_reconciliation_required', resultNotification }
     );
     if (unknown) await auditAttempt(dependencies.client, unknown, 'outcome_unknown', 'operator_reconciliation_required', nowIso);
     return unknown;

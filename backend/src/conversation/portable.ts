@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 import { TABLE_CONVERSATIONAL_STATE } from '../db/setup';
 import {
   validateConversationalRecord,
@@ -46,6 +48,30 @@ function mapConversationalRecord(item: Record<string, unknown>): JsonRecord {
     actionTokenHash: _actionTokenHash,
     ...portable
   } = item;
+  const typefullyPluginDraft = portable.recordType === 'plugin_draft'
+    && portable.pluginId === 'typefully';
+  if (typefullyPluginDraft && portable.data !== undefined) {
+    portable.data = {
+      kind: 'typefully_portable_redacted',
+      dataHash: portableDigest(portable.data),
+    };
+  }
+  if (
+    portable.recordType === 'proposal_version'
+    && portable.spec
+    && typeof portable.spec === 'object'
+    && !Array.isArray(portable.spec)
+    && (portable.spec as Record<string, unknown>).pluginId === 'typefully'
+  ) {
+    const spec = { ...(portable.spec as Record<string, unknown>) };
+    if (spec.proposedContent !== undefined) {
+      spec.proposedContent = {
+        kind: 'typefully_portable_redacted',
+        contentHash: portableDigest(spec.proposedContent),
+      };
+    }
+    portable.spec = spec;
+  }
   if (
     portable.recordType === 'conversational_private_payload'
     && portable.content
@@ -62,14 +88,39 @@ function mapConversationalRecord(item: Record<string, unknown>): JsonRecord {
       portable.status = 'outcome_unknown';
     }
   }
+  const telegramBound = portable.channel === 'telegram' || portable.identityChannel === 'telegram';
+  if (telegramBound) {
+    for (const field of [
+      'channelUserId',
+      'channelConversationKey',
+      'identityChannelUserId',
+      'identityBindingId',
+      'channelBindingId',
+    ]) {
+      if (typeof portable[field] === 'string') portable[field] = portableDigest(portable[field]);
+    }
+    if (
+      (portable.recordType === 'identity_binding' || portable.recordType === 'channel_binding')
+      && typeof portable.id === 'string'
+    ) portable.id = portableDigest(portable.id);
+    if (portable.recordType === 'conversation_event') {
+      for (const field of ['idempotencyKey', 'provenance']) {
+        if (typeof portable[field] === 'string') portable[field] = portableDigest(portable[field]);
+      }
+    }
+  }
   return JSON.parse(JSON.stringify(portable)) as JsonRecord;
+}
+
+function portableDigest(value: unknown): string {
+  return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
 function redactPrivateText(value: Record<string, unknown>): JsonRecord {
   const redacted: JsonRecord = {};
   const removed: string[] = [];
   for (const [key, entry] of Object.entries(value)) {
-    if (/^(?:text|caption|message|transcript|description)$/i.test(key)) {
+    if (/^(?:text|caption|message|transcript|description|editUrl|privateUrl)$/i.test(key)) {
       removed.push(key);
       continue;
     }

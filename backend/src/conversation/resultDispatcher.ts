@@ -10,6 +10,7 @@ import {
   listResultNotifications,
 } from './repository';
 import type { ResultNotification } from './types';
+import { safeTypefullyEditUrl } from './typefullyPlugin';
 import { getUser } from '../db/users';
 
 interface ResultTransport {
@@ -48,7 +49,14 @@ function privateResultMessage(notification: ResultNotification, content: unknown
   const result = object(body.result);
   if (typeof result?.message === 'string') {
     const message = result.message.trim();
-    if (message && Buffer.byteLength(message, 'utf8') <= 16_384) return message;
+    if (message && Buffer.byteLength(message, 'utf8') <= 16_384) {
+      if (result.kind === 'typefully_saved_draft' && typeof result.editUrl === 'string') {
+        const editUrl = safeTypefullyEditUrl(result.editUrl);
+        if (editUrl) return `${message}\n${editUrl}`;
+        throw new Error('Result payload URL is invalid');
+      }
+      return message;
+    }
   }
   if (body.status === 'failed_safe') return 'The approved action failed safely. No change was made.';
   if (body.status === 'outcome_unknown') {

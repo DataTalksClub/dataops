@@ -134,6 +134,16 @@ interface ProposalSpec {
   sourceRefs: Array<{ ref: string; revision?: string; classification: string }>;
   permissionRef: string;
   permissionRevision?: number;
+  actorId?: string;
+  conversationId?: string;
+  draftRef?: string;
+  proposalId?: string;
+  proposalVersion?: number;
+  resourceKey?: string;
+  accountConfigDigest?: string;
+  accountScopeDigest?: string;
+  deliveryMode?: ExecutionAttempt['deliveryMode'];
+  deliveryModeDigest?: string;
   expiresAt: string;
 }
 
@@ -143,6 +153,7 @@ interface ProposalVersion extends RecordBase {
   version: number;
   conversationId: string;
   draftId?: string;
+  presentationIds?: string[];
   status: 'presented' | 'superseded' | 'expired' | 'canceled' | 'claimed' | 'conflicted';
   spec: ProposalSpec;
   canonicalPayloadHash: string;
@@ -194,6 +205,11 @@ interface ExecutionAttempt extends RecordBase {
   channelConversationKey?: string;
   permissionRef?: string;
   permissionRevision?: number;
+  resourceKey?: string;
+  accountConfigDigest?: string;
+  accountScopeDigest?: string;
+  deliveryModeDigest?: string;
+  draftRef?: string;
   canonicalPayloadHash?: string;
   renderedViewHash?: string;
   executorBuildDigest?: string;
@@ -208,10 +224,12 @@ interface ExecutionAttempt extends RecordBase {
   resultReceiptRef?: string;
   resultReceipt?: SafeExecutionReceipt;
   manualResolution?: {
-    outcome: 'effect_applied' | 'no_effect';
+    outcome: 'effect_applied' | 'no_effect' | 'found' | 'not_found';
     reason: string;
     actorId: string;
     resolvedAt: string;
+    draftId?: string;
+    proofClassification?: string;
   };
   revision: number;
 }
@@ -472,7 +490,11 @@ function validateConversationalRecord(
       assertString(record.pluginId, 'plugin_draft.pluginId');
       assertString(record.pluginBuild, 'plugin_draft.pluginBuild', 500);
       assertEnum(record.status, ['collecting', 'ready', 'abandoned'], 'plugin_draft.status');
-      assertSafeJson(record.data, 'plugin_draft.data');
+      assertSafeJson(
+        record.data,
+        'plugin_draft.data',
+        record.pluginId === 'typefully' ? 96_000 : MAX_JSON_BYTES
+      );
       assertInteger(record.revision, 'plugin_draft.revision', 1);
       break;
     case 'proposal_version':
@@ -480,6 +502,17 @@ function validateConversationalRecord(
       assertInteger(record.version, 'proposal_version.version', 1);
       assertString(record.conversationId, 'proposal_version.conversationId');
       if (record.draftId) assertString(record.draftId, 'proposal_version.draftId');
+      if (record.presentationIds !== undefined) {
+        if (
+          !Array.isArray(record.presentationIds)
+          || record.presentationIds.length < 1
+          || record.presentationIds.length > 8
+          || new Set(record.presentationIds).size !== record.presentationIds.length
+        ) throw new Error('proposal_version.presentationIds must be 1..8 unique ids');
+        record.presentationIds.forEach((id, index) => {
+          assertString(id, `proposal_version.presentationIds[${index}]`);
+        });
+      }
       assertEnum(record.status, ['presented', 'superseded', 'expired', 'canceled', 'claimed', 'conflicted'], 'proposal_version.status');
       assertProposalSpec(record.spec);
       assertHash(record.canonicalPayloadHash, 'proposal_version.canonicalPayloadHash');
@@ -533,6 +566,13 @@ function validateConversationalRecord(
       if (record.permissionRevision !== undefined) {
         assertInteger(record.permissionRevision, 'execution_attempt.permissionRevision', 1);
       }
+      if (record.resourceKey) assertString(record.resourceKey, 'execution_attempt.resourceKey');
+      if (record.draftRef) assertString(record.draftRef, 'execution_attempt.draftRef');
+      for (const field of [
+        'accountConfigDigest', 'accountScopeDigest', 'deliveryModeDigest',
+      ] as const) {
+        if (record[field]) assertHash(record[field], `execution_attempt.${field}`);
+      }
       if (record.canonicalPayloadHash) assertHash(record.canonicalPayloadHash, 'execution_attempt.canonicalPayloadHash');
       if (record.renderedViewHash) assertHash(record.renderedViewHash, 'execution_attempt.renderedViewHash');
       if (record.executorBuildDigest) assertHash(record.executorBuildDigest, 'execution_attempt.executorBuildDigest');
@@ -544,10 +584,24 @@ function validateConversationalRecord(
         validateSafeExecutionReceipt(record.resultReceipt);
       }
       if (record.manualResolution) {
-        assertEnum(record.manualResolution.outcome, ['effect_applied', 'no_effect'], 'execution_attempt.manualResolution.outcome');
+        assertEnum(
+          record.manualResolution.outcome,
+          ['effect_applied', 'no_effect', 'found', 'not_found'],
+          'execution_attempt.manualResolution.outcome'
+        );
         assertString(record.manualResolution.reason, 'execution_attempt.manualResolution.reason', 1_000);
         assertString(record.manualResolution.actorId, 'execution_attempt.manualResolution.actorId');
         assertIsoTimestamp(record.manualResolution.resolvedAt, 'execution_attempt.manualResolution.resolvedAt');
+        if (record.manualResolution.draftId) {
+          assertString(record.manualResolution.draftId, 'execution_attempt.manualResolution.draftId', 500);
+        }
+        if (record.manualResolution.proofClassification) {
+          assertString(
+            record.manualResolution.proofClassification,
+            'execution_attempt.manualResolution.proofClassification',
+            100
+          );
+        }
       }
       assertInteger(record.revision, 'execution_attempt.revision', 1);
       break;
@@ -592,7 +646,16 @@ function validateConversationalRecord(
     case 'conversational_private_payload':
       assertString(record.conversationId, 'conversational_private_payload.conversationId');
       assertEnum(record.classification, ['private', 'sensitive'], 'conversational_private_payload.classification');
-      assertSafeJson(record.content, 'conversational_private_payload.content');
+      assertSafeJson(
+        record.content,
+        'conversational_private_payload.content',
+        (
+          record.content
+          && typeof record.content === 'object'
+          && !Array.isArray(record.content)
+          && record.content.kind === 'telegram_outbound'
+        ) ? 96_000 : MAX_JSON_BYTES
+      );
       break;
     case 'skill_load_receipt':
       assertString(record.conversationId, 'skill_load_receipt.conversationId');
@@ -657,7 +720,14 @@ function assertRetention(record: ConversationalRecord): void {
 }
 
 function assertProposalSpec(spec: ProposalSpec): void {
-  assertSafeJson(spec, 'proposal_version.spec');
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+    throw new Error('proposal_version.spec must be an object');
+  }
+  assertSafeJson(
+    spec,
+    'proposal_version.spec',
+    spec.pluginId === 'typefully' ? 96_000 : MAX_JSON_BYTES
+  );
   for (const field of [
     'pluginId', 'pluginBuildDigest', 'schemaDigest', 'policyDigest',
     'action', 'operation', 'effect', 'permissionRef',
@@ -669,6 +739,27 @@ function assertProposalSpec(spec: ProposalSpec): void {
   }
   if (spec.permissionRevision !== undefined) {
     assertInteger(spec.permissionRevision, 'proposal_version.spec.permissionRevision', 1);
+  }
+  for (const field of [
+    'actorId', 'conversationId', 'draftRef', 'proposalId',
+  ] as const) {
+    if (spec[field]) assertString(spec[field], `proposal_version.spec.${field}`);
+  }
+  if (spec.proposalVersion !== undefined) {
+    assertInteger(spec.proposalVersion, 'proposal_version.spec.proposalVersion', 1);
+  }
+  if (spec.resourceKey) assertString(spec.resourceKey, 'proposal_version.spec.resourceKey');
+  for (const field of [
+    'accountConfigDigest', 'accountScopeDigest', 'deliveryModeDigest',
+  ] as const) {
+    if (spec[field]) assertHash(spec[field], `proposal_version.spec.${field}`);
+  }
+  if (spec.deliveryMode) {
+    assertEnum(
+      spec.deliveryMode,
+      ['provider_idempotency', 'correlation_lookup', 'operator_reconciliation_only'],
+      'proposal_version.spec.deliveryMode'
+    );
   }
   assertIsoTimestamp(spec.expiresAt, 'proposal_version.spec.expiresAt');
   if (!Array.isArray(spec.sourceRefs)) throw new Error('proposal_version.spec.sourceRefs must be an array');

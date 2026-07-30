@@ -6,7 +6,6 @@ import { createTables, deleteTables } from '../src/db/setup';
 import { parseMessage, handleTelegramWebhook } from '../src/routes/telegram';
 import { getAssistantJob } from '../src/db/assistantJobs';
 import { getIntakeItem } from '../src/db/intake';
-import { setSocialDraftAssistantClients } from '../src/assistant/socialDraftAssistant';
 import { route } from '../src/router';
 import { TODO_GUIDANCE } from '../src/conversation/todoPlugin';
 
@@ -364,59 +363,25 @@ describe('Telegram integration', () => {
       assert.strictEqual(job!.status, 'draft');
     });
 
-    it('routes /social through the same bot and records the resulting assistant job', async () => {
-      process.env.TYPEFULLY_SOCIAL_SET_ALEXEY = '188312';
-      setSocialDraftAssistantClients({
-        zai: {
-          async generateDraft() {
-            return {
-              draftTitle: 'Workshop draft',
-              scratchpadText: 'Shared Telegram route test',
-              xPosts: ['X draft'],
-              linkedinPosts: ['LinkedIn draft'],
-            };
-          },
-        },
-        typefully: {
-          async createSavedDraft(input) {
-            return {
-              id: 'mock-shared-route',
-              status: 'draft',
-              privateUrl: 'https://typefully.example/draft/mock-shared-route',
-              shareUrl: null,
-              socialSetId: input.socialSetId,
-              platforms: input.platforms,
-              preview: input.draft.xPosts[0],
-            };
-          },
-        },
-      });
-      try {
-        const res = await handleTelegramWebhook({
-          headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
-          body: JSON.stringify({
-            message: {
-              message_id: 54,
-              chat: { id: 12345 },
-              from: { id: 42, username: 'operator' },
-              text: '/social Alexey post about the next workshop'
-            }
-          })
-        } as any);
-        assert.strictEqual(res.statusCode, 200);
-        const body = JSON.parse(res.body);
-        assert.strictEqual(body.route, 'social-draft');
-        const client = await getClient();
-        const item = await getIntakeItem(client, body.intakeItemId);
-        assert.strictEqual(item!.assistantReadiness?.assistantType, 'social-draft');
-        assert.strictEqual(item!.assistantJobIds.length, 1);
-        const job = await getAssistantJob(client, item!.assistantJobIds[0]);
-        assert.strictEqual(job!.assistantType, 'social-draft');
-        assert.strictEqual(job!.status, 'waiting_approval');
-      } finally {
-        setSocialDraftAssistantClients(null);
-        delete process.env.TYPEFULLY_SOCIAL_SET_ALEXEY;
-      }
+    it('keeps /social static and cannot reach a model or provider write', async () => {
+      const res = await handleTelegramWebhook({
+        headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+        body: JSON.stringify({
+          message: {
+            message_id: 54,
+            chat: { id: 12345 },
+            from: { id: 42, username: 'operator' },
+            text: '/social Alexey post about the next workshop'
+          }
+        })
+      } as any);
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.route, 'social-draft');
+      const client = await getClient();
+      const item = await getIntakeItem(client, body.intakeItemId);
+      assert.strictEqual(item!.assistantReadiness, undefined);
+      assert.deepStrictEqual(item!.assistantJobIds, []);
     });
 
     it('captures Telegram attachments through the same intake route', async () => {
