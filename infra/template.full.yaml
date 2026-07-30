@@ -41,6 +41,31 @@ Parameters:
     Default: 28800
     MinValue: 300
     MaxValue: 86400
+  ConversationalPresentationTtlSeconds:
+    Type: Number
+    Default: 1800
+    MinValue: 60
+    MaxValue: 86400
+  ConversationalExecutionLeaseSeconds:
+    Type: Number
+    Default: 60
+    MinValue: 5
+    MaxValue: 900
+  ConversationalExecutionDeadlineMs:
+    Type: Number
+    Default: 20000
+    MinValue: 100
+    MaxValue: 120000
+  ConversationalExecutionMaxPreDispatchLeases:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 20
+  ConversationalExecutionRecoveryLimit:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    MaxValue: 100
   DataOpsEnvironment:
     Type: String
     Default: prod
@@ -883,6 +908,88 @@ Resources:
         - Key: DataClass
           Value: PortalBrokerSecret
 
+  ConversationalExecutionFailureQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateExecutionFailure }
+
+  ConversationalExecutionWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: ..
+      Runtime: nodejs24.x
+      Handler: dist/execution-worker-handler.handler
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          DATAOPS_ENV: !Ref DataOpsEnvironment
+          DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable
+          DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
+          CONVERSATIONAL_EXECUTION_LEASE_SECONDS: !Ref ConversationalExecutionLeaseSeconds
+          CONVERSATIONAL_EXECUTION_DEADLINE_MS: !Ref ConversationalExecutionDeadlineMs
+          CONVERSATIONAL_EXECUTION_MAX_PRE_DISPATCH_LEASES: !Ref ConversationalExecutionMaxPreDispatchLeases
+          CONVERSATIONAL_EXECUTION_RECOVERY_LIMIT: !Ref ConversationalExecutionRecoveryLimit
+          CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Query
+              - dynamodb:UpdateItem
+              - dynamodb:TransactWriteItems
+            Resource:
+              - !GetAtt DataOpsConversationalStateTable.Arn
+              - !Sub ${DataOpsConversationalStateTable.Arn}/index/GSI1
+              - !Sub ${DataOpsConversationalStateTable.Arn}/index/GSI2
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:GetItem
+            Resource:
+              - !GetAtt DataOpsUsersTable.Arn
+        - Statement:
+            Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt ConversationalExecutionFailureQueue.Arn
+      Events:
+        QueuedAttemptStream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt DataOpsConversationalStateTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 1
+            MaximumRetryAttempts: 3
+            BisectBatchOnFunctionError: true
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            DestinationConfig:
+              OnFailure:
+                Type: SQS
+                Destination: !GetAtt ConversationalExecutionFailureQueue.Arn
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"eventName":["INSERT","MODIFY"],"dynamodb":{"NewImage":{"recordType":{"S":["execution_attempt"]},"status":{"S":["queued"]}}}}'
+        ExecutionRecovery:
+          Type: Schedule
+          Properties:
+            Description: Recover due conversational execution attempts through the indexed worker path.
+            Schedule: rate(2 minutes)
+            Enabled: true
+            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}'
+
   BackendFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -1048,6 +1155,8 @@ Resources:
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
           CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled
           ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn
+          CONVERSATIONAL_PRESENTATION_TTL_SECONDS: !Ref ConversationalPresentationTtlSeconds
+          CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -1086,6 +1195,10 @@ Resources:
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
 
 Outputs:
+  ConversationalExecutionWorkerFunctionName:
+    Value: !Ref ConversationalExecutionWorkerFunction
+  ConversationalExecutionFailureQueueArn:
+    Value: !GetAtt ConversationalExecutionFailureQueue.Arn
   DataOpsConversationalStateTableName:
     Description: Retained DynamoDB table for private conversational state
     Value: !Ref DataOpsConversationalStateTable

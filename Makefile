@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build ci clean build-BackendFunction
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -108,3 +108,5 @@ build-BackendFunction:
 	cd "$(ARTIFACTS_DIR)" && npm ci --omit=dev --workspace dataops-backend
 	rm -rf "$(ARTIFACTS_DIR)/node_modules/zerosearch-node"
 	cp -R backend/vendor/zerosearch-node "$(ARTIFACTS_DIR)/node_modules/zerosearch-node"
+
+build-ConversationalExecutionWorkerFunction: build-BackendFunction
