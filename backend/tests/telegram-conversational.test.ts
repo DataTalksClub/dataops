@@ -38,6 +38,7 @@ import { handleConversationalIdentityBindingRoutes } from '../src/routes/convers
 import { handleTelegramWebhook, resetTelegramConfigCache } from '../src/routes/telegram';
 import { expiryFrom, type Conversation, type JsonValue } from '../src/conversation/types';
 import { CONVERSATIONAL_ENTITY_SPECS } from '../src/conversation/portable';
+import { conversationalRolloutSnapshot } from '../src/conversation/rollout';
 import type { LambdaEvent } from '../src/types';
 
 const NOW = new Date('2026-07-30T12:00:00.000Z');
@@ -225,7 +226,7 @@ describe('private conversational Telegram adapter', () => {
   });
 
   beforeEach(async () => {
-    process.env.CONVERSATIONAL_TELEGRAM_ENABLED = 'true';
+    process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'true';
     process.env.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED = 'true';
     process.env.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED = 'true';
     process.env.TELEGRAM_BOT_TOKEN = 'fake-bot-token';
@@ -655,6 +656,20 @@ describe('private conversational Telegram adapter', () => {
       assert.match(telegram.sent.at(-1)?.text || '', /typed social request.*confirm.*public source/i);
       assert.strictEqual(core.calls.length, 0);
     }
+    for (const [updateId, text, route, expected] of [
+      [1122, '/podcast create one', 'podcast-guidance', /outside this conversational MVP/i],
+      [1123, '/start', 'start-guidance', /verified private chats/i],
+      [1124, '/help', 'help-guidance', /approvals require buttons/i],
+      [1125, '/status', 'status-guidance', /online/i],
+    ] as const) {
+      const staticResponse = await handleTelegramWebhook(
+        webhook(messageUpdate(updateId, { text })),
+        dependencies()
+      );
+      assert.strictEqual(JSON.parse(staticResponse.body).route, route);
+      assert.match(telegram.sent.at(-1)?.text || '', expected);
+      assert.strictEqual(core.calls.length, 0);
+    }
     const todo = await handleTelegramWebhook(
       webhook(messageUpdate(119, { text: '/todo buy milk tomorrow' })),
       dependencies()
@@ -666,8 +681,6 @@ describe('private conversational Telegram adapter', () => {
     assert.strictEqual(core.calls.at(-1)?.kind, 'message');
     await handleTelegramWebhook(webhook(messageUpdate(122, { text: '/cancel' })), dependencies());
     assert.strictEqual(core.calls.at(-1)?.command, 'cancel');
-    await handleTelegramWebhook(webhook(messageUpdate(123, { text: '/help' })), dependencies());
-    assert.match(telegram.sent.at(-1)!.text, /approvals require buttons/i);
     const sessions = await handleTelegramWebhook(webhook(messageUpdate(124, { text: '/sessions' })), dependencies());
     assert.strictEqual(JSON.parse(sessions.body).route, 'sessions');
     assert.ok(telegram.sent.at(-1)!.buttons);
@@ -1001,7 +1014,7 @@ describe('private conversational Telegram adapter', () => {
     assert.strictEqual(photoCalls, before);
   });
 
-  it('fails closed when media flags/config are disabled and preserves legacy behavior when global is off', async () => {
+  it('fails closed when media flags are disabled and enters authenticated maintenance when ingress is off', async () => {
     process.env.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED = 'false';
     telegram.files.set('voice-disabled', { path: 'voice/file.ogg', bytes: validOgg() });
     await handleTelegramWebhook(webhook(messageUpdate(150, {
@@ -1010,13 +1023,18 @@ describe('private conversational Telegram adapter', () => {
     assert.strictEqual(voiceCalls, 0);
     assert.strictEqual(telegram.downloads.length, 0);
 
-    process.env.CONVERSATIONAL_TELEGRAM_ENABLED = 'false';
-    delete process.env.TELEGRAM_BOT_TOKEN;
+    process.env.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED = 'false';
+    process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'false';
     resetTelegramConfigCache();
-    const legacy = await handleTelegramWebhook(webhook({
-      message: { message_id: 151, chat: { id: 7001 }, text: '/status' },
-    }));
-    assert.strictEqual(JSON.parse(legacy.body).route, 'status');
+    const maintenance = await handleTelegramWebhook(webhook(messageUpdate(151, {
+      text: '/status',
+    })), {
+      sendMaintenanceReply: async (chatId, text) => {
+        telegram.sent.push({ chatId, text });
+      },
+    });
+    assert.strictEqual(JSON.parse(maintenance.body).route, 'maintenance');
+    assert.match(telegram.sent.at(-1)?.text || '', /maintenance mode/i);
   });
 
   it('reaps only old safe directories within budget and never follows symlinks', async () => {
@@ -1148,7 +1166,12 @@ describe('private conversational Telegram adapter', () => {
 
     process.env.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED = 'false';
     process.env.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED = 'false';
-    const config = conversationalTelegramConfig('fake', 'secret', new Set(['7001']));
+    const config = conversationalTelegramConfig(
+      'fake',
+      'secret',
+      new Set(['7001']),
+      conversationalRolloutSnapshot()
+    );
     assert.throws(
       () => adapterDependenciesFromConfig(config, client),
       /telegram_core_unavailable/

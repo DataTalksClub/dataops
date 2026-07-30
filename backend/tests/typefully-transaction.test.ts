@@ -36,6 +36,7 @@ import {
   processAttempt,
   runRecovery,
 } from '../src/conversation/executionWorker';
+import { conversationalRolloutSnapshot } from '../src/conversation/rollout';
 import { dispatchOne, runResultDispatcher } from '../src/conversation/resultDispatcher';
 import { ConversationalProposalCore } from '../src/conversation/todoCore';
 import { TypefullyProposalAdapter } from '../src/conversation/proposalCoordinator';
@@ -96,8 +97,9 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
   };
 
   before(async () => {
-    process.env.CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED = 'true';
-    process.env.CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED = 'true';
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'typefully';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'true';
     process.env.CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST = CONFIG_DIGEST;
     process.env.TYPEFULLY_ACCOUNT_CONFIG_REVISION = CONFIG_REVISION;
     process.env.TYPEFULLY_BASE_URL = BASE_URL;
@@ -404,6 +406,34 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
       now: () => NOW,
       executionRegistry: presentationRegistry,
     });
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'false';
+    const previewSource = await core.handle(input(
+      'Typed public social source 0 for an exact Typefully post',
+      'preview-only-source'
+    ));
+    assert.match(previewSource.message, new RegExp(TYPEFULLY_PUBLIC_CONFIRMATION, 'i'));
+    const previewOnly = await core.handle(input(
+      TYPEFULLY_PUBLIC_CONFIRMATION,
+      'preview-only-confirm'
+    ));
+    assert.equal(
+      previewOnly.buttons?.some((button) => button.text === 'Approve and add to Typefully'),
+      false
+    );
+    assert.equal(
+      previewOnly.buttons?.some((button) => button.text === 'Request changes'),
+      true
+    );
+    const previewCancel = previewOnly.buttons?.find(
+      (button) => button.text === 'Cancel proposal'
+    )?.action;
+    assert.ok(previewCancel);
+    assert.match((await core.handle({
+      ...input('', 'preview-only-cancel'),
+      kind: 'button_action',
+      action: previewCancel,
+    })).message, /canceled.*no provider write/i);
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'true';
     const bareConfirmationCalls = modelCalls;
     assert.match(
       (await core.handle(input(TYPEFULLY_PUBLIC_CONFIRMATION, 'bare-confirmation'))).message,
@@ -1635,18 +1665,24 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
     });
     const disabledAttemptId = approvedDisabled.message.match(/attempt-[a-f0-9]+/)?.[0];
     assert.ok(disabledAttemptId);
-    process.env.CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED = 'false';
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'false';
     const disabledResult = await processAttempt(disabledAttemptId, {
       client,
       registry: new ExecutorRegistry([workerExecutor()]),
       now: () => NOW,
       leaseOwner: () => 'preflight-disabled-worker',
+      attemptEnabled: (attempt) => (
+        Boolean(attempt.permissionRef)
+        && conversationalRolloutSnapshot().executionAttemptEnabled(attempt.permissionRef!)
+      ),
     });
-    process.env.CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED = 'true';
-    assert.equal(disabledResult?.status, 'failed_safe');
+    assert.equal(disabledResult?.status, 'queued');
+    assert.equal(disabledResult?.attemptNumber, 1);
+    assert.equal(disabledResult?.leaseOwner, undefined);
     assert.equal(disabledResult?.dispatchStartedAt, undefined);
     assert.equal(providerCalls, beforeCrashCalls);
 
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'true';
     modelCandidate = {
       ...modelCandidate,
       xPosts: ['Revoked actor preflight X post'],
@@ -1951,7 +1987,7 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
             leakedMessages.push(message);
           },
         },
-      }), 'rejected');
+      }), 'outcome_unknown');
       assert.deepEqual(leakedMessages, []);
       assert.equal(
         (await getResultNotification(client, notificationId, NOW))?.status,

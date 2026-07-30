@@ -250,8 +250,9 @@ describe('generic proposal coordinator with two enabled adapters', {
   let client: DynamoDBDocumentClient;
 
   before(async () => {
-    process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED = 'true';
-    process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED = 'true';
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'todo,typefully';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'true';
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
@@ -259,8 +260,9 @@ describe('generic proposal coordinator with two enabled adapters', {
 
   after(async () => {
     await stopLocal();
-    delete process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED;
-    delete process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED;
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
+    process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'false';
   });
 
   it('selects, preflights, revises, and approves each adapter without cross-plugin context or proof', async () => {

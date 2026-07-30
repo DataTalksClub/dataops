@@ -7,11 +7,10 @@ import { TypefullySavedDraftExecutor } from './typefullyExecutor';
 import { ActorTodoExecutor } from './todoWriter';
 
 function defaultWorkerExecutionRegistry(client: DynamoDBDocumentClient): ExecutorRegistry {
-  const executors: CapabilityExecutor[] = [];
-  if (process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED === 'true') {
-    executors.push(new ActorTodoExecutor(client));
-  }
-  executors.push(new TypefullySavedDraftExecutor(client));
+  const executors: CapabilityExecutor[] = [
+    new ActorTodoExecutor(client),
+    new TypefullySavedDraftExecutor(client),
+  ];
   if (process.env.NODE_ENV === 'test' && process.env.CONVERSATIONAL_FAKE_EXECUTOR_ENABLED === 'true') {
     executors.push(new FakeCapabilityExecutor(
       'fake.effect',

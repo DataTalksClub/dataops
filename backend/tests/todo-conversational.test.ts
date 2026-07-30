@@ -163,36 +163,28 @@ describe('conversational todo plugin', () => {
   });
 
   it('keeps result delivery independently disabled without touching AWS clients', async () => {
-    const previous = process.env.CONVERSATIONAL_RESULT_DELIVERY_ENABLED;
-    delete process.env.CONVERSATIONAL_RESULT_DELIVERY_ENABLED;
+    const previous = process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED;
+    process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'false';
     try {
       assert.deepEqual(await resultNotificationHandler(), { disabled: true });
     } finally {
-      if (previous === undefined) delete process.env.CONVERSATIONAL_RESULT_DELIVERY_ENABLED;
-      else process.env.CONVERSATIONAL_RESULT_DELIVERY_ENABLED = previous;
+      if (previous === undefined) process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'false';
+      else process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = previous;
     }
   });
 
-  it('keeps the production todo executor independently disabled by default', () => {
-    const previous = process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED;
-    delete process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED;
-    try {
-      assert.equal(
-        defaultExecutionRegistry({} as DynamoDBDocumentClient).get(
-          TODO_EFFECT,
-          todoMetadata.buildDigest
-        ),
-        null
-      );
-      process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED = 'true';
-      assert.ok(defaultExecutionRegistry({} as DynamoDBDocumentClient).get(
-        TODO_EFFECT,
-        todoMetadata.buildDigest
-      ));
-    } finally {
-      if (previous === undefined) delete process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED;
-      else process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED = previous;
-    }
+  it('keeps the production executor registry static across rollout states', () => {
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
+    assert.ok(defaultExecutionRegistry({} as DynamoDBDocumentClient).get(
+      TODO_EFFECT,
+      todoMetadata.buildDigest
+    ));
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
+    assert.ok(defaultExecutionRegistry({} as DynamoDBDocumentClient).get(
+      TODO_EFFECT,
+      todoMetadata.buildDigest
+    ));
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
   });
 
   it('normalizes inert descriptions and rejects missing, unsafe, oversized, extra, and invalid values', () => {
@@ -272,8 +264,8 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
   let client: DynamoDBDocumentClient;
 
   before(async () => {
-    process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED = 'true';
-    process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED = 'true';
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'todo';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
@@ -281,8 +273,8 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
 
   after(async () => {
     await stopLocal();
-    delete process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED;
-    delete process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED;
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
   });
 
   async function putAttempt(input: ActorTodoWrite): Promise<void> {
@@ -950,7 +942,7 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
       client,
       now: () => NOW,
       transport: { async sendPrivateMessage() { assert.fail('disabled owner received result'); } },
-    }), 'rejected');
+    }), 'outcome_unknown');
     await client.send(new UpdateCommand({
       TableName: TABLE_USERS,
       Key: { PK: `USER#${actorId}`, SK: `USER#${actorId}` },
@@ -969,7 +961,7 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
       client,
       now: () => NOW,
       transport: { async sendPrivateMessage() { assert.fail('replaced identity received result'); } },
-    }), 'rejected');
+    }), 'outcome_unknown');
 
     const originalChannel = await getChannelBinding(client, 'telegram', '7001', NOW);
     assert.ok(originalChannel);
@@ -990,6 +982,6 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
       client,
       now: () => NOW,
       transport: { async sendPrivateMessage() { assert.fail('replaced channel received result'); } },
-    }), 'rejected');
+    }), 'outcome_unknown');
   });
 });

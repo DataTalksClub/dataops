@@ -613,6 +613,84 @@ describe('transactional conversational approval and durable execution', () => {
     )));
   });
 
+  it('leaves disabled work queued, closes the pre-dispatch race, and does not interrupt dispatched work', async () => {
+    provider.behavior = 'success';
+
+    const disabledPresented = await context();
+    const disabledApproved = await approvePresentation(
+      disabledPresented.actionToken,
+      disabledPresented.provenance,
+      { client, registry, now: () => NOW }
+    );
+    const disabledCalls = provider.calls.length;
+    const disabledBefore = await getExecutionAttempt(
+      client,
+      disabledApproved.attempt.id,
+      NOW
+    );
+    const disabled = await processAttempt(disabledApproved.attempt.id, {
+      client,
+      registry,
+      now: () => NOW,
+      leaseOwner: () => 'disabled-before-lease',
+      attemptEnabled: () => false,
+    });
+    assert.strictEqual(disabled?.status, 'queued');
+    assert.strictEqual(disabled?.attemptNumber, disabledBefore?.attemptNumber);
+    assert.strictEqual(disabled?.leaseOwner, undefined);
+    assert.strictEqual(provider.calls.length, disabledCalls);
+
+    const racedPresented = await context();
+    const racedApproved = await approvePresentation(
+      racedPresented.actionToken,
+      racedPresented.provenance,
+      { client, registry, now: () => NOW }
+    );
+    let checks = 0;
+    const racedCalls = provider.calls.length;
+    const raced = await processAttempt(racedApproved.attempt.id, {
+      client,
+      registry,
+      now: () => NOW,
+      leaseOwner: () => 'disabled-after-lease',
+      attemptEnabled: () => {
+        checks += 1;
+        return checks === 1;
+      },
+    });
+    assert.strictEqual(checks, 2);
+    assert.strictEqual(raced?.status, 'queued');
+    assert.strictEqual(raced?.dispatchStartedAt, undefined);
+    assert.strictEqual(provider.calls.length, racedCalls);
+
+    const dispatchedPresented = await context();
+    const dispatchedApproved = await approvePresentation(
+      dispatchedPresented.actionToken,
+      dispatchedPresented.provenance,
+      { client, registry, now: () => NOW }
+    );
+    const leased = await claimQueuedAttempt(
+      client,
+      dispatchedApproved.attempt.id,
+      'already-dispatched-worker',
+      NOW.toISOString(),
+      new Date(NOW.getTime() + 60_000).toISOString()
+    );
+    assert.ok(leased);
+    const dispatched = await markDispatchStarted(client, leased!, NOW.toISOString());
+    assert.ok(dispatched);
+    const dispatchedCalls = provider.calls.length;
+    const recovered = await recoverExecutingAttempt(dispatched!, {
+      client,
+      registry,
+      now: () => LATER,
+      leaseOwner: () => 'already-dispatched-recovery',
+      attemptEnabled: () => false,
+    });
+    assert.strictEqual(recovered?.status, 'succeeded');
+    assert.strictEqual(provider.calls.length - dispatchedCalls, 1);
+  });
+
   it('never persists or exposes unsafe executor receipt fields', async () => {
     const presented = await context('fake.unsafe', BUILD_UNSAFE);
     const approved = await approvePresentation(

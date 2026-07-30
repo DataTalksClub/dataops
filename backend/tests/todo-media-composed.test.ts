@@ -154,8 +154,8 @@ describe('confirmed Telegram media composes with the real todo core', {
   let client: DynamoDBDocumentClient;
 
   before(async () => {
-    process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED = 'true';
-    process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED = 'true';
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'todo';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
@@ -165,8 +165,8 @@ describe('confirmed Telegram media composes with the real todo core', {
   after(async () => {
     await rm(ROOT, { recursive: true, force: true });
     await stopLocal();
-    delete process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED;
-    delete process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED;
+    process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
+    process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
   });
 
   it('keeps voice/photo inert until confirmation and completes approved voice and corrected photo todos', async () => {

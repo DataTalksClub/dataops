@@ -120,17 +120,21 @@ Telegram chats. A request can make at most two model
 calls: one `skill_load` call followed by one separate `skill_invoke` call.
 Neither call can approve or execute domain work.
 
-Todo rollout is independently default-off at all three effect boundaries:
-`CONVERSATIONAL_TODO_PLUGIN_ENABLED` controls catalog/proposal visibility,
-`CONVERSATIONAL_TODO_EXECUTOR_ENABLED` controls executor registration, and
-`CONVERSATIONAL_RESULT_DELIVERY_ENABLED` controls the scheduled private-result
-dispatcher. Enabling the global conversational adapter does not enable any of
-these capabilities. An attempt whose executor is disabled fails safely during
-the worker pre-dispatch check; it is never held for a later rollout to execute.
-The authenticated legacy Telegram route also intercepts `/todo`, including
-arguments and bot-username forms, before acquiring a database client. It always
-returns the same bounded static guidance and never creates legacy intake while
-the conversational adapter is default-off.
+Rollout is owned by one strict immutable snapshot with exactly six controls:
+Telegram ingress, execution leasing, the canonical plugin allowlist (`none`,
+`todo`, `typefully`, or `todo,typefully`), Typefully external execution, voice,
+and photo. All defaults are off. Plugin visibility, approval/dispatch
+eligibility, result delivery, and media availability are derived from those
+controls; retired independent flags are rejected. Disabled queued work remains
+durable and unleased, while already dispatched work is not interrupted.
+
+Ingress-off Telegram still authenticates the webhook, rejects raw updates over
+256 KiB before JSON parsing, and may make one no-retry private maintenance or
+group-redirect reply attempt with the configured Telegram API deadline capped
+at five seconds. Timeout or network ambiguity is acknowledged safely with only
+a fixed error code; it performs no conversational or domain write.
+The legacy mutation handler is removed. `/todo`, `/social`, and `/podcast` are
+static non-mutating guidance in every rollout state.
 
 A shared proposal coordinator maps a loaded plugin action to its strict draft,
 immutable proposal, preview, and approval controls. Channel adapters can supply
@@ -289,7 +293,12 @@ the separate Stream/scheduled worker; the approval request never invokes an
 executor.
 
 The SAM stack owns the worker, filtered DynamoDB Stream event source, indexed
-recovery schedule, and encrypted retained failure queue. Lease duration,
+recovery schedule, an independent two-minute execution-worker health pulse,
+and encrypted retained failure queue. The worker pulse performs only its fixed
+heartbeat write and emits a zero-age metric after success; recovery and result
+delivery emit their own zero-age metrics only after successful scheduled runs.
+Only those three heartbeat alarms treat missing data as breaching, while
+disabled schedules and their conditioned alarms remain inert. Lease duration,
 deadline, pre-dispatch retry bound, recovery page size, and the 30-minute
 presentation action lifetime are bounded stack parameters. The production
 worker registers only capability-scoped executors. The test fake executor can

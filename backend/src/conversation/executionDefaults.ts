@@ -9,14 +9,12 @@ const FAKE_BUILD_DIGEST = `sha256:${'f'.repeat(64)}`;
 function defaultExecutionRegistry(
   client: DynamoDBDocumentClient
 ): ExecutorRegistry {
-  const executors: CapabilityExecutor[] = [];
-  if (process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED === 'true') {
-    executors.push(new ActorTodoExecutor(client));
-  }
-  // Registration is safe while execution is disabled: the executor's
-  // side-effect-free preflight checks the independent worker-only kill switch
-  // before a dispatch marker can be persisted.
-  executors.push(new TypefullyProposalRenderExecutor());
+  // Executors are a static build-time registry. Rollout eligibility is checked
+  // before approval, leasing, and dispatch rather than changing registration.
+  const executors: CapabilityExecutor[] = [
+    new ActorTodoExecutor(client),
+    new TypefullyProposalRenderExecutor(),
+  ];
   if (process.env.NODE_ENV === 'test' && process.env.CONVERSATIONAL_FAKE_EXECUTOR_ENABLED === 'true') {
     executors.push(new FakeCapabilityExecutor(
       'fake.effect',
