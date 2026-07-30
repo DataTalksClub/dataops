@@ -1,18 +1,21 @@
 const { test, expect } = require('@playwright/test');
-
-// Helper to get today's date in YYYY-MM-DD format
-function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
-}
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+} = require('./helpers/business-date');
+const BERLIN_TODAY = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
 // Seed user IDs (from seed-users script)
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
 
 test.describe('Task list view redesign', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
+  test.beforeEach(async ({ page }) => {
+    await installBerlinBoundaryClock(page);
+  });
 
   // ──────────────────────────────────────────────────────────────────
   // Setup: ensure seed users exist for the tests
@@ -21,7 +24,7 @@ test.describe('Task list view redesign', () => {
   test.describe('Scenario: Grace views tasks with instructions and required links', () => {
     let taskWithInstructions;
     let taskWithRequiredLink;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       // Create a task with instructionsUrl
@@ -55,7 +58,10 @@ test.describe('Task list view redesign', () => {
     });
 
     test('shows instructions link icon and required link input with disabled checkbox', async ({ page }) => {
+      expect(BERLIN_MIDNIGHT_BOUNDARY_INSTANT.slice(0, 10)).toBe('2026-07-30');
+      expect(BERLIN_TODAY).toBe('2026-07-31');
       await page.goto('/#/tasks');
+      await expect(page.locator('#task-date')).toHaveValue(BERLIN_TODAY);
       await page.waitForSelector('[data-task-row]');
 
       // Find the row for the task with instructions
@@ -88,7 +94,7 @@ test.describe('Task list view redesign', () => {
 
   test.describe('Scenario: Grace fills in a required link to enable task completion', () => {
     let task;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       const res = await request.post('/api/tasks', {
@@ -141,7 +147,7 @@ test.describe('Task list view redesign', () => {
   test.describe('Scenario: Grace fills in required shared bundle links', () => {
     let bundle;
     let task;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       const bundleRes = await request.post('/api/bundles', {
@@ -223,7 +229,7 @@ test.describe('Task list view redesign', () => {
     let taskGrace;
     let taskValeriia;
     let taskUnassigned;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       // Check if Grace user exists; if not, these tests will still work
@@ -300,7 +306,7 @@ test.describe('Task list view redesign', () => {
     let bundleTask1;
     let bundleTask2;
     let nonBundleTask;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       // Create a bundle
@@ -384,7 +390,7 @@ test.describe('Task list view redesign', () => {
 
   test.describe('Scenario: Grace creates a task with an assignee', () => {
     let createdTaskId;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.afterAll(async ({ request }) => {
       if (createdTaskId) {
@@ -434,7 +440,7 @@ test.describe('Task list view redesign', () => {
 
   test.describe('Scenario: Task list layout changes', () => {
     let testTask;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       const res = await request.post('/api/tasks', {
@@ -525,7 +531,7 @@ test.describe('Task list view redesign', () => {
   test.describe('Scenario: Status filter works', () => {
     let todoTask;
     let doneTask;
-    const today = todayString();
+    const today = BERLIN_TODAY;
 
     test.beforeAll(async ({ request }) => {
       const res1 = await request.post('/api/tasks', {
