@@ -149,23 +149,19 @@ Parameters:
     Type: String
     Default: dataops-v1/telegram-integration
     Description: Name of the out-of-band shared Telegram JSON secret containing botToken, webhookSecret, and allowedChatIds
-  ConversationalAgentEnabled:
+  ConversationalTelegramIngressEnabled:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
-  ConversationalTodoPluginEnabled:
+  ConversationalExecutionEnabled:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
-  ConversationalTodoExecutorEnabled:
+  ConversationalEnabledPlugins:
     Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
-  ConversationalTypefullyPluginEnabled:
-    Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
-  ConversationalTypefullyExecutionEnabled:
+    Default: none
+    AllowedValues: [none, todo, typefully, "todo,typefully"]
+  ConversationalTypefullyExternalExecutionEnabled:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
@@ -181,19 +177,11 @@ Parameters:
     Type: String
     Default: https://api.typefully.com
     AllowedPattern: "^https://[^ ]+$"
-  ConversationalResultDeliveryEnabled:
-    Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
   ZaiConversationalApiKeySecretArn:
     Type: String
     Default: ""
     Description: Optional ARN of the out-of-band z.ai JSON secret containing apiKey
     AllowedPattern: "^$|^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
-  ConversationalTelegramEnabled:
-    Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
   ConversationalTelegramVoiceEnabled:
     Type: String
     Default: "false"
@@ -202,6 +190,14 @@ Parameters:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
+  ConversationalAlarmSubscriptionConfirmed:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  DataOpsDeploymentId:
+    Type: String
+    Default: local
+    AllowedPattern: "^[A-Za-z0-9._-]{1,128}$"
   GroqTranscriptionApiKeySecretArn:
     Type: String
     Default: ""
@@ -227,7 +223,7 @@ Parameters:
     Type: Number
     Default: 5000
     MinValue: 100
-    MaxValue: 10000
+    MaxValue: 5000
   TelegramApiMaxResponseBytes:
     Type: Number
     Default: 65536
@@ -302,18 +298,28 @@ Parameters:
     Default: sponsor-communications
     AllowedPattern: "^[A-Za-z0-9_.\\/-]+$"
 Rules:
-  ConversationalAgentRequiresZaiSecret:
+  ConversationalIngressRequiresZaiSecret:
     Assertions:
       - Assert: !Or
-          - !Equals [!Ref ConversationalAgentEnabled, "false"]
+          - !Equals [!Ref ConversationalTelegramIngressEnabled, "false"]
           - !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
-        AssertDescription: Enabling the conversational agent requires a z.ai secret ARN
+        AssertDescription: Telegram ingress requires a z.ai secret ARN
+  TypefullyExternalRequiresExecutionAndPlugin:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref ConversationalTypefullyExternalExecutionEnabled, "false"]
+          - !And
+              - !Equals [!Ref ConversationalExecutionEnabled, "true"]
+              - !Or
+                  - !Equals [!Ref ConversationalEnabledPlugins, typefully]
+                  - !Equals [!Ref ConversationalEnabledPlugins, "todo,typefully"]
+        AssertDescription: Typefully external execution requires execution and the Typefully plugin
   TelegramVoiceRequiresConfiguration:
     Assertions:
       - Assert: !Or
           - !Equals [!Ref ConversationalTelegramVoiceEnabled, "false"]
           - !And
-              - !Equals [!Ref ConversationalTelegramEnabled, "true"]
+              - !Equals [!Ref ConversationalTelegramIngressEnabled, "true"]
               - !Not [!Equals [!Ref GroqTranscriptionApiKeySecretArn, ""]]
         AssertDescription: Telegram voice requires the global adapter and Groq secret ARN
   TelegramPhotoRequiresConfiguration:
@@ -321,7 +327,7 @@ Rules:
       - Assert: !Or
           - !Equals [!Ref ConversationalTelegramPhotoEnabled, "false"]
           - !And
-              - !Equals [!Ref ConversationalTelegramEnabled, "true"]
+              - !Equals [!Ref ConversationalTelegramIngressEnabled, "true"]
               - !Not [!Equals [!Ref ZaiVisionApiKeySecretArn, ""]]
         AssertDescription: Telegram photo requires the global adapter and z.ai vision secret ARN
   SponsorSendRequiresPrivateConfiguration:
@@ -338,10 +344,22 @@ Conditions:
   HasZaiConversationalSecret: !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
   HasGroqTranscriptionSecret: !Not [!Equals [!Ref GroqTranscriptionApiKeySecretArn, ""]]
   HasZaiVisionSecret: !Not [!Equals [!Ref ZaiVisionApiKeySecretArn, ""]]
+  HasTypefullyExecutionConfiguration: !And
+    - !Not [!Equals [!Ref ConversationalTypefullyAccountConfigDigest, "sha256:0000000000000000000000000000000000000000000000000000000000000000"]]
+    - !Not [!Equals [!Ref TypefullyAccountConfigRevision, unconfigured]]
+    - !Not [!Equals [!Ref TypefullySocialSetAlexey, 0]]
+    - !Not [!Equals [!Ref TypefullySocialSetDataTalksClub, 0]]
   HasSponsorTemplateSecret: !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
   HasSponsorHmacSecret: !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
   SponsorCommunicationSendingEnabled: !Equals [!Ref SponsorCommunicationSendEnabled, "true"]
-  ConversationalResultDeliveryIsEnabled: !Equals [!Ref ConversationalResultDeliveryEnabled, "true"]
+  ConversationalIngressIsEnabled: !Equals [!Ref ConversationalTelegramIngressEnabled, "true"]
+  ConversationalExecutionIsEnabled: !Equals [!Ref ConversationalExecutionEnabled, "true"]
+  ConversationalTypefullyExternalIsEnabled: !Equals [!Ref ConversationalTypefullyExternalExecutionEnabled, "true"]
+  ConversationalVoiceIsEnabled: !Equals [!Ref ConversationalTelegramVoiceEnabled, "true"]
+  ConversationalPhotoIsEnabled: !Equals [!Ref ConversationalTelegramPhotoEnabled, "true"]
+  ConversationalMediaIsEnabled: !Or
+    - !Condition ConversationalVoiceIsEnabled
+    - !Condition ConversationalPhotoIsEnabled
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -351,6 +369,327 @@ Globals:
       - x86_64
 
 Resources:
+  ConversationalRolloutAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-conversational-rollout-alarms
+      KmsMasterKeyId: alias/aws/sns
+
+  ConversationalBackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub /dataops/${AWS::StackName}/conversational/backend
+      RetentionInDays: 30
+
+  ConversationalExecutionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub /dataops/${AWS::StackName}/conversational/execution
+      RetentionInDays: 30
+
+  ConversationalResultDispatcherLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub /dataops/${AWS::StackName}/conversational/result-dispatcher
+      RetentionInDays: 30
+
+  ConversationalExecutionOutcomeUnknownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalExecutionIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-execution-outcome-unknown
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ExecutionOutcomeUnknown
+      Dimensions: [{ Name: Component, Value: execution-worker }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalExecutionFailureQueueVisibleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalExecutionIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-execution-failure-queue-visible
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ConversationalExecutionFailureQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalRecoveryOldestDueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalExecutionIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-recovery-oldest-due-age
+      Namespace: DataOps/ConversationalAgent
+      MetricName: RecoveryOldestDueAgeSeconds
+      Dimensions: [{ Name: Component, Value: recovery }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalExecutionWorkerHeartbeatStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalExecutionIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-execution-worker-heartbeat-stale
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ExecutionWorkerHeartbeatAgeSeconds
+      Dimensions: [{ Name: Component, Value: execution-worker }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalRecoveryHeartbeatStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalExecutionIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-recovery-heartbeat-stale
+      Namespace: DataOps/ConversationalAgent
+      MetricName: RecoveryHeartbeatAgeSeconds
+      Dimensions: [{ Name: Component, Value: recovery }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalResultDeliveryOutcomeUnknownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-result-delivery-outcome-unknown
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ResultDeliveryOutcomeUnknown
+      Dimensions: [{ Name: Component, Value: result-dispatcher }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalResultDeliveryOldestPendingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-result-delivery-oldest-pending
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ResultDeliveryOldestPendingAgeSeconds
+      Dimensions: [{ Name: Component, Value: result-dispatcher }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalResultDispatcherHeartbeatStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-result-dispatcher-heartbeat-stale
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ResultDispatcherHeartbeatAgeSeconds
+      Dimensions: [{ Name: Component, Value: result-dispatcher }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalResultDeliveryFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-result-delivery-failed
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ResultDeliveryFailed
+      Dimensions: [{ Name: Component, Value: result-dispatcher }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalTelegramWebhookFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-telegram-webhook-failures
+      Namespace: DataOps/ConversationalAgent
+      MetricName: TelegramWebhookFailures
+      Dimensions: [{ Name: Component, Value: telegram }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalModelFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-model-failures
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ModelFailures
+      Dimensions: [{ Name: Component, Value: model }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalVoiceFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalVoiceIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-voice-failures
+      Namespace: DataOps/ConversationalAgent
+      MetricName: VoiceFailures
+      Dimensions: [{ Name: Component, Value: voice }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalPhotoFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalPhotoIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-photo-failures
+      Namespace: DataOps/ConversationalAgent
+      MetricName: PhotoFailures
+      Dimensions: [{ Name: Component, Value: photo }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalTypefullyDraftFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalTypefullyExternalIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-typefully-draft-failed
+      Namespace: DataOps/ConversationalAgent
+      MetricName: TypefullyDraftFailed
+      Dimensions: [{ Name: Component, Value: typefully }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalMediaCleanupFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalMediaIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-media-cleanup-failed
+      Namespace: DataOps/ConversationalAgent
+      MetricName: MediaCleanupFailed
+      Dimensions: [{ Name: Component, Value: media-cleanup }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalRetentionCleanupFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalIngressIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-retention-cleanup-failed
+      Namespace: DataOps/ConversationalAgent
+      MetricName: RetentionCleanupFailed
+      Dimensions: [{ Name: Component, Value: retention-cleanup }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
+  ConversationalExecutionFailedSafeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ConversationalExecutionIsEnabled
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-conversational-execution-failed-safe
+      Namespace: DataOps/ConversationalAgent
+      MetricName: ExecutionFailedSafe
+      Dimensions: [{ Name: Component, Value: execution-worker }]
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+
   DataOpsConversationalStateTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -1131,6 +1470,9 @@ Resources:
       Handler: dist/execution-worker-handler.handler
       Timeout: 30
       MemorySize: 512
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref ConversationalExecutionLogGroup
       Environment:
         Variables:
           DATAOPS_ENV: !Ref DataOpsEnvironment
@@ -1142,8 +1484,12 @@ Resources:
           CONVERSATIONAL_EXECUTION_MAX_PRE_DISPATCH_LEASES: !Ref ConversationalExecutionMaxPreDispatchLeases
           CONVERSATIONAL_EXECUTION_RECOVERY_LIMIT: !Ref ConversationalExecutionRecoveryLimit
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
-          CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled
-          CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED: !Ref ConversationalTypefullyExecutionEnabled
+          CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled
+          CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled
+          CONVERSATIONAL_ENABLED_PLUGINS: !Ref ConversationalEnabledPlugins
+          CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: !Ref ConversationalTypefullyExternalExecutionEnabled
+          CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled
+          CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: !Ref ConversationalTelegramPhotoEnabled
           CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: !Ref ConversationalTypefullyAccountConfigDigest
           TYPEFULLY_ACCOUNT_CONFIG_REVISION: !Ref TypefullyAccountConfigRevision
           TYPEFULLY_BASE_URL: !Ref TypefullyBaseUrl
@@ -1210,8 +1556,15 @@ Resources:
           Properties:
             Description: Recover due conversational execution attempts through the indexed worker path.
             Schedule: rate(2 minutes)
-            Enabled: true
+            State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}'
+        ExecutionHealthPulse:
+          Type: Schedule
+          Properties:
+            Description: Emit the idle-safe conversational execution worker health pulse.
+            Schedule: rate(2 minutes)
+            State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]
+            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-health-pulse"}}'
 
   SponsorCommunicationFailureQueue:
     Type: AWS::SQS::Queue
@@ -1471,6 +1824,9 @@ Resources:
       Handler: dist/result-notification-handler.handler
       Timeout: 30
       MemorySize: 256
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref ConversationalResultDispatcherLogGroup
       Environment:
         Variables:
           DATAOPS_ENV: !Ref DataOpsEnvironment
@@ -1478,12 +1834,18 @@ Resources:
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
           CONVERSATIONAL_RESULT_DISPATCH_LIMIT: "50"
           CONVERSATIONAL_RESULT_DISPATCH_LEASE_SECONDS: "60"
-          CONVERSATIONAL_RESULT_DELIVERY_ENABLED: !Ref ConversationalResultDeliveryEnabled
+          CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled
+          CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled
+          CONVERSATIONAL_ENABLED_PLUGINS: !Ref ConversationalEnabledPlugins
+          CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: !Ref ConversationalTypefullyExternalExecutionEnabled
+          CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled
+          CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: !Ref ConversationalTelegramPhotoEnabled
       Policies:
         - Statement:
             Effect: Allow
             Action:
               - dynamodb:GetItem
+              - dynamodb:PutItem
               - dynamodb:Query
               - dynamodb:UpdateItem
             Resource:
@@ -1507,7 +1869,7 @@ Resources:
           Properties:
             Description: Deliver owner-bound conversational execution results through the shared Telegram channel.
             Schedule: rate(1 minute)
-            State: !If [ConversationalResultDeliveryIsEnabled, ENABLED, DISABLED]
+            State: !If [ConversationalIngressIsEnabled, ENABLED, DISABLED]
 
   BackendFunction:
     Type: AWS::Serverless::Function
@@ -1519,6 +1881,9 @@ Resources:
       Handler: dist/handler.handler
       Timeout: 30
       MemorySize: 1024
+      LoggingConfig:
+        LogFormat: JSON
+        LogGroup: !Ref ConversationalBackendLogGroup
       Policies:
         - Statement:
             Effect: Allow
@@ -1711,13 +2076,13 @@ Resources:
           DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket
           DATAOPS_DAPIER_CREDENTIALS_TABLE: !Ref DapierCredentialsTableName
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
-          CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled
-          CONVERSATIONAL_TODO_PLUGIN_ENABLED: !Ref ConversationalTodoPluginEnabled
-          CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled
-          CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED: !Ref ConversationalTypefullyPluginEnabled
+          CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled
+          CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled
+          CONVERSATIONAL_ENABLED_PLUGINS: !Ref ConversationalEnabledPlugins
+          CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: !Ref ConversationalTypefullyExternalExecutionEnabled
           CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: !Ref ConversationalTypefullyAccountConfigDigest
+          CONVERSATIONAL_TYPEFULLY_PROVIDER_CONFIGURED: !If [HasTypefullyExecutionConfiguration, "true", "false"]
           ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn
-          CONVERSATIONAL_TELEGRAM_ENABLED: !Ref ConversationalTelegramEnabled
           CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled
           CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: !Ref ConversationalTelegramPhotoEnabled
           GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: !Ref GroqTranscriptionApiKeySecretArn
@@ -1737,6 +2102,12 @@ Resources:
           TELEGRAM_MEDIA_MAX_TEXT_BYTES: !Ref TelegramMediaMaxTextBytes
           CONVERSATIONAL_PRESENTATION_TTL_SECONDS: !Ref ConversationalPresentationTtlSeconds
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
+          DATAOPS_DEPLOYMENT_ID: !Ref DataOpsDeploymentId
+          CONVERSATIONAL_FAILURE_QUEUE_CONFIGURED: "true"
+          CONVERSATIONAL_ALARM_TOPIC_CONFIGURED: "true"
+          CONVERSATIONAL_ALARMS_CONFIGURED: "true"
+          CONVERSATIONAL_LOG_GROUPS_CONFIGURED: "true"
+          CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED: !Ref ConversationalAlarmSubscriptionConfirmed
           SPONSOR_COMMUNICATION_SEND_ENABLED: !Ref SponsorCommunicationSendEnabled
           SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: !Ref SponsorCommunicationTemplateSecretArn
           SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
@@ -1778,6 +2149,8 @@ Resources:
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
 
 Outputs:
+  ConversationalRolloutAlarmTopicArn:
+    Value: !Ref ConversationalRolloutAlarmTopic
   SponsorSendWorkerFunctionName:
     Value: !Ref SponsorSendWorkerFunction
   SponsorSesEventFunctionName:

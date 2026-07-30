@@ -278,10 +278,10 @@ test('z.ai deadline covers body reads, redacts stream failures, and cleans up it
 });
 
 test('production configuration is disabled by default and fails closed when enabled without a secret', () => {
-  const beforeEnabled = process.env.CONVERSATIONAL_AGENT_ENABLED;
+  const beforeEnabled = process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED;
   const beforeSecret = process.env.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN;
   try {
-    delete process.env.CONVERSATIONAL_AGENT_ENABLED;
+    process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'false';
     delete process.env.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN;
     assert.deepEqual(conversationalModelConfigFromEnv(), {
       enabled: false,
@@ -292,7 +292,7 @@ test('production configuration is disabled by default and fails closed when enab
       maximumOutput: undefined,
     });
     assert.equal(createConversationalModelFromEnv(), null);
-    process.env.CONVERSATIONAL_AGENT_ENABLED = 'true';
+    process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'true';
     assert.throws(() => conversationalModelConfigFromEnv(), (error: unknown) => (
       error instanceof ConversationalModelError && error.code === 'model_config_error'
     ));
@@ -307,8 +307,8 @@ test('production configuration is disabled by default and fails closed when enab
       baseUrl: 'https://evil.example',
     }), ConversationalModelError);
   } finally {
-    if (beforeEnabled === undefined) delete process.env.CONVERSATIONAL_AGENT_ENABLED;
-    else process.env.CONVERSATIONAL_AGENT_ENABLED = beforeEnabled;
+    if (beforeEnabled === undefined) process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = 'false';
+    else process.env.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED = beforeEnabled;
     if (beforeSecret === undefined) delete process.env.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN;
     else process.env.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN = beforeSecret;
   }

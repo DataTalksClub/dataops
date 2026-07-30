@@ -111,23 +111,21 @@ jobs:
       DAPIER_CREDENTIALS_TABLE_NAME: ${{ vars.DAPIER_CREDENTIALS_TABLE_NAME }}
       DAPIER_CREDENTIALS_TABLE_ARN: ${{ vars.DAPIER_CREDENTIALS_TABLE_ARN }}
       MAILING_EXPORTS_CONFIG: ${{ vars.MAILING_EXPORTS_CONFIG }}
-      CONVERSATIONAL_AGENT_ENABLED: ${{ vars.CONVERSATIONAL_AGENT_ENABLED }}
+      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED }}
       SPONSOR_FINANCE_ENABLED: ${{ vars.SPONSOR_FINANCE_ENABLED }}
-      CONVERSATIONAL_TODO_PLUGIN_ENABLED: ${{ vars.CONVERSATIONAL_TODO_PLUGIN_ENABLED }}
-      CONVERSATIONAL_TODO_EXECUTOR_ENABLED: ${{ vars.CONVERSATIONAL_TODO_EXECUTOR_ENABLED }}
-      CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED: ${{ vars.CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED }}
-      CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED }}
+      CONVERSATIONAL_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_EXECUTION_ENABLED }}
+      CONVERSATIONAL_ENABLED_PLUGINS: ${{ vars.CONVERSATIONAL_ENABLED_PLUGINS }}
+      CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED }}
       CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: ${{ vars.CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST }}
       TYPEFULLY_ACCOUNT_CONFIG_REVISION: ${{ vars.TYPEFULLY_ACCOUNT_CONFIG_REVISION }}
       TYPEFULLY_BASE_URL: ${{ vars.TYPEFULLY_BASE_URL }}
       WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN: ${{ vars.WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN }}
       TYPEFULLY_SOCIAL_SET_ALEXEY: ${{ vars.TYPEFULLY_SOCIAL_SET_ALEXEY }}
       TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: ${{ vars.TYPEFULLY_SOCIAL_SET_DATATALKSCLUB }}
-      CONVERSATIONAL_RESULT_DELIVERY_ENABLED: ${{ vars.CONVERSATIONAL_RESULT_DELIVERY_ENABLED }}
       ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}
-      CONVERSATIONAL_TELEGRAM_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_ENABLED }}
       CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED }}
       CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED }}
+      CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED: ${{ vars.CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED }}
       GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN: ${{ vars.GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN }}
       ZAI_VISION_API_KEY_SECRET_ARN: ${{ vars.ZAI_VISION_API_KEY_SECRET_ARN }}
       ZAI_VISION_MODEL: ${{ vars.ZAI_VISION_MODEL }}
@@ -192,19 +190,17 @@ jobs:
           fi
           : "${EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX:=transfer/}"
           : "${MAILING_EXPORTS_CONFIG:=[]}"
-          : "${CONVERSATIONAL_AGENT_ENABLED:=false}"
+          : "${CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED:=false}"
           : "${SPONSOR_FINANCE_ENABLED:=false}"
-          : "${CONVERSATIONAL_TODO_PLUGIN_ENABLED:=false}"
-          : "${CONVERSATIONAL_TODO_EXECUTOR_ENABLED:=false}"
-          : "${CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED:=false}"
-          : "${CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED:=false}"
+          : "${CONVERSATIONAL_EXECUTION_ENABLED:=false}"
+          : "${CONVERSATIONAL_ENABLED_PLUGINS:=none}"
+          : "${CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED:=false}"
           : "${CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST:=sha256:0000000000000000000000000000000000000000000000000000000000000000}"
           : "${TYPEFULLY_ACCOUNT_CONFIG_REVISION:=unconfigured}"
           : "${TYPEFULLY_BASE_URL:=https://api.typefully.com}"
-          : "${CONVERSATIONAL_RESULT_DELIVERY_ENABLED:=false}"
-          : "${CONVERSATIONAL_TELEGRAM_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_VOICE_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED:=false}"
+          : "${CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED:=false}"
           : "${ZAI_VISION_MODEL:=glm-4.6v}"
           : "${ZAI_VISION_BASE_URL:=https://api.z.ai/api/paas/v4/chat/completions}"
           : "${TELEGRAM_HANDLER_DEADLINE_MS:=28000}"
@@ -222,12 +218,37 @@ jobs:
           : "${SPONSOR_SES_IDENTITY_ARN:=arn:aws:ses:eu-west-1:000000000000:identity/example.invalid}"
           : "${SPONSOR_SES_FROM_ADDRESS:=no-reply@example.invalid}"
           : "${SPONSOR_SES_CONFIGURATION_SET_NAME:=dataops-sponsor-reviewed-send-disabled}"
-          if [ "$CONVERSATIONAL_AGENT_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
-            echo "Conversational agent cannot be enabled without its z.ai secret ARN" >&2
+          strict_boolean() {
+            case "$2" in
+              true|false) ;;
+              *) echo "$1 must be exactly true or false" >&2; exit 1 ;;
+            esac
+          }
+          strict_boolean CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED"
+          strict_boolean CONVERSATIONAL_EXECUTION_ENABLED "$CONVERSATIONAL_EXECUTION_ENABLED"
+          strict_boolean CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED "$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED"
+          strict_boolean CONVERSATIONAL_TELEGRAM_VOICE_ENABLED "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED"
+          strict_boolean CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED"
+          strict_boolean CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED "$CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED"
+          case "$TELEGRAM_API_TIMEOUT_MS" in
+            ''|*[!0-9]*) echo "TELEGRAM_API_TIMEOUT_MS must be an integer from 100 through 5000" >&2; exit 1 ;;
+          esac
+          if [ "$TELEGRAM_API_TIMEOUT_MS" -lt 100 ] || [ "$TELEGRAM_API_TIMEOUT_MS" -gt 5000 ]; then
+            echo "TELEGRAM_API_TIMEOUT_MS must be an integer from 100 through 5000" >&2
             exit 1
           fi
-          if [ "$CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED" = "true" ] && { \
-            [ -z "$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" ] \
+          case "$CONVERSATIONAL_ENABLED_PLUGINS" in
+            none|todo|typefully|todo,typefully) ;;
+            *) echo "CONVERSATIONAL_ENABLED_PLUGINS must be a canonical plugin subset" >&2; exit 1 ;;
+          esac
+          if [ "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
+            echo "Telegram ingress cannot be enabled without its z.ai secret ARN" >&2
+            exit 1
+          fi
+          if [ "$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED" = "true" ] && { \
+            [ "$CONVERSATIONAL_EXECUTION_ENABLED" != "true" ] \
+            || { [ "$CONVERSATIONAL_ENABLED_PLUGINS" != "typefully" ] && [ "$CONVERSATIONAL_ENABLED_PLUGINS" != "todo,typefully" ]; } \
+            || [ -z "$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" ] \
             || [ -z "$TYPEFULLY_SOCIAL_SET_ALEXEY" ] \
             || [ -z "$TYPEFULLY_SOCIAL_SET_DATATALKSCLUB" ] \
             || [ "$TYPEFULLY_ACCOUNT_CONFIG_REVISION" = "unconfigured" ]; \
@@ -235,11 +256,11 @@ jobs:
             echo "Conversational Typefully execution requires the exact secret ARN, both account mappings, and a configuration revision" >&2
             exit 1
           fi
-          if [ "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_ENABLED" != "true" ] || [ -z "$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" ]; }; then
+          if [ "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" != "true" ] || [ -z "$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" ]; }; then
             echo "Telegram voice requires the global adapter and Groq secret ARN" >&2
             exit 1
           fi
-          if [ "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_ENABLED" != "true" ] || [ -z "$ZAI_VISION_API_KEY_SECRET_ARN" ]; }; then
+          if [ "$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" != "true" ] || [ -z "$ZAI_VISION_API_KEY_SECRET_ARN" ]; }; then
             echo "Telegram photo requires the global adapter and z.ai vision secret ARN" >&2
             exit 1
           fi
@@ -268,23 +289,22 @@ jobs:
               "ParameterKey=DapierCredentialsTableName,ParameterValue=$DAPIER_CREDENTIALS_TABLE_NAME" \
               "ParameterKey=DapierCredentialsTableArn,ParameterValue=$DAPIER_CREDENTIALS_TABLE_ARN" \
               "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" \
-              "ParameterKey=ConversationalAgentEnabled,ParameterValue=$CONVERSATIONAL_AGENT_ENABLED" \
+              "ParameterKey=ConversationalTelegramIngressEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" \
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
-              "ParameterKey=ConversationalTodoPluginEnabled,ParameterValue=$CONVERSATIONAL_TODO_PLUGIN_ENABLED" \
-              "ParameterKey=ConversationalTodoExecutorEnabled,ParameterValue=$CONVERSATIONAL_TODO_EXECUTOR_ENABLED" \
-              "ParameterKey=ConversationalTypefullyPluginEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED" \
-              "ParameterKey=ConversationalTypefullyExecutionEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED" \
+              "ParameterKey=ConversationalExecutionEnabled,ParameterValue=$CONVERSATIONAL_EXECUTION_ENABLED" \
+              "ParameterKey=ConversationalEnabledPlugins,ParameterValue=$CONVERSATIONAL_ENABLED_PLUGINS" \
+              "ParameterKey=ConversationalTypefullyExternalExecutionEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED" \
               "ParameterKey=ConversationalTypefullyAccountConfigDigest,ParameterValue=$CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST" \
               "ParameterKey=TypefullyAccountConfigRevision,ParameterValue=$TYPEFULLY_ACCOUNT_CONFIG_REVISION" \
               "ParameterKey=TypefullyBaseUrl,ParameterValue=$TYPEFULLY_BASE_URL" \
               "ParameterKey=WorkEngineTypefullyApiTokenSecretArn,ParameterValue=$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" \
               "ParameterKey=TypefullySocialSetAlexey,ParameterValue=$TYPEFULLY_SOCIAL_SET_ALEXEY" \
               "ParameterKey=TypefullySocialSetDataTalksClub,ParameterValue=$TYPEFULLY_SOCIAL_SET_DATATALKSCLUB" \
-              "ParameterKey=ConversationalResultDeliveryEnabled,ParameterValue=$CONVERSATIONAL_RESULT_DELIVERY_ENABLED" \
               "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" \
-              "ParameterKey=ConversationalTelegramEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_ENABLED" \
               "ParameterKey=ConversationalTelegramVoiceEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" \
               "ParameterKey=ConversationalTelegramPhotoEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED" \
+              "ParameterKey=ConversationalAlarmSubscriptionConfirmed,ParameterValue=$CONVERSATIONAL_ALARM_SUBSCRIPTION_CONFIRMED" \
+              "ParameterKey=DataOpsDeploymentId,ParameterValue=$GITHUB_SHA" \
               "ParameterKey=GroqTranscriptionApiKeySecretArn,ParameterValue=$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" \
               "ParameterKey=ZaiVisionApiKeySecretArn,ParameterValue=$ZAI_VISION_API_KEY_SECRET_ARN" \
               "ParameterKey=ZaiVisionModel,ParameterValue=$ZAI_VISION_MODEL" \

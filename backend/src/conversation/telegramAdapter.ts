@@ -47,6 +47,11 @@ import {
 } from './telegramMedia';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { createTodoConversationalCoreFromEnv, TODO_GUIDANCE } from './todoCore';
+import type { ConversationalRolloutSnapshot } from './rollout';
+import {
+  emitConversationalMetric,
+  logConversationalEvent,
+} from './observability';
 
 type NormalizedKind = 'message' | 'button_action' | 'session_command' | 'voice_note' | 'photo';
 type InputTrust = 'operator_authored' | 'untrusted_provider_derived';
@@ -118,6 +123,14 @@ const PRIVATE_REDIRECT = 'Please continue with the DataOps bot in a private chat
 const LINK_GUIDANCE = 'This Telegram account is not linked. Ask a DataOps administrator to link it.';
 const UNSUPPORTED = 'That input is not supported here. Send private text, a voice note, or a photo.';
 const TYPEFULLY_GUIDANCE = 'Send a new typed social request in this private chat. I will ask you to confirm that exact text as public source before preparing a Typefully draft preview.';
+const PODCAST_GUIDANCE = 'Podcast creation is outside this conversational MVP. No job or document was created.';
+const HELP_GUIDANCE = [
+  'DataOps conversational Telegram works in verified private chats.',
+  'Describe one todo or a typed public social draft request, review the complete proposal, then use its exact controls.',
+  'Voice notes and photos are shown back for Use, correction, or Discard before conversation.',
+  'Approvals require buttons; typed shortcuts never approve or execute.',
+  'Session commands: /new, /sessions, /continue, /cancel, /discard.',
+].join('\n');
 const TELEGRAM_MESSAGE_CHUNK_BYTES = 3_900;
 const GROUP_REDIRECT_INTERVAL_MS = 60_000;
 const groupRedirects = new Map<string, number>();
@@ -771,7 +784,12 @@ async function stageMedia(
     }
     return true;
   }
-  await reapOrphanMedia(config.tempRoot, now);
+  try {
+    await reapOrphanMedia(config.tempRoot, now);
+  } catch {
+    emitConversationalMetric('RetentionCleanupFailed', 1, 'retention-cleanup');
+    logConversationalEvent('cleanup_failed', 'retention-cleanup');
+  }
   const directory = await createInvocationDirectory(config.tempRoot, updateId);
   const filePath = path.join(directory, kind === 'voice_note' ? 'voice.ogg' : 'photo.jpg');
   try {
@@ -831,7 +849,12 @@ async function stageMedia(
     ).catch(() => undefined);
     throw error;
   } finally {
-    await removeInvocationDirectory(config.tempRoot, directory);
+    try {
+      await removeInvocationDirectory(config.tempRoot, directory);
+    } catch {
+      emitConversationalMetric('MediaCleanupFailed', 1, 'media-cleanup');
+      logConversationalEvent('cleanup_failed', 'media-cleanup');
+    }
   }
 }
 
@@ -1068,6 +1091,22 @@ async function handleConversationalTelegramWebhook(
     ).catch(() => undefined);
     return response(200, { ok: true, route: 'link-required' });
   }
+  const staticCommand = commandFrom(boundedText(message?.text)).command;
+  const staticGuidance = staticCommand === 'todo'
+    ? TODO_GUIDANCE
+    : staticCommand === 'social'
+      ? TYPEFULLY_GUIDANCE
+      : staticCommand === 'podcast'
+        ? PODCAST_GUIDANCE
+        : staticCommand === 'start' || staticCommand === 'help'
+          ? HELP_GUIDANCE
+          : staticCommand === 'status'
+            ? 'DataOps conversational Telegram is online.'
+            : null;
+  if (staticGuidance) {
+    await sendBeforeDeadline(dependencies, chatId, staticGuidance, deadlineAt);
+    return response(200, { ok: true, route: `${staticCommand}-guidance` });
+  }
   const now = (dependencies.now || (() => new Date()))();
   const ensured = await ensureConversation(dependencies.client, user.id, chatId, now);
   const conversation = ensured.conversation;
@@ -1211,15 +1250,7 @@ async function handleConversationalTelegramWebhook(
 
   const text = boundedText(message?.text);
   const parsed = commandFrom(text);
-  const supportedCommands = new Set(['new', 'sessions', 'continue', 'cancel', 'discard', 'help']);
-  if (parsed.command === 'todo') {
-    await sendBeforeDeadline(dependencies, chatId, TODO_GUIDANCE, deadlineAt);
-    return response(200, { ok: true, route: 'todo-guidance' });
-  }
-  if (parsed.command === 'social') {
-    await sendBeforeDeadline(dependencies, chatId, TYPEFULLY_GUIDANCE, deadlineAt);
-    return response(200, { ok: true, route: 'social-guidance' });
-  }
+  const supportedCommands = new Set(['new', 'sessions', 'continue', 'cancel', 'discard']);
   if (parsed.command && !supportedCommands.has(parsed.command)) {
     await sendBeforeDeadline(dependencies, chatId, UNSUPPORTED, deadlineAt);
     return response(200, { ok: true, route: 'unsupported' });
@@ -1280,6 +1311,8 @@ async function handleConversationalTelegramWebhook(
       return response(200, { ok: true, route: 'voice-preview', duplicate });
     } catch (error) {
       if ((error as Error).message === 'media_outbound_pending') throw error;
+      emitConversationalMetric('VoiceFailures', 1, 'voice');
+      logConversationalEvent('media_failed', 'voice');
       await sendBeforeDeadline(
         dependencies, chatId,
         'I could not safely process that voice note. Please send text or a new OGG voice note.',
@@ -1327,6 +1360,8 @@ async function handleConversationalTelegramWebhook(
       return response(200, { ok: true, route: 'photo-preview', duplicate });
     } catch (error) {
       if ((error as Error).message === 'media_outbound_pending') throw error;
+      emitConversationalMetric('PhotoFailures', 1, 'photo');
+      logConversationalEvent('media_failed', 'photo');
       await sendBeforeDeadline(
         dependencies, chatId, 'I could not safely process that photo. Please send text instead.', deadlineAt
       ).catch(() => undefined);
@@ -1418,18 +1453,19 @@ async function handleConversationalTelegramWebhook(
 function conversationalTelegramConfig(
   botToken: string | undefined,
   webhookSecret: string | undefined,
-  allowedChatIds: Set<string>
+  allowedChatIds: Set<string>,
+  rollout: ConversationalRolloutSnapshot
 ): AdapterConfig {
   if (!botToken || !webhookSecret || allowedChatIds.size === 0) throw new Error('telegram_config_error');
   return {
     botToken,
     webhookSecret,
     allowedChatIds,
-    voiceEnabled: process.env.CONVERSATIONAL_TELEGRAM_VOICE_ENABLED === 'true',
-    photoEnabled: process.env.CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED === 'true',
+    voiceEnabled: rollout.eligibility.voiceAvailable,
+    photoEnabled: rollout.eligibility.photoAvailable,
     tempRoot: process.env.DATAOPS_TELEGRAM_MEDIA_TEMP_ROOT || DEFAULT_TEMP_ROOT,
     hardDeadlineMs: boundedInteger(process.env.TELEGRAM_HANDLER_DEADLINE_MS, 28_000, 1_000, 28_000),
-    telegramApiTimeoutMs: boundedInteger(process.env.TELEGRAM_API_TIMEOUT_MS, 5_000, 100, 10_000),
+    telegramApiTimeoutMs: boundedInteger(process.env.TELEGRAM_API_TIMEOUT_MS, 5_000, 100, 5_000),
     telegramMaximumResponseBytes: boundedInteger(
       process.env.TELEGRAM_API_MAX_RESPONSE_BYTES, 65_536, 1_024, 256 * 1024
     ),
@@ -1439,6 +1475,7 @@ function conversationalTelegramConfig(
 export {
   HttpTelegramClient,
   LINK_GUIDANCE,
+  MAX_UPDATE_BYTES,
   PRIVATE_REDIRECT,
   TelegramNotSentError,
   adapterDependenciesFromConfig,

@@ -9,10 +9,26 @@ import {
   runResultDispatcher,
   type ResultTransport,
 } from './conversation/resultDispatcher';
+import { conversationalRolloutSnapshot } from './conversation/rollout';
+import { emitConversationalMetric } from './conversation/observability';
+import {
+  oldestPendingResultAgeSeconds,
+  writeRolloutHeartbeat,
+} from './conversation/rolloutState';
 
 let client: DynamoDBDocumentClient | null = null;
 let secrets: SecretsManagerClient | null = null;
 let cachedBotToken: string | null = null;
+
+interface ResultNotificationHandlerOverrides {
+  client?: DynamoDBDocumentClient;
+  transport?: ResultTransport;
+  now?: () => Date;
+  runResultDispatcher?: typeof runResultDispatcher;
+  oldestPendingResultAgeSeconds?: typeof oldestPendingResultAgeSeconds;
+  writeRolloutHeartbeat?: typeof writeRolloutHeartbeat;
+  emitConversationalMetric?: typeof emitConversationalMetric;
+}
 
 async function botToken(): Promise<string> {
   if (cachedBotToken) return cachedBotToken;
@@ -70,17 +86,62 @@ function telegramMessageBody(
   return { chat_id: channelConversationKey, text };
 }
 
-async function handler(): Promise<unknown> {
-  if (process.env.CONVERSATIONAL_RESULT_DELIVERY_ENABLED !== 'true') {
+async function handleResultNotification(
+  overrides: ResultNotificationHandlerOverrides = {}
+): Promise<unknown> {
+  const rollout = conversationalRolloutSnapshot();
+  if (!rollout.eligibility.resultDelivery) {
     return { disabled: true };
   }
-  client ||= await getClient();
-  return runResultDispatcher({
-    client,
-    transport: new TelegramResultTransport(),
+  const currentClient = overrides.client || (client ||= await getClient());
+  const now = overrides.now || (() => new Date());
+  const startedAt = now();
+  const emitMetric = overrides.emitConversationalMetric || emitConversationalMetric;
+  const result = await (overrides.runResultDispatcher || runResultDispatcher)({
+    client: currentClient,
+    transport: overrides.transport || new TelegramResultTransport(),
+    now: () => startedAt,
     limit: Number(process.env.CONVERSATIONAL_RESULT_DISPATCH_LIMIT || 50),
     leaseSeconds: Number(process.env.CONVERSATIONAL_RESULT_DISPATCH_LEASE_SECONDS || 60),
   });
+  if (result.delivered) {
+    emitMetric('ResultDeliverySucceeded', result.delivered, 'result-dispatcher');
+  }
+  if (result.rejected) {
+    emitMetric('ResultDeliveryFailed', result.rejected, 'result-dispatcher');
+  }
+  if (result.outcomeUnknown) {
+    emitMetric(
+      'ResultDeliveryOutcomeUnknown',
+      result.outcomeUnknown,
+      'result-dispatcher'
+    );
+  }
+  const completedAt = now();
+  const oldestPending = await (
+    overrides.oldestPendingResultAgeSeconds || oldestPendingResultAgeSeconds
+  )(currentClient, completedAt);
+  emitMetric(
+    'ResultDeliveryOldestPendingAgeSeconds',
+    oldestPending ?? 0,
+    'result-dispatcher'
+  );
+  await (overrides.writeRolloutHeartbeat || writeRolloutHeartbeat)(
+    currentClient,
+    'result_dispatcher',
+    completedAt
+  );
+  emitMetric(
+    'ResultDispatcherHeartbeatAgeSeconds',
+    0,
+    'result-dispatcher',
+    completedAt.getTime()
+  );
+  return result;
+}
+
+async function handler(): Promise<unknown> {
+  return handleResultNotification();
 }
 
 function resetResultNotificationHandlerForTests(): void {
@@ -91,7 +152,9 @@ function resetResultNotificationHandlerForTests(): void {
 
 export {
   TelegramResultTransport,
+  handleResultNotification,
   handler,
   resetResultNotificationHandlerForTests,
   telegramMessageBody,
 };
+export type { ResultNotificationHandlerOverrides };

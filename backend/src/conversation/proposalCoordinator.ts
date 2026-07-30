@@ -29,6 +29,7 @@ import {
   validateTypefullyCandidate,
   type TypefullyCandidate,
 } from './typefullyPlugin';
+import { conversationalRolloutSnapshot } from './rollout';
 
 interface ProposalAdapterContext {
   actorId: string;
@@ -124,8 +125,7 @@ class TodoProposalAdapter implements ProposalAdapter {
   readonly policyDigest = TODO_POLICY_DIGEST;
 
   isEnabled(): boolean {
-    return process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED === 'true'
-      && process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED === 'true';
+    return conversationalRolloutSnapshot().eligibility.todoVisible;
   }
 
   preflightSource(
@@ -300,7 +300,7 @@ class TypefullyProposalAdapter implements ProposalAdapter {
   readonly policyDigest = TYPEFULLY_POLICY_DIGEST;
 
   isEnabled(): boolean {
-    return process.env.CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED === 'true';
+    return conversationalRolloutSnapshot().eligibility.typefullyVisible;
   }
 
   preflightSource(

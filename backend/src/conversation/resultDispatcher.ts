@@ -89,7 +89,7 @@ async function dispatchOne(
       'outcome_unknown',
       now.toISOString()
     );
-    return 'rejected';
+    return 'outcome_unknown';
   }
   if (
     !claimed.identityChannelUserId
@@ -103,7 +103,7 @@ async function dispatchOne(
       'outcome_unknown',
       now.toISOString()
     );
-    return 'rejected';
+    return 'outcome_unknown';
   }
   const [identity, binding, payload, user] = await Promise.all([
     getIdentityBinding(
@@ -148,7 +148,7 @@ async function dispatchOne(
       'outcome_unknown',
       now.toISOString()
     );
-    return 'rejected';
+    return 'outcome_unknown';
   }
   let message: string;
   try {
@@ -160,7 +160,7 @@ async function dispatchOne(
       'outcome_unknown',
       now.toISOString()
     );
-    return 'rejected';
+    return 'outcome_unknown';
   }
   try {
     await dependencies.transport.sendPrivateMessage(claimed.channelConversationKey, message);

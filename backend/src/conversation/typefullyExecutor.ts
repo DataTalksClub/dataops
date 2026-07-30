@@ -42,6 +42,7 @@ import {
   type TypefullyCandidate,
   type TypefullyPlatform,
 } from './typefullyPlugin';
+import { parseConversationalRolloutSnapshot } from './rollout';
 import {
   candidateFromTypefullySpec,
   renderTypefullySpec,
@@ -307,7 +308,7 @@ class TypefullySavedDraftExecutor implements CapabilityExecutor {
 
   async preflight(request: ExecutorPreflightRequest): Promise<ExecutorPreflightResult> {
     const env = this.dependencies.env || process.env;
-    if (env.CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED !== 'true') {
+    if (!parseConversationalRolloutSnapshot(env).eligibility.typefullyApprovalAndDispatch) {
       return { kind: 'failed_safe', reasonCode: 'typefully_execution_disabled' };
     }
     const candidate = candidateFromTypefullySpec(request.spec);

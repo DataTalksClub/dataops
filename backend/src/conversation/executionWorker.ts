@@ -10,6 +10,7 @@ import {
   queryDueAttempts,
   reclaimDispatchedAttempt,
   reconcileUnknownAttempt,
+  releaseUndispatchedAttempt,
   requeueUndispatchedAttempt,
   type DispatchStateGuard,
 } from './executionRepository';
@@ -51,6 +52,7 @@ interface WorkerDependencies {
   leaseOwner?: () => string;
   config?: Partial<WorkerConfig>;
   crashAfter?: 'lease' | 'dispatch_marker' | 'executor_response';
+  attemptEnabled?: (attempt: ExecutionAttempt) => boolean;
 }
 
 interface WorkerResult {
@@ -234,6 +236,19 @@ async function executeLeasedAttempt(
 ): Promise<ExecutionAttempt | null> {
   const config = workerConfig(dependencies.config);
   const now = (dependencies.now || (() => new Date()))();
+  if (
+    !options.dispatchAlreadyStarted
+    && !leased.dispatchStartedAt
+    && dependencies.attemptEnabled
+    && !dependencies.attemptEnabled(leased)
+  ) {
+    return releaseUndispatchedAttempt(
+      dependencies.client,
+      leased,
+      now.toISOString(),
+      new Date(now.getTime() + 300_000).toISOString()
+    );
+  }
   const checked = await preDispatchCheck(leased, dependencies);
   if (!checked) {
     const failed = await finalizeAttempt(
@@ -361,6 +376,12 @@ async function processAttempt(
 ): Promise<ExecutionAttempt | null> {
   const config = workerConfig(dependencies.config);
   const now = (dependencies.now || (() => new Date()))();
+  const current = await getExecutionAttempt(dependencies.client, attemptId, now);
+  if (
+    current?.status === 'queued'
+    && dependencies.attemptEnabled
+    && !dependencies.attemptEnabled(current)
+  ) return current;
   const owner = (dependencies.leaseOwner || (() => `worker-${crypto.randomUUID()}`))();
   const leased = await claimQueuedAttempt(
     dependencies.client,
@@ -383,6 +404,14 @@ async function recoverExecutingAttempt(
   const now = (dependencies.now || (() => new Date()))();
   const nowIso = now.toISOString();
   if (!attempt.dispatchStartedAt) {
+    if (dependencies.attemptEnabled && !dependencies.attemptEnabled(attempt)) {
+      return requeueUndispatchedAttempt(
+        dependencies.client,
+        attempt,
+        nowIso,
+        new Date(now.getTime() + 300_000).toISOString()
+      );
+    }
     if (attempt.attemptNumber >= config.maxPreDispatchLeases) {
       const failed = await finalizeAttempt(
         dependencies.client,

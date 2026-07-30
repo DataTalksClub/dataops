@@ -3,6 +3,11 @@ import {
   SecretsManagerClient,
   type SecretsManagerClientConfig,
 } from '@aws-sdk/client-secrets-manager';
+import {
+  emitConversationalMetric,
+  logConversationalEvent,
+} from './observability';
+import { conversationalRolloutSnapshot } from './rollout';
 
 interface ModelMessage {
   role: 'user' | 'assistant';
@@ -215,6 +220,8 @@ class ZaiConversationalClient implements ConversationalModel {
       })();
       return await Promise.race([operation, timeout]);
     } catch (error) {
+      emitConversationalMetric('ModelFailures', 1, 'model');
+      logConversationalEvent('model_failed', 'model');
       if (error instanceof ConversationalModelError) throw error;
       if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         throw new ConversationalModelError('model_timeout', 'The assistant took too long. Please try again.');
@@ -307,7 +314,7 @@ class ZaiConversationalClient implements ConversationalModel {
 }
 
 function conversationalModelConfigFromEnv(): ZaiClientConfig {
-  const enabled = process.env.CONVERSATIONAL_AGENT_ENABLED === 'true';
+  const enabled = conversationalRolloutSnapshot().eligibility.runtimeAvailable;
   const secretArn = process.env.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN || undefined;
   if (enabled && !secretArn) {
     throw new ConversationalModelError('model_config_error', 'Conversational model secret is not configured');

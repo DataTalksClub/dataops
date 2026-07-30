@@ -8,6 +8,11 @@ import { runConfiguredMailingExports } from './mailingExports/service';
 import { sanitizeJsonResponse } from './responsePrivacy';
 import type { CronRunnerResult } from './cron/runner';
 import type { LambdaEvent, LambdaResponse } from './types';
+import {
+  ConversationalRolloutConfigurationError,
+  conversationalRolloutSnapshot,
+} from './conversation/rollout';
+import { logConversationalEvent } from './conversation/observability';
 
 let client: DynamoDBDocumentClient | null = null;
 let initialized = false;
@@ -35,6 +40,19 @@ function isScheduledEvent(event: unknown): boolean {
 }
 
 async function handler(event: LambdaEvent | Record<string, unknown>, _context?: unknown): Promise<LambdaResponse | CronRunnerResult> {
+  try {
+    conversationalRolloutSnapshot();
+  } catch (error) {
+    if (error instanceof ConversationalRolloutConfigurationError) {
+      logConversationalEvent('configuration_rejected', 'telegram');
+      return {
+        statusCode: 503,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Conversational rollout configuration is invalid' }),
+      };
+    }
+    throw error;
+  }
   // Normalize Lambda Function URL events to the API Gateway-shaped LambdaEvent
   // the router expects. Function URLs send requestContext.http.method/path and
   // rawPath, not httpMethod/path.

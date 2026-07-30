@@ -1242,6 +1242,36 @@ async function requeueUndispatchedAttempt(
   }
 }
 
+async function releaseUndispatchedAttempt(
+  client: DynamoDBDocumentClient,
+  attempt: ExecutionAttempt,
+  now: string,
+  readyAt: string
+): Promise<ExecutionAttempt | null> {
+  if (!attempt.leaseOwner) return null;
+  try {
+    const result = await client.send(new UpdateCommand({
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      Key: { PK: `ATTEMPT#${attempt.id}`, SK: 'META' },
+      UpdateExpression: 'SET #status = :queued, readyAt = :readyAt, updatedAt = :now, revision = revision + :one, GSI2PK = :state, GSI2SK = :recoverySort REMOVE leaseOwner, leaseExpiresAt',
+      ConditionExpression: '#status = :executing AND revision = :revision AND leaseOwner = :owner AND attribute_not_exists(dispatchStartedAt)',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':queued': 'queued', ':executing': 'executing', ':revision': attempt.revision,
+        ':owner': attempt.leaseOwner, ':now': now, ':one': 1,
+        ':state': 'ATTEMPT_STATE#queued',
+        ':recoverySort': `READY#${readyAt}#LEASE#-#${attempt.id}`,
+        ':readyAt': readyAt,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+    return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw error;
+  }
+}
+
 async function reconcileUnknownAttempt(
   client: DynamoDBDocumentClient,
   attemptId: string,
@@ -1490,6 +1520,7 @@ export {
   queryDueAttempts,
   reclaimDispatchedAttempt,
   reconcileUnknownAttempt,
+  releaseUndispatchedAttempt,
   requeueUndispatchedAttempt,
 };
 export type {

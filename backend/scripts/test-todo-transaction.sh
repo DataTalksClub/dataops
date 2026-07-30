@@ -40,6 +40,12 @@ AWS_SECRET_ACCESS_KEY=local \
 AWS_REGION=us-east-1 \
 NODE_ENV=test \
 SKIP_AUTH=true \
+CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED=false \
+CONVERSATIONAL_EXECUTION_ENABLED=false \
+CONVERSATIONAL_ENABLED_PLUGINS=none \
+CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED=false \
+CONVERSATIONAL_TELEGRAM_VOICE_ENABLED=false \
+CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED=false \
 node --import tsx --test --test-concurrency=1 \
   tests/proposal-coordinator-multi.test.ts \
   tests/todo-conversational.test.ts \

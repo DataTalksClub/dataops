@@ -4,11 +4,12 @@ import {
   loadTypefullyPluginArtifact,
   typefullyPluginDefinition,
 } from './typefullyPlugin';
+import { conversationalRolloutSnapshot } from './rollout';
 
 function createProductionPluginRegistry(
   config: { todoEnabled: boolean; typefullyEnabled?: boolean } = {
-    todoEnabled: process.env.CONVERSATIONAL_TODO_PLUGIN_ENABLED === 'true',
-    typefullyEnabled: process.env.CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED === 'true',
+    todoEnabled: conversationalRolloutSnapshot().eligibility.todoVisible,
+    typefullyEnabled: conversationalRolloutSnapshot().eligibility.typefullyVisible,
   }
 ): StaticPluginRegistry {
   return new StaticPluginRegistry(

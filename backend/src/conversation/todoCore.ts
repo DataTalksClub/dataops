@@ -14,6 +14,7 @@ import {
   getProposalVersion,
 } from './executionRepository';
 import { createProductionPluginRegistry } from './plugins';
+import { conversationalRolloutSnapshot } from './rollout';
 import type { StaticPluginRegistry } from './pluginRegistry';
 import { canonicalJson } from './pluginRegistry';
 import {
@@ -1208,18 +1209,20 @@ class ConversationalProposalCore implements TelegramCoreRuntime {
       presentationTtlSeconds: 1_800,
     });
     const copy = adapter.presentation(candidate);
+    const approvalEnabled = conversationalRolloutSnapshot()
+      .proposalApprovalEnabled(adapter.pluginId as 'todo' | 'typefully');
     return {
       kind: 'assistant_message',
       message: copy.message,
       buttons: [
-        {
+        ...(approvalEnabled ? [{
           text: copy.approveLabel,
           action: {
             type: 'proposal_approve',
             pluginId: adapter.pluginId,
             presentationAction: presented.actionToken,
           },
-        },
+        }] : []),
         {
           text: copy.requestChangesLabel,
           action: {
@@ -1273,6 +1276,14 @@ class ConversationalProposalCore implements TelegramCoreRuntime {
     if (!adapter || adapter.pluginId !== pluginId) return this.error();
     const copy = adapter.presentation(proposalRecord!.spec.proposedContent!);
     if (type === 'proposal_approve') {
+      if (!conversationalRolloutSnapshot().proposalApprovalEnabled(
+        adapter.pluginId as 'todo' | 'typefully'
+      )) {
+        return {
+          kind: 'clarification',
+          message: 'Approval is unavailable while this capability is in preview or maintenance mode.',
+        };
+      }
       try {
         const approved = await approvePresentation(token, {
           actorId: input.actor.id,
