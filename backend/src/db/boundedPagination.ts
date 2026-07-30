@@ -90,7 +90,6 @@ export async function collectBoundedPages<T>(input: {
         controller.abort();
         reject(new StoragePaginationError("storage-pagination-timeout"));
       }, remaining);
-      timeout.unref?.();
     });
     let result: { Items?: unknown; LastEvaluatedKey?: unknown };
     try {
