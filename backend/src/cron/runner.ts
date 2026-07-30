@@ -8,6 +8,7 @@ import type { Template, Bundle } from '../types';
 import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
 import { berlinDate } from '../sponsorFinance/core';
+import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
 
 export interface CronRunnerResult {
   created: string[];
@@ -23,6 +24,18 @@ export interface CronRunnerResult {
   };
   failures: number;
 }
+
+export interface SponsorAutomationEvaluators {
+  bookingAlerts: (client: DynamoDBDocumentClient, today: string) => Promise<unknown>;
+  financeAlerts: (client: DynamoDBDocumentClient, today: string) => Promise<unknown>;
+  communicationSuggestions: (client: DynamoDBDocumentClient, today: string) => Promise<unknown>;
+}
+
+const defaultSponsorAutomationEvaluators: SponsorAutomationEvaluators = {
+  bookingAlerts: evaluateSponsorBookingAlerts,
+  financeAlerts: evaluateSponsorFinanceAlerts,
+  communicationSuggestions: evaluateCommunicationSuggestions,
+};
 
 /**
  * Format an anchor date as a human-readable string (e.g., "Mar 15").
@@ -40,7 +53,11 @@ function formatAnchorDate(dateStr: string): string {
  * evaluate their schedule against the current date, and create bundles
  * for matches (with duplicate prevention).
  */
-async function runCron(client: DynamoDBDocumentClient, now?: Date): Promise<CronRunnerResult> {
+async function runCron(
+  client: DynamoDBDocumentClient,
+  now?: Date,
+  sponsorEvaluators: SponsorAutomationEvaluators = defaultSponsorAutomationEvaluators,
+): Promise<CronRunnerResult> {
   const today = now || new Date();
   const todayDate = berlinDate(today);
 
@@ -60,12 +77,27 @@ async function runCron(client: DynamoDBDocumentClient, now?: Date): Promise<Cron
   const recurringGenerated: string[] = [];
   let recurringSkipped = 0;
 
-  try {
-    await evaluateSponsorBookingAlerts(client, todayDate);
-    await evaluateSponsorFinanceAlerts(client, todayDate);
-  } catch (err: unknown) {
-    failures++;
-    await createNotification(client, { type: 'automation-failure', message: `Sponsor booking alert evaluation failed for ${todayDate}`, dueAt: todayDate });
+  const sponsorAutomations = [
+    ['sponsor booking alerts', sponsorEvaluators.bookingAlerts],
+    ['sponsor finance alerts', sponsorEvaluators.financeAlerts],
+    ['sponsor communication suggestions', sponsorEvaluators.communicationSuggestions],
+  ] as const;
+  for (const [name, evaluate] of sponsorAutomations) {
+    try {
+      await evaluate(client, todayDate);
+    } catch {
+      failures++;
+      console.error(`Sponsor automation evaluator failed: ${name}`);
+      try {
+        await createNotification(client, {
+          type: 'automation-failure',
+          message: `Sponsor automation evaluator failed: ${name} for ${todayDate}`,
+          dueAt: todayDate,
+        });
+      } catch {
+        console.error(`Sponsor automation failure notification failed: ${name}`);
+      }
+    }
   }
 
   try {

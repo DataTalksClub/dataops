@@ -61,6 +61,7 @@ test.describe("production sponsor CRM portal", () => {
         id: "contact-1",
         organizationId: "org-1",
         name: "Synthetic Contact",
+        emails: ["finance-contact@example.invalid"],
         primary: true,
         version: 1,
       },
@@ -86,6 +87,8 @@ test.describe("production sponsor CRM portal", () => {
       overpaymentCandidate = false,
       downloadRequests = 0,
       reconcileRequests = 0;
+    const communicationRequests = [];
+    let communicationResponses = 0;
     const mutationKeys = [];
     const financeProjection = () =>
       financeStage === "unclassified"
@@ -233,7 +236,8 @@ test.describe("production sponsor CRM portal", () => {
               paymentLinkLimit: 20,
             };
     await page.route("**/work/api/sponsor-crm/**", async (route) => {
-      const pathname = new URL(route.request().url()).pathname;
+      const url = new URL(route.request().url()),
+        pathname = url.pathname;
       if (pathname.includes("/finance")) {
         if (financeDisabled)
           return route.fulfill({
@@ -341,6 +345,60 @@ test.describe("production sponsor CRM portal", () => {
         return route.fulfill({ json: { items: [contact] } });
       if (pathname.endsWith("/bookings"))
         return route.fulfill({ json: { items: [booking] } });
+      if (pathname.endsWith("/bookings/booking-1/communications")) {
+        const cursor = url.searchParams.get("cursor");
+        communicationRequests.push({
+          limit: url.searchParams.get("limit"),
+          cursor,
+        });
+        if (
+          url.searchParams.get("limit") !== "50"
+          || (cursor && cursor !== "finance-history-page-2")
+        )
+          return route.fulfill({
+            status: 400,
+            json: { error: "Synthetic communication pagination mismatch" },
+          });
+        communicationResponses++;
+        return route.fulfill({
+          json: {
+            config: {
+              configured: true,
+              enabled: true,
+              generation: 1,
+              hmacActiveVersion: "v1",
+              hmacAcceptedVersions: ["v1"],
+            },
+            permissions: {
+              role: "operator",
+              canApprove: false,
+              canCancel: false,
+              canReconcile: false,
+            },
+            items: cursor
+              ? [
+                  {
+                    id: "attempt-delivered",
+                    recordType: "sponsor-send-attempt",
+                    status: "provider_observed",
+                    derivedStatus: "delivered",
+                  },
+                ]
+              : [
+                  {
+                    id: "suggestion-confirmation",
+                    recordType: "communication-suggestion",
+                    communicationType: "booking-confirmation",
+                    status: "open",
+                    eligible: true,
+                    safeReason:
+                      "Booking confirmed; reviewed communication is available.",
+                  },
+                ],
+            nextCursor: cursor ? null : "finance-history-page-2",
+          },
+        });
+      }
       if (pathname.endsWith("/history"))
         return route.fulfill({
           json: {
@@ -416,6 +474,23 @@ test.describe("production sponsor CRM portal", () => {
     await expect(
       page.getByText("This booking has not been classified."),
     ).toBeVisible();
+    const statusMessage = page.locator("[data-crm-message]");
+    await expect.poll(() => communicationRequests.length).toBe(2);
+    expect(communicationRequests).toEqual([
+      { limit: "50", cursor: null },
+      { limit: "50", cursor: "finance-history-page-2" },
+    ]);
+    expect(communicationResponses).toBe(2);
+    await expect(page.locator("[data-crm-communications]")).toContainText(
+      "booking-confirmation",
+    );
+    await expect(page.locator("[data-crm-communications]")).toContainText(
+      "delivered",
+    );
+    await expect(statusMessage).toHaveText("Sponsor CRM ready.");
+    await page
+      .locator("[data-crm-detail]")
+      .screenshot({ path: ".tmp/sponsor-crm-production-history.png" });
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-unclassified.png" });
@@ -508,7 +583,6 @@ test.describe("production sponsor CRM portal", () => {
       .locator("[data-finance-candidate-dialog]")
       .getByRole("button", { name: "Link selected evidence" })
       .click();
-    const statusMessage = page.locator("[data-crm-message]");
     await expect(statusMessage).toContainText("Could not link payment");
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "partially-paid",
@@ -530,9 +604,6 @@ test.describe("production sponsor CRM portal", () => {
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-paid.png" });
-    await page
-      .locator("[data-crm-detail]")
-      .screenshot({ path: ".tmp/sponsor-crm-production-history.png" });
     await page
       .locator("[data-crm-alerts]")
       .screenshot({ path: ".tmp/sponsor-crm-production-alert.png" });
@@ -657,6 +728,12 @@ test.describe("production sponsor CRM portal", () => {
       page.getByRole("button", { name: "Download invoice" }),
     ).toBeVisible();
     await expect(page.locator("[data-finance-panel] button")).toHaveCount(1);
+    await expect(statusMessage).not.toContainText(
+      /Could not|Synthetic route missing/,
+    );
+    await expect(page.locator("[data-crm-communications]")).toContainText(
+      "delivered",
+    );
     await page.screenshot({
       path: ".tmp/sponsor-finance-operator-read-only.png",
       fullPage: true,
@@ -681,6 +758,10 @@ test.describe("production sponsor CRM portal", () => {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(390);
+    await expect(statusMessage).not.toContainText(
+      /Could not|Synthetic route missing/,
+    );
+    expect(communicationResponses).toBe(communicationRequests.length);
     await page.screenshot({
       path: ".tmp/sponsor-crm-production-mobile.png",
       fullPage: true,

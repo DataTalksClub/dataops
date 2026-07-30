@@ -330,7 +330,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
     assert "!Ref EmailDocumentIntakeSecretArn" in backend
     # No cross-function invocation — the old two-Lambda proxy is gone.
-    assert "lambda:InvokeFunction" not in template
+    assert "lambda:InvokeFunction" not in backend
 
 
 def test_email_document_intake_uses_a_precreated_rotatable_secret():
@@ -617,3 +617,113 @@ def test_active_and_legacy_oidc_templates_default_to_dataops_repo_and_stack():
         assert "Default: dataops-v1" in template
         assert "Default: dtc-operations" not in template
         assert "Default: dtc-operations-full-sandbox" not in template
+
+
+def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    table = _resource_block(template, "DataOpsSponsorCrmTable")
+    parameter = template.split("  SponsorCommunicationSendEnabled:", 1)[1].split(
+        "\n  SponsorCommunicationTemplateSecretArn:", 1
+    )[0]
+    assert "DeletionPolicy: Retain" in table
+    assert "UpdateReplacePolicy: Retain" in table
+    assert "SSESpecification: { SSEEnabled: true }" in table
+    assert "PointInTimeRecoveryEnabled: true" in table
+    assert "TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }" in table
+    assert "StreamViewType: NEW_AND_OLD_IMAGES" in table
+    for index in (
+        "GSI-Communication",
+        "GSI-SponsorSendDue",
+        "GSI-SponsorSendLookup",
+        "GSI-SponsorBookingCommunication",
+    ):
+        assert f"IndexName: {index}" in table
+    assert 'Default: "false"' in parameter
+    assert "SponsorSendRequiresPrivateConfiguration" in template
+
+
+def test_sponsor_communication_backend_and_worker_capabilities_are_separated():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    backend = _resource_block(template, "BackendFunction")
+    worker = _resource_block(template, "SponsorSendWorkerFunction")
+    event_handler = _resource_block(template, "SponsorSesEventFunction")
+    archive = _resource_block(template, "SponsorPrivateArchiveFunction")
+
+    assert "SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: !Ref SponsorCommunicationTemplateSecretArn" in backend
+    assert "SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn" in backend
+    assert "ses:" not in backend
+
+    assert "Handler: dist/sponsor-send-worker-handler.handler" in worker
+    assert "Action: ses:SendEmail" in worker
+    assert "Resource: !Ref SponsorSesIdentityArn" in worker
+    assert "ses:FromAddress: !Ref SponsorSesFromAddress" in worker
+    assert "ses:ConfigurationSet: !Ref SponsorSesConfigurationSet" in worker
+    assert "SendRawEmail" not in worker
+    assert "SendBulkEmail" not in worker
+    assert "ses:*" not in worker
+    assert "SponsorCommunicationTemplateSecretArn" not in worker
+    assert "SponsorCommunicationHmacSecretArn" in worker
+    assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in worker
+    assert "GSI-SponsorSendDue" in worker
+    assert "dynamodb:Scan" not in worker
+
+    assert "Handler: dist/sponsor-ses-event-handler.handler" in event_handler
+    assert "ses:" not in event_handler
+    assert "SponsorCommunicationTemplateSecretArn" not in event_handler
+    assert "SponsorCommunicationHmacSecretArn" in event_handler
+    assert "DataOpsUsersTable" not in event_handler
+
+    assert "Handler: dist/sponsor-private-archive-handler.handler" in archive
+    assert "dynamodb:Scan" in archive
+    assert "dynamodb:PutItem" not in archive
+    assert "secretsmanager:" not in archive
+    assert "ses:" not in archive
+    assert "SponsorCommunicationPrivateArchiveBucket" in archive
+    assert "DataOpsExportArchiveBucket" not in archive
+
+
+def test_sponsor_ses_events_are_transformed_before_lambda_and_failures_are_encrypted():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    rule = _resource_block(template, "SponsorSesEventRule")
+    queue = _resource_block(template, "SponsorCommunicationFailureQueue")
+    destination = _resource_block(template, "SponsorSesEventDestination")
+
+    assert "InputTransformer:" in rule
+    assert "InputPathsMap:" in rule
+    assert "InputTemplate:" in rule
+    for field in (
+        "eventId", "eventTime", "eventType", "messageId", "awsAccount", "awsRegion",
+        "configurationSet", "configurationSetGeneration", "attemptCorrelation",
+        "communicationId", "configGeneration",
+    ):
+        assert field in rule
+    for private_field in ("recipient", "subject", "body", "headers", "diagnostic"):
+        assert private_field not in rule.lower()
+    # A rule-level DLQ receives the failed EventBridge source event, which may
+    # contain SES recipient/diagnostic fields. Only the Lambda async failure
+    # destination may retain the already-transformed strict envelope.
+    assert "DeadLetterConfig" not in rule
+    event_handler = _resource_block(template, "SponsorSesEventFunction")
+    assert "EventInvokeConfig:" in event_handler
+    assert "Destination: !GetAtt SponsorCommunicationFailureQueue.Arn" in event_handler
+    assert "events.amazonaws.com" not in template[
+        template.index("SponsorCommunicationFailureQueue:"):template.index("SponsorCommunicationPrivateArchiveKey:")
+    ]
+    assert "KmsMasterKeyId: alias/aws/sqs" in queue
+    assert "MessageRetentionPeriod: 1209600" in queue
+    assert "MatchingEventTypes: [SEND, DELIVERY, DELIVERY_DELAY, REJECT, RENDERING_FAILURE, BOUNCE, COMPLAINT]" in destination
+
+
+def test_sponsor_private_archive_is_isolated_retained_and_kms_encrypted():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    bucket = _resource_block(template, "SponsorCommunicationPrivateArchiveBucket")
+    key = _resource_block(template, "SponsorCommunicationPrivateArchiveKey")
+    assert "DeletionPolicy: Retain" in bucket
+    assert "UpdateReplacePolicy: Retain" in bucket
+    assert "SSEAlgorithm: aws:kms" in bucket
+    assert "SponsorCommunicationPrivateArchiveKey.Arn" in bucket
+    assert "BlockPublicAcls: true" in bucket
+    assert "RestrictPublicBuckets: true" in bucket
+    assert "VersioningConfiguration: { Status: Enabled }" in bucket
+    assert "DeletionPolicy: Retain" in key
+    assert "EnableKeyRotation: true" in key
