@@ -1,6 +1,5 @@
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 
-import { runSocialDraftAssistant } from '../assistant/socialDraftAssistant';
 import { createAssistantJob } from '../db/assistantJobs';
 import { getClient } from '../db/client';
 import { createTables } from '../db/setup';
@@ -196,23 +195,12 @@ async function handlePodcastRoute(item: IntakeItem, actorId?: string): Promise<s
 }
 
 async function handleSocialRoute(
-  update: Record<string, unknown>,
-  item: IntakeItem,
-  argument: string,
-  actorId?: string
+  _update: Record<string, unknown>,
+  _item: IntakeItem,
+  _argument: string,
+  _actorId?: string
 ): Promise<string> {
-  if ((item.assistantJobIds || []).length > 0) {
-    return `Social draft request already captured: ${item.title}`;
-  }
-  if (!argument) return 'Use /social followed by the account and requested post, for example: /social Alexey post about the next workshop';
-  const client = await getClient();
-  const result = await runSocialDraftAssistant(client, { telegramUpdate: update, text: argument }, actorId);
-  if (result.job) await markAssistantRoute(item, 'social-draft', result.job.id);
-  if (result.reviewStatus === 'needs-account-clarification') {
-    return 'Please name the target account: Alexey / Al_Grigor or DataTalksClub.';
-  }
-  if (result.reviewStatus === 'created') return 'Social draft created in Typefully and is waiting for review.';
-  return 'The social draft request failed safely. Check the DataOps assistant job for details.';
+  return 'Send a typed social request in this private chat. I will ask you to confirm the exact text as public source, then show a complete preview before approval.';
 }
 
 async function handleLegacyTelegramWebhook(

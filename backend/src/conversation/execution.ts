@@ -9,6 +9,7 @@ import {
   getCanonicalTarget,
   getProposalVersion,
   markProposalConflicted,
+  type DispatchStateGuard,
 } from './executionRepository';
 import {
   compareAndSetPresentation,
@@ -43,6 +44,16 @@ interface ExecutorRequest {
   signal: AbortSignal;
 }
 
+interface ExecutorPreflightRequest {
+  spec: ProposalSpec;
+  attempt: ExecutionAttempt;
+  now: Date;
+}
+
+type ExecutorPreflightResult =
+  | { kind: 'ready'; dispatchGuard?: DispatchStateGuard }
+  | { kind: 'failed_safe'; reasonCode: string };
+
 type ExecutorResult =
   | { outcome: 'succeeded'; receipt: SafeExecutionReceipt; privateResult?: import('./types').JsonValue }
   | { outcome: 'failed_safe'; reasonCode: string };
@@ -53,6 +64,7 @@ interface CapabilityExecutor {
   permissionRef: string;
   deliveryMode: DeliveryMode;
   render(spec: ProposalSpec): unknown;
+  preflight?(request: ExecutorPreflightRequest): Promise<ExecutorPreflightResult>;
   execute(request: ExecutorRequest): Promise<ExecutorResult>;
   reconcile?(request: Omit<ExecutorRequest, 'signal'>): Promise<ReconciliationResult>;
 }
@@ -208,6 +220,9 @@ async function presentProposal(
   if (!Buffer.isBuffer(tokenBytes) || tokenBytes.length < 32) throw new Error('Presentation token must contain at least 256 random bits');
   const actionToken = tokenBytes.toString('base64url');
   const actionTokenHash = sha256(actionToken);
+  const presentationId = `presentation-${sha256(
+    `${input.proposalId}:${input.version}:${actionTokenHash}`
+  ).slice(7, 31)}`;
   const retention = expiryFrom(nowIso, 30);
   const actionTtlSeconds = boundedSeconds(dependencies.presentationTtlSeconds, 1_800, 60, 86_400);
   const proposal: ProposalVersion = {
@@ -221,6 +236,7 @@ async function presentProposal(
     version: input.version,
     conversationId: input.conversationId,
     ...(input.draftId ? { draftId: input.draftId } : {}),
+    presentationIds: [presentationId],
     status: 'presented',
     spec: normalizedSpec,
     canonicalPayloadHash,
@@ -230,7 +246,7 @@ async function presentProposal(
     revision: input.revision || 1,
   };
   const presentation: ProposalPresentation = {
-    id: `presentation-${sha256(`${input.proposalId}:${input.version}:${actionTokenHash}`).slice(7, 31)}`,
+    id: presentationId,
     recordType: 'proposal_presentation',
     schemaVersion: 1,
     createdAt: nowIso,
@@ -331,6 +347,17 @@ async function approvePresentation(
   if (
     presentation.status !== 'active'
     || proposal.status !== 'presented'
+    || (proposal.spec.actorId !== undefined && proposal.spec.actorId !== proposal.actorId)
+    || (
+      proposal.spec.conversationId !== undefined
+      && proposal.spec.conversationId !== proposal.conversationId
+    )
+    || (proposal.spec.draftRef !== undefined && proposal.spec.draftRef !== proposal.draftId)
+    || (proposal.spec.proposalId !== undefined && proposal.spec.proposalId !== proposal.proposalId)
+    || (
+      proposal.spec.proposalVersion !== undefined
+      && proposal.spec.proposalVersion !== proposal.version
+    )
     || presentation.renderedViewHash !== proposal.renderedViewHash
     || !presentation.actionExpiresAt
     || Date.parse(presentation.actionExpiresAt) <= now.getTime()
@@ -360,8 +387,28 @@ async function approvePresentation(
       proposal.spec.permissionRevision !== undefined
       && permission.revision !== proposal.spec.permissionRevision
     )
+    || (
+      proposal.spec.resourceKey !== undefined
+      && !permission.allowedResourceKeys?.includes(proposal.spec.resourceKey)
+    )
+    || (
+      proposal.spec.accountConfigDigest !== undefined
+      && permission.accountConfigDigest !== proposal.spec.accountConfigDigest
+    )
+    || (
+      proposal.spec.accountScopeDigest !== undefined
+      && permission.accountScopeDigest !== proposal.spec.accountScopeDigest
+    )
+    || (
+      proposal.spec.deliveryModeDigest !== undefined
+      && permission.deliveryModeDigest !== proposal.spec.deliveryModeDigest
+    )
     || !executor
     || executor.permissionRef !== proposal.spec.permissionRef
+    || (
+      proposal.spec.deliveryMode !== undefined
+      && executor.deliveryMode !== proposal.spec.deliveryMode
+    )
     || !proposalHashesAreValid(proposal, executor)
     || Date.parse(proposal.spec.expiresAt) <= now.getTime()
   ) {
@@ -422,6 +469,17 @@ async function approvePresentation(
     channelConversationKey: provenance.channelConversationKey,
     permissionRef: proposal.spec.permissionRef,
     permissionRevision: proposal.spec.permissionRevision || permission.revision,
+    ...(proposal.spec.resourceKey ? { resourceKey: proposal.spec.resourceKey } : {}),
+    ...(proposal.spec.accountConfigDigest
+      ? { accountConfigDigest: proposal.spec.accountConfigDigest }
+      : {}),
+    ...(proposal.spec.accountScopeDigest
+      ? { accountScopeDigest: proposal.spec.accountScopeDigest }
+      : {}),
+    ...(proposal.spec.deliveryModeDigest
+      ? { deliveryModeDigest: proposal.spec.deliveryModeDigest }
+      : {}),
+    ...(proposal.spec.draftRef ? { draftRef: proposal.spec.draftRef } : {}),
     canonicalPayloadHash: proposal.canonicalPayloadHash,
     renderedViewHash: proposal.renderedViewHash,
     executorBuildDigest: proposal.spec.pluginBuildDigest,
@@ -490,6 +548,8 @@ export type {
   ApprovalDependencies,
   CapabilityExecutor,
   ExecutorRequest,
+  ExecutorPreflightRequest,
+  ExecutorPreflightResult,
   ExecutorResult,
   PresentedProposal,
   ProposalPresentationDependencies,

@@ -355,6 +355,7 @@ test('schema const and enum literals reject every lossy or non-JSON value withou
   assert.equal(validateSchema({ type: 'null', const: null, enum: [null] }, null), true);
   assert.equal(validateSchema({ type: 'null', const: NaN }, null), false);
   assert.equal(validateSchema({ type: 'null', enum: [Infinity] }, null), false);
+  assert.equal(validateSchema({ type: 'string', minLength: 4_000, maxLength: 4_000 }, '😀'.repeat(4_000)), true);
 });
 
 test('context assembler preserves mandatory policy, bounds optional layers, and stores only hashes', () => {

@@ -82,13 +82,6 @@ Parameters:
     Type: Number
     Default: 365
     MinValue: 90
-  TypefullyApiTokenSecretName:
-    Type: String
-    Default: dataops-v1/work-engine/typefully-api-token
-  TypefullyApiToken:
-    Type: String
-    NoEcho: true
-    Default: ""
   TypefullySocialSetAlexey:
     Type: Number
     Default: 0
@@ -168,6 +161,26 @@ Parameters:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
+  ConversationalTypefullyPluginEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ConversationalTypefullyExecutionEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ConversationalTypefullyAccountConfigDigest:
+    Type: String
+    Default: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    AllowedPattern: "^sha256:[a-f0-9]{64}$"
+  TypefullyAccountConfigRevision:
+    Type: String
+    Default: unconfigured
+    AllowedPattern: "^[a-zA-Z0-9_.-]{1,100}$"
+  TypefullyBaseUrl:
+    Type: String
+    Default: https://api.typefully.com
+    AllowedPattern: "^https://[^ ]+$"
   ConversationalResultDeliveryEnabled:
     Type: String
     Default: "false"
@@ -1130,6 +1143,13 @@ Resources:
           CONVERSATIONAL_EXECUTION_RECOVERY_LIMIT: !Ref ConversationalExecutionRecoveryLimit
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
           CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled
+          CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED: !Ref ConversationalTypefullyExecutionEnabled
+          CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: !Ref ConversationalTypefullyAccountConfigDigest
+          TYPEFULLY_ACCOUNT_CONFIG_REVISION: !Ref TypefullyAccountConfigRevision
+          TYPEFULLY_BASE_URL: !Ref TypefullyBaseUrl
+          TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecretArn
+          TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
+          TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
       Policies:
         - Statement:
             Effect: Allow
@@ -1162,6 +1182,10 @@ Resources:
             Effect: Allow
             Action: sqs:SendMessage
             Resource: !GetAtt ConversationalExecutionFailureQueue.Arn
+        - Statement:
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref WorkEngineTypefullyApiTokenSecretArn
       Events:
         QueuedAttemptStream:
           Type: DynamoDB
@@ -1562,7 +1586,6 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
               - !Ref WorkEnginePortalSecret
-              - !Ref WorkEngineTypefullyApiTokenSecretArn
               - !Ref BookkeepingIngestionSecret
               - !Ref EmailDocumentIntakeSecretArn
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
@@ -1687,13 +1710,12 @@ Resources:
           DATAOPS_MAILING_EXPORTS_CONFIG: !Ref MailingExportsConfig
           DATAOPS_MAILING_EXPORTS_BUCKET: !Ref MailingExportsBucket
           DATAOPS_DAPIER_CREDENTIALS_TABLE: !Ref DapierCredentialsTableName
-          TYPEFULLY_API_KEY_SECRET_NAME: !Ref WorkEngineTypefullyApiTokenSecretArn
-          TYPEFULLY_SOCIAL_SET_ALEXEY: !Ref TypefullySocialSetAlexey
-          TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: !Ref TypefullySocialSetDataTalksClub
           TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName
           CONVERSATIONAL_AGENT_ENABLED: !Ref ConversationalAgentEnabled
           CONVERSATIONAL_TODO_PLUGIN_ENABLED: !Ref ConversationalTodoPluginEnabled
           CONVERSATIONAL_TODO_EXECUTOR_ENABLED: !Ref ConversationalTodoExecutorEnabled
+          CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED: !Ref ConversationalTypefullyPluginEnabled
+          CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: !Ref ConversationalTypefullyAccountConfigDigest
           ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: !Ref ZaiConversationalApiKeySecretArn
           CONVERSATIONAL_TELEGRAM_ENABLED: !Ref ConversationalTelegramEnabled
           CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: !Ref ConversationalTelegramVoiceEnabled
@@ -1834,9 +1856,6 @@ Outputs:
   EmailDocumentIntakeSecretName:
     Description: Rotatable machine credential for versioned email document intake
     Value: !Ref EmailDocumentIntakeSecretArn
-  WorkEngineTypefullyApiTokenSecretName:
-    Description: Typefully API token secret consumed by the work engine for saved-draft creation
-    Value: !Ref TypefullyApiTokenSecretName
   TelegramIntegrationSecretName:
     Description: Shared Telegram bot/webhook configuration secret name
     Value: !Ref TelegramIntegrationSecretName

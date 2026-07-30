@@ -115,6 +115,14 @@ jobs:
       SPONSOR_FINANCE_ENABLED: ${{ vars.SPONSOR_FINANCE_ENABLED }}
       CONVERSATIONAL_TODO_PLUGIN_ENABLED: ${{ vars.CONVERSATIONAL_TODO_PLUGIN_ENABLED }}
       CONVERSATIONAL_TODO_EXECUTOR_ENABLED: ${{ vars.CONVERSATIONAL_TODO_EXECUTOR_ENABLED }}
+      CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED: ${{ vars.CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED }}
+      CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED: ${{ vars.CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED }}
+      CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST: ${{ vars.CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST }}
+      TYPEFULLY_ACCOUNT_CONFIG_REVISION: ${{ vars.TYPEFULLY_ACCOUNT_CONFIG_REVISION }}
+      TYPEFULLY_BASE_URL: ${{ vars.TYPEFULLY_BASE_URL }}
+      WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN: ${{ vars.WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN }}
+      TYPEFULLY_SOCIAL_SET_ALEXEY: ${{ vars.TYPEFULLY_SOCIAL_SET_ALEXEY }}
+      TYPEFULLY_SOCIAL_SET_DATATALKSCLUB: ${{ vars.TYPEFULLY_SOCIAL_SET_DATATALKSCLUB }}
       CONVERSATIONAL_RESULT_DELIVERY_ENABLED: ${{ vars.CONVERSATIONAL_RESULT_DELIVERY_ENABLED }}
       ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}
       CONVERSATIONAL_TELEGRAM_ENABLED: ${{ vars.CONVERSATIONAL_TELEGRAM_ENABLED }}
@@ -188,6 +196,11 @@ jobs:
           : "${SPONSOR_FINANCE_ENABLED:=false}"
           : "${CONVERSATIONAL_TODO_PLUGIN_ENABLED:=false}"
           : "${CONVERSATIONAL_TODO_EXECUTOR_ENABLED:=false}"
+          : "${CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED:=false}"
+          : "${CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED:=false}"
+          : "${CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST:=sha256:0000000000000000000000000000000000000000000000000000000000000000}"
+          : "${TYPEFULLY_ACCOUNT_CONFIG_REVISION:=unconfigured}"
+          : "${TYPEFULLY_BASE_URL:=https://api.typefully.com}"
           : "${CONVERSATIONAL_RESULT_DELIVERY_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_ENABLED:=false}"
           : "${CONVERSATIONAL_TELEGRAM_VOICE_ENABLED:=false}"
@@ -211,6 +224,15 @@ jobs:
           : "${SPONSOR_SES_CONFIGURATION_SET_NAME:=dataops-sponsor-reviewed-send-disabled}"
           if [ "$CONVERSATIONAL_AGENT_ENABLED" = "true" ] && [ -z "$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" ]; then
             echo "Conversational agent cannot be enabled without its z.ai secret ARN" >&2
+            exit 1
+          fi
+          if [ "$CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED" = "true" ] && { \
+            [ -z "$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" ] \
+            || [ -z "$TYPEFULLY_SOCIAL_SET_ALEXEY" ] \
+            || [ -z "$TYPEFULLY_SOCIAL_SET_DATATALKSCLUB" ] \
+            || [ "$TYPEFULLY_ACCOUNT_CONFIG_REVISION" = "unconfigured" ]; \
+          }; then
+            echo "Conversational Typefully execution requires the exact secret ARN, both account mappings, and a configuration revision" >&2
             exit 1
           fi
           if [ "$CONVERSATIONAL_TELEGRAM_VOICE_ENABLED" = "true" ] && { [ "$CONVERSATIONAL_TELEGRAM_ENABLED" != "true" ] || [ -z "$GROQ_TRANSCRIPTION_API_KEY_SECRET_ARN" ]; }; then
@@ -250,6 +272,14 @@ jobs:
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
               "ParameterKey=ConversationalTodoPluginEnabled,ParameterValue=$CONVERSATIONAL_TODO_PLUGIN_ENABLED" \
               "ParameterKey=ConversationalTodoExecutorEnabled,ParameterValue=$CONVERSATIONAL_TODO_EXECUTOR_ENABLED" \
+              "ParameterKey=ConversationalTypefullyPluginEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_PLUGIN_ENABLED" \
+              "ParameterKey=ConversationalTypefullyExecutionEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_EXECUTION_ENABLED" \
+              "ParameterKey=ConversationalTypefullyAccountConfigDigest,ParameterValue=$CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST" \
+              "ParameterKey=TypefullyAccountConfigRevision,ParameterValue=$TYPEFULLY_ACCOUNT_CONFIG_REVISION" \
+              "ParameterKey=TypefullyBaseUrl,ParameterValue=$TYPEFULLY_BASE_URL" \
+              "ParameterKey=WorkEngineTypefullyApiTokenSecretArn,ParameterValue=$WORK_ENGINE_TYPEFULLY_API_TOKEN_SECRET_ARN" \
+              "ParameterKey=TypefullySocialSetAlexey,ParameterValue=$TYPEFULLY_SOCIAL_SET_ALEXEY" \
+              "ParameterKey=TypefullySocialSetDataTalksClub,ParameterValue=$TYPEFULLY_SOCIAL_SET_DATATALKSCLUB" \
               "ParameterKey=ConversationalResultDeliveryEnabled,ParameterValue=$CONVERSATIONAL_RESULT_DELIVERY_ENABLED" \
               "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" \
               "ParameterKey=ConversationalTelegramEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_ENABLED" \

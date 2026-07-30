@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   DeleteCommand,
   GetCommand,
@@ -16,6 +17,7 @@ import {
   type ExecutionAttempt,
   type IdentityBinding,
   type JsonValue,
+  type PluginDraft,
   type ProposalPresentation,
   type ProposalVersion,
   type SafeExecutionReceipt,
@@ -26,11 +28,26 @@ interface ApprovalPermission {
   permissionRef: string;
   enabled: boolean;
   revision: number;
+  allowedResourceKeys?: string[];
+  accountScopeDigest?: string;
+  accountConfigDigest?: string;
+  deliveryModeDigest?: string;
 }
 
 interface CanonicalTarget {
   targetRef: string;
   revision: string;
+}
+
+interface DispatchStateGuard {
+  kind: 'typefully_public_source';
+  conversationId: string;
+  actorId: string;
+  draftId: string;
+  draftRevision: number;
+  draftData: JsonValue;
+  pluginBuild: string;
+  payloads: Array<{ id: string; content: JsonValue }>;
 }
 
 interface AtomicApprovalInput {
@@ -52,7 +69,21 @@ interface AtomicPresentationInput {
   supersededPresentations: ProposalPresentation[];
 }
 
+interface AtomicTypefullyRequestChangesInput {
+  presentation: ProposalPresentation;
+  proposal: ProposalVersion;
+  draft: PluginDraft;
+  nextDraft: PluginDraft;
+  siblingPresentations: ProposalPresentation[];
+  now: string;
+}
+
 type AttemptStatus = ExecutionAttempt['status'];
+
+function approvalScopeDigest(resourceKeys: string[]): string {
+  const sorted = [...resourceKeys].sort();
+  return `sha256:${createHash('sha256').update(JSON.stringify(sorted)).digest('hex')}`;
+}
 
 function clean<T>(item: Record<string, unknown> | undefined): T | null {
   if (!item) return null;
@@ -90,6 +121,37 @@ async function putApprovalPermission(
   client: DynamoDBDocumentClient,
   permission: ApprovalPermission
 ): Promise<void> {
+  if (
+    !permission.userId
+    || !permission.permissionRef
+    || !Number.isSafeInteger(permission.revision)
+    || permission.revision < 1
+  ) throw new Error('Approval permission is invalid');
+  if (permission.allowedResourceKeys !== undefined) {
+    if (
+      !Array.isArray(permission.allowedResourceKeys)
+      || permission.allowedResourceKeys.length > 2
+      || permission.allowedResourceKeys.some(
+        (key) => !['typefully:account:alexey', 'typefully:account:datatalksclub'].includes(key)
+      )
+      || [...new Set(permission.allowedResourceKeys)].sort().join('\0')
+        !== permission.allowedResourceKeys.join('\0')
+    ) throw new Error('Approval permission resource scope is invalid');
+    if (permission.accountScopeDigest !== approvalScopeDigest(permission.allowedResourceKeys)) {
+      throw new Error('Approval permission scope digest is invalid');
+    }
+  } else if (permission.accountScopeDigest !== undefined) {
+    throw new Error('Approval permission scope digest requires resource scope');
+  }
+  for (const digest of [
+    permission.accountScopeDigest,
+    permission.accountConfigDigest,
+    permission.deliveryModeDigest,
+  ]) {
+    if (digest !== undefined && !/^sha256:[a-f0-9]{64}$/.test(digest)) {
+      throw new Error('Approval permission digest is invalid');
+    }
+  }
   await client.send(new PutCommand({
     TableName: TABLE_CONVERSATIONAL_STATE,
     Item: {
@@ -98,6 +160,9 @@ async function putApprovalPermission(
       recordType: 'execution_authorization_state',
       ...permission,
     },
+    ConditionExpression: 'attribute_not_exists(PK) OR #revision < :revision',
+    ExpressionAttributeNames: { '#revision': 'revision' },
+    ExpressionAttributeValues: { ':revision': permission.revision },
   }));
 }
 
@@ -248,6 +313,100 @@ async function atomicStorePresentedProposal(
   }
 }
 
+async function atomicTypefullyRequestChanges(
+  client: DynamoDBDocumentClient,
+  input: AtomicTypefullyRequestChangesInput
+): Promise<void> {
+  const { presentation, proposal, draft, nextDraft, now } = input;
+  validateConversationalRecord(nextDraft);
+  if (
+    presentation.status !== 'active'
+    || proposal.status !== 'presented'
+    || draft.status !== 'ready'
+    || presentation.proposalId !== proposal.proposalId
+    || presentation.proposalVersion !== proposal.version
+    || proposal.draftId !== draft.id
+    || draft.id !== nextDraft.id
+    || nextDraft.revision !== draft.revision + 1
+  ) throw new Error('typefully_request_changes_not_current');
+  const siblings = input.siblingPresentations.filter((sibling) => sibling.status === 'active');
+  const boundIds = proposal.presentationIds || [];
+  if (
+    boundIds.length < 1
+    || boundIds.length > 8
+    || siblings.length !== boundIds.length
+    || new Set(siblings.map((sibling) => sibling.id)).size !== siblings.length
+    || !boundIds.every((id) => siblings.some((sibling) => sibling.id === id))
+    || !siblings.some((sibling) => sibling.actionTokenHash === presentation.actionTokenHash)
+    || siblings.some((sibling) => (
+      sibling.proposalId !== proposal.proposalId
+      || sibling.proposalVersion !== proposal.version
+      || sibling.actorId !== proposal.actorId
+      || sibling.conversationId !== proposal.conversationId
+    ))
+  ) {
+    throw new Error('typefully_request_changes_presentation_missing');
+  }
+  const writes: NonNullable<
+    ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']
+  > = siblings.map((sibling) => ({
+    Update: {
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      Key: { PK: `PRESENTATION#${sibling.actionTokenHash}`, SK: 'META' },
+      UpdateExpression: 'SET #status = :revoked, updatedAt = :now, revision = revision + :one',
+      ConditionExpression: '#status = :active AND revision = :revision',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':revoked': 'revoked',
+        ':active': 'active',
+        ':revision': sibling.revision,
+        ':now': now,
+        ':one': 1,
+      },
+    },
+  }));
+  writes.push(
+    {
+      Update: {
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Key: { PK: `PROPOSAL#${proposal.proposalId}`, SK: versionSk(proposal.version) },
+        UpdateExpression: 'SET #status = :superseded, updatedAt = :now, revision = revision + :one',
+        ConditionExpression: '#status = :presented AND revision = :revision',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':superseded': 'superseded',
+          ':presented': 'presented',
+          ':revision': proposal.revision,
+          ':now': now,
+          ':one': 1,
+        },
+      },
+    },
+    {
+      Put: {
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Item: {
+          ...nextDraft,
+          PK: `CONVERSATION#${nextDraft.conversationId}`,
+          SK: `DRAFT#${nextDraft.id}`,
+          GSI1PK: `CONVERSATION#${nextDraft.conversationId}`,
+          GSI1SK: `DRAFT#${nextDraft.updatedAt}#${nextDraft.id}`,
+        },
+        ConditionExpression: 'revision = :revision AND #status = :ready AND pluginId = :pluginId AND pluginBuild = :pluginBuild',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':revision': draft.revision,
+          ':ready': 'ready',
+          ':pluginId': 'typefully',
+          ':pluginBuild': draft.pluginBuild,
+        },
+      },
+    }
+  );
+  if (writes.length > 50) throw new Error('too_many_typefully_presentations');
+  await client.send(new TransactWriteCommand({ TransactItems: writes }));
+}
+
 async function atomicApproval(
   client: DynamoDBDocumentClient,
   input: AtomicApprovalInput
@@ -305,10 +464,27 @@ async function atomicApproval(
       ConditionCheck: {
         TableName: TABLE_CONVERSATIONAL_STATE,
         Key: { PK: `AUTHZ#${presentation.actorId}#${proposal.spec.permissionRef}`, SK: 'STATE' },
-        ConditionExpression: 'enabled = :true AND revision = :revision',
+        ConditionExpression: [
+          'enabled = :true',
+          'revision = :revision',
+          ...(proposal.spec.resourceKey ? ['contains(allowedResourceKeys, :resourceKey)'] : []),
+          ...(proposal.spec.accountScopeDigest ? ['accountScopeDigest = :accountScopeDigest'] : []),
+          ...(proposal.spec.accountConfigDigest ? ['accountConfigDigest = :accountConfigDigest'] : []),
+          ...(proposal.spec.deliveryModeDigest ? ['deliveryModeDigest = :deliveryModeDigest'] : []),
+        ].join(' AND '),
         ExpressionAttributeValues: {
           ':true': true,
           ':revision': attempt.permissionRevision,
+          ...(proposal.spec.resourceKey ? { ':resourceKey': proposal.spec.resourceKey } : {}),
+          ...(proposal.spec.accountScopeDigest
+            ? { ':accountScopeDigest': proposal.spec.accountScopeDigest }
+            : {}),
+          ...(proposal.spec.accountConfigDigest
+            ? { ':accountConfigDigest': proposal.spec.accountConfigDigest }
+            : {}),
+          ...(proposal.spec.deliveryModeDigest
+            ? { ':deliveryModeDigest': proposal.spec.deliveryModeDigest }
+            : {}),
         },
       },
     },
@@ -649,7 +825,10 @@ async function reclaimDispatchedAttempt(
     }));
     return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
   } catch (error) {
-    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    if (
+      ['ConditionalCheckFailedException', 'TransactionCanceledException']
+        .includes((error as { name?: string }).name || '')
+    ) return null;
     throw error;
   }
 }
@@ -657,24 +836,218 @@ async function reclaimDispatchedAttempt(
 async function markDispatchStarted(
   client: DynamoDBDocumentClient,
   attempt: ExecutionAttempt,
-  now: string
+  now: string,
+  dispatchGuard?: DispatchStateGuard
 ): Promise<ExecutionAttempt | null> {
+  const update = {
+    TableName: TABLE_CONVERSATIONAL_STATE,
+    Key: { PK: `ATTEMPT#${attempt.id}`, SK: 'META' },
+    UpdateExpression: 'SET dispatchStartedAt = :now, updatedAt = :now, revision = revision + :one',
+    ConditionExpression: '#status = :executing AND leaseOwner = :owner AND leaseGeneration = :generation AND leaseExpiresAt > :now AND attribute_not_exists(dispatchStartedAt)',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: {
+      ':executing': 'executing', ':owner': attempt.leaseOwner,
+      ':generation': attempt.leaseGeneration, ':now': now, ':one': 1,
+    },
+  };
   try {
-    const result = await client.send(new UpdateCommand({
-      TableName: TABLE_CONVERSATIONAL_STATE,
-      Key: { PK: `ATTEMPT#${attempt.id}`, SK: 'META' },
-      UpdateExpression: 'SET dispatchStartedAt = :now, updatedAt = :now, revision = revision + :one',
-      ConditionExpression: '#status = :executing AND leaseOwner = :owner AND leaseGeneration = :generation AND leaseExpiresAt > :now AND attribute_not_exists(dispatchStartedAt)',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: {
-        ':executing': 'executing', ':owner': attempt.leaseOwner,
-        ':generation': attempt.leaseGeneration, ':now': now, ':one': 1,
-      },
-      ReturnValues: 'ALL_NEW',
-    }));
+    const typefullyAttempt = attempt.permissionRef === 'typefully:create-saved-draft';
+    if (
+      typefullyAttempt
+      && (
+        !attempt.permissionRevision
+        || !attempt.resourceKey
+        || !attempt.accountConfigDigest
+        || !attempt.accountScopeDigest
+        || !attempt.deliveryModeDigest
+        || !attempt.draftRef
+        || !attempt.actorId
+        || !attempt.identityChannel
+        || !attempt.identityChannelUserId
+        || !attempt.identityBindingId
+        || !attempt.identityBindingRevision
+        || !attempt.channelBindingId
+        || !attempt.channelConversationKey
+        || !dispatchGuard
+      )
+    ) return null;
+    if (
+      process.env.NODE_ENV !== 'test'
+      && attempt.permissionRef
+      && attempt.permissionRevision
+      && attempt.resourceKey
+      && attempt.accountConfigDigest
+      && attempt.accountScopeDigest
+      && attempt.deliveryModeDigest
+    ) {
+      if (
+        typefullyAttempt
+        && (
+          !dispatchGuard
+          || dispatchGuard.kind !== 'typefully_public_source'
+          || dispatchGuard.conversationId !== attempt.conversationId
+          || dispatchGuard.actorId !== attempt.actorId
+          || dispatchGuard.draftId !== attempt.draftRef
+        )
+      ) return null;
+      const payloadChecks: NonNullable<
+        ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']
+      > = dispatchGuard
+        ? dispatchGuard.payloads.map((payload) => ({
+          ConditionCheck: {
+            TableName: TABLE_CONVERSATIONAL_STATE,
+            Key: { PK: `PRIVATE_PAYLOAD#${payload.id}`, SK: 'META' },
+            ConditionExpression: 'conversationId = :conversationId AND classification = :private AND #content = :content AND expiresAt > :now',
+            ExpressionAttributeNames: { '#content': 'content' },
+            ExpressionAttributeValues: {
+              ':conversationId': dispatchGuard.conversationId,
+              ':private': 'private',
+              ':content': payload.content,
+              ':now': now,
+            },
+          },
+        }))
+        : [];
+      const sourceChecks: NonNullable<
+        ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']
+      > = dispatchGuard ? [
+        {
+          ConditionCheck: {
+            TableName: TABLE_CONVERSATIONAL_STATE,
+            Key: {
+              PK: `CONVERSATION#${dispatchGuard.conversationId}`,
+              SK: `DRAFT#${dispatchGuard.draftId}`,
+            },
+            ConditionExpression: 'revision = :revision AND pluginId = :pluginId AND pluginBuild = :pluginBuild AND #data = :data AND expiresAt > :now',
+            ExpressionAttributeNames: { '#data': 'data' },
+            ExpressionAttributeValues: {
+              ':revision': dispatchGuard.draftRevision,
+              ':pluginId': 'typefully',
+              ':pluginBuild': dispatchGuard.pluginBuild,
+              ':data': dispatchGuard.draftData,
+              ':now': now,
+            },
+          },
+        },
+        ...payloadChecks,
+        {
+          ConditionCheck: {
+            TableName: TABLE_CONVERSATIONAL_STATE,
+            Key: { PK: `CONVERSATION#${dispatchGuard.conversationId}`, SK: 'META' },
+            ConditionExpression: 'ownerUserId = :actor AND #status = :active AND expiresAt > :now',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: {
+              ':actor': dispatchGuard.actorId,
+              ':active': 'active',
+              ':now': now,
+            },
+          },
+        },
+      ] : [];
+      await client.send(new TransactWriteCommand({
+        TransactItems: [
+          { Update: update },
+          {
+            ConditionCheck: {
+              TableName: TABLE_CONVERSATIONAL_STATE,
+              Key: {
+                PK: `AUTHZ#${attempt.actorId}#${attempt.permissionRef}`,
+                SK: 'STATE',
+              },
+              ConditionExpression: 'enabled = :true AND revision = :revision AND contains(allowedResourceKeys, :resourceKey) AND accountConfigDigest = :accountConfigDigest AND accountScopeDigest = :accountScopeDigest AND deliveryModeDigest = :deliveryModeDigest',
+              ExpressionAttributeValues: {
+                ':true': true,
+                ':revision': attempt.permissionRevision,
+                ':resourceKey': attempt.resourceKey,
+                ':accountConfigDigest': attempt.accountConfigDigest,
+                ':accountScopeDigest': attempt.accountScopeDigest,
+                ':deliveryModeDigest': attempt.deliveryModeDigest,
+              },
+            },
+          },
+          {
+            ConditionCheck: {
+              TableName: TABLE_CONVERSATIONAL_STATE,
+              Key: {
+                PK: `PROPOSAL#${attempt.proposalId}`,
+                SK: versionSk(attempt.proposalVersion),
+              },
+              ConditionExpression: 'canonicalPayloadHash = :payloadHash AND renderedViewHash = :viewHash AND actorId = :actor AND conversationId = :conversationId AND draftId = :draftRef AND spec.actorId = :actor AND spec.conversationId = :conversationId AND spec.draftRef = :draftRef AND spec.proposalId = :proposalId AND spec.proposalVersion = :proposalVersion AND spec.#expiresAt > :now',
+              ExpressionAttributeNames: { '#expiresAt': 'expiresAt' },
+              ExpressionAttributeValues: {
+                ':payloadHash': attempt.canonicalPayloadHash,
+                ':viewHash': attempt.renderedViewHash,
+                ':actor': attempt.actorId,
+                ':conversationId': attempt.conversationId,
+                ':draftRef': attempt.draftRef,
+                ':proposalId': attempt.proposalId,
+                ':proposalVersion': attempt.proposalVersion,
+                ':now': now,
+              },
+            },
+          },
+          {
+            ConditionCheck: {
+              TableName: TABLE_USERS,
+              Key: { PK: `USER#${attempt.actorId}`, SK: `USER#${attempt.actorId}` },
+              ConditionExpression: 'attribute_exists(PK) AND (attribute_not_exists(disabled) OR disabled = :false) AND #role IN (:admin, :operator)',
+              ExpressionAttributeNames: { '#role': 'role' },
+              ExpressionAttributeValues: {
+                ':false': false,
+                ':admin': 'admin',
+                ':operator': 'operator',
+              },
+            },
+          },
+          {
+            ConditionCheck: {
+              TableName: TABLE_CONVERSATIONAL_STATE,
+              Key: {
+                PK: `IDENTITY#${attempt.identityChannel}#${attempt.identityChannelUserId}`,
+                SK: 'META',
+              },
+              ConditionExpression: '#status = :active AND userId = :actor AND revision = :identityRevision AND id = :identityId',
+              ExpressionAttributeNames: { '#status': 'status' },
+              ExpressionAttributeValues: {
+                ':active': 'active',
+                ':actor': attempt.actorId,
+                ':identityRevision': attempt.identityBindingRevision,
+                ':identityId': attempt.identityBindingId,
+              },
+            },
+          },
+          {
+            ConditionCheck: {
+              TableName: TABLE_CONVERSATIONAL_STATE,
+              Key: {
+                PK: `CHANNEL#${attempt.identityChannel}#${attempt.channelConversationKey}`,
+                SK: 'BINDING',
+              },
+              ConditionExpression: 'id = :channelBindingId AND conversationId = :conversationId AND ownerUserId = :actor',
+              ExpressionAttributeValues: {
+                ':channelBindingId': attempt.channelBindingId,
+                ':conversationId': attempt.conversationId,
+                ':actor': attempt.actorId,
+              },
+            },
+          },
+          ...sourceChecks,
+        ],
+      }));
+      const stored = await client.send(new GetCommand({
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Key: { PK: `ATTEMPT#${attempt.id}`, SK: 'META' },
+        ConsistentRead: true,
+      }));
+      return clean<ExecutionAttempt>(stored.Item as Record<string, unknown> | undefined);
+    }
+    const result = await client.send(new UpdateCommand({ ...update, ReturnValues: 'ALL_NEW' }));
     return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
   } catch (error) {
-    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    if (
+      ['ConditionalCheckFailedException', 'TransactionCanceledException']
+        .includes((error as { name?: string }).name || '')
+    ) return null;
     throw error;
   }
 }
@@ -914,27 +1287,168 @@ async function manuallyResolveAttempt(
   client: DynamoDBDocumentClient,
   attemptId: string,
   expectedRevision: number,
-  resolution: NonNullable<ExecutionAttempt['manualResolution']>
+  resolution: NonNullable<ExecutionAttempt['manualResolution']>,
+  privateResult?: JsonValue,
+  receipt?: SafeExecutionReceipt
 ): Promise<ExecutionAttempt | null> {
-  try {
-    const result = await client.send(new UpdateCommand({
+  if (receipt) validateSafeExecutionReceipt(receipt);
+  const existing = privateResult === undefined
+    ? null
+    : clean<ExecutionAttempt>((await client.send(new GetCommand({
       TableName: TABLE_CONVERSATIONAL_STATE,
       Key: { PK: `ATTEMPT#${attemptId}`, SK: 'META' },
-      UpdateExpression: 'SET #status = :resolved, manualResolution = :resolution, updatedAt = :now, revision = revision + :one, recoveryBlocked = :true, GSI2PK = :state, GSI2SK = :sort',
-      ConditionExpression: '#status = :unknown AND revision = :revision',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: {
-        ':resolved': 'manually_resolved', ':unknown': 'outcome_unknown',
-        ':resolution': resolution, ':now': resolution.resolvedAt, ':one': 1,
-        ':revision': expectedRevision, ':true': true,
-        ':state': 'ATTEMPT_STATE#manually_resolved',
-        ':sort': `READY#${resolution.resolvedAt}#LEASE#-#${attemptId}`,
-      },
-      ReturnValues: 'ALL_NEW',
-    }));
+      ConsistentRead: true,
+    }))).Item as Record<string, unknown> | undefined);
+  const sets = [
+    '#status = :resolved',
+    'manualResolution = :resolution',
+    'updatedAt = :now',
+    'revision = revision + :one',
+    'recoveryBlocked = :true',
+    'GSI2PK = :state',
+    'GSI2SK = :sort',
+  ];
+  const values: Record<string, unknown> = {
+    ':resolved': 'manually_resolved', ':unknown': 'outcome_unknown',
+    ':resolution': resolution, ':now': resolution.resolvedAt, ':one': 1,
+    ':revision': expectedRevision, ':true': true,
+    ':state': 'ATTEMPT_STATE#manually_resolved',
+    ':sort': `READY#${resolution.resolvedAt}#LEASE#-#${attemptId}`,
+  };
+  if (receipt) {
+    sets.push('resultReceipt = :receipt', 'resultReceiptRef = :receiptRef');
+    values[':receipt'] = receipt;
+    values[':receiptRef'] = receipt.receiptId;
+  }
+  const update = {
+    TableName: TABLE_CONVERSATIONAL_STATE,
+    Key: { PK: `ATTEMPT#${attemptId}`, SK: 'META' },
+    UpdateExpression: `SET ${sets.join(', ')}`,
+    ConditionExpression: '#status = :unknown AND revision = :revision',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: values,
+    ReturnValues: 'ALL_NEW',
+  } as const;
+  try {
+    if (privateResult !== undefined) {
+      if (
+        !existing
+        || existing.status !== 'outcome_unknown'
+        || existing.revision !== expectedRevision
+        || !existing.actorId
+        || !existing.identityChannel
+        || !existing.identityChannelUserId
+        || !existing.identityBindingId
+        || !existing.identityBindingRevision
+        || !existing.channelBindingId
+        || !existing.channelConversationKey
+      ) return null;
+      const retention = expiryFrom(resolution.resolvedAt, 30);
+      const payloadId = `execution-manual-result-${attemptId}`;
+      const notificationId = `result-notification-manual-${attemptId}`;
+      const payload = {
+        id: payloadId,
+        recordType: 'conversational_private_payload' as const,
+        schemaVersion: 1,
+        createdAt: resolution.resolvedAt,
+        updatedAt: resolution.resolvedAt,
+        ...retention,
+        conversationId: existing.conversationId,
+        classification: 'private' as const,
+        content: {
+          kind: 'execution_result',
+          executionAttemptId: attemptId,
+          status: 'manually_resolved',
+          result: privateResult,
+        },
+      };
+      const notification = {
+        id: notificationId,
+        recordType: 'result_notification' as const,
+        schemaVersion: 1,
+        createdAt: resolution.resolvedAt,
+        updatedAt: resolution.resolvedAt,
+        ...retention,
+        conversationId: existing.conversationId,
+        executionAttemptId: attemptId,
+        actorId: existing.actorId,
+        channel: existing.identityChannel,
+        channelConversationKey: existing.channelConversationKey,
+        identityChannelUserId: existing.identityChannelUserId,
+        identityBindingId: existing.identityBindingId,
+        identityBindingRevision: existing.identityBindingRevision,
+        channelBindingId: existing.channelBindingId,
+        privatePayloadRef: payloadId,
+        status: 'pending' as const,
+        readyAt: resolution.resolvedAt,
+        revision: 1,
+      };
+      validateConversationalRecord(payload);
+      validateConversationalRecord(notification);
+      const payloadItem = {
+        ...payload,
+        PK: `PRIVATE_PAYLOAD#${payloadId}`,
+        SK: 'META',
+        GSI1PK: `CONVERSATION#${existing.conversationId}`,
+        GSI1SK: `PRIVATE_PAYLOAD#${payloadId}`,
+      };
+      const notificationItem = {
+        ...notification,
+        PK: `RESULT_NOTIFICATION#${notificationId}`,
+        SK: 'META',
+        GSI1PK: `CONVERSATION#${existing.conversationId}`,
+        GSI1SK: `RESULT_NOTIFICATION#${resolution.resolvedAt}#${notificationId}`,
+        GSI2PK: 'RESULT_NOTIFICATION_STATE#pending',
+        GSI2SK: `READY#${resolution.resolvedAt}#${notificationId}`,
+      };
+      if (process.env.NODE_ENV !== 'test') {
+        const { ReturnValues: _returnValues, ...transactionUpdate } = update;
+        await client.send(new TransactWriteCommand({
+          TransactItems: [
+            { Update: transactionUpdate },
+            {
+              Put: {
+                TableName: TABLE_CONVERSATIONAL_STATE,
+                Item: payloadItem,
+                ConditionExpression: 'attribute_not_exists(PK)',
+              },
+            },
+            {
+              Put: {
+                TableName: TABLE_CONVERSATIONAL_STATE,
+                Item: notificationItem,
+                ConditionExpression: 'attribute_not_exists(PK)',
+              },
+            },
+          ],
+        }));
+        const stored = await client.send(new GetCommand({
+          TableName: TABLE_CONVERSATIONAL_STATE,
+          Key: { PK: `ATTEMPT#${attemptId}`, SK: 'META' },
+          ConsistentRead: true,
+        }));
+        return clean<ExecutionAttempt>(stored.Item as Record<string, unknown> | undefined);
+      }
+      const result = await client.send(new UpdateCommand(update));
+      await client.send(new PutCommand({
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Item: payloadItem,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      }));
+      await client.send(new PutCommand({
+        TableName: TABLE_CONVERSATIONAL_STATE,
+        Item: notificationItem,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      }));
+      return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
+    }
+    const result = await client.send(new UpdateCommand(update));
     return clean<ExecutionAttempt>(result.Attributes as Record<string, unknown>);
   } catch (error) {
-    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    if (
+      ['ConditionalCheckFailedException', 'TransactionCanceledException']
+        .includes((error as { name?: string }).name || '')
+    ) return null;
     throw error;
   }
 }
@@ -959,7 +1473,9 @@ async function queryDueAttempts(
 }
 
 export {
+  approvalScopeDigest,
   atomicStorePresentedProposal,
+  atomicTypefullyRequestChanges,
   atomicApproval,
   claimQueuedAttempt,
   finalizeAttempt,
@@ -976,4 +1492,11 @@ export {
   reconcileUnknownAttempt,
   requeueUndispatchedAttempt,
 };
-export type { ApprovalPermission, AtomicApprovalInput, AtomicPresentationInput, CanonicalTarget };
+export type {
+  ApprovalPermission,
+  AtomicApprovalInput,
+  AtomicPresentationInput,
+  AtomicTypefullyRequestChangesInput,
+  CanonicalTarget,
+  DispatchStateGuard,
+};

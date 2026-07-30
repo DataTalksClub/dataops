@@ -1,22 +1,17 @@
-import { ExecutorRegistry, type CapabilityExecutor } from './execution';
-import { FakeCapabilityExecutor } from './executionWorker';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+
+import { ExecutorRegistry, type CapabilityExecutor } from './execution';
+import { FAKE_BUILD_DIGEST } from './executionDefaults';
+import { FakeCapabilityExecutor } from './executionWorker';
+import { TypefullySavedDraftExecutor } from './typefullyExecutor';
 import { ActorTodoExecutor } from './todoWriter';
-import { TypefullyProposalRenderExecutor } from './typefullySpec';
 
-const FAKE_BUILD_DIGEST = `sha256:${'f'.repeat(64)}`;
-
-function defaultExecutionRegistry(
-  client: DynamoDBDocumentClient
-): ExecutorRegistry {
+function defaultWorkerExecutionRegistry(client: DynamoDBDocumentClient): ExecutorRegistry {
   const executors: CapabilityExecutor[] = [];
   if (process.env.CONVERSATIONAL_TODO_EXECUTOR_ENABLED === 'true') {
     executors.push(new ActorTodoExecutor(client));
   }
-  // Registration is safe while execution is disabled: the executor's
-  // side-effect-free preflight checks the independent worker-only kill switch
-  // before a dispatch marker can be persisted.
-  executors.push(new TypefullyProposalRenderExecutor());
+  executors.push(new TypefullySavedDraftExecutor(client));
   if (process.env.NODE_ENV === 'test' && process.env.CONVERSATIONAL_FAKE_EXECUTOR_ENABLED === 'true') {
     executors.push(new FakeCapabilityExecutor(
       'fake.effect',
@@ -28,4 +23,4 @@ function defaultExecutionRegistry(
   return new ExecutorRegistry(executors);
 }
 
-export { FAKE_BUILD_DIGEST, defaultExecutionRegistry };
+export { defaultWorkerExecutionRegistry };

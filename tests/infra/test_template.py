@@ -218,7 +218,9 @@ def test_conversational_execution_worker_has_filtered_stream_recovery_and_failur
     assert "dynamodb:DeleteItem" not in task_permissions
     assert "dynamodb:Query" not in task_permissions
     assert "dynamodb:Scan" not in task_permissions
-    assert "secretsmanager:" not in worker
+    assert worker.count("secretsmanager:GetSecretValue") == 1
+    assert "Resource: !Ref WorkEngineTypefullyApiTokenSecretArn" in worker
+    assert "TelegramIntegrationSecretName" not in worker
     assert "s3:" not in worker
     assert "Type: AWS::SQS::Queue" in queue
     assert "DeletionPolicy: Retain" in queue
@@ -256,7 +258,8 @@ def test_conversational_result_dispatcher_is_private_scheduled_and_least_privile
     assert "DATAOPS_TASKS_TABLE" not in dispatcher
     assert "ZAI_" not in dispatcher
     assert "TELEGRAM_INTEGRATION_SECRET_NAME" not in worker
-    assert "secretsmanager:" not in worker
+    assert worker.count("secretsmanager:GetSecretValue") == 1
+    assert "Resource: !Ref WorkEngineTypefullyApiTokenSecretArn" in worker
     assert "ResultDelivery" not in backend
     assert "ConversationalResultDispatcherFunctionName:" in template
 

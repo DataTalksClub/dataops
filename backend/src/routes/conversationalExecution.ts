@@ -1,7 +1,9 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { sha256 } from '../conversation/execution';
 import { defaultExecutionRegistry } from '../conversation/executionDefaults';
 import {
+  getProposalVersion,
   manuallyResolveAttempt,
 } from '../conversation/executionRepository';
 import {
@@ -13,6 +15,13 @@ import {
   getConversation,
   getExecutionAttempt,
 } from '../conversation/repository';
+import { canonicalJson } from '../conversation/pluginRegistry';
+import { candidateFromTypefullySpec } from '../conversation/typefullySpec';
+import {
+  TYPEFULLY_PERMISSION,
+  safeTypefullyDraftId,
+  safeTypefullyEditUrl,
+} from '../conversation/typefullyPlugin';
 import { expiryFrom, validateSafeExecutionReceipt, type ExecutionAttempt } from '../conversation/types';
 import { getUser } from '../db/users';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -169,6 +178,109 @@ async function handleConversationalExecutionRoutes(
     } catch {
       return response(409, { error: 'Reconciliation is unavailable' });
     }
+  }
+
+  if (authorized.attempt.permissionRef === TYPEFULLY_PERMISSION) {
+    const allowed = new Set(['revision', 'outcome', 'proofClassification', 'draftId', 'editUrl']);
+    if (Object.keys(request).some((key) => !allowed.has(key))) {
+      return response(400, { error: 'Typefully resolution contains unsupported fields' });
+    }
+    if (!['found', 'not_found'].includes(String(request.outcome))) {
+      return response(400, { error: 'outcome must be found or not_found' });
+    }
+    const found = request.outcome === 'found';
+    const expectedProof = found ? 'exact_match' : 'accepted_search_complete';
+    if (request.proofClassification !== expectedProof) {
+      return response(400, { error: `proofClassification must be ${expectedProof}` });
+    }
+    const draftId = safeTypefullyDraftId(request.draftId);
+    if (
+      (found && (!draftId || SECRET_PATTERN.test(draftId)))
+      || (!found && request.draftId !== undefined)
+    ) {
+      return response(400, { error: found ? 'A bounded unique draftId is required' : 'not_found cannot include draftId' });
+    }
+    const editUrl = request.editUrl === undefined ? undefined : safeTypefullyEditUrl(request.editUrl);
+    if (
+      (request.editUrl !== undefined && !editUrl)
+      || (!found && request.editUrl !== undefined)
+    ) {
+      return response(400, { error: 'editUrl must be a credential-free private Typefully URL for found only' });
+    }
+    if (authorized.attempt.status === 'manually_resolved') {
+      return response(200, { attempt: publicAttempt(authorized.attempt) });
+    }
+    if (authorized.attempt.status !== 'outcome_unknown') {
+      return response(409, { error: 'Only an uncertain attempt can be resolved' });
+    }
+    const proposal = await getProposalVersion(
+      client,
+      authorized.attempt.proposalId,
+      authorized.attempt.proposalVersion
+    );
+    const candidate = proposal && candidateFromTypefullySpec(proposal.spec);
+    if (!proposal || !candidate || proposal.canonicalPayloadHash !== authorized.attempt.canonicalPayloadHash) {
+      return response(409, { error: 'The approved Typefully proposal is unavailable' });
+    }
+    const now = (dependencies.now || (() => new Date()))().toISOString();
+    const proof = {
+      outcome: request.outcome,
+      proofClassification: expectedProof,
+      logicalAccount: candidate.account,
+      ...(found ? { draftId: draftId! } : {}),
+      attemptId,
+      proposalId: authorized.attempt.proposalId,
+      canonicalPayloadHash: authorized.attempt.canonicalPayloadHash!,
+      recordedAt: now,
+    };
+    const receipt = {
+      receiptId: `typefully-reconciliation-${sha256(canonicalJson(proof)).slice(7, 39)}`,
+      effectHash: sha256(canonicalJson(proof)),
+      recordedAt: now,
+      metadata: {
+        outcome: String(request.outcome),
+        proofClassification: expectedProof,
+        logicalAccount: candidate.account,
+        ...(found ? { draftId: draftId! } : {}),
+        attemptId,
+        proposalId: authorized.attempt.proposalId,
+        canonicalPayloadHash: authorized.attempt.canonicalPayloadHash!,
+      },
+    };
+    const privateResult = found
+      ? {
+        kind: 'typefully_saved_draft',
+        message: 'Typefully draft reconciled as found.',
+        ...(editUrl ? { editUrl } : {}),
+      }
+      : {
+        kind: 'typefully_reconciliation_result',
+        message: 'Typefully reconciliation found no matching draft. Create a new proposal before another attempt.',
+      };
+    const updated = await manuallyResolveAttempt(client, attemptId, Number(request.revision), {
+      outcome: request.outcome as 'found' | 'not_found',
+      reason: 'accepted_private_runbook',
+      actorId,
+      resolvedAt: now,
+      ...(found ? { draftId: draftId! } : {}),
+      proofClassification: expectedProof,
+    }, privateResult, receipt);
+    if (!updated) {
+      const existing = await getExecutionAttempt(client, attemptId);
+      if (existing?.status === 'manually_resolved') {
+        return response(200, { attempt: publicAttempt(existing) });
+      }
+      return response(409, { error: 'Attempt revision changed' });
+    }
+    await appendResolutionAudit(
+      client,
+      updated,
+      actorId,
+      'execution_manually_resolved',
+      String(request.outcome),
+      now
+    );
+    return response(200, { attempt: publicAttempt(updated) });
   }
 
   const keys = Object.keys(request);

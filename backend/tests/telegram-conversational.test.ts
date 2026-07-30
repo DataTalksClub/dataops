@@ -36,7 +36,7 @@ import {
 } from '../src/conversation/telegramAdapter';
 import { handleConversationalIdentityBindingRoutes } from '../src/routes/conversationalIdentityBindings';
 import { handleTelegramWebhook, resetTelegramConfigCache } from '../src/routes/telegram';
-import { expiryFrom, type Conversation } from '../src/conversation/types';
+import { expiryFrom, type Conversation, type JsonValue } from '../src/conversation/types';
 import { CONVERSATIONAL_ENTITY_SPECS } from '../src/conversation/portable';
 import type { LambdaEvent } from '../src/types';
 
@@ -160,6 +160,7 @@ class FakeCore implements TelegramCoreRuntime {
   readonly calls: CoreInput[] = [];
   delayed?: Promise<void>;
   reply?: string;
+  buttons?: Array<{ text: string; action: JsonValue }>;
   async handle(input: CoreInput) {
     this.calls.push(input);
     await this.delayed;
@@ -179,6 +180,7 @@ class FakeCore implements TelegramCoreRuntime {
     return {
       kind: 'assistant_message' as const,
       message: this.reply || `core:${input.kind}:${input.text || input.command || ''}`,
+      ...(this.buttons ? { buttons: this.buttons } : {}),
     };
   }
 }
@@ -478,6 +480,7 @@ describe('private conversational Telegram adapter', () => {
     assert.strictEqual(core.calls.length, 1);
     assert.strictEqual(core.calls[0].kind, 'message');
     assert.strictEqual(core.calls[0].actor.id, 'operator-telegram');
+    assert.equal(typeof core.calls[0].source?.payloadRef, 'string');
     assert.strictEqual(telegram.sent.length, 1);
     const duplicate = await handleTelegramWebhook(webhook(messageUpdate(110, { text: 'hello' })), dependencies());
     assert.strictEqual(JSON.parse(duplicate.body).duplicate, true);
@@ -502,6 +505,19 @@ describe('private conversational Telegram adapter', () => {
     const chunks = telegram.sent.slice(sentBeforeLongReply);
     assert.strictEqual(chunks.length, 3);
     assert.ok(chunks.every((chunk) => Buffer.byteLength(chunk.text, 'utf8') <= 3_900));
+
+    core.reply = '完整 preview '.repeat(2_000);
+    core.buttons = [{ text: 'Approve', action: { type: 'approve' } }];
+    const sentBeforeLongPreview = telegram.sent.length;
+    await handleTelegramWebhook(webhook(messageUpdate(1119, { text: 'long preview' })), dependencies());
+    const previewChunks = telegram.sent.slice(sentBeforeLongPreview);
+    assert.ok(previewChunks.length > 4);
+    assert.ok(previewChunks.every((chunk, index) => (
+      chunk.text.startsWith(`Preview ${index + 1}/${previewChunks.length}\n`)
+    )));
+    assert.ok(previewChunks.slice(0, -1).every((chunk) => chunk.buttons === undefined));
+    assert.deepEqual(previewChunks.at(-1)?.buttons?.map((button) => button.text), ['Approve']);
+    core.buttons = undefined;
   });
 
   it('recovers a persisted outbound reply after send failure without rerunning core', async () => {
@@ -630,9 +646,15 @@ describe('private conversational Telegram adapter', () => {
   });
 
   it('maps core commands and blocks legacy mutation shortcuts', async () => {
-    const unsupported = await handleTelegramWebhook(webhook(messageUpdate(120, { text: '/social post now' })), dependencies());
-    assert.strictEqual(JSON.parse(unsupported.body).route, 'unsupported');
-    assert.strictEqual(core.calls.length, 0);
+    for (const [updateId, text] of [[120, '/social post now'], [1121, '/social']] as const) {
+      const social = await handleTelegramWebhook(
+        webhook(messageUpdate(updateId, { text })),
+        dependencies()
+      );
+      assert.strictEqual(JSON.parse(social.body).route, 'social-guidance');
+      assert.match(telegram.sent.at(-1)?.text || '', /typed social request.*confirm.*public source/i);
+      assert.strictEqual(core.calls.length, 0);
+    }
     const todo = await handleTelegramWebhook(
       webhook(messageUpdate(119, { text: '/todo buy milk tomorrow' })),
       dependencies()
@@ -688,7 +710,8 @@ describe('private conversational Telegram adapter', () => {
       webhook(messageUpdate(134, { text: 'ordinary after use' })), dependencies()
     );
     assert.strictEqual(JSON.parse(afterUse.body).route, 'message');
-    assert.deepStrictEqual(core.calls.at(-1)?.source, { kind: 'telegram_text' });
+    assert.strictEqual(core.calls.at(-1)?.source?.kind, 'telegram_text');
+    assert.strictEqual(typeof core.calls.at(-1)?.source?.payloadRef, 'string');
     assert.deepStrictEqual(await readdir(ROOT), []);
 
     telegram.files.set('bad-voice', { path: 'voice/bad.ogg', bytes: Buffer.from('NOPE') });
@@ -745,7 +768,8 @@ describe('private conversational Telegram adapter', () => {
       webhook(messageUpdate(182, { text: 'ordinary after discard' })), dependencies()
     );
     assert.strictEqual(JSON.parse(afterDiscard.body).route, 'message');
-    assert.deepStrictEqual(core.calls.at(-1)?.source, { kind: 'telegram_text' });
+    assert.strictEqual(core.calls.at(-1)?.source?.kind, 'telegram_text');
+    assert.strictEqual(typeof core.calls.at(-1)?.source?.payloadRef, 'string');
   });
 
   it('uses opaque actor-bound actions once and rejects concurrent sibling or cross-actor use', async () => {
@@ -904,7 +928,8 @@ describe('private conversational Telegram adapter', () => {
       webhook(messageUpdate(193, { text: 'ordinary after race' })), dependencies()
     );
     assert.strictEqual(JSON.parse(afterTerminal.body).route, 'message');
-    assert.deepStrictEqual(core.calls.at(-1)?.source, { kind: 'telegram_text' });
+    assert.strictEqual(core.calls.at(-1)?.source?.kind, 'telegram_text');
+    assert.strictEqual(typeof core.calls.at(-1)?.source?.payloadRef, 'string');
   });
 
   it('stages bounded JPEG OCR with caption, supports correction, and rejects image documents', async () => {
@@ -937,7 +962,8 @@ describe('private conversational Telegram adapter', () => {
       webhook(messageUpdate(146, { text: 'ordinary after correction' })), dependencies()
     );
     assert.strictEqual(JSON.parse(afterCorrection.body).route, 'message');
-    assert.deepStrictEqual(core.calls.at(-1)?.source, { kind: 'telegram_text' });
+    assert.strictEqual(core.calls.at(-1)?.source?.kind, 'telegram_text');
+    assert.strictEqual(typeof core.calls.at(-1)?.source?.payloadRef, 'string');
     const before = photoCalls;
     await handleTelegramWebhook(webhook(messageUpdate(142, {
       document: { file_id: 'photo-file', mime_type: 'image/jpeg' },

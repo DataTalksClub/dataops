@@ -1,7 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from './db/client';
-import { defaultExecutionRegistry } from './conversation/executionDefaults';
+import { defaultWorkerExecutionRegistry } from './conversation/executionWorkerDefaults';
 import { processAttempt, runRecovery, workerConfig } from './conversation/executionWorker';
 
 let client: DynamoDBDocumentClient | null = null;
@@ -25,7 +25,7 @@ async function handler(event: Record<string, unknown>): Promise<unknown> {
   client ||= await getClient();
   const dependencies = {
     client,
-    registry: defaultExecutionRegistry(client),
+    registry: defaultWorkerExecutionRegistry(client),
     config: configFromEnv(),
   };
   const detail = event.detail as Record<string, unknown> | undefined;
