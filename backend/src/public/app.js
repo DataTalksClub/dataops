@@ -234,9 +234,37 @@
 
   // ── Helpers ─────────────────────────────────────────────────────
 
+  var BERLIN_BUSINESS_TIME_ZONE = 'Europe/Berlin';
+  var berlinBusinessDateFormatter = new Intl.DateTimeFormat('en', {
+    timeZone: BERLIN_BUSINESS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+
+  // Convert an instant to the operations calendar date. Date-only values are
+  // intentionally excluded: they are already calendar dates, not instants.
+  function berlinBusinessDate(value) {
+    if (!(value instanceof Date)) {
+      if (
+        typeof value !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+      ) {
+        return '';
+      }
+      if (!validDatePart(value.slice(0, 10))) return '';
+    }
+    var date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    var parts = {};
+    berlinBusinessDateFormatter.formatToParts(date).forEach(function (part) {
+      if (part.type !== 'literal') parts[part.type] = part.value;
+    });
+    return parts.year + '-' + parts.month + '-' + parts.day;
+  }
+
   function todayString() {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    return berlinBusinessDate(new Date());
   }
 
   function showError(msg) {
@@ -787,12 +815,9 @@
   // sources, and non-todo states deliberately fall back to legacy semantics.
   // This derives state from existing fields, so no persisted lifecycle flag or
   // data migration is needed (#106).
-  function validDatePart(value, allowTimestamp) {
+  function validDatePart(value) {
     var text = typeof value === 'string' ? value : '';
-    var pattern = allowTimestamp
-      ? /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z)?$/
-      : /^(\d{4}-\d{2}-\d{2})$/;
-    var match = pattern.exec(text);
+    var match = /^(\d{4}-\d{2}-\d{2})$/.exec(text);
     if (!match) return '';
     var date = new Date(match[1] + 'T00:00:00Z');
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === match[1] ? match[1] : '';
@@ -800,8 +825,8 @@
 
   function taskIsScheduled(task, bundle) {
     if (!task || task.source !== 'template' || task.status !== 'todo') return false;
-    var taskDate = validDatePart(task.date, false);
-    var createdDate = validDatePart(bundle && bundle.createdAt, true);
+    var taskDate = validDatePart(task.date);
+    var createdDate = berlinBusinessDate(bundle && bundle.createdAt);
     return !!taskDate && !!createdDate && taskDate < createdDate;
   }
 
@@ -877,7 +902,7 @@
     // fallback so a workflow never loses all navigation context.
     var currentOrFuture = active
       .filter(function (task) {
-        var taskDate = validDatePart(task.date, false);
+        var taskDate = validDatePart(task.date);
         return !!taskDate && taskDate >= today;
       })
       .sort(function (a, b) {

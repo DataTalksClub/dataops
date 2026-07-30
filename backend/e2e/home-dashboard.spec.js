@@ -1,21 +1,21 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBundleCreatedAtOverride,
+  offsetBusinessDate,
+} = require('./helpers/business-date');
 
 // Helper to get today's date in YYYY-MM-DD format
 function todayString() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
+  return berlinBusinessDate(new Date());
 }
 
 function offsetDateString(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
+  return offsetBusinessDate(new Date(), days);
 }
 
 // Seed user IDs (from seed-users script)
@@ -155,6 +155,7 @@ async function expectSingleQueueNextAction(row, label) {
 }
 
 test.describe('Home dashboard (issue #26)', () => {
+  test.use({ timezoneId: BERLIN_TIME_ZONE });
   // The dashboard wait helpers use a bounded retry-with-refresh loop (up to ~72s
   // worst case to recover a cold-start/stale queue snapshot), which can exceed
   // the 30s Playwright config default and fail with "Test timeout of 30000ms
@@ -1528,7 +1529,10 @@ test.describe('Home dashboard (issue #26)', () => {
     });
 
     test('Seeded Newsletter anchored today is healthy instead of all-red at t=0 (#106)', async ({ page, request }) => {
-      const today = todayString();
+      await page.clock.setFixedTime(new Date(BERLIN_MIDNIGHT_BOUNDARY_INSTANT));
+      const today = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
+      expect(BERLIN_MIDNIGHT_BOUNDARY_INSTANT.slice(0, 10)).toBe('2026-07-30');
+      expect(today).toBe('2026-07-31');
       const suffix = Date.now().toString(36);
       let bundleId;
       let tasks = [];
@@ -1552,8 +1556,10 @@ test.describe('Home dashboard (issue #26)', () => {
         bundleId = body.bundle.id;
         tasks = body.tasks;
 
-        const preCreationTasks = tasks.filter((task) => task.date < body.bundle.createdAt.slice(0, 10));
+        const creationDate = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
+        const preCreationTasks = tasks.filter((task) => task.date < creationDate);
         expect(preCreationTasks).toHaveLength(9);
+        await installBundleCreatedAtOverride(page, bundleId, BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 
         await page.setViewportSize({ width: 1440, height: 1100 });
         await page.goto('/#/');
@@ -1577,6 +1583,7 @@ test.describe('Home dashboard (issue #26)', () => {
         await expect(card).not.toContainText('Missing evidence 15');
         await screenshotIssue106(page, 'dashboard-newsletter-t0-1440');
       } finally {
+        await page.unrouteAll({ behavior: 'wait' });
         for (const task of tasks) await cleanupTask(request, task);
         await cleanupBundle(request, bundleId);
       }

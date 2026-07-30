@@ -282,10 +282,15 @@ describe('Home dashboard (issue #26)', () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
       assert.ok(result.body.includes('function taskIsScheduled(task, bundle)'), 'should centralize scheduled semantics');
-      assert.ok(result.body.includes('function validDatePart(value, allowTimestamp)'), 'should validate task and bundle dates');
+      assert.ok(result.body.includes("var BERLIN_BUSINESS_TIME_ZONE = 'Europe/Berlin'"), 'should declare the operations calendar explicitly');
+      assert.ok(result.body.includes('function berlinBusinessDate(value)'), 'should centralize instant-to-business-date conversion');
+      assert.ok(result.body.includes('return berlinBusinessDate(new Date())'), 'should derive app today through the Berlin formatter');
+      assert.ok(result.body.includes('function validDatePart(value)'), 'should validate task calendar dates');
       assert.ok(result.body.includes("date.toISOString().slice(0, 10) === match[1]"), 'should reject impossible calendar dates');
+      assert.ok(result.body.includes("if (!validDatePart(value.slice(0, 10))) return ''"), 'should reject impossible timestamp dates');
       assert.ok(result.body.includes("task.source !== 'template'"), 'should leave non-template work on legacy semantics');
       assert.ok(result.body.includes("task.status !== 'todo'"), 'should leave waiting/non-todo work active');
+      assert.ok(result.body.includes('var createdDate = berlinBusinessDate(bundle && bundle.createdAt)'), 'should compare creation timestamps on the Berlin calendar');
       assert.ok(result.body.includes('taskDate < createdDate'), 'should schedule only offsets before bundle creation');
       assert.ok(result.body.includes("return ['Scheduled']"), 'should expose scheduled state to queue labels');
       assert.ok(result.body.includes("if (labels.indexOf('Scheduled') !== -1) return 'Scheduled'"), 'should group scheduled tasks consistently');
