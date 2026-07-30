@@ -498,7 +498,7 @@
   }
 
   function taskMissingProofTitle(task, taskFiles, bundle) {
-    if (!task || task.status === 'done') return '';
+    if (!taskIsActive(task)) return '';
     var proof = taskProofRequirement(task);
     var proofLabel = proof && proof.label ? String(proof.label) : '';
     if (task.requiredLinkName && !nonEmptyValue(task.link) && !taskSkipClosureSuppresses(task, 'requiredLink', task.requiredLinkName)) {
@@ -562,7 +562,15 @@
       return taskRequiresBundleLink(task, linkName);
     });
     if (!requiringTasks.length) return false;
-    return requiringTasks.every(function (task) {
+    // Archived requirements are historical and must not keep an empty shared
+    // link red. Active requirements still make the link operationally missing,
+    // while completed tasks retain the existing explicit skip-closure rule.
+    var relevantTasks = requiringTasks.filter(function (task) {
+      return task.status !== 'archived';
+    });
+    if (!relevantTasks.length) return true;
+    if (relevantTasks.some(taskIsActive)) return false;
+    return relevantTasks.every(function (task) {
       return task.status === 'done' && taskSkipClosureSuppresses(task, 'bundleLink', linkName);
     });
   }
@@ -689,12 +697,13 @@
     if (label === 'Done') return ' task-queue-label--done';
     if (label === 'Overdue') return ' task-queue-label--overdue';
     if (label === 'Waiting' || label === 'Follow-up due') return ' task-queue-label--waiting';
+    if (label === 'Scheduled') return ' task-queue-label--scheduled';
     return '';
   }
 
   // The single primary next-action affordance label shown on a collapsed row.
   function taskNextActionLabel(task, missingProofTitle) {
-    if (!task || task.status === 'done') return 'Details';
+    if (!taskIsActive(task)) return 'Details';
     if (task.status === 'waiting') return 'Follow up';
     if (missingProofTitle) {
       if (/^Attach /.test(missingProofTitle)) return 'Add file';
@@ -771,23 +780,60 @@
     return states.length ? states : ['today', 'overdue', 'waiting', 'follow-up-due'];
   }
 
+  // A template task is scheduled rather than late only when template offset
+  // arithmetic gave a todo task a nominal date before its workflow existed.
+  // Tasks whose dates could genuinely pass after workflow creation retain the
+  // existing due/overdue behavior. Missing or invalid metadata, non-template
+  // sources, and non-todo states deliberately fall back to legacy semantics.
+  // This derives state from existing fields, so no persisted lifecycle flag or
+  // data migration is needed (#106).
+  function validDatePart(value, allowTimestamp) {
+    var text = typeof value === 'string' ? value : '';
+    var pattern = allowTimestamp
+      ? /^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z)?$/
+      : /^(\d{4}-\d{2}-\d{2})$/;
+    var match = pattern.exec(text);
+    if (!match) return '';
+    var date = new Date(match[1] + 'T00:00:00Z');
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === match[1] ? match[1] : '';
+  }
+
+  function taskIsScheduled(task, bundle) {
+    if (!task || task.source !== 'template' || task.status !== 'todo') return false;
+    var taskDate = validDatePart(task.date, false);
+    var createdDate = validDatePart(bundle && bundle.createdAt, true);
+    return !!taskDate && !!createdDate && taskDate < createdDate;
+  }
+
+  // Done and archived are both terminal TaskStatus values. Keep this predicate
+  // shared so historical work cannot leak back into dashboard queues, workflow
+  // risk counts, evidence warnings, or next-due selection (#106).
+  function taskIsActive(task) {
+    return !!task && task.status !== 'done' && task.status !== 'archived';
+  }
+
   function dashboardQueueLabels(task, taskFiles, today, bundle) {
+    if (!taskIsActive(task)) return [];
     var states = dashboardStates(task);
     var labels = [];
     function add(state, label) {
       if (states.indexOf(state) !== -1 && labels.indexOf(label) === -1) labels.push(label);
     }
+    if (taskIsScheduled(task, bundle)) return ['Scheduled'];
     var missing = taskMissingProofTitle(task, taskFiles, bundle);
     var waiting = task.status === 'waiting';
-    var dueOrOverdue = task.status !== 'done' && task.date && task.date <= today;
+    var dueOrOverdue = task.date && task.date <= today;
     if (waiting && isDueFollowUpTask(task)) add('follow-up-due', 'Follow-up due');
     else if (waiting) add('waiting', 'Waiting');
-    if (task.status !== 'done' && task.date && task.date < today) add('overdue', 'Overdue');
-    if (task.status !== 'done' && task.date === today) add('today', 'Today');
-    if (missing && (dueOrOverdue || states.indexOf('missing-evidence') !== -1) && labels.indexOf('Missing evidence') === -1) {
+    if (task.date && task.date < today) add('overdue', 'Overdue');
+    if (task.date === today) add('today', 'Today');
+    // Evidence becomes a queue risk when work is actually due. Template
+    // validation may opt into the missing-evidence queue, but must not make
+    // future tasks red at workflow creation time (#106).
+    if (missing && dueOrOverdue && labels.indexOf('Missing evidence') === -1) {
       labels.push('Missing evidence');
     }
-    if (validationArray(task, 'atRiskWhen').length > 0 && (missing || waiting)) add('at-risk', 'At risk');
+    if (validationArray(task, 'atRiskWhen').length > 0 && ((missing && dueOrOverdue) || waiting)) add('at-risk', 'At risk');
     return labels;
   }
 
@@ -803,27 +849,43 @@
     if (labels.indexOf('Today') !== -1) return 'Today';
     if (labels.indexOf('Missing evidence') !== -1 || labels.indexOf('At risk') !== -1) return 'At-risk workflows';
     if (labels.indexOf('Waiting') !== -1) return 'Waiting';
+    if (labels.indexOf('Scheduled') !== -1) return 'Scheduled';
     return 'Other';
   }
 
   function bundleRiskSummary(bundle, tasks, filesByTask) {
     var today = todayString();
-    var active = (tasks || []).filter(function (task) {
-      return task.status !== 'done';
+    var active = (tasks || []).filter(taskIsActive);
+    var scheduled = active.filter(function (task) {
+      return taskIsScheduled(task, bundle);
     });
-    var overdue = active.filter(function (task) {
+    var riskActive = active.filter(function (task) {
+      return scheduled.indexOf(task) === -1;
+    });
+    var overdue = riskActive.filter(function (task) {
       return task.date && task.date < today;
     });
-    var waiting = active.filter(function (task) {
+    var waiting = riskActive.filter(function (task) {
       return task.status === 'waiting';
     });
     var followUps = waiting.filter(isDueFollowUpTask);
-    var missingEvidence = active.filter(function (task) {
-      return !!taskMissingProofTitle(task, (filesByTask || {})[task.id] || [], bundle);
+    var missingEvidence = riskActive.filter(function (task) {
+      return task.date && task.date <= today && !!taskMissingProofTitle(task, (filesByTask || {})[task.id] || [], bundle);
     });
-    var nextTask = active.slice().sort(function (a, b) {
-      return (a.date || '').localeCompare(b.date || '');
-    })[0];
+    // A current/future task is a more truthful "Next due" than a retroactive
+    // scheduled offset. If none exists, retain the legacy earliest-active
+    // fallback so a workflow never loses all navigation context.
+    var currentOrFuture = active
+      .filter(function (task) {
+        var taskDate = validDatePart(task.date, false);
+        return !!taskDate && taskDate >= today;
+      })
+      .sort(function (a, b) {
+        return (a.date || '9999-12-31').localeCompare(b.date || '9999-12-31');
+      });
+    var nextTasks = (currentOrFuture.length ? currentOrFuture : riskActive.length ? riskActive : active).slice().sort(function (a, b) {
+      return (a.date || '9999-12-31').localeCompare(b.date || '9999-12-31');
+    });
     var assistantRefs = Array.isArray(bundle && bundle.assistantJobRefs) ? bundle.assistantJobRefs : [];
     var assistantApproval = assistantRefs.filter(function (ref) {
       return ref && ref.status === 'waiting_approval';
@@ -836,9 +898,11 @@
       waiting: waiting.length,
       followUps: followUps.length,
       missingEvidence: missingEvidence.length,
+      scheduled: scheduled.length,
       assistantApproval: assistantApproval,
       assistantFailed: assistantFailed,
-      nextTask: nextTask || null
+      nextTask: nextTasks[0] || null,
+      nextTasks: nextTasks.slice(0, 3)
     };
   }
 
@@ -2582,6 +2646,7 @@
     if (risk.waiting) riskItems.push('<span class="task-queue-label">Waiting ' + risk.waiting + '</span>');
     if (risk.followUps) riskItems.push('<span class="task-queue-label">Follow-ups ' + risk.followUps + '</span>');
     if (risk.missingEvidence) riskItems.push('<span class="task-queue-label">Missing evidence ' + risk.missingEvidence + '</span>');
+    if (risk.scheduled) riskItems.push('<span class="task-queue-label task-queue-label--scheduled">Scheduled ' + risk.scheduled + '</span>');
     if (risk.assistantApproval) riskItems.push('<span class="task-queue-label">Assistant approvals ' + risk.assistantApproval + '</span>');
     if (risk.assistantFailed) riskItems.push('<span class="task-queue-label">Assistant failed ' + risk.assistantFailed + '</span>');
     if (risk.nextTask) {
@@ -2906,6 +2971,7 @@
       'Follow-ups due': [],
       'At-risk workflows': [],
       Waiting: [],
+      Scheduled: [],
       Other: []
     };
     (tasks || []).forEach(function (t) {
@@ -3072,7 +3138,7 @@
 
     // Overflow groups (waiting-not-yet-due, other) render only when populated,
     // after the four core sections.
-    ['Waiting', 'Other'].forEach(function (group) {
+    ['Waiting', 'Scheduled', 'Other'].forEach(function (group) {
       var rows = buckets[group] || [];
       if (!rows.length) return;
       html += groupHeaderHtml(group);
@@ -4203,7 +4269,8 @@
           return;
         }
 
-        // Fetch tasks for each bundle to compute progress
+        // Fetch tasks for each bundle once; progress and the four list-summary
+        // fields all come from the shared risk helper.
         var taskPromises = bundles.map(function (b) {
           return api.bundles
             .tasks(b.id)
@@ -4232,6 +4299,9 @@
             }).length;
             var totalCount = tasks.length;
             var badgeClass = 'progress-badge' + (totalCount > 0 && doneCount === totalCount ? ' all-done' : '');
+            var risk = bundleRiskSummary(b, tasks, {});
+            var nextDue = risk.nextTask ? risk.nextTask.date : 'None';
+            var stage = b.stage || 'preparation';
 
             var descText = b.description || '';
             var truncatedDesc = descText.length > 100 ? descText.substring(0, 100) + '...' : descText;
@@ -4239,7 +4309,55 @@
             var card = document.createElement('div');
             card.className = 'bundle-card';
             card.setAttribute('data-card-bundle-id', b.id);
-            card.innerHTML = '<a class="bundle-card-title" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '" aria-label="Open bundle ' + escapeHtml(b.title || 'Untitled') + '">' + escapeHtml(b.title) + '</a>' + '<div class="bundle-card-date">' + escapeHtml(b.anchorDate || '') + '</div>' + (truncatedDesc ? '<div class="bundle-card-desc">' + escapeHtml(truncatedDesc) + '</div>' : '') + '<div class="bundle-card-footer">' + '<span class="' + badgeClass + '">' + doneCount + ' / ' + totalCount + ' done</span>' + '<div class="card-footer-actions">' + '<a class="card-action-link" href="' + escapeHtml(bundleHash(b.id)) + '" data-bundle-id="' + b.id + '">Open bundle</a>' + '<button class="btn-danger" data-delete-bundle="' + b.id + '">Delete</button>' + '</div>' + '</div>';
+            card.innerHTML =
+              '<a class="bundle-card-title" href="' +
+              escapeHtml(bundleHash(b.id)) +
+              '" data-bundle-id="' +
+              b.id +
+              '" aria-label="Open bundle ' +
+              escapeHtml(b.title || 'Untitled') +
+              '">' +
+              escapeHtml(b.title) +
+              '</a>' +
+              '<div class="bundle-card-date">' +
+              escapeHtml(b.anchorDate || '') +
+              '</div>' +
+              (truncatedDesc ? '<div class="bundle-card-desc">' + escapeHtml(truncatedDesc) + '</div>' : '') +
+              '<div class="bundle-card-summary" data-testid="bundle-card-summary">' +
+              '<span class="badge-stage ' +
+              escapeHtml(stage) +
+              '">Stage ' +
+              escapeHtml(stage) +
+              '</span>' +
+              '<span class="task-queue-label">Next due ' +
+              escapeHtml(nextDue) +
+              '</span>' +
+              '<span class="task-queue-label task-queue-label--overdue">Overdue ' +
+              risk.overdue +
+              '</span>' +
+              '<span class="task-queue-label task-queue-label--waiting">Waiting ' +
+              risk.waiting +
+              '</span>' +
+              '</div>' +
+              '<div class="bundle-card-footer">' +
+              '<span class="' +
+              badgeClass +
+              '">' +
+              doneCount +
+              ' / ' +
+              totalCount +
+              ' done</span>' +
+              '<div class="card-footer-actions">' +
+              '<a class="card-action-link" href="' +
+              escapeHtml(bundleHash(b.id)) +
+              '" data-bundle-id="' +
+              b.id +
+              '">Open bundle</a>' +
+              '<button class="btn-danger" data-delete-bundle="' +
+              b.id +
+              '">Delete</button>' +
+              '</div>' +
+              '</div>';
             cardsDiv.appendChild(card);
           });
 
@@ -4648,22 +4766,14 @@
   }
 
   function renderWorkflowContext(bundle, tasks, filesByTask, assistantJobs) {
-    var today = todayString();
-    var active = tasks.filter(function (task) {
-      return task.status !== 'done';
-    });
-    var overdue = active.filter(function (task) {
-      return task.date && task.date < today;
-    });
-    var waiting = active.filter(function (task) {
-      return task.status === 'waiting';
-    });
-    var followUps = waiting.filter(isDueFollowUpTask);
+    var risk = bundleRiskSummary(bundle, tasks, filesByTask);
+    var active = tasks.filter(taskIsActive);
     var missingLinks = (bundle.bundleLinks || []).filter(function (link) {
       return isBundleLinkMissing(link, tasks);
     });
     var missingFiles = active.filter(function (task) {
-      return task.requiresFile && (!filesByTask[task.id] || filesByTask[task.id].length === 0);
+      var taskFiles = filesByTask[task.id] || [];
+      return !taskIsScheduled(task, bundle) && task.requiresFile && taskFiles.length === 0;
     });
     var jobs = assistantJobs || [];
     var assistantApproval = jobs.filter(function (job) {
@@ -4672,17 +4782,11 @@
     var assistantFailed = jobs.filter(function (job) {
       return job.status === 'failed';
     });
-    var nextTasks = active
-      .slice()
-      .sort(function (a, b) {
-        return (a.date || '').localeCompare(b.date || '');
-      })
-      .slice(0, 3);
     return (
       '<div class="workflow-context-grid">' +
       '<div class="workflow-context-metric"><span>Next due</span><strong>' +
       escapeHtml(
-        nextTasks
+        risk.nextTasks
           .map(function (task) {
             return task.date + ' · ' + task.description;
           })
@@ -4690,13 +4794,16 @@
       ) +
       '</strong></div>' +
       '<div class="workflow-context-metric"><span>Overdue</span><strong>' +
-      overdue.length +
+      risk.overdue +
       '</strong></div>' +
       '<div class="workflow-context-metric"><span>Waiting</span><strong>' +
-      waiting.length +
+      risk.waiting +
       '</strong></div>' +
       '<div class="workflow-context-metric"><span>Follow-ups due</span><strong>' +
-      followUps.length +
+      risk.followUps +
+      '</strong></div>' +
+      '<div class="workflow-context-metric"><span>Scheduled</span><strong>' +
+      risk.scheduled +
       '</strong></div>' +
       '<div class="workflow-context-metric"><span>Missing links</span><strong>' +
       missingLinks.length +
@@ -4728,21 +4835,25 @@
     // Keep backward-compat class on the container div
     container.className = 'bundle-tasks-table task-checklist';
 
-    // Split tasks: active (not done) sorted by date, done at the bottom
-    var activeTasks = tasks.filter(function (t) {
-      return t.status !== 'done';
-    });
+    // Split active and terminal tasks so archived history stays inspectable
+    // without exposing completion controls or operational risk pills.
+    var activeTasks = tasks.filter(taskIsActive);
     var doneTasks = tasks.filter(function (t) {
       return t.status === 'done';
+    });
+    var archivedTasks = tasks.filter(function (t) {
+      return t.status === 'archived';
     });
 
     function buildTaskRow(t) {
       var isDone = t.status === 'done';
+      var isArchived = t.status === 'archived';
+      var isTerminal = isDone || isArchived;
       var hasRequiredLink = !!t.requiredLinkName;
       var taskFiles = filesByTask[t.id] || [];
       var missingProofTitle = taskMissingProofTitle(t, taskFiles, bundle);
       var waitingBlockTitle = waitingCompletionBlockTitle(t);
-      var checkboxDisabled = !!(waitingBlockTitle || missingProofTitle);
+      var checkboxDisabled = isArchived || !!(waitingBlockTitle || missingProofTitle);
       // A task is a milestone if it has stageOnComplete set
       var isMilestone = !!t.stageOnComplete;
 
@@ -4831,7 +4942,7 @@
         metaLine.appendChild(assigneeBadge);
       }
 
-      var queueLabels = isDone ? ['Done'] : dashboardQueueLabels(t, taskFiles, todayString(), bundle);
+      var queueLabels = isDone ? ['Done'] : isArchived ? ['Archived'] : dashboardQueueLabels(t, taskFiles, todayString(), bundle);
       if (queueLabels.length) {
         var pillsWrap = document.createElement('span');
         pillsWrap.className = 'task-checklist-pills';
@@ -4892,7 +5003,7 @@
       details.insertAdjacentHTML('beforeend', renderTaskHistory(t, false));
 
       // Required link input inline under description
-      if (hasRequiredLink) {
+      if (hasRequiredLink && !isTerminal) {
         var wrapper = document.createElement('div');
         wrapper.className = 'required-link-wrapper';
         wrapper.style.marginTop = '4px';
@@ -4954,7 +5065,7 @@
         details.appendChild(wrapper);
       }
 
-      if (t.requiresFile) {
+      if (t.requiresFile && !isTerminal) {
         var fileWrapper = document.createElement('div');
         fileWrapper.className = 'required-file-wrapper';
         fileWrapper.setAttribute('data-required-file-wrapper', t.id);
@@ -4964,7 +5075,7 @@
         details.appendChild(fileWrapper);
       }
 
-      if (taskNeedsCompletionProofControls(t) && !isDone) {
+      if (taskNeedsCompletionProofControls(t) && !isTerminal) {
         var proof = taskProofRequirement(t);
         var skipStatuses = taskAllowedSkipStatuses(t);
         var proofWrapper = document.createElement('div');
@@ -5040,7 +5151,7 @@
         waitingRow.className = 'waiting-task-row';
         waitingRow.innerHTML = '<span class="badge-waiting">Waiting: ' + escapeHtml(t.waitingFor || 'external reply') + (t.followUpAt ? ' · follow up ' + escapeHtml(formatDateLabel(t.followUpAt)) : '') + '</span>' + renderDashboardTaskActions(t);
         details.appendChild(waitingRow);
-      } else if (!isDone) {
+      } else if (!isTerminal) {
         var waitForm = document.createElement('div');
         waitForm.className = 'waiting-form';
         waitForm.innerHTML = '<input type="text" class="waiting-for-input" data-waiting-for-task="' + escapeHtml(t.id) + '" placeholder="Waiting for" />' + '<select class="waiting-channel-input" data-waiting-channel-task="' + escapeHtml(t.id) + '">' + renderChannelOptions('email') + '</select>' + '<input type="date" class="waiting-followup-input" data-waiting-followup-task="' + escapeHtml(t.id) + '" value="' + escapeHtml(defaultNextFollowUpDate()) + '" />' + '<input type="text" class="waiting-note-input" data-waiting-note-task="' + escapeHtml(t.id) + '" placeholder="Note" />' + '<button type="button" class="task-action-btn" data-mark-waiting-task="' + escapeHtml(t.id) + '">Mark waiting</button>';
@@ -5098,6 +5209,17 @@
       container.appendChild(doneHeading);
 
       doneTasks.forEach(function (t) {
+        container.appendChild(buildTaskRow(t));
+      });
+    }
+
+    if (archivedTasks.length > 0) {
+      var archivedHeading = document.createElement('div');
+      archivedHeading.className = 'task-section-heading';
+      archivedHeading.textContent = 'Archived (' + archivedTasks.length + ')';
+      container.appendChild(archivedHeading);
+
+      archivedTasks.forEach(function (t) {
         container.appendChild(buildTaskRow(t));
       });
     }

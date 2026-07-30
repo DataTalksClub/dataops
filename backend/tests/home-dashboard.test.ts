@@ -278,6 +278,39 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes('Missing evidence'), 'should surface missing evidence context');
     });
 
+    it('app.js derives scheduled state only for pre-creation template todo tasks (#106)', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('function taskIsScheduled(task, bundle)'), 'should centralize scheduled semantics');
+      assert.ok(result.body.includes('function validDatePart(value, allowTimestamp)'), 'should validate task and bundle dates');
+      assert.ok(result.body.includes("date.toISOString().slice(0, 10) === match[1]"), 'should reject impossible calendar dates');
+      assert.ok(result.body.includes("task.source !== 'template'"), 'should leave non-template work on legacy semantics');
+      assert.ok(result.body.includes("task.status !== 'todo'"), 'should leave waiting/non-todo work active');
+      assert.ok(result.body.includes('taskDate < createdDate'), 'should schedule only offsets before bundle creation');
+      assert.ok(result.body.includes("return ['Scheduled']"), 'should expose scheduled state to queue labels');
+      assert.ok(result.body.includes("if (labels.indexOf('Scheduled') !== -1) return 'Scheduled'"), 'should group scheduled tasks consistently');
+    });
+
+    it('app.js treats done and archived tasks as terminal across queue and risk helpers (#106)', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('function taskIsActive(task)'), 'should centralize the terminal-state invariant');
+      assert.ok(result.body.includes("task.status !== 'done' && task.status !== 'archived'"), 'should exclude both terminal statuses');
+      assert.ok(result.body.includes('if (!taskIsActive(task)) return []'), 'should suppress terminal dashboard labels');
+      assert.ok(result.body.includes('var active = (tasks || []).filter(taskIsActive)'), 'should exclude terminal work from shared risk');
+    });
+
+    it('app.js enriches bundle-list cards with the shared risk summary (#106)', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('data-testid="bundle-card-summary"'), 'should render a stable rich-card summary');
+      assert.ok(result.body.includes('>Stage '), 'should show stage');
+      assert.ok(result.body.includes('>Next due '), 'should show next due');
+      assert.ok(result.body.includes('>Overdue '), 'should show an explicit overdue count');
+      assert.ok(result.body.includes('>Waiting '), 'should show an explicit waiting count');
+      assert.ok(result.body.includes('var risk = bundleRiskSummary(b, tasks, {})'), 'should reuse shared risk logic');
+    });
+
     it('app.js groups daily queue tasks and labels generated work sources', async () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
@@ -290,6 +323,7 @@ describe('Home dashboard (issue #26)', () => {
       assert.ok(result.body.includes("{ group: 'Follow-ups due', empty: 'No follow-ups due' }"), 'should include a Follow-ups due section with empty state');
       assert.ok(result.body.includes("{ group: 'At-risk workflows', empty: 'No at-risk workflows' }"), 'should include an At-risk workflows section');
       assert.ok(result.body.includes('dashboard-queue-empty'), 'should render empty-state rows for empty core sections');
+      assert.ok(result.body.includes("['Waiting', 'Scheduled', 'Other']"), 'should render scheduled work after core queues');
       assert.ok(result.body.includes('badge-recurring'), 'should label recurring tasks');
       assert.ok(result.body.includes('badge-template-source'), 'should label template-generated tasks');
     });

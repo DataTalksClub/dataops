@@ -3,6 +3,12 @@ const { test, expect } = require('@playwright/test');
 // Helper: UUID v4 pattern
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function utcDateString(offsetDays = 0) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * Helper: create a template via API and return the template object.
  */
@@ -410,6 +416,50 @@ test.describe('Template instantiation - milestone stage transition', () => {
 });
 
 test.describe('Template instantiation - date calculation', () => {
+
+  test('a today anchor preserves pre-creation offsets for derived scheduled classification (#106)', async ({ request }) => {
+    const today = utcDateString();
+    let template;
+    let bundle;
+    let tasks = [];
+
+    try {
+      template = await createTemplate(request, {
+        name: 'E2E Scheduled Date Calc ' + Date.now(),
+        type: 'test',
+        taskDefinitions: [
+          { refId: 'before', description: 'Before workflow creation', offsetDays: -2 },
+          { refId: 'anchor', description: 'Anchor day', offsetDays: 0 },
+          { refId: 'after', description: 'After anchor', offsetDays: 2 },
+        ],
+      });
+
+      ({ bundle, tasks } = await createBundleFromTemplate(request, {
+        title: 'E2E Scheduled Date Bundle ' + Date.now(),
+        anchorDate: today,
+        templateId: template.id,
+      }));
+
+      const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));
+      expect(bundle.createdAt.slice(0, 10)).toBe(today);
+      expect(byRef.get('before').date).toBe(utcDateString(-2));
+      expect(byRef.get('before').date < bundle.createdAt.slice(0, 10)).toBe(true);
+      expect(byRef.get('anchor').date).toBe(today);
+      expect(byRef.get('after').date).toBe(utcDateString(2));
+      for (const task of tasks) {
+        expect(task.source).toBe('template');
+        expect(task.status).toBe('todo');
+        expect(task.createdAt).toBe(task.updatedAt);
+      }
+    } finally {
+      for (const task of tasks) await request.delete('/api/tasks/' + task.id);
+      if (bundle) {
+        await request.put('/api/bundles/' + bundle.id + '/archive');
+        await request.delete('/api/bundles/' + bundle.id);
+      }
+      if (template) await request.delete('/api/templates/' + template.id);
+    }
+  });
 
   test('task dates are correctly calculated from anchor date and offset days', async ({ request }) => {
     // Given: A template has tasks with offsetDays -14, -7, 0, +3, +7

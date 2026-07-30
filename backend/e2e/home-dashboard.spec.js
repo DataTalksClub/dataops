@@ -23,6 +23,7 @@ const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const VALERIIA_ID = '00000000-0000-0000-0000-000000000002';
 const ISSUE_67_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-67');
 const ISSUE_69_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-69');
+const ISSUE_106_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-106');
 
 async function screenshotIssue67(page, name) {
   fs.mkdirSync(ISSUE_67_SCREENSHOT_DIR, { recursive: true });
@@ -32,6 +33,11 @@ async function screenshotIssue67(page, name) {
 async function screenshotIssue69(page, name) {
   fs.mkdirSync(ISSUE_69_SCREENSHOT_DIR, { recursive: true });
   await page.screenshot({ path: path.join(ISSUE_69_SCREENSHOT_DIR, name + '.png'), fullPage: true });
+}
+
+async function screenshotIssue106(page, name) {
+  fs.mkdirSync(ISSUE_106_SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(ISSUE_106_SCREENSHOT_DIR, name + '.png'), fullPage: true });
 }
 
 async function cleanupTask(request, task) {
@@ -1304,6 +1310,275 @@ test.describe('Home dashboard (issue #26)', () => {
         expect(section).not.toBe('At-risk workflows');
       } finally {
         await cleanupTask(request, task);
+      }
+    });
+
+    test('A today-anchored template starts scheduled, while worked and non-template late tasks stay overdue (#106)', async ({ page, request }) => {
+      const today = todayString();
+      const suffix = Date.now().toString(36);
+      let templateId;
+      let bundleId;
+      let generatedTasks = [];
+      let adHocTask;
+      let recurringTask;
+      let orphanTemplateTask;
+
+      try {
+        const templateRes = await request.post('/api/templates', {
+          data: {
+            name: 'Scheduled semantics ' + suffix,
+            type: 'test',
+            taskDefinitions: [
+              {
+                refId: 'retroactive',
+                description: 'Retroactive template preparation ' + suffix,
+                offsetDays: -2,
+                proofRequirement: { type: 'comment', label: 'Preparation confirmed', required: true },
+                validation: {
+                  dashboardStates: ['today', 'overdue', 'missing-evidence', 'at-risk'],
+                  atRiskWhen: ['missing-evidence'],
+                },
+              },
+              { refId: 'today', description: 'Current template task ' + suffix, offsetDays: 0 },
+              { refId: 'future', description: 'Future template task ' + suffix, offsetDays: 2 },
+            ],
+          },
+        });
+        expect(templateRes.status()).toBe(201);
+        templateId = (await templateRes.json()).template.id;
+
+        const bundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Healthy new workflow ' + suffix,
+            anchorDate: today,
+            templateId,
+          },
+        });
+        expect(bundleRes.status()).toBe(201);
+        const bundleBody = await bundleRes.json();
+        bundleId = bundleBody.bundle.id;
+        generatedTasks = bundleBody.tasks;
+        const retroactive = generatedTasks.find((task) => task.templateTaskRef === 'retroactive');
+        const current = generatedTasks.find((task) => task.templateTaskRef === 'today');
+
+        const adHocRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Genuinely late ad-hoc task ' + suffix,
+            date: offsetDateString(-1),
+            source: 'manual',
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        expect(adHocRes.status()).toBe(201);
+        adHocTask = await adHocRes.json();
+
+        const recurringRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Genuinely late recurring task ' + suffix,
+            date: offsetDateString(-1),
+            source: 'recurring',
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        expect(recurringRes.status()).toBe(201);
+        recurringTask = await recurringRes.json();
+
+        const orphanTemplateRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Template task without bundle creation metadata ' + suffix,
+            date: offsetDateString(-1),
+            source: 'template',
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        expect(orphanTemplateRes.status()).toBe(201);
+        orphanTemplateTask = await orphanTemplateRes.json();
+
+        await page.setViewportSize({ width: 1440, height: 1100 });
+        await page.goto('/#/');
+        await waitForDashboardTaskRow(page, retroactive.id);
+
+        const scheduledRow = taskRow(page, retroactive.id);
+        await expect(scheduledRow).toContainText('Scheduled');
+        await expect(scheduledRow).not.toContainText('Overdue');
+        await expect(scheduledRow).not.toContainText('Missing evidence');
+        await expect(scheduledRow).not.toContainText('At risk');
+        expect(await queueSectionForRow(page, retroactive.id)).toBe('Scheduled');
+
+        const currentRow = taskRow(page, current.id);
+        await expect(currentRow).toContainText('Today');
+        expect(await queueSectionForRow(page, current.id)).toBe('Today');
+
+        await waitForDashboardTaskRow(page, adHocTask.id);
+        expect(await queueSectionForRow(page, adHocTask.id)).toBe('Overdue');
+        await waitForDashboardTaskRow(page, recurringTask.id);
+        expect(await queueSectionForRow(page, recurringTask.id)).toBe('Overdue');
+        await waitForDashboardTaskRow(page, orphanTemplateTask.id);
+        expect(await queueSectionForRow(page, orphanTemplateTask.id)).toBe('Overdue');
+
+        const bundleCard = page.locator('.dashboard-bundle-card', { hasText: 'Healthy new workflow ' + suffix });
+        await expect(bundleCard).toBeVisible();
+        await expect(bundleCard).toContainText('Scheduled 1');
+        await expect(bundleCard).toContainText('Next today');
+        await expect(bundleCard).not.toContainText('Overdue');
+        await expect(bundleCard).not.toContainText('Missing evidence');
+        await screenshotIssue106(page, 'dashboard-fresh-workflow-1440');
+
+        // A non-todo task is active work even if its nominal template date was
+        // before bundle creation, so genuine late work is not blanket-hidden.
+        const activateRes = await request.put('/api/tasks/' + retroactive.id, {
+          data: {
+            status: 'waiting',
+            waitingFor: 'Operator follow-up',
+            followUpAt: today,
+            comment: 'Workflow has started',
+          },
+        });
+        expect(activateRes.status()).toBe(200);
+        await waitForDashboardTaskRow(page, retroactive.id);
+        await expect(taskRow(page, retroactive.id)).toContainText('Overdue');
+        expect(await queueSectionForRow(page, retroactive.id)).toBe('Overdue');
+      } finally {
+        if (orphanTemplateTask) await cleanupTask(request, orphanTemplateTask);
+        if (recurringTask) await cleanupTask(request, recurringTask);
+        if (adHocTask) await cleanupTask(request, adHocTask);
+        for (const task of generatedTasks) await cleanupTask(request, task);
+        await cleanupBundle(request, bundleId);
+        if (templateId) await request.delete('/api/templates/' + templateId);
+      }
+    });
+
+    test('Invalid task or bundle dates fall back to active overdue semantics instead of Scheduled (#106)', async ({ page, request }) => {
+      const suffix = Date.now().toString(36);
+      let invalidTaskDateBundleId;
+      let invalidCreatedDateBundleId;
+      let invalidTaskDateTask;
+      let invalidCreatedDateTask;
+
+      try {
+        const invalidTaskBundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Invalid task date fallback ' + suffix,
+            anchorDate: todayString(),
+          },
+        });
+        expect(invalidTaskBundleRes.status()).toBe(201);
+        invalidTaskDateBundleId = (await invalidTaskBundleRes.json()).bundle.id;
+
+        const invalidTaskRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Impossible template date ' + suffix,
+            date: '2026-02-30',
+            bundleId: invalidTaskDateBundleId,
+            source: 'template',
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        expect(invalidTaskRes.status()).toBe(201);
+        invalidTaskDateTask = await invalidTaskRes.json();
+
+        const invalidCreatedBundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Invalid created date fallback ' + suffix,
+            anchorDate: todayString(),
+          },
+        });
+        expect(invalidCreatedBundleRes.status()).toBe(201);
+        invalidCreatedDateBundleId = (await invalidCreatedBundleRes.json()).bundle.id;
+
+        const invalidCreatedTaskRes = await request.post('/api/tasks', {
+          data: {
+            description: 'Template task with invalid bundle metadata ' + suffix,
+            date: offsetDateString(-2),
+            bundleId: invalidCreatedDateBundleId,
+            source: 'template',
+            validation: { dashboardStates: ['overdue'] },
+          },
+        });
+        expect(invalidCreatedTaskRes.status()).toBe(201);
+        invalidCreatedDateTask = await invalidCreatedTaskRes.json();
+
+        await page.route(
+          (url) => url.pathname === '/api/bundles/' + invalidCreatedDateBundleId,
+          async (route) => {
+            const response = await route.fetch();
+            const body = await response.json();
+            body.bundle.createdAt = 'not-a-calendar-date';
+            await route.fulfill({ response, body: JSON.stringify(body) });
+          }
+        );
+
+        await page.goto('/#/');
+        await waitForDashboardTaskRow(page, invalidTaskDateTask.id);
+        await waitForDashboardTaskRow(page, invalidCreatedDateTask.id);
+
+        for (const task of [invalidTaskDateTask, invalidCreatedDateTask]) {
+          const row = taskRow(page, task.id);
+          await expect(row).toContainText('Overdue');
+          await expect(row).not.toContainText('Scheduled');
+          expect(await queueSectionForRow(page, task.id)).toBe('Overdue');
+        }
+      } finally {
+        await page.unrouteAll({ behavior: 'wait' });
+        await cleanupTask(request, invalidCreatedDateTask);
+        await cleanupTask(request, invalidTaskDateTask);
+        await cleanupBundle(request, invalidCreatedDateBundleId);
+        await cleanupBundle(request, invalidTaskDateBundleId);
+      }
+    });
+
+    test('Seeded Newsletter anchored today is healthy instead of all-red at t=0 (#106)', async ({ page, request }) => {
+      const today = todayString();
+      const suffix = Date.now().toString(36);
+      let bundleId;
+      let tasks = [];
+
+      try {
+        const templatesRes = await request.get('/api/templates');
+        expect(templatesRes.status()).toBe(200);
+        const templates = (await templatesRes.json()).templates;
+        const newsletter = templates.find((template) => template.name === 'Newsletter');
+        expect(newsletter).toBeTruthy();
+
+        const bundleRes = await request.post('/api/bundles', {
+          data: {
+            title: 'Newsletter t0 ' + suffix,
+            anchorDate: today,
+            templateId: newsletter.id,
+          },
+        });
+        expect(bundleRes.status()).toBe(201);
+        const body = await bundleRes.json();
+        bundleId = body.bundle.id;
+        tasks = body.tasks;
+
+        const preCreationTasks = tasks.filter((task) => task.date < body.bundle.createdAt.slice(0, 10));
+        expect(preCreationTasks).toHaveLength(9);
+
+        await page.setViewportSize({ width: 1440, height: 1100 });
+        await page.goto('/#/');
+        await waitForDashboardTaskRow(page, preCreationTasks[0].id);
+        await page.uncheck('#assigned-to-me');
+        await waitForDashboardTasksLoaded(page);
+
+        for (const task of preCreationTasks) {
+          await expect(taskRow(page, task.id)).toContainText('Scheduled');
+          await expect(taskRow(page, task.id)).not.toContainText('Overdue');
+          await expect(taskRow(page, task.id)).not.toContainText('Missing evidence');
+          expect(await queueSectionForRow(page, task.id)).toBe('Scheduled');
+        }
+
+        const card = page.locator('.dashboard-bundle-card', { hasText: 'Newsletter t0 ' + suffix });
+        await expect(card).toBeVisible();
+        await expect(card).toContainText('Scheduled 9');
+        await expect(card).toContainText('Next today');
+        await expect(card).not.toContainText('Overdue');
+        await expect(card).toContainText('Missing evidence 1');
+        await expect(card).not.toContainText('Missing evidence 15');
+        await screenshotIssue106(page, 'dashboard-newsletter-t0-1440');
+      } finally {
+        for (const task of tasks) await cleanupTask(request, task);
+        await cleanupBundle(request, bundleId);
       }
     });
 

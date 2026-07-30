@@ -135,6 +135,18 @@ describe('Bundle detail view (issue #27)', () => {
       assert.ok(result.body.includes('progress-badge'), 'should have progress-badge testid');
     });
 
+    it('app.js uses the shared risk summary in the detail header (#106)', async () => {
+      const event = { httpMethod: 'GET', path: '/public/app.js' };
+      const result = await handler(event, {});
+      assert.ok(result.body.includes('var risk = bundleRiskSummary(bundle, tasks, filesByTask)'), 'detail should reuse shared risk logic');
+      assert.ok(result.body.includes('var active = tasks.filter(taskIsActive)'), 'detail evidence counts should exclude archived work');
+      assert.ok(result.body.includes('<span>Scheduled</span>'), 'detail should show scheduled count');
+      assert.ok(result.body.includes('risk.overdue'), 'detail should use shared overdue count');
+      assert.ok(result.body.includes('risk.waiting'), 'detail should use shared waiting count');
+      assert.ok(result.body.includes('risk.nextTasks'), 'detail should use shared next-due selection');
+      assert.ok(result.body.includes("isArchived ? ['Archived']"), 'archived task rows should show only their terminal state');
+    });
+
     it('app.js renders task checkboxes with disabled state for required links', async () => {
       const event = { httpMethod: 'GET', path: '/public/app.js' };
       const result = await handler(event, {});
@@ -190,6 +202,9 @@ describe('Bundle detail view (issue #27)', () => {
       assert.ok(result.body.includes('data-task-completion-evidence'), 'done evidence should have a stable selector');
       assert.ok(result.body.includes('isBundleLinkMissing'), 'bundle missing-link checks should be skip-aware');
       assert.ok(result.body.includes('emptyBundleLinkCoveredBySkip'), 'empty bundle links should be suppressible by completed skip evidence');
+      assert.ok(result.body.includes("task.status !== 'archived'"), 'archived-only requirements should not create shared-link risk');
+      assert.ok(result.body.includes('if (relevantTasks.some(taskIsActive)) return false'), 'active shared-link requirements should remain missing');
+      assert.ok(result.body.includes("task.status === 'done' && taskSkipClosureSuppresses"), 'completed requirements should retain explicit skip semantics');
     });
   });
 

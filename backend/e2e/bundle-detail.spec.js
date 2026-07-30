@@ -1,4 +1,23 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
+
+const ISSUE_106_SCREENSHOT_DIR = path.join(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-106');
+
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function offsetDateString(days) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function screenshotIssue106(page, name) {
+  fs.mkdirSync(ISSUE_106_SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(ISSUE_106_SCREENSHOT_DIR, name + '.png'), fullPage: true });
+}
 
 // Helper to archive and delete a bundle
 async function archiveAndDelete(request, bundleId) {
@@ -25,6 +44,234 @@ async function expandRow(row) {
 }
 
 test.describe('Bundle detail view (issue #27)', () => {
+
+  test('fresh template bundle list and detail share scheduled risk semantics and rich summary (#106)', async ({ page, request }) => {
+    const today = todayString();
+    const suffix = uid();
+    let templateId;
+    let bundleId;
+    let tasks = [];
+
+    try {
+      const templateRes = await request.post('/api/templates', {
+        data: {
+          name: 'Bundle summary schedule ' + suffix,
+          type: 'test',
+          taskDefinitions: [
+            {
+              refId: 'retroactive',
+              description: 'Prepare before workflow existed ' + suffix,
+              offsetDays: -3,
+              proofRequirement: { type: 'comment', label: 'Preparation confirmed', required: true },
+              validation: {
+                dashboardStates: ['overdue', 'missing-evidence', 'at-risk'],
+                atRiskWhen: ['missing-evidence'],
+              },
+            },
+            { refId: 'current', description: 'Start workflow today ' + suffix, offsetDays: 0 },
+            { refId: 'future', description: 'Publish later ' + suffix, offsetDays: 4 },
+          ],
+        },
+      });
+      expect(templateRes.status()).toBe(201);
+      templateId = (await templateRes.json()).template.id;
+
+      const bundleRes = await request.post('/api/bundles', {
+        data: {
+          title: 'Scheduled summary ' + suffix,
+          anchorDate: today,
+          templateId,
+        },
+      });
+      expect(bundleRes.status()).toBe(201);
+      const body = await bundleRes.json();
+      bundleId = body.bundle.id;
+      tasks = body.tasks;
+
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await page.goto('/#/bundles');
+      const card = page.locator('.bundle-card', { hasText: 'Scheduled summary ' + suffix });
+      await expect(card).toBeVisible({ timeout: 15000 });
+
+      const summary = card.locator('[data-testid="bundle-card-summary"]');
+      await expect(summary).toContainText('Stage preparation');
+      await expect(summary).toContainText('Next due ' + today);
+      await expect(summary).toContainText('Overdue 0');
+      await expect(summary).toContainText('Waiting 0');
+      await expect(card).toContainText('0 / 3 done');
+      await screenshotIssue106(page, 'bundles-list-rich-card-1280');
+
+      await card.locator('.bundle-card-title').click();
+      await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+
+      const context = page.locator('[data-testid="workflow-context"]');
+      const metric = (label) => context.locator('.workflow-context-metric').filter({ has: page.getByText(label, { exact: true }) });
+      await expect(metric('Next due').locator('strong')).toContainText(today);
+      await expect(metric('Overdue').locator('strong')).toHaveText('0');
+      await expect(metric('Waiting').locator('strong')).toHaveText('0');
+      await expect(metric('Scheduled').locator('strong')).toHaveText('1');
+
+      const retroactive = tasks.find((task) => task.templateTaskRef === 'retroactive');
+      const retroactiveRow = page.locator('[data-task-row="' + retroactive.id + '"]');
+      await expect(retroactiveRow).toContainText('Scheduled');
+      await expect(retroactiveRow).not.toContainText('Overdue');
+      await expect(retroactiveRow).not.toContainText('Missing evidence');
+      await expect(retroactiveRow).not.toContainText('At risk');
+      await screenshotIssue106(page, 'bundle-detail-healthy-header-1280');
+    } finally {
+      for (const task of tasks) {
+        await request.delete('/api/tasks/' + task.id);
+      }
+      if (bundleId) await archiveAndDelete(request, bundleId);
+      if (templateId) await request.delete('/api/templates/' + templateId);
+    }
+  });
+
+  test('archived history is excluded from list, detail, and dashboard risk while active overdue remains (#106)', async ({ page, request }) => {
+    const suffix = uid();
+    const archivedDate = offsetDateString(-3);
+    const activeDate = offsetDateString(-1);
+    let bundleId;
+    const tasks = [];
+
+    try {
+      const bundleRes = await request.post('/api/bundles', {
+        data: {
+          title: 'Terminal task risk ' + suffix,
+          anchorDate: todayString(),
+          bundleLinks: [{ name: 'Campaign', url: '' }],
+        },
+      });
+      expect(bundleRes.status()).toBe(201);
+      bundleId = (await bundleRes.json()).bundle.id;
+
+      const riskValidation = {
+        dashboardStates: ['overdue', 'missing-evidence', 'at-risk', 'waiting'],
+        atRiskWhen: ['missing-evidence'],
+      };
+      const archivedRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Archived historical task ' + suffix,
+          date: archivedDate,
+          bundleId,
+          source: 'template',
+          status: 'archived',
+          requiresFile: true,
+          validation: { ...riskValidation, requiredBundleLinks: ['Campaign'] },
+        },
+      });
+      expect(archivedRes.status()).toBe(201);
+      const archivedTask = await archivedRes.json();
+      tasks.push(archivedTask);
+
+      const activeRes = await request.post('/api/tasks', {
+        data: {
+          description: 'Genuine active overdue task ' + suffix,
+          date: activeDate,
+          bundleId,
+          source: 'manual',
+          requiresFile: true,
+          validation: riskValidation,
+        },
+      });
+      expect(activeRes.status()).toBe(201);
+      const activeTask = await activeRes.json();
+      tasks.push(activeTask);
+
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await page.goto('/#/bundles');
+      const card = page.locator('.bundle-card', { hasText: 'Terminal task risk ' + suffix });
+      await expect(card).toBeVisible({ timeout: 15000 });
+      const summary = card.locator('[data-testid="bundle-card-summary"]');
+      await expect(summary).toContainText('Next due ' + activeDate);
+      await expect(summary).not.toContainText(archivedDate);
+      await expect(summary).toContainText('Overdue 1');
+      await expect(summary).toContainText('Waiting 0');
+      await screenshotIssue106(page, 'bundles-list-archived-excluded-1280');
+
+      await card.locator('.bundle-card-title').click();
+      await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+      const context = page.locator('[data-testid="workflow-context"]');
+      const metric = (label) => context.locator('.workflow-context-metric').filter({ has: page.getByText(label, { exact: true }) });
+      await expect(metric('Next due').locator('strong')).toContainText(activeDate + ' · Genuine active overdue task ' + suffix);
+      await expect(metric('Next due').locator('strong')).not.toContainText('Archived historical task');
+      await expect(metric('Overdue').locator('strong')).toHaveText('1');
+      await expect(metric('Waiting').locator('strong')).toHaveText('0');
+      await expect(metric('Scheduled').locator('strong')).toHaveText('0');
+      await expect(metric('Missing links').locator('strong')).toHaveText('0');
+      await expect(metric('Missing files').locator('strong')).toHaveText('1');
+      const campaignRow = page.locator('.bundle-link-row', { hasText: 'Campaign' });
+      await expect(campaignRow).not.toHaveClass(/bundle-link-row--empty/);
+
+      const archivedRow = page.locator('[data-task-row="' + archivedTask.id + '"]');
+      await expect(archivedRow).toContainText('Archived');
+      await expect(archivedRow).not.toContainText('Overdue');
+      await expect(archivedRow).not.toContainText('Missing evidence');
+      await expect(archivedRow).not.toContainText('Missing file');
+      await expect(archivedRow).not.toContainText('At risk');
+      await expect(archivedRow).not.toContainText('Scheduled');
+      await expect(archivedRow).not.toContainText('Waiting');
+      await expect(archivedRow.locator('[data-task-checkbox]')).toBeDisabled();
+
+      const activeRow = page.locator('[data-task-row="' + activeTask.id + '"]');
+      await expect(activeRow).toContainText('Overdue');
+      await expect(activeRow).toContainText('Missing evidence');
+      await expect(activeRow).toContainText('At risk');
+      await screenshotIssue106(page, 'bundle-detail-archived-excluded-1280');
+
+      // Add an active-only empty requirement. It remains live risk while the
+      // archived-only Campaign slot stays covered.
+      const addActiveLinkRes = await request.put('/api/bundles/' + bundleId, {
+        data: {
+          bundleLinks: [
+            { name: 'Campaign', url: '' },
+            { name: 'Active control', url: '' },
+          ],
+        },
+      });
+      expect(addActiveLinkRes.status()).toBe(200);
+      const addActiveRequirementRes = await request.put('/api/tasks/' + activeTask.id, {
+        data: {
+          validation: { ...riskValidation, requiredBundleLinks: ['Active control'] },
+        },
+      });
+      expect(addActiveRequirementRes.status()).toBe(200);
+      await page.reload();
+      await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+      await expect(metric('Missing links').locator('strong')).toHaveText('1');
+      await expect(page.locator('.bundle-link-row', { hasText: 'Campaign' })).not.toHaveClass(/bundle-link-row--empty/);
+      await expect(page.locator('.bundle-link-row', { hasText: 'Active control' })).toHaveClass(/bundle-link-row--empty/);
+
+      // A mixed active+archived requirement is still operationally missing.
+      const addMixedRequirementRes = await request.put('/api/tasks/' + activeTask.id, {
+        data: {
+          validation: { ...riskValidation, requiredBundleLinks: ['Campaign', 'Active control'] },
+        },
+      });
+      expect(addMixedRequirementRes.status()).toBe(200);
+      await page.reload();
+      await page.waitForSelector('[data-testid="workflow-context"]', { timeout: 15000 });
+      await expect(metric('Missing links').locator('strong')).toHaveText('2');
+      await expect(page.locator('.bundle-link-row', { hasText: 'Campaign' })).toHaveClass(/bundle-link-row--empty/);
+      await expect(page.locator('.bundle-link-row', { hasText: 'Active control' })).toHaveClass(/bundle-link-row--empty/);
+      await screenshotIssue106(page, 'bundle-detail-shared-link-terminal-control-1280');
+
+      await page.goto('/#/');
+      await page.waitForSelector('#dashboard-tasks[data-loaded="true"]', { timeout: 15000 });
+      await expect(page.locator('[data-task-row="' + archivedTask.id + '"]')).toHaveCount(0);
+      const dashboardActive = page.locator('[data-task-row="' + activeTask.id + '"]');
+      await expect(dashboardActive).toBeVisible();
+      await expect(dashboardActive).toContainText('Overdue');
+      await expect(dashboardActive).toContainText('Missing evidence');
+      await expect(dashboardActive).toContainText('At risk');
+      await screenshotIssue106(page, 'dashboard-archived-excluded-1280');
+    } finally {
+      for (const task of tasks) {
+        await request.delete('/api/tasks/' + task.id);
+      }
+      if (bundleId) await archiveAndDelete(request, bundleId);
+    }
+  });
 
   // ── Scenario: Grace views a bundle with references and bundle links ──
   test.describe('Scenario: Grace views a bundle with references and bundle links', () => {
