@@ -414,7 +414,31 @@ describe('private conversational Telegram adapter', () => {
         () => NOW
       ),
     ]);
-    assert.deepStrictEqual(concurrent.map((result) => result?.statusCode).sort(), [201, 409]);
+    const concurrentStatuses = concurrent.map((result) => result?.statusCode).sort();
+    assert.ok(
+      (
+        concurrentStatuses[0] === 200
+        && concurrentStatuses[1] === 201
+      ) || (
+        concurrentStatuses[0] === 201
+        && concurrentStatuses[1] === 409
+      ),
+      `expected one create and one duplicate/conflict, received ${concurrentStatuses.join(',')}`
+    );
+    const createdResponse = concurrent.find((result) => result?.statusCode === 201);
+    assert.ok(createdResponse);
+    const createdBody = JSON.parse(createdResponse.body) as {
+      binding: Record<string, unknown>;
+    };
+    const duplicateResponse = concurrent.find((result) => result?.statusCode === 200);
+    if (duplicateResponse) {
+      const duplicateBody = JSON.parse(duplicateResponse.body) as {
+        binding: Record<string, unknown>;
+        duplicate?: boolean;
+      };
+      assert.strictEqual(duplicateBody.duplicate, true);
+      assert.deepStrictEqual(duplicateBody.binding, createdBody.binding);
+    }
     const audits = await client.send(new QueryCommand({
       TableName: TABLE_CONVERSATIONAL_STATE,
       KeyConditionExpression: 'PK = :pk',
@@ -608,6 +632,13 @@ describe('private conversational Telegram adapter', () => {
   it('maps core commands and blocks legacy mutation shortcuts', async () => {
     const unsupported = await handleTelegramWebhook(webhook(messageUpdate(120, { text: '/social post now' })), dependencies());
     assert.strictEqual(JSON.parse(unsupported.body).route, 'unsupported');
+    assert.strictEqual(core.calls.length, 0);
+    const todo = await handleTelegramWebhook(
+      webhook(messageUpdate(119, { text: '/todo buy milk tomorrow' })),
+      dependencies()
+    );
+    assert.strictEqual(JSON.parse(todo.body).route, 'todo-guidance');
+    assert.match(telegram.sent.at(-1)!.text, /ordinary private message/i);
     assert.strictEqual(core.calls.length, 0);
     await handleTelegramWebhook(webhook(messageUpdate(121, { text: 'yes' })), dependencies());
     assert.strictEqual(core.calls.at(-1)?.kind, 'message');
@@ -1021,6 +1052,38 @@ describe('private conversational Telegram adapter', () => {
       (portable.content as Record<string, unknown>).redactedFields,
       ['caption', 'text']
     );
+    const resultNotificationSpec = CONVERSATIONAL_ENTITY_SPECS.find(
+      (spec) => spec.recordType === 'result_notification'
+    )!;
+    const portableNotification = resultNotificationSpec.map({
+      PK: 'RESULT_NOTIFICATION#test',
+      SK: 'META',
+      GSI2PK: 'RESULT_NOTIFICATION_STATE#pending',
+      GSI2SK: `READY#${NOW.toISOString()}#test`,
+      id: 'test',
+      recordType: 'result_notification',
+      schemaVersion: 1,
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      conversationId: conversation.id,
+      executionAttemptId: 'attempt-test',
+      actorId: 'operator-telegram',
+      channel: 'telegram',
+      channelConversationKey: '7001',
+      identityChannelUserId: '7001',
+      identityBindingId: 'identity-test',
+      identityBindingRevision: 1,
+      channelBindingId: 'channel-test',
+      privatePayloadRef: 'execution-result-attempt-test',
+      status: 'pending',
+      readyAt: NOW.toISOString(),
+      leaseExpiresAt: new Date(NOW.getTime() + 60_000).toISOString(),
+      revision: 1,
+    });
+    assert.equal(portableNotification.status, 'outcome_unknown');
+    assert.equal('channelConversationKey' in portableNotification, false);
+    assert.equal('identityChannelUserId' in portableNotification, false);
+    assert.equal('leaseExpiresAt' in portableNotification, false);
   });
 
   it('bounds hanging and oversized Telegram/provider responses and has no production fake core', async () => {

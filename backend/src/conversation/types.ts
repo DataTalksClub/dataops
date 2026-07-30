@@ -22,6 +22,7 @@ type RecordType =
   | 'proposal_presentation'
   | 'execution_attempt'
   | 'conversation_audit_event'
+  | 'result_notification'
   | 'conversational_private_payload'
   | 'skill_load_receipt'
   | 'context_receipt';
@@ -132,6 +133,7 @@ interface ProposalSpec {
   baseRevision?: string;
   sourceRefs: Array<{ ref: string; revision?: string; classification: string }>;
   permissionRef: string;
+  permissionRevision?: number;
   expiresAt: string;
 }
 
@@ -185,11 +187,13 @@ interface ExecutionAttempt extends RecordBase {
   correlationRef?: string;
   actorId?: string;
   identityBindingId?: string;
+  identityBindingRevision?: number;
   identityChannel?: string;
   identityChannelUserId?: string;
   channelBindingId?: string;
   channelConversationKey?: string;
   permissionRef?: string;
+  permissionRevision?: number;
   canonicalPayloadHash?: string;
   renderedViewHash?: string;
   executorBuildDigest?: string;
@@ -230,6 +234,25 @@ interface ConversationalPrivatePayload extends RecordBase {
   content: JsonValue;
 }
 
+interface ResultNotification extends RecordBase {
+  recordType: 'result_notification';
+  conversationId: string;
+  executionAttemptId: string;
+  actorId: string;
+  channel: string;
+  channelConversationKey?: string;
+  identityChannelUserId?: string;
+  identityBindingId?: string;
+  identityBindingRevision?: number;
+  channelBindingId?: string;
+  privatePayloadRef: string;
+  status: 'pending' | 'dispatching' | 'delivered' | 'outcome_unknown';
+  readyAt: string;
+  leaseExpiresAt?: string;
+  deliveredAt?: string;
+  revision: number;
+}
+
 interface SkillLoadReceipt extends RecordBase {
   recordType: 'skill_load_receipt';
   conversationId: string;
@@ -265,6 +288,7 @@ type ConversationalRecord =
   | ProposalPresentation
   | ExecutionAttempt
   | ConversationAuditEvent
+  | ResultNotification
   | ConversationalPrivatePayload
   | SkillLoadReceipt
   | StoredContextReceipt;
@@ -363,6 +387,7 @@ function validateConversationalRecord(
     'proposal_presentation',
     'execution_attempt',
     'conversation_audit_event',
+    'result_notification',
     'conversational_private_payload',
     'skill_load_receipt',
     'context_receipt',
@@ -497,11 +522,17 @@ function validateConversationalRecord(
       if (record.correlationRef) assertString(record.correlationRef, 'execution_attempt.correlationRef', 1_000);
       if (record.actorId) assertString(record.actorId, 'execution_attempt.actorId');
       if (record.identityBindingId) assertString(record.identityBindingId, 'execution_attempt.identityBindingId');
+      if (record.identityBindingRevision !== undefined) {
+        assertInteger(record.identityBindingRevision, 'execution_attempt.identityBindingRevision', 1);
+      }
       if (record.identityChannel) assertString(record.identityChannel, 'execution_attempt.identityChannel');
       if (record.identityChannelUserId) assertString(record.identityChannelUserId, 'execution_attempt.identityChannelUserId');
       if (record.channelBindingId) assertString(record.channelBindingId, 'execution_attempt.channelBindingId');
       if (record.channelConversationKey) assertString(record.channelConversationKey, 'execution_attempt.channelConversationKey', 500);
       if (record.permissionRef) assertString(record.permissionRef, 'execution_attempt.permissionRef');
+      if (record.permissionRevision !== undefined) {
+        assertInteger(record.permissionRevision, 'execution_attempt.permissionRevision', 1);
+      }
       if (record.canonicalPayloadHash) assertHash(record.canonicalPayloadHash, 'execution_attempt.canonicalPayloadHash');
       if (record.renderedViewHash) assertHash(record.renderedViewHash, 'execution_attempt.renderedViewHash');
       if (record.executorBuildDigest) assertHash(record.executorBuildDigest, 'execution_attempt.executorBuildDigest');
@@ -531,6 +562,32 @@ function validateConversationalRecord(
       for (const forbidden of ['message', 'payload', 'body', 'url', 'actionTokenHash', 'providerResponse']) {
         if (forbidden in record) throw new Error(`conversation_audit_event.${forbidden} is forbidden`);
       }
+      break;
+    case 'result_notification':
+      assertString(record.conversationId, 'result_notification.conversationId');
+      assertString(record.executionAttemptId, 'result_notification.executionAttemptId');
+      assertString(record.actorId, 'result_notification.actorId');
+      assertString(record.channel, 'result_notification.channel');
+      if (options.portable) {
+        if ('channelConversationKey' in record) {
+          throw new Error('result_notification.channelConversationKey is forbidden in portable records');
+        }
+        if ('identityChannelUserId' in record) {
+          throw new Error('result_notification.identityChannelUserId is forbidden in portable records');
+        }
+      } else {
+        assertString(record.channelConversationKey, 'result_notification.channelConversationKey', 500);
+        assertString(record.identityChannelUserId, 'result_notification.identityChannelUserId', 500);
+      }
+      assertString(record.identityBindingId, 'result_notification.identityBindingId');
+      assertInteger(record.identityBindingRevision, 'result_notification.identityBindingRevision', 1);
+      assertString(record.channelBindingId, 'result_notification.channelBindingId');
+      assertString(record.privatePayloadRef, 'result_notification.privatePayloadRef');
+      assertEnum(record.status, ['pending', 'dispatching', 'delivered', 'outcome_unknown'], 'result_notification.status');
+      assertIsoTimestamp(record.readyAt, 'result_notification.readyAt');
+      if (record.leaseExpiresAt) assertIsoTimestamp(record.leaseExpiresAt, 'result_notification.leaseExpiresAt');
+      if (record.deliveredAt) assertIsoTimestamp(record.deliveredAt, 'result_notification.deliveredAt');
+      assertInteger(record.revision, 'result_notification.revision', 1);
       break;
     case 'conversational_private_payload':
       assertString(record.conversationId, 'conversational_private_payload.conversationId');
@@ -610,6 +667,9 @@ function assertProposalSpec(spec: ProposalSpec): void {
   for (const field of ['pluginBuildDigest', 'schemaDigest', 'policyDigest'] as const) {
     assertHash(spec[field], `proposal_version.spec.${field}`);
   }
+  if (spec.permissionRevision !== undefined) {
+    assertInteger(spec.permissionRevision, 'proposal_version.spec.permissionRevision', 1);
+  }
   assertIsoTimestamp(spec.expiresAt, 'proposal_version.spec.expiresAt');
   if (!Array.isArray(spec.sourceRefs)) throw new Error('proposal_version.spec.sourceRefs must be an array');
   spec.sourceRefs.forEach((source, index) => {
@@ -683,6 +743,7 @@ export type {
   ConversationAuditEvent,
   ConversationEvent,
   ConversationalPrivatePayload,
+  ResultNotification,
   ConversationalRecord,
   ExecutionAttempt,
   IdentityBinding,

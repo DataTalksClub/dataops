@@ -321,6 +321,13 @@ export interface Task {
   requiredLinkName?: string;
   requiresFile?: boolean;
   assigneeId?: string;
+  createdBy?: string;
+  assistantExecutionRef?: {
+    executionAttemptId: string;
+    proposalId: string;
+    proposalVersion: number;
+    canonicalPayloadHash: string;
+  };
   tags?: string[];
   bundleId?: string;
   templateId?: string;

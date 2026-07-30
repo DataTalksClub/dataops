@@ -297,6 +297,8 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     required_link_name: optionalString(item.requiredLinkName),
     requires_file: optionalBoolean(item.requiresFile),
     assignee_id: optionalString(item.assigneeId),
+    created_by: optionalString(item.createdBy),
+    assistant_execution_ref: optionalJsonStringOrObject(item.assistantExecutionRef),
     bundle_id: optionalString(item.bundleId),
     template_id: optionalString(item.templateId),
     template_task_ref: optionalString(item.templateTaskRef),
@@ -857,6 +859,41 @@ function optionalTaskHistoryField(
   }
 }
 
+function optionalAssistantExecutionRef(
+  task: JsonRecord,
+  errors: string[],
+  context: string
+): void {
+  const value = task.assistant_execution_ref;
+  if (value === undefined || value === null) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${context} field assistant_execution_ref must be an object when present`);
+    return;
+  }
+  const reference = value as JsonRecord;
+  validateNoSecretPayload(reference, errors, `${context}.assistant_execution_ref`);
+  const expected = [
+    'canonicalPayloadHash',
+    'executionAttemptId',
+    'proposalId',
+    'proposalVersion',
+  ];
+  if (
+    Object.keys(reference).sort().join(',') !== expected.sort().join(',')
+    || typeof reference.executionAttemptId !== 'string'
+    || reference.executionAttemptId.length === 0
+    || typeof reference.proposalId !== 'string'
+    || reference.proposalId.length === 0
+    || !Number.isSafeInteger(reference.proposalVersion)
+    || Number(reference.proposalVersion) < 1
+    || typeof reference.canonicalPayloadHash !== 'string'
+    || !/^sha256:[a-f0-9]{64}$/.test(reference.canonicalPayloadHash)
+  ) {
+    errors.push(`${context} field assistant_execution_ref is malformed`);
+    return;
+  }
+}
+
 function optionalProofRequirementField(
   record: JsonRecord,
   field: string,
@@ -1212,6 +1249,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalRefArrayField(task, 'audit_event_refs', 'auditEventId', errors, context);
     optionalTaskHistoryField(task, userIds, errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
+    optionalReference(task, 'created_by', userIds, errors, context);
+    optionalAssistantExecutionRef(task, errors, context);
     optionalReference(task, 'completed_by', userIds, errors, context);
     optionalReference(task, 'bundle_id', bundleIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);

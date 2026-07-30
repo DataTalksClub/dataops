@@ -162,7 +162,11 @@ async function preDispatchCheck(
     ),
     getUser(dependencies.client, attempt.actorId),
   ]);
-  if (!actor || actor.disabled === true) return null;
+  if (
+    !actor
+    || actor.disabled === true
+    || !['admin', 'operator'].includes(actor.role || '')
+  ) return null;
   if (
     !identity
     || identity.id !== attempt.identityBindingId
@@ -198,7 +202,10 @@ async function executeLeasedAttempt(
       leased,
       'failed_safe',
       now.toISOString(),
-      { errorCode: 'pre_dispatch_check_failed' }
+      {
+        errorCode: 'pre_dispatch_check_failed',
+        resultNotification: {},
+      }
     );
     if (failed) await auditAttempt(dependencies.client, failed, 'execution_failed_safe', 'pre_dispatch_check_failed', now.toISOString());
     return failed;
@@ -230,7 +237,7 @@ async function executeLeasedAttempt(
           dispatched,
           'outcome_unknown',
           (dependencies.now || (() => new Date()))().toISOString(),
-          { errorCode: 'unsafe_executor_receipt' }
+          { errorCode: 'unsafe_executor_receipt', resultNotification: {} }
         );
       }
     }
@@ -240,8 +247,14 @@ async function executeLeasedAttempt(
       result.outcome,
       (dependencies.now || (() => new Date()))().toISOString(),
       result.outcome === 'succeeded'
-        ? { receipt: result.receipt }
-        : { errorCode: safeReasonCode(result.reasonCode, 'executor_failed_safe') }
+        ? {
+          receipt: result.receipt,
+          resultNotification: { privateResult: result.privateResult },
+        }
+        : {
+          errorCode: safeReasonCode(result.reasonCode, 'executor_failed_safe'),
+          resultNotification: {},
+        }
     );
     if (finalized) {
       await auditAttempt(
@@ -296,7 +309,7 @@ async function recoverExecutingAttempt(
         attempt,
         'failed_safe',
         nowIso,
-        { errorCode: 'pre_dispatch_retry_exhausted' }
+        { errorCode: 'pre_dispatch_retry_exhausted', resultNotification: {} }
       );
       if (failed) await auditAttempt(dependencies.client, failed, 'execution_failed_safe', 'pre_dispatch_retry_exhausted', nowIso);
       return failed;
@@ -321,7 +334,7 @@ async function recoverExecutingAttempt(
       reclaimed,
       'outcome_unknown',
       nowIso,
-      { errorCode: 'operator_reconciliation_required' }
+      { errorCode: 'operator_reconciliation_required', resultNotification: {} }
     );
     if (unknown) await auditAttempt(dependencies.client, unknown, 'outcome_unknown', 'operator_reconciliation_required', nowIso);
     return unknown;
@@ -334,7 +347,7 @@ async function recoverExecutingAttempt(
         reclaimed,
         'outcome_unknown',
         nowIso,
-        { errorCode: 'reconciler_unavailable' }
+        { errorCode: 'reconciler_unavailable', resultNotification: {} }
       );
     }
     let reconciled: ReconciliationResult;
@@ -359,7 +372,7 @@ async function recoverExecutingAttempt(
           reclaimed,
           'outcome_unknown',
           nowIso,
-          { errorCode: 'unsafe_reconciliation_receipt' }
+          { errorCode: 'unsafe_reconciliation_receipt', resultNotification: {} }
         );
       }
     }
@@ -369,8 +382,14 @@ async function recoverExecutingAttempt(
       status,
       nowIso,
       reconciled.outcome === 'applied'
-        ? { receipt: reconciled.receipt }
-        : { errorCode: safeReasonCode(reconciled.reasonCode, 'reconciliation_unknown') }
+        ? {
+          receipt: reconciled.receipt,
+          resultNotification: { privateResult: reconciled.privateResult },
+        }
+        : {
+          errorCode: safeReasonCode(reconciled.reasonCode, 'reconciliation_unknown'),
+          resultNotification: {},
+        }
     );
   }
   return executeLeasedAttempt(reclaimed, dependencies, { dispatchAlreadyStarted: true });

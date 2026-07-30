@@ -135,6 +135,72 @@ describe('Telegram production DynamoDB transactions', {
     assert.strictEqual(audits.Items?.[0].bindingRevision, 1);
   });
 
+  it('allows exactly one absent identity transaction and one conditional loser', async () => {
+    const channelUserId = '77002';
+    const attempts = ['a', 'b'].map((suffix): {
+      binding: IdentityBinding;
+      audit: IdentityBindingAudit;
+    } => ({
+      binding: {
+        id: `identity-transaction-race-${suffix}`,
+        recordType: 'identity_binding',
+        schemaVersion: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+        userId: 'operator-transaction',
+        channel: 'telegram',
+        channelUserId,
+        status: 'active',
+        provisionedBy: 'admin-transaction',
+        provisionedAt: NOW,
+        revision: 1,
+      },
+      audit: {
+        id: `identity-audit-transaction-race-${suffix}`,
+        recordType: 'identity_binding_audit',
+        schemaVersion: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+        ...expiryFrom(NOW, 365),
+        channel: 'telegram',
+        channelUserId,
+        userId: 'operator-transaction',
+        action: 'created',
+        actorId: 'admin-transaction',
+        outcome: 'succeeded',
+        bindingRevision: 1,
+      },
+    }));
+
+    const outcomes = await Promise.allSettled(attempts.map(({ binding, audit }) => (
+      transitionIdentityBindingWithAudit(client, binding, audit, null)
+    )));
+    assert.strictEqual(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 1);
+    const rejected = outcomes.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected'
+    );
+    assert.strictEqual(rejected.length, 1);
+    assert.strictEqual(
+      (rejected[0].reason as { name?: string }).name,
+      'TransactionCanceledException'
+    );
+
+    const stored = await client.send(new GetCommand({
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      Key: { PK: `IDENTITY#telegram#${channelUserId}`, SK: 'META' },
+      ConsistentRead: true,
+    }));
+    assert.ok(attempts.some(({ binding }) => binding.id === stored.Item?.id));
+    const audits = await client.send(new QueryCommand({
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': `IDENTITY_AUDIT#telegram#${channelUserId}` },
+      ConsistentRead: true,
+    }));
+    assert.strictEqual(audits.Items?.length, 1);
+    assert.strictEqual(audits.Items?.[0].bindingRevision, 1);
+  });
+
   it('consumes one of two sibling callbacks with one event and one revision increment', async () => {
     const conversationId = 'telegram-transaction-conversation';
     await createConversation(client, {

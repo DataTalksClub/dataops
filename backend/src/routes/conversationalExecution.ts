@@ -159,7 +159,7 @@ async function handleConversationalExecutionRoutes(
     try {
       const updated = await reconcileAttempt(authorized.attempt, Number(request.revision), {
         client,
-        registry: dependencies.registry || defaultExecutionRegistry(),
+        registry: dependencies.registry || defaultExecutionRegistry(client),
         now: dependencies.now,
         config: dependencies.config,
         leaseOwner: dependencies.leaseOwner,

@@ -26,6 +26,7 @@ import {
   type PluginDraft,
   type ProposalPresentation,
   type ProposalVersion,
+  type ResultNotification,
   type SkillLoadReceipt,
   type StoredContextReceipt,
   type SummaryCheckpoint,
@@ -155,6 +156,16 @@ function storageItem(record: ConversationalRecord): Record<string, unknown> {
         SK: `${record.createdAt}#${record.id}`,
         GSI1PK: `CONVERSATION#${record.conversationId}`,
         GSI1SK: `AUDIT#${record.createdAt}#${record.id}`,
+      };
+    case 'result_notification':
+      return {
+        ...record,
+        PK: `RESULT_NOTIFICATION#${record.id}`,
+        SK: 'META',
+        GSI1PK: `CONVERSATION#${record.conversationId}`,
+        GSI1SK: `RESULT_NOTIFICATION#${record.createdAt}#${record.id}`,
+        GSI2PK: `RESULT_NOTIFICATION_STATE#${record.status}`,
+        GSI2SK: `READY#${record.readyAt}#${record.id}`,
       };
     case 'conversational_private_payload':
       return {
@@ -435,6 +446,7 @@ async function getIdentityBinding(
   const result = await client.send(new GetCommand({
     TableName: TABLE_CONVERSATIONAL_STATE,
     Key: { PK: `IDENTITY#${channel}#${channelUserId}`, SK: 'META' },
+    ConsistentRead: true,
   }));
   return clean<IdentityBinding>(result.Item as Record<string, unknown> | undefined);
 }
@@ -487,6 +499,7 @@ async function getConversation(
   const result = await client.send(new GetCommand({
     TableName: TABLE_CONVERSATIONAL_STATE,
     Key: { PK: `CONVERSATION#${conversationId}`, SK: 'META' },
+    ConsistentRead: true,
   }));
   const conversation = clean<Conversation>(result.Item as Record<string, unknown> | undefined);
   return !conversation || conversation.status === 'deleted' || isExpired(conversation, now) ? null : conversation;
@@ -562,6 +575,7 @@ async function getChannelBinding(
   const result = await client.send(new GetCommand({
     TableName: TABLE_CONVERSATIONAL_STATE,
     Key: { PK: `CHANNEL#${channel}#${channelConversationKey}`, SK: 'BINDING' },
+    ConsistentRead: true,
   }));
   const binding = clean<ChannelBinding>(result.Item as Record<string, unknown> | undefined);
   if (!binding || isExpired(binding, now)) return null;
@@ -2176,6 +2190,125 @@ async function filterLiveOwners<T extends { conversationId: string; expiresAt?: 
   return result;
 }
 
+async function getResultNotification(
+  client: DynamoDBDocumentClient,
+  id: string,
+  now = new Date()
+): Promise<ResultNotification | null> {
+  const result = await client.send(new GetCommand({
+    TableName: TABLE_CONVERSATIONAL_STATE,
+    Key: { PK: `RESULT_NOTIFICATION#${id}`, SK: 'META' },
+    ConsistentRead: true,
+  }));
+  const notification = clean<ResultNotification>(result.Item as Record<string, unknown> | undefined);
+  return !notification || isExpired(notification, now) ? null : notification;
+}
+
+async function listResultNotifications(
+  client: DynamoDBDocumentClient,
+  status: 'pending' | 'dispatching',
+  through: string,
+  limit = 50
+): Promise<ResultNotification[]> {
+  const result = await client.send(new QueryCommand({
+    TableName: TABLE_CONVERSATIONAL_STATE,
+    IndexName: 'GSI2',
+    KeyConditionExpression: 'GSI2PK = :state AND GSI2SK <= :through',
+    ExpressionAttributeValues: {
+      ':state': `RESULT_NOTIFICATION_STATE#${status}`,
+      ':through': `READY#${through}#\uffff`,
+    },
+    Limit: Math.min(Math.max(limit, 1), 100),
+  }));
+  return ((result.Items || []) as Record<string, unknown>[])
+    .map((item) => clean<ResultNotification>(item)!)
+    .filter(Boolean);
+}
+
+async function claimResultNotification(
+  client: DynamoDBDocumentClient,
+  notification: ResultNotification,
+  now: string,
+  leaseExpiresAt: string
+): Promise<ResultNotification | null> {
+  try {
+    const result = await client.send(new UpdateCommand({
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      Key: { PK: `RESULT_NOTIFICATION#${notification.id}`, SK: 'META' },
+      UpdateExpression: 'SET #status = :dispatching, leaseExpiresAt = :lease, updatedAt = :now, revision = revision + :one, GSI2PK = :state, GSI2SK = :sort',
+      ConditionExpression: '#status = :pending AND revision = :revision AND readyAt <= :now',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':pending': 'pending', ':dispatching': 'dispatching',
+        ':revision': notification.revision, ':lease': leaseExpiresAt,
+        ':now': now, ':one': 1, ':state': 'RESULT_NOTIFICATION_STATE#dispatching',
+        ':sort': `READY#${leaseExpiresAt}#${notification.id}`,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+    return clean<ResultNotification>(result.Attributes as Record<string, unknown>);
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw error;
+  }
+}
+
+async function finishResultNotification(
+  client: DynamoDBDocumentClient,
+  notification: ResultNotification,
+  status: 'delivered' | 'outcome_unknown',
+  now: string
+): Promise<ResultNotification | null> {
+  try {
+    const deliveredSet = status === 'delivered' ? ', deliveredAt = :now' : '';
+    const result = await client.send(new UpdateCommand({
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      Key: { PK: `RESULT_NOTIFICATION#${notification.id}`, SK: 'META' },
+      UpdateExpression: `SET #status = :status, updatedAt = :now${deliveredSet}, revision = revision + :one, GSI2PK = :state, GSI2SK = :sort REMOVE leaseExpiresAt`,
+      ConditionExpression: '#status = :dispatching AND revision = :revision AND leaseExpiresAt > :now',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':dispatching': 'dispatching', ':status': status,
+        ':revision': notification.revision, ':now': now, ':one': 1,
+        ':state': `RESULT_NOTIFICATION_STATE#${status}`,
+        ':sort': `READY#${now}#${notification.id}`,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+    return clean<ResultNotification>(result.Attributes as Record<string, unknown>);
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw error;
+  }
+}
+
+async function expireDispatchingResultNotification(
+  client: DynamoDBDocumentClient,
+  notification: ResultNotification,
+  now: string
+): Promise<ResultNotification | null> {
+  try {
+    const result = await client.send(new UpdateCommand({
+      TableName: TABLE_CONVERSATIONAL_STATE,
+      Key: { PK: `RESULT_NOTIFICATION#${notification.id}`, SK: 'META' },
+      UpdateExpression: 'SET #status = :unknown, updatedAt = :now, revision = revision + :one, GSI2PK = :state, GSI2SK = :sort REMOVE leaseExpiresAt',
+      ConditionExpression: '#status = :dispatching AND revision = :revision AND leaseExpiresAt <= :now',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':dispatching': 'dispatching', ':unknown': 'outcome_unknown',
+        ':revision': notification.revision, ':now': now, ':one': 1,
+        ':state': 'RESULT_NOTIFICATION_STATE#outcome_unknown',
+        ':sort': `READY#${now}#${notification.id}`,
+      },
+      ReturnValues: 'ALL_NEW',
+    }));
+    return clean<ResultNotification>(result.Attributes as Record<string, unknown>);
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw error;
+  }
+}
+
 async function updateState<T extends { status: string; revision: number }>(
   client: DynamoDBDocumentClient,
   Key: Key,
@@ -2213,6 +2346,7 @@ export {
   compareAndSetExecutionAttempt,
   compareAndSetPresentation,
   compareAndSetProposalStatus,
+  claimResultNotification,
   consumeConversationalAction,
   consumeConversationalActionAndAppend,
   consumeSkillLoadReceipt,
@@ -2231,6 +2365,7 @@ export {
   getCheckpoint,
   getPluginDraft,
   getPresentationByTokenHash,
+  getResultNotification,
   getSkillLoadReceipt,
   insertProposalVersion,
   listConversationEvents,
@@ -2239,6 +2374,7 @@ export {
   listOwnerConversations,
   listProposalRelationships,
   listProposalVersions,
+  listResultNotifications,
   listRecoveryCandidates,
   markConversationDeleted,
   putConversationalPrivatePayload,
@@ -2251,6 +2387,8 @@ export {
   saveCheckpoint,
   saveContextReceipt,
   savePluginDraft,
+  finishResultNotification,
+  expireDispatchingResultNotification,
   storeSkillLoadResult,
   transitionStagedMediaAndAppend,
   transitionIdentityBindingWithAudit,

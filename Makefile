@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -116,3 +116,5 @@ build-SponsorSendWorkerFunction: build-BackendFunction
 build-SponsorSesEventFunction: build-BackendFunction
 
 build-SponsorPrivateArchiveFunction: build-BackendFunction
+
+build-ConversationalResultDispatcherFunction: build-BackendFunction

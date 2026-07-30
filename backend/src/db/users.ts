@@ -140,6 +140,7 @@ async function getUser(client: DynamoDBDocumentClient, id: string): Promise<User
     new GetCommand({
       TableName: TABLE_USERS,
       Key: { PK: `USER#${id}`, SK: `USER#${id}` },
+      ConsistentRead: true,
     })
   );
 

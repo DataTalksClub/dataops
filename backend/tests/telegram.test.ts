@@ -8,6 +8,7 @@ import { getAssistantJob } from '../src/db/assistantJobs';
 import { getIntakeItem } from '../src/db/intake';
 import { setSocialDraftAssistantClients } from '../src/assistant/socialDraftAssistant';
 import { route } from '../src/router';
+import { TODO_GUIDANCE } from '../src/conversation/todoPlugin';
 
 describe('Telegram integration', () => {
   let port: number;
@@ -94,7 +95,7 @@ describe('Telegram integration', () => {
       assert.strictEqual(item!.status, 'new');
     });
 
-    it('creates a task only when direct task compatibility mode is enabled', async () => {
+    it('never restores the retired direct-task compatibility bypass', async () => {
       process.env.TELEGRAM_DIRECT_TASKS_COMPAT = 'true';
       try {
         const event = {
@@ -111,15 +112,12 @@ describe('Telegram integration', () => {
         const res = await handleTelegramWebhook(event as any);
         assert.strictEqual(res.statusCode, 200);
         const body = JSON.parse(res.body);
-        assert.ok(body.taskId);
+        assert.strictEqual(body.taskId, undefined);
         assert.ok(body.intakeItemId);
 
-        const { getTask } = await import('../src/db/tasks');
+        const { listTasksByDate } = await import('../src/db/tasks');
         const client = await getClient();
-        const task = await getTask(client, body.taskId);
-        assert.strictEqual(task!.description, 'Dentist appointment');
-        assert.strictEqual(task!.date, '2026-04-15');
-        assert.strictEqual(task!.source, 'telegram');
+        assert.deepStrictEqual(await listTasksByDate(client, '2026-04-15'), []);
       } finally {
         delete process.env.TELEGRAM_DIRECT_TASKS_COMPAT;
       }
@@ -161,6 +159,89 @@ describe('Telegram integration', () => {
         globalThis.fetch = originalFetch;
         delete process.env.TELEGRAM_BOT_TOKEN;
       }
+    });
+
+    it('returns static /todo guidance with every supported command variant while default-off', async () => {
+      const environmentKeys = [
+        'CONVERSATIONAL_TELEGRAM_ENABLED',
+        'CONVERSATIONAL_TODO_PLUGIN_ENABLED',
+        'CONVERSATIONAL_TODO_EXECUTOR_ENABLED',
+        'CONVERSATIONAL_RESULT_DELIVERY_ENABLED',
+      ] as const;
+      const previous = Object.fromEntries(
+        environmentKeys.map((key) => [key, process.env[key]])
+      );
+      const variants = [
+        '/todo',
+        '/todo buy milk tomorrow',
+        '  /ToDo  ',
+        '\n/TODO   buy milk tomorrow\t',
+        '/todo@DataOpsBot',
+        '/ToDo@dataops_bot   buy milk tomorrow',
+      ];
+      let databaseClientCalls = 0;
+      let coreCalls = 0;
+      const replies: Array<{ chatId: string; text: string; botToken?: string }> = [];
+      try {
+        for (const flagState of ['unset', 'false'] as const) {
+          for (const key of environmentKeys) {
+            if (flagState === 'unset') delete process.env[key];
+            else process.env[key] = 'false';
+          }
+          for (const [index, text] of variants.entries()) {
+            const res = await handleTelegramWebhook({
+              headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+              body: JSON.stringify({
+                message: {
+                  message_id: 600 + index,
+                  chat: { id: 12345 },
+                  from: { id: 42 },
+                  text,
+                },
+              }),
+            } as any, {
+              core: {
+                async handle() {
+                  coreCalls += 1;
+                  assert.fail('conversational core must not run for legacy /todo');
+                },
+              },
+              legacy: {
+                async getClient() {
+                  databaseClientCalls += 1;
+                  assert.fail('database client must not be acquired for /todo guidance');
+                },
+                async sendReply(chatId, replyText, botToken) {
+                  replies.push({ chatId, text: replyText, botToken });
+                },
+              },
+            });
+            assert.strictEqual(res.statusCode, 200);
+            assert.deepStrictEqual(JSON.parse(res.body), {
+              ok: true,
+              route: 'todo-guidance',
+            });
+          }
+        }
+      } finally {
+        for (const key of environmentKeys) {
+          const value = previous[key];
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+      assert.strictEqual(databaseClientCalls, 0);
+      assert.strictEqual(coreCalls, 0);
+      assert.strictEqual(replies.length, variants.length * 2);
+      assert.ok(Buffer.byteLength(TODO_GUIDANCE, 'utf8') <= 300);
+      assert.ok(replies.every((reply) => (
+        reply.chatId === '12345'
+        && reply.text === TODO_GUIDANCE
+        && reply.botToken === undefined
+      )));
+      assert.ok(replies.every((reply) => (
+        !/intake captured|todo created|approved and queued/i.test(reply.text)
+      )));
     });
 
     it('returns 401 when secret token is missing', async () => {

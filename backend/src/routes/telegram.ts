@@ -5,9 +5,9 @@ import { createAssistantJob } from '../db/assistantJobs';
 import { getClient } from '../db/client';
 import { createTables } from '../db/setup';
 import { updateIntakeItem } from '../db/intake';
-import { createTask } from '../db/tasks';
 import { createTelegramIntake } from './intake';
 import type { IntakeItem, LambdaEvent, LambdaResponse } from '../types';
+import { TODO_GUIDANCE } from '../conversation/todoPlugin';
 import {
   adapterDependenciesFromConfig,
   conversationalTelegramConfig,
@@ -21,6 +21,15 @@ interface TelegramConfig {
   webhookSecret?: string;
   allowedChatIds: Set<string>;
 }
+
+interface LegacyTelegramDependencyOverrides {
+  getClient?: typeof getClient;
+  sendReply?: typeof sendTelegramReply;
+}
+
+type TelegramRouteDependencyOverrides = Partial<TelegramAdapterDependencies> & {
+  legacy?: LegacyTelegramDependencyOverrides;
+};
 
 let secretsClient: SecretsManagerClient | null = null;
 let cachedConfig: TelegramConfig | null = null;
@@ -206,7 +215,10 @@ async function handleSocialRoute(
   return 'The social draft request failed safely. Check the DataOps assistant job for details.';
 }
 
-async function handleLegacyTelegramWebhook(event: LambdaEvent): Promise<LambdaResponse> {
+async function handleLegacyTelegramWebhook(
+  event: LambdaEvent,
+  dependencyOverrides: LegacyTelegramDependencyOverrides = {}
+): Promise<LambdaResponse> {
   let config: TelegramConfig;
   try {
     config = await telegramConfig();
@@ -247,8 +259,16 @@ async function handleLegacyTelegramWebhook(event: LambdaEvent): Promise<LambdaRe
 
   const text = messageText(message);
   const { command, argument } = commandFrom(text);
+  const sendReply = dependencyOverrides.sendReply || sendTelegramReply;
+  if (command === 'todo') {
+    await sendReply(chatId, TODO_GUIDANCE, config.botToken);
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ ok: true, route: 'todo-guidance' }),
+    };
+  }
   if (command === 'start' || command === 'help') {
-    await sendTelegramReply(
+    await sendReply(
       chatId,
       [
         'DataOps Telegram',
@@ -263,50 +283,39 @@ async function handleLegacyTelegramWebhook(event: LambdaEvent): Promise<LambdaRe
     return { statusCode: 200, body: JSON.stringify({ ok: true, route: 'help' }) };
   }
   if (command === 'status') {
-    await sendTelegramReply(chatId, 'DataOps Telegram is online. Intake and assistant requests are routed through this bot.', config.botToken);
+    await sendReply(chatId, 'DataOps Telegram is online. Intake and assistant requests are routed through this bot.', config.botToken);
     return { statusCode: 200, body: JSON.stringify({ ok: true, route: 'status' }) };
   }
 
-  const client = await getClient();
+  const client = await (dependencyOverrides.getClient || getClient)();
   await createTables(client);
   const item = await createTelegramIntake(client, update);
   if (!item) return { statusCode: 200, body: JSON.stringify({ ok: true }) };
 
   let reply: string;
   let route = 'intake';
-  let taskId: string | undefined;
   if (command === 'podcast') {
     route = 'podcast';
     reply = await handlePodcastRoute(item, actorIdFrom(message));
   } else if (command === 'social') {
     route = 'social-draft';
     reply = await handleSocialRoute(update, item, argument, actorIdFrom(message));
-  } else if (process.env.TELEGRAM_DIRECT_TASKS_COMPAT === 'true' && text) {
-    route = 'direct-task-compat';
-    const { description, date } = parseMessage(text);
-    if (!description) {
-      reply = 'Please provide a task description.';
-    } else {
-      const task = await createTask(client, { description, date, source: 'telegram' });
-      taskId = task.id;
-      reply = `Task created: "${task.description}" for ${task.date}`;
-    }
   } else {
     reply = `Intake captured: "${item.title}"`;
   }
-  await sendTelegramReply(chatId, reply, config.botToken);
+  await sendReply(chatId, reply, config.botToken);
   return {
     statusCode: 200,
-    body: JSON.stringify({ ok: true, route, intakeItemId: item.id, taskId }),
+    body: JSON.stringify({ ok: true, route, intakeItemId: item.id }),
   };
 }
 
 async function handleTelegramWebhook(
   event: LambdaEvent,
-  dependencyOverrides: Partial<TelegramAdapterDependencies> = {}
+  dependencyOverrides: TelegramRouteDependencyOverrides = {}
 ): Promise<LambdaResponse> {
   if (process.env.CONVERSATIONAL_TELEGRAM_ENABLED !== 'true') {
-    return handleLegacyTelegramWebhook(event);
+    return handleLegacyTelegramWebhook(event, dependencyOverrides.legacy);
   }
   let config: TelegramConfig;
   try {

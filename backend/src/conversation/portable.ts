@@ -28,6 +28,7 @@ const CONVERSATIONAL_ENTITY_SPECS: ConversationalEntitySpec[] = [
   ['proposal_presentations', 'proposal_presentations.jsonl', 'proposal_presentation'],
   ['execution_attempts', 'execution_attempts.jsonl', 'execution_attempt'],
   ['conversation_audit_events', 'conversation_audit_events.jsonl', 'conversation_audit_event'],
+  ['result_notifications', 'result_notifications.jsonl', 'result_notification'],
   ['conversational_private_payloads', 'conversational_private_payloads.jsonl', 'conversational_private_payload'],
 ].map(([name, filename, recordType]) => ({
   name,
@@ -52,6 +53,14 @@ function mapConversationalRecord(item: Record<string, unknown>): JsonRecord {
     && !Array.isArray(portable.content)
   ) {
     portable.content = redactPrivateText(portable.content as Record<string, unknown>);
+  }
+  if (portable.recordType === 'result_notification') {
+    delete portable.channelConversationKey;
+    delete portable.identityChannelUserId;
+    delete portable.leaseExpiresAt;
+    if (portable.status === 'pending' || portable.status === 'dispatching') {
+      portable.status = 'outcome_unknown';
+    }
   }
   return JSON.parse(JSON.stringify(portable)) as JsonRecord;
 }
@@ -201,13 +210,28 @@ function validateConversationalEntities(
   for (const specName of [
     'channel_bindings', 'conversation_events', 'summary_checkpoints', 'plugin_drafts',
     'proposal_versions', 'proposal_presentations', 'execution_attempts',
-    'conversation_audit_events', 'conversational_private_payloads',
+    'conversation_audit_events', 'result_notifications', 'conversational_private_payloads',
   ]) {
     for (const [index, record] of (records[specName] || []).entries()) {
       const conversationId = required(record, 'conversationId', `${specName}[${index}]`, errors);
       if (conversationId && !conversations.has(conversationId)) {
         errors.push(`${specName}[${index}].conversationId references missing conversation without relationship evidence`);
       }
+    }
+  }
+  for (const [index, notification] of (records.result_notifications || []).entries()) {
+    const context = `result_notifications[${index}]`;
+    const payload = typeof notification.privatePayloadRef === 'string'
+      ? privatePayloadsById.get(notification.privatePayloadRef)
+      : undefined;
+    if (!payload) {
+      errors.push(`${context}.privatePayloadRef references missing private payload`);
+    } else if (payload.conversationId !== notification.conversationId) {
+      errors.push(`${context}.privatePayloadRef must stay in the same conversation`);
+    }
+    const conversation = conversationsById.get(String(notification.conversationId || ''));
+    if (conversation && notification.actorId !== conversation.ownerUserId) {
+      errors.push(`${context}.actorId must match conversation owner`);
     }
   }
   for (const [index, binding] of (records.channel_bindings || []).entries()) {

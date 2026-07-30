@@ -79,6 +79,13 @@ describe('portable execution data export', () => {
       description: 'Send external follow-up',
       date: '2026-06-20',
       assigneeId: user.id,
+      createdBy: user.id,
+      assistantExecutionRef: {
+        executionAttemptId: 'attempt-export-safe',
+        proposalId: 'proposal-export-safe',
+        proposalVersion: 1,
+        canonicalPayloadHash: `sha256:${'a'.repeat(64)}`,
+      },
       bundleId: bundle.id,
       templateId: template.id,
       templateTaskRef: 'send-follow-up',
@@ -327,6 +334,8 @@ describe('portable execution data export', () => {
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
+    assert.match(tasksJsonl, /"created_by"/);
+    assert.match(tasksJsonl, /"assistant_execution_ref":\{"executionAttemptId":"attempt-export-safe"/);
     assert.match(tasksJsonl, /"source":"recurring"/);
     assert.match(tasksJsonl, /"recurring_config_id"/);
     assert.match(tasksJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
@@ -502,6 +511,13 @@ describe('portable execution data export', () => {
           instruction_doc_id: 123,
           systems: ['github', 42],
           validation: ['not-valid'],
+          assistant_execution_ref: {
+            executionAttemptId: 'attempt',
+            proposalId: 'proposal',
+            proposalVersion: 0,
+            canonicalPayloadHash: 'invalid',
+            rawToken: 'must-never-echo-this-value',
+          },
           proof_requirement: { type: 'url' },
           task_history: [
             {
@@ -612,6 +628,9 @@ describe('portable execution data export', () => {
       const validation = await validatePortableExport(brokenDir);
 
       assert.strictEqual(validation.valid, false);
+      assert.ok(validation.errors.some((error) => error.includes('assistant_execution_ref is malformed')));
+      assert.ok(validation.errors.some((error) => error.includes('must not contain secrets')));
+      assert.ok(validation.errors.every((error) => !error.includes('must-never-echo-this-value')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field waiting_for')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field follow_up_at')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field date must be a YYYY-MM-DD date')));
