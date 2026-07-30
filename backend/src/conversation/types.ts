@@ -147,7 +147,19 @@ interface ProposalPresentation extends RecordBase {
   channel: string;
   status: 'active' | 'consumed' | 'revoked' | 'expired';
   actionTokenHash: string;
+  renderedViewHash?: string;
+  identityBindingId?: string;
+  channelBindingId?: string;
+  channelConversationKey?: string;
+  actionExpiresAt?: string;
   revision: number;
+}
+
+interface SafeExecutionReceipt {
+  receiptId: string;
+  effectHash: string;
+  recordedAt: string;
+  metadata?: JsonValue;
 }
 
 interface ExecutionAttempt extends RecordBase {
@@ -159,13 +171,32 @@ interface ExecutionAttempt extends RecordBase {
   deliveryMode: 'provider_idempotency' | 'correlation_lookup' | 'operator_reconciliation_only';
   idempotencyRef?: string;
   correlationRef?: string;
+  actorId?: string;
+  identityBindingId?: string;
+  identityChannel?: string;
+  identityChannelUserId?: string;
+  channelBindingId?: string;
+  channelConversationKey?: string;
+  permissionRef?: string;
+  canonicalPayloadHash?: string;
+  renderedViewHash?: string;
+  executorBuildDigest?: string;
   attemptNumber: number;
   readyAt: string;
   leaseOwner?: string;
   leaseExpiresAt?: string;
+  leaseGeneration?: number;
+  dispatchStartedAt?: string;
   recoveryBlocked: boolean;
   errorCode?: string;
   resultReceiptRef?: string;
+  resultReceipt?: SafeExecutionReceipt;
+  manualResolution?: {
+    outcome: 'effect_applied' | 'no_effect';
+    reason: string;
+    actorId: string;
+    resolvedAt: string;
+  };
   revision: number;
 }
 
@@ -421,6 +452,11 @@ function validateConversationalRecord(
       } else {
         assertHash(record.actionTokenHash, 'proposal_presentation.actionTokenHash');
       }
+      if (record.renderedViewHash) assertHash(record.renderedViewHash, 'proposal_presentation.renderedViewHash');
+      if (record.identityBindingId) assertString(record.identityBindingId, 'proposal_presentation.identityBindingId');
+      if (record.channelBindingId) assertString(record.channelBindingId, 'proposal_presentation.channelBindingId');
+      if (record.channelConversationKey) assertString(record.channelConversationKey, 'proposal_presentation.channelConversationKey', 500);
+      if (record.actionExpiresAt) assertIsoTimestamp(record.actionExpiresAt, 'proposal_presentation.actionExpiresAt');
       assertInteger(record.revision, 'proposal_presentation.revision', 1);
       break;
     case 'execution_attempt':
@@ -436,8 +472,29 @@ function validateConversationalRecord(
       if (record.leaseExpiresAt) assertIsoTimestamp(record.leaseExpiresAt, 'execution_attempt.leaseExpiresAt');
       if (record.idempotencyRef) assertString(record.idempotencyRef, 'execution_attempt.idempotencyRef', 1_000);
       if (record.correlationRef) assertString(record.correlationRef, 'execution_attempt.correlationRef', 1_000);
+      if (record.actorId) assertString(record.actorId, 'execution_attempt.actorId');
+      if (record.identityBindingId) assertString(record.identityBindingId, 'execution_attempt.identityBindingId');
+      if (record.identityChannel) assertString(record.identityChannel, 'execution_attempt.identityChannel');
+      if (record.identityChannelUserId) assertString(record.identityChannelUserId, 'execution_attempt.identityChannelUserId');
+      if (record.channelBindingId) assertString(record.channelBindingId, 'execution_attempt.channelBindingId');
+      if (record.channelConversationKey) assertString(record.channelConversationKey, 'execution_attempt.channelConversationKey', 500);
+      if (record.permissionRef) assertString(record.permissionRef, 'execution_attempt.permissionRef');
+      if (record.canonicalPayloadHash) assertHash(record.canonicalPayloadHash, 'execution_attempt.canonicalPayloadHash');
+      if (record.renderedViewHash) assertHash(record.renderedViewHash, 'execution_attempt.renderedViewHash');
+      if (record.executorBuildDigest) assertHash(record.executorBuildDigest, 'execution_attempt.executorBuildDigest');
+      if (record.leaseGeneration !== undefined) assertInteger(record.leaseGeneration, 'execution_attempt.leaseGeneration', 0);
+      if (record.dispatchStartedAt) assertIsoTimestamp(record.dispatchStartedAt, 'execution_attempt.dispatchStartedAt');
       if (record.errorCode) assertString(record.errorCode, 'execution_attempt.errorCode', 1_000);
       if (record.resultReceiptRef) assertString(record.resultReceiptRef, 'execution_attempt.resultReceiptRef', 1_000);
+      if (record.resultReceipt) {
+        validateSafeExecutionReceipt(record.resultReceipt);
+      }
+      if (record.manualResolution) {
+        assertEnum(record.manualResolution.outcome, ['effect_applied', 'no_effect'], 'execution_attempt.manualResolution.outcome');
+        assertString(record.manualResolution.reason, 'execution_attempt.manualResolution.reason', 1_000);
+        assertString(record.manualResolution.actorId, 'execution_attempt.manualResolution.actorId');
+        assertIsoTimestamp(record.manualResolution.resolvedAt, 'execution_attempt.manualResolution.resolvedAt');
+      }
       assertInteger(record.revision, 'execution_attempt.revision', 1);
       break;
     case 'conversation_audit_event':
@@ -546,6 +603,38 @@ function assertHash(value: unknown, path: string): asserts value is string {
   }
 }
 
+function validateSafeExecutionReceipt(receipt: SafeExecutionReceipt): void {
+  assertString(receipt.receiptId, 'execution_attempt.resultReceipt.receiptId');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/.test(receipt.receiptId) || CONTEXT_SECRET_VALUE.test(receipt.receiptId)) {
+    throw new Error('execution_attempt.resultReceipt.receiptId is unsafe');
+  }
+  assertHash(receipt.effectHash, 'execution_attempt.resultReceipt.effectHash');
+  assertIsoTimestamp(receipt.recordedAt, 'execution_attempt.resultReceipt.recordedAt');
+  if (receipt.metadata === undefined) return;
+  if (!receipt.metadata || typeof receipt.metadata !== 'object' || Array.isArray(receipt.metadata)) {
+    throw new Error('execution_attempt.resultReceipt.metadata must be a flat safe object');
+  }
+  const entries = Object.entries(receipt.metadata);
+  if (entries.length > 20) throw new Error('execution_attempt.resultReceipt.metadata has too many fields');
+  for (const [key, value] of entries) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(key) || SECRET_FIELD.test(key)) {
+      throw new Error('execution_attempt.resultReceipt.metadata contains an unsafe field');
+    }
+    if (!['string', 'number', 'boolean'].includes(typeof value) && value !== null) {
+      throw new Error('execution_attempt.resultReceipt.metadata values must be scalar');
+    }
+    if (
+      typeof value === 'string'
+      && (Buffer.byteLength(value, 'utf8') > 500 || SIGNED_VALUE.test(value) || CONTEXT_SECRET_VALUE.test(value))
+    ) {
+      throw new Error('execution_attempt.resultReceipt.metadata contains an unsafe value');
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new Error('execution_attempt.resultReceipt.metadata contains an unsafe number');
+    }
+  }
+}
+
 function isExpired(record: Pick<RecordBase, 'expiresAt'>, now = new Date()): boolean {
   return Boolean(record.expiresAt && Date.parse(record.expiresAt) <= now.getTime());
 }
@@ -562,6 +651,7 @@ export {
   expiryFrom,
   isExpired,
   validateConversationalRecord,
+  validateSafeExecutionReceipt,
 };
 export type {
   ChannelBinding,
@@ -577,6 +667,7 @@ export type {
   ProposalPresentation,
   ProposalSpec,
   ProposalVersion,
+  SafeExecutionReceipt,
   RecordBase,
   RecordType,
   SkillLoadReceipt,

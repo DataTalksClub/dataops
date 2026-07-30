@@ -219,6 +219,13 @@ npm run test:integration
 
 Requires Docker. Runs the Lambda handler in a container against DynamoDB Local.
 
+The transactional conversational-approval concurrency proof runs 25 full
+approval calls against a fresh transaction-capable DynamoDB Local container:
+
+```bash
+npm run test:execution-transaction
+```
+
 ## Build
 
 ```bash
@@ -226,6 +233,22 @@ npm run build
 ```
 
 Compiles TypeScript to `dist/` (CommonJS) and copies `src/public/` and `src/pages/` static assets. The production Lambda handler entry point is `dist/handler.handler`.
+
+## Conversational execution safety
+
+Conversational approvals store only a SHA-256 hash of each opaque action token.
+Approval atomically consumes the presentation, claims its immutable proposal,
+and creates one deterministic queued execution attempt. Execution runs only in
+the separate Stream/scheduled worker; the approval request never invokes an
+executor.
+
+The SAM stack owns the worker, filtered DynamoDB Stream event source, indexed
+recovery schedule, and encrypted retained failure queue. Lease duration,
+deadline, pre-dispatch retry bound, recovery page size, and the 30-minute
+presentation action lifetime are bounded stack parameters. The fake executor
+is disabled in deployed functions by default and requires no provider secrets.
+Uncertain effects are never blindly requeued: recovery follows the stored
+provider-idempotency, correlation-lookup, or operator-reconciliation-only mode.
 
 ## Project Structure
 

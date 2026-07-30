@@ -25,6 +25,7 @@ import { handleMailingExportRoutes } from './routes/mailingExports';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleNewsletterSlotRoutes } from './routes/newsletterSlots';
 import { handleCalendarRoutes } from './routes/calendar';
+import { handleConversationalExecutionRoutes } from './routes/conversationalExecution';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { getSession } from './db/sessions';
 import { getUser } from './db/users';
@@ -751,6 +752,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/mailing-exports')) {
       const result = await handleMailingExportRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/conversational/execution-attempts/')) {
+      const result = await handleConversationalExecutionRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 

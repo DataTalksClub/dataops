@@ -104,6 +104,42 @@ def test_conversational_state_table_is_retained_private_stream_ready_state():
     assert "DynamoDBEvent" not in table
 
 
+def test_conversational_execution_worker_has_filtered_stream_recovery_and_failure_delivery():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    worker = _resource_block(template, "ConversationalExecutionWorkerFunction")
+    queue = _resource_block(template, "ConversationalExecutionFailureQueue")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert "Type: AWS::Serverless::Function" in worker
+    assert "Handler: dist/execution-worker-handler.handler" in worker
+    assert "Type: DynamoDB" in worker
+    assert "!GetAtt DataOpsConversationalStateTable.StreamArn" in worker
+    assert "ReportBatchItemFailures" in worker
+    assert "MaximumRetryAttempts: 3" in worker
+    assert "BisectBatchOnFunctionError: true" in worker
+    assert '"recordType":{"S":["execution_attempt"]}' in worker
+    assert '"status":{"S":["queued"]}' in worker
+    assert "Type: SQS" in worker
+    assert "!GetAtt ConversationalExecutionFailureQueue.Arn" in worker
+    assert "Type: Schedule" in worker
+    assert "conversational-execution-recovery" in worker
+    assert "dynamodb:Query" in worker
+    assert "dynamodb:Scan" not in worker
+    assert "${DataOpsConversationalStateTable.Arn}/index/GSI2" in worker
+    assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in worker
+    assert "!GetAtt DataOpsUsersTable.Arn" in worker
+    assert worker.count("!GetAtt DataOpsUsersTable.Arn") == 1
+    assert "secretsmanager:" not in worker
+    assert "s3:" not in worker
+    assert "Type: AWS::SQS::Queue" in queue
+    assert "DeletionPolicy: Retain" in queue
+    assert "UpdateReplacePolicy: Retain" in queue
+    assert "SqsManagedSseEnabled: true" in queue
+    assert "MessageRetentionPeriod: 1209600" in queue
+    assert "QueuedAttemptStream" not in backend
+    assert "CONVERSATIONAL_EXECUTION_LEASE_SECONDS" not in backend
+
+
 def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
     template = TEMPLATE.read_text(encoding="utf-8")
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
