@@ -9,6 +9,10 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { TABLE_NEWSLETTER_SLOTS } from "./setup";
+import {
+  collectBoundedPages,
+  type StoragePaginationLimits,
+} from "./boundedPagination";
 export type NewsletterSlot = Record<string, unknown> & {
   id: string;
   publicationDate: string;
@@ -45,21 +49,31 @@ export async function listNewsletterSlots(
   client: DynamoDBDocumentClient,
   from: string,
   to: string,
+  limits?: StoragePaginationLimits,
 ) {
-  const result = await client.send(
-    new QueryCommand({
-      TableName: TABLE_NEWSLETTER_SLOTS,
-      IndexName: "GSI-Date",
-      KeyConditionExpression:
-        "rangeKey=:range AND publicationKey BETWEEN :from AND :to",
-      ExpressionAttributeValues: {
-        ":range": "SLOTS",
-        ":from": from,
-        ":to": `${to}~`,
-      },
-    }),
+  const items = await collectBoundedPages<Record<string, unknown>>({
+    limits,
+    loadPage: async (ExclusiveStartKey, abortSignal) => client.send(
+      new QueryCommand({
+        TableName: TABLE_NEWSLETTER_SLOTS,
+        IndexName: "GSI-Date",
+        KeyConditionExpression:
+          "rangeKey=:range AND publicationKey BETWEEN :from AND :to",
+        ExpressionAttributeValues: {
+          ":range": "SLOTS",
+          ":from": from,
+          ":to": `${to}~`,
+        },
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }),
+      { abortSignal },
+    ),
+  });
+  return (items.map(clean).filter(Boolean) as NewsletterSlot[]).sort(
+    (left, right) =>
+      left.publicationDate.localeCompare(right.publicationDate) ||
+      left.id.localeCompare(right.id),
   );
-  return (result.Items || []).map(clean).filter(Boolean) as NewsletterSlot[];
 }
 export async function createNewsletterSlot(
   client: DynamoDBDocumentClient,
