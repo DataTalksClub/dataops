@@ -2,6 +2,10 @@ import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SPONSOR_CRM } from './setup';
+import {
+  collectBoundedPages,
+  type StoragePaginationLimits,
+} from './boundedPagination';
 
 export type CrmRecord = Record<string, unknown> & { id: string; version: number; createdAt: string; updatedAt: string };
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
@@ -29,9 +33,27 @@ export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string,
   return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: k, SK: k } }))).Item as Record<string, unknown>);
 }
 
-export async function listCrmRecords(client: DynamoDBDocumentClient, kind: string) {
-  const result = await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM, FilterExpression: 'begins_with(PK, :prefix)', ExpressionAttributeValues: { ':prefix': `${kind.toUpperCase()}#` } }));
-  return (result.Items || []).map(item => clean(item as Record<string, unknown>)!).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+export async function listCrmRecords(
+  client: DynamoDBDocumentClient,
+  kind: string,
+  limits?: StoragePaginationLimits,
+) {
+  const items = await collectBoundedPages<Record<string, unknown>>({
+    limits,
+    loadPage: async (ExclusiveStartKey, abortSignal) => client.send(
+      new ScanCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        ConsistentRead: true,
+        FilterExpression: 'begins_with(PK, :prefix)',
+        ExpressionAttributeValues: { ':prefix': `${kind.toUpperCase()}#` },
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }),
+      { abortSignal },
+    ),
+  });
+  return items.map(item => clean(item)!).sort((a, b) =>
+    String(b.updatedAt).localeCompare(String(a.updatedAt)) ||
+    a.id.localeCompare(b.id));
 }
 
 export async function createCrmRecord(client: DynamoDBDocumentClient, kind: string, value: Record<string, unknown>) {

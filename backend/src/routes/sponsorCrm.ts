@@ -1,6 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { createBookingAtomic, createContactAtomic, createOrganizationAtomic, getCrmRecord, listBookingHistory, listCrmRecords, updateBookingAtomic, updateContactAtomic, updateOrganizationAtomic, type CrmRecord } from '../db/sponsorCrm';
+import { storageSnapshotDigest } from '../db/boundedPagination';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -14,9 +15,15 @@ const realDate = (value: unknown) => { if (typeof value !== 'string' || !DATE.te
 const page = (items: CrmRecord[], event: LambdaEvent) => {
   const query = event.queryStringParameters || {}, limit = Number(query.limit || 50), cursor = Number(query.cursor || 0);
   const sliced = items.slice(cursor, cursor + limit);
-  return { items: sliced, nextCursor: cursor + limit < items.length ? String(cursor + limit) : null };
+  return {
+    items: sliced,
+    nextCursor: cursor + limit < items.length ? String(cursor + limit) : null,
+    ...(query.migrationSnapshot === 'true'
+      ? { complete: true, snapshotDigest: storageSnapshotDigest(items) }
+      : {}),
+  };
 };
-function validateList(event:LambdaEvent,kind:string){const query=event.queryStringParameters||{},limit=Number(query.limit||50),cursor=Number(query.cursor||0);if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(cursor)||cursor<0)return'Invalid pagination';if(query.status&&kind==='booking'&&!STATUSES.has(query.status))return'Invalid status filter';if(query.from&&!realDate(query.from))return'Invalid from date';if(query.to&&!realDate(query.to))return'Invalid to date';if(query.from&&query.to&&query.from>query.to)return'Invalid date range';if(query.organizationId&&!ID.test(query.organizationId))return'Invalid organizationId filter';if(query.active&&!['true','false'].includes(query.active))return'Invalid active filter';return'';}
+function validateList(event:LambdaEvent,kind:string){const query=event.queryStringParameters||{},limit=Number(query.limit||50),cursor=Number(query.cursor||0);if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(cursor)||cursor<0)return'Invalid pagination';if(query.migrationSnapshot&&!['true'].includes(query.migrationSnapshot))return'Invalid migration snapshot mode';if(query.status&&kind==='booking'&&!STATUSES.has(query.status))return'Invalid status filter';if(query.from&&!realDate(query.from))return'Invalid from date';if(query.to&&!realDate(query.to))return'Invalid to date';if(query.from&&query.to&&query.from>query.to)return'Invalid date range';if(query.organizationId&&!ID.test(query.organizationId))return'Invalid organizationId filter';if(query.active&&!['true','false'].includes(query.active))return'Invalid active filter';return'';}
 const safeBookingSummary = (booking: CrmRecord) => ({ id: booking.id, organizationId: booking.organizationId, slotType: booking.slotType, status: booking.status, plannedPublicationDate: booking.plannedPublicationDate, scheduleEntryId: booking.scheduleEntryId, bundleId: booking.bundleId, version: booking.version, updatedAt: booking.updatedAt });
 function validateOrganization(body: Record<string, unknown>, partial = false) { return (!partial && !text(body.displayName, 200)) || (body.displayName !== undefined && !text(body.displayName, 200)) || (body.notes !== undefined && typeof body.notes !== 'string') ? 'Invalid organization fields' : ''; }
 function validateContact(body: Record<string, unknown>, partial = false) {
