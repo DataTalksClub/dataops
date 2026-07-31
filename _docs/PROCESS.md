@@ -276,6 +276,10 @@ assistant/podcast boundaries, and list the expected tests or screenshots.
   launches when `main` is not safe for new worktrees, dependencies are blocked,
   agent capacity is exhausted, or all remaining work is waiting on human
   verification.
+- When infrastructure or another externally controlled state blocks an issue,
+  record and handle it under [External Blocker Fallback](#external-blocker-fallback),
+  then keep eligible independent non-infrastructure work moving instead of
+  repeatedly polling the blocker.
 - Groom `needs grooming` issues first by launching Product Manager in grooming
   mode.
 - Pick the next groomed issues two at a time when they are independent.
@@ -558,6 +562,50 @@ If the user interrupts with new information while role agents are working, keep
 those agents running unless the new instruction invalidates their task. Convert
 the new information into intake issues or PM grooming work in parallel, then
 return to orchestrating active handoffs.
+
+## External Blocker Fallback
+
+When infrastructure, an operator action, credentials, or another externally
+controlled state blocks an issue, update that issue before reallocating
+capacity. Record its `Status` as blocked, the exact blocker, its `Depends on`
+dependency and evidence, the next owner, and one precise, observable resume
+condition. Keep the issue open. While agent-verifiable work remains but cannot
+advance, use `Status: blocked` and retain the next pipeline role as owner. Add
+or retain `human` only after all agent-verifiable work has passed and shipped
+and the sole remaining gate is explicitly `[HUMAN]`.
+
+Then select the highest-priority eligible independent non-infrastructure work
+from groomed issues, following the existing dependency, issue-selection,
+available-capacity, and clean-worktree rules. Do not repeatedly poll or
+re-investigate the same unchanged external gate while eligible independent
+non-infrastructure work exists. A dependency closing or changing status, a new
+authorized HUMAN/operator record, a new On-Call report, or new user input that
+satisfies or changes the documented resume condition is meaningful new
+evidence; re-reading the same gate is not. If no eligible independent
+non-infrastructure work remains, or capacity or safety rules prevent starting
+it, report the shared waiting state once. Only in the former case, and only when
+the user explicitly requests bounded monitoring, assign it to the relevant role
+owner with a deadline and explicit termination condition, record one result,
+then stop. Otherwise report once and stop. Do not invent work to appear active.
+
+When new evidence satisfies the documented resume condition, continue at the
+next incomplete pipeline step. Preserve completed lifecycle evidence unless the
+external change or a subsequent implementation change invalidates it; rerun
+the affected specialist, Tester, PM, or On-Call gate when it does. Resuming does
+not broaden the issue's scope or authorization.
+
+This fallback never treats a blocker as success, acceptance, deployment, or
+completion, and never bypasses a dependency, acceptance criterion, review gate,
+or HUMAN check. It grants no authority to deploy manually, dispatch or rerun a
+workflow, mutate AWS or another external system, enable flags, repair production
+data, expose credentials, broaden IAM or credentials, or create an environment.
+Software Engineer, specialist, Tester, PM acceptance, local merge and push, and
+On-Call ownership remain unchanged. After a push, On-Call still owns CI/CD
+monitoring while the orchestrator advances independent work; the orchestrator
+does not replace On-Call with repeated manual workflow polling. Dirty-main and
+worktree safety, dependency checks, the no-PR local merge policy, source and
+private-knowledge boundaries, and external-mutation restrictions remain in
+force.
 
 ## Human Verification
 
