@@ -6,11 +6,13 @@ import { readFileSync } from "node:fs";
 import {
   CONTRACT,
   STAGES,
-  assertSamePrefix,
+  inspectLivePrefix,
+  inspectProcessedPrefix,
   parseTemplate,
   safeEvidence,
   validateCallerIdentity,
-  validateStack,
+  validateStackHealth,
+  validateStackIdentity,
   validateTargetTemplate,
 } from "./sponsor-crm-gsi-core.mjs";
 
@@ -35,6 +37,24 @@ class SafeFailure extends Error {
 
 function fail(code) {
   throw new SafeFailure(code);
+}
+
+function classified(code, callback) {
+  try {
+    return callback();
+  } catch (error) {
+    if (error instanceof SafeFailure) throw error;
+    fail(code);
+  }
+}
+
+async function classifiedAsync(code, callback) {
+  try {
+    return await callback();
+  } catch (error) {
+    if (error instanceof SafeFailure) throw error;
+    fail(code);
+  }
 }
 
 function killGroup(child, signal) {
@@ -174,19 +194,33 @@ async function main() {
     Buffer.byteLength(source) > 0 &&
       Buffer.byteLength(source) <= MAX_TEMPLATE_BYTES,
   );
-  const target = parseTemplate(source);
-  const targetIdentity = validateTargetTemplate(target);
+  const target = classified("guard-target-template-contract", () =>
+    parseTemplate(source),
+  );
+  const targetIdentity = classified("guard-target-template-contract", () =>
+    validateTargetTemplate(target),
+  );
 
-  validateCallerIdentity(await aws("sts", "get-caller-identity"));
+  const caller = await aws("sts", "get-caller-identity");
+  classified("guard-caller-identity", () =>
+    validateCallerIdentity(caller),
+  );
   const stackResponse = await aws(
     "cloudformation",
     "describe-stacks",
     "--stack-name",
     CONTRACT.stack,
   );
-  assert.equal(stackResponse.Stacks?.length, 1);
+  classified("guard-cloudformation-stack-identity", () =>
+    assert.equal(stackResponse.Stacks?.length, 1),
+  );
   const stack = stackResponse.Stacks[0];
-  validateStack(stack);
+  classified("guard-cloudformation-stack-identity", () =>
+    validateStackIdentity(stack),
+  );
+  classified("guard-cloudformation-stack-health", () =>
+    validateStackHealth(stack),
+  );
   const resource = (await aws(
     "cloudformation",
     "describe-stack-resource",
@@ -195,52 +229,77 @@ async function main() {
     "--logical-resource-id",
     CONTRACT.logicalId,
   )).StackResourceDetail;
-  assert.equal(resource?.LogicalResourceId, CONTRACT.logicalId);
-  assert.equal(resource?.ResourceType, "AWS::DynamoDB::Table");
-  assert.equal(resource?.PhysicalResourceId, CONTRACT.physicalTable);
+  classified("guard-cloudformation-resource-identity", () => {
+    assert.equal(resource?.LogicalResourceId, CONTRACT.logicalId);
+    assert.equal(resource?.ResourceType, "AWS::DynamoDB::Table");
+    assert.equal(resource?.PhysicalResourceId, CONTRACT.physicalTable);
+  });
 
-  const processed = parseTemplate((await aws(
+  const processedBody = (await aws(
     "cloudformation",
     "get-template",
     "--stack-name",
     CONTRACT.stack,
     "--template-stage",
     "Processed",
-  )).TemplateBody);
+  )).TemplateBody;
+  const processed = classified("guard-processed-retained-state", () =>
+    parseTemplate(processedBody),
+  );
   const table = (await aws(
     "dynamodb",
     "describe-table",
     "--table-name",
     CONTRACT.physicalTable,
   )).Table;
-  table.ContinuousBackupsDescription = (await aws(
+  const continuousBackups = (await aws(
     "dynamodb",
     "describe-continuous-backups",
     "--table-name",
     CONTRACT.physicalTable,
   )).ContinuousBackupsDescription;
-  assert.equal(
-    table.TableArn,
-    `arn:aws:dynamodb:${CONTRACT.region}:${CONTRACT.account}:table/${CONTRACT.physicalTable}`,
+  classified("guard-table-health-schema", () => {
+    assert.ok(table && typeof table === "object" && !Array.isArray(table));
+    table.ContinuousBackupsDescription = continuousBackups;
+  });
+  classified("guard-table-identity", () => {
+    assert.equal(
+      table.TableArn,
+      `arn:aws:dynamodb:${CONTRACT.region}:${CONTRACT.account}:table/${CONTRACT.physicalTable}`,
+    );
+    assert.match(table.TableId ?? "", /^[A-Za-z0-9_.-]{8,128}$/);
+  });
+  const tags = await classifiedAsync(
+    "guard-cloudformation-table-ownership",
+    () => tableTags(table.TableArn),
   );
-  assert.match(table.TableId ?? "", /^[A-Za-z0-9_.-]{8,128}$/);
-  const tags = await tableTags(table.TableArn);
-  assert.equal(
-    tags.get("aws:cloudformation:stack-id"),
-    stack.StackId,
-    "DynamoDB stack-id ownership tag mismatch",
+  classified("guard-cloudformation-table-ownership", () => {
+    assert.equal(
+      tags.get("aws:cloudformation:stack-id"),
+      stack.StackId,
+      "DynamoDB stack-id ownership tag mismatch",
+    );
+    assert.equal(
+      tags.get("aws:cloudformation:logical-id"),
+      CONTRACT.logicalId,
+      "DynamoDB logical-id ownership tag mismatch",
+    );
+    assert.equal(
+      tags.get("aws:cloudformation:stack-name"),
+      CONTRACT.stack,
+      "DynamoDB stack-name ownership tag mismatch",
+    );
+  });
+  const processedPrefix = classified("guard-processed-retained-state", () =>
+    inspectProcessedPrefix(processed),
   );
-  assert.equal(
-    tags.get("aws:cloudformation:logical-id"),
-    CONTRACT.logicalId,
-    "DynamoDB logical-id ownership tag mismatch",
+  const livePrefix = classified("guard-table-health-schema", () =>
+    inspectLivePrefix(table),
   );
-  assert.equal(
-    tags.get("aws:cloudformation:stack-name"),
-    CONTRACT.stack,
-    "DynamoDB stack-name ownership tag mismatch",
+  classified("guard-processed-live-prefix-drift", () =>
+    assert.equal(processedPrefix, livePrefix),
   );
-  const prefix = assertSamePrefix(processed, table);
+  const prefix = processedPrefix;
   if (prefix !== STAGES.length) {
     fail("dispatch-migrate-sponsor-crm-gsis");
   }

@@ -2304,6 +2304,15 @@ test("process runtime refuses unapproved workflow_dispatch actor before AWS", ()
 });
 
 test("read-only deployment guard blocks incomplete prefixes without mutation", () => {
+  const expectedCalls = [
+    "sts:get-caller-identity",
+    "cloudformation:describe-stacks",
+    "cloudformation:describe-stack-resource",
+    "cloudformation:get-template",
+    "dynamodb:describe-table",
+    "dynamodb:describe-continuous-backups",
+    "dynamodb:list-tags-of-resource",
+  ];
   for (let prefix = 0; prefix < STAGES.length; prefix += 1) {
     const harness = fakeHarness({
       processed: processed(prefix),
@@ -2313,7 +2322,87 @@ test("read-only deployment guard blocks incomplete prefixes without mutation", (
     try {
       const result = runFakeGuard(harness);
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /dispatch-migrate-sponsor-crm-gsis/);
+      assert.equal(
+        result.stderr.trim(),
+        "Sponsor CRM deployment guard failed closed: dispatch-migrate-sponsor-crm-gsis",
+      );
+      const state = harness.readState();
+      assert.deepEqual(
+        state.calls.map(({ service, operation }) => `${service}:${operation}`),
+        expectedCalls,
+      );
+      assert.deepEqual(mutationCalls(state), []);
+    } finally {
+      harness.cleanup();
+    }
+  }
+});
+
+test("read-only deployment guard emits stable sanitized assertion categories", () => {
+  const sensitive = "DO-NOT-LEAK-817685572750-table-id-template";
+  const retainedDrift = processed(STAGES.length);
+  retainedDrift.Resources[CONTRACT.logicalId].Properties.BillingMode =
+    sensitive;
+
+  const cases = [
+    {
+      code: "guard-cloudformation-stack-identity",
+      mutation: { stackId: sensitive },
+    },
+    {
+      code: "guard-cloudformation-stack-health",
+      mutation: { stackStatus: "UPDATE_IN_PROGRESS" },
+    },
+    {
+      code: "guard-cloudformation-resource-identity",
+      mutation: { physicalResourceId: sensitive },
+    },
+    {
+      code: "guard-table-identity",
+      mutation: { tableArn: sensitive },
+    },
+    {
+      code: "guard-cloudformation-table-ownership",
+      mutation: {
+        tableTags: SYSTEM_TAGS.map((tag) =>
+          tag.Key === "aws:cloudformation:stack-id"
+            ? { ...tag, Value: sensitive }
+            : tag,
+        ),
+      },
+    },
+    {
+      code: "guard-processed-retained-state",
+      mutation: { processed: retainedDrift },
+    },
+    {
+      code: "guard-table-health-schema",
+      mutation: { pitrStatus: sensitive },
+    },
+    {
+      code: "guard-processed-live-prefix-drift",
+      mutation: { processed: processed(0), prefix: 1 },
+    },
+  ];
+
+  for (const { code, mutation } of cases) {
+    const harness = fakeHarness({
+      processed: processed(STAGES.length),
+      prefix: STAGES.length,
+      changeSets: [],
+      ...mutation,
+    }, { GITHUB_EVENT_NAME: "push" });
+    try {
+      const result = runFakeGuard(harness);
+      assert.notEqual(result.status, 0);
+      assert.equal(
+        result.stderr.trim(),
+        `Sponsor CRM deployment guard failed closed: ${code}`,
+      );
+      assert.ok(!result.stderr.includes(sensitive));
+      assert.ok(!result.stderr.includes(TABLE_ARN));
+      assert.ok(!result.stderr.includes(TABLE_ID));
+      assert.ok(!result.stderr.includes(STACK_ID));
       assert.deepEqual(mutationCalls(harness.readState()), []);
     } finally {
       harness.cleanup();
@@ -2474,7 +2563,9 @@ test("stage migrator and read-only guard keep separate operation surfaces", () =
     assert.ok(!guard.includes(forbidden));
   }
   assert.match(guard, /dispatch-migrate-sponsor-crm-gsis/);
-  assert.match(guard, /assertSamePrefix\(processed, table\)/);
+  assert.match(guard, /inspectProcessedPrefix\(processed\)/);
+  assert.match(guard, /inspectLivePrefix\(table\)/);
+  assert.match(guard, /guard-processed-live-prefix-drift/);
 });
 
 test("workflows separate protected migration from guarded unchanged app deploy", () => {

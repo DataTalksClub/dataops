@@ -413,6 +413,11 @@ export function stageIdentity({
 }
 
 export function validateStack(stack) {
+  validateStackIdentity(stack);
+  validateStackHealth(stack);
+}
+
+export function validateStackIdentity(stack) {
   assert.equal(stack.StackName, CONTRACT.stack, "stack identity mismatch");
   assert.match(
     stack.StackId ?? "",
@@ -421,6 +426,9 @@ export function validateStack(stack) {
     ),
     "stack ARN identity mismatch",
   );
+}
+
+export function validateStackHealth(stack) {
   assert.ok(
     TERMINAL_SUCCESS.has(stack.StackStatus),
     `stack is not in an accepted terminal state: ${safeStatus(stack.StackStatus)}`,
