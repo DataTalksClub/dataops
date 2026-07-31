@@ -2366,7 +2366,15 @@ test("read-only deployment guard emits stable sanitized assertion categories", (
       mutation: { tableTags: sensitive },
     },
     {
-      code: "guard-cloudformation-table-stack-id",
+      code: "guard-cloudformation-table-stack-id-absent",
+      mutation: {
+        tableTags: SYSTEM_TAGS.filter(
+          (tag) => tag.Key !== "aws:cloudformation:stack-id",
+        ),
+      },
+    },
+    {
+      code: "guard-cloudformation-table-stack-id-mismatch",
       mutation: {
         tableTags: SYSTEM_TAGS.map((tag) =>
           tag.Key === "aws:cloudformation:stack-id"

@@ -273,7 +273,10 @@ async function main() {
     "guard-cloudformation-table-tag-read",
     () => tableTags(table.TableArn),
   );
-  classified("guard-cloudformation-table-stack-id", () =>
+  classified("guard-cloudformation-table-stack-id-absent", () =>
+    assert.ok(tags.has("aws:cloudformation:stack-id")),
+  );
+  classified("guard-cloudformation-table-stack-id-mismatch", () =>
     assert.equal(
       tags.get("aws:cloudformation:stack-id"),
       stack.StackId,
