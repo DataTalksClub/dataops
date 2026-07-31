@@ -270,26 +270,30 @@ async function main() {
     assert.match(table.TableId ?? "", /^[A-Za-z0-9_.-]{8,128}$/);
   });
   const tags = await classifiedAsync(
-    "guard-cloudformation-table-ownership",
+    "guard-cloudformation-table-tag-read",
     () => tableTags(table.TableArn),
   );
-  classified("guard-cloudformation-table-ownership", () => {
+  classified("guard-cloudformation-table-stack-id", () =>
     assert.equal(
       tags.get("aws:cloudformation:stack-id"),
       stack.StackId,
       "DynamoDB stack-id ownership tag mismatch",
-    );
+    ),
+  );
+  classified("guard-cloudformation-table-logical-id", () =>
     assert.equal(
       tags.get("aws:cloudformation:logical-id"),
       CONTRACT.logicalId,
       "DynamoDB logical-id ownership tag mismatch",
-    );
+    ),
+  );
+  classified("guard-cloudformation-table-stack-name", () =>
     assert.equal(
       tags.get("aws:cloudformation:stack-name"),
       CONTRACT.stack,
       "DynamoDB stack-name ownership tag mismatch",
-    );
-  });
+    ),
+  );
   const processedPrefix = classified("guard-processed-retained-state", () =>
     inspectProcessedPrefix(processed),
   );

@@ -2362,10 +2362,32 @@ test("read-only deployment guard emits stable sanitized assertion categories", (
       mutation: { tableArn: sensitive },
     },
     {
-      code: "guard-cloudformation-table-ownership",
+      code: "guard-cloudformation-table-tag-read",
+      mutation: { tableTags: sensitive },
+    },
+    {
+      code: "guard-cloudformation-table-stack-id",
       mutation: {
         tableTags: SYSTEM_TAGS.map((tag) =>
           tag.Key === "aws:cloudformation:stack-id"
+            ? { ...tag, Value: sensitive }
+            : tag,
+        ),
+      },
+    },
+    {
+      code: "guard-cloudformation-table-logical-id",
+      mutation: {
+        tableTags: SYSTEM_TAGS.filter(
+          (tag) => tag.Key !== "aws:cloudformation:logical-id",
+        ),
+      },
+    },
+    {
+      code: "guard-cloudformation-table-stack-name",
+      mutation: {
+        tableTags: SYSTEM_TAGS.map((tag) =>
+          tag.Key === "aws:cloudformation:stack-name"
             ? { ...tag, Value: sensitive }
             : tag,
         ),
@@ -2407,6 +2429,26 @@ test("read-only deployment guard emits stable sanitized assertion categories", (
     } finally {
       harness.cleanup();
     }
+  }
+});
+
+test("read-only deployment guard preserves sanitized AWS tag-read failures", () => {
+  const harness = fakeHarness({
+    processed: processed(STAGES.length),
+    prefix: STAGES.length,
+    changeSets: [],
+    failOperation: "dynamodb:list-tags-of-resource",
+  }, { GITHUB_EVENT_NAME: "push" });
+  try {
+    const result = runFakeGuard(harness);
+    assert.notEqual(result.status, 0);
+    assert.equal(
+      result.stderr.trim(),
+      "Sponsor CRM deployment guard failed closed: aws-dynamodb-list-tags-of-resource",
+    );
+    assert.deepEqual(mutationCalls(harness.readState()), []);
+  } finally {
+    harness.cleanup();
   }
 });
 
