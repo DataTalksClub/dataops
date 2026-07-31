@@ -127,6 +127,14 @@ Run `make sop-lint FILES="content/path/to/sop.md"` for marked SOP files.
 and credentials files under `.tmp/aws-empty/`, disables EC2 metadata lookup, and
 does not require live AWS credentials or run `sam deploy`.
 
+Sponsor CRM’s four indexes are added one at a time by a separate protected,
+manual migration workflow. The normal application workflow never performs that
+migration: immediately after OIDC credentials and before the deployment build,
+a read-only guard requires the exact retained table identity, CloudFormation
+ownership, and all four canonical indexes to be active with no backfill. If
+they are incomplete, deployment stops and directs the operator to dispatch the
+protected migration first.
+
 ## Node workspace
 
 DataOps uses npm workspaces from the repository root. The single workspace is

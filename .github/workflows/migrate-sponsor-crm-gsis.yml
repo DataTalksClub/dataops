@@ -1,0 +1,53 @@
+name: Migrate Sponsor CRM GSIs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dataops-v1-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-1
+  AWS_DEFAULT_REGION: eu-west-1
+  AWS_ROLE_ARN: arn:aws:iam::817685572750:role/dataops-github-actions-deploy
+
+jobs:
+  migrate:
+    name: Add Sponsor CRM indexes sequentially
+    runs-on: ubuntu-latest
+    if: github.actor == 'alexeygrigorev'
+    environment: dataops-v1-production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install deployment gate dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: dataops-v1-sponsor-gsi-migration
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Add the four Sponsor CRM indexes one at a time
+        run: |
+          set -euo pipefail
+          node scripts/deploy/sponsor-crm-gsi-migrator.mjs \
+            migrate infra/template.full.yaml infra/template.full.yaml
