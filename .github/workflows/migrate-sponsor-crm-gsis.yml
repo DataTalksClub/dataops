@@ -20,7 +20,6 @@ jobs:
     name: Add Sponsor CRM indexes sequentially
     runs-on: ubuntu-latest
     if: github.actor == 'alexeygrigorev'
-    environment: dataops-v1-production
     permissions:
       contents: read
       id-token: write
