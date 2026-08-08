@@ -4,12 +4,14 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import yaml from "js-yaml";
 import {
   CONTRACT,
   STAGES,
@@ -2303,6 +2305,30 @@ test("process runtime refuses unapproved workflow_dispatch actor before AWS", ()
   }
 });
 
+test("process runtime refuses alternate repository, ref, or SHA before AWS", () => {
+  const cases = [
+    { GITHUB_REPOSITORY: "DataTalksClub/other" },
+    { GITHUB_REPOSITORY_OWNER: "OtherOwner" },
+    { GITHUB_REF: "refs/heads/dev" },
+    { GITHUB_REF: "refs/tags/v1.0.0" },
+    { GITHUB_REF: "refs/pull/145/merge" },
+    { GITHUB_SHA: "not-a-commit" },
+  ];
+  for (const overrides of cases) {
+    const harness = fakeHarness(
+      { processed: processed(0), prefix: 0, changeSets: [] },
+      overrides,
+    );
+    try {
+      const result = runFakeMigration(harness);
+      assert.notEqual(result.status, 0);
+      assert.deepEqual(harness.readState().calls, undefined);
+    } finally {
+      harness.cleanup();
+    }
+  }
+});
+
 test("read-only deployment guard blocks incomplete prefixes without mutation", () => {
   const expectedCalls = [
     "sts:get-caller-identity",
@@ -2618,7 +2644,7 @@ test("stage migrator and read-only guard keep separate operation surfaces", () =
   assert.match(guard, /guard-processed-live-prefix-drift/);
 });
 
-test("workflows separate protected migration from guarded unchanged app deploy", () => {
+test("workflows separate manual migration from guarded unchanged app deploy", () => {
   const deploy = readFileSync(
     ".github/workflows/deploy-dataops-v1.yml",
     "utf8",
@@ -2626,6 +2652,11 @@ test("workflows separate protected migration from guarded unchanged app deploy",
   const migration = readFileSync(
     ".github/workflows/migrate-sponsor-crm-gsis.yml",
     "utf8",
+  );
+  assert.equal(
+    digest(deploy),
+    "4611d88891fcb3031a94b0140b7238686e6e68feb68824ac7332d1a71180b14c",
+    "the ordinary application deployment workflow changed",
   );
   const deployJob = deploy.slice(deploy.indexOf("\n  deploy:\n"));
   const guard = deployJob.indexOf(
@@ -2664,11 +2695,100 @@ test("workflows separate protected migration from guarded unchanged app deploy",
 
   assert.match(migration, /^on:\n  workflow_dispatch:/m);
   assert.match(migration, /if: github\.actor == 'alexeygrigorev'/);
-  assert.match(migration, /environment: dataops-v1-production/);
+  assert.doesNotMatch(migration, /^\s*environment:/m);
   assert.match(migration, /id-token: write/);
   assert.match(migration, /migrate infra\/template\.full\.yaml infra\/template\.full\.yaml/);
   assert.match(migration, /concurrency:\n  group: dataops-v1-deploy\n  cancel-in-progress: false/);
   assert.ok(!migration.includes("sam package"));
   assert.ok(!migration.includes("sam deploy"));
   assert.ok(!migration.includes("sponsor-crm-gsi-guard.mjs"));
+});
+
+test("active workflows keep migration on the usual exact main OIDC boundary", () => {
+  const workflowPaths = readdirSync(".github/workflows", {
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".yml"))
+    .map((entry) => `.github/workflows/${entry.name}`)
+    .sort();
+  assert.ok(workflowPaths.length > 0);
+
+  const workflows = new Map(
+    workflowPaths.map((path) => {
+      const source = readFileSync(path, "utf8");
+      const parsed = yaml.safeLoad(source, { schema: yaml.JSON_SCHEMA });
+      assert.equal(
+        typeof parsed,
+        "object",
+        `${path} did not parse as a workflow`,
+      );
+      assert.ok(
+        parsed !== null && !Array.isArray(parsed),
+        `${path} is not a mapping`,
+      );
+      return [path, { parsed, source }];
+    }),
+  );
+  const migrationEntry = workflows.get(
+    ".github/workflows/migrate-sponsor-crm-gsis.yml",
+  );
+  assert.ok(migrationEntry);
+  const migration = migrationEntry.parsed;
+  const migrateJob = migration.jobs.migrate;
+  assert.deepEqual(Object.keys(migration.on), ["workflow_dispatch"]);
+  assert.equal(migrateJob.if, "github.actor == 'alexeygrigorev'");
+  assert.ok(!Object.hasOwn(migrateJob, "environment"));
+  assert.equal(migration.concurrency.group, "dataops-v1-deploy");
+  assert.equal(migration.concurrency["cancel-in-progress"], false);
+  assert.deepEqual(migrateJob.permissions, {
+    contents: "read",
+    "id-token": "write",
+  });
+  assert.equal(
+    migration.env.AWS_ROLE_ARN,
+    "arn:aws:iam::817685572750:role/dataops-github-actions-deploy",
+  );
+  const credentialStep = migrateJob.steps.find((step) =>
+    String(step.uses ?? "").startsWith("aws-actions/configure-aws-credentials@"),
+  );
+  assert.ok(credentialStep);
+  assert.equal(credentialStep.with["role-to-assume"], "${{ env.AWS_ROLE_ARN }}");
+  assert.equal(credentialStep.with["aws-region"], "${{ env.AWS_REGION }}");
+  assert.equal(
+    credentialStep.with["role-session-name"],
+    "dataops-v1-sponsor-gsi-migration",
+  );
+  assert.ok(!Object.hasOwn(credentialStep.with, "audience"));
+  assert.ok(!migrationEntry.source.includes("environment:"));
+  assert.equal(
+    migrateJob.steps.at(-1).run.trim(),
+    [
+      "set -euo pipefail",
+      "node scripts/deploy/sponsor-crm-gsi-migrator.mjs \\",
+      "  migrate infra/template.full.yaml infra/template.full.yaml",
+    ].join("\n"),
+  );
+  assert.ok(!migrationEntry.source.includes("secrets."));
+  assert.ok(!migrationEntry.source.includes("vars."));
+  assert.equal(CONTRACT.repository, "DataTalksClub/dataops");
+  assert.equal(CONTRACT.ref, "refs/heads/main");
+  const deployReadme = readFileSync("scripts/deploy/README.md", "utf8");
+  assert.match(
+    deployReadme,
+    /repo:DataTalksClub\/dataops:ref:refs\/heads\/main/,
+  );
+  assert.match(deployReadme, /Issue #145 authorizes no dispatch/);
+  assert.match(deployReadme, /#143 must first establish/);
+  assert.match(deployReadme, /#136 must then pass its fresh/);
+
+  for (const [path, { parsed, source }] of workflows) {
+    assert.ok(
+      !JSON.stringify(parsed).toLowerCase().includes("production"),
+      `${path} selects or names a production target`,
+    );
+    assert.ok(
+      !source.includes("dataops-v1-production"),
+      `${path} names the retired production environment`,
+    );
+  }
 });
