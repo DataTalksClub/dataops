@@ -3,13 +3,17 @@
 The Sponsor CRM index migration and the normal application deployment are two
 separate workflows.
 
-`migrate-sponsor-crm-gsis.yml` is a protected, manually dispatched migration.
-Only `alexeygrigorev` on `DataTalksClub/dataops` `main` may run it, through the
-`dataops-v1-production` environment and the exact GitHub OIDC deployment role.
-It retrieves the last successful processed `dataops-v1` template, compares it
-with the live retained Sponsor CRM table, and adds the four canonical indexes
-one at a time. Each stage uses one exact CloudFormation change set and waits for
-the table and new index to become fully active before continuing.
+`migrate-sponsor-crm-gsis.yml` is a manually dispatched migration with no
+GitHub Actions job environment. When later authorized under #136, only
+`alexeygrigorev` on exact `DataTalksClub/dataops` `main` may run it. Without a
+job environment it uses the existing deployment role and its exact usual OIDC
+branch subject `repo:DataTalksClub/dataops:ref:refs/heads/main`; it requires no
+environment subject, extra trust subject, environment secret or variable, or
+environment approval path. It retrieves the last successful processed
+`dataops-v1` template, compares it with the live retained Sponsor CRM table, and
+adds the four canonical indexes one at a time. Each stage uses one exact
+CloudFormation change set and waits for the table and new index to become fully
+active before continuing.
 
 The migration enumerates active change sets to exhaustion before creation and
 execution. It rejects pagination cycles, unrelated candidates, changed IDs,
@@ -58,5 +62,8 @@ the guard passes, the existing build and `sam deploy` command run unchanged.
 
 The migration workflow has no SAM package/deploy or final application
 change-set path. The deployment guard contains no mutation operation. Do not run
-either script locally against production or call `UpdateTable`; use the
-protected migration workflow and then the normal application deployment.
+either script locally against sandbox operational data or call `UpdateTable`.
+Issue #145 authorizes no dispatch: #143 must first establish the Sponsor table
+ownership boundary, and #136 must then pass its fresh Architecture, Security,
+and HUMAN pre-dispatch gates before the migration workflow or the following
+normal application deployment may run.
