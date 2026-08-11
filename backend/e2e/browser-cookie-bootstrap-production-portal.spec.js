@@ -61,6 +61,11 @@ test.describe('production portal browser-cookie bootstrap', () => {
   test('loads the workspace from an HttpOnly cookie via /api/me without a browser bearer', async ({ browser }) => {
     const context = await browser.newContext({ baseURL: BASE_URL });
     const page = await context.newPage();
+    await page.route('**/docs', (route) => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'docs intentionally unavailable for auth bootstrap test' }),
+    }));
     const meResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/work/api/me');
 
     await page.goto('/__e2e__/browser-session');

@@ -503,16 +503,20 @@ async function loadDocuments() {
     renderRecentDocs();
     renderRecentlyViewed();
     renderPinned();
-    refreshOperationsWorkSnapshot({ rerender: true });
-    refreshOperationsRecurringSnapshot({ rerender: true });
-    refreshOperationsArtifactSnapshot({ rerender: true });
-    refreshOperationsAssistantSnapshot({ rerender: true });
-    refreshOperationsQualitySnapshot({ rerender: true });
   } catch (error) {
     setStatus(error.message);
   } finally {
     if (skeleton) skeleton.hidden = true;
   }
+
+  // Work APIs are independent of the Git-backed docs API. A docs outage (or
+  // an intentionally offline deployment) must not prevent Home, Inbox,
+  // assistants, artifacts, or recurring work from bootstrapping.
+  refreshOperationsWorkSnapshot({ rerender: true });
+  refreshOperationsRecurringSnapshot({ rerender: true });
+  refreshOperationsArtifactSnapshot({ rerender: true });
+  refreshOperationsAssistantSnapshot({ rerender: true });
+  refreshOperationsQualitySnapshot({ rerender: true });
 }
 
 async function openInitialRoute() {
