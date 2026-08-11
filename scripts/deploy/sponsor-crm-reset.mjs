@@ -37,7 +37,6 @@ import {
   validateIdentity,
   validateIntent,
   validateLiveTable,
-  validateMappings,
   validateProcessedBaseline,
   validateRuntimeEnvironment,
   validateStackBaseline,
@@ -288,6 +287,9 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
   validateTransition(phase, prior);
   const priorCompletionDigest = prior?.receipt.completionDigest ?? NO_RECEIPT;
   const before = preliminary ?? await observeState(aws, env, stackProbe, phase, prior?.completion);
+  if (prior && ["create", "execute", "verify", "cleanup-candidate"].includes(phase)) {
+    before.oldTable ??= lineageTable(prior.completion);
+  }
   if (phase === "execute" && !before.table && !String(before.stackStatus).endsWith("_IN_PROGRESS")) {
     before.candidate = await reloadApprovedCandidate(aws, before, prior.completion);
   }
@@ -404,9 +406,9 @@ async function verifyExistingCompletion(phase, aws, before, completion, prior) {
   let current = before;
   if (phase === "create") {
     const candidate = await reloadApprovedCandidate(aws, before, completion);
-    current = { ...before, candidate, oldTable: lineageTable(prior), oldMapping: lineageMapping(prior) };
+    current = { ...before, candidate, oldTable: lineageTable(prior) };
   } else if (phase === "delete" || phase === "cleanup-candidate") {
-    current = { ...before, oldTable: lineageTable(prior), oldMapping: lineageMapping(prior) };
+    current = { ...before, oldTable: lineageTable(prior) };
   }
   assert.deepEqual(current, completion.poststate, "recorded completion postcondition no longer holds");
 }
@@ -446,13 +448,10 @@ function resolveReceipt(ledgerState, supplied) {
 
 function resetSeedFrom(state) {
   const table = state.oldTable ?? state.table;
-  const mapping = state.oldMapping ?? state.mapping;
-  assert.ok(table?.tableId && table?.streamArn && mapping?.mappingUuid, "reset root requires exact old table/stream/mapping identities");
+  assert.ok(table?.tableId, "reset root requires the exact old table identity");
   return {
     fixtureDigest: state.fixtureDigest,
     oldTableIdDigest: digest(table.tableId),
-    oldStreamArnDigest: digest(table.streamArn),
-    oldMappingIdDigest: digest(mapping.mappingUuid),
   };
 }
 
@@ -591,10 +590,9 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
     if (classification !== "precondition") assert.ok(resumingIntent, "observed delete has no prior immutable intent");
     if (classification === "complete") {
       const oldTable = lineageTable(prior);
-      const oldMapping = lineageMapping(prior);
-      assert.ok(oldTable && oldMapping, "completed delete lost original identities");
-      const completedState = { ...before, oldTable, oldMapping };
-      assertPoststateEqual(intent.prestate, completedState, ["/table", "/mapping", "/oldTable", "/oldMapping"]);
+      assert.ok(oldTable, "completed delete lost original table identity");
+      const completedState = { ...before, oldTable };
+      assertPoststateEqual(intent.prestate, completedState, ["/table", "/oldTable"]);
       return { observed: true, state: completedState };
     }
     if (classification === "precondition") {
@@ -605,9 +603,8 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
     const after = await observeState(aws, env, before.stack.stackId, phase, prior);
     assert.equal(after.table, undefined);
     const oldTable = before.table.tableStatus === "ACTIVE" ? before.table : prior?.prestate?.table;
-    const oldMapping = before.mapping ?? prior?.prestate?.mapping;
-    const completedState = { ...after, oldTable, oldMapping };
-    assertPoststateEqual(intent.prestate, completedState, ["/table", "/mapping", "/oldTable", "/oldMapping"]);
+    const completedState = { ...after, oldTable };
+    assertPoststateEqual(intent.prestate, completedState, ["/table", "/oldTable"]);
     return { observed: classification === "in-progress", state: completedState };
   }
   if (phase === "create") {
@@ -635,10 +632,9 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
     });
     const after = await observeState(aws, env, before.stack.stackId, phase, prior, { candidate });
     const boundCandidate = { ...candidate, candidateInventoryDigest: bindCandidateInventory(after.candidates, candidate) };
-    const equalityState = { ...after, candidate: boundCandidate };
+    const equalityState = { ...after, candidate: boundCandidate, oldTable: lineageTable(prior) };
     assertPoststateEqual(intent.prestate, equalityState, ["/candidates/0", "/candidate"]);
-    const completedState = { ...equalityState, oldTable: prior?.poststate?.oldTable ?? prior?.prestate?.table, oldMapping: prior?.poststate?.oldMapping ?? prior?.prestate?.mapping };
-    return { observed, state: completedState, candidate: boundCandidate };
+    return { observed, state: equalityState, candidate: boundCandidate };
   }
   if (phase === "execute") {
     assert.equal(prior.candidate.candidateDigest, operation.expected.candidateDigest, "execute candidate digest mismatch");
@@ -647,7 +643,7 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
     if (classification !== "precondition") assert.ok(resumingIntent, "observed execution has no prior immutable intent");
     if (classification === "complete") {
       assertFinalState(before, prior);
-      assertPoststateEqual(intent.prestate, before, ["/stackStatus", "/candidates/0", "/candidate", "/table", "/mapping"]);
+      assertPoststateEqual(intent.prestate, before, ["/stackStatus", "/candidates/0", "/candidate", "/table"]);
       return { observed: true, state: before, candidate: prior.candidate };
     }
     const summary = matchingCandidate(before.candidates, undefined, prior.candidate.candidateArn);
@@ -662,9 +658,9 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
       await aws.call("cloudformation", "execute-change-set", operation.target.argv);
       await waitForStack(aws, before.stack.stackId);
     }
-    const after = await observeState(aws, env, before.stack.stackId, phase, prior);
+    const after = { ...await observeState(aws, env, before.stack.stackId, phase, prior), oldTable: lineageTable(prior) };
     assertFinalState(after, prior);
-    assertPoststateEqual(intent.prestate, after, ["/stackStatus", "/candidates/0", "/candidate", "/table", "/mapping"]);
+    assertPoststateEqual(intent.prestate, after, ["/stackStatus", "/candidates/0", "/candidate", "/table"]);
     return { observed: classification !== "precondition", state: after, candidate: prior.candidate };
   }
   assert.equal(phase, "cleanup-candidate");
@@ -672,7 +668,7 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
   const candidate = matchingCandidate(before.candidates, undefined, prior.candidate.candidateArn);
   const classification = classifyResume(phase, before, operation.expected, prior);
   if (classification !== "precondition") assert.ok(resumingIntent, "observed cleanup has no prior immutable intent");
-  const withOriginalIdentities = (state) => ({ ...state, oldTable: lineageTable(prior), oldMapping: lineageMapping(prior) });
+  const withOriginalIdentities = (state) => ({ ...state, oldTable: lineageTable(prior) });
   const finalizeCleanup = (state) => {
     assert.equal(state.candidates.length, 0, "candidate inventory not empty after cleanup");
     assert.equal(prior.poststate.candidates.length, 1, "approved cleanup baseline was not singleton");
@@ -751,12 +747,8 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
   assert.equal(resource.StackResourceDetail?.ResourceType, "AWS::DynamoDB::Table");
   assert.ok(/_COMPLETE$/.test(resource.StackResourceDetail?.ResourceStatus ?? "") || (executeInProgress && /_IN_PROGRESS$/.test(resource.StackResourceDetail?.ResourceStatus ?? "")));
   const resources = await listStackResources(aws, stack.stackId, { allowExecuteInProgress: executeInProgress });
-  const functionResource = resources.find(({ LogicalResourceId }) => LogicalResourceId === "SponsorSendWorkerFunction");
-  const mappingResource = resources.find(({ LogicalResourceId }) => LogicalResourceId === CONTRACT.mappingLogicalId);
-  assert.match(functionResource?.PhysicalResourceId ?? "", /^dataops-v1-SponsorSendWorkerFunction-[A-Za-z0-9]+$/);
   const candidates = await listChangeSets(aws, stack.stackId);
   let table;
-  let mapping;
   const described = await aws.call("dynamodb", "describe-table", ["--table-name", CONTRACT.physicalTable], { allowNotFound: true });
   if (described) {
     if (executeInProgress && described.Table?.TableStatus !== "ACTIVE") {
@@ -765,7 +757,7 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
       assert.match(described.Table?.TableId ?? "", /^[A-Za-z0-9._-]{8,128}$/);
       const oldTable = lineageTable(prior);
       if (oldTable?.tableId) assert.notEqual(described.Table.TableId, oldTable.tableId);
-      table = { tableArn: described.Table.TableArn, tableId: described.Table.TableId, tableStatus: described.Table.TableStatus, streamArn: described.Table.LatestStreamArn, inProgress: true };
+      table = { tableArn: described.Table.TableArn, tableId: described.Table.TableId, tableStatus: described.Table.TableStatus, inProgress: true };
     } else {
       table = validateLiveTable(described.Table, {
         allowDeleting: phase === "delete",
@@ -776,25 +768,12 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
       const backups = await aws.call("dynamodb", "describe-continuous-backups", ["--table-name", CONTRACT.physicalTable]);
       const ttl = await aws.call("dynamodb", "describe-time-to-live", ["--table-name", CONTRACT.physicalTable]);
       const tags = await listTags(aws, table.tableArn);
-      validateAuxiliaryTableState({ backups, ttl, tags }, stack.stackId);
-      mapping = await listMappings(aws, functionResource.PhysicalResourceId, table.streamArn);
-      assert.equal(mappingResource?.PhysicalResourceId, mapping.mappingUuid, "generated mapping resource identity changed");
-      const oldTable = lineageTable(prior);
-      if (oldTable?.streamArn && oldTable.streamArn !== table.streamArn) {
-        assert.deepEqual(await listMappingsRaw(aws, functionResource.PhysicalResourceId, oldTable.streamArn), [], "old stream mapping still exists");
-      }
+      const original = lineageTable(prior);
+      validateAuxiliaryTableState({ backups, ttl, tags }, stack.stackId, { owned: Boolean(original?.tableId && table.tableId !== original.tableId) });
     } else if (phase === "delete" || phase === "disable-protection" || phase === "restore-protection") {
       const old = lineageTable(prior);
       assert.equal(table.tableId, old?.tableId, "deleting table identity changed");
-      assert.equal(table.streamArn, old?.streamArn, "deleting stream identity changed");
-      mapping = lineageMapping(prior);
     }
-  } else if (prior?.poststate?.oldTable) {
-    const oldMappings = await listMappingsRaw(aws, functionResource.PhysicalResourceId, prior.poststate.oldTable.streamArn);
-    mapping = validateMappings({ EventSourceMappings: oldMappings }, prior.poststate.oldTable.streamArn);
-    const expectedOldMapping = lineageMapping(prior);
-    assert.equal(mapping.mappingUuid, expectedOldMapping.mappingUuid, "old mapping identity changed");
-    assert.equal(mapping.mappingDigest, expectedOldMapping.mappingDigest, "old mapping configuration changed");
   }
   return {
     stack,
@@ -807,7 +786,6 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
     candidates,
     candidate: options.candidate,
     table,
-    mapping,
   };
 }
 
@@ -825,7 +803,7 @@ async function listStackResources(aws, stackId, { allowExecuteInProgress = false
     assert.equal(typeof item.LogicalResourceId, "string");
     assert.equal(typeof item.ResourceType, "string");
     const terminal = /^(CREATE|DELETE|UPDATE|IMPORT|UPDATE_ROLLBACK)_COMPLETE$/.test(item.ResourceStatus ?? "");
-    const reviewedInProgress = allowExecuteInProgress && [CONTRACT.logicalId, CONTRACT.mappingLogicalId].includes(item.LogicalResourceId) && /^(CREATE|UPDATE)_IN_PROGRESS$/.test(item.ResourceStatus ?? "");
+    const reviewedInProgress = allowExecuteInProgress && item.LogicalResourceId === CONTRACT.logicalId && /^(CREATE|UPDATE)_IN_PROGRESS$/.test(item.ResourceStatus ?? "");
     assert.ok(terminal || reviewedInProgress, `unreviewed stack resource status ${item.ResourceStatus}`);
   }
   return values.sort((a, b) => a.LogicalResourceId.localeCompare(b.LogicalResourceId));
@@ -841,16 +819,6 @@ async function listTags(aws, arn) {
   const tags = [];
   await paginate((token) => aws.call("dynamodb", "list-tags-of-resource", ["--resource-arn", arn, ...(token ? ["--next-token", token] : [])]), "NextToken", (page) => tags.push(...(page.Tags ?? [])));
   return { Tags: tags };
-}
-
-async function listMappings(aws, functionName, streamArn) {
-  return validateMappings({ EventSourceMappings: await listMappingsRaw(aws, functionName, streamArn) }, streamArn);
-}
-
-async function listMappingsRaw(aws, functionName, streamArn) {
-  const mappings = [];
-  await paginate((marker) => aws.call("lambda", "list-event-source-mappings", ["--function-name", functionName, "--event-source-arn", streamArn, ...(marker ? ["--marker", marker] : []), "--max-items", "100"]), "NextMarker", (page) => mappings.push(...(page.EventSourceMappings ?? [])));
-  return mappings;
 }
 
 async function paginate(fetch, tokenKey, consume) {
@@ -985,26 +953,12 @@ function assertFinalState(state, prior) {
   assert.ok(state.table, "replacement table absent");
   const oldTable = prior?.poststate?.oldTable ?? prior?.prestate?.oldTable ?? prior?.prestate?.table;
   if (oldTable?.tableId) assert.notEqual(state.table.tableId, oldTable.tableId);
-  if (oldTable?.streamArn) assert.notEqual(state.table.streamArn, oldTable.streamArn);
   assert.equal(state.table.deletionProtection, false, "recreated table protection must match the prefix-0 fixture default");
   assert.equal(state.candidates.length, 0, "candidate inventory not empty after execution");
-  assert.ok(state.mapping, "new stream mapping absent");
-  const oldMapping = lineageMapping(prior);
-  const stableOld = structuredClone(oldMapping.mapping);
-  const stableNew = structuredClone(state.mapping.mapping);
-  for (const value of [stableOld, stableNew]) {
-    delete value.UUID;
-    delete value.EventSourceArn;
-  }
-  assert.deepEqual(stableNew, stableOld, "mapping stable configuration changed");
 }
 
 function lineageTable(prior) {
   return prior?.poststate?.oldTable ?? prior?.prestate?.oldTable ?? prior?.poststate?.table ?? prior?.prestate?.table;
-}
-
-function lineageMapping(prior) {
-  return prior?.poststate?.oldMapping ?? prior?.prestate?.oldMapping ?? prior?.poststate?.mapping ?? prior?.prestate?.mapping;
 }
 
 function describedParameters(parameters) {
@@ -1014,7 +968,6 @@ function describedParameters(parameters) {
 function stableStackResource(value) {
   const copy = structuredClone(value);
   delete copy.LastUpdatedTimestamp;
-  if (copy.LogicalResourceId === CONTRACT.mappingLogicalId) delete copy.PhysicalResourceId;
   return copy;
 }
 

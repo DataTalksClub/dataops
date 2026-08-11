@@ -15,7 +15,6 @@ import {
   bindCandidateInventory,
   canonicalJson,
   completionKey,
-  dependencyInventory,
   deriveOperationId,
   deriveResetId,
   digest,
@@ -31,8 +30,6 @@ import {
   validateChangeList,
   validateCompletion,
   validateIntent,
-  validateLiveTable,
-  validateMappings,
   validateProcessedBaseline,
   validateRuntimeEnvironment,
   validateStackIdAnchor,
@@ -48,15 +45,8 @@ const NEW_ID = "new-table-id-12345678";
 const CANDIDATE_CREATED = "2026-08-11T12:00:00.000Z";
 const TABLE_RECREATION = Object.freeze({
   AttributeDefinitions: "Conditionally", BillingMode: "Never", KeySchema: "Always",
-  PointInTimeRecoverySpecification: "Never", SSESpecification: "Never", StreamSpecification: "Never",
-  TableName: "Always", TimeToLiveSpecification: "Never",
+  PointInTimeRecoverySpecification: "Never", SSESpecification: "Never", TableName: "Always",
 });
-const OLD_STREAM = `${CONTRACT.tableArn}/stream/2026-08-01T00:00:00.000`;
-const NEW_STREAM = `${CONTRACT.tableArn}/stream/2026-08-11T00:00:00.000`;
-const FUNCTION_NAME = "dataops-v1-SponsorSendWorkerFunction-ABC123";
-const FUNCTION_ARN = `arn:aws:lambda:eu-west-1:817685572750:function:${FUNCTION_NAME}`;
-const OLD_MAPPING = "11111111-1111-1111-1111-111111111111";
-const NEW_MAPPING = "22222222-2222-2222-2222-222222222222";
 
 function dispatchEnv(phase, prior, approval) {
   const receiptId = prior?.receipt_id ?? NO_RECEIPT;
@@ -81,37 +71,25 @@ function dispatchEnv(phase, prior, approval) {
   };
 }
 
-function setPointer(root, pointer, value) {
-  const parts = pointer.split("/").slice(1).map((item) => item.replaceAll("~1", "/").replaceAll("~0", "~"));
-  let cursor = root;
-  for (let index = 0; index < parts.length - 1; index += 1) {
-    const key = /^\d+$/.test(parts[index]) ? Number(parts[index]) : parts[index];
-    const nextIsArray = /^\d+$/.test(parts[index + 1]);
-    if (cursor[key] === undefined) cursor[key] = nextIsArray ? [] : {};
-    cursor = cursor[key];
-  }
-  const leaf = /^\d+$/.test(parts.at(-1)) ? Number(parts.at(-1)) : parts.at(-1);
-  cursor[leaf] = structuredClone(value);
-}
-
 function processed() {
   const fixture = loadPrefixZeroFixture();
-  const template = { AWSTemplateFormatVersion: "2010-09-09", Resources: { [CONTRACT.logicalId]: structuredClone(fixture.tableResource) } };
-  for (const reference of fixture.references) {
-    template.Resources[reference.logicalId] ??= { Type: reference.resourceType, Properties: {} };
-    const semanticValue = ({ Ref: { Ref: reference.value }, "Fn::GetAtt": { "Fn::GetAtt": reference.value }, "Fn::Sub": { "Fn::Sub": reference.value } })[reference.form] ?? reference.value;
-    setPointer(template, reference.pointer, semanticValue);
-    if (reference.actions.length) {
-      const statementPointer = reference.pointer.slice(0, reference.pointer.lastIndexOf("/Resource"));
-      const statement = getPointer(template, statementPointer);
-      statement.Action = structuredClone(reference.actions);
-    }
-  }
-  return template;
-}
-
-function getPointer(root, pointer) {
-  return pointer.split("/").slice(1).reduce((cursor, part) => cursor[part.replaceAll("~1", "/").replaceAll("~0", "~")], root);
+  return {
+    AWSTemplateFormatVersion: "2010-09-09",
+    Resources: {
+      [CONTRACT.logicalId]: structuredClone(fixture.tableResource),
+      BackendFunction: {
+        Type: "AWS::Lambda::Function",
+        Properties: { Environment: { Variables: { DATAOPS_SPONSOR_CRM_TABLE: { Ref: CONTRACT.logicalId } } } },
+      },
+      BackendFunctionRole: {
+        Type: "AWS::IAM::Role",
+        Properties: { Policies: [{ PolicyDocument: { Statement: {
+          Action: ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"],
+          Resource: [...Array.from({ length: 15 }, (_, index) => `arn:aws:dynamodb:eu-west-1:817685572750:table/unrelated-${index}`), { "Fn::GetAtt": [CONTRACT.logicalId, "Arn"] }],
+        } } }] },
+      },
+    },
+  };
 }
 
 function table({ fresh = false, protection = false, status = "ACTIVE" } = {}) {
@@ -125,25 +103,8 @@ function table({ fresh = false, protection = false, status = "ACTIVE" } = {}) {
     DeletionProtectionEnabled: protection,
     KeySchema: [{ AttributeName: "PK", KeyType: "HASH" }, { AttributeName: "SK", KeyType: "RANGE" }],
     AttributeDefinitions: [{ AttributeName: "PK", AttributeType: "S" }, { AttributeName: "SK", AttributeType: "S" }],
-    StreamSpecification: { StreamEnabled: true, StreamViewType: "NEW_AND_OLD_IMAGES" },
-    LatestStreamArn: fresh ? NEW_STREAM : OLD_STREAM,
     ItemCount: 0,
     TableSizeBytes: 0,
-  };
-}
-
-function mapping(fresh = false, state = "Disabled") {
-  return {
-    UUID: fresh ? NEW_MAPPING : OLD_MAPPING,
-    State: state,
-    FunctionArn: FUNCTION_ARN,
-    EventSourceArn: fresh ? NEW_STREAM : OLD_STREAM,
-    StartingPosition: "LATEST",
-    BatchSize: 10,
-    MaximumBatchingWindowInSeconds: 1,
-    MaximumRetryAttempts: 2,
-    BisectBatchOnFunctionError: true,
-    FunctionResponseTypes: [],
   };
 }
 
@@ -157,13 +118,6 @@ function candidateChanges() {
         ChangeSource: "DirectModification", Evaluation: "Static",
         Target: { Attribute: "Properties", Name, RequiresRecreation: TABLE_RECREATION[Name], BeforeValue: null, AfterValue: canonicalJson(value) },
       })),
-    } },
-    { Type: "Resource", ResourceChange: {
-      Action: "Modify", LogicalResourceId: CONTRACT.mappingLogicalId, ResourceType: "AWS::Lambda::EventSourceMapping",
-      Replacement: "True", Scope: ["Properties"], Details: [{
-        ChangeSource: "DirectModification", Evaluation: "Static",
-        Target: { Attribute: "Properties", Name: "EventSourceArn", RequiresRecreation: "Always", BeforeValue: OLD_STREAM, AfterValue: "<new-DataOpsSponsorCrmTable.StreamArn>" },
-      }],
     } },
   ];
 }
@@ -221,8 +175,6 @@ class MockAws {
     if (service === "cloudformation" && operation === "list-stack-resources") {
       const resources = [
       { LogicalResourceId: CONTRACT.logicalId, PhysicalResourceId: CONTRACT.physicalTable, ResourceType: "AWS::DynamoDB::Table", ResourceStatus: "CREATE_COMPLETE" },
-      { LogicalResourceId: "SponsorSendWorkerFunction", PhysicalResourceId: FUNCTION_NAME, ResourceType: "AWS::Lambda::Function", ResourceStatus: "CREATE_COMPLETE" },
-      { LogicalResourceId: CONTRACT.mappingLogicalId, PhysicalResourceId: this.fresh ? NEW_MAPPING : OLD_MAPPING, ResourceType: "AWS::Lambda::EventSourceMapping", ResourceStatus: "CREATE_COMPLETE" },
       ];
       if (this.extraStackResource) resources.push({ LogicalResourceId: "UnrelatedQueue", PhysicalResourceId: "queue", ResourceType: "AWS::SQS::Queue", ResourceStatus: "CREATE_COMPLETE" });
       return { StackResourceSummaries: resources };
@@ -239,16 +191,10 @@ class MockAws {
       return { Table: table({ fresh: this.fresh, protection: this.protection, status: this.tableStatus }) };
     }
     if (service === "dynamodb" && operation === "describe-continuous-backups") return { ContinuousBackupsDescription: { PointInTimeRecoveryDescription: { PointInTimeRecoveryStatus: "ENABLED" } } };
-    if (service === "dynamodb" && operation === "describe-time-to-live") return { TimeToLiveDescription: { AttributeName: "ttl", TimeToLiveStatus: "ENABLED" } };
-    if (service === "dynamodb" && operation === "list-tags-of-resource") return { Tags: [
+    if (service === "dynamodb" && operation === "describe-time-to-live") return { TimeToLiveDescription: { TimeToLiveStatus: "DISABLED" } };
+    if (service === "dynamodb" && operation === "list-tags-of-resource") return { Tags: this.fresh ? [
       { Key: "aws:cloudformation:stack-name", Value: CONTRACT.stack }, { Key: "aws:cloudformation:logical-id", Value: CONTRACT.logicalId }, { Key: "aws:cloudformation:stack-id", Value: STACK_ID },
-    ] };
-    if (service === "lambda" && operation === "list-event-source-mappings") {
-      assert.equal(value(args, "--function-name"), FUNCTION_NAME);
-      const stream = value(args, "--event-source-arn");
-      const items = (stream === OLD_STREAM && !this.fresh) ? [mapping(false)] : (stream === NEW_STREAM && this.fresh) ? [mapping(true)] : [];
-      return { EventSourceMappings: items };
-    }
+    ] : [] };
     if (service === "dynamodb" && operation === "update-table") {
       assert.deepEqual(args.slice(0, 2), ["--table-name", CONTRACT.physicalTable]);
       this.protection = args[2] === "--deletion-protection-enabled";
@@ -277,7 +223,7 @@ class MockAws {
         Parameters: [{ ParameterKey: "GitHubOwner", ParameterValue: "DataTalksClub", UsePreviousValue: true }, { ParameterKey: "PrivateValue", ParameterValue: "opaque", UsePreviousValue: true }],
         Capabilities: ["CAPABILITY_AUTO_EXPAND", "CAPABILITY_IAM"], NotificationARNs: [], IncludeNestedStacks: false,
         RollbackConfiguration: { RollbackTriggers: [] },
-        Changes: this.paginateCandidate ? [nextToken ? allChanges[1] : allChanges[0]] : allChanges,
+        Changes: this.paginateCandidate ? (nextToken ? allChanges : []) : allChanges,
         ...((this.paginateCandidate && !nextToken) ? { NextToken: "candidate-page-2" } : {}),
       };
       if (nextToken && this.candidatePageMutation) this.candidatePageMutation(response);
@@ -311,21 +257,19 @@ test("canonical fixture freezes exact prefix zero and complete semantic inventor
   for (const mutate of [
     (copy) => { copy.Resources[CONTRACT.logicalId].Properties.Tags = []; },
     (copy) => { copy.Resources[CONTRACT.logicalId].Properties.GlobalSecondaryIndexes = []; },
-    (copy) => { delete copy.Resources.BackendFunction; },
     (copy) => { copy.Resources.UnknownWriter = { Type: "AWS::Lambda::Function", Properties: { Table: { Ref: CONTRACT.logicalId } } }; },
-    (copy) => { copy.Resources.BackendFunction.Properties.Environment.Variables.DATAOPS_SPONSOR_CRM_TABLE = CONTRACT.physicalTable; },
-    (copy) => { copy.Resources.BackendFunction.Properties.Environment.Variables.SHADOW_TABLE = { "Fn::Sub": "${AWS::StackName}-sponsor-crm" }; },
-    (copy) => { copy.Resources.BackendFunction.Properties.Environment.Variables.SHADOW_TABLE = { "Fn::Join": ["-", [{ Ref: "AWS::StackName" }, "sponsor", "crm"]] }; },
-    (copy) => { copy.Resources.BackendFunction.Properties.Environment.Variables.SHADOW_ARN = { "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-sponsor-crm" }; },
+    (copy) => { copy.Resources.UnknownWriter = { Type: "AWS::Lambda::Function", Properties: { Table: CONTRACT.physicalTable } }; },
+    (copy) => { copy.Resources.UnknownWriter = { Type: "AWS::Lambda::Function", Properties: { Table: { "Fn::Sub": "${AWS::StackName}-sponsor-crm" } } }; },
+    (copy) => { copy.Resources.UnknownWriter = { Type: "AWS::Lambda::Function", Properties: { Table: { "Fn::Join": ["-", [{ Ref: "AWS::StackName" }, "sponsor", "crm"]] } } }; },
+    (copy) => { copy.Resources.UnknownWriter = { Type: "AWS::Lambda::Function", Properties: { TableArn: { "Fn::Sub": "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AWS::StackName}-sponsor-crm" } } }; },
     (copy) => { copy.Outputs = { Leak: { Value: { Ref: CONTRACT.logicalId } } }; },
-    (copy) => { getPointer(copy, "/Resources/BackendFunctionRole/Properties/Policies/0/PolicyDocument/Statement").Action.push("dynamodb:CreateTable"); },
   ]) {
     const changed = processed(); mutate(changed); assert.throws(() => validateProcessedBaseline(changed));
   }
 });
 
 test("records, deterministic IDs, opaque receipts, and exact schemas fail closed", () => {
-  const resetId = deriveResetId({ stackIdDigest: digest(STACK_ID), sha: SHA, fixtureDigest: "1".repeat(64), oldTableIdDigest: "2".repeat(64), oldStreamArnDigest: "3".repeat(64), oldMappingIdDigest: "4".repeat(64) });
+  const resetId = deriveResetId({ stackIdDigest: digest(STACK_ID), sha: SHA, fixtureDigest: "1".repeat(64), oldTableIdDigest: "2".repeat(64) });
   const plannedTargetDigest = "5".repeat(64);
   const operationId = deriveOperationId({ resetId, phase: "delete", sourceSha: SHA, priorCompletionDigest: NO_RECEIPT, plannedTargetDigest });
   const identity = { resetId, ordinal: 20, phase: "delete", operationId, plannedTargetDigest, stackIdDigest: digest(STACK_ID) };
@@ -354,8 +298,8 @@ test("candidate details reconstruct the exact fixture and reject every unreviewe
   const expected = { candidateArn: "arn:aws:cloudformation:eu-west-1:817685572750:changeSet/reset/33333333-3333-3333-3333-333333333333", name: "reset", stackId: STACK_ID, stackIdDigest: digest(STACK_ID), description: "desc", parameters: [{ ParameterKey: "A", UsePreviousValue: true }], capabilities: ["CAPABILITY_IAM"] };
   const candidate = { ChangeSetId: expected.candidateArn, ChangeSetName: "reset", Description: "desc", StackName: CONTRACT.stack, StackId: STACK_ID, ChangeSetType: "UPDATE", CreationTime: CANDIDATE_CREATED, Status: "CREATE_COMPLETE", ExecutionStatus: "AVAILABLE", Parameters: structuredClone(expected.parameters), Capabilities: ["CAPABILITY_IAM"], NotificationARNs: [], IncludeNestedStacks: false, RollbackConfiguration: { RollbackTriggers: [] } };
   const accepted = validateCandidate(candidate, expected, candidateChanges()); assert.equal(accepted.candidateDigest, digest(accepted.candidate));
-  const firstPage = { ...structuredClone(candidate), Changes: [candidateChanges()[0]], NextToken: "page-2" };
-  const secondPage = { ...structuredClone(candidate), Changes: [candidateChanges()[1]] };
+  const firstPage = { ...structuredClone(candidate), Changes: [], NextToken: "page-2" };
+  const secondPage = { ...structuredClone(candidate), Changes: candidateChanges() };
   assert.doesNotThrow(() => validateCandidatePage(firstPage));
   assert.doesNotThrow(() => validateCandidatePage(secondPage, firstPage));
   for (const mutate of [
@@ -371,7 +315,6 @@ test("candidate details reconstruct the exact fixture and reject every unreviewe
     (changes) => { changes[0].ResourceChange.Details[0].Target.AfterValue = "{}"; },
     (changes) => { changes[0].ResourceChange.Details.find(({ Target }) => Target.Name === "BillingMode").Target.RequiresRecreation = "Always"; },
     (changes) => { changes[0].ResourceChange.Details.push(structuredClone(changes[0].ResourceChange.Details[0])); },
-    (changes) => { changes[1].ResourceChange.Details[0].Target.Name = "FunctionName"; },
     (changes) => { changes.push({ ResourceChange: { LogicalResourceId: "Evil", ResourceType: "AWS::IAM::Role", Action: "Add" } }); },
   ]) { const changed = candidateChanges(); mutate(changed); assert.throws(() => validateChangeList(changed)); }
 });
@@ -449,7 +392,7 @@ test("cleanup never targets a candidate when inventory is not the exact approved
 });
 
 for (const [proof, mutate] of [
-  ["dependency", (mock) => { mock.template.Resources.BackendFunction.Properties.Environment.Variables.SHADOW_TABLE = { "Fn::Sub": "${AWS::StackName}-sponsor-crm" }; }],
+  ["dependency", (mock) => { mock.template.Resources.UnknownWriter = { Type: "AWS::Lambda::Function", Properties: { Table: { "Fn::Sub": "${AWS::StackName}-sponsor-crm" } } }; }],
   ["template", (mock) => { mock.template.Metadata = { UnexpectedDrift: true }; }],
   ["resource", (mock) => { mock.extraStackResource = true; }],
 ]) {

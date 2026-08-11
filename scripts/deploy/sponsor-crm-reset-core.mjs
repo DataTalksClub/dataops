@@ -17,7 +17,6 @@ export const CONTRACT = Object.freeze({
   role: "dataops-github-actions-deploy",
   roleArn: "arn:aws:iam::817685572750:role/dataops-github-actions-deploy",
   tableArn: "arn:aws:dynamodb:eu-west-1:817685572750:table/dataops-v1-sponsor-crm",
-  mappingLogicalId: "SponsorSendWorkerFunctionQueuedSponsorSend",
   recordSchema: "dataops.sponsor-reset/v1",
   fixtureSchema: "dataops.sponsor-reset-prefix-0/v1",
   evidenceBucket: "aws-sam-cli-managed-default-samclisourcebucket-dgwncwijmnpd",
@@ -82,13 +81,6 @@ const FIXTURE_PATH = fileURLToPath(new URL("./fixtures/sponsor-crm-prefix-0.proc
 const ACCEPTED_REFERENCE_IDS = Object.freeze([
   "BackendFunction",
   "BackendFunctionRole",
-  "SponsorPrivateArchiveFunction",
-  "SponsorPrivateArchiveFunctionRole",
-  "SponsorSendWorkerFunction",
-  "SponsorSendWorkerFunctionQueuedSponsorSend",
-  "SponsorSendWorkerFunctionRole",
-  "SponsorSesEventFunction",
-  "SponsorSesEventFunctionRole",
 ]);
 const PSEUDO_PARAMETER_VALUES = Object.freeze({
   "AWS::AccountId": GSI_CONTRACT.account,
@@ -102,9 +94,7 @@ const TABLE_RECREATION = Object.freeze({
   KeySchema: "Always",
   PointInTimeRecoverySpecification: "Never",
   SSESpecification: "Never",
-  StreamSpecification: "Never",
   TableName: "Always",
-  TimeToLiveSpecification: "Never",
 });
 const CANDIDATE_FIELDS = Object.freeze([
   "Capabilities", "ChangeSetId", "ChangeSetName", "ChangeSetType", "CreationTime", "Description", "ExecutionStatus",
@@ -218,12 +208,12 @@ export function collectSponsorReferences(template) {
   const found = [];
   assert.ok(template?.Resources && typeof template.Resources === "object", "processed Resources missing");
   walk(template, "", (value, pointer, ancestors) => {
+    const parts = pointer.split("/");
+    const logicalId = parts[1] === "Resources" ? unescapePointer(parts[2] ?? "") : undefined;
+    if (logicalId === CONTRACT.logicalId) return;
     const reference = classifyReference(value, pointer);
     if (!reference) return;
-    const parts = pointer.split("/");
     assert.equal(parts[1], "Resources", `Sponsor reference outside Resources at ${pointer}`);
-    const logicalId = unescapePointer(parts[2] ?? "");
-    if (logicalId === CONTRACT.logicalId) return;
     const resource = template.Resources?.[logicalId];
     assert.ok(resource, `reference outside a resource at ${pointer}`);
     const actions = nearestActions(ancestors);
@@ -242,6 +232,7 @@ export function collectSponsorReferences(template) {
 
 function classifyReference(value, pointer = "unknown") {
   if (typeof value === "string") {
+    if (pointer === `/Resources/${CONTRACT.logicalId}/Metadata/SamResourceId` && value === CONTRACT.logicalId) return undefined;
     if (value === CONTRACT.physicalTable) return { form: "literal-table-name", value };
     if (value === CONTRACT.tableArn) return { form: "literal-table-arn", value };
     if (value.startsWith(`${CONTRACT.tableArn}/stream/`)) return { form: "literal-stream-arn", value };
@@ -332,7 +323,6 @@ function isSponsorTarget(value) {
 function classifyDependency(logicalId, resourceType) {
   assert.ok(ACCEPTED_REFERENCE_IDS.includes(logicalId), `unreviewed Sponsor dependency ${logicalId}`);
   if (resourceType === "AWS::IAM::Role") return "generated-role";
-  if (resourceType === "AWS::Lambda::EventSourceMapping") return "stream-consumer";
   if (logicalId === "SponsorPrivateArchiveFunction") return "reader";
   if (resourceType === "AWS::Lambda::Function") return "writer";
   assert.fail(`unsupported Sponsor dependency classification ${logicalId}`);
@@ -395,46 +385,26 @@ export function validateLiveTable(table, { priorTableId, deletionProtection, all
   assert.equal(table.SSEDescription?.Status, "ENABLED");
   assert.equal(typeof table.DeletionProtectionEnabled, "boolean", "deletion protection not explicit");
   if (deletionProtection !== undefined) assert.equal(table.DeletionProtectionEnabled, deletionProtection);
-  assert.equal(table.StreamSpecification?.StreamEnabled, true);
-  assert.equal(table.StreamSpecification?.StreamViewType, "NEW_AND_OLD_IMAGES");
-  assert.match(table.LatestStreamArn ?? "", new RegExp(`^${escapeRegex(CONTRACT.tableArn)}/stream/`));
+  assert.equal(table.StreamSpecification, undefined, "legacy prefix-0 table unexpectedly has streams enabled");
+  assert.equal(table.LatestStreamArn, undefined, "legacy prefix-0 table unexpectedly has a stream ARN");
   return {
     tableArn: table.TableArn,
     tableId: table.TableId,
     tableStatus: table.TableStatus,
-    streamArn: table.LatestStreamArn,
     tableDigest: digest(stableTable(table)),
     deletionProtection: table.DeletionProtectionEnabled,
   };
 }
 
-export function validateAuxiliaryTableState({ backups, ttl, tags }, stackId) {
+export function validateAuxiliaryTableState({ backups, ttl, tags }, stackId, { owned }) {
   assert.equal(backups?.ContinuousBackupsDescription?.PointInTimeRecoveryDescription?.PointInTimeRecoveryStatus, "ENABLED");
-  assert.deepEqual(ttl?.TimeToLiveDescription, { AttributeName: "ttl", TimeToLiveStatus: "ENABLED" });
-  assert.deepEqual(normalizeTags(tags?.Tags), [
-    { Key: "aws:cloudformation:logical-id", Value: CONTRACT.logicalId },
-    { Key: "aws:cloudformation:stack-id", Value: stackId },
-    { Key: "aws:cloudformation:stack-name", Value: CONTRACT.stack },
-  ]);
-}
-
-export function stableMapping(mapping) {
-  assert.match(mapping.UUID ?? "", UUID);
-  assert.ok(new Set(["Enabled", "Disabled"]).has(mapping.State));
-  assert.match(mapping.FunctionArn ?? "", /^arn:aws:lambda:eu-west-1:817685572750:function:dataops-v1-SponsorSendWorkerFunction-[A-Za-z0-9]+$/);
-  assert.match(mapping.EventSourceArn ?? "", new RegExp(`^${escapeRegex(CONTRACT.tableArn)}/stream/`));
-  const copy = structuredClone(mapping);
-  delete copy.LastModified;
-  delete copy.StateTransitionReason;
-  return copy;
-}
-
-export function validateMappings(response, expectedStreamArn) {
-  assert.equal(response.NextMarker, undefined);
-  assert.equal(response.EventSourceMappings?.length, 1, "mapping must be singleton");
-  const mapping = stableMapping(response.EventSourceMappings[0]);
-  assert.equal(mapping.EventSourceArn, expectedStreamArn);
-  return { mappingUuid: mapping.UUID, mappingDigest: digest(mapping), mapping };
+  assert.deepEqual(ttl?.TimeToLiveDescription, { TimeToLiveStatus: "DISABLED" });
+  const expectedTags = owned ? [
+      { Key: "aws:cloudformation:logical-id", Value: CONTRACT.logicalId },
+      { Key: "aws:cloudformation:stack-id", Value: stackId },
+      { Key: "aws:cloudformation:stack-name", Value: CONTRACT.stack },
+    ] : [];
+  assert.deepEqual(normalizeTags(tags?.Tags), expectedTags);
 }
 
 export function validateCandidate(changeSet, expected, changes) {
@@ -492,16 +462,15 @@ export function bindCandidateInventory(candidates, candidate) {
 }
 
 export function validateChangeList(changes) {
-  assert.equal(changes.length, 2, "candidate must contain exactly two resource changes");
+  assert.equal(changes.length, 1, "candidate must contain exactly one resource change");
   for (const change of changes) {
     assert.deepEqual(Object.keys(change).sort(), ["ResourceChange", "Type"], "candidate Change fields changed");
     assert.equal(change.Type, "Resource", "candidate Change type changed");
   }
   const sorted = structuredClone(changes).sort((a, b) => a.ResourceChange.LogicalResourceId.localeCompare(b.ResourceChange.LogicalResourceId));
   const byId = new Map(sorted.map(({ ResourceChange }) => [ResourceChange?.LogicalResourceId, ResourceChange]));
-  assert.equal(byId.size, 2);
+  assert.equal(byId.size, 1);
   validateTableAdd(byId.get(CONTRACT.logicalId));
-  validateMappingChange(byId.get(CONTRACT.mappingLogicalId));
   return sorted;
 }
 
@@ -543,16 +512,6 @@ function validateTableAdd(change) {
   }
 }
 
-function validateMappingChange(change) {
-  validateChangeEnvelope(change, "AWS::Lambda::EventSourceMapping", "Modify");
-  assert.equal(change.Details.length, 1);
-  const target = change.Details[0].Target;
-  assert.equal(target.Name, "EventSourceArn");
-  assert.match(target.BeforeValue ?? "", new RegExp(`^${escapeRegex(CONTRACT.tableArn)}/stream/`));
-  assert.equal(target.AfterValue, "<new-DataOpsSponsorCrmTable.StreamArn>");
-  assert.equal(target.RequiresRecreation, "Always");
-}
-
 function parsePropertyValue(value) {
   assert.equal(typeof value, "string", "candidate property value must be canonical JSON text");
   const parsed = JSON.parse(value);
@@ -560,11 +519,11 @@ function parsePropertyValue(value) {
   return parsed;
 }
 
-export function deriveResetId({ stackIdDigest, sha, fixtureDigest, oldTableIdDigest, oldStreamArnDigest, oldMappingIdDigest }) {
+export function deriveResetId({ stackIdDigest, sha, fixtureDigest, oldTableIdDigest }) {
   assert.match(stackIdDigest ?? "", HEX);
   assert.match(sha ?? "", SHA);
-  for (const value of [fixtureDigest, oldTableIdDigest, oldStreamArnDigest, oldMappingIdDigest]) assert.match(value ?? "", HEX);
-  return digest({ schema: CONTRACT.recordSchema, repository: CONTRACT.repository, stackIdDigest, sha, fixtureDigest, oldTableIdDigest, oldStreamArnDigest, oldMappingIdDigest });
+  for (const value of [fixtureDigest, oldTableIdDigest]) assert.match(value ?? "", HEX);
+  return digest({ schema: CONTRACT.recordSchema, repository: CONTRACT.repository, stackIdDigest, sha, fixtureDigest, oldTableIdDigest });
 }
 
 export function deriveOperationId({ resetId, phase, sourceSha, priorCompletionDigest, plannedTargetDigest }) {
