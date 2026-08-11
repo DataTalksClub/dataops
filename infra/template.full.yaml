@@ -785,7 +785,6 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
-      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
       StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }

@@ -174,10 +174,9 @@ export function validateTargetTemplate(template) {
     !Object.hasOwn(properties, "Tags"),
     "checked-in target must inherit only the exact stack tags",
   );
-  assert.deepEqual(
-    properties.TimeToLiveSpecification,
-    { AttributeName: "ttl", Enabled: true },
-    "checked-in target TTL contract changed",
+  assert.ok(
+    !Object.hasOwn(properties, "TimeToLiveSpecification"),
+    "checked-in target TTL must stay absent during the DynamoDB cooldown",
   );
   assert.deepEqual(
     properties.StreamSpecification,

@@ -1078,7 +1078,7 @@ test("bounded waiter classifications stop on failures and rollbacks", () => {
   }
 });
 
-test("target validation rejects stale GSI, TTL, stream, and preservation contracts", () => {
+test("target validation rejects stale GSI, premature TTL, stream, and preservation contracts", () => {
   const source = parseTemplate(readFileSync("infra/template.full.yaml", "utf8"));
   const mutations = [
     (properties) => {
@@ -1086,7 +1086,7 @@ test("target validation rejects stale GSI, TTL, stream, and preservation contrac
         "KEYS_ONLY";
     },
     (properties) => {
-      properties.TimeToLiveSpecification.Enabled = false;
+      properties.TimeToLiveSpecification = { AttributeName: "ttl", Enabled: true };
     },
     (properties) => {
       properties.StreamSpecification.StreamViewType = "KEYS_ONLY";
