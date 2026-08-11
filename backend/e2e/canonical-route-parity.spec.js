@@ -70,6 +70,20 @@ async function expectNoSeriousA11y(page, selector) {
 }
 
 test.describe('issue 156 canonical route and operator parity', () => {
+  test('boots hash workspace routes without waiting for a delayed docs provider', async ({ page, request }) => {
+    await setRouteFaults(request, [{ method: 'GET', path: '/docs', delayMs: 5000 }]);
+    try {
+      const docsStarted = page.waitForRequest((req) => new URL(req.url()).pathname === '/docs');
+      await page.goto('/#/');
+      await docsStarted;
+      await expect(page.locator('#library-title')).toHaveText('Home', { timeout: 2000 });
+      await expect(page.locator('.operations-home')).toBeVisible();
+    } finally {
+      await page.goto('about:blank');
+      await clearRouteFaults(request);
+    }
+  });
+
   test('resolves every supported row, valid task combination, normalization, and browser history', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     const routes = [

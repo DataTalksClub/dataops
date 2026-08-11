@@ -451,8 +451,15 @@ function restoreDarkMode() {
 showLibrary({ updateUrl: false });
 refreshChangesPanel();
 updateSaveState();
-loadDocuments().then(async () => {
-  await openInitialRoute();
+const documentsReady = loadDocuments();
+// Hash workspace routes do not depend on the Git-backed document catalog.
+// Open them immediately so a slow/unavailable docs provider cannot strand the
+// entire app on the legacy "Loading documents" shell. Legacy pathname-based
+// document links still wait for the catalog so they can resolve honestly.
+const initialRouteReadyPromise = window.location.hash || window.location.pathname === "/"
+  ? openInitialRoute()
+  : documentsReady.then(() => openInitialRoute());
+initialRouteReadyPromise.then(() => {
   initialRouteReady = true;
 });
 refreshGitStatus();
@@ -528,6 +535,15 @@ async function loadDocuments() {
   const skeleton = document.querySelector("#tree-skeleton");
   if (skeleton) skeleton.hidden = false;
 
+  // Work APIs are independent of the Git-backed docs API. Start their
+  // bootstrap requests before awaiting docs so Home, Inbox, assistants,
+  // artifacts, and recurring work remain operational during a docs outage.
+  refreshOperationsWorkSnapshot({ rerender: true });
+  refreshOperationsRecurringSnapshot({ rerender: true });
+  refreshOperationsArtifactSnapshot({ rerender: true });
+  refreshOperationsAssistantSnapshot({ rerender: true });
+  refreshOperationsQualitySnapshot({ rerender: true });
+
   try {
     const payload = await request(apiUrl("/docs"));
     allDocuments = payload.documents || [];
@@ -542,15 +558,6 @@ async function loadDocuments() {
   } finally {
     if (skeleton) skeleton.hidden = true;
   }
-
-  // Work APIs are independent of the Git-backed docs API. A docs outage (or
-  // an intentionally offline deployment) must not prevent Home, Inbox,
-  // assistants, artifacts, or recurring work from bootstrapping.
-  refreshOperationsWorkSnapshot({ rerender: true });
-  refreshOperationsRecurringSnapshot({ rerender: true });
-  refreshOperationsArtifactSnapshot({ rerender: true });
-  refreshOperationsAssistantSnapshot({ rerender: true });
-  refreshOperationsQualitySnapshot({ rerender: true });
 }
 
 async function openInitialRoute() {
