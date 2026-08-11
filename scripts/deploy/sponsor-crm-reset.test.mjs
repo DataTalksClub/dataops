@@ -181,7 +181,8 @@ class MockAws {
     }
     if (service === "cloudformation" && operation === "list-change-sets") {
       const summaries = this.candidate ? [{
-        ChangeSetId: this.inventoryArnOverride ?? this.candidateArn, ChangeSetName: this.candidateName, Status: this.candidateStatus, ExecutionStatus: this.candidateExecution,
+        ChangeSetId: this.inventoryArnOverride ?? this.candidateArn, ChangeSetName: this.candidateName, Description: this.candidateDescription,
+        Status: this.candidateStatus, ExecutionStatus: this.candidateExecution,
       }] : [];
       if (this.candidate && this.extraCandidate) summaries.push({ ChangeSetId: `${this.candidateArn}-foreign`, ChangeSetName: "foreign", Status: "CREATE_COMPLETE", ExecutionStatus: "AVAILABLE" });
       return { Summaries: summaries, ...(this.paginationLoop ? { NextToken: "repeat" } : {}) };
@@ -528,6 +529,19 @@ test("an exact missing table can recover through a root create without detached 
   for (const record of ledger.records.values()) {
     assert.deepEqual(JSON.parse(canonicalJson(record)), record);
   }
+});
+
+test("a fully revalidated singleton orphan candidate can be cleaned from a missing-table root", async () => {
+  const mock = new MockAws();
+  mock.present = false;
+  mock.candidate = true;
+  mock.candidateName = `dataops-sponsor-reset-${"a".repeat(24)}`;
+  mock.candidateDescription = `dataops.sponsor-reset/v1/${"a".repeat(64)}`;
+  mock.candidateArn = `arn:aws:cloudformation:eu-west-1:817685572750:changeSet/${mock.candidateName}/33333333-3333-3333-3333-333333333333`;
+  const ledger = new MemoryLedger();
+  const cleaned = await phase(mock, ledger, "cleanup-candidate");
+  assert.equal(cleaned.status, "completed");
+  assert.equal(mock.candidate, false);
 });
 
 test("S3 listing is bounded and rejects pagination cycles, foreign keys, missing encryption/version/checksum", async () => {

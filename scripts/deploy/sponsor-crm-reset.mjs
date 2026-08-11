@@ -289,6 +289,9 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
   const priorCompletionDigest = prior?.receipt.completionDigest ?? NO_RECEIPT;
   checkpoint = "phase-state";
   const before = preliminary ?? await observeState(aws, env, stackProbe, phase, prior?.completion);
+  if (!prior && phase === "cleanup-candidate") {
+    before.candidate = await reloadOrphanCandidate(aws, before);
+  }
   if (prior && ["create", "execute", "verify", "cleanup-candidate"].includes(phase)) {
     const oldTable = lineageTable(prior.completion);
     if (oldTable !== undefined) before.oldTable ??= oldTable;
@@ -296,7 +299,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
   if (phase === "execute" && !before.table && !String(before.stackStatus).endsWith("_IN_PROGRESS")) {
     before.candidate = await reloadApprovedCandidate(aws, before, prior.completion);
   }
-  if (phase === "cleanup-candidate" && !before.table && before.candidates.length === 1
+  if (prior && phase === "cleanup-candidate" && !before.table && before.candidates.length === 1
     && before.candidates[0].Status === "CREATE_COMPLETE" && before.candidates[0].ExecutionStatus === "AVAILABLE") {
     before.candidate = await reloadApprovedCandidate(aws, before, prior.completion);
   }
@@ -425,7 +428,7 @@ function validateLedgerLineage(ledgerState, resetId, sourceSha, stackIdDigest) {
   if (intents.length === 0) return;
   const roots = intents.filter(({ priorCompletionDigest }) => priorCompletionDigest === NO_RECEIPT);
   assert.equal(roots.length, 1, "reset lineage must have exactly one root");
-  assert.ok(["preflight", "create"].includes(roots[0].phase), "reset root must be preflight or missing-table recovery create");
+  assert.ok(["preflight", "create", "cleanup-candidate"].includes(roots[0].phase), "reset root phase is not reviewed");
   for (const intent of intents) {
     assert.equal(intent.resetId, resetId);
     assert.equal(intent.sourceSha, sourceSha, "ledger source SHA changed");
@@ -456,13 +459,13 @@ function resolveReceipt(ledgerState, supplied) {
 function resetSeedFrom(state, phase = "preflight") {
   const table = state.oldTable ?? state.table;
   if (!table?.tableId) {
-    assert.equal(phase, "create", "reset root requires the exact old table identity");
+    assert.ok(["create", "cleanup-candidate"].includes(phase), "reset root requires the exact old table identity");
     assert.equal(state.table, undefined, "recovery create requires the table to be absent");
-    assert.deepEqual(state.candidates, [], "recovery create requires an empty candidate inventory");
+    assert.equal(state.candidates.length, phase === "create" ? 0 : 1, "recovery candidate inventory changed");
   }
   return {
     fixtureDigest: state.fixtureDigest,
-    oldTableIdDigest: table?.tableId ? digest(table.tableId) : digest("reviewed-missing-table-recovery"),
+    oldTableIdDigest: table?.tableId ? digest(table.tableId) : digest(`reviewed-missing-table-recovery:${phase}`),
   };
 }
 
@@ -497,7 +500,7 @@ function validateTransition(phase, prior) {
     create: [undefined, "delete"],
     execute: ["create"],
     verify: ["execute"],
-    "cleanup-candidate": ["create"],
+    "cleanup-candidate": [undefined, "create"],
     "restore-protection": ["disable-protection"],
     abandon: ["preflight", "disable-protection", "delete", "create", "execute", "verify", "cleanup-candidate"],
   }[phase];
@@ -556,7 +559,7 @@ function planOperation(phase, identity, before, prior) {
   }
   if (phase === "verify") return { target: none, expected: { tablePresent: true, candidateCount: 0 } };
   if (phase === "cleanup-candidate") {
-    const candidate = prior?.candidate;
+    const candidate = prior?.candidate ?? before.candidate;
     assert.ok(candidate?.candidateArn);
     if (before.candidates.length > 0 && before.candidates[0].Status === "CREATE_COMPLETE") {
       assert.deepEqual(before.candidate, candidate, "cleanup candidate was not fully revalidated");
@@ -682,29 +685,32 @@ async function executeOrObserve(phase, aws, env, before, operation, prior, { int
   }
   assert.equal(phase, "cleanup-candidate");
   assert.equal(before.table, undefined, "candidate cleanup only applies before execution");
-  const candidate = matchingCandidate(before.candidates, undefined, prior.candidate.candidateArn);
+  const approved = prior?.candidate ?? before.candidate;
+  assert.ok(approved?.candidateArn, "cleanup has no fully reviewed candidate");
+  const candidate = matchingCandidate(before.candidates, undefined, approved.candidateArn);
   const classification = classifyResume(phase, before, operation.expected, prior);
   if (classification !== "precondition") assert.ok(resumingIntent, "observed cleanup has no prior immutable intent");
-  const withOriginalIdentities = (state) => ({ ...state, oldTable: lineageTable(prior) });
+  const withOriginalIdentities = (state) => ({ ...state, oldTable: lineageTable(prior) ?? null });
   const finalizeCleanup = (state) => {
     assert.equal(state.candidates.length, 0, "candidate inventory not empty after cleanup");
-    assert.equal(prior.poststate.candidates.length, 1, "approved cleanup baseline was not singleton");
-    bindCandidateInventory(prior.poststate.candidates, prior.candidate);
+    const baseline = prior?.poststate ?? intent.prestate;
+    assert.equal(baseline.candidates.length, 1, "approved cleanup baseline was not singleton");
+    bindCandidateInventory(baseline.candidates, approved);
     const completedState = withOriginalIdentities(state);
-    assertPoststateEqual(prior.poststate, completedState, ["/candidates/0", "/candidate"]);
+    assertPoststateEqual(baseline, completedState, ["/candidates/0", "/candidate", "/oldTable"]);
     return completedState;
   };
-  if (classification === "complete") return { observed: true, state: finalizeCleanup(before), candidate: prior.candidate };
+  if (classification === "complete") return { observed: true, state: finalizeCleanup(before), candidate: approved };
   assert.ok(classification === "precondition" || classification === "in-progress");
   if (classification === "precondition") {
     assert.equal(before.candidates.length, 1, "cleanup requires the sole approved candidate");
-    bindCandidateInventory(before.candidates, prior.candidate);
+    bindCandidateInventory(before.candidates, approved);
   }
   if (classification === "precondition") await aws.call("cloudformation", "delete-change-set", operation.target.argv);
-  await waitForCandidateAbsence(aws, prior.candidate.candidateArn, before.stack.stackId);
+  await waitForCandidateAbsence(aws, approved.candidateArn, before.stack.stackId);
   const after = await observeState(aws, env, before.stack.stackId, phase, prior);
   const completedState = finalizeCleanup(after);
-  return { observed: classification === "in-progress", state: completedState, candidate: prior.candidate };
+  return { observed: classification === "in-progress", state: completedState, candidate: approved };
 }
 
 export function classifyResume(phase, state, expected, prior) {
@@ -932,6 +938,28 @@ async function reloadApprovedCandidate(aws, state, completion) {
   const rebound = { ...candidate, candidateInventoryDigest: bindCandidateInventory(state.candidates, approved) };
   assert.deepEqual(rebound, approved, "approved candidate digest/details changed");
   return rebound;
+}
+
+async function reloadOrphanCandidate(aws, state) {
+  assert.equal(state.table, undefined, "orphan cleanup requires the table to be absent");
+  assert.equal(state.candidates.length, 1, "orphan cleanup requires exactly one active candidate");
+  const summary = state.candidates[0];
+  assert.match(summary.ChangeSetName ?? "", /^dataops-sponsor-reset-[0-9a-f]{24}$/);
+  const descriptionMatch = /^dataops\.sponsor-reset\/v1\/([0-9a-f]{64})$/.exec(summary.Description ?? "");
+  assert.ok(descriptionMatch, "orphan candidate description is not reset-bound");
+  assert.equal(summary.ChangeSetName, `dataops-sponsor-reset-${descriptionMatch[1].slice(0, 24)}`);
+  assert.equal(summary.Status, "CREATE_COMPLETE");
+  assert.equal(summary.ExecutionStatus, "AVAILABLE");
+  const candidate = await waitForCandidate(aws, summary.ChangeSetId, {
+    name: summary.ChangeSetName,
+    description: summary.Description,
+    parameters: describedParameters(state.privateParameters),
+    capabilities: state.stack.capabilities,
+    stackId: state.stack.stackId,
+    stackIdDigest: state.stack.stackIdDigest,
+    templateDigest: state.templateDigest,
+  });
+  return { ...candidate, candidateInventoryDigest: bindCandidateInventory(state.candidates, candidate) };
 }
 
 async function waitForTable(aws, desiredProtection) {

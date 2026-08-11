@@ -96,9 +96,12 @@ const TABLE_RECREATION = Object.freeze({
   SSESpecification: "Never",
   TableName: "Always",
 });
-const CANDIDATE_FIELDS = Object.freeze([
+const CANDIDATE_REQUIRED_FIELDS = Object.freeze([
   "Capabilities", "ChangeSetId", "ChangeSetName", "ChangeSetType", "CreationTime", "Description", "ExecutionStatus",
   "IncludeNestedStacks", "NotificationARNs", "Parameters", "RollbackConfiguration", "StackId", "StackName", "Status",
+]);
+const CANDIDATE_OPTIONAL_FIELDS = Object.freeze([
+  "ImportExistingResources", "OnStackFailure", "ParentChangeSetId", "RoleARN", "RootChangeSetId", "StatusReason", "Tags",
 ]);
 
 export function validateRuntimeEnvironment(env) {
@@ -433,15 +436,20 @@ export function validateCandidate(changeSet, expected, changes) {
   assert.equal(changeSet.RootChangeSetId, undefined);
   const normalizedChanges = validateChangeList(changes);
   const candidateSummary = sanitizedCandidate(changeSet);
-  assert.deepEqual(Object.keys(candidateSummary).sort(), [...CANDIDATE_FIELDS].sort(), "candidate response fields changed");
+  const candidateFields = Object.keys(candidateSummary);
+  const allowedFields = new Set([...CANDIDATE_REQUIRED_FIELDS, ...CANDIDATE_OPTIONAL_FIELDS]);
+  assert.ok(CANDIDATE_REQUIRED_FIELDS.every((field) => candidateFields.includes(field)), "candidate response required fields changed");
+  assert.ok(candidateFields.every((field) => allowedFields.has(field)), "candidate response has an unknown field");
   const normalized = { changeSet: candidateSummary, changes: normalizedChanges };
   return { candidateDigest: digest(normalized), candidate: normalized };
 }
 
 export function validateCandidatePage(page, first = page) {
   assert.ok(Array.isArray(page?.Changes), "candidate page changes missing");
-  const pageFields = [...CANDIDATE_FIELDS, "Changes", ...(Object.hasOwn(page, "NextToken") ? ["NextToken"] : [])].sort();
-  assert.deepEqual(Object.keys(page).sort(), pageFields, "candidate page fields changed");
+  const pageFields = Object.keys(page);
+  const allowed = new Set([...CANDIDATE_REQUIRED_FIELDS, ...CANDIDATE_OPTIONAL_FIELDS, "Changes", "NextToken"]);
+  assert.ok(CANDIDATE_REQUIRED_FIELDS.every((field) => pageFields.includes(field)), "candidate page required fields changed");
+  assert.ok(pageFields.every((field) => allowed.has(field)), "candidate page has an unknown field");
   if (Object.hasOwn(page, "NextToken")) assert.ok(typeof page.NextToken === "string" && page.NextToken.length > 0 && page.NextToken.length <= 4096);
   assert.deepEqual(sanitizedCandidate(page), sanitizedCandidate(first), "candidate page invariant fields changed");
   return page;
