@@ -1769,12 +1769,11 @@ Resources:
               messageId: "$.detail.mail.messageId"
               awsAccount: "$.account"
               awsRegion: "$.region"
-              configurationSet: "$.detail.mail.tags['ses:configuration-set'][0]"
-              configurationSetGeneration: "$.detail.mail.tags['configuration-set-generation'][0]"
+              configurationSetGeneration: "$.detail.mail.tags.configuration-set-generation[0]"
               attemptCorrelation: "$.detail.mail.tags.attempt[0]"
               communicationId: "$.detail.mail.tags.communication[0]"
-              configGeneration: "$.detail.mail.tags['config-generation'][0]"
-            InputTemplate: '{"schemaVersion":"1","eventId":<eventId>,"eventTime":<eventTime>,"eventType":<eventType>,"messageId":<messageId>,"awsAccount":<awsAccount>,"awsRegion":<awsRegion>,"configurationSet":<configurationSet>,"configurationSetGeneration":<configurationSetGeneration>,"attemptCorrelation":<attemptCorrelation>,"communicationId":<communicationId>,"configGeneration":<configGeneration>}'
+              configGeneration: "$.detail.mail.tags.config-generation[0]"
+            InputTemplate: !Sub '{"schemaVersion":"1","eventId":<eventId>,"eventTime":<eventTime>,"eventType":<eventType>,"messageId":<messageId>,"awsAccount":<awsAccount>,"awsRegion":<awsRegion>,"configurationSet":"${SponsorSesConfigurationSet}","configurationSetGeneration":<configurationSetGeneration>,"attemptCorrelation":<attemptCorrelation>,"communicationId":<communicationId>,"configGeneration":<configGeneration>}'
 
   SponsorSesEventInvokePermission:
     Type: AWS::Lambda::Permission

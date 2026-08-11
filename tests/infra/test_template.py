@@ -254,7 +254,8 @@ def test_conversational_state_table_is_retained_private_stream_ready_state():
     assert "IndexName: GSI1" in table
     assert "IndexName: GSI2" in table
     assert "Value: PrivateExecutionState" in table
-    assert "DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable" in backend
+    assert "DATAOPS_STACK_NAME: !Ref AWS::StackName" in backend
+    assert "DATAOPS_CONVERSATIONAL_STATE_TABLE:" not in backend
     assert "!GetAtt DataOpsConversationalStateTable.Arn" in backend
     assert "${DataOpsConversationalStateTable.Arn}/index/*" in backend
     assert "DataOpsConversationalStateTableName:" in template
@@ -945,7 +946,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "DATAOPS_DOCS_DOMAIN: " in backend
     assert "GITHUB_OWNER: !Ref GitHubOwner" in backend
     assert "AUTH_BASE_URL: !Ref AuthBaseUrl" in backend
-    assert "AUTH_USER_POOL_ID: !Ref AuthUserPoolId" in backend
+    assert "AUTH_USER_POOL_ID:" not in backend
     assert "AUTH_ISSUER: !Ref AuthIssuer" in backend
     assert "AUTH_JWKS_URL: !Ref AuthJwksUrl" in backend
     assert "AUTH_CLIENT_ID: !Ref AuthClientId" in backend
@@ -954,14 +955,15 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "AUTH_SESSION_LIFETIME_SECONDS: !Ref AuthSessionLifetimeSeconds" in backend
     assert "BASIC_AUTH_USERNAME" not in backend
     assert "BASIC_AUTH_PASSWORD_SECRET_NAME" not in backend
-    assert "DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable" in backend
-    assert "DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable" in backend
-    assert "DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable" in backend
-    assert "DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable" in backend
-    assert "DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable" in backend
-    assert "DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable" in backend
-    assert "DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable" in backend
-    assert "DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable" in backend
+    assert "DATAOPS_STACK_NAME: !Ref AWS::StackName" in backend
+    assert "DATAOPS_TASKS_TABLE:" not in backend
+    assert "DATAOPS_BUNDLES_TABLE:" not in backend
+    assert "DATAOPS_TEMPLATES_TABLE:" not in backend
+    assert "DATAOPS_USERS_TABLE:" not in backend
+    assert "DATAOPS_FILES_TABLE:" not in backend
+    assert "DATAOPS_ARTIFACTS_TABLE:" not in backend
+    assert "DATAOPS_NOTIFICATIONS_TABLE:" not in backend
+    assert "DATAOPS_SESSIONS_TABLE:" not in backend
     assert "DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket" in backend
     assert "DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix" in backend
     assert "dynamodb:GetItem" in backend
@@ -980,7 +982,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*" in backend
     assert "DailyBackendExport" in backend
     assert '"dataopsAction":"export"' in backend
-    assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret" in backend
+    assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret" in backend
     assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
     assert "!Ref EmailDocumentIntakeSecretArn" in backend
     # No cross-function invocation — the old two-Lambda proxy is gone.
@@ -1030,7 +1032,7 @@ def test_email_document_storage_is_private_retained_and_prefix_scoped():
     assert "${EmailDocumentsBucket.Arn}/${EmailDocumentSourcePrefix}*" in backend
     assert "${EmailDocumentsBucket.Arn}/${EmailDocumentDestinationPrefix}*" in backend
     assert "EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket" in backend
-    assert "EMAIL_DOCUMENTS_KMS_KEY: !GetAtt EmailDocumentsKey.Arn" in backend
+    assert "EMAIL_DOCUMENTS_KMS_KEY: !Ref EmailDocumentsKey" in backend
     assert "EMAIL_DOCUMENT_SOURCE_PREFIX: !Ref EmailDocumentSourcePrefix" in backend
     assert "EMAIL_DOCUMENT_DESTINATION_PREFIX: !Ref EmailDocumentDestinationPrefix" in backend
     assert "EMAIL_DOCUMENT_RECIPIENT_ROUTES: !Ref EmailDocumentRecipientRoutes" in backend
@@ -1309,7 +1311,9 @@ def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract
     assert "UpdateReplacePolicy: Retain" in table
     assert "SSESpecification: { SSEEnabled: true }" in table
     assert "PointInTimeRecoveryEnabled: true" in table
-    assert "TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }" in table
+    # TTL is intentionally omitted while DynamoDB's one-hour TTL mutation
+    # cooldown is active; it is safe to enable in a later isolated update.
+    assert "TimeToLiveSpecification:" not in table
     assert "StreamViewType: NEW_AND_OLD_IMAGES" in table
     for index in (
         "GSI-Communication",
@@ -1371,6 +1375,13 @@ def test_sponsor_ses_events_are_transformed_before_lambda_and_failures_are_encry
     assert "InputTransformer:" in rule
     assert "InputPathsMap:" in rule
     assert "InputTemplate:" in rule
+    # EventBridge InputTransformer JSONPaths only accept dot notation. The
+    # SES configuration-set tag contains a colon, so project the stack-owned
+    # configuration-set name directly into the strict envelope instead.
+    assert "['" not in rule
+    assert '${SponsorSesConfigurationSet}' in rule
+    assert '$.detail.mail.tags.configuration-set-generation[0]' in rule
+    assert '$.detail.mail.tags.config-generation[0]' in rule
     for field in (
         "eventId", "eventTime", "eventType", "messageId", "awsAccount", "awsRegion",
         "configurationSet", "configurationSetGeneration", "attemptCorrelation",
