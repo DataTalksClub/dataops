@@ -334,9 +334,17 @@ test("runtime and StackId anchor reject every public identity or handoff mismatc
 });
 
 test("candidate details reconstruct the exact fixture and reject every unreviewed effect", () => {
-  const expected = { candidateArn: "arn:aws:cloudformation:eu-west-1:817685572750:changeSet/reset/33333333-3333-3333-3333-333333333333", name: "reset", stackId: STACK_ID, stackIdDigest: digest(STACK_ID), description: "desc", parameters: [{ ParameterKey: "A", UsePreviousValue: true }], capabilities: ["CAPABILITY_IAM"] };
+  const expected = { candidateArn: "arn:aws:cloudformation:eu-west-1:817685572750:changeSet/reset/33333333-3333-3333-3333-333333333333", name: "reset", stackId: STACK_ID, stackIdDigest: digest(STACK_ID), description: "desc", parameters: [{ ParameterKey: "A", ParameterValue: "value", UsePreviousValue: true }], capabilities: ["CAPABILITY_IAM"] };
   const candidate = { ChangeSetId: expected.candidateArn, ChangeSetName: "reset", Description: "desc", StackName: CONTRACT.stack, StackId: STACK_ID, ChangeSetType: "UPDATE", DeploymentMode: "REVERT_DRIFT", StackDriftStatus: "DRIFTED", CreationTime: CANDIDATE_CREATED, Status: "CREATE_COMPLETE", ExecutionStatus: "AVAILABLE", Parameters: structuredClone(expected.parameters), Capabilities: ["CAPABILITY_IAM"], NotificationARNs: [], IncludeNestedStacks: false, RollbackConfiguration: { RollbackTriggers: [] } };
   const accepted = validateCandidate(candidate, expected, candidateChanges()); assert.equal(accepted.candidateDigest, digest(accepted.candidate));
+  const omittedType = structuredClone(candidate); delete omittedType.ChangeSetType;
+  assert.doesNotThrow(() => validateCandidate(omittedType, expected, candidateChanges()));
+  const omittedUsePrevious = structuredClone(candidate); delete omittedUsePrevious.Parameters[0].UsePreviousValue;
+  assert.doesNotThrow(() => validateCandidate(omittedUsePrevious, expected, candidateChanges()));
+  const changedParameter = structuredClone(omittedUsePrevious); changedParameter.Parameters[0].ParameterValue = "changed";
+  assert.throws(() => validateCandidate(changedParameter, expected, candidateChanges()));
+  const wrongType = structuredClone(candidate); wrongType.ChangeSetType = "CREATE";
+  assert.throws(() => validateCandidate(wrongType, expected, candidateChanges()));
   const firstPage = { ...structuredClone(candidate), Changes: [], NextToken: "page-2" };
   const secondPage = { ...structuredClone(candidate), Changes: candidateChanges() };
   assert.doesNotThrow(() => validateCandidatePage(firstPage));

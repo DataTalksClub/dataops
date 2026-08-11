@@ -89,12 +89,12 @@ const PSEUDO_PARAMETER_VALUES = Object.freeze({
   "AWS::StackName": GSI_CONTRACT.stack,
 });
 const CANDIDATE_REQUIRED_FIELDS = Object.freeze([
-  "Capabilities", "ChangeSetId", "ChangeSetName", "ChangeSetType", "CreationTime", "DeploymentMode", "Description",
+  "Capabilities", "ChangeSetId", "ChangeSetName", "CreationTime", "DeploymentMode", "Description",
   "ExecutionStatus", "IncludeNestedStacks", "NotificationARNs", "Parameters", "RollbackConfiguration", "StackDriftStatus",
   "StackId", "StackName", "Status",
 ]);
 const CANDIDATE_OPTIONAL_FIELDS = Object.freeze([
-  "DeploymentConfig", "ImportExistingResources", "OnStackFailure", "ParentChangeSetId", "RoleARN", "RootChangeSetId",
+  "ChangeSetType", "DeploymentConfig", "ImportExistingResources", "OnStackFailure", "ParentChangeSetId", "RoleARN", "RootChangeSetId",
   "StatusReason", "Tags",
 ]);
 
@@ -411,7 +411,7 @@ export function validateCandidate(changeSet, expected, changes) {
   assert.equal(changeSet.StackId, expected.stackId);
   assert.equal(digest(changeSet.StackId), expected.stackIdDigest);
   assert.equal(changeSet.StackName, CONTRACT.stack);
-  assert.equal(changeSet.ChangeSetType, "UPDATE");
+  if (changeSet.ChangeSetType !== undefined) assert.equal(changeSet.ChangeSetType, "UPDATE");
   assert.equal(changeSet.DeploymentMode, "REVERT_DRIFT");
   assert.equal(changeSet.StackDriftStatus, "DRIFTED");
   if (changeSet.DeploymentConfig !== undefined) {
@@ -421,7 +421,7 @@ export function validateCandidate(changeSet, expected, changes) {
   assert.equal(changeSet.ExecutionStatus, "AVAILABLE");
   assert.match(changeSet.CreationTime ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   assert.equal(changeSet.Description, expected.description);
-  assert.deepEqual(changeSet.Parameters, expected.parameters);
+  validateCandidateParameters(changeSet.Parameters, expected.parameters);
   assert.deepEqual([...(changeSet.Capabilities ?? [])].sort(), expected.capabilities);
   assert.equal(changeSet.RoleARN, undefined);
   assert.deepEqual(changeSet.NotificationARNs ?? [], []);
@@ -429,10 +429,10 @@ export function validateCandidate(changeSet, expected, changes) {
   assert.deepEqual(changeSet.RollbackConfiguration?.RollbackTriggers ?? [], []);
   assert.equal(changeSet.RollbackConfiguration?.MonitoringTimeInMinutes ?? 0, 0);
   assert.deepEqual(changeSet.Tags ?? [], []);
-  assert.equal(changeSet.OnStackFailure, undefined);
+  assert.equal(changeSet.OnStackFailure ?? undefined, undefined);
   assert.equal(changeSet.ImportExistingResources ?? false, false);
-  assert.equal(changeSet.ParentChangeSetId, undefined);
-  assert.equal(changeSet.RootChangeSetId, undefined);
+  assert.equal(changeSet.ParentChangeSetId ?? undefined, undefined);
+  assert.equal(changeSet.RootChangeSetId ?? undefined, undefined);
   const normalizedChanges = validateChangeList(changes);
   const candidateSummary = sanitizedCandidate(changeSet);
   const candidateFields = Object.keys(candidateSummary);
@@ -441,6 +441,21 @@ export function validateCandidate(changeSet, expected, changes) {
   assert.ok(candidateFields.every((field) => allowedFields.has(field)), "candidate response has an unknown field");
   const normalized = { changeSet: candidateSummary, changes: normalizedChanges };
   return { candidateDigest: digest(normalized), candidate: normalized };
+}
+
+function validateCandidateParameters(actual, expected) {
+  assert.ok(Array.isArray(actual) && Array.isArray(expected), "candidate parameters missing");
+  const normalize = (values, { response }) => values.map((parameter) => {
+    const allowed = response
+      ? ["ParameterKey", "ParameterValue", ...(Object.hasOwn(parameter, "UsePreviousValue") ? ["UsePreviousValue"] : [])]
+      : ["ParameterKey", "ParameterValue", "UsePreviousValue"];
+    assertExactFields(parameter, allowed);
+    assert.equal(typeof parameter.ParameterKey, "string");
+    assert.equal(typeof parameter.ParameterValue, "string");
+    if (Object.hasOwn(parameter, "UsePreviousValue")) assert.equal(parameter.UsePreviousValue, true);
+    return { ParameterKey: parameter.ParameterKey, ParameterValue: parameter.ParameterValue };
+  }).sort((left, right) => left.ParameterKey.localeCompare(right.ParameterKey));
+  assert.deepEqual(normalize(actual, { response: true }), normalize(expected, { response: false }), "candidate parameters changed");
 }
 
 export function validateCandidatePage(page, first = page) {
