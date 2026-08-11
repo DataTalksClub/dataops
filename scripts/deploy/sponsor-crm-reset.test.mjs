@@ -181,8 +181,9 @@ class MemoryLedger {
 }
 
 class MockAws {
-  constructor({ protection = false } = {}) {
+  constructor({ protection = false, systemTags = true } = {}) {
     this.present = true; this.fresh = false; this.protection = protection; this.tableStatus = "ACTIVE";
+    this.systemTags = systemTags;
     this.candidate = false; this.candidateStatus = "CREATE_COMPLETE"; this.candidateExecution = "AVAILABLE";
     this.stackStatus = "UPDATE_ROLLBACK_COMPLETE"; this.calls = []; this.template = processed();
   }
@@ -231,7 +232,7 @@ class MockAws {
     }
     if (service === "dynamodb" && operation === "describe-continuous-backups") return { ContinuousBackupsDescription: { PointInTimeRecoveryDescription: { PointInTimeRecoveryStatus: "ENABLED" } } };
     if (service === "dynamodb" && operation === "describe-time-to-live") return { TimeToLiveDescription: { TimeToLiveStatus: "DISABLED" } };
-    if (service === "dynamodb" && operation === "list-tags-of-resource") return { Tags: this.fresh ? [
+    if (service === "dynamodb" && operation === "list-tags-of-resource") return { Tags: this.fresh && this.systemTags ? [
       { Key: "aws:cloudformation:stack-name", Value: CONTRACT.stack }, { Key: "aws:cloudformation:logical-id", Value: CONTRACT.logicalId }, { Key: "aws:cloudformation:stack-id", Value: STACK_ID },
     ] : [] };
     if (service === "dynamodb" && operation === "update-table") {
@@ -577,6 +578,17 @@ test("an exact missing table can recover through a root create without detached 
   for (const record of ledger.records.values()) {
     assert.deepEqual(JSON.parse(canonicalJson(record)), record);
   }
+});
+
+test("a CloudFormation-owned fresh table may omit reserved system tags", async () => {
+  const mock = new MockAws({ systemTags: false });
+  mock.present = false;
+  const ledger = new MemoryLedger();
+  const created = await phase(mock, ledger, "create");
+  const executed = await phase(mock, ledger, "execute", created);
+  const verified = await phase(mock, ledger, "verify", executed);
+  assert.equal(verified.status, "completed");
+  assert.equal(mock.fresh, true);
 });
 
 test("a fully revalidated singleton orphan candidate can be cleaned from a missing-table root", async () => {

@@ -803,6 +803,7 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
       const original = lineageTable(prior);
       validateAuxiliaryTableState({ backups, ttl, tags }, stack.stackId, {
         owned: original === null || Boolean(original?.tableId && table.tableId !== original.tableId),
+        resource: resource.StackResourceDetail,
       });
     } else if (phase === "delete" || phase === "disable-protection" || phase === "restore-protection") {
       const old = lineageTable(prior);

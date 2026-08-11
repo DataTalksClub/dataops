@@ -393,15 +393,27 @@ export function validateLiveTable(table, { priorTableId, deletionProtection, all
   };
 }
 
-export function validateAuxiliaryTableState({ backups, ttl, tags }, stackId, { owned }) {
+export function validateAuxiliaryTableState({ backups, ttl, tags }, stackId, { owned, resource }) {
   assert.equal(backups?.ContinuousBackupsDescription?.PointInTimeRecoveryDescription?.PointInTimeRecoveryStatus, "ENABLED");
   assert.deepEqual(ttl?.TimeToLiveDescription, { TimeToLiveStatus: "DISABLED" });
+  const actualTags = normalizeTags(tags?.Tags);
   const expectedTags = owned ? [
       { Key: "aws:cloudformation:logical-id", Value: CONTRACT.logicalId },
       { Key: "aws:cloudformation:stack-id", Value: stackId },
       { Key: "aws:cloudformation:stack-name", Value: CONTRACT.stack },
     ] : [];
-  assert.deepEqual(normalizeTags(tags?.Tags), expectedTags);
+  if (owned) {
+    assert.equal(resource?.StackId, stackId);
+    assert.equal(resource?.LogicalResourceId, CONTRACT.logicalId);
+    assert.equal(resource?.PhysicalResourceId, CONTRACT.physicalTable);
+    assert.equal(resource?.ResourceType, "AWS::DynamoDB::Table");
+    assert.equal(resource?.ResourceStatus, "CREATE_COMPLETE");
+    // DynamoDB can omit CloudFormation's reserved system tags. When it does,
+    // the exact stack-resource binding above remains the ownership proof.
+    if (actualTags.length > 0) assert.deepEqual(actualTags, expectedTags);
+  } else {
+    assert.deepEqual(actualTags, expectedTags);
+  }
 }
 
 export function validateCandidate(changeSet, expected, changes) {
