@@ -2031,28 +2031,13 @@ Resources:
       Environment:
         Variables:
           DATAOPS_ENV: !Ref DataOpsEnvironment
-          DATAOPS_TASKS_TABLE: !Ref DataOpsTasksTable
-          DATAOPS_BUNDLES_TABLE: !Ref DataOpsBundlesTable
-          DATAOPS_TEMPLATES_TABLE: !Ref DataOpsTemplatesTable
-          DATAOPS_USERS_TABLE: !Ref DataOpsUsersTable
-          DATAOPS_FILES_TABLE: !Ref DataOpsFilesTable
-          DATAOPS_ARTIFACTS_TABLE: !Ref DataOpsArtifactsTable
-          DATAOPS_ASSISTANT_JOBS_TABLE: !Ref DataOpsAssistantJobsTable
-          DATAOPS_AUDIT_EVENTS_TABLE: !Ref DataOpsAuditEventsTable
-          DATAOPS_INTAKE_TABLE: !Ref DataOpsIntakeTable
-          DATAOPS_NOTIFICATIONS_TABLE: !Ref DataOpsNotificationsTable
-          DATAOPS_SESSIONS_TABLE: !Ref DataOpsSessionsTable
-          DATAOPS_BOOKKEEPING_TABLE: !Ref DataOpsBookkeepingTable
-          DATAOPS_SPONSOR_CRM_TABLE: !Ref DataOpsSponsorCrmTable
+          DATAOPS_STACK_NAME: !Ref AWS::StackName
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
-          DATAOPS_NEWSLETTER_SLOTS_TABLE: !Ref DataOpsNewsletterSlotsTable
-          DATAOPS_CALENDAR_TABLE: !Ref DataOpsCalendarTable
-          DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
-          BOOKKEEPING_DOCUMENTS_KMS_KEY: !GetAtt BookkeepingDocumentsKey.Arn
-          BOOKKEEPING_INGESTION_SECRET_NAME: !Ref BookkeepingIngestionSecret
+          BOOKKEEPING_DOCUMENTS_KMS_KEY: !Ref BookkeepingDocumentsKey
+          BOOKKEEPING_INGESTION_SECRET_NAME: !Sub ${AWS::StackName}/bookkeeping/ingestion
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
           GITHUB_OWNER: !Ref GitHubOwner
@@ -2060,7 +2045,6 @@ Resources:
           GITHUB_BRANCH: !Ref GitHubBranch
           GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
           AUTH_BASE_URL: !Ref AuthBaseUrl
-          AUTH_USER_POOL_ID: !Ref AuthUserPoolId
           AUTH_ISSUER: !Ref AuthIssuer
           AUTH_JWKS_URL: !Ref AuthJwksUrl
           AUTH_CLIENT_ID: !Ref AuthClientId
@@ -2069,10 +2053,10 @@ Resources:
           AUTH_SESSION_LIFETIME_SECONDS: !Ref AuthSessionLifetimeSeconds
           DATAOPS_DOCS_DOMAIN: "1"
           WORK_ENGINE_AUTH_MODE: portal
-          WORK_ENGINE_PORTAL_SECRET_NAME: !Ref WorkEnginePortalSecret
+          WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret
           EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn
           EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket
-          EMAIL_DOCUMENTS_KMS_KEY: !GetAtt EmailDocumentsKey.Arn
+          EMAIL_DOCUMENTS_KMS_KEY: !Ref EmailDocumentsKey
           EMAIL_DOCUMENT_SOURCE_PREFIX: !Ref EmailDocumentSourcePrefix
           EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: !Ref EmailDocumentExternalSourceBucketName
           EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: !Ref EmailDocumentExternalSourcePrefix
@@ -2107,7 +2091,6 @@ Resources:
           TELEGRAM_MEDIA_PROVIDER_TIMEOUT_MS: !Ref TelegramMediaProviderTimeoutMs
           TELEGRAM_MEDIA_PROVIDER_MAX_RESPONSE_BYTES: !Ref TelegramMediaProviderMaxResponseBytes
           TELEGRAM_MEDIA_MAX_TEXT_BYTES: !Ref TelegramMediaMaxTextBytes
-          CONVERSATIONAL_PRESENTATION_TTL_SECONDS: !Ref ConversationalPresentationTtlSeconds
           CONVERSATIONAL_FAKE_EXECUTOR_ENABLED: "false"
           DATAOPS_DEPLOYMENT_ID: !Ref DataOpsDeploymentId
           CONVERSATIONAL_FAILURE_QUEUE_CONFIGURED: "true"

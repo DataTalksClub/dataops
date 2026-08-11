@@ -20,6 +20,11 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         intake: mod.TABLE_INTAKE,
         notifications: mod.TABLE_NOTIFICATIONS,
         sessions: mod.TABLE_SESSIONS,
+        bookkeeping: mod.TABLE_BOOKKEEPING,
+        sponsorCrm: mod.TABLE_SPONSOR_CRM,
+        newsletterSlots: mod.TABLE_NEWSLETTER_SLOTS,
+        calendar: mod.TABLE_CALENDAR,
+        conversationalState: mod.TABLE_CONVERSATIONAL_STATE,
         autoCreate: mod.shouldAutoCreateTables(),
       }));
     });
@@ -83,6 +88,28 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.intake, 'prod-intake');
     assert.strictEqual(setup.notifications, 'prod-notifications');
     assert.strictEqual(setup.sessions, 'prod-sessions');
+    assert.strictEqual(setup.autoCreate, false);
+  });
+
+  it('derives production table names from the CloudFormation stack name', () => {
+    const setup = runSetupProbe({ DATAOPS_STACK_NAME: 'dataops-v1' });
+
+    assert.strictEqual(setup.tasks, 'dataops-v1-tasks');
+    assert.strictEqual(setup.bundles, 'dataops-v1-bundles');
+    assert.strictEqual(setup.templates, 'dataops-v1-templates');
+    assert.strictEqual(setup.users, 'dataops-v1-users');
+    assert.strictEqual(setup.files, 'dataops-v1-files');
+    assert.strictEqual(setup.artifacts, 'dataops-v1-artifacts');
+    assert.strictEqual(setup.assistantJobs, 'dataops-v1-assistant-jobs');
+    assert.strictEqual(setup.auditEvents, 'dataops-v1-audit-events');
+    assert.strictEqual(setup.intake, 'dataops-v1-intake');
+    assert.strictEqual(setup.notifications, 'dataops-v1-notifications');
+    assert.strictEqual(setup.sessions, 'dataops-v1-sessions');
+    assert.strictEqual(setup.bookkeeping, 'dataops-v1-bookkeeping');
+    assert.strictEqual(setup.sponsorCrm, 'dataops-v1-sponsor-crm');
+    assert.strictEqual(setup.newsletterSlots, 'dataops-v1-newsletter-slots');
+    assert.strictEqual(setup.calendar, 'dataops-v1-calendar');
+    assert.strictEqual(setup.conversationalState, 'dataops-v1-conversational-state');
     assert.strictEqual(setup.autoCreate, false);
   });
 

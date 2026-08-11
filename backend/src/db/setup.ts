@@ -4,8 +4,12 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-function tableName(envName: string, fallback: string): string {
-  return process.env[envName] || fallback;
+function tableName(envName: string, fallback: string, stackSuffix: string): string {
+  const explicitName = process.env[envName];
+  if (explicitName) return explicitName;
+
+  const stackName = process.env.DATAOPS_STACK_NAME;
+  return stackName ? `${stackName}-${stackSuffix}` : fallback;
 }
 
 function shouldAutoCreateTables(): boolean {
@@ -18,24 +22,25 @@ function shouldAutoCreateTables(): boolean {
   );
 }
 
-const TABLE_TASKS = tableName('DATAOPS_TASKS_TABLE', 'Tasks');
-const TABLE_BUNDLES = tableName('DATAOPS_BUNDLES_TABLE', 'Projects');
-const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates');
-const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users');
-const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files');
-const TABLE_ARTIFACTS = tableName('DATAOPS_ARTIFACTS_TABLE', 'Artifacts');
-const TABLE_ASSISTANT_JOBS = tableName('DATAOPS_ASSISTANT_JOBS_TABLE', 'AssistantJobs');
-const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents');
-const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems');
-const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications');
-const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions');
-const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping');
-const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm');
-const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'NewsletterSlots');
-const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar');
+const TABLE_TASKS = tableName('DATAOPS_TASKS_TABLE', 'Tasks', 'tasks');
+const TABLE_BUNDLES = tableName('DATAOPS_BUNDLES_TABLE', 'Projects', 'bundles');
+const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates', 'templates');
+const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users', 'users');
+const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files', 'files');
+const TABLE_ARTIFACTS = tableName('DATAOPS_ARTIFACTS_TABLE', 'Artifacts', 'artifacts');
+const TABLE_ASSISTANT_JOBS = tableName('DATAOPS_ASSISTANT_JOBS_TABLE', 'AssistantJobs', 'assistant-jobs');
+const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents', 'audit-events');
+const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems', 'intake');
+const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications', 'notifications');
+const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions', 'sessions');
+const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping', 'bookkeeping');
+const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm', 'sponsor-crm');
+const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'NewsletterSlots', 'newsletter-slots');
+const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar', 'calendar');
 const TABLE_CONVERSATIONAL_STATE = tableName(
   'DATAOPS_CONVERSATIONAL_STATE_TABLE',
-  'ConversationalState'
+  'ConversationalState',
+  'conversational-state'
 );
 
 /**
