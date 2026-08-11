@@ -88,14 +88,6 @@ const PSEUDO_PARAMETER_VALUES = Object.freeze({
   "AWS::Region": GSI_CONTRACT.region,
   "AWS::StackName": GSI_CONTRACT.stack,
 });
-const TABLE_RECREATION = Object.freeze({
-  AttributeDefinitions: "Conditionally",
-  BillingMode: "Never",
-  KeySchema: "Always",
-  PointInTimeRecoverySpecification: "Never",
-  SSESpecification: "Never",
-  TableName: "Always",
-});
 const CANDIDATE_REQUIRED_FIELDS = Object.freeze([
   "Capabilities", "ChangeSetId", "ChangeSetName", "ChangeSetType", "CreationTime", "DeploymentMode", "Description",
   "ExecutionStatus", "IncludeNestedStacks", "NotificationARNs", "Parameters", "RollbackConfiguration", "StackDriftStatus",
@@ -477,61 +469,205 @@ export function bindCandidateInventory(candidates, candidate) {
 }
 
 export function validateChangeList(changes) {
-  assert.equal(changes.length, 1, "candidate must contain exactly one resource change");
+  assert.equal(changes.length, 3, "candidate must contain exactly three reviewed resource changes");
   for (const change of changes) {
     assert.deepEqual(Object.keys(change).sort(), ["ResourceChange", "Type"], "candidate Change fields changed");
     assert.equal(change.Type, "Resource", "candidate Change type changed");
   }
   const sorted = structuredClone(changes).sort((a, b) => a.ResourceChange.LogicalResourceId.localeCompare(b.ResourceChange.LogicalResourceId));
   const byId = new Map(sorted.map(({ ResourceChange }) => [ResourceChange?.LogicalResourceId, ResourceChange]));
-  assert.equal(byId.size, 1);
+  assert.equal(byId.size, 3, "candidate logical resource inventory changed");
+  validateBackendFunctionDependency(byId.get("BackendFunction"));
+  validateBackendRoleDependency(byId.get("BackendFunctionRole"));
   validateTableAdd(byId.get(CONTRACT.logicalId));
   return sorted;
 }
 
-function validateChangeEnvelope(change, type, action) {
+function validateModifyEnvelope(change, { logicalId, type, physicalId, ignored }) {
   assert.ok(change, "required candidate effect missing");
-  assert.deepEqual(
-    Object.keys(change).sort(),
-    ["Action", "Details", "LogicalResourceId", "Replacement", "ResourceType", "Scope"].sort(),
-    "candidate ResourceChange fields changed",
-  );
+  assertExactFields(change, [
+    "Action", "AfterContext", "BeforeContext", "Details", "LogicalResourceId", "PhysicalResourceId", "Replacement",
+    "ResourceDriftIgnoredAttributes", "ResourceDriftStatus", "ResourceType", "Scope",
+  ]);
+  assert.equal(change.LogicalResourceId, logicalId);
   assert.equal(change.ResourceType, type);
-  assert.equal(change.Action, action);
+  assert.equal(change.PhysicalResourceId, physicalId);
+  assert.equal(change.Action, "Modify");
+  assert.equal(change.Replacement, "False");
   assert.deepEqual(change.Scope, ["Properties"]);
-  if (action === "Add") assert.equal(change.Replacement, "True");
-  if (action === "Modify") assert.equal(change.Replacement, "True");
-  assert.ok(Array.isArray(change.Details) && change.Details.length > 0, "full candidate details required");
-  for (const detail of change.Details) {
-    assert.deepEqual(Object.keys(detail).sort(), ["ChangeSource", "Evaluation", "Target"].sort(), "candidate detail fields changed");
-    assert.equal(detail.Evaluation, "Static");
-    assert.equal(detail.ChangeSource, "DirectModification");
-    assert.equal(detail.Target?.Attribute, "Properties");
-    assert.equal(typeof detail.Target?.Name, "string");
-    assert.ok(Object.hasOwn(detail.Target, "BeforeValue"), "candidate BeforeValue missing");
-    assert.ok(Object.hasOwn(detail.Target, "AfterValue"), "candidate AfterValue missing");
-    assert.deepEqual(Object.keys(detail.Target).sort(), ["AfterValue", "Attribute", "BeforeValue", "Name", "RequiresRecreation"].sort());
-  }
+  assert.equal(change.ResourceDriftStatus, "IN_SYNC");
+  assert.deepEqual(change.ResourceDriftIgnoredAttributes, ignored);
+  assert.equal(change.Details.length, 1, "dependency change detail inventory changed");
+  return {
+    before: parseCandidateJson(change.BeforeContext, `${logicalId} BeforeContext`),
+    after: parseCandidateJson(change.AfterContext, `${logicalId} AfterContext`),
+    detail: change.Details[0],
+  };
 }
 
 function validateTableAdd(change) {
-  validateChangeEnvelope(change, "AWS::DynamoDB::Table", "Add");
-  const fixture = loadPrefixZeroFixture();
-  const properties = fixture.tableResource.Properties;
-  const names = Object.keys(properties).sort();
-  assert.deepEqual(change.Details.map(({ Target }) => Target.Name).sort(), names, "table property detail inventory changed");
-  for (const detail of change.Details) {
-    assert.equal(detail.Target.BeforeValue, null, "new table property unexpectedly has a before value");
-    assert.deepEqual(parsePropertyValue(detail.Target.AfterValue), properties[detail.Target.Name], `table property ${detail.Target.Name} changed`);
-    assert.equal(detail.Target.RequiresRecreation, TABLE_RECREATION[detail.Target.Name], `table property ${detail.Target.Name} recreation classification changed`);
-  }
+  assert.ok(change, "required table recreation effect missing");
+  assertExactFields(change, [
+    "Action", "AfterContext", "Details", "LogicalResourceId", "PhysicalResourceId", "PreviousDeploymentContext",
+    "ResourceDriftIgnoredAttributes", "ResourceDriftStatus", "ResourceType", "Scope",
+  ]);
+  assert.equal(change.LogicalResourceId, CONTRACT.logicalId);
+  assert.equal(change.PhysicalResourceId, CONTRACT.physicalTable);
+  assert.equal(change.ResourceType, "AWS::DynamoDB::Table");
+  assert.equal(change.Action, "Add");
+  assert.deepEqual(change.Scope, []);
+  assert.equal(change.ResourceDriftStatus, "DELETED");
+  assert.deepEqual(change.ResourceDriftIgnoredAttributes, []);
+  assert.deepEqual(change.Details, []);
+  const expected = expectedTableContext();
+  assert.deepEqual(parseCandidateJson(change.AfterContext, "table AfterContext"), expected);
+  assert.deepEqual(parseCandidateJson(change.PreviousDeploymentContext, "table PreviousDeploymentContext"), expected);
 }
 
-function parsePropertyValue(value) {
-  assert.equal(typeof value, "string", "candidate property value must be canonical JSON text");
+function validateBackendFunctionDependency(change) {
+  const { before, after, detail } = validateModifyEnvelope(change, {
+    logicalId: "BackendFunction",
+    type: "AWS::Lambda::Function",
+    physicalId: matchPhysicalId(change?.PhysicalResourceId, /^dataops-v1-BackendFunction-[A-Za-z0-9]+$/),
+    ignored: [
+      { Path: "/Properties/Code/S3Bucket", Reason: "WRITE_ONLY_PROPERTY" },
+      { Path: "/Properties/Code/S3Key", Reason: "WRITE_ONLY_PROPERTY" },
+    ],
+  });
+  assertExactFields(detail, ["CausingEntity", "ChangeSource", "Evaluation", "Target"]);
+  assert.equal(detail.CausingEntity, CONTRACT.logicalId);
+  assert.equal(detail.ChangeSource, "ResourceReference");
+  assert.equal(detail.Evaluation, "Static");
+  assert.deepEqual(detail.Target, {
+    Attribute: "Properties",
+    Name: "Environment",
+    RequiresRecreation: "Never",
+    Path: "/Properties/Environment/Variables/DATAOPS_SPONSOR_CRM_TABLE",
+    BeforeValue: CONTRACT.physicalTable,
+    AfterValue: "{{changeSet:KNOWN_AFTER_APPLY}}",
+    BeforeValueFrom: "ACTUAL_STATE",
+    AfterValueFrom: "TEMPLATE",
+    AttributeChangeType: "Modify",
+  });
+  assert.equal(before?.Properties?.Environment?.Variables?.DATAOPS_SPONSOR_CRM_TABLE, CONTRACT.physicalTable);
+  assert.equal(after?.Properties?.Environment?.Variables?.DATAOPS_SPONSOR_CRM_TABLE, "{{changeSet:KNOWN_AFTER_APPLY}}");
+  after.Properties.Environment.Variables.DATAOPS_SPONSOR_CRM_TABLE = CONTRACT.physicalTable;
+  assert.deepEqual(after, before, "BackendFunction changed outside the recreated table reference");
+}
+
+function validateBackendRoleDependency(change) {
+  const { before, after, detail } = validateModifyEnvelope(change, {
+    logicalId: "BackendFunctionRole",
+    type: "AWS::IAM::Role",
+    physicalId: matchPhysicalId(change?.PhysicalResourceId, /^dataops-v1-BackendFunctionRole-[A-Za-z0-9]+$/),
+    ignored: [{ Path: "/Properties/ManagedPolicyArns", Reason: "WRITE_ONLY_PROPERTY" }],
+  });
+  assertExactFields(detail, ["ChangeSource", "Evaluation", "Target"]);
+  assert.equal(detail.ChangeSource, "DirectModification");
+  assert.equal(detail.Evaluation, "Static");
+  assertExactFields(detail.Target, [
+    "AfterValue", "AfterValueFrom", "Attribute", "AttributeChangeType", "BeforeValue", "BeforeValueFrom", "Name", "Path",
+    "RequiresRecreation",
+  ]);
+  assert.deepEqual({
+    Attribute: detail.Target.Attribute,
+    Name: detail.Target.Name,
+    RequiresRecreation: detail.Target.RequiresRecreation,
+    Path: detail.Target.Path,
+    BeforeValueFrom: detail.Target.BeforeValueFrom,
+    AfterValueFrom: detail.Target.AfterValueFrom,
+    AttributeChangeType: detail.Target.AttributeChangeType,
+  }, {
+    Attribute: "Properties",
+    Name: "Policies",
+    RequiresRecreation: "Never",
+    Path: "/Properties/Policies/0/PolicyDocument",
+    BeforeValueFrom: "ACTUAL_STATE",
+    AfterValueFrom: "TEMPLATE",
+    AttributeChangeType: "Modify",
+  });
+  const beforePolicy = parseCandidateJson(detail.Target.BeforeValue, "BackendFunctionRole policy before value");
+  const afterPolicy = parseCandidateJson(detail.Target.AfterValue, "BackendFunctionRole policy after value");
+  validateBackendRolePolicyReference(beforePolicy, afterPolicy);
+  assert.deepEqual(
+    normalizeBackendRolePolicy(before?.Properties?.Policies?.[0]?.PolicyDocument),
+    normalizeBackendRolePolicy(beforePolicy),
+  );
+  assert.deepEqual(
+    normalizeBackendRolePolicy(after?.Properties?.Policies?.[0]?.PolicyDocument),
+    normalizeBackendRolePolicy(afterPolicy),
+  );
+  assert.deepEqual(normalizeBackendRoleContext(after), normalizeBackendRoleContext(before), "BackendFunctionRole changed outside the recreated table reference");
+}
+
+function validateBackendRolePolicyReference(before, after) {
+  assertExactFields(before, ["Statement", "Version"]);
+  assertExactFields(after, ["Statement", "Version"]);
+  assert.equal(before.Version, "2008-10-17");
+  assert.equal(after.Version, before.Version);
+  assert.equal(before.Statement?.length, 1);
+  assert.equal(after.Statement?.length, 1);
+  const fixtureActions = loadPrefixZeroFixture().references.find(({ logicalId }) => logicalId === "BackendFunctionRole")?.actions;
+  for (const statement of [before.Statement[0], after.Statement[0]]) {
+    assertExactFields(statement, ["Action", "Effect", "Resource"]);
+    assert.equal(statement.Effect, "Allow");
+    assert.deepEqual([...statement.Action].sort(), [...fixtureActions].sort());
+    assert.equal(new Set(statement.Action).size, fixtureActions.length);
+  }
+  assert.equal(before.Statement[0].Resource.filter((value) => value === CONTRACT.tableArn).length, 1);
+  assert.equal(after.Statement[0].Resource.filter((value) => value === "{{changeSet:KNOWN_AFTER_APPLY}}").length, 1);
+  const rebound = after.Statement[0].Resource.map((value) => value === "{{changeSet:KNOWN_AFTER_APPLY}}" ? CONTRACT.tableArn : value);
+  assert.deepEqual(rebound, before.Statement[0].Resource, "BackendFunctionRole policy changed outside the table ARN reference");
+}
+
+function normalizeBackendRoleContext(context) {
+  const normalized = structuredClone(context);
+  for (const policy of normalized?.Properties?.Policies ?? []) {
+    policy.PolicyDocument = normalizeBackendRolePolicy(policy.PolicyDocument, { rebind: true });
+  }
+  return normalized;
+}
+
+function normalizeBackendRolePolicy(policy, { rebind = false } = {}) {
+  const normalized = structuredClone(policy);
+  for (const statement of normalized?.Statement ?? []) {
+    if (Array.isArray(statement.Action)) statement.Action.sort();
+    if (Array.isArray(statement.Resource)) {
+      statement.Resource = statement.Resource
+        .map((value) => rebind && value === "{{changeSet:KNOWN_AFTER_APPLY}}" ? CONTRACT.tableArn : value)
+        .sort();
+    }
+  }
+  return normalized;
+}
+
+function expectedTableContext() {
+  const fixture = loadPrefixZeroFixture().tableResource;
+  return {
+    Properties: {
+      AttributeDefinitions: structuredClone(fixture.Properties.AttributeDefinitions),
+      BillingMode: fixture.Properties.BillingMode,
+      KeySchema: structuredClone(fixture.Properties.KeySchema),
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: "true" },
+      SSESpecification: { SSEEnabled: "true" },
+      TableName: CONTRACT.physicalTable,
+    },
+    DeletionPolicy: fixture.DeletionPolicy,
+    Metadata: structuredClone(fixture.Metadata),
+    UpdateReplacePolicy: fixture.UpdateReplacePolicy,
+  };
+}
+
+function parseCandidateJson(value, label) {
+  assert.equal(typeof value, "string", `${label} must be JSON text`);
   const parsed = JSON.parse(value);
-  assert.equal(canonicalJson(parsed), value, "candidate property value is not canonical");
+  assert.ok(parsed && typeof parsed === "object" && !Array.isArray(parsed), `${label} must be a JSON object`);
   return parsed;
+}
+
+function matchPhysicalId(value, pattern) {
+  assert.match(value ?? "", pattern, "candidate physical resource identity changed");
+  return value;
 }
 
 export function deriveResetId({ stackIdDigest, sha, fixtureDigest, oldTableIdDigest }) {

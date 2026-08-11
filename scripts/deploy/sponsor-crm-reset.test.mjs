@@ -43,10 +43,6 @@ const STACK_ANCHOR = `sha256:${digest(STACK_ID)}`;
 const OLD_ID = "old-table-id-12345678";
 const NEW_ID = "new-table-id-12345678";
 const CANDIDATE_CREATED = "2026-08-11T12:00:00.000Z";
-const TABLE_RECREATION = Object.freeze({
-  AttributeDefinitions: "Conditionally", BillingMode: "Never", KeySchema: "Always",
-  PointInTimeRecoverySpecification: "Never", SSESpecification: "Never", TableName: "Always",
-});
 
 function dispatchEnv(phase, prior, approval) {
   const receiptId = prior?.receipt_id ?? NO_RECEIPT;
@@ -110,14 +106,56 @@ function table({ fresh = false, protection = false, status = "ACTIVE" } = {}) {
 
 function candidateChanges() {
   const fixture = loadPrefixZeroFixture();
+  const roleActions = fixture.references.find(({ logicalId }) => logicalId === "BackendFunctionRole").actions;
+  const rolePolicyBefore = { Version: "2008-10-17", Statement: [{ Effect: "Allow", Action: roleActions, Resource: [CONTRACT.tableArn] }] };
+  const rolePolicyAfter = structuredClone(rolePolicyBefore);
+  rolePolicyAfter.Statement[0].Resource = ["{{changeSet:KNOWN_AFTER_APPLY}}"];
+  const roleContext = (policy) => ({ Properties: { Policies: [{ PolicyDocument: policy, PolicyName: "BackendFunctionRolePolicy0" }] } });
+  const functionContext = (tableName) => ({ Properties: { Environment: { Variables: { DATAOPS_SPONSOR_CRM_TABLE: tableName } } } });
+  const tableContext = {
+    Properties: {
+      AttributeDefinitions: fixture.tableResource.Properties.AttributeDefinitions,
+      BillingMode: fixture.tableResource.Properties.BillingMode,
+      KeySchema: fixture.tableResource.Properties.KeySchema,
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: "true" },
+      SSESpecification: { SSEEnabled: "true" },
+      TableName: CONTRACT.physicalTable,
+    },
+    DeletionPolicy: fixture.tableResource.DeletionPolicy,
+    Metadata: fixture.tableResource.Metadata,
+    UpdateReplacePolicy: fixture.tableResource.UpdateReplacePolicy,
+  };
   return [
     { Type: "Resource", ResourceChange: {
-      Action: "Add", LogicalResourceId: CONTRACT.logicalId, ResourceType: "AWS::DynamoDB::Table",
-      Replacement: "True", Scope: ["Properties"],
-      Details: Object.entries(fixture.tableResource.Properties).map(([Name, value]) => ({
-        ChangeSource: "DirectModification", Evaluation: "Static",
-        Target: { Attribute: "Properties", Name, RequiresRecreation: TABLE_RECREATION[Name], BeforeValue: null, AfterValue: canonicalJson(value) },
-      })),
+      Action: "Modify", LogicalResourceId: "BackendFunctionRole", PhysicalResourceId: "dataops-v1-BackendFunctionRole-example",
+      ResourceType: "AWS::IAM::Role", Replacement: "False", Scope: ["Properties"], ResourceDriftStatus: "IN_SYNC",
+      ResourceDriftIgnoredAttributes: [{ Path: "/Properties/ManagedPolicyArns", Reason: "WRITE_ONLY_PROPERTY" }],
+      BeforeContext: JSON.stringify(roleContext(rolePolicyBefore)), AfterContext: JSON.stringify(roleContext(rolePolicyAfter)),
+      Details: [{ ChangeSource: "DirectModification", Evaluation: "Static", Target: {
+        Attribute: "Properties", Name: "Policies", RequiresRecreation: "Never", Path: "/Properties/Policies/0/PolicyDocument",
+        BeforeValue: JSON.stringify(rolePolicyBefore), AfterValue: JSON.stringify(rolePolicyAfter), BeforeValueFrom: "ACTUAL_STATE",
+        AfterValueFrom: "TEMPLATE", AttributeChangeType: "Modify",
+      } }],
+    } },
+    { Type: "Resource", ResourceChange: {
+      Action: "Modify", LogicalResourceId: "BackendFunction", PhysicalResourceId: "dataops-v1-BackendFunction-example",
+      ResourceType: "AWS::Lambda::Function", Replacement: "False", Scope: ["Properties"], ResourceDriftStatus: "IN_SYNC",
+      ResourceDriftIgnoredAttributes: [
+        { Path: "/Properties/Code/S3Bucket", Reason: "WRITE_ONLY_PROPERTY" },
+        { Path: "/Properties/Code/S3Key", Reason: "WRITE_ONLY_PROPERTY" },
+      ],
+      BeforeContext: JSON.stringify(functionContext(CONTRACT.physicalTable)), AfterContext: JSON.stringify(functionContext("{{changeSet:KNOWN_AFTER_APPLY}}")),
+      Details: [{ CausingEntity: CONTRACT.logicalId, ChangeSource: "ResourceReference", Evaluation: "Static", Target: {
+        Attribute: "Properties", Name: "Environment", RequiresRecreation: "Never",
+        Path: "/Properties/Environment/Variables/DATAOPS_SPONSOR_CRM_TABLE", BeforeValue: CONTRACT.physicalTable,
+        AfterValue: "{{changeSet:KNOWN_AFTER_APPLY}}", BeforeValueFrom: "ACTUAL_STATE", AfterValueFrom: "TEMPLATE",
+        AttributeChangeType: "Modify",
+      } }],
+    } },
+    { Type: "Resource", ResourceChange: {
+      Action: "Add", LogicalResourceId: CONTRACT.logicalId, PhysicalResourceId: CONTRACT.physicalTable,
+      ResourceType: "AWS::DynamoDB::Table", Scope: [], ResourceDriftStatus: "DELETED", ResourceDriftIgnoredAttributes: [],
+      Details: [], AfterContext: JSON.stringify(tableContext), PreviousDeploymentContext: JSON.stringify(tableContext),
     } },
   ];
 }
@@ -314,9 +352,11 @@ test("candidate details reconstruct the exact fixture and reject every unreviewe
     (changes) => { changes[0].HookInvocationCount = 0; },
     (changes) => { changes[0].ResourceChange.Details[0].Evaluation = "Dynamic"; },
     (changes) => { changes[0].ResourceChange.Details[0].Target.AfterValue = "{}"; },
-    (changes) => { changes[0].ResourceChange.Details.find(({ Target }) => Target.Name === "BillingMode").Target.RequiresRecreation = "Always"; },
-    (changes) => { changes[0].ResourceChange.Details.push(structuredClone(changes[0].ResourceChange.Details[0])); },
+    (changes) => { changes[1].ResourceChange.Details[0].CausingEntity = "UnrelatedTable"; },
+    (changes) => { changes[2].ResourceChange.AfterContext = "{}"; },
+    (changes) => { changes[2].ResourceChange.Details.push({ ChangeSource: "DirectModification" }); },
     (changes) => { changes.push({ ResourceChange: { LogicalResourceId: "Evil", ResourceType: "AWS::IAM::Role", Action: "Add" } }); },
+    (changes) => { changes.push({ Type: "Resource", ResourceChange: { LogicalResourceId: "EmailDocumentsBucket", ResourceType: "AWS::S3::Bucket", Action: "Modify" } }); },
   ]) { const changed = candidateChanges(); mutate(changed); assert.throws(() => validateChangeList(changed)); }
 });
 
