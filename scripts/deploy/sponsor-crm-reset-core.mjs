@@ -64,7 +64,7 @@ export const NO_RECEIPT = "none";
 export const NO_RECEIPT_DIGEST = "sha256:none";
 
 export const PROTECTED_FILES = Object.freeze({
-  "infra/template.full.yaml": "fb272bbddbde1a41cb2b5ae92cf0923baa03815a517df143119731fee2ef8ee5",
+  "infra/template.full.yaml": "4c7ba50dbbe6b1ae65b0dfcf7c0f439c5b8b688d7e9504d75a336713b4b13550",
   ".github/workflows/deploy-dataops-v1.yml": "4611d88891fcb3031a94b0140b7238686e6e68feb68824ac7332d1a71180b14c",
   ".github/workflows/migrate-sponsor-crm-gsis.yml": "e5e64ced853b5ca7a391a9f979c4fd6e50811d5daec5775bd605f8c184384c1f",
   "scripts/deploy/sponsor-crm-gsi-core.mjs": "fe5a2944b8da2721e8a1df061b1ac283ccea2e6ce35df20920229e5c4fc94b10",
