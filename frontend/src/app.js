@@ -456,9 +456,13 @@ const documentsReady = loadDocuments();
 // Open them immediately so a slow/unavailable docs provider cannot strand the
 // entire app on the legacy "Loading documents" shell. Legacy pathname-based
 // document links still wait for the catalog so they can resolve honestly.
-const initialRouteReadyPromise = window.location.hash || window.location.pathname === "/"
-  ? openInitialRoute()
-  : documentsReady.then(() => openInitialRoute());
+// Defer route parsing until this script has initialized its route-definition
+// constants. This still runs in the next microtask and does not wait for docs.
+const initialRouteReadyPromise = Promise.resolve().then(() => (
+  window.location.hash || window.location.pathname === "/"
+    ? openInitialRoute()
+    : documentsReady.then(() => openInitialRoute())
+));
 initialRouteReadyPromise.then(() => {
   initialRouteReady = true;
 });
@@ -615,7 +619,13 @@ async function applyCurrentBrowserLocation() {
 }
 
 function scheduleCurrentBrowserLocation() {
-  if (!initialRouteReady) return;
+  if (!initialRouteReady) {
+    // The initial workspace shell is committed synchronously, while its
+    // hydration promise settles on a later microtask. Preserve any hash change
+    // that lands in that window instead of leaving the visible route stale.
+    initialRouteReadyPromise.then(() => scheduleCurrentBrowserLocation());
+    return;
+  }
   if (locationRouteTimer) clearTimeout(locationRouteTimer);
   locationRouteTimer = setTimeout(() => {
     locationRouteTimer = null;
