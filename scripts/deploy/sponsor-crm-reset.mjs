@@ -53,6 +53,7 @@ const POLL_MS = bounded("SPONSOR_RESET_POLL_MS", 15_000, 0, 60_000);
 
 let cancelled = false;
 let active;
+let checkpoint = "startup";
 const PRIVATE_KEY = new RegExp(`^${escapeRegex(CONTRACT.evidencePrefix)}runs/[0-9a-f]{64}/operations/\\d{3}-[a-z-]+-[0-9a-f]{64}/(?:intent\\.json|completion-[0-9a-f]{64}\\.json)$`);
 
 export class SafeFailure extends Error {
@@ -249,17 +250,23 @@ export class S3PrivateLedger {
 }
 
 export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLedger(aws)) {
+  checkpoint = "runtime-input";
   validateRuntimeEnvironment(env);
   const phase = env.SPONSOR_RESET_PHASE;
   const suppliedReceipt = parseReceiptInputs(env.SPONSOR_RESET_RECEIPT_ID, env.SPONSOR_RESET_RECEIPT_DIGEST);
   validateApproval(env.SPONSOR_RESET_APPROVAL, phase, env.SPONSOR_RESET_RECEIPT_DIGEST);
+  checkpoint = "caller-identity";
   validateIdentity(await aws.call("sts", "get-caller-identity"));
+  checkpoint = "evidence-control";
   await ledger.verifyControlPlane();
 
+  checkpoint = "stack-baseline";
   const stackProbe = await describeStack(aws);
   const stack = validateStackBaseline(stackProbe, env.SPONSOR_RESET_STACK_ID_DIGEST, { allowExecuteInProgress: phase === "execute" });
   let suppliedCompletion;
+  checkpoint = "receipt-load";
   if (suppliedReceipt) suppliedCompletion = await ledger.findReceipt(suppliedReceipt);
+  checkpoint = "initial-state";
   const preliminary = suppliedCompletion
     ? undefined
     : await observeState(aws, env, stackProbe, phase, undefined);
@@ -267,6 +274,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
     ? undefined
     : resetSeedFrom(preliminary);
   const resetId = suppliedCompletion?.resetId ?? deriveResetId({ stackIdDigest: stack.stackIdDigest, sha: env.GITHUB_SHA, ...resetSeed });
+  checkpoint = "ledger-lineage";
   const ledgerState = await loadLedger(ledger, resetId);
   validateLedgerLineage(ledgerState, resetId, env.GITHUB_SHA, stack.stackIdDigest);
   const prior = suppliedReceipt ? resolveReceipt(ledgerState, suppliedReceipt) : undefined;
@@ -279,6 +287,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
   }
   validateTransition(phase, prior);
   const priorCompletionDigest = prior?.receipt.completionDigest ?? NO_RECEIPT;
+  checkpoint = "phase-state";
   const before = preliminary ?? await observeState(aws, env, stackProbe, phase, prior?.completion);
   if (prior && ["create", "execute", "verify", "cleanup-candidate"].includes(phase)) {
     before.oldTable ??= lineageTable(prior.completion);
@@ -290,6 +299,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
     && before.candidates[0].Status === "CREATE_COMPLETE" && before.candidates[0].ExecutionStatus === "AVAILABLE") {
     before.candidate = await reloadApprovedCandidate(aws, before, prior.completion);
   }
+  checkpoint = "phase-plan";
   const plannedTargetDigest = targetPlanDigest(phase, before, prior?.completion);
   const operationId = deriveOperationId({ resetId, phase, sourceSha: env.GITHUB_SHA, priorCompletionDigest, plannedTargetDigest });
   const identity = { resetId, ordinal: PHASE_ORDINAL[phase], phase, operationId, plannedTargetDigest, stackIdDigest: stack.stackIdDigest };
@@ -316,6 +326,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
     assert.deepEqual(intent.target, proposedIntent.target, "same-intent target drift");
     assert.deepEqual(intent.expectedPostcondition, proposedIntent.expectedPostcondition, "same-intent postcondition drift");
   }
+  checkpoint = "intent-persist";
   const storedIntent = await ledger.putRecord(intentKey(identity), intent);
   validateIntent(storedIntent.record);
   const intentDigest = recordDigest(intent);
@@ -323,6 +334,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
   const afterIntent = await ledger.getRecord(intentKey(identity));
   assert.equal(recordDigest(afterIntent.record), intentDigest, "intent reread digest mismatch");
 
+  checkpoint = "phase-execution";
   const result = await executeOrObserve(phase, aws, env, before, operation, prior?.completion, { intent, resumingIntent: Boolean(existing?.intent) });
   const completion = makeCompletion({
     intent,
@@ -333,6 +345,7 @@ export async function runPhase(env, aws = new AwsCli(), ledger = new S3PrivateLe
     candidate: result.candidate ?? prior?.completion?.candidate ?? null,
   });
   const receipt = receiptFor(completion);
+  checkpoint = "completion-persist";
   const storedCompletion = await ledger.putRecord(completionKey(identity, receipt.completionDigest), completion);
   validateCompletion(storedCompletion.record);
   assert.equal(recordDigest(storedCompletion.record), receipt.completionDigest);
@@ -726,22 +739,29 @@ export function classifyResume(phase, state, expected, prior) {
 }
 
 async function observeState(aws, env, knownStack, phase, prior, options = {}) {
+  checkpoint = "state-caller";
   const caller = await aws.call("sts", "get-caller-identity");
   validateIdentity(caller);
+  checkpoint = "state-stack";
   const stackObject = typeof knownStack === "object" ? knownStack : await describeStack(aws, knownStack ?? CONTRACT.stack);
   const stack = validateStackBaseline(stackObject, env.SPONSOR_RESET_STACK_ID_DIGEST, { allowExecuteInProgress: phase === "execute" });
   const executeInProgress = phase === "execute" && String(stackObject.StackStatus).endsWith("_IN_PROGRESS");
+  checkpoint = "state-template";
   const processed = parseTemplate((await aws.call("cloudformation", "get-template", ["--stack-name", stack.stackId, "--template-stage", "Processed"])).TemplateBody);
   const baseline = validateProcessedBaseline(processed);
+  checkpoint = "state-resource";
   const resource = await aws.call("cloudformation", "describe-stack-resource", ["--stack-name", stack.stackId, "--logical-resource-id", CONTRACT.logicalId]);
   assert.equal(resource.StackResourceDetail?.StackId, stack.stackId);
   assert.equal(resource.StackResourceDetail?.LogicalResourceId, CONTRACT.logicalId);
   assert.equal(resource.StackResourceDetail?.PhysicalResourceId, CONTRACT.physicalTable);
   assert.equal(resource.StackResourceDetail?.ResourceType, "AWS::DynamoDB::Table");
   assert.ok(/_COMPLETE$/.test(resource.StackResourceDetail?.ResourceStatus ?? "") || (executeInProgress && /_IN_PROGRESS$/.test(resource.StackResourceDetail?.ResourceStatus ?? "")));
+  checkpoint = "state-inventory";
   const resources = await listStackResources(aws, stack.stackId, { allowExecuteInProgress: executeInProgress });
+  checkpoint = "state-candidates";
   const candidates = await listChangeSets(aws, stack.stackId);
   let table;
+  checkpoint = "state-table";
   const described = await aws.call("dynamodb", "describe-table", ["--table-name", CONTRACT.physicalTable], { allowNotFound: true });
   if (described) {
     if (executeInProgress && described.Table?.TableStatus !== "ACTIVE") {
@@ -758,6 +778,7 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
       });
     }
     if (table.tableStatus === "ACTIVE") {
+      checkpoint = "state-auxiliary";
       const backups = await aws.call("dynamodb", "describe-continuous-backups", ["--table-name", CONTRACT.physicalTable]);
       const ttl = await aws.call("dynamodb", "describe-time-to-live", ["--table-name", CONTRACT.physicalTable]);
       const tags = await listTags(aws, table.tableArn);
@@ -1013,7 +1034,7 @@ async function main() {
     const result = await runPhase(process.env);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
-    const code = error instanceof SafeFailure ? error.code : "reset-contract-failed";
+    const code = error instanceof SafeFailure ? error.code : error?.code === "ERR_ASSERTION" ? `reset-contract-${checkpoint}` : "reset-contract-failed";
     process.stderr.write(`Sponsor reset failed closed: ${code}\n`);
     process.exitCode = 1;
   }
