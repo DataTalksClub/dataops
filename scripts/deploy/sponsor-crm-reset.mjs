@@ -891,6 +891,7 @@ async function describeCandidate(aws, candidateArn, expected) {
     ]);
     if (["CREATE_PENDING", "CREATE_IN_PROGRESS"].includes(response.Status)) return undefined;
     checkpoint = `candidate-${safeCandidateStatus(response.Status)}-${safeCandidateExecution(response.ExecutionStatus)}`;
+    if (response.Status === "FAILED") checkpoint = `candidate-failed-${safeCandidateFailure(response.StatusReason)}`;
     first ??= response;
     validateCandidatePage(response, first);
     changes.push(...(response.Changes ?? []));
@@ -930,6 +931,18 @@ function safeCandidateStatus(value) {
 
 function safeCandidateExecution(value) {
   return ["AVAILABLE", "UNAVAILABLE"].includes(value) ? value.toLowerCase() : "other";
+}
+
+function safeCandidateFailure(value) {
+  const reason = String(value ?? "");
+  if (/didn.t contain changes|no updates/i.test(reason)) return "no-changes";
+  if (/does not support|unsupported/i.test(reason)) return "unsupported";
+  if (/already exists|conflict/i.test(reason)) return "conflict";
+  if (/not found|does not exist/i.test(reason)) return "not-found";
+  if (/accessdenied|not authorized|permission/i.test(reason)) return "permission";
+  if (/throttl|rate exceeded/i.test(reason)) return "throttled";
+  if (/validat|invalid/i.test(reason)) return "validation";
+  return "other";
 }
 
 async function reloadApprovedCandidate(aws, state, completion) {
