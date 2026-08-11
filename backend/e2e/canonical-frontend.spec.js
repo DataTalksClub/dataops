@@ -54,20 +54,20 @@ test.describe('canonical DataOps frontend', () => {
       data: { source: 'manual', title: `Canonical intake ${id}`, note: 'Safe synthetic intake context', dataClass: 'internal' },
     });
     expect(response.status()).toBe(201);
-    const item = await response.json();
+    const item = (await response.json()).item;
 
     await page.goto(`/#/inbox?intakeId=${item.id}`);
     await expect(page.locator('#library-title')).toHaveText('Inbox');
     await expect(page.locator('.intake-detail h3')).toHaveText(`Canonical intake ${id}`);
-    await expect(page.locator('[data-intake-action="convert-task"]')).toBeVisible();
-    await expect(page.locator('[data-intake-action="follow-up-sent"]')).toBeVisible();
-    await expect(page.locator('[data-intake-action="prepare-assistant"]')).toBeVisible();
-    await expect(page.locator('[data-intake-action="archive"]')).toBeVisible();
-
-    await page.locator('[data-intake-waiting]').fill('Synthetic external response');
-    await page.locator('[data-intake-followup]').fill('2026-08-14');
-    await page.locator('[data-intake-reason]').fill('Waiting for a safe synthetic response');
-    await page.locator('[data-intake-action="block"]').click();
+    await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Convert to task');
+    await expect(page.locator('[data-intake-submit="follow-up-sent"]')).toHaveCount(0);
+    await page.locator('.intake-secondary-actions > summary', { hasText: 'Other valid actions' }).click();
+    await page.locator('.intake-action-disclosure > summary', { hasText: 'Block and schedule follow-up' }).click();
+    const block = page.locator('.intake-action-disclosure', { hasText: 'Block and schedule follow-up' });
+    await block.locator('[name="waitingFor"]').fill('Synthetic external response');
+    await block.locator('[name="followUpAt"]').fill('2026-08-14');
+    await block.locator('[name="reason"]').fill('Waiting for a safe synthetic response');
+    await block.locator('[data-intake-submit="block"]').click();
     await expect(page.locator('.intake-status')).toContainText('blocked');
   });
 

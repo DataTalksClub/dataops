@@ -112,24 +112,29 @@ const taskModalBackdrop = document.querySelector("#task-modal-backdrop");
 taskPanelClose.addEventListener("click", closeTaskPanel);
 // Backdrop click closes the modal, matching the confirm/diff modal pattern.
 taskModalBackdrop.addEventListener("click", closeTaskPanel);
-let taskModalOpener = null;
 
 const bundlePanel = document.querySelector("#bundle-panel");
 const bundlePanelTitle = document.querySelector("#bundle-panel-title");
 const bundlePanelBody = document.querySelector("#bundle-panel-body");
 const bundlePanelClose = document.querySelector("#bundle-panel-close");
 bundlePanelClose.addEventListener("click", closeBundlePanel);
+document.addEventListener("keydown", handleWorkspaceEntityModalKeydown);
 
 const workBellButton = document.querySelector("#work-bell-button");
-const workBellCount = document.querySelector("#work-bell-count");
+const workBellCount = workBellButton?.querySelector(".work-bell-count");
 const mobileWorkBellButton = document.querySelector("#mobile-work-bell-button");
 const mobileWorkBellCount = mobileWorkBellButton?.querySelector(".work-bell-count");
 const workBellPanel = document.querySelector("#work-bell-panel");
 const workBellBody = document.querySelector("#work-bell-body");
 const workBellClose = document.querySelector("#work-bell-close");
-function toggleWorkBellPanel() {
-  if (workBellPanel.hidden) openWorkBellPanel();
-  else closeWorkBellPanel();
+async function toggleWorkBellPanel() {
+  if (workBellPanel.hidden) {
+    if (!(await canLeaveCurrentDocument())) return false;
+    await navigateCanonicalWorkspace("/notifications").ready;
+    return true;
+  }
+  closeWorkBellPanel();
+  return true;
 }
 workBellButton.addEventListener("click", toggleWorkBellPanel);
 mobileWorkBellButton?.addEventListener("click", toggleWorkBellPanel);
@@ -141,15 +146,19 @@ const settingsMenu = document.querySelector("#settings-menu");
 const settingsMenuClose = document.querySelector("#settings-menu-close");
 const settingsAdminButton = document.querySelector("#settings-admin-button");
 const settingsUsersButton = document.querySelector("#settings-users-button");
+const settingsSignOutButton = document.querySelector("#settings-sign-out-button");
 const settingsButtons = [settingsButton, mobileSettingsButton].filter(Boolean);
+let settingsMenuOpener = null;
 
 function openSettingsMenu() {
+  settingsMenuOpener = document.activeElement instanceof HTMLElement ? document.activeElement : settingsButton;
   closeWorkBellPanel();
   syncThemeToggleLabel();
   settingsMenu.hidden = false;
   for (const button of settingsButtons) {
     button.setAttribute("aria-expanded", "true");
   }
+  settingsMenuClose.focus();
 }
 
 function closeSettingsMenu() {
@@ -157,6 +166,8 @@ function closeSettingsMenu() {
   for (const button of settingsButtons) {
     button.setAttribute("aria-expanded", "false");
   }
+  if (settingsMenuOpener?.isConnected) settingsMenuOpener.focus();
+  settingsMenuOpener = null;
 }
 
 function toggleSettingsMenu() {
@@ -175,6 +186,12 @@ settingsUsersButton.addEventListener("click", () => {
   closeSettingsMenu();
   showWorkspaceSurface("users");
 });
+settingsSignOutButton.addEventListener("click", async () => {
+  if (!(await canLeaveCurrentDocument())) return;
+  settingsSignOutButton.disabled = true;
+  settingsSignOutButton.querySelector("span").textContent = "Ending this browser session…";
+  window.location.assign("/logout");
+});
 // Close the dropdown when the theme toggle or a git action is invoked, then
 // let the existing handlers run. Stop propagation so the outside-click closer
 // does not also fire on the same event.
@@ -192,6 +209,8 @@ document.addEventListener("click", (event) => {
 });
 let workBellNotifications = [];
 let workBellError = "";
+const workBellDismissErrors = new Map();
+let workBellOpener = null;
 
 let activeTaskPanelId = null;
 let activeTaskPanelTask = null;
@@ -218,6 +237,7 @@ let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
 let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
 let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
 let intakeState = { filter: "actionable", selectedId: null, items: [], bundles: [], loaded: false, error: "" };
+let intakeMutationState = { itemId: "", action: "", values: {}, error: "", busy: false, status: "" };
 let assistantQueueState = { filter: "podcast", selectedJobId: null };
 let runtimeTemplateState = {
   loaded: false,
@@ -234,7 +254,13 @@ let runtimeTemplateState = {
   conflict: null,
 };
 let pendingLegacyRoute = null;
-let applyingLocationRoute = false;
+let activeWorkspaceRouteToken = 0;
+let activeWorkspaceRoute = null;
+let locationRouteTimer = null;
+let initialRouteReady = false;
+let workspaceEntityState = null;
+let taskRouteContext = emptyTaskRouteContext();
+const recurringDeleteErrors = new Map();
 // Dedicated Users surface snapshot (#95). Kept separate from the home work
 // snapshot so create/edit/disable mutations can refresh just this surface
 // without forcing the whole operations snapshot to reload.
@@ -376,14 +402,6 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     helpModal.hidden = true;
   }
-  if (event.key === "Escape" && taskPanel && !taskPanel.hidden) {
-    event.preventDefault();
-    closeTaskPanel();
-  }
-  if (event.key === "Escape" && bundlePanel && !bundlePanel.hidden) {
-    event.preventDefault();
-    closeBundlePanel();
-  }
   if (event.key === "Escape" && workBellPanel && !workBellPanel.hidden) {
     event.preventDefault();
     closeWorkBellPanel();
@@ -418,7 +436,7 @@ function syncThemeToggleLabel(on = body.classList.contains("dark")) {
   themeToggleButton.title = on ? "Switch to light mode" : "Switch to dark mode";
   themeToggleButton.textContent = on ? "Light mode" : "Dark mode";
   themeToggleButton.setAttribute("aria-label", themeToggleButton.title);
-  themeToggleButton.setAttribute("aria-checked", String(on));
+  themeToggleButton.setAttribute("aria-pressed", String(on));
 }
 
 function restoreDarkMode() {
@@ -433,7 +451,10 @@ function restoreDarkMode() {
 showLibrary({ updateUrl: false });
 refreshChangesPanel();
 updateSaveState();
-loadDocuments().then(openInitialRoute);
+loadDocuments().then(async () => {
+  await openInitialRoute();
+  initialRouteReady = true;
+});
 refreshGitStatus();
 
 // Test-only seam: force a fresh work-snapshot fetch + re-render of Operations
@@ -533,9 +554,17 @@ async function loadDocuments() {
 }
 
 async function openInitialRoute() {
-  const workspaceRoute = parseWorkspaceHash();
-  if (workspaceRoute) {
-    await applyWorkspaceRoute(workspaceRoute, { replace: true });
+  let workspaceRoute = parseWorkspaceHash();
+  if (workspaceRoute && !workspaceRoute.invalid) {
+    if (workspaceRoute.normalized) {
+      history.replaceState(history.state, "", workspaceRoute.canonicalUrl);
+      workspaceRoute = parseWorkspaceHash();
+    }
+    await applyWorkspaceRoute(workspaceRoute);
+    return;
+  }
+  if (window.location.hash || window.location.pathname === "/") {
+    await applyWorkspaceRoute(replaceWithWorkspaceHome());
     return;
   }
   const docPath = docPathFromLocation();
@@ -554,10 +583,18 @@ async function openInitialRoute() {
   await showOperationsHome({ replace: true });
 }
 
-window.addEventListener("popstate", () => {
-  const workspaceRoute = parseWorkspaceHash();
-  if (workspaceRoute) {
-    applyWorkspaceRoute(workspaceRoute, { replace: true });
+async function applyCurrentBrowserLocation() {
+  let workspaceRoute = parseWorkspaceHash();
+  if (workspaceRoute && !workspaceRoute.invalid) {
+    if (workspaceRoute.normalized) {
+      history.replaceState(history.state, "", workspaceRoute.canonicalUrl);
+      workspaceRoute = parseWorkspaceHash();
+    }
+    await applyWorkspaceRoute(workspaceRoute);
+    return;
+  }
+  if (window.location.hash || window.location.pathname === "/") {
+    await applyWorkspaceRoute(replaceWithWorkspaceHome());
     return;
   }
   const docPath = docPathFromLocation();
@@ -568,12 +605,20 @@ window.addEventListener("popstate", () => {
   selectedFolder = folderPathFromLocation();
   showLibrary({ updateUrl: false });
   refreshDocuments();
-});
+}
 
-window.addEventListener("hashchange", () => {
-  const workspaceRoute = parseWorkspaceHash();
-  if (workspaceRoute) applyWorkspaceRoute(workspaceRoute, { replace: true });
-});
+function scheduleCurrentBrowserLocation() {
+  if (!initialRouteReady) return;
+  if (locationRouteTimer) clearTimeout(locationRouteTimer);
+  locationRouteTimer = setTimeout(() => {
+    locationRouteTimer = null;
+    applyCurrentBrowserLocation();
+  }, 0);
+}
+
+window.addEventListener("popstate", scheduleCurrentBrowserLocation);
+
+window.addEventListener("hashchange", scheduleCurrentBrowserLocation);
 
 const PIN_KEY = "dtc-pinned";
 
@@ -724,12 +769,22 @@ async function refreshDocuments() {
       if (systemFilter.value) url.searchParams.set("system", systemFilter.value);
       if (tagFilter.value) url.searchParams.set("tag", tagFilter.value);
 
-      const payload = await request(url, { signal: controller.signal });
+      url.searchParams.set("source", "docs");
+      const [docsResult, workResult] = await Promise.allSettled([
+        request(url, { signal: controller.signal }),
+        loadUnifiedWorkSearch(query, controller.signal),
+      ]);
       if (searchController !== controller) return;
       searchController = null;
 
-      const results = Array.isArray(payload.results) ? payload.results : [];
-      activeSearchSources = Array.isArray(payload.sources) ? payload.sources : [];
+      const payload = docsResult.status === "fulfilled"
+        ? docsResult.value
+        : { results: [], sources: [{ source: "docs", status: "unavailable", error: docsResult.reason?.message || "Document search unavailable" }] };
+      const workSearch = workResult.status === "fulfilled"
+        ? workResult.value
+        : { results: [], sources: [{ source: "work", status: "unavailable", error: workResult.reason?.message || "Work search unavailable" }] };
+      const results = [...(Array.isArray(payload.results) ? payload.results : []), ...workSearch.results].slice(0, 80);
+      activeSearchSources = [...(Array.isArray(payload.sources) ? payload.sources : []), ...workSearch.sources];
       visibleDocuments = results;
       selectedFolder = "";
       renderTree(localFiltered);
@@ -759,6 +814,57 @@ async function refreshDocuments() {
     if (error.name === "AbortError") return;
     setStatus(error.message);
   }
+}
+
+async function loadUnifiedWorkSearch(query, signal) {
+  const definitions = [
+    { source: "tasks", path: "/api/tasks", items: tasksFromWorkPayload, type: "task" },
+    { source: "workflows", path: "/api/bundles", items: bundlesFromWorkPayload, type: "workflow" },
+    { source: "templates", path: "/api/templates", items: (payload) => Array.isArray(payload) ? payload : payload?.templates || [], type: "template" },
+    { source: "artifacts", path: "/api/artifacts", items: (payload) => Array.isArray(payload) ? payload : payload?.artifacts || [], type: "artifact" },
+    { source: "assistant-jobs", path: "/api/assistant-jobs", items: assistantJobsFromPayload, type: "assistant-job" },
+  ];
+  const settled = await Promise.allSettled(definitions.map((definition) => request(workApiUrl(definition.path), { signal })));
+  const wanted = query.toLowerCase();
+  const results = [];
+  const sources = [];
+  settled.forEach((result, index) => {
+    const definition = definitions[index];
+    if (result.status === "rejected") {
+      sources.push({ source: definition.source, status: "unavailable", error: result.reason?.message || "Work source unavailable" });
+      return;
+    }
+    const matches = definition.items(result.value).filter((item) => [
+      item.id, item.title, item.name, item.description, item.status, item.assistantType, item.storageUri,
+    ].filter(Boolean).join(" ").toLowerCase().includes(wanted));
+    sources.push({ source: definition.source, status: "ok", count: matches.length });
+    for (const item of matches) results.push(unifiedWorkSearchResult(definition.type, item));
+  });
+  return { results, sources };
+}
+
+function unifiedWorkSearchResult(type, item) {
+  const id = item.id;
+  const title = item.title || item.name || item.description || item.storageUri || id;
+  const route = type === "task"
+    ? { kind: "task", taskId: id }
+    : type === "workflow"
+      ? { kind: "workflow", bundleId: id }
+      : type === "template"
+        ? { kind: "template", templateId: id, templateType: item.type }
+        : type === "assistant-job"
+          ? { kind: "assistant-job", assistantJobId: id, taskId: item.taskId, bundleId: item.bundleId }
+          : { kind: "artifact", artifactId: id, taskId: item.taskId, bundleId: item.bundleId };
+  return {
+    type,
+    id,
+    title,
+    context: item.description || item.summary || item.assistantType || item.storageUri || "",
+    source: type,
+    source_label: labelizeWorkValue(type),
+    route,
+    fields: { status: item.status || "", due_date: item.date || "", workflow_title: item.bundleId || "" },
+  };
 }
 
 function filterDocuments(documents) {
@@ -1046,10 +1152,7 @@ function renderTasksSubNav(activeSection) {
     }
     tab.addEventListener("click", async () => {
       if (id !== activeTasksSection && !(await confirmLeaveRuntimeDraft())) return;
-      activeTasksSection = id;
-      setWorkspaceUrl("tasks", id);
-      renderTasksSurface(allDocuments, id);
-      syncLibraryPageTitle();
+      navigateCanonicalWorkspace(workspaceHashPath("tasks", id));
     });
     nav.append(tab);
   }
@@ -1593,6 +1696,9 @@ async function renderNewsletterSurface() {
 }
 
 async function renderSponsorCrmSurface() {
+  const routeAtStart = pendingLegacyRoute;
+  const routeToken = routeAtStart?.token;
+  const requestedBookingId = routeAtStart?.path === "/sponsors" ? routeAtStart.params.get("bookingId") : null;
   documentList.replaceChildren();
   const surface = document.createElement("section");
   surface.className = "sponsor-crm-surface";
@@ -1876,7 +1982,10 @@ async function renderSponsorCrmSurface() {
     const history = await api(`/bookings/${booking.id}/history`);
     const org = organizations.find((item) => item.id === booking.organizationId);
     surface.querySelector("[data-crm-detail]").innerHTML =
-      `<article class="crm-card"><h3>Booking detail</h3><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+      `<article class="crm-card"><header><h3>Booking detail</h3><button type="button" data-close-booking>Return to bookings</button></header><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+    surface.querySelector("[data-close-booking]").addEventListener("click", () => {
+      navigateCanonicalWorkspace("/sponsors");
+    });
     await loadFinance(booking);
     await loadCommunications(booking.id);
   }
@@ -2163,15 +2272,14 @@ async function renderSponsorCrmSurface() {
       open = event.target.closest("[data-open-booking]")?.dataset.openBooking;
     if (edit) openBooking(bookings.find((item) => item.id === edit));
     if (open)
-      safe(async () => {
-        const booking = bookings.find((item) => item.id === open);
-        await reopenBookingDetail(booking);
-      }, "Could not load booking history");
+      navigateCanonicalWorkspace("/sponsors", { bookingId: open });
   };
   surface.querySelector("[data-crm-alerts]").onclick = (event) => {
     const id = event.target.closest("[data-alert-booking]")?.dataset.alertBooking;
     const booking = bookings.find((item) => item.id === id);
-    if (booking) safe(() => reopenBookingDetail(booking), "Could not load booking");
+    if (booking) {
+      navigateCanonicalWorkspace("/sponsors", { bookingId: id });
+    }
   };
   for (const dialog of surface.querySelectorAll("dialog")) {
     const cancel = dialog.querySelector('[value="cancel"],[data-cancel]');
@@ -2449,6 +2557,32 @@ async function renderSponsorCrmSurface() {
   };
   try {
     await refresh();
+    if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
+    if (requestedBookingId) {
+      let booking = bookings.find((item) => item.id === requestedBookingId);
+      try {
+        if (!booking) {
+          booking = await api(`/bookings/${encodeURIComponent(requestedBookingId)}`);
+          if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
+          bookings = [booking, ...bookings];
+          draw();
+        }
+        await reopenBookingDetail(booking);
+      } catch (error) {
+        if (routeToken && (!isWorkspaceRouteFresh(routeToken) || !surface.isConnected)) return;
+        const detail = surface.querySelector("[data-crm-detail]");
+        renderEntityLoadState(detail, {
+          kind: "booking",
+          id: requestedBookingId,
+          status: error.status === 404 ? "not-found" : "error",
+          error: error.message,
+          retry: () => renderSponsorCrmSurface(),
+          returnToList: () => {
+            navigateCanonicalWorkspace("/sponsors");
+          },
+        });
+      }
+    }
   } catch (error) {
     surface.querySelector("[data-crm-orgs]").textContent =
       "Could not load sponsors.";
@@ -2522,7 +2656,7 @@ async function renderBookkeepingSurface() {
   const surface = document.createElement("section");
   surface.className = "bookkeeping-surface";
   surface.innerHTML = `
-    <header class="bookkeeping-header"><div><h2>Bookkeeping</h2><p>Private ledger and monthly evidence.</p></div><button class="primary-button" data-bookkeeping-add>Add entry</button></header>
+    <header class="bookkeeping-header"><div><h3>Private ledger</h3><p>Bookkeeping evidence and monthly packages.</p></div><button class="primary-button" data-bookkeeping-add>Add entry</button></header>
     <div class="bookkeeping-filters">
       <label>Year <select data-filter="year"><option value="">All</option></select></label><label>Type <input data-filter="entryType"></label><label>Category <input data-filter="category"></label><label>Provider / payee <input data-filter="counterparty"></label><label>Currency <input data-filter="currency" maxlength="3"></label><label>Search <input data-filter="search" type="search"></label>
     </div><p class="bookkeeping-totals" aria-live="polite"></p><div class="bookkeeping-ledger" aria-live="polite">Loading ledger…</div>
@@ -2565,8 +2699,8 @@ async function renderBookkeepingSurface() {
 }
 
 function renderWorkQueueSurface(model) {
-  const today = todayIsoDate();
-  const tasks = allWorkTasks(operationsWorkSnapshot);
+  const today = taskRouteContext.date || todayIsoDate();
+  const tasks = Array.isArray(taskRouteContext.tasks) ? taskRouteContext.tasks : allWorkTasks(operationsWorkSnapshot);
   // Per-group loaded state (#97): each queue group degrades against its own
   // data source so a single failed endpoint only empties its own group.
   const groupLoaded = {
@@ -2589,6 +2723,29 @@ function renderWorkQueueSurface(model) {
   const section = document.createElement("section");
   section.className = "ops-work-queue";
   section.setAttribute("aria-label", "Work queue");
+  if (taskRouteContext.date || taskRouteContext.bundleId || taskRouteContext.contextBundleId || taskRouteContext.failures.length) {
+    const context = document.createElement("aside");
+    context.className = "task-route-context";
+    context.setAttribute("aria-label", "Task queue route context");
+    const heading = document.createElement("h3");
+    heading.textContent = "Queue context";
+    const summary = document.createElement("p");
+    summary.textContent = [
+      taskRouteContext.date ? `Date ${taskRouteContext.date}` : "",
+      taskRouteContext.bundleId ? `Filtered to workflow ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}` : "",
+      taskRouteContext.contextBundleId ? `Return workflow ${taskRouteContext.contextBundle?.title || taskRouteContext.contextBundleId}` : "",
+    ].filter(Boolean).join(" · ");
+    context.append(heading, summary);
+    if (taskRouteContext.contextBundleId && taskRouteContext.contextBundle) {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = "Open return workflow";
+      open.addEventListener("click", () => openBundlePanel(taskRouteContext.contextBundleId));
+      context.append(open);
+    }
+    for (const failure of taskRouteContext.failures) context.append(renderTaskRouteContextFailure(failure));
+    section.append(context);
+  }
   for (const [label, list] of groups) {
     const group = document.createElement("article");
     group.className = "ops-queue-group";
@@ -2618,10 +2775,38 @@ function renderWorkQueueSurface(model) {
   return section;
 }
 
+function renderTaskRouteContextFailure(failure) {
+  const labels = {
+    "filter-bundle": ["Filter workflow", "The workflow filter could not be verified."],
+    "task-query": ["Filtered task queue", "The requested task slice could not be loaded."],
+    "return-context": ["Return workflow", "The return context could not be loaded."],
+  };
+  const [label, explanation] = labels[failure.source] || ["Route context", "This route context could not be loaded."];
+  const state = document.createElement("section");
+  state.className = `task-context-state entity-route-${failure.status}`;
+  state.dataset.contextSource = failure.source;
+  state.setAttribute("role", failure.status === "error" ? "alert" : "status");
+  const heading = document.createElement("strong");
+  heading.textContent = `${label} ${failure.status === "not-found" ? "not found" : "unavailable"}`;
+  const detail = document.createElement("p");
+  detail.textContent = `${explanation} Requested value: ${failure.id}. ${failure.error || ""}`.trim();
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "Retry route context";
+  retry.addEventListener("click", () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }));
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "Clear queue context";
+  clear.addEventListener("click", () => navigateCanonicalWorkspace("/tasks"));
+  state.append(heading, detail, retry, clear);
+  return state;
+}
+
 function renderWorkQueueRow(task, today) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ops-queue-row";
+  button.dataset.taskId = task.id;
   button.addEventListener("click", () => openTaskPanel(task.id));
   const title = document.createElement("strong");
   title.textContent = workTaskTitle(task);
@@ -2670,6 +2855,7 @@ function renderWorkflowSurfaceCard(item) {
   const card = document.createElement("button");
   card.type = "button";
   card.className = `ops-workflow-card ops-risk-${item.risk || "low"}`;
+  card.dataset.bundleId = item.bundleId;
   card.addEventListener("click", () => openBundlePanel(item.bundleId));
   const title = document.createElement("strong");
   title.textContent = item.title;
@@ -2800,7 +2986,15 @@ function markRuntimeDraftChanged() {
 
 async function confirmLeaveRuntimeDraft() {
   if (!runtimeDraftDirty()) return true;
-  return await confirmDialog("This runtime template has unsaved changes. Leave without saving them?", { okText: "Leave", danger: true });
+  const confirmed = await confirmDialog("This runtime template has unsaved changes. Leave without saving them?", { okText: "Leave", danger: true });
+  if (!confirmed) return false;
+  runtimeTemplateState.draft = null;
+  runtimeTemplateState.baseline = null;
+  runtimeTemplateState.conflict = null;
+  runtimeTemplateState.fieldErrors = {};
+  runtimeTemplateState.editorState = "clean";
+  runtimeTemplateState.feedback = "";
+  return true;
 }
 
 window.addEventListener("beforeunload", (event) => {
@@ -2815,6 +3009,7 @@ async function refreshRuntimeTemplates(options = {}) {
       request(workApiUrl("/api/templates")),
       request(workApiUrl("/api/me")).catch(() => ({})),
     ]);
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     runtimeTemplateState = {
       ...runtimeTemplateState,
       loaded: true,
@@ -2823,6 +3018,7 @@ async function refreshRuntimeTemplates(options = {}) {
       error: "",
     };
   } catch (error) {
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     runtimeTemplateState = { ...runtimeTemplateState, loaded: false, error: error.message || "Runtime templates could not be loaded" };
   }
   if (options.rerender && activeWorkspaceView === "tasks" && activeTasksSection === "templates" && isOperationsHomeVisible()) {
@@ -3154,13 +3350,7 @@ function renderRuntimeTemplateAdmin() {
     add.textContent = "New runtime template";
     add.addEventListener("click", async () => {
       if (!(await confirmLeaveRuntimeDraft())) return;
-      runtimeTemplateState.selectedId = "__new__";
-      runtimeTemplateState.draft = newRuntimeTemplateDraft();
-      runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
-      runtimeTemplateState.editorState = "clean";
-      runtimeTemplateState.feedback = "";
-      runtimeTemplateState.fieldErrors = {};
-      renderTasksSurface(allDocuments, "templates");
+      navigateCanonicalWorkspace("/templates", {}, { entity: { templateId: "__new__" } });
     });
     header.append(add);
   }
@@ -3204,13 +3394,7 @@ function renderRuntimeTemplateAdmin() {
     button.addEventListener("click", async () => {
       if (template.id === runtimeTemplateState.selectedId) return;
       if (!(await confirmLeaveRuntimeDraft())) return;
-      runtimeTemplateState.selectedId = template.id;
-      runtimeTemplateState.draft = runtimeTemplateDefinition(template);
-      runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
-      runtimeTemplateState.editorState = "clean";
-      runtimeTemplateState.feedback = "";
-      runtimeTemplateState.fieldErrors = {};
-      renderTasksSurface(allDocuments, "templates");
+      navigateCanonicalWorkspace("/templates", { templateId: template.id });
     });
     list.append(button);
   }
@@ -3226,14 +3410,15 @@ function renderRuntimeTemplateBackButton() {
   back.textContent = "Back to template list";
   back.addEventListener("click", async () => {
     if (!(await confirmLeaveRuntimeDraft())) return;
-    runtimeTemplateState.selectedId = null;
     runtimeTemplateState.draft = null;
     runtimeTemplateState.baseline = null;
+    runtimeTemplateState.conflict = null;
     runtimeTemplateState.editorState = "clean";
     runtimeTemplateState.feedback = "";
     runtimeTemplateState.fieldErrors = {};
-    renderTasksSurface(allDocuments, "templates");
-    document.querySelector(".runtime-template-search")?.focus();
+    await navigateCanonicalWorkspace("/templates", {}, {
+      restoreFocus: { kind: "runtime-template-list" },
+    }).ready;
   });
   return back;
 }
@@ -3311,6 +3496,16 @@ function renderRuntimeTemplateReadOnly(selected) {
 function renderRuntimeTemplateEditor() {
   const editor = document.createElement("div");
   editor.className = "runtime-template-editor";
+  if (workspaceEntityState?.kind === "template" && ["not-found", "error"].includes(workspaceEntityState.status)) {
+    renderEntityLoadState(editor, {
+      ...workspaceEntityState,
+      retry: () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }),
+      returnToList: () => {
+        navigateCanonicalWorkspace("/templates");
+      },
+    });
+    return editor;
+  }
   const creating = runtimeTemplateState.selectedId === "__new__";
   const selected = runtimeTemplateState.templates.find((template) => template.id === runtimeTemplateState.selectedId);
   if (!creating && !selected) {
@@ -3406,7 +3601,13 @@ function renderRuntimeTemplateEditor() {
       runtimeTemplateState.editorState = "saved";
       runtimeTemplateState.feedback = `Saved version ${saved.version}.`;
       setStatus(creating ? "Runtime template created." : "Runtime template saved.");
-      renderTasksSurface(allDocuments, "templates");
+      if (runtimeTemplateState.selectedId) {
+        await navigateCanonicalWorkspace(
+          "/templates",
+          { templateId: runtimeTemplateState.selectedId },
+          { hydrate: false },
+        ).ready;
+      }
     } catch (error) {
       save.disabled = false;
       if (error.status === 409) {
@@ -3463,7 +3664,7 @@ function renderRuntimeTemplateEditor() {
         runtimeTemplateState.draft = null;
         runtimeTemplateState.baseline = null;
         setStatus("Runtime template deleted.");
-        await refreshRuntimeTemplates({ rerender: true });
+        await navigateCanonicalWorkspace("/templates").ready;
       } catch (error) {
         if (error.payload?.code === "template_in_use") {
           const categories = Object.entries(error.payload.references?.categories || {}).map(([name, count]) => referenceCountLabel(name, count)).join(", ");
@@ -3506,8 +3707,7 @@ function renderAssistantsSurface() {
     button.textContent = label;
     button.addEventListener("click", () => {
       assistantQueueState.filter = id;
-      assistantQueueState.selectedJobId = null;
-      renderTasksSurface(allDocuments, "assistants");
+      navigateCanonicalWorkspace("/assistants");
     });
     filters.append(button);
   }
@@ -3531,7 +3731,7 @@ function renderAssistantsSurface() {
   detail.dataset.assistantDetail = "";
   layout.append(queue, detail);
   section.append(layout);
-  const selectedId = assistantQueueState.selectedJobId || filtered[0]?.id;
+  const selectedId = assistantQueueState.selectedJobId;
   assistantQueueState.selectedJobId = selectedId || null;
   if (selectedId) renderAssistantJobDetail(detail, selectedId);
   else detail.append(renderHonestState("Assistant job detail", "Select a job to inspect inputs, events, output artifacts, and approval history."));
@@ -3544,9 +3744,7 @@ function renderAssistantJobRow(job) {
   const context = assistantContextLabel(job);
   row.innerHTML = `<div><strong>${escapeHtml(job.title || job.assistantType || job.id || "Assistant job")}</strong><span>${escapeHtml(job.assistantType || "assistant")} · attempt ${Number(job.attemptCount || 0)}/${Number(job.maxAttempts || 1)}${context ? ` · ${escapeHtml(context)}` : ""}</span><small>${escapeHtml(assistantNextAction(job))}${job.lastError ? ` · Error: ${escapeHtml(job.lastError.summary || job.lastError.code || "failed")}` : ""}</small></div><em>${escapeHtml(String(job.status || "draft").replace(/_/g, " "))}</em>`;
   row.addEventListener("click", () => {
-    assistantQueueState.selectedJobId = job.id;
-    setWorkspaceEntityParam("assistantJobId", job.id);
-    renderTasksSurface(allDocuments, "assistants");
+    navigateCanonicalWorkspace("/assistants", { assistantJobId: job.id });
   });
   return row;
 }
@@ -3635,9 +3833,8 @@ function renderAssistantCreatePanel() {
       });
       const job = created.job || created;
       await request(workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}/submit`), { method: "POST" });
-      assistantQueueState.selectedJobId = job.id;
       setStatus("Assistant job queued.");
-      await refreshOperationsAssistantSnapshot({ rerender: true });
+      await navigateCanonicalWorkspace("/assistants", { assistantJobId: job.id }).ready;
     } catch (error) {
       reportError(error.message || "Could not create assistant job");
     }
@@ -3697,7 +3894,16 @@ async function renderAssistantJobDetail(container, jobId) {
     });
     container.querySelectorAll("[data-assistant-lifecycle]").forEach((button) => button.addEventListener("click", () => runAssistantAction(job, button.dataset.assistantLifecycle)));
   } catch (error) {
-    container.replaceChildren(renderHonestState("Assistant job unavailable", error.message || "The detail API request failed."));
+    renderEntityLoadState(container, {
+      kind: "assistant job",
+      id: jobId,
+      status: error.status === 404 ? "not-found" : "error",
+      error: error.message,
+      retry: () => renderAssistantJobDetail(container, jobId),
+      returnToList: () => {
+        navigateCanonicalWorkspace("/assistants");
+      },
+    });
   }
 }
 
@@ -3736,6 +3942,7 @@ async function refreshIntakeSnapshot(options = {}) {
       request(workApiUrl("/api/intake")),
       request(workApiUrl("/api/bundles")),
     ]);
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     intakeState = {
       ...intakeState,
       items: Array.isArray(intakePayload) ? intakePayload : intakePayload.items || [],
@@ -3744,6 +3951,7 @@ async function refreshIntakeSnapshot(options = {}) {
       error: "",
     };
   } catch (error) {
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     intakeState = { ...intakeState, loaded: false, error: error.message || "Inbox could not be loaded" };
   }
   if (options.rerender && activeWorkspaceView === "inbox" && isOperationsHomeVisible()) renderInboxSurface();
@@ -3773,7 +3981,10 @@ function renderInboxSurface() {
 
   const wrap = document.createElement("div");
   wrap.className = "operations-home ops-surface ops-inbox";
-  wrap.append(renderSurfaceHeader("Inbox", "Capture raw operational inputs, then attach, convert, defer, resolve, or prepare them for an assistant."));
+  const intro = document.createElement("p");
+  intro.className = "ops-surface-intro";
+  intro.textContent = "Capture raw operational inputs, then attach, convert, defer, resolve, or prepare them for an assistant.";
+  wrap.append(intro);
   wrap.append(renderManualIntakeForm());
 
   const filters = document.createElement("nav");
@@ -3786,8 +3997,7 @@ function renderInboxSurface() {
     button.textContent = label;
     button.addEventListener("click", () => {
       intakeState.filter = id;
-      intakeState.selectedId = null;
-      renderInboxSurface();
+      navigateCanonicalWorkspace("/inbox");
     });
     filters.append(button);
   }
@@ -3807,20 +4017,27 @@ function renderInboxSurface() {
   }
 
   const filtered = intakeState.items.filter((item) => intakeMatchesFilter(item, intakeState.filter));
-  const selected = intakeState.items.find((item) => item.id === intakeState.selectedId) || filtered[0] || null;
+  const selected = intakeState.items.find((item) => item.id === intakeState.selectedId) || null;
   intakeState.selectedId = selected?.id || null;
   const layout = document.createElement("div");
   layout.className = "intake-layout";
+  layout.classList.toggle("has-selected-intake", Boolean(selected));
   layout.append(renderIntakeQueue(filtered), renderIntakeDetail(selected));
   wrap.append(layout);
   documentList.replaceChildren(wrap);
+  if (selected && isMobileShell()) {
+    requestAnimationFrame(() => {
+      const detail = documentList.querySelector(".intake-detail");
+      if (detail && intakeState.selectedId === selected.id) detail.scrollIntoView({ block: "start" });
+    });
+  }
   setStatus(`${filtered.length} inbox item${filtered.length === 1 ? "" : "s"} in ${intakeState.filter}.`);
 }
 
 function renderManualIntakeForm() {
-  const panel = document.createElement("section");
+  const panel = document.createElement("details");
   panel.className = "intake-panel";
-  panel.innerHTML = `<h3>Manual intake</h3><div class="intake-create-grid"><label class="wide">Note<textarea data-intake-create-note placeholder="Paste the request, context, and safe links"></textarea></label><label>Title<input data-intake-create-title placeholder="Short subject"></label><label>Data class<select data-intake-create-class><option>internal</option><option>public</option><option>private</option><option>sensitive</option></select></label><label>Tags<input data-intake-create-tags placeholder="comma,separated"></label><button class="primary-button" data-intake-create>Capture intake</button></div>`;
+  panel.innerHTML = `<summary>Capture a new intake item</summary><div class="intake-create-grid"><label class="wide">Note<textarea data-intake-create-note placeholder="Paste the request, context, and safe links"></textarea></label><label>Title<input data-intake-create-title placeholder="Short subject"></label><label>Data class<select data-intake-create-class><option>internal</option><option>public</option><option>private</option><option>sensitive</option></select></label><label>Tags<input data-intake-create-tags placeholder="comma,separated"></label><button class="primary-button" data-intake-create>Capture intake</button></div>`;
   panel.querySelector("[data-intake-create]").addEventListener("click", async () => {
     const note = panel.querySelector("[data-intake-create-note]").value.trim();
     const title = panel.querySelector("[data-intake-create-title]").value.trim();
@@ -3862,9 +4079,7 @@ function renderIntakeQueue(items) {
     button.className = `intake-row ${item.id === intakeState.selectedId ? "is-selected" : ""}`;
     button.innerHTML = `<span><strong>${escapeHtml(item.title || "Untitled intake")}</strong><small>${escapeHtml(intakeMeta(item))}</small><span>${escapeHtml(String(item.summary || "").slice(0, 180))}</span></span><em>${escapeHtml(intakeStatusLabel(item))}</em>`;
     button.addEventListener("click", () => {
-      intakeState.selectedId = item.id;
-      setWorkspaceEntityParam("intakeId", item.id);
-      renderInboxSurface();
+      navigateCanonicalWorkspace("/inbox", { intakeId: item.id });
     });
     panel.append(button);
   }
@@ -3880,50 +4095,135 @@ function renderIntakeDetail(item) {
   const panel = document.createElement("section");
   panel.className = "intake-panel intake-detail";
   if (!item) {
+    if (workspaceEntityState?.kind === "intake" && ["not-found", "error"].includes(workspaceEntityState.status)) {
+      renderEntityLoadState(panel, {
+        ...workspaceEntityState,
+        retry: () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }),
+        returnToList: () => {
+          navigateCanonicalWorkspace("/inbox");
+        },
+      });
+      return panel;
+    }
     panel.append(renderHonestState("Intake detail", "Select an intake item to triage it into normal workflow work."));
     return panel;
   }
   const bundleOptions = [`<option value="">No workflow</option>`, ...intakeState.bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`)].join("");
   const taskRelationships = (item.taskIds || []).map((id) => `<button type="button" data-open-intake-task="${escapeHtml(id)}">Task ${escapeHtml(id)}</button>`).join(" ") || "None";
   const bundleRelationships = (item.bundleIds || []).map((id) => `<button type="button" data-open-intake-bundle="${escapeHtml(id)}">${escapeHtml(intakeState.bundles.find((bundle) => bundle.id === id)?.title || id)}</button>`).join(" ") || "None";
-  const history = (item.history || []).slice(-8).reverse().map((event) => `<li><strong>${escapeHtml(String(event.action || "event").replace(/-/g, " "))}</strong><span>${escapeHtml(event.createdAt || "")}${event.reason ? ` · ${escapeHtml(event.reason)}` : ""}</span></li>`).join("");
-  panel.innerHTML = `<header><div><h3>${escapeHtml(item.title || "Untitled intake")}</h3><small>${escapeHtml(intakeMeta(item))}</small></div><span class="intake-status">${escapeHtml(intakeStatusLabel(item))}</span></header><section><h4>Raw intake excerpt</h4><p>${escapeHtml(item.summary || "")}</p><small>Raw bodies and binaries remain behind storage references; this excerpt is not task proof.</small></section><section><h4>Relationships</h4><div><strong>Tasks:</strong> ${taskRelationships}</div><div><strong>Workflows:</strong> ${bundleRelationships}</div>${intakeRefList("Assistant jobs", item.assistantJobIds)}</section><section><h4>Links, files, and artifacts</h4>${intakeRefList("Links", item.linkRefs)}${intakeRefList("Files", item.fileRefs)}${intakeRefList("Artifacts", item.artifactRefs)}</section><section><h4>Triage actions</h4><div class="intake-action-grid"><label>Task ID<input data-intake-task placeholder="Existing task id"></label><label>Workflow<select data-intake-bundle>${bundleOptions}</select></label><button data-intake-action="attach">Attach</button><label>Task date<input type="date" data-intake-date value="${todayIsoDate()}"></label><label>Assignee<input data-intake-assignee value="${escapeHtml(item.assigneeId || "")}" placeholder="User id"></label><button class="primary-button" data-intake-action="convert-task">Convert to task</button><label>Duplicate of<input data-intake-duplicate placeholder="Intake item id"></label><label>Reason<input data-intake-reason placeholder="Required for resolved states"></label><button data-intake-action="mark-duplicate">Duplicate</button><label>Waiting for<input data-intake-waiting value="${escapeHtml(item.waitingFor || "")}" placeholder="Person or system"></label><label>Follow up<input type="date" data-intake-followup value="${escapeHtml(String(item.followUpAt || "").slice(0, 10))}"></label><button data-intake-action="block">Block</button><label>Next follow-up<input type="date" data-intake-next-followup value="${defaultNextFollowUpDate()}"></label><label class="wide">Operational note<input data-intake-note placeholder="Short operational note"></label><button data-intake-action="follow-up-sent">Follow-up sent</button><button data-intake-action="response-received">Response received</button><label>Assistant skill<input data-intake-assistant value="${escapeHtml(item.assistantReadiness?.assistantType || "podcast")}"></label><label>Create job<select data-intake-create-job><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label><button data-intake-action="prepare-assistant">Prepare assistant</button><button data-intake-action="ignore">Ignore</button><button data-intake-action="archive">Archive</button></div></section><section><h4>History</h4><ul class="intake-history">${history || "<li>No triage history recorded.</li>"}</ul></section>`;
+  const assistantRelationships = (item.assistantJobIds || []).map((id) => `<button type="button" data-open-intake-assistant="${escapeHtml(id)}">Assistant job ${escapeHtml(id)}</button>`).join(" ") || "None";
+  const history = renderIntakeHistoryMarkup(item.history || []);
+  const actionMarkup = intakeActionMarkup(item, bundleOptions);
+  panel.innerHTML = `<header><div><h3>${escapeHtml(item.title || "Untitled intake")}</h3><small>${escapeHtml(intakeMeta(item))}</small></div><div class="intake-detail-heading-actions"><span class="intake-status">${escapeHtml(intakeStatusLabel(item))}</span><button type="button" data-close-intake>Return to Inbox</button></div></header><section><h4>Intake context</h4><p>${escapeHtml(item.summary || "")}</p><small>Raw bodies and binaries remain behind storage references; this excerpt is not task proof.</small></section>${actionMarkup}<section><h4>Relationships</h4><div><strong>Tasks:</strong> ${taskRelationships}</div><div><strong>Workflows:</strong> ${bundleRelationships}</div><div><strong>Assistants:</strong> ${assistantRelationships}</div></section><section><h4>Links, files, and artifacts</h4>${intakeRefList("Links", item.linkRefs)}${intakeRefList("Files", item.fileRefs)}${intakeRefList("Artifacts", item.artifactRefs)}</section><section aria-labelledby="intake-history-heading"><h4 id="intake-history-heading">History <small>(newest first)</small></h4><ol class="intake-history">${history || "<li>No triage history recorded.</li>"}</ol></section>`;
+
+  panel.querySelector("[data-close-intake]").addEventListener("click", () => {
+    navigateCanonicalWorkspace("/inbox");
+  });
 
   panel.querySelectorAll("[data-open-intake-task]").forEach((button) => button.addEventListener("click", () => openTaskPanel(button.dataset.openIntakeTask)));
   panel.querySelectorAll("[data-open-intake-bundle]").forEach((button) => button.addEventListener("click", () => openBundlePanel(button.dataset.openIntakeBundle)));
-  panel.querySelectorAll("[data-intake-action]").forEach((button) => button.addEventListener("click", async () => {
-    const value = (selector) => panel.querySelector(selector)?.value.trim() || "";
-    const action = button.dataset.intakeAction;
-    const taskId = value("[data-intake-task]");
-    const bundleId = value("[data-intake-bundle]");
-    const reason = value("[data-intake-reason]");
-    const payloadByAction = {
-      attach: { taskIds: taskId ? [taskId] : [], bundleIds: bundleId ? [bundleId] : [], note: value("[data-intake-note]") || undefined },
-      "convert-task": { date: value("[data-intake-date]"), assigneeId: value("[data-intake-assignee]") || undefined, bundleId: bundleId || undefined, waitingFor: value("[data-intake-waiting]") || undefined, followUpAt: value("[data-intake-followup]") || undefined, note: value("[data-intake-note]") || undefined },
-      "mark-duplicate": { duplicateOfIntakeItemId: value("[data-intake-duplicate]"), reason },
-      block: { reason, waitingFor: value("[data-intake-waiting]") || undefined, followUpAt: value("[data-intake-followup]") || undefined },
-      "follow-up-sent": { note: value("[data-intake-note]"), nextFollowUpAt: value("[data-intake-next-followup]"), channel: "intake" },
-      "response-received": { note: value("[data-intake-note]") },
-      "prepare-assistant": { assistantType: value("[data-intake-assistant]"), createJob: value("[data-intake-create-job]") === "true" },
-      ignore: { reason },
-      archive: { reason },
-    };
-    const result = await mutateIntake(item.id, action, payloadByAction[action], `Intake ${action.replace(/-/g, " ")} recorded.`);
-    if (result && action === "convert-task" && result.task?.id) openTaskPanel(result.task.id);
-    if (result && action === "attach" && taskId) openTaskPanel(taskId);
-    else if (result && action === "attach" && bundleId) openBundlePanel(bundleId);
+  panel.querySelectorAll("[data-open-intake-assistant]").forEach((button) => button.addEventListener("click", () => {
+    navigateCanonicalWorkspace("/assistants", { assistantJobId: button.dataset.openIntakeAssistant });
   }));
+  panel.querySelectorAll("[data-intake-submit]").forEach((button) => button.addEventListener("click", () => submitIntakeAction(panel, item, button.dataset.intakeSubmit)));
+  if (intakeMutationState.itemId === item.id && intakeMutationState.error) {
+    const error = panel.querySelector("[data-intake-inline-error]");
+    if (error) requestAnimationFrame(() => error.focus());
+  }
   return panel;
 }
 
-function setWorkspaceEntityParam(name, value) {
-  const route = parseWorkspaceHash();
-  if (!route) return;
-  const params = new URLSearchParams(route.params);
-  if (value) params.set(name, value);
-  else params.delete(name);
-  const query = params.toString();
-  history.replaceState(history.state, "", `/#${route.path}${query ? `?${query}` : ""}`);
+function intakeActionMarkup(item, bundleOptions) {
+  const status = String(item.status || "new");
+  const due = status === "blocked" && String(item.followUpAt || "").slice(0, 10) <= todayIsoDate();
+  const resolved = ["duplicate", "ignored", "archived"].includes(status);
+  const related = ["attached", "converted"].includes(status) || item.assistantReadiness?.status === "ready";
+  const state = intakeMutationState.itemId === item.id ? intakeMutationState : { values: {}, error: "", status: "" };
+  const values = state.values || {};
+  const value = (name, fallback = "") => escapeHtml(values[name] ?? fallback);
+  const disclosure = (action, label, fields, primary = false, destructive = false) => `<details class="intake-action-disclosure ${primary ? "is-primary" : ""} ${destructive ? "is-destructive" : ""}" ${state.action === action && state.error ? "open" : ""}><summary>${escapeHtml(label)}</summary><div class="intake-action-fields">${fields}<button type="button" class="${primary ? "primary-button" : destructive ? "danger-button" : ""}" data-intake-submit="${action}" ${state.busy ? "disabled" : ""}>${escapeHtml(label)}</button></div></details>`;
+  if (resolved) {
+    return `<section class="intake-resolution-summary"><h4>Resolution</h4><p>This item is ${escapeHtml(status)} and read-only.${item.resolutionReason ? ` ${escapeHtml(item.resolutionReason)}` : ""}</p></section>`;
+  }
+  if (related) {
+    const assistantJobId = item.assistantJobIds?.[0];
+    const taskId = item.taskIds?.[0];
+    const bundleId = item.bundleIds?.[0];
+    const continuation = assistantJobId
+      ? `<button type="button" class="primary-button" data-open-intake-assistant="${escapeHtml(assistantJobId)}">Continue assistant job</button>`
+      : taskId
+        ? `<button type="button" class="primary-button" data-open-intake-task="${escapeHtml(taskId)}">Continue task</button>`
+        : bundleId
+          ? `<button type="button" class="primary-button" data-open-intake-bundle="${escapeHtml(bundleId)}">Continue workflow</button>`
+          : "";
+    const createAssistant = item.assistantReadiness?.status === "ready" && !assistantJobId
+      ? disclosure("prepare-assistant", "Create assistant draft", `<label>Assistant type<input name="assistantType" value="${value("assistantType", item.assistantReadiness?.assistantType || "podcast")}"></label><input name="createJob" value="true" type="hidden">`, !continuation)
+      : "";
+    return `<section class="intake-next-actions"><h4>Continue work</h4><p>Continue from the exact linked record.</p>${continuation}${createAssistant}</section>${intakeMutationFeedback(item)}`;
+  }
+  const convert = disclosure("convert-task", "Convert to task", `<label>Task date<input name="date" type="date" value="${value("date", todayIsoDate())}"></label><label>Assignee<input name="assigneeId" value="${value("assigneeId", item.assigneeId || "")}" placeholder="User id"></label><label>Workflow<select name="bundleId">${bundleOptions}</select></label>`, true);
+  const attach = disclosure("attach", "Attach to existing work", `<label>Task ID<input name="taskId" value="${value("taskId")}" placeholder="Existing task id"></label><label>Workflow<select name="bundleId">${bundleOptions}</select></label><label>Note<input name="note" value="${value("note")}" placeholder="Optional context"></label>`);
+  const block = disclosure("block", "Block and schedule follow-up", `<label>Reason<input name="reason" value="${value("reason", item.blockedReason || "")}" required></label><label>Waiting for<input name="waitingFor" value="${value("waitingFor", item.waitingFor || "")}" required></label><label>Follow up<input name="followUpAt" type="date" value="${value("followUpAt", String(item.followUpAt || "").slice(0, 10) || defaultNextFollowUpDate())}" required></label>`);
+  const follow = disclosure("follow-up-sent", "Record follow-up sent", `<label>Operational note<input name="note" value="${value("note")}" required></label><label>Next follow-up<input name="nextFollowUpAt" type="date" value="${value("nextFollowUpAt", defaultNextFollowUpDate())}" required></label>`, due);
+  const response = disclosure("response-received", "Record response received", `<label>Operational note<input name="note" value="${value("note")}" required></label>`, status === "blocked" && !due);
+  const assistant = disclosure("prepare-assistant", "Prepare assistant input", `<label>Assistant type<input name="assistantType" value="${value("assistantType", item.assistantReadiness?.assistantType || "podcast")}"></label><label>Create job<select name="createJob"><option value="false">Prepare references only</option><option value="true">Create draft job</option></select></label>`);
+  const destructive = `<details class="intake-secondary-actions"><summary>Resolution actions</summary>${disclosure("mark-duplicate", "Mark duplicate", `<label>Duplicate of<input name="duplicateOfIntakeItemId" value="${value("duplicateOfIntakeItemId")}" required></label><label>Reason<input name="reason" value="${value("reason")}" required></label>`, false, true)}${disclosure("ignore", "Ignore item", `<label>Reason<input name="reason" value="${value("reason")}" required></label>`, false, true)}${disclosure("archive", "Archive item", `<label>Reason<input name="reason" value="${value("reason")}" required></label>`, false, true)}</details>`;
+  return `<section class="intake-next-actions"><h4>Next action</h4>${status === "blocked" ? `${due ? follow : response}<details class="intake-secondary-actions"><summary>Other valid actions</summary>${due ? response : follow}</details>` : `${convert}<details class="intake-secondary-actions"><summary>Other valid actions</summary>${attach}${block}${assistant}</details>${destructive}`}${intakeMutationFeedback(item)}</section>`;
+}
+
+function intakeMutationFeedback(item) {
+  if (intakeMutationState.itemId !== item.id) return `<p class="intake-inline-feedback" data-intake-inline-error tabindex="-1" aria-live="polite"></p>`;
+  const role = intakeMutationState.error ? "alert" : "status";
+  return `<p class="intake-inline-feedback ${intakeMutationState.error ? "is-error" : ""}" data-intake-inline-error tabindex="-1" role="${role}" aria-live="assertive">${escapeHtml(intakeMutationState.error || intakeMutationState.status || "")}</p>`;
+}
+
+async function submitIntakeAction(panel, item, action) {
+  if (intakeMutationState.busy) return;
+  const details = panel.querySelector(`[data-intake-submit="${CSS.escape(action)}"]`)?.closest("details");
+  const values = Object.fromEntries([...details.querySelectorAll("input,select,textarea")].map((field) => [field.name, field.value.trim()]));
+  intakeMutationState = { itemId: item.id, action, values, error: "", busy: true, status: "Saving…" };
+  renderInboxSurface();
+  const payloadByAction = {
+    attach: { taskIds: values.taskId ? [values.taskId] : [], bundleIds: values.bundleId ? [values.bundleId] : [], note: values.note || undefined },
+    "convert-task": { date: values.date, assigneeId: values.assigneeId || undefined, bundleId: values.bundleId || undefined },
+    "mark-duplicate": { duplicateOfIntakeItemId: values.duplicateOfIntakeItemId, reason: values.reason },
+    block: { reason: values.reason, waitingFor: values.waitingFor, followUpAt: values.followUpAt },
+    "follow-up-sent": { note: values.note, nextFollowUpAt: values.nextFollowUpAt, channel: "intake" },
+    "response-received": { note: values.note },
+    "prepare-assistant": { assistantType: values.assistantType, createJob: values.createJob === "true" },
+    ignore: { reason: values.reason },
+    archive: { reason: values.reason },
+  };
+  try {
+    const result = await request(workApiUrl(`/api/intake/${encodeURIComponent(item.id)}/${action}`), { method: "POST", body: JSON.stringify(payloadByAction[action]) });
+    intakeMutationState = { itemId: item.id, action: "", values: {}, error: "", busy: false, status: `${humanizeIntakeAction(action)} recorded.` };
+    await refreshIntakeSnapshot();
+    renderInboxSurface();
+    const createdTaskId = result.task?.id || (action === "attach" ? values.taskId : "");
+    if (createdTaskId) openTaskPanel(createdTaskId);
+    else if (action === "attach" && values.bundleId) openBundlePanel(values.bundleId);
+  } catch (error) {
+    intakeMutationState = { itemId: item.id, action, values, error: error.message || "Intake action failed", busy: false, status: "" };
+    renderInboxSurface();
+  }
+}
+
+function humanizeIntakeAction(action) {
+  return ({ "manual-created": "Captured manually", created: "Captured", updated: "Updated details", attached: "Attached to work", "converted-to-task": "Converted to task", duplicate: "Marked as duplicate", blocked: "Blocked for a response", "follow-up-sent": "Follow-up sent", "response-received": "Response received", unblocked: "Unblocked", "assistant-input-prepared": "Prepared assistant input", "assistant-job-created": "Created assistant job", "assistant-job-queued": "Queued assistant job", ignored: "Ignored", archived: "Archived", "reference-registered": "Added a reference" })[action] || String(action || "Updated").replace(/[-_]/g, " ");
+}
+
+function formatBerlinDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { datetime: "", text: String(value || "Unknown time") };
+  return { datetime: date.toISOString(), text: new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin", timeZoneName: "short" }).format(date) };
+}
+
+function renderIntakeHistoryMarkup(events) {
+  return [...events].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).map((event) => {
+    const when = formatBerlinDateTime(event.createdAt);
+    const context = [event.actorId ? `by ${event.actorId}` : "", event.reason || "", event.metadata?.waitingFor ? `waiting for ${event.metadata.waitingFor}` : "", event.metadata?.followUpAt ? `follow-up ${formatBerlinDateTime(event.metadata.followUpAt).text}` : "", event.metadata?.taskId ? `task ${event.metadata.taskId}` : "", event.metadata?.bundleId ? `workflow ${event.metadata.bundleId}` : "", event.metadata?.assistantJobId ? `assistant ${event.metadata.assistantJobId}` : ""].filter(Boolean).join(" · ");
+    return `<li><strong>${escapeHtml(humanizeIntakeAction(event.action))}</strong><span>${when.datetime ? `<time datetime="${escapeHtml(when.datetime)}">${escapeHtml(when.text)}</time>` : escapeHtml(when.text)}${context ? ` · ${escapeHtml(context)}` : ""}</span></li>`;
+  }).join("");
 }
 
 function renderArtifactsSurface() {
@@ -4610,6 +4910,7 @@ async function refreshOperationsAssistantSnapshot(options = {}) {
   const snapshot = emptyOperationsAssistantSnapshot();
   try {
     const payload = await request(workApiUrl("/api/assistant-jobs"));
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     const jobs = assistantJobsFromPayload(payload);
     if (jobs.length > 0 || Array.isArray(payload?.jobs) || Array.isArray(payload?.assistantJobs) || Array.isArray(payload?.items) || Array.isArray(payload)) {
       snapshot.loaded = true;
@@ -4618,8 +4919,10 @@ async function refreshOperationsAssistantSnapshot(options = {}) {
       snapshot.errors = ["Assistant job lifecycle is not connected in this environment."];
     }
   } catch (err) {
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     snapshot.errors = [err?.message || "Assistant jobs API request failed"];
   }
+  if (options.token && !isWorkspaceRouteFresh(options.token)) return;
   operationsAssistantSnapshot = snapshot;
   if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
 }
@@ -4727,81 +5030,119 @@ function findWorkTaskInSnapshot(taskId) {
   return null;
 }
 
-async function openTaskPanel(taskId) {
-  closeBundlePanel();
-  // Capture the element that opened the modal so focus can return to it on
-  // close. Only capture on a fresh open, not when swapping tasks while open.
-  const wasOpen = !taskPanel.hidden;
-  if (!wasOpen && document.activeElement instanceof HTMLElement) {
-    taskModalOpener = document.activeElement;
+function taskRouteParams(taskId) {
+  const route = parseWorkspaceHash();
+  if (route && !route.invalid && route.path === "/tasks") {
+    const params = new URLSearchParams(route.params);
+    params.set("taskId", taskId);
+    return { path: "/tasks", params };
   }
-  activeTaskPanelId = taskId;
-  activeTaskPanelTask = findWorkTaskInSnapshot(taskId);
-  activeTaskPanelArtifacts = [];
-  taskPanelTitle.textContent = "Loading task...";
-  taskPanelBody.replaceChildren();
-  taskPanel.hidden = false;
-  body.classList.add("task-panel-open");
-  body.classList.add("task-modal-open");
-  if (!wasOpen) {
-    document.addEventListener("keydown", handleTaskModalKeydown);
-    taskPanelClose.focus();
+  if (activeBundlePanelId) {
+    return { path: "/bundles", params: { bundleId: activeBundlePanelId, taskId } };
   }
-  renderTaskPanel();
+  return { path: "/tasks", params: { taskId } };
+}
+
+function openTaskPanel(taskId, options = {}) {
+  let target = taskRouteParams(taskId);
+  if (options.preserveBundle && options.expectedBundleId) {
+    target = { path: "/bundles", params: { bundleId: options.expectedBundleId, taskId } };
+  }
+  return navigateCanonicalWorkspace(target.path, target.params).ready;
+}
+
+async function hydrateTaskPanel(taskId, token, options = {}) {
   try {
     const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
+    if (!isWorkspaceRouteFresh(token) || activeTaskPanelId !== taskId) return;
     const fetched = payload && typeof payload === "object" && payload.id ? payload : null;
-    const artifacts = fetched ? await loadArtifactsForTask(fetched) : [];
-    if (fetched && activeTaskPanelId === taskId) {
+    if (options.expectedBundleId && fetched && fetched.bundleId !== options.expectedBundleId) {
+      activeTaskPanelTask = null;
+      activeTaskPanelArtifacts = [];
+      renderEntityLoadState(taskPanelBody, {
+        kind: "task/workflow",
+        id: taskId,
+        status: "mismatch",
+        error: `Task belongs to workflow ${fetched.bundleId || "none"}, not ${options.expectedBundleId}.`,
+        retry: () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }),
+        returnToList: () => closeTaskPanel(),
+      });
+      taskPanelTitle.textContent = "Task/workflow mismatch";
+      return;
+    }
+    if (fetched) {
       activeTaskPanelTask = fetched;
-      activeTaskPanelArtifacts = artifacts;
+      activeTaskPanelArtifacts = [];
       renderTaskPanel();
     }
+    const artifacts = fetched ? await loadArtifactsForTask(fetched) : [];
+    if (!isWorkspaceRouteFresh(token) || activeTaskPanelId !== taskId || activeTaskPanelTask?.id !== fetched?.id) return;
+    activeTaskPanelArtifacts = artifacts;
+    renderTaskPanel();
   } catch (err) {
-    if (activeTaskPanelId === taskId) {
-      const notice = document.createElement("p");
-      notice.className = "ops-empty";
-      notice.textContent = `Could not load task detail: ${err.message || "request failed"}`;
-      taskPanelBody.replaceChildren(notice);
+    if (isWorkspaceRouteFresh(token) && activeTaskPanelId === taskId) {
+      taskPanelTitle.textContent = err.status === 404 ? "Task not found" : "Task unavailable";
+      renderEntityLoadState(taskPanelBody, {
+        kind: "task",
+        id: taskId,
+        status: err.status === 404 ? "not-found" : "error",
+        error: err.message,
+        retry: () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }),
+        returnToList: () => closeTaskPanel(),
+      });
     }
   }
 }
 
-function closeTaskPanel() {
-  activeTaskPanelId = null;
-  activeTaskPanelTask = null;
-  activeTaskPanelArtifacts = [];
-  taskPanel.hidden = true;
-  body.classList.remove("task-panel-open");
-  body.classList.remove("task-modal-open");
-  document.removeEventListener("keydown", handleTaskModalKeydown);
-  const focusTarget = taskModalOpener?.isConnected ? taskModalOpener : null;
-  taskModalOpener = null;
-  if (focusTarget instanceof HTMLElement) focusTarget.focus();
-}
-
-// Focus trap for the task modal: Tab/Shift+Tab cycle within the dialog, Esc
-// closes it. Mirrors the sidebar's handleSidebarKeydown focus-trap pattern.
-function handleTaskModalKeydown(event) {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeTaskPanel();
+function closeTaskPanel(options = {}) {
+  const route = parseWorkspaceHash();
+  if (options.updateUrl === false || !route || route.invalid || !route.params.has("taskId")) {
+    resetTaskPanel();
     return;
   }
-  if (event.key !== "Tab" || taskPanel.hidden) return;
-  const panel = taskPanel.querySelector(".task-modal-panel");
-  if (!panel) return;
-  const focusables = [...panel.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+  if (route.params.has("taskId")) {
+    const taskId = route.params.get("taskId");
+    const params = new URLSearchParams(route.params);
+    params.delete("taskId");
+    return navigateCanonicalWorkspace(route.path, params, {
+      restoreFocus: {
+        kind: "task",
+        id: taskId,
+        surface: route.path === "/bundles" ? "workflows" : "tasks",
+      },
+    }).ready;
+  }
+}
+
+// Task detail can sit above workflow detail, so one handler selects the
+// top-most entity dialog. This prevents one Escape event from closing both
+// canonical route layers and keeps Tab/Shift+Tab inside the active dialog.
+function handleWorkspaceEntityModalKeydown(event) {
+  if (event.defaultPrevented) return;
+  const activePanel = !taskPanel.hidden
+    ? taskPanel.querySelector(".task-modal-panel")
+    : !bundlePanel.hidden
+      ? bundlePanel
+      : null;
+  if (!activePanel) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (!taskPanel.hidden) closeTaskPanel();
+    else closeBundlePanel();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusables = [...activePanel.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
     (el) => el.offsetParent !== null,
   );
   if (focusables.length === 0) return;
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
   const active = document.activeElement;
-  if (event.shiftKey && (active === first || !panel.contains(active))) {
+  if (event.shiftKey && (active === first || !activePanel.contains(active))) {
     event.preventDefault();
     last.focus();
-  } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+  } else if (!event.shiftKey && (active === last || !activePanel.contains(active))) {
     event.preventDefault();
     first.focus();
   }
@@ -4815,6 +5156,25 @@ function renderTaskPanel() {
 
   const status = String(task.status || "todo").toLowerCase();
   const today = todayIsoDate();
+
+  const routeContextParts = [
+    taskRouteContext.date ? `Queue date ${taskRouteContext.date}` : "",
+    taskRouteContext.bundleId ? `Filtered to workflow ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}` : "",
+    taskRouteContext.contextBundleId
+      ? `Return to ${taskRouteContext.contextBundle?.title || taskRouteContext.contextBundleId}`
+      : "",
+  ].filter(Boolean);
+  if (routeContextParts.length > 0) {
+    const routeContext = document.createElement("section");
+    routeContext.className = "task-panel-route-context";
+    routeContext.setAttribute("aria-label", "Queue context");
+    const heading = document.createElement("strong");
+    heading.textContent = "Queue context";
+    const description = document.createElement("p");
+    description.textContent = routeContextParts.join(" · ");
+    routeContext.append(heading, description);
+    taskPanelBody.append(routeContext);
+  }
 
   const meta = document.createElement("div");
   meta.className = "task-detail-meta";
@@ -4834,7 +5194,7 @@ function renderTaskPanel() {
     link.type = "button";
     link.className = "task-instruction-doc-link";
     link.textContent = resolveBundleLabel(task.bundleId);
-    link.addEventListener("click", () => openBundlePanel(task.bundleId));
+    link.addEventListener("click", () => navigateTaskToWorkflow(task));
     bundleRow.append(link);
     meta.append(bundleRow);
   }
@@ -5247,14 +5607,21 @@ function formatMetaText(value) {
 }
 
 // Resolve bundle/user ids to human-readable labels for the task detail meta
-// rows. Fall back to "—" when an id is unknown/missing so we never render a
-// raw UUID, undefined, or [object Object]. These read from the cached work
-// snapshot (operationsWorkSnapshot), so they add no per-open HTTP calls.
+// rows. Exact route-owned bundle responses take precedence over the coarse
+// work snapshot, which can still be hydrating on a fresh deep link. The route
+// context and active bundle data are both token-guarded before assignment.
 function resolveBundleLabel(bundleId) {
-  if (!bundleId) return "—";
+  if (!bundleId) return "Open workflow";
+  const exactBundles = [
+    taskRouteContext.filterBundle,
+    taskRouteContext.contextBundle,
+    activeBundlePanelData?.bundle,
+  ];
+  const exact = exactBundles.find((candidate) => candidate?.id === bundleId);
+  if (exact?.title) return exact.title;
   const bundle = operationsWorkSnapshot.bundlesById?.get(bundleId);
   if (bundle && bundle.title) return bundle.title;
-  return "—";
+  return "Open workflow";
 }
 
 function resolveAssigneeLabel(assigneeId) {
@@ -5302,11 +5669,14 @@ async function updateTaskStatus(taskId, status) {
 
 async function refreshTaskPanel(taskId) {
   if (activeTaskPanelId !== taskId) return;
+  const token = activeWorkspaceRouteToken;
   try {
     const payload = await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`));
-    if (payload && payload.id && activeTaskPanelId === taskId) {
+    if (payload && payload.id && activeTaskPanelId === taskId && isWorkspaceRouteFresh(token)) {
       activeTaskPanelTask = payload;
-      activeTaskPanelArtifacts = await loadArtifactsForTask(payload);
+      const artifacts = await loadArtifactsForTask(payload);
+      if (!isWorkspaceRouteFresh(token) || activeTaskPanelId !== taskId) return;
+      activeTaskPanelArtifacts = artifacts;
       renderTaskPanel();
     }
   } catch {
@@ -5400,44 +5770,92 @@ function appendTaskEventComment(existing, eventText) {
 
 // ---------- Bundle (workflow) detail panel ----------
 
-async function openBundlePanel(bundleId) {
-  closeTaskPanel();
-  activeBundlePanelId = bundleId;
-  activeBundlePanelData = null;
-  bundlePanelTitle.textContent = "Loading workflow...";
-  bundlePanelBody.replaceChildren();
-  bundlePanel.hidden = false;
-  body.classList.add("task-panel-open");
-  renderBundlePanel();
+function openBundlePanel(bundleId) {
+  return navigateCanonicalWorkspace("/bundles", { bundleId }).ready;
+}
+
+async function hydrateBundlePanel(bundleId, token) {
   try {
     const [bundleResult, tasksResult, artifactsResult] = await Promise.allSettled([
       request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`)),
       request(workApiUrl(`/api/tasks`, { bundleId })),
       loadArtifactsForBundle(bundleId),
     ]);
+    if (!isWorkspaceRouteFresh(token) || activeBundlePanelId !== bundleId) return;
+    if (bundleResult.status === "rejected") throw bundleResult.reason;
     const bundlePayload = settledPayload(bundleResult);
     const bundle = bundlePayload && (bundlePayload.bundle || bundlePayload);
     const tasks = tasksFromWorkPayload(settledPayload(tasksResult));
     const artifacts = Array.isArray(settledPayload(artifactsResult)) ? settledPayload(artifactsResult) : [];
-    if (activeBundlePanelId === bundleId) {
+    if (isWorkspaceRouteFresh(token) && activeBundlePanelId === bundleId) {
       activeBundlePanelData = { bundle, tasks, artifacts };
       renderBundlePanel();
+      if (activeTaskPanelTask?.bundleId === bundleId) renderTaskPanel();
     }
   } catch (err) {
-    if (activeBundlePanelId === bundleId) {
-      const notice = document.createElement("p");
-      notice.className = "ops-empty";
-      notice.textContent = `Could not load workflow: ${err.message || "request failed"}`;
-      bundlePanelBody.replaceChildren(notice);
+    if (isWorkspaceRouteFresh(token) && activeBundlePanelId === bundleId) {
+      bundlePanelTitle.textContent = err.status === 404 ? "Workflow not found" : "Workflow unavailable";
+      renderEntityLoadState(bundlePanelBody, {
+        kind: "workflow",
+        id: bundleId,
+        status: err.status === 404 ? "not-found" : "error",
+        error: err.message,
+        retry: () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }),
+        returnToList: () => closeBundlePanel(),
+      });
     }
   }
 }
 
-function closeBundlePanel() {
-  activeBundlePanelId = null;
-  activeBundlePanelData = null;
-  bundlePanel.hidden = true;
-  body.classList.remove("task-panel-open");
+function closeBundlePanel(options = {}) {
+  const route = parseWorkspaceHash();
+  if (options.updateUrl === false || !route || route.invalid || route.path !== "/bundles") {
+    resetBundlePanel();
+    return;
+  }
+  return navigateCanonicalWorkspace("/bundles", {}, {
+    restoreFocus: { kind: "workflow", id: route.params.get("bundleId"), surface: "workflows" },
+  }).ready;
+}
+
+function renderEntityLoadState(container, { kind, id, status, error, retry, returnToList }) {
+  const state = document.createElement("section");
+  state.className = `entity-route-state entity-route-${status}`;
+  state.tabIndex = -1;
+  state.setAttribute("role", status === "error" ? "alert" : "status");
+  const heading = document.createElement("h3");
+  heading.textContent = status === "not-found"
+    ? `${labelizeWorkValue(kind)} not found`
+    : status === "mismatch"
+      ? "Task and workflow do not match"
+      : `${labelizeWorkValue(kind)} unavailable`;
+  const detail = document.createElement("p");
+  detail.textContent = status === "not-found"
+    ? `No ${kind} exists with ID ${id}. It may be stale or no longer available.`
+    : `${error || `Could not load ${kind}.`} Requested ID: ${id}.`;
+  const actions = document.createElement("div");
+  actions.className = "entity-route-actions";
+  const retryButton = document.createElement("button");
+  retryButton.type = "button";
+  retryButton.textContent = "Retry";
+  retryButton.addEventListener("click", retry);
+  const returnButton = document.createElement("button");
+  returnButton.type = "button";
+  returnButton.textContent = `Return to ${kind === "intake" ? "Inbox" : kind === "template" ? "templates" : kind === "workflow" || kind === "task/workflow" ? "workflows" : `${kind}s`}`;
+  returnButton.addEventListener("click", returnToList);
+  actions.append(retryButton, returnButton);
+  state.append(heading, detail, actions);
+  container.replaceChildren(state);
+  requestAnimationFrame(() => state.focus());
+  return state;
+}
+
+function renderEntityLoadingState(container, kind, id) {
+  const state = document.createElement("section");
+  state.className = "entity-route-state entity-route-loading";
+  state.setAttribute("role", "status");
+  state.textContent = `Loading ${kind} ${id}…`;
+  container.replaceChildren(state);
 }
 
 function renderBundlePanel() {
@@ -5466,7 +5884,7 @@ function renderBundlePanel() {
     stageSelect.append(opt);
   }
   stageSelect.addEventListener("change", () => updateBundleStage(bundle.id, stageSelect.value));
-  const stageLabel = document.createElement("span");
+  const stageLabel = document.createElement("label");
   stageLabel.textContent = "Stage ";
   stageLabel.append(stageSelect);
   meta.append(stageLabel);
@@ -5503,7 +5921,11 @@ function renderBundlePanel() {
   if (progress.total > 0) {
     const bar = document.createElement("div");
     bar.className = "ops-progress";
+    bar.setAttribute("role", "progressbar");
     bar.setAttribute("aria-label", progress.label);
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    bar.setAttribute("aria-valuenow", String(progress.percent));
     const fill = document.createElement("i");
     fill.style.width = `${progress.percent}%`;
     bar.append(fill);
@@ -5693,6 +6115,7 @@ function renderBundleChecklistItem(task, bundleId, today) {
 
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
+  checkbox.setAttribute("aria-label", `${isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`);
   checkbox.checked = isDone;
   checkbox.disabled = isWaiting || missingLink || missingFile || missingArtifact;
   if (checkbox.disabled && !isDone) {
@@ -5707,9 +6130,12 @@ function renderBundleChecklistItem(task, bundleId, today) {
     updateTaskStatus(task.id, isDone ? "todo" : "done");
   });
 
-  const label = document.createElement("span");
+  const label = document.createElement("button");
+  label.type = "button";
   label.className = `bundle-checklist-label ${isDone ? "is-done" : ""}`;
+  label.dataset.taskId = task.id;
   label.textContent = workTaskTitle(task);
+  label.addEventListener("click", () => openTaskPanel(task.id, { preserveBundle: true, expectedBundleId: bundleId }));
 
   const dateMeta = document.createElement("small");
   dateMeta.className = "bundle-checklist-date";
@@ -5728,6 +6154,11 @@ function renderBundleChecklistItem(task, bundleId, today) {
   }
   row.append(checkbox, label, dateMeta);
   return row;
+}
+
+async function navigateTaskToWorkflow(task) {
+  if (!task?.bundleId) return;
+  await navigateCanonicalWorkspace("/bundles", { bundleId: task.bundleId, taskId: task.id }).ready;
 }
 
 function dedupeArtifacts(artifacts) {
@@ -5907,12 +6338,14 @@ async function saveBundleLink(bundleId, currentLinks, linkName, linkValue) {
 
 // ---------- Notification bell ----------
 
-async function refreshWorkBell() {
+async function refreshWorkBell(options = {}) {
   try {
     const payload = await request(workApiUrl("/api/notifications"));
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     workBellNotifications = Array.isArray(payload) ? payload : payload.notifications || [];
     workBellError = "";
   } catch (err) {
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
     workBellNotifications = [];
     workBellError = err?.message || "Notifications API request failed";
   }
@@ -5932,12 +6365,22 @@ function syncWorkBellIndicators() {
 }
 
 function openWorkBellPanel() {
+  workBellOpener = document.activeElement instanceof HTMLElement ? document.activeElement : workBellButton;
   renderWorkBellPanel();
   workBellPanel.hidden = false;
+  workBellClose.focus();
 }
 
-function closeWorkBellPanel() {
+function closeWorkBellPanel(options = {}) {
+  if (workBellPanel.hidden) return;
+  const route = parseWorkspaceHash();
+  if (options.updateUrl !== false && route && !route.invalid && route.path === "/notifications") {
+    navigateCanonicalWorkspace("/");
+    return;
+  }
   workBellPanel.hidden = true;
+  if (options.restoreFocus !== false && workBellOpener?.isConnected) workBellOpener.focus();
+  workBellOpener = null;
 }
 
 function renderWorkBellPanel() {
@@ -5971,14 +6414,51 @@ function renderWorkBellPanel() {
     if (notification.taskId) metaParts.push("task");
     meta.textContent = metaParts.join(" - ");
     item.append(meta);
+    const actions = document.createElement("div");
+    actions.className = "work-bell-item-actions";
     if (notification.taskId) {
-      item.style.cursor = "pointer";
-      item.addEventListener("click", () => {
-        closeWorkBellPanel();
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = "Open task";
+      open.addEventListener("click", () => {
+        closeWorkBellPanel({ updateUrl: false });
         openTaskPanel(notification.taskId);
       });
+      actions.append(open);
+    }
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.textContent = "Dismiss";
+    dismiss.dataset.dismissNotification = notification.id;
+    dismiss.setAttribute("aria-label", `Dismiss notification: ${notification.message || notification.type || notification.id}`);
+    dismiss.addEventListener("click", () => dismissWorkNotification(notification, dismiss));
+    actions.append(dismiss);
+    item.append(actions);
+    const failure = workBellDismissErrors.get(notification.id);
+    if (failure) {
+      const error = document.createElement("p");
+      error.className = "work-bell-item-error";
+      error.setAttribute("role", "alert");
+      error.textContent = `${failure} Select Dismiss to retry.`;
+      item.append(error);
     }
     workBellBody.append(item);
+  }
+}
+
+async function dismissWorkNotification(notification, button) {
+  button.disabled = true;
+  button.textContent = "Dismissing…";
+  try {
+    await request(workApiUrl(`/api/notifications/${encodeURIComponent(notification.id)}/dismiss`), { method: "PUT" });
+    workBellNotifications = workBellNotifications.filter((item) => item.id !== notification.id);
+    workBellDismissErrors.delete(notification.id);
+    syncWorkBellIndicators();
+    renderWorkBellPanel();
+  } catch (error) {
+    workBellDismissErrors.set(notification.id, error.message || "Notification could not be dismissed");
+    renderWorkBellPanel();
+    [...workBellBody.querySelectorAll("[data-dismiss-notification]")].find((candidate) => candidate.dataset.dismissNotification === notification.id)?.focus();
   }
 }
 
@@ -6004,12 +6484,14 @@ function openQuickTaskForm() {
     createBtn.disabled = true;
     createBtn.textContent = "Creating...";
     try {
-      await request(workApiUrl("/api/tasks"), {
+      const created = await request(workApiUrl("/api/tasks"), {
         method: "POST",
         body: JSON.stringify({ description, date }),
       });
       overlay.remove();
-      await refreshOperationsWorkSnapshot({ rerender: true });
+      const task = created?.task || created;
+      if (task?.id) openTaskPanel(task.id);
+      refreshOperationsWorkSnapshot({ rerender: true });
     } catch (err) {
       reportError(`Could not create task: ${err.message || "request failed"}`);
       createBtn.disabled = false;
@@ -7231,8 +7713,49 @@ function renderRecurringConfigItem(config) {
   toggle.textContent = config.enabled === false ? "Resume" : "Pause";
   toggle.addEventListener("click", () => toggleRecurringConfig(config.id, config.enabled === false, toggle));
 
-  item.append(text, toggle);
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "task-action-btn danger-button";
+  remove.textContent = "Delete schedule";
+  remove.setAttribute("aria-label", `Delete recurring schedule ${recurringConfigTitle(config)}`);
+  remove.addEventListener("click", () => deleteRecurringConfigFromUi(config, remove));
+
+  const actions = document.createElement("div");
+  actions.className = "recurring-row-actions";
+  actions.append(toggle, remove);
+  item.append(text, actions);
+  const error = recurringDeleteErrors.get(config.id);
+  if (error) {
+    const guidance = document.createElement("p");
+    guidance.className = "recurring-delete-guidance";
+    guidance.setAttribute("role", "alert");
+    guidance.tabIndex = -1;
+    guidance.textContent = error;
+    item.append(guidance);
+  }
   return item;
+}
+
+async function deleteRecurringConfigFromUi(config, button) {
+  const confirmed = await confirmDialog(
+    `Delete recurring schedule “${recurringConfigTitle(config)}”? This removes only the schedule. Tasks already generated from it are never deleted.`,
+    { okText: "Delete schedule", danger: true },
+  );
+  if (!confirmed) return;
+  button.disabled = true;
+  button.textContent = "Deleting…";
+  try {
+    await request(workApiUrl(`/api/recurring/${encodeURIComponent(config.id)}`), { method: "DELETE" });
+    recurringDeleteErrors.delete(config.id);
+    await refreshOperationsRecurringSnapshot({ rerender: true });
+  } catch (error) {
+    const message = error.status === 409
+      ? "This schedule has generated history and cannot be deleted. Pause it instead; generated tasks and notifications are preserved."
+      : `${error.message || "Could not delete this schedule"} Select Delete schedule to retry.`;
+    recurringDeleteErrors.set(config.id, message);
+    await refreshOperationsRecurringSnapshot({ rerender: true });
+    requestAnimationFrame(() => document.querySelector(".recurring-delete-guidance[role='alert']")?.focus());
+  }
 }
 
 function renderWorkflowTemplateCard(template) {
@@ -7514,16 +8037,16 @@ function openUnifiedSearchResult(result) {
     });
     return;
   }
-  if ((kind === "artifact" || kind === "file" || kind === "assistant-job") && route.taskId) {
+  if (kind === "assistant-job") {
+    navigateCanonicalWorkspace("/assistants", { assistantJobId: route.assistantJobId || result.id });
+    return;
+  }
+  if ((kind === "artifact" || kind === "file") && route.taskId) {
     openTaskPanel(route.taskId);
     return;
   }
-  if ((kind === "artifact" || kind === "file" || kind === "assistant-job") && route.bundleId) {
+  if ((kind === "artifact" || kind === "file") && route.bundleId) {
     openBundlePanel(route.bundleId);
-    return;
-  }
-  if (kind === "assistant-job") {
-    showWorkspaceSurface("assistants");
     return;
   }
   if (kind === "artifact" || kind === "file") showWorkspaceSurface("artifacts");
@@ -7791,8 +8314,11 @@ function captureScrollPosition() {
 
 async function openDocument(path, options = {}) {
   if (!(await canLeaveCurrentDocument())) return;
-  closeTaskPanel();
-  closeBundlePanel();
+  ++activeWorkspaceRouteToken;
+  activeWorkspaceRoute = null;
+  resetTaskPanel();
+  resetBundlePanel();
+  closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
   captureScrollPosition();
   docReturnContext = options.returnContext || null;
   renderDocReturnContext();
@@ -7957,72 +8483,396 @@ function workspaceHashPath(view, tasksSection = "queue") {
   return WORKSPACE_HASH_BY_VIEW[view] || "/";
 }
 
-function setWorkspaceUrl(view, tasksSection = "queue", options = {}) {
-  if (applyingLocationRoute) return;
-  const visible = `/#${workspaceHashPath(view, tasksSection)}`;
-  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (current === visible) return;
-  const method = options.replace ? "replaceState" : "pushState";
-  history[method]({ workspace: view, tasksSection }, "", visible);
+const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
+  "/": { view: "home", tasksSection: "queue", params: [] },
+  "/inbox": { view: "inbox", tasksSection: "queue", params: ["intakeId"] },
+  "/tasks": { view: "tasks", tasksSection: "queue", params: ["taskId", "date", "bundleId", "contextBundleId"] },
+  "/bundles": { view: "tasks", tasksSection: "workflows", params: ["bundleId", "taskId"] },
+  "/assistants": { view: "tasks", tasksSection: "assistants", params: ["assistantJobId"] },
+  "/templates": { view: "tasks", tasksSection: "templates", params: ["templateId"] },
+  "/recurring": { view: "tasks", tasksSection: "templates", params: [] },
+  "/artifacts": { view: "tasks", tasksSection: "artifacts", params: [] },
+  "/notifications": { view: "home", tasksSection: "queue", params: [] },
+  "/bookkeeping": { view: "bookkeeping", tasksSection: "queue", params: [] },
+  "/sponsors": { view: "sponsors", tasksSection: "queue", params: ["bookingId"] },
+  "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
+  "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
+  "/mailing-exports": { view: "mailing-exports", tasksSection: "queue", params: [] },
+  "/processes": { view: "docs", tasksSection: "queue", params: [] },
+  "/admin": { view: "admin", tasksSection: "queue", params: [] },
+  "/users": { view: "users", tasksSection: "queue", params: [] },
+});
+
+function isRealIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-function parseWorkspaceHash() {
-  const raw = String(window.location.hash || "");
-  if (!raw.startsWith("#/")) return null;
+function canonicalWorkspaceUrl(path, params = new URLSearchParams()) {
+  const definition = WORKSPACE_ROUTE_DEFINITIONS[path] || WORKSPACE_ROUTE_DEFINITIONS["/"];
+  const ordered = new URLSearchParams();
+  for (const name of definition.params) {
+    const value = params instanceof URLSearchParams ? params.get(name) : params?.[name];
+    if (value) ordered.set(name, value);
+  }
+  const query = ordered.toString();
+  return `/#${path}${query ? `?${query}` : ""}`;
+}
+
+function parseWorkspaceHash(rawHash = window.location.hash) {
+  const raw = String(rawHash || "");
+  if (!raw) return { invalid: true, reason: "empty hash" };
+  if (!raw.startsWith("#/") || raw.includes("#", 1)) return { invalid: true, reason: "malformed hash" };
   const value = raw.slice(1);
   const queryIndex = value.indexOf("?");
-  const path = (queryIndex >= 0 ? value.slice(0, queryIndex) : value).replace(/\/+$/, "") || "/";
-  const params = new URLSearchParams(queryIndex >= 0 ? value.slice(queryIndex + 1) : "");
-  const mapped = {
-    "/": ["home", "queue"],
-    "/inbox": ["inbox", "queue"],
-    "/tasks": ["tasks", "queue"],
-    "/bundles": ["tasks", "workflows"],
-    "/assistants": ["tasks", "assistants"],
-    "/templates": ["tasks", "templates"],
-    "/recurring": ["tasks", "templates"],
-    "/artifacts": ["tasks", "artifacts"],
-    "/notifications": ["home", "queue"],
-    "/bookkeeping": ["bookkeeping", "queue"],
-    "/sponsors": ["sponsors", "queue"],
-    "/newsletter": ["newsletter", "queue"],
-    "/calendar": ["calendar", "queue"],
-    "/mailing-exports": ["mailing-exports", "queue"],
-    "/processes": ["docs", "queue"],
-    "/admin": ["admin", "queue"],
-    "/users": ["users", "queue"],
-  }[path];
-  if (!mapped) return { view: "home", tasksSection: "queue", path, params };
-  return { view: mapped[0], tasksSection: mapped[1], path, params };
+  const rawPath = queryIndex >= 0 ? value.slice(0, queryIndex) : value;
+  const rawQuery = queryIndex >= 0 ? value.slice(queryIndex + 1) : "";
+  if (rawQuery.includes("?")) return { invalid: true, reason: "malformed query" };
+  try {
+    decodeURIComponent(rawPath);
+    for (const component of rawQuery.split("&").filter(Boolean)) {
+      const separator = component.indexOf("=");
+      decodeURIComponent((separator >= 0 ? component.slice(0, separator) : component).replace(/\+/g, " "));
+      decodeURIComponent((separator >= 0 ? component.slice(separator + 1) : "").replace(/\+/g, " "));
+    }
+  } catch {
+    return { invalid: true, reason: "malformed encoding" };
+  }
+  const path = rawPath.endsWith("/") && rawPath !== "/" ? rawPath.slice(0, -1) : rawPath;
+  const definition = WORKSPACE_ROUTE_DEFINITIONS[path];
+  if (!definition) return { invalid: true, reason: "unknown path" };
+  const incoming = new URLSearchParams(rawQuery);
+  const params = new URLSearchParams();
+  for (const name of definition.params) {
+    const values = incoming.getAll(name);
+    if (values.length > 1 || (values.length === 1 && !values[0])) return { invalid: true, reason: `invalid ${name}` };
+    if (values[0]) params.set(name, values[0]);
+  }
+  if (params.has("date") && !isRealIsoDate(params.get("date"))) return { invalid: true, reason: "invalid date" };
+  if (path === "/bundles" && params.has("taskId") && !params.has("bundleId")) {
+    return { invalid: true, reason: "taskId requires bundleId" };
+  }
+  const canonicalUrl = canonicalWorkspaceUrl(path, params);
+  const currentUrl = `${window.location.pathname}${window.location.search}${raw}`;
+  return {
+    view: definition.view,
+    tasksSection: definition.tasksSection,
+    path,
+    params,
+    canonicalUrl,
+    normalized: currentUrl !== canonicalUrl,
+  };
 }
 
-async function applyWorkspaceRoute(route, options = {}) {
-  if (!route || applyingLocationRoute) return;
-  const previousView = activeWorkspaceView;
-  const previousTasksSection = activeTasksSection;
-  applyingLocationRoute = true;
-  pendingLegacyRoute = route;
-  if (route.view === "inbox" && route.params.get("intakeId")) intakeState.selectedId = route.params.get("intakeId");
-  if (route.tasksSection === "assistants" && route.params.get("assistantJobId")) assistantQueueState.selectedJobId = route.params.get("assistantJobId");
-  try {
-    const requestedView = route.view === "tasks" && route.tasksSection !== "queue" ? route.tasksSection : route.view;
-    const changed = await showWorkspaceSurface(requestedView, { updateUrl: false, replace: options.replace });
-    if (!changed) {
-      activeWorkspaceView = previousView;
-      activeTasksSection = previousTasksSection;
-      pendingLegacyRoute = null;
-      syncWorkspaceNav();
-      history.replaceState(history.state, "", `/#${workspaceHashPath(previousView, previousTasksSection)}`);
+function replaceWithWorkspaceHome() {
+  const target = canonicalWorkspaceUrl("/");
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (current !== target) history.replaceState({ workspace: "home", tasksSection: "queue" }, "", target);
+  return parseWorkspaceHash("#/");
+}
+
+function workspaceRouteFor(path, params = {}) {
+  const visible = canonicalWorkspaceUrl(path, params);
+  return parseWorkspaceHash(visible.slice(visible.indexOf("#")));
+}
+
+function isWorkspaceRouteFresh(token) {
+  return token === activeWorkspaceRouteToken;
+}
+
+function emptyTaskRouteContext(route = null) {
+  const date = route?.params.get("date") || "";
+  const bundleId = route?.params.get("bundleId") || "";
+  return {
+    date,
+    bundleId,
+    contextBundleId: route?.params.get("contextBundleId") || "",
+    tasks: date || bundleId ? [] : null,
+    filterBundle: null,
+    contextBundle: null,
+    failures: [],
+  };
+}
+
+function resetTaskPanel() {
+  activeTaskPanelId = null;
+  activeTaskPanelTask = null;
+  activeTaskPanelArtifacts = [];
+  taskPanel.hidden = true;
+  body.classList.remove("task-panel-open");
+  body.classList.remove("task-modal-open");
+  if (!bundlePanel.hidden) {
+    bundlePanel.inert = false;
+    bundlePanel.removeAttribute("aria-hidden");
+  }
+}
+
+function resetBundlePanel() {
+  activeBundlePanelId = null;
+  activeBundlePanelData = null;
+  bundlePanel.hidden = true;
+  body.classList.remove("task-panel-open");
+}
+
+function prepareTaskPanel(taskId) {
+  if (!taskId) return;
+  activeTaskPanelId = taskId;
+  activeTaskPanelTask = null;
+  activeTaskPanelArtifacts = [];
+  taskPanelTitle.textContent = "Loading task...";
+  taskPanelBody.replaceChildren();
+  taskPanel.hidden = false;
+  body.classList.add("task-panel-open", "task-modal-open");
+  if (!bundlePanel.hidden) {
+    bundlePanel.inert = true;
+    bundlePanel.setAttribute("aria-hidden", "true");
+  }
+  renderEntityLoadingState(taskPanelBody, "task", taskId);
+  taskPanelClose.focus();
+}
+
+function prepareBundlePanel(bundleId) {
+  if (!bundleId) return;
+  activeBundlePanelId = bundleId;
+  activeBundlePanelData = null;
+  bundlePanelTitle.textContent = "Loading workflow...";
+  bundlePanelBody.replaceChildren();
+  bundlePanel.inert = false;
+  bundlePanel.removeAttribute("aria-hidden");
+  bundlePanel.hidden = false;
+  body.classList.add("task-panel-open");
+  renderEntityLoadingState(bundlePanelBody, "workflow", bundleId);
+  bundlePanelClose.focus();
+}
+
+function visibleEntityFocusTarget(restoreFocus) {
+  if (restoreFocus?.kind === "runtime-template-list") {
+    const search = document.querySelector(".runtime-template-search");
+    return search instanceof HTMLElement && search.isConnected && search.offsetParent !== null
+      ? search
+      : null;
+  }
+  if (!restoreFocus?.id) return null;
+  const candidates = restoreFocus.kind === "workflow"
+    ? [...document.querySelectorAll(".ops-workflow-card[data-bundle-id]")]
+    : restoreFocus.surface === "workflows"
+      ? [...document.querySelectorAll(".bundle-checklist-label[data-task-id]")]
+      : [...document.querySelectorAll(".ops-queue-row[data-task-id]")];
+  const dataKey = restoreFocus.kind === "workflow" ? "bundleId" : "taskId";
+  return candidates.find((candidate) => (
+    candidate.dataset[dataKey] === restoreFocus.id
+    && candidate.isConnected
+    && candidate.offsetParent !== null
+  )) || null;
+}
+
+function restoreWorkspaceEntityFocus(restoreFocus, token) {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      if (!isWorkspaceRouteFresh(token)) {
+        resolve();
+        return;
+      }
+      const recreatedRow = visibleEntityFocusTarget(restoreFocus);
+      const target = recreatedRow || libraryTitle;
+      if (target === libraryTitle) target.tabIndex = -1;
+      if (target instanceof HTMLElement && target.isConnected) target.focus();
+      resolve();
+    });
+  });
+}
+
+function commitWorkspaceRoute(route, token, options = {}) {
+  activeWorkspaceRoute = route;
+  pendingLegacyRoute = { ...route, token };
+  workspaceEntityState = null;
+  if (route.view === "tasks") activeTasksSection = route.tasksSection;
+  intakeState.selectedId = route.view === "inbox" ? route.params.get("intakeId") : null;
+  assistantQueueState.selectedJobId = route.tasksSection === "assistants" ? route.params.get("assistantJobId") : null;
+  runtimeTemplateState.selectedId = route.tasksSection === "templates"
+    ? options.entity?.templateId ?? route.params.get("templateId")
+    : null;
+  taskRouteContext = route.path === "/tasks" ? emptyTaskRouteContext(route) : emptyTaskRouteContext();
+
+  resetTaskPanel();
+  resetBundlePanel();
+  closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
+  closeSettingsMenu();
+
+  const requestedView = route.view === "tasks" && route.tasksSection !== "queue" ? route.tasksSection : route.view;
+  const tasksSection = LEGACY_VIEW_TO_TASKS_SECTION(requestedView);
+  if (tasksSection) {
+    activeWorkspaceView = "tasks";
+    activeTasksSection = tasksSection;
+  } else if (requestedView === "tasks") {
+    activeWorkspaceView = "tasks";
+    activeTasksSection = "queue";
+  } else if (requestedView === "processes" || requestedView === "search") {
+    activeWorkspaceView = "docs";
+  } else {
+    activeWorkspaceView = requestedView || "home";
+  }
+  syncWorkspaceNav();
+  libraryTitle.textContent = operationsViewTitle(activeWorkspaceView, activeTasksSection);
+  selectedFolder = "";
+  searchInput.value = "";
+  clearDocumentFilters();
+  setView("library");
+  refreshDocuments();
+  closeSidebar();
+
+  const bundleId = route.path === "/bundles" ? route.params.get("bundleId") : "";
+  const taskId = route.params.get("taskId");
+  if (bundleId) prepareBundlePanel(bundleId);
+  if (taskId) prepareTaskPanel(taskId);
+  if (route.path === "/notifications") openWorkBellPanel();
+}
+
+function hydrateWorkspaceRoute(route, token) {
+  const jobs = [];
+  if (route.path === "/inbox") jobs.push(resolveIntakeRouteEntity(route, token));
+  if (route.path === "/tasks") jobs.push(resolveTaskQueueRouteContext(route, token));
+  if (route.path === "/templates") jobs.push(resolveTemplateRouteEntity(route, token));
+  if (route.path === "/assistants") jobs.push(refreshOperationsAssistantSnapshot({ rerender: true, token }));
+  if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
+  if (route.path === "/artifacts") jobs.push(refreshOperationsArtifactSnapshot({ rerender: true }));
+  if (route.path === "/users") jobs.push(refreshUsersSurface({ rerender: true }));
+  const bundleId = route.path === "/bundles" ? route.params.get("bundleId") : "";
+  const taskId = route.params.get("taskId");
+  if (bundleId) jobs.push(hydrateBundlePanel(bundleId, token));
+  if (taskId) jobs.push(hydrateTaskPanel(taskId, token, { expectedBundleId: bundleId || "" }));
+  if (route.path === "/recurring") {
+    requestAnimationFrame(() => {
+      if (!isWorkspaceRouteFresh(token)) return;
+      const recurring = document.querySelector(".ops-recurring-section");
+      if (recurring) {
+        recurring.tabIndex = -1;
+        recurring.focus();
+      }
+    });
+  }
+  return Promise.allSettled(jobs);
+}
+
+function navigateCanonicalWorkspace(path, params = {}, options = {}) {
+  const route = options.route || workspaceRouteFor(path, params);
+  if (!route || route.invalid) return { route, token: activeWorkspaceRouteToken, ready: Promise.resolve() };
+  const token = ++activeWorkspaceRouteToken;
+  const visible = route.canonicalUrl;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const historyMode = options.history || "push";
+  if (historyMode !== "none" && current !== visible) {
+    history[historyMode === "replace" ? "replaceState" : "pushState"](
+      { workspace: route.view, tasksSection: route.tasksSection },
+      "",
+      visible,
+    );
+  }
+  commitWorkspaceRoute(route, token, options);
+  const hydration = options.hydrate === false ? Promise.resolve() : hydrateWorkspaceRoute(route, token);
+  const ready = hydration.then(() => (
+    options.restoreFocus
+      ? restoreWorkspaceEntityFocus(options.restoreFocus, token)
+      : undefined
+  ));
+  return { route, token, ready };
+}
+
+async function applyWorkspaceRoute(route) {
+  if (!route || route.invalid) return;
+  const previousRoute = activeWorkspaceRoute;
+  if (initialRouteReady && !(await canLeaveCurrentDocument())) {
+    if (previousRoute?.canonicalUrl) {
+      history.replaceState(
+        { workspace: previousRoute.view, tasksSection: previousRoute.tasksSection },
+        "",
+        previousRoute.canonicalUrl,
+      );
+    }
+    return;
+  }
+  await navigateCanonicalWorkspace(route.path, route.params, { route, history: "none" }).ready;
+}
+
+async function resolveIntakeRouteEntity(route, token) {
+  await refreshIntakeSnapshot({ token });
+  if (!isWorkspaceRouteFresh(token)) return;
+  const intakeId = route.params.get("intakeId");
+  if (!intakeId) {
+    workspaceEntityState = null;
+    renderInboxSurface();
+    return;
+  }
+  let item = intakeState.items.find((candidate) => candidate.id === intakeId);
+  if (!item) {
+    workspaceEntityState = { kind: "intake", id: intakeId, status: "loading" };
+    renderInboxSurface();
+    try {
+      const payload = await request(workApiUrl(`/api/intake/${encodeURIComponent(intakeId)}`));
+      if (!isWorkspaceRouteFresh(token)) return;
+      item = payload.item || payload;
+      intakeState.items = [item, ...intakeState.items.filter((candidate) => candidate.id !== item.id)];
+    } catch (error) {
+      if (!isWorkspaceRouteFresh(token)) return;
+      workspaceEntityState = { kind: "intake", id: intakeId, status: error.status === 404 ? "not-found" : "error", error: error.message };
+      renderInboxSurface();
       return;
     }
-    const taskId = route.params.get("taskId");
-    const bundleId = route.params.get("bundleId");
-    if (taskId) openTaskPanel(taskId);
-    else if (bundleId) openBundlePanel(bundleId);
-    if (route.path === "/notifications") openWorkBellPanel();
-  } finally {
-    applyingLocationRoute = false;
   }
+  workspaceEntityState = { kind: "intake", id: intakeId, status: "ready" };
+  intakeState.selectedId = intakeId;
+  renderInboxSurface();
+}
+
+async function resolveTaskQueueRouteContext(route, token) {
+  const context = taskRouteContext;
+  const { date, bundleId, contextBundleId } = context;
+  const sources = [
+    bundleId ? { source: "filter-bundle", id: bundleId, load: () => request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`)) } : null,
+    date || bundleId ? { source: "task-query", id: [date, bundleId].filter(Boolean).join(" · "), load: () => request(workApiUrl("/api/tasks", { date, bundleId })) } : null,
+    contextBundleId ? { source: "return-context", id: contextBundleId, load: () => request(workApiUrl(`/api/bundles/${encodeURIComponent(contextBundleId)}`)) } : null,
+  ].filter(Boolean);
+  const results = await Promise.allSettled(sources.map((entry) => entry.load()));
+  if (!isWorkspaceRouteFresh(token) || taskRouteContext !== context) return;
+  results.forEach((result, index) => {
+    const entry = sources[index];
+    if (result.status === "rejected") {
+      context.failures.push({ source: entry.source, id: entry.id, status: result.reason?.status === 404 ? "not-found" : "error", error: result.reason?.message || "Request failed" });
+      return;
+    }
+    if (entry.source === "filter-bundle") context.filterBundle = result.value.bundle || result.value;
+    else if (entry.source === "task-query") context.tasks = tasksFromWorkPayload(result.value);
+    else context.contextBundle = result.value.bundle || result.value;
+  });
+  if (activeWorkspaceView === "tasks" && activeTasksSection === "queue") renderTasksSurface(allDocuments, "queue");
+  if (activeTaskPanelTask && isWorkspaceRouteFresh(token)) renderTaskPanel();
+}
+
+async function resolveTemplateRouteEntity(route, token) {
+  await refreshRuntimeTemplates({ token });
+  if (!isWorkspaceRouteFresh(token)) return;
+  const templateId = route.params.get("templateId");
+  if (!templateId) {
+    workspaceEntityState = null;
+    renderTasksSurface(allDocuments, "templates");
+    return;
+  }
+  let template = runtimeTemplateState.templates.find((candidate) => candidate.id === templateId);
+  if (!template) {
+    try {
+      const payload = await request(workApiUrl(`/api/templates/${encodeURIComponent(templateId)}`));
+      if (!isWorkspaceRouteFresh(token)) return;
+      template = payload.template || payload;
+      runtimeTemplateState.templates = [template, ...runtimeTemplateState.templates];
+    } catch (error) {
+      if (!isWorkspaceRouteFresh(token)) return;
+      workspaceEntityState = { kind: "template", id: templateId, status: error.status === 404 ? "not-found" : "error", error: error.message };
+    }
+  }
+  if (template) workspaceEntityState = { kind: "template", id: templateId, status: "ready" };
+  runtimeTemplateState.selectedId = templateId;
+  renderTasksSurface(allDocuments, "templates");
 }
 
 async function saveCurrentDocument() {
@@ -8252,64 +9102,22 @@ const TASKS_SECTION_BY_LEGACY_VIEW = {
 const LEGACY_VIEW_TO_TASKS_SECTION = (view) => TASKS_SECTION_BY_LEGACY_VIEW[view] || null;
 
 async function showOperationsHome(options = {}) {
-  if (!(await canLeaveCurrentDocument())) return false;
-  activeWorkspaceView = "home";
-  syncWorkspaceNav();
-  selectedFolder = "";
-  searchInput.value = "";
-  clearDocumentFilters();
-  if (options.updateUrl !== false) setWorkspaceUrl("home", "", { replace: options.replace });
-  closeTaskPanel();
-  closeBundlePanel();
-  closeWorkBellPanel();
-  setView("library");
-  refreshDocuments();
-  closeSidebar();
-  return true;
+  if (!(await canLeaveCurrentDocument())) return;
+  return navigateCanonicalWorkspace("/", {}, { history: options.updateUrl === false ? "none" : options.replace ? "replace" : "push" }).ready;
 }
 
 async function showWorkspaceSurface(view, options = {}) {
   const nextView = view || "home";
-  if (nextView === "home") {
-    return await showOperationsHome(options);
-  }
-  if (!(await canLeaveCurrentDocument())) return false;
-  // Route the legacy 9-view nav onto the new Home / Tasks / Docs IA. Work
-  // surfaces collapse into the Tasks tab at the matching sub-section; the
-  // library surfaces (processes/search) route to Docs. New primary views
-  // (tasks, docs) land directly.
+  if (!(await canLeaveCurrentDocument())) return;
   const tasksSection = LEGACY_VIEW_TO_TASKS_SECTION(nextView);
-  if (tasksSection) {
-    activeWorkspaceView = "tasks";
-    activeTasksSection = tasksSection;
-  } else if (nextView === "tasks") {
-    // The Tasks tab always lands on its default sub-section (Queue) on a
-    // top-level navigation, even if a previous visit left a different section.
-    activeWorkspaceView = "tasks";
-    activeTasksSection = "queue";
-  } else if (nextView === "processes" || nextView === "search") {
-    activeWorkspaceView = "docs";
-  } else {
-    activeWorkspaceView = nextView;
-  }
-  syncWorkspaceNav();
-  selectedFolder = "";
-  searchInput.value = "";
-  clearDocumentFilters();
-  if (options.updateUrl !== false) setWorkspaceUrl(activeWorkspaceView, activeTasksSection, { replace: options.replace });
-  closeTaskPanel();
-  closeBundlePanel();
-  closeWorkBellPanel();
-  closeSettingsMenu();
-  setView("library");
-  if (nextView === "users") refreshUsersSurface({ rerender: true });
-  if (nextView === "inbox") refreshIntakeSnapshot({ rerender: true });
-  if (activeWorkspaceView === "tasks" && activeTasksSection === "templates") refreshRuntimeTemplates({ rerender: true });
-  if (activeWorkspaceView === "tasks" && activeTasksSection === "assistants") refreshOperationsAssistantSnapshot({ rerender: true });
-  if (activeWorkspaceView === "tasks" && activeTasksSection === "artifacts") refreshOperationsArtifactSnapshot({ rerender: true });
-  refreshDocuments();
-  closeSidebar();
-  return true;
+  const path = tasksSection
+    ? workspaceHashPath("tasks", tasksSection)
+    : nextView === "tasks"
+      ? "/tasks"
+      : workspaceHashPath(nextView === "processes" || nextView === "search" ? "docs" : nextView);
+  return navigateCanonicalWorkspace(path, options.params || {}, {
+    history: options.updateUrl === false ? "none" : options.replace ? "replace" : "push",
+  }).ready;
 }
 
 function syncWorkspaceNav() {
@@ -8323,9 +9131,11 @@ function syncWorkspaceNav() {
 
 async function showCreate() {
   if (!(await canLeaveCurrentDocument())) return;
-  closeTaskPanel();
-  closeBundlePanel();
-  closeWorkBellPanel();
+  ++activeWorkspaceRouteToken;
+  activeWorkspaceRoute = null;
+  resetTaskPanel();
+  resetBundlePanel();
+  closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
   if (!newDocPath.value.trim()) {
     const base = selectedFolder ? `content/${selectedFolder}` : "content";
     newDocPath.value = `${base}/new-document.md`;
@@ -8371,6 +9181,7 @@ function syncSidebarShellState() {
     sidebar.removeAttribute("role");
     sidebar.removeAttribute("aria-modal");
     sidebar.removeAttribute("aria-hidden");
+    sidebar.inert = false;
     pageShell.inert = false;
     if (mobileWorkBellButton) mobileWorkBellButton.inert = false;
     mobileNewButton.inert = false;
@@ -8383,10 +9194,12 @@ function syncSidebarShellState() {
     sidebar.setAttribute("role", "dialog");
     sidebar.setAttribute("aria-modal", "true");
     sidebar.removeAttribute("aria-hidden");
+    sidebar.inert = false;
   } else {
     sidebar.removeAttribute("role");
     sidebar.removeAttribute("aria-modal");
     sidebar.setAttribute("aria-hidden", "true");
+    sidebar.inert = true;
   }
   pageShell.inert = open;
   if (mobileWorkBellButton) mobileWorkBellButton.inert = open;
@@ -8682,13 +9495,16 @@ async function request(url, options = {}) {
 
   if (text && !parsedJson) {
     const fallback = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
-    throw new Error(response.ok ? "Unexpected non-JSON API response" : fallback);
+    const error = new Error(response.ok ? "Unexpected non-JSON API response" : fallback);
+    error.status = response.status;
+    throw error;
   }
 
   if (!response.ok) {
     const fallback = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
     const error = new Error(payload?.error || fallback);
     error.status = response.status;
+    error.code = payload?.code;
     error.payload = payload;
     throw error;
   }
@@ -10530,9 +11346,9 @@ function resolveConfirm(value) {
     _confirmResolve = null;
     _confirmOpener = null;
     confirmModal.hidden = true;
-    resolve(value);
     requestAnimationFrame(() => {
       if (opener?.isConnected) opener.focus();
+      resolve(value);
     });
   }
 }
