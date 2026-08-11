@@ -315,6 +315,10 @@ if (service === "sts" && operation === "get-caller-identity") {
     (state.stackResourceDescribeCount ?? 0) + 1;
   const preexecute = state.stackResourceDescribeCount >= 2;
   output({ StackResourceDetail: {
+    StackId: preexecute && state.preexecuteStackId
+      ? state.preexecuteStackId
+      : (state.stackId ??
+        "arn:aws:cloudformation:eu-west-1:817685572750:stack/dataops-v1/12345678-1234-1234-1234-123456789abc"),
     LogicalResourceId: preexecute && state.preexecuteLogicalResourceId
       ? state.preexecuteLogicalResourceId
       : (state.logicalResourceId ?? "DataOpsSponsorCrmTable"),
@@ -322,6 +326,7 @@ if (service === "sts" && operation === "get-caller-identity") {
     PhysicalResourceId: preexecute && state.preexecutePhysicalResourceId
       ? state.preexecutePhysicalResourceId
       : (state.physicalResourceId ?? "dataops-v1-sponsor-crm"),
+    ResourceStatus: state.resourceStatus ?? "UPDATE_COMPLETE",
   } });
 } else if (service === "cloudformation" && operation === "get-template") {
   const identity = value("--change-set-name");
@@ -1209,6 +1214,7 @@ test("process runtime executes four sequential content-bound stages from prefix 
     processed: processed(0),
     prefix: 0,
     changeSets: [],
+    tableTags: [],
   });
   try {
     const result = runFakeMigration(harness);
@@ -2392,14 +2398,6 @@ test("read-only deployment guard emits stable sanitized assertion categories", (
       mutation: { tableTags: sensitive },
     },
     {
-      code: "guard-cloudformation-table-stack-id-absent",
-      mutation: {
-        tableTags: SYSTEM_TAGS.filter(
-          (tag) => tag.Key !== "aws:cloudformation:stack-id",
-        ),
-      },
-    },
-    {
       code: "guard-cloudformation-table-stack-id-mismatch",
       mutation: {
         tableTags: SYSTEM_TAGS.map((tag) =>
@@ -2491,6 +2489,7 @@ test("read-only deployment guard accepts only the exact active four-index table"
     processed: processed(STAGES.length),
     prefix: STAGES.length,
     changeSets: [],
+    tableTags: [],
     ttlStatus: "DISABLED",
     streamSpecification: { StreamEnabled: false },
     streamLabel: null,

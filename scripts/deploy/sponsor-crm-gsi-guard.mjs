@@ -230,9 +230,11 @@ async function main() {
     CONTRACT.logicalId,
   )).StackResourceDetail;
   classified("guard-cloudformation-resource-identity", () => {
+    assert.equal(resource?.StackId, stack.StackId);
     assert.equal(resource?.LogicalResourceId, CONTRACT.logicalId);
     assert.equal(resource?.ResourceType, "AWS::DynamoDB::Table");
     assert.equal(resource?.PhysicalResourceId, CONTRACT.physicalTable);
+    assert.match(resource?.ResourceStatus ?? "", /^(CREATE|UPDATE)_COMPLETE$/);
   });
 
   const processedBody = (await aws(
@@ -273,30 +275,32 @@ async function main() {
     "guard-cloudformation-table-tag-read",
     () => tableTags(table.TableArn),
   );
-  classified("guard-cloudformation-table-stack-id-absent", () =>
-    assert.ok(tags.has("aws:cloudformation:stack-id")),
-  );
-  classified("guard-cloudformation-table-stack-id-mismatch", () =>
-    assert.equal(
-      tags.get("aws:cloudformation:stack-id"),
-      stack.StackId,
-      "DynamoDB stack-id ownership tag mismatch",
-    ),
-  );
-  classified("guard-cloudformation-table-logical-id", () =>
-    assert.equal(
-      tags.get("aws:cloudformation:logical-id"),
-      CONTRACT.logicalId,
-      "DynamoDB logical-id ownership tag mismatch",
-    ),
-  );
-  classified("guard-cloudformation-table-stack-name", () =>
-    assert.equal(
-      tags.get("aws:cloudformation:stack-name"),
-      CONTRACT.stack,
-      "DynamoDB stack-name ownership tag mismatch",
-    ),
-  );
+  if (tags.size > 0) {
+    classified("guard-cloudformation-table-stack-id-absent", () =>
+      assert.ok(tags.has("aws:cloudformation:stack-id")),
+    );
+    classified("guard-cloudformation-table-stack-id-mismatch", () =>
+      assert.equal(
+        tags.get("aws:cloudformation:stack-id"),
+        stack.StackId,
+        "DynamoDB stack-id ownership tag mismatch",
+      ),
+    );
+    classified("guard-cloudformation-table-logical-id", () =>
+      assert.equal(
+        tags.get("aws:cloudformation:logical-id"),
+        CONTRACT.logicalId,
+        "DynamoDB logical-id ownership tag mismatch",
+      ),
+    );
+    classified("guard-cloudformation-table-stack-name", () =>
+      assert.equal(
+        tags.get("aws:cloudformation:stack-name"),
+        CONTRACT.stack,
+        "DynamoDB stack-name ownership tag mismatch",
+      ),
+    );
+  }
   const processedPrefix = classified("guard-processed-retained-state", () =>
     inspectProcessedPrefix(processed),
   );

@@ -288,9 +288,11 @@ async function validateStackIdentity() {
     "--logical-resource-id",
     CONTRACT.logicalId,
   ))?.StackResourceDetail;
+  assert.equal(resource?.StackId, stack.StackId);
   assert.equal(resource?.LogicalResourceId, CONTRACT.logicalId);
   assert.equal(resource?.ResourceType, "AWS::DynamoDB::Table");
   assert.equal(resource?.PhysicalResourceId, CONTRACT.physicalTable);
+  assert.match(resource?.ResourceStatus ?? "", /^(CREATE|UPDATE)_COMPLETE$/);
   return stack;
 }
 
@@ -671,7 +673,11 @@ function stableContinuousBackups(description) {
 function migrationSnapshot(stack, processed, table) {
   const definition = structuredClone(sponsorTable(processed));
   const tags = normalizeTags(table.Tags);
-  const tagValues = new Map(tags.map((tag) => [tag.Key, tag.Value]));
+  const expectedTags = [
+    { Key: "aws:cloudformation:logical-id", Value: CONTRACT.logicalId },
+    { Key: "aws:cloudformation:stack-id", Value: stack.StackId },
+    { Key: "aws:cloudformation:stack-name", Value: CONTRACT.stack },
+  ];
   delete definition.Properties.AttributeDefinitions;
   delete definition.Properties.GlobalSecondaryIndexes;
   assert.equal(definition.DeletionPolicy, "Retain");
@@ -695,21 +701,9 @@ function migrationSnapshot(stack, processed, table) {
       ?.PointInTimeRecoveryStatus,
     "ENABLED",
   );
-  assert.equal(
-    tagValues.get("aws:cloudformation:stack-id"),
-    stack.StackId,
-    "DynamoDB stack-id ownership tag mismatch",
-  );
-  assert.equal(
-    tagValues.get("aws:cloudformation:logical-id"),
-    CONTRACT.logicalId,
-    "DynamoDB logical-id ownership tag mismatch",
-  );
-  assert.equal(
-    tagValues.get("aws:cloudformation:stack-name"),
-    CONTRACT.stack,
-    "DynamoDB stack-name ownership tag mismatch",
-  );
+  // DynamoDB may omit CloudFormation's reserved system tags. The caller has
+  // already proved the exact StackId/logical ID/physical ID resource binding.
+  if (tags.length > 0) assert.deepEqual(tags, expectedTags);
   return {
     stackId: stack.StackId,
     logicalId: CONTRACT.logicalId,
