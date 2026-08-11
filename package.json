@@ -14,6 +14,7 @@
     "export:templates:backend": "npm run export:templates --workspace dataops-backend",
     "seed:backend": "npm run seed:users --workspace dataops-backend && npm run seed --workspace dataops-backend",
     "test:sponsor-gsi-migrator": "node --test scripts/deploy/sponsor-crm-gsi-core.test.mjs",
+    "test:sponsor-reset": "node --test scripts/deploy/sponsor-crm-reset.test.mjs",
     "test:e2e:backend": "npm run test:e2e --workspace dataops-backend",
     "test:backend": "npm test --workspace dataops-backend",
     "typecheck:backend": "npm run typecheck --workspace dataops-backend",

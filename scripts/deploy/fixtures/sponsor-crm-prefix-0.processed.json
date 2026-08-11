@@ -1,0 +1,46 @@
+{
+  "schema": "dataops.sponsor-reset-prefix-0/v1",
+  "fixtureDigest": "75c3e7fe91252ddb4809ec2ad0141a063b3c0dafbd1c47227d213e1091454ae5",
+  "tableResource": {
+    "Type": "AWS::DynamoDB::Table",
+    "DeletionPolicy": "Retain",
+    "UpdateReplacePolicy": "Retain",
+    "Properties": {
+      "TableName": { "Fn::Sub": "${AWS::StackName}-sponsor-crm" },
+      "BillingMode": "PAY_PER_REQUEST",
+      "SSESpecification": { "SSEEnabled": true },
+      "PointInTimeRecoverySpecification": { "PointInTimeRecoveryEnabled": true },
+      "TimeToLiveSpecification": { "AttributeName": "ttl", "Enabled": true },
+      "StreamSpecification": { "StreamViewType": "NEW_AND_OLD_IMAGES" },
+      "AttributeDefinitions": [
+        { "AttributeName": "PK", "AttributeType": "S" },
+        { "AttributeName": "SK", "AttributeType": "S" }
+      ],
+      "KeySchema": [
+        { "AttributeName": "PK", "KeyType": "HASH" },
+        { "AttributeName": "SK", "KeyType": "RANGE" }
+      ]
+    }
+  },
+  "references": [
+    { "logicalId": "BackendFunction", "resourceType": "AWS::Lambda::Function", "pointer": "/Resources/BackendFunction/Properties/Environment/Variables/DATAOPS_SPONSOR_CRM_TABLE", "form": "Ref", "value": "DataOpsSponsorCrmTable", "classification": "writer", "actions": [] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/15", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "Arn"], "classification": "generated-role", "actions": ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:UpdateItem"] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/16", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-Communication", "classification": "generated-role", "actions": ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:UpdateItem"] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/17", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendDue", "classification": "generated-role", "actions": ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:UpdateItem"] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/18", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendLookup", "classification": "generated-role", "actions": ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:UpdateItem"] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/19", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorBookingCommunication", "classification": "generated-role", "actions": ["dynamodb:DeleteItem", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:UpdateItem"] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/1/PolicyDocument/Statement/Resource/1", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "Arn"], "classification": "generated-role", "actions": ["dynamodb:TransactGetItems"] },
+    { "logicalId": "BackendFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/BackendFunctionRole/Properties/Policies/2/PolicyDocument/Statement/Resource/0", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "Arn"], "classification": "generated-role", "actions": ["dynamodb:TransactWriteItems"] },
+    { "logicalId": "SponsorPrivateArchiveFunction", "resourceType": "AWS::Lambda::Function", "pointer": "/Resources/SponsorPrivateArchiveFunction/Properties/Environment/Variables/DATAOPS_SPONSOR_CRM_TABLE", "form": "Ref", "value": "DataOpsSponsorCrmTable", "classification": "reader", "actions": [] },
+    { "logicalId": "SponsorPrivateArchiveFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorPrivateArchiveFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "Arn"], "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:Scan"] },
+    { "logicalId": "SponsorSendWorkerFunction", "resourceType": "AWS::Lambda::Function", "pointer": "/Resources/SponsorSendWorkerFunction/Properties/Environment/Variables/DATAOPS_SPONSOR_CRM_TABLE", "form": "Ref", "value": "DataOpsSponsorCrmTable", "classification": "writer", "actions": [] },
+    { "logicalId": "SponsorSendWorkerFunctionQueuedSponsorSend", "resourceType": "AWS::Lambda::EventSourceMapping", "pointer": "/Resources/SponsorSendWorkerFunctionQueuedSponsorSend/Properties/EventSourceArn", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "StreamArn"], "classification": "stream-consumer", "actions": [] },
+    { "logicalId": "SponsorSendWorkerFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorSendWorkerFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/0", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "Arn"], "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"] },
+    { "logicalId": "SponsorSendWorkerFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorSendWorkerFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/1", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-Communication", "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"] },
+    { "logicalId": "SponsorSendWorkerFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorSendWorkerFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/2", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendDue", "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"] },
+    { "logicalId": "SponsorSendWorkerFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorSendWorkerFunctionRole/Properties/Policies/0/PolicyDocument/Statement/Resource/3", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendLookup", "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"] },
+    { "logicalId": "SponsorSesEventFunction", "resourceType": "AWS::Lambda::Function", "pointer": "/Resources/SponsorSesEventFunction/Properties/Environment/Variables/DATAOPS_SPONSOR_CRM_TABLE", "form": "Ref", "value": "DataOpsSponsorCrmTable", "classification": "writer", "actions": [] },
+    { "logicalId": "SponsorSesEventFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorSesEventFunctionRole/Properties/Policies/1/PolicyDocument/Statement/Resource/0", "form": "Fn::GetAtt", "value": ["DataOpsSponsorCrmTable", "Arn"], "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"] },
+    { "logicalId": "SponsorSesEventFunctionRole", "resourceType": "AWS::IAM::Role", "pointer": "/Resources/SponsorSesEventFunctionRole/Properties/Policies/1/PolicyDocument/Statement/Resource/1", "form": "Fn::Sub", "value": "${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendLookup", "classification": "generated-role", "actions": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems", "dynamodb:UpdateItem"] }
+  ]
+}
