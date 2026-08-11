@@ -781,6 +781,7 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
   checkpoint = "state-table";
   const described = await aws.call("dynamodb", "describe-table", ["--table-name", CONTRACT.physicalTable], { allowNotFound: true });
   if (described) {
+    checkpoint = tableShapeCheckpoint(described.Table);
     if (executeInProgress && described.Table?.TableStatus !== "ACTIVE") {
       assert.equal(described.Table?.TableName, CONTRACT.physicalTable);
       assert.equal(described.Table?.TableArn, CONTRACT.tableArn);
@@ -1016,6 +1017,18 @@ function lineageTable(prior) {
   if (prior?.poststate && Object.hasOwn(prior.poststate, "oldTable")) return prior.poststate.oldTable;
   if (prior?.prestate && Object.hasOwn(prior.prestate, "oldTable")) return prior.prestate.oldTable;
   return prior?.poststate?.table ?? prior?.prestate?.table;
+}
+
+function tableShapeCheckpoint(table) {
+  const status = table?.TableStatus === "ACTIVE" ? "active" : table?.TableStatus === "CREATING" ? "creating" : table?.TableStatus === "UPDATING" ? "updating" : "other-status";
+  const keys = JSON.stringify(table?.KeySchema) === JSON.stringify([
+    { AttributeName: "PK", KeyType: "HASH" },
+    { AttributeName: "SK", KeyType: "RANGE" },
+  ]) ? "keys-ok" : "keys-other";
+  const attributes = Array.isArray(table?.AttributeDefinitions) ? Math.min(table.AttributeDefinitions.length, 9) : "other";
+  const indexes = Array.isArray(table?.GlobalSecondaryIndexes) ? Math.min(table.GlobalSecondaryIndexes.length, 9) : 0;
+  const stream = table?.StreamSpecification || table?.LatestStreamArn ? "stream" : "no-stream";
+  return `state-table-${status}-${keys}-attrs-${attributes}-gsis-${indexes}-${stream}`;
 }
 
 function describedParameters(parameters) {
