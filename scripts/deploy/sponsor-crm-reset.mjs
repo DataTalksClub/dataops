@@ -890,12 +890,15 @@ async function describeCandidate(aws, candidateArn, expected) {
       ...(token ? ["--next-token", token] : []), "--include-property-values",
     ]);
     if (["CREATE_PENDING", "CREATE_IN_PROGRESS"].includes(response.Status)) return undefined;
+    checkpoint = `candidate-${safeCandidateStatus(response.Status)}-${safeCandidateExecution(response.ExecutionStatus)}`;
     first ??= response;
     validateCandidatePage(response, first);
     changes.push(...(response.Changes ?? []));
     token = response.NextToken;
     if (!token) {
+      checkpoint = "candidate-semantic-validation";
       const validated = validateCandidate(first, { ...expected, candidateArn }, changes);
+      checkpoint = "candidate-template-validation";
       const candidateTemplate = parseTemplate((await aws.call("cloudformation", "get-template", ["--stack-name", expected.stackId, "--change-set-name", candidateArn, "--template-stage", "Processed"])).TemplateBody);
       const baseline = validateProcessedBaseline(candidateTemplate);
       assert.equal(baseline.templateDigest, expected.templateDigest, "candidate Processed template changed");
@@ -919,6 +922,14 @@ async function describeCandidate(aws, candidateArn, expected) {
     seen.add(token);
   }
   fail("candidate-pagination-limit");
+}
+
+function safeCandidateStatus(value) {
+  return ["CREATE_COMPLETE", "FAILED"].includes(value) ? value.toLowerCase().replace("_", "-") : "other";
+}
+
+function safeCandidateExecution(value) {
+  return ["AVAILABLE", "UNAVAILABLE"].includes(value) ? value.toLowerCase() : "other";
 }
 
 async function reloadApprovedCandidate(aws, state, completion) {
