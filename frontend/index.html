@@ -176,7 +176,7 @@
               <div id="task-panel-body" class="task-panel-body"></div>
             </div>
           </section>
-          <section id="bundle-panel" class="task-panel" aria-label="Workflow detail" hidden>
+          <section id="bundle-panel" class="task-panel" role="dialog" aria-modal="true" aria-labelledby="bundle-panel-title" hidden>
             <header class="task-panel-header">
               <strong id="bundle-panel-title">Workflow</strong>
               <button id="bundle-panel-close" class="quiet-button" type="button" aria-label="Close workflow">Close</button>
@@ -267,29 +267,33 @@
       </div>
     </div>
 
-    <div id="work-bell-panel" class="work-bell-panel" hidden>
+    <div id="work-bell-panel" class="work-bell-panel" hidden role="dialog" aria-modal="false" aria-labelledby="work-bell-title">
       <header class="work-bell-header">
-        <strong>Notifications</strong>
+        <strong id="work-bell-title">Notifications</strong>
         <button id="work-bell-close" class="quiet-button" type="button" aria-label="Close">Close</button>
       </header>
       <div id="work-bell-body" class="work-bell-body"></div>
     </div>
 
-    <div id="settings-menu" class="settings-menu work-bell-panel" hidden role="menu" aria-label="Settings">
+    <div id="settings-menu" class="settings-menu work-bell-panel" hidden role="dialog" aria-modal="false" aria-labelledby="settings-menu-title">
       <header class="work-bell-header">
-        <strong>Settings</strong>
+        <strong id="settings-menu-title">Settings</strong>
         <button id="settings-menu-close" class="quiet-button" type="button" aria-label="Close settings">Close</button>
       </header>
       <div class="settings-menu-body work-bell-body">
-       <button id="settings-admin-button" class="settings-menu-item" type="button" role="menuitem">
+       <button id="settings-admin-button" class="settings-menu-item" type="button">
          <strong>Admin</strong>
          <span>Process docs, recurring config, diagnostics.</span>
        </button>
-        <button id="settings-users-button" class="settings-menu-item" type="button" role="menuitem">
+        <button id="settings-users-button" class="settings-menu-item" type="button">
           <strong>Users</strong>
           <span>People, roles, and account access.</span>
         </button>
-       <button id="theme-toggle-button" class="settings-menu-item" type="button" role="menuitemcheckbox" aria-checked="false">Dark mode</button>
+       <button id="theme-toggle-button" class="settings-menu-item" type="button" aria-pressed="false">Dark mode</button>
+        <button id="settings-sign-out-button" class="settings-menu-item settings-sign-out" type="button">
+          <strong>Sign out</strong>
+          <span>End this browser session and return to shared login.</span>
+        </button>
         <div class="settings-menu-item settings-version-row">
           <span>Version</span>
           <code id="app-version">local</code>

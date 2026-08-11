@@ -15,6 +15,21 @@ import type { LambdaEvent } from '../src/types';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 let e2eBrowserSessionToken = '';
+type E2eRouteFault = {
+  method?: string;
+  path: string;
+  query?: Record<string, string>;
+  status?: number;
+  delayMs?: number;
+  remaining?: number;
+};
+let e2eRouteFaults: E2eRouteFault[] = [];
+
+function matchesRouteFault(fault: E2eRouteFault, method: string, parsed: URL): boolean {
+  const apiPath = parsed.pathname.replace(/^\/work(?=\/api\/)/, '');
+  if ((fault.method || 'GET').toUpperCase() !== method.toUpperCase() || fault.path !== apiPath) return false;
+  return Object.entries(fault.query || {}).every(([key, value]) => parsed.searchParams.get(key) === value);
+}
 
 const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url!, `http://localhost:${PORT}`);
@@ -44,6 +59,37 @@ const server = http.createServer(async (req, res) => {
   const body = chunks.length > 0
     ? Buffer.concat(chunks).toString(isMultipart ? 'binary' : 'utf-8')
     : null;
+
+  // Deterministic server-side faults for route E2E. Requests still traverse
+  // the browser, HTTP server, and real handler; a delay falls through to the
+  // handler, while an explicit status proves non-404 transport failures.
+  if (parsed.pathname === '/__e2e__/route-faults') {
+    if (req.method === 'DELETE') e2eRouteFaults = [];
+    else if (req.method === 'POST') {
+      const payload = body ? JSON.parse(body) : {};
+      e2eRouteFaults = Array.isArray(payload.faults)
+        ? payload.faults.map((fault: E2eRouteFault) => ({ ...fault, remaining: fault.remaining ?? 1 }))
+        : [];
+    } else {
+      res.writeHead(405, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Method not allowed' }));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ faults: e2eRouteFaults.length }));
+    return;
+  }
+
+  const fault = e2eRouteFaults.find((candidate) => matchesRouteFault(candidate, req.method || 'GET', parsed) && (candidate.remaining ?? 1) > 0);
+  if (fault) {
+    fault.remaining = (fault.remaining ?? 1) - 1;
+    if (fault.delayMs) await new Promise((resolve) => setTimeout(resolve, fault.delayMs));
+    if (fault.status) {
+      res.writeHead(fault.status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: `Synthetic route failure (${fault.status})` }));
+      return;
+    }
+  }
 
   // Build query string parameters
   const queryStringParameters: Record<string, string> = {};

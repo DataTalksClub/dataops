@@ -1752,7 +1752,7 @@ body[data-view="create"] .editor-view {
 }
 
 .ops-recurring-item.is-paused {
-  opacity: 0.72;
+  border-style: dashed;
 }
 
 .ops-recurring-item > div {
@@ -2058,7 +2058,7 @@ body.task-modal-open {
   font-size: 11px;
   font-weight: 650;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
   margin-bottom: 6px;
 }
 
@@ -2095,7 +2095,7 @@ body.task-modal-open {
 
 .bundle-task-group-title {
   margin-top: 8px;
-  color: var(--faint);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
@@ -2108,6 +2108,11 @@ body.task-modal-open {
 }
 
 .bundle-checklist-label {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2318,6 +2323,27 @@ body.task-modal-open {
   font-size: 11px;
 }
 
+.work-bell-item-actions,
+.recurring-row-actions,
+.entity-route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.work-bell-item-error,
+.recurring-delete-guidance,
+.inline-route-error,
+.intake-inline-feedback.is-error {
+  margin: 4px 0 0;
+  color: var(--danger);
+  font-size: var(--do-text-sm);
+}
+
+.settings-sign-out {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
 .work-bell-empty {
   color: var(--muted);
   font-size: 12px;
@@ -2357,6 +2383,10 @@ body.task-modal-open {
   background: color-mix(in srgb, var(--do-color-control) 92%, var(--do-color-accent));
 }
 
+.work-bell-header .quiet-button {
+  color: var(--text);
+}
+
 .settings-menu-item strong {
   font-weight: 600;
 }
@@ -2379,7 +2409,7 @@ body.task-modal-open {
 
 .settings-version-row code {
   overflow: hidden;
-  color: var(--faint);
+  color: var(--text);
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
   text-align: right;
@@ -5429,6 +5459,11 @@ body[data-view="create"] #back-button {
   font-size: var(--do-text-sm);
 }
 
+.intake-row.is-selected small,
+.intake-row.is-selected > span > span {
+  color: var(--text);
+}
+
 .intake-row em,
 .assistant-job-row em,
 .intake-status,
@@ -5467,6 +5502,145 @@ body[data-view="create"] #back-button {
 .assistant-detail > section {
   border-top: var(--do-border);
   padding-top: 12px;
+}
+
+.ops-surface-intro {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.intake-panel > summary,
+.intake-action-disclosure > summary,
+.intake-secondary-actions > summary {
+  min-height: 44px;
+  box-sizing: border-box;
+  cursor: pointer;
+  font-weight: 650;
+  padding: 10px 4px;
+}
+
+.intake-panel > summary + .intake-create-grid {
+  margin-top: 12px;
+}
+
+.intake-next-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.intake-action-disclosure,
+.intake-secondary-actions {
+  min-width: 0;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--surface);
+  padding: 0 10px;
+}
+
+.intake-action-disclosure.is-primary {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.intake-action-disclosure.is-destructive {
+  margin: 8px 0;
+}
+
+.intake-action-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+  padding: 4px 0 12px;
+}
+
+.intake-action-fields label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+}
+
+.intake-action-disclosure.is-primary .intake-action-fields label {
+  color: var(--text);
+}
+
+.intake-action-fields input,
+.intake-action-fields select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.intake-detail-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.intake-inline-feedback {
+  min-height: 1.3em;
+  margin: 0;
+}
+
+.entity-route-state {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: var(--do-radius-md);
+  background: var(--do-color-control);
+  padding: 18px;
+  overflow-wrap: anywhere;
+}
+
+.entity-route-state h3,
+.entity-route-state p {
+  margin: 0;
+}
+
+.entity-route-loading {
+  border-color: var(--line);
+}
+
+.task-route-context {
+  grid-column: 1 / -1;
+  border: var(--do-border);
+  border-radius: var(--do-radius-md);
+  background: var(--accent-soft);
+  padding: 12px;
+}
+
+.task-route-context h3,
+.task-route-context p {
+  margin: 0 0 6px;
+}
+
+.task-panel-route-context {
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--accent-soft);
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+
+.task-panel-route-context p {
+  margin: 4px 0 0;
+}
+
+.ops-recurring-item {
+  flex-wrap: wrap;
+}
+
+.recurring-delete-guidance {
+  flex-basis: 100%;
 }
 
 .intake-reference-group {
@@ -5778,6 +5952,11 @@ body[data-view="create"] #back-button {
     grid-template-columns: 1fr;
   }
 
+  .intake-layout.has-selected-intake .intake-detail {
+    order: -1;
+    scroll-margin-top: 72px;
+  }
+
   .intake-create-grid,
   .intake-action-grid,
   .assistant-create-grid,
@@ -5869,5 +6048,28 @@ body[data-view="create"] #back-button {
   .assistant-artifacts a {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .intake-action-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .intake-panel,
+  .assistant-panel,
+  .runtime-template-admin,
+  .entity-route-state {
+    padding: 12px;
+  }
+
+  .intake-detail-heading-actions,
+  .recurring-row-actions {
+    justify-content: flex-start;
+  }
+
+  .intake-detail-heading-actions button,
+  .intake-action-fields button,
+  .recurring-row-actions button,
+  .work-bell-item-actions button {
+    min-height: 44px;
   }
 }
