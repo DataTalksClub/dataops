@@ -911,7 +911,7 @@ describe('API — CRUD for tasks', () => {
     it('GET / returns SPA HTML with status 200', async () => {
       const res = await handler({ httpMethod: 'GET', path: '/' }, {});
       assert.strictEqual(res.statusCode, 200);
-      assert.strictEqual(res.headers!['Content-Type'], 'text/html');
+      assert.match(res.headers!['Content-Type'], /^text\/html/);
       assert.ok(res.body.includes('<title>DataOps</title>'));
     });
 

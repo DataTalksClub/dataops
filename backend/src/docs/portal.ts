@@ -53,8 +53,9 @@ let contentStore: ContentsApiGithubStore | null = null;
 
 function frontendRoot(): string {
   if (process.env.FRONTEND_ROOT) return resolve(process.env.FRONTEND_ROOT);
-  // src/docs -> src -> work-engine -> repo root -> frontend
-  return resolve(__dirname, '..', '..', '..', 'frontend');
+  // Compiled layout: dist/docs -> dist/frontend. Local development passes an
+  // explicit FRONTEND_ROOT pointing at the same top-level frontend source.
+  return resolve(__dirname, '..', 'frontend');
 }
 
 function store(): ContentsApiGithubStore {
@@ -96,11 +97,11 @@ function guessType(p: string): string {
 function fileResponse(bytes: Buffer, contentType: string): LambdaResponse {
   const isText = contentType.startsWith('text/') || contentType.startsWith('application/javascript') || contentType.startsWith('application/json');
   if (isText) {
-    return { statusCode: 200, headers: { 'content-type': contentType, 'cache-control': 'no-store' }, body: bytes.toString('utf-8') };
+    return { statusCode: 200, headers: { 'Content-Type': contentType, 'Cache-Control': 'no-store' }, body: bytes.toString('utf-8') };
   }
   return {
     statusCode: 200,
-    headers: { 'content-type': contentType, 'cache-control': 'no-store' },
+    headers: { 'Content-Type': contentType, 'Cache-Control': 'no-store' },
     body: bytes.toString('base64'),
     isBase64Encoded: true,
   };
@@ -114,9 +115,15 @@ function resolveUnder(root: string, rel: string): string | null {
   return target;
 }
 
-function serveIndex(): LambdaResponse | null {
+function serveIndex(): LambdaResponse {
   const index = resolve(frontendRoot(), 'index.html');
-  if (!existsSync(index)) return null;
+  if (!existsSync(index)) {
+    return {
+      statusCode: 500,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      body: JSON.stringify({ error: 'Canonical frontend artifact is missing' }),
+    };
+  }
   return fileResponse(readFileSync(index), 'text/html; charset=utf-8');
 }
 
@@ -135,6 +142,11 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
   if (!extOf(path) || path.endsWith('.md')) return serveIndex();
 
   return null;
+}
+
+/** Serve the one canonical browser frontend outside full portal mode as well. */
+export function serveCanonicalFrontend(event: LambdaEvent): LambdaResponse | null {
+  return serveFrontend(event, (event.httpMethod || 'GET').toUpperCase(), event.path || '/');
 }
 
 async function serveContent(path: string): Promise<LambdaResponse> {
@@ -199,8 +211,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     return { authorized: true, userId: user?.id };
   }
   if ((path === '/work' || path.startsWith('/work/')) && method === 'GET') {
-    const index = serveIndex();
-    if (index) return { response: index, authorized: true, userId: user?.id };
+    return { response: serveIndex(), authorized: true, userId: user?.id };
   }
 
   // Docs content API.

@@ -13,12 +13,12 @@ describe('handler', () => {
     const result = await handler(event, {});
 
     assert.strictEqual(result.statusCode, 200);
-    assert.strictEqual(result.headers!['Content-Type'], 'text/html');
+    assert.match(result.headers!['Content-Type'], /^text\/html/);
     assert.ok(result.body.includes('<title>DataOps</title>'));
-    assert.ok(result.body.includes('id="app"'));
-    assert.ok(result.body.includes('href="#/tasks"'));
-    assert.ok(result.body.includes('href="#/bundles"'));
-    assert.ok(result.body.includes('href="#/templates"'));
+    assert.ok(result.body.includes('id="document-list"'));
+    assert.ok(result.body.includes('data-workspace-view="home"'));
+    assert.ok(result.body.includes('data-workspace-view="inbox"'));
+    assert.ok(result.body.includes('data-workspace-view="tasks"'));
   });
 
   it('GET /api/health returns {"status":"ok"} with status 200', async () => {
@@ -64,9 +64,9 @@ describe('handler Function URL event normalization', () => {
     const result = await handler(event, {});
 
     assert.strictEqual(result.statusCode, 200);
-    assert.strictEqual(result.headers!['Content-Type'], 'text/html');
+    assert.match(result.headers!['Content-Type'], /^text\/html/);
     assert.ok(result.body.includes('<title>DataOps</title>'));
-    assert.ok(result.body.includes('id="app"'));
+    assert.ok(result.body.includes('id="document-list"'));
   });
 
   it('FU-shaped GET /api/health returns {"status":"ok"} with status 200', async () => {

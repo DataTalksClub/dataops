@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { timingSafeEqual } from 'crypto';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -13,7 +11,7 @@ import { handleArtifactRoutes } from './routes/artifacts';
 import { handleAssistantJobRoutes } from './routes/assistantJobs';
 import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
 import { handleDocsRoutes, isDocsDomainEnabled } from './docs';
-import { handlePortal } from './docs/portal';
+import { handlePortal, serveCanonicalFrontend } from './docs/portal';
 import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
 import { handleEmailWebhook } from './routes/email';
@@ -63,8 +61,6 @@ function isAuthExempt(method: string, path: string): boolean {
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/webhook/telegram') return true;
-  // Static assets
-  if (method === 'GET' && path.startsWith('/public/')) return true;
   return false;
 }
 
@@ -640,6 +636,17 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       reqPath = event.path || '/';
     }
 
+    // The canonical frontend always uses the single-origin /work API seam.
+    // Full portal mode rewrites it above; API-only/local mode performs the
+    // same in-process mapping without enabling browser-session auth or docs.
+    if (!isDocsDomainEnabled() && reqPath === '/work/health') {
+      event.path = '/api/health';
+      reqPath = event.path;
+    } else if (!isDocsDomainEnabled() && reqPath.startsWith('/work/api/')) {
+      event.path = reqPath.slice('/work'.length);
+      reqPath = event.path;
+    }
+
     // ── Auth routes (exempt from middleware) ─────────────────────
     const portalUserId = await portalTrustedUserId(event);
     // x-user-id is an internal identity propagation header, never a client
@@ -673,6 +680,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (result) return result;
     }
 
+    // API-only/local configurations still expose the same canonical frontend;
+    // full portal mode serves it earlier after browser authentication.
+    if (!portalMode && method === 'GET' && (reqPath === '/' || reqPath === '/index.html' || reqPath.startsWith('/src/'))) {
+      const frontend = serveCanonicalFrontend(event);
+      if (frontend) return frontend;
+    }
+
     // ── Auth middleware ───────────────────────────────────────────
     // All /api/* routes (except exempt ones) require a valid session.
     // In test mode (NODE_ENV=test), auth can be bypassed with SKIP_AUTH=true.
@@ -691,51 +705,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       // Attach userId to event headers for downstream use
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = session.userId;
-    }
-
-    // GET / — serve SPA HTML
-    if (method === 'GET' && reqPath === '/') {
-      const htmlPath = path.join(__dirname, 'pages', 'index.html');
-      const authMode = portalMode ? 'browser-cookie' : 'legacy-bearer';
-      const html = fs.readFileSync(htmlPath, 'utf-8').replace('__DATAOPS_AUTH_MODE__', authMode);
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' },
-        body: html,
-      };
-    }
-
-    // GET /public/*.js — serve static JS files
-    if (method === 'GET' && reqPath.startsWith('/public/')) {
-      // Guard against path traversal
-      if (reqPath.includes('..')) {
-        return jsonResponse(404, { error: 'Not found' });
-      }
-
-      // Only serve .js files
-      if (!reqPath.endsWith('.js')) {
-        return jsonResponse(404, { error: 'Not found' });
-      }
-
-      const filename = reqPath.slice('/public/'.length);
-
-      // Extra safety: reject if filename contains slashes (only serve from top-level public dir)
-      if (filename.includes('/') || filename.includes('\\')) {
-        return jsonResponse(404, { error: 'Not found' });
-      }
-
-      const filePath = path.join(__dirname, 'public', filename);
-
-      try {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        return {
-          statusCode: 200,
-          headers: { 'Content-Type': 'application/javascript' },
-          body: content,
-        };
-      } catch {
-        return jsonResponse(404, { error: 'Not found' });
-      }
     }
 
     // GET /api/health — health check

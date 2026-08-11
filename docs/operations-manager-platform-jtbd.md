@@ -28,7 +28,7 @@ The analysis is grounded in:
   report, Maven lightning lesson, and office hours.
 - `backend/src/types.ts`: current platform objects for tasks, bundles,
   templates, recurring configs, users, files, and notifications.
-- `backend/src/public/app.js`: current SPA behavior for dashboard, tasks,
+- `frontend/src/app.js`: canonical portal behavior for dashboard, tasks,
   bundles, templates, recurring configs, notifications, required links, and
   completion checkboxes.
 - `content/tasks/templates/*.md`: transitional imported task templates and

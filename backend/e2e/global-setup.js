@@ -50,6 +50,7 @@ function buildTestServerEnvironment(parentEnvironment = process.env) {
     IS_LOCAL: 'true',
     SKIP_AUTH: 'true',
     PORT: String(TEST_SERVER_PORT),
+    FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
     ...DARK_ROLLOUT_ENVIRONMENT,
   };
 }

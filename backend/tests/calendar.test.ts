@@ -375,21 +375,14 @@ describe("operations calendar", () => {
     );
   });
   it("ships week/month UI, independent layers, accessible status, and API seam", async () => {
-    const src = path.resolve(__dirname, "../src"),
-      html = await fs.readFile(path.join(src, "pages/index.html"), "utf8"),
-      app = await fs.readFile(path.join(src, "public/app.js"), "utf8"),
-      client = await fs.readFile(path.join(src, "public/api.js"), "utf8");
-    assert.match(html, /#\/calendar/);
+    const frontend = path.resolve(__dirname, "../../frontend"),
+      html = await fs.readFile(path.join(frontend, "index.html"), "utf8"),
+      app = await fs.readFile(path.join(frontend, "src/app.js"), "utf8");
+    assert.match(html, /data-workspace-view="calendar"/);
     assert.match(app, /Europe\/Berlin · Monday–Sunday · ISO weeks/);
-    for (const id of [
-      "calendar-view",
-      "calendar-activities",
-      "calendar-public",
-      "calendar-school",
-      "calendar-alerts",
-    ])
+    for (const id of ["data-view", "data-type", "data-layer", "data-alerts", "data-calendar"])
       assert.ok(app.includes(id));
-    assert.match(client, /calendar:\{list:function/);
+    assert.match(app, /\/api\/calendar-items/);
   });
   it("imports only the two allowlisted sheets, dry-run first, then through API", async () => {
     const file = path.join(process.cwd(), ".tmp", "calendar-synthetic.xlsx");

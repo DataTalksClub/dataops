@@ -336,7 +336,7 @@ describe('POST /api/webhook/email', () => {
 
     const indexRes = await handler({ httpMethod: 'GET', path: '/' }, {});
     assert.strictEqual(indexRes.statusCode, 200);
-    assert.strictEqual(indexRes.headers!['Content-Type'], 'text/html');
+    assert.match(indexRes.headers!['Content-Type'], /^text\/html/);
 
     const taskRes = await handler({
       httpMethod: 'POST',

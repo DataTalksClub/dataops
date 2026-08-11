@@ -605,73 +605,19 @@ test.describe('Tasks filtered by bundleId', () => {
 // Frontend navigation
 // ──────────────────────────────────────────────────────────────────
 
-test.describe('Frontend bundles page', () => {
-  test('navigating to #/bundles shows Bundles heading and New Bundle form', async ({ page }) => {
+test.describe('Canonical workflow page', () => {
+  test('navigating to #/bundles opens the Workflows section in the canonical Tasks surface', async ({ page }) => {
     await page.goto('/#/bundles');
-    await page.waitForSelector('h2');
-
-    const heading = await page.textContent('h2');
-    expect(heading).toBe('Bundles');
-
-    const formHeading = await page.textContent('.form-section h3');
-    expect(formHeading).toBe('New Bundle');
-
-    // Verify the form fields are present
-    await expect(page.locator('#bundle-title')).toBeVisible();
-    await expect(page.locator('#bundle-anchor')).toBeVisible();
-    await expect(page.locator('#bundle-create-btn')).toBeVisible();
+    await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
+    await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('[data-workspace-view="tasks"]')).toHaveAttribute('aria-current', 'page');
   });
 
-  test('nav bar shows Bundles link (not Projects)', async ({ page }) => {
+  test('primary navigation exposes one Tasks entry instead of a second Bundles shell', async ({ page }) => {
     await page.goto('/');
-    // Wait for page to load
-    await page.waitForSelector('nav');
-
-    const navText = await page.textContent('nav');
-    expect(navText).toContain('Bundles');
-    expect(navText).not.toContain('Projects');
-
-    // Verify the link href
-    const bundleLink = page.locator('nav a[href="#/bundles"]');
-    await expect(bundleLink).toBeVisible();
-  });
-
-  test('empty state explains how to create the first bundle', async ({ page }) => {
-    await page.route('**/api/bundles', async (route) => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ bundles: [] }),
-        });
-        return;
-      }
-      await route.continue();
-    });
-
-    await page.goto('/#/bundles');
-    await page.waitForSelector('.empty-state');
-
-    await expect(page.locator('.empty-state-title')).toHaveText('No bundles yet');
-    await expect(page.locator('.empty-state-body')).toContainText('Use the form above to create a bundle');
-  });
-
-  test('creating a bundle from the frontend form works', async ({ page }) => {
-    const title = `Frontend Bundle ${Date.now()}`;
-
-    await page.goto('/#/bundles');
-    await page.waitForSelector('#bundle-title');
-
-    await page.fill('#bundle-title', title);
-    await page.fill('#bundle-anchor', '2026-07-01');
-    await page.click('#bundle-create-btn');
-
-    const card = page.locator('.bundle-card').filter({
-      has: page.locator('.bundle-card-title', { hasText: title }),
-    });
-    await expect(card).toBeVisible();
-    await expect(card.locator('.card-action-link')).toHaveText('Open bundle');
-    await expect(card.locator('.card-action-link')).toHaveAttribute('href', /^#\/bundles\?bundleId=.+$/);
+    await expect(page.locator('[data-workspace-view="tasks"]')).toBeVisible();
+    await expect(page.locator('nav a[href="#/bundles"]')).toHaveCount(0);
+    await expect(page.locator('nav a[href="#/projects"]')).toHaveCount(0);
   });
 });
 

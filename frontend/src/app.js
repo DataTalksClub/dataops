@@ -217,6 +217,11 @@ let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
 let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
 let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
 let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
+let intakeState = { filter: "actionable", selectedId: null, items: [], bundles: [], loaded: false, error: "" };
+let assistantQueueState = { filter: "podcast", selectedJobId: null };
+let runtimeTemplateState = { loaded: false, templates: [], selectedId: null, search: "", error: "" };
+let pendingLegacyRoute = null;
+let applyingLocationRoute = false;
 // Dedicated Users surface snapshot (#95). Kept separate from the home work
 // snapshot so create/edit/disable mutations can refresh just this surface
 // without forcing the whole operations snapshot to reload.
@@ -511,6 +516,11 @@ async function loadDocuments() {
 }
 
 async function openInitialRoute() {
+  const workspaceRoute = parseWorkspaceHash();
+  if (workspaceRoute) {
+    await applyWorkspaceRoute(workspaceRoute, { replace: true });
+    return;
+  }
   const docPath = docPathFromLocation();
   if (docPath) {
     const exists = allDocuments.some((doc) => doc.path === docPath);
@@ -522,10 +532,17 @@ async function openInitialRoute() {
     selectedFolder = folderPath;
     showLibrary({ updateUrl: false });
     refreshDocuments();
+    return;
   }
+  await showOperationsHome({ replace: true });
 }
 
 window.addEventListener("popstate", () => {
+  const workspaceRoute = parseWorkspaceHash();
+  if (workspaceRoute) {
+    applyWorkspaceRoute(workspaceRoute, { replace: true });
+    return;
+  }
   const docPath = docPathFromLocation();
   if (docPath) {
     openDocument(docPath, { updateUrl: false });
@@ -534,6 +551,11 @@ window.addEventListener("popstate", () => {
   selectedFolder = folderPathFromLocation();
   showLibrary({ updateUrl: false });
   refreshDocuments();
+});
+
+window.addEventListener("hashchange", () => {
+  const workspaceRoute = parseWorkspaceHash();
+  if (workspaceRoute) applyWorkspaceRoute(workspaceRoute, { replace: true });
 });
 
 const PIN_KEY = "dtc-pinned";
@@ -771,6 +793,10 @@ function renderOperationsWorkspace(documents) {
     renderTasksSurface(documents, activeTasksSection);
     return;
   }
+  if (activeWorkspaceView === "inbox") {
+    renderInboxSurface();
+    return;
+  }
   if (activeWorkspaceView === "docs") {
     renderDocsSurface(documents);
     return;
@@ -800,6 +826,7 @@ function renderOperationsWorkspace(documents) {
 // Title/path helpers for the new Home / Tasks / Docs IA.
 function operationsViewTitle(view, tasksSection) {
   if (view === "home") return "Home";
+  if (view === "inbox") return "Inbox";
   if (view === "tasks") return tasksSectionTitle(tasksSection);
   if (view === "docs") return "Docs";
   if (view === "users") return "Users";
@@ -813,6 +840,7 @@ function operationsViewTitle(view, tasksSection) {
 
 function operationsViewPath(view) {
   if (view === "home") return "Home";
+  if (view === "inbox") return "Inbox";
   if (view === "tasks") return "Tasks";
   if (view === "docs") return "Docs";
   if (view === "users") return "Users";
@@ -1001,6 +1029,7 @@ function renderTasksSubNav(activeSection) {
     }
     tab.addEventListener("click", () => {
       activeTasksSection = id;
+      setWorkspaceUrl("tasks", id);
       renderTasksSurface(allDocuments, id);
       syncLibraryPageTitle();
     });
@@ -2627,6 +2656,7 @@ function renderWorkflowSurfaceCard(item) {
 function renderTemplatesRecurringSurface(model) {
   const section = document.createElement("section");
   section.className = "ops-split-surface";
+  section.append(renderRuntimeTemplateAdmin());
   const templates = document.createElement("div");
   templates.className = "ops-section";
   const templateHeader = document.createElement("div");
@@ -2646,35 +2676,612 @@ function renderTemplatesRecurringSurface(model) {
   return section;
 }
 
+const RUNTIME_TEMPLATE_FIELDS = [
+  "name", "type", "emoji", "tags", "defaultAssigneeId", "phases", "sourceDocIds",
+  "references", "bundleLinkDefinitions", "triggerType", "triggerSchedule", "triggerLeadDays",
+  "triggerEnabled", "taskDefinitions",
+];
+
+async function refreshRuntimeTemplates(options = {}) {
+  try {
+    const payload = await request(workApiUrl("/api/templates"));
+    runtimeTemplateState = {
+      ...runtimeTemplateState,
+      loaded: true,
+      templates: Array.isArray(payload) ? payload : payload.templates || [],
+      error: "",
+    };
+  } catch (error) {
+    runtimeTemplateState = { ...runtimeTemplateState, loaded: false, error: error.message || "Runtime templates could not be loaded" };
+  }
+  if (options.rerender && activeWorkspaceView === "tasks" && activeTasksSection === "templates" && isOperationsHomeVisible()) {
+    renderTasksSurface(allDocuments, "templates");
+  }
+}
+
+function editableRuntimeTemplate(template) {
+  const editable = {};
+  for (const field of RUNTIME_TEMPLATE_FIELDS) {
+    if (template?.[field] !== undefined) editable[field] = template[field];
+  }
+  return editable;
+}
+
+function renderRuntimeTemplateAdmin() {
+  const section = document.createElement("section");
+  section.className = "ops-section runtime-template-admin";
+  const header = document.createElement("div");
+  header.className = "ops-section-header";
+  header.innerHTML = `<div><h3>Runtime template administration</h3><span>Templates stored in the application database and used to instantiate workflows.</span></div>`;
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "primary-button";
+  add.textContent = "New runtime template";
+  add.addEventListener("click", () => {
+    runtimeTemplateState.selectedId = "__new__";
+    renderTasksSurface(allDocuments, "templates");
+  });
+  header.append(add);
+  section.append(header);
+
+  if (runtimeTemplateState.error) {
+    section.append(renderHonestState("Runtime templates unavailable", runtimeTemplateState.error));
+    return section;
+  }
+  if (!runtimeTemplateState.loaded) {
+    section.append(renderHonestState("Loading runtime templates", "Fetching the current database-backed template definitions."));
+    return section;
+  }
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "runtime-template-search";
+  search.placeholder = "Search runtime templates";
+  search.value = runtimeTemplateState.search;
+  search.addEventListener("input", debounce(() => {
+    runtimeTemplateState.search = search.value.trim().toLowerCase();
+    renderTasksSurface(allDocuments, "templates");
+  }, 150));
+  section.append(search);
+
+  const layout = document.createElement("div");
+  layout.className = "runtime-template-layout";
+  const list = document.createElement("div");
+  list.className = "runtime-template-list";
+  const templates = runtimeTemplateState.templates.filter((template) => {
+    const haystack = [template.name, template.type, template.triggerType, ...(template.tags || [])].filter(Boolean).join(" ").toLowerCase();
+    return !runtimeTemplateState.search || haystack.includes(runtimeTemplateState.search);
+  });
+  if (!templates.length) list.append(renderHonestState("No runtime templates match", "Create a template or broaden the search."));
+  for (const template of templates) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `runtime-template-row ${template.id === runtimeTemplateState.selectedId ? "is-selected" : ""}`;
+    button.innerHTML = `<strong>${escapeHtml(template.emoji ? `${template.emoji} ${template.name}` : template.name || "Unnamed template")}</strong><span>${escapeHtml(template.type || "untyped")} · ${(template.taskDefinitions || []).length} tasks · ${escapeHtml(template.triggerType || "manual")}</span>`;
+    button.addEventListener("click", () => {
+      runtimeTemplateState.selectedId = template.id;
+      renderTasksSurface(allDocuments, "templates");
+    });
+    list.append(button);
+  }
+  layout.append(list, renderRuntimeTemplateEditor());
+  section.append(layout);
+  return section;
+}
+
+function renderRuntimeTemplateEditor() {
+  const editor = document.createElement("div");
+  editor.className = "runtime-template-editor";
+  const creating = runtimeTemplateState.selectedId === "__new__";
+  const selected = runtimeTemplateState.templates.find((template) => template.id === runtimeTemplateState.selectedId);
+  if (!creating && !selected) {
+    editor.append(renderHonestState("Template editor", "Select a runtime template to edit its complete validated definition."));
+    return editor;
+  }
+  const value = creating
+    ? { name: "New workflow", type: "workflow", triggerType: "manual", taskDefinitions: [{ refId: "first-task", description: "First task", offsetDays: 0 }] }
+    : editableRuntimeTemplate(selected);
+  const heading = document.createElement("h4");
+  heading.textContent = creating ? "New runtime template" : `Edit ${selected.name || selected.id}`;
+  const guidance = document.createElement("p");
+  guidance.textContent = "Edit the validated template JSON. This preserves advanced fields—phases, document context, proof rules, milestones, references, and automatic triggers—without maintaining a second bespoke form schema.";
+  const textarea = document.createElement("textarea");
+  textarea.className = "runtime-template-json";
+  textarea.spellcheck = false;
+  textarea.value = JSON.stringify(value, null, 2);
+  const feedback = document.createElement("p");
+  feedback.className = "runtime-template-feedback";
+  const actions = document.createElement("div");
+  actions.className = "runtime-template-actions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary-button";
+  save.textContent = creating ? "Create template" : "Save template";
+  save.addEventListener("click", async () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(textarea.value);
+    } catch (error) {
+      feedback.textContent = `Invalid JSON: ${error.message}`;
+      feedback.classList.add("is-error");
+      return;
+    }
+    const payload = editableRuntimeTemplate(parsed);
+    try {
+      const response = await request(workApiUrl(creating ? "/api/templates" : `/api/templates/${encodeURIComponent(selected.id)}`), {
+        method: creating ? "POST" : "PUT",
+        body: JSON.stringify(payload),
+      });
+      runtimeTemplateState.selectedId = (response.template || response).id || selected?.id || null;
+      setStatus(creating ? "Runtime template created." : "Runtime template saved.");
+      await refreshRuntimeTemplates({ rerender: true });
+    } catch (error) {
+      feedback.textContent = error.message || "Template save failed";
+      feedback.classList.add("is-error");
+    }
+  });
+  actions.append(save);
+  if (!creating) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger-button";
+    remove.textContent = "Delete template";
+    remove.addEventListener("click", async () => {
+      if (!(await confirmDialog(`Delete runtime template “${selected.name || selected.id}”?`, { okText: "Delete", danger: true }))) return;
+      try {
+        await request(workApiUrl(`/api/templates/${encodeURIComponent(selected.id)}`), { method: "DELETE" });
+        runtimeTemplateState.selectedId = null;
+        setStatus("Runtime template deleted.");
+        await refreshRuntimeTemplates({ rerender: true });
+      } catch (error) {
+        feedback.textContent = error.message || "Template deletion failed";
+        feedback.classList.add("is-error");
+      }
+    });
+    actions.append(remove);
+  }
+  editor.append(heading, guidance, textarea, feedback, actions);
+  return editor;
+}
+
 function renderAssistantsSurface() {
   const section = document.createElement("section");
-  section.className = "ops-state-list";
+  section.className = "assistant-workspace";
   section.setAttribute("aria-label", "Assistant jobs");
   if (!operationsAssistantSnapshot.loaded) {
-    section.append(renderHonestState("Assistant jobs not connected", "No fake queue is shown. Assistant run status, approvals, retries, logs, and workflow-linked outputs belong to #30 and #44."));
+    section.append(renderHonestState("Assistant jobs unavailable", operationsAssistantSnapshot.errors[0] || "The assistant job API is not connected in this environment."));
     return section;
   }
-  if (operationsAssistantSnapshot.jobs.length === 0) {
-    section.append(renderHonestState("No assistant jobs", "Connected assistant job API returned no queued, running, failed, review-needed, or completed jobs."));
-    return section;
+
+  section.append(renderAssistantCreatePanel());
+  const filters = document.createElement("nav");
+  filters.className = "ops-subnav assistant-filter-bar";
+  filters.setAttribute("aria-label", "Assistant job filters");
+  for (const [id, label] of [["podcast", "Podcast jobs"], ["needs-approval", "Needs approval"], ["failed", "Failed"], ["running", "Running/queued"], ["completed", "Completed"], ["all", "All"]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `ops-subnav-tab ${assistantQueueState.filter === id ? "is-active" : ""}`;
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      assistantQueueState.filter = id;
+      assistantQueueState.selectedJobId = null;
+      renderTasksSurface(allDocuments, "assistants");
+    });
+    filters.append(button);
   }
-  for (const job of operationsAssistantSnapshot.jobs) section.append(renderAssistantJobRow(job));
+  section.append(filters);
+
+  const filtered = operationsAssistantSnapshot.jobs
+    .filter((job) => assistantMatchesFilter(job, assistantQueueState.filter))
+    .sort((a, b) => assistantJobGroupOrder(a) - assistantJobGroupOrder(b) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, 60);
+  const layout = document.createElement("div");
+  layout.className = "assistant-layout";
+  const queue = document.createElement("section");
+  queue.className = "assistant-panel assistant-queue";
+  const heading = document.createElement("h3");
+  heading.textContent = "Operational assistant queue";
+  queue.append(heading);
+  if (!filtered.length) queue.append(renderHonestState("No matching assistant jobs", "Choose another filter or request assistant help for a workflow."));
+  for (const job of filtered) queue.append(renderAssistantJobRow(job));
+  const detail = document.createElement("section");
+  detail.className = "assistant-panel assistant-detail";
+  detail.dataset.assistantDetail = "";
+  layout.append(queue, detail);
+  section.append(layout);
+  const selectedId = assistantQueueState.selectedJobId || filtered[0]?.id;
+  assistantQueueState.selectedJobId = selectedId || null;
+  if (selectedId) renderAssistantJobDetail(detail, selectedId);
+  else detail.append(renderHonestState("Assistant job detail", "Select a job to inspect inputs, events, output artifacts, and approval history."));
   return section;
 }
 
 function renderAssistantJobRow(job) {
   const row = document.createElement("article");
-  row.className = "ops-data-row";
-  const title = document.createElement("strong");
-  title.textContent = job.title || job.name || job.id || "Assistant job";
-  const meta = document.createElement("span");
-  meta.textContent = [
-    job.status || "unknown",
-    job.bundleId ? `workflow ${job.bundleId}` : "",
-    job.taskId ? `task ${job.taskId}` : "",
-  ].filter(Boolean).join(" · ");
-  row.append(title, meta);
+  row.className = `assistant-job-row ${job.id === assistantQueueState.selectedJobId ? "is-selected" : ""}`;
+  const context = assistantContextLabel(job);
+  row.innerHTML = `<div><strong>${escapeHtml(job.title || job.assistantType || job.id || "Assistant job")}</strong><span>${escapeHtml(job.assistantType || "assistant")} · attempt ${Number(job.attemptCount || 0)}/${Number(job.maxAttempts || 1)}${context ? ` · ${escapeHtml(context)}` : ""}</span><small>${escapeHtml(assistantNextAction(job))}${job.lastError ? ` · Error: ${escapeHtml(job.lastError.summary || job.lastError.code || "failed")}` : ""}</small></div><em>${escapeHtml(String(job.status || "draft").replace(/_/g, " "))}</em>`;
+  row.addEventListener("click", () => {
+    assistantQueueState.selectedJobId = job.id;
+    setWorkspaceEntityParam("assistantJobId", job.id);
+    renderTasksSurface(allDocuments, "assistants");
+  });
   return row;
+}
+
+function assistantMatchesFilter(job, filter) {
+  if (filter === "needs-approval") return job.status === "waiting_approval";
+  if (filter === "failed") return job.status === "failed";
+  if (filter === "running") return ["running", "queued", "retrying"].includes(job.status);
+  if (filter === "completed") return ["approved", "succeeded", "rejected", "canceled"].includes(job.status);
+  if (filter === "podcast") return job.assistantType === "podcast";
+  return true;
+}
+
+function assistantJobGroupOrder(job) {
+  if (job.status === "waiting_approval") return 0;
+  if (job.status === "failed") return 1;
+  if (["running", "retrying"].includes(job.status)) return 2;
+  if (["queued", "draft"].includes(job.status)) return 3;
+  return 4;
+}
+
+function assistantNextAction(job) {
+  if (job.status === "waiting_approval") return "Review output";
+  if (["failed", "rejected"].includes(job.status)) return assistantCanRetry(job) ? "Retry with failure context" : "Retry limit reached";
+  if (job.status === "queued") return "Run dry or wait for runner";
+  if (job.status === "running") return "Watch timeline";
+  if (job.status === "draft") return "Submit or run dry";
+  if (job.status === "retrying") return "Submit retry";
+  if (job.status === "approved") return "Output approved";
+  if (job.status === "succeeded") return "Output attached";
+  if (job.status === "canceled") return "Canceled";
+  return "Check status";
+}
+
+function assistantCanRetry(job) {
+  return ["failed", "rejected"].includes(job?.status) && Number(job.attemptCount || 0) < Number(job.maxAttempts || 1);
+}
+
+function assistantCanCancel(job) {
+  return ["draft", "queued", "running", "retrying", "waiting_approval"].includes(job?.status);
+}
+
+function assistantContextLabel(job) {
+  const bundle = (operationsWorkSnapshot.bundles || []).find((candidate) => candidate.id === job.bundleId);
+  if (bundle) return `workflow ${bundle.title || bundle.id}`;
+  if (job.bundleId) return `workflow ${job.bundleId}`;
+  if (job.taskId) return `task ${job.taskId}`;
+  return "";
+}
+
+function renderAssistantCreatePanel() {
+  const panel = document.createElement("section");
+  panel.className = "assistant-panel";
+  const bundles = operationsWorkSnapshot.bundles || [];
+  panel.innerHTML = `<h3>Request DataOps Assistant help</h3><div class="assistant-create-grid"><label>Workflow<select data-assistant-bundle><option value="">Select workflow</option>${bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`).join("")}</select></label><label>Task<select data-assistant-task><option value="">Workflow-level job</option></select></label><label>Assistant type<input data-assistant-type value="podcast"></label><label>Title<input data-assistant-title placeholder="DataOps Assistant podcast prep"></label><button class="primary-button" data-assistant-create>Ask DataOps Assistant</button></div>`;
+  const bundleSelect = panel.querySelector("[data-assistant-bundle]");
+  const taskSelect = panel.querySelector("[data-assistant-task]");
+  bundleSelect.addEventListener("change", async () => {
+    taskSelect.innerHTML = `<option value="">Workflow-level job</option>`;
+    if (!bundleSelect.value) return;
+    try {
+      const payload = await request(workApiUrl("/api/tasks", { bundleId: bundleSelect.value }));
+      for (const task of tasksFromWorkPayload(payload)) {
+        const option = document.createElement("option");
+        option.value = task.id;
+        option.textContent = workTaskTitle(task);
+        taskSelect.append(option);
+      }
+    } catch (error) {
+      reportError(error.message || "Could not load workflow tasks");
+    }
+  });
+  panel.querySelector("[data-assistant-create]").addEventListener("click", async () => {
+    const bundleId = bundleSelect.value;
+    const taskId = taskSelect.value;
+    if (!bundleId && !taskId) return reportError("Select a workflow or task before requesting assistant help.");
+    const assistantType = panel.querySelector("[data-assistant-type]").value.trim() || "podcast";
+    const title = panel.querySelector("[data-assistant-title]").value.trim() || `DataOps Assistant: ${assistantType}`;
+    const inputRefs = [];
+    if (bundleId) inputRefs.push({ type: "bundle", id: bundleId });
+    if (taskId) inputRefs.push({ type: "task", id: taskId });
+    try {
+      const created = await request(workApiUrl("/api/assistant-jobs"), {
+        method: "POST",
+        body: JSON.stringify({ assistantType, title, bundleId: bundleId || undefined, taskId: taskId || undefined, inputRefs, approvalRequired: true, maxAttempts: 2 }),
+      });
+      const job = created.job || created;
+      await request(workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}/submit`), { method: "POST" });
+      assistantQueueState.selectedJobId = job.id;
+      setStatus("Assistant job queued.");
+      await refreshOperationsAssistantSnapshot({ rerender: true });
+    } catch (error) {
+      reportError(error.message || "Could not create assistant job");
+    }
+  });
+  return panel;
+}
+
+function assistantActionButtons(job) {
+  const actions = [];
+  if (["draft", "retrying"].includes(job.status)) actions.push(["submit", "Submit"]);
+  if (["draft", "queued", "retrying", "running"].includes(job.status)) actions.push(["run-dry", "Run dry"]);
+  if (job.status === "waiting_approval") actions.push(["approve", "Approve"], ["reject", "Reject"]);
+  if (assistantCanRetry(job)) actions.push(["retry", "Retry"]);
+  if (assistantCanCancel(job)) actions.push(["cancel", "Cancel"]);
+  return actions;
+}
+
+async function runAssistantAction(job, action) {
+  let body;
+  if (action === "reject") {
+    const reason = window.prompt("Rejection reason");
+    if (!reason?.trim()) return;
+    body = JSON.stringify({ reason: reason.trim() });
+  }
+  try {
+    const result = await request(workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}/${action}`), { method: "POST", ...(body ? { body } : {}) });
+    if (action === "retry" && result?.job?.status === "retrying") {
+      await request(workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}/submit`), { method: "POST" });
+    }
+    setStatus(`Assistant job ${action.replace(/-/g, " ")} complete.`);
+    await refreshOperationsAssistantSnapshot({ rerender: true });
+  } catch (error) {
+    reportError(error.message || "Assistant action failed");
+  }
+}
+
+async function renderAssistantJobDetail(container, jobId) {
+  container.replaceChildren(renderHonestState("Assistant job detail", "Loading job events and artifacts…"));
+  try {
+    const payload = await request(workApiUrl(`/api/assistant-jobs/${encodeURIComponent(jobId)}`));
+    if (assistantQueueState.selectedJobId !== jobId || !container.isConnected) return;
+    const job = payload.job || payload;
+    const artifacts = payload.artifacts || [];
+    const events = payload.events || [];
+    container.innerHTML = `<header><div><h3>${escapeHtml(job.title || job.assistantType || job.id)}</h3><small>${escapeHtml(assistantContextLabel(job))}</small></div><span class="assistant-status">${escapeHtml(String(job.status || "draft").replace(/_/g, " "))}</span></header><div class="assistant-editor"><label>Title<input data-assistant-edit-title value="${escapeHtml(job.title || "")}"></label><label>Assistant type<input data-assistant-edit-type value="${escapeHtml(job.assistantType || "")}"></label><label>Approval required<select data-assistant-edit-approval><option value="true" ${job.approvalRequired !== false ? "selected" : ""}>Yes</option><option value="false" ${job.approvalRequired === false ? "selected" : ""}>No</option></select></label><button data-assistant-save>Save draft fields</button></div><div class="assistant-actions">${assistantActionButtons(job).map(([action, label]) => `<button data-assistant-lifecycle="${action}" class="${action === "approve" ? "primary-button" : ""}">${label}</button>`).join("")}${["failed", "rejected"].includes(job.status) && !assistantCanRetry(job) ? "<span>Retry limit reached</span>" : ""}</div><section><h4>Input references</h4><div class="assistant-ref-list">${(job.inputRefs || []).length ? job.inputRefs.map((ref) => `<code>${escapeHtml(ref.title || ref.uri || ref.id || ref.type || "input")}</code>`).join(" ") : "No input references recorded."}</div></section><section><h4>Output artifacts and proof</h4><div class="assistant-artifacts">${artifacts.length ? artifacts.map((artifact) => `<a href="${escapeHtml(artifact.storageUri || "#")}" target="_blank" rel="noopener"><strong>${escapeHtml(artifact.title || artifact.type || "Artifact")}</strong><span>${escapeHtml(artifact.status || "draft")} · ${escapeHtml(artifact.storageProvider || "unknown")}</span></a>`).join("") : "No output artifacts attached."}</div></section><section><h4>Run log and status history</h4><ul class="assistant-timeline">${events.length ? events.slice(-12).reverse().map((event) => `<li><strong>${escapeHtml(String(event.action || "event").replace(/_/g, " "))}</strong><span>${escapeHtml(event.createdAt || "")}${event.summary ? ` · ${escapeHtml(event.summary)}` : ""}</span></li>`).join("") : "<li>No run events recorded.</li>"}</ul></section>`;
+    container.querySelector("[data-assistant-save]").addEventListener("click", async () => {
+      try {
+        await request(workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}`), {
+          method: "PUT",
+          body: JSON.stringify({ title: container.querySelector("[data-assistant-edit-title]").value.trim(), assistantType: container.querySelector("[data-assistant-edit-type]").value.trim(), approvalRequired: container.querySelector("[data-assistant-edit-approval]").value === "true" }),
+        });
+        setStatus("Assistant draft fields saved.");
+        await refreshOperationsAssistantSnapshot({ rerender: true });
+      } catch (error) {
+        reportError(error.message || "Could not update assistant job");
+      }
+    });
+    container.querySelectorAll("[data-assistant-lifecycle]").forEach((button) => button.addEventListener("click", () => runAssistantAction(job, button.dataset.assistantLifecycle)));
+  } catch (error) {
+    container.replaceChildren(renderHonestState("Assistant job unavailable", error.message || "The detail API request failed."));
+  }
+}
+
+function intakeMatchesFilter(item, filter) {
+  const status = String(item?.status || "new");
+  const followUp = String(item?.followUpAt || "").slice(0, 10);
+  const assistantReady = item?.assistantReadiness?.status === "ready";
+  if (filter === "new") return status === "new";
+  if (filter === "blocked") return status === "blocked";
+  if (filter === "due") return status === "blocked" && !(item.taskIds || []).length && followUp && followUp <= todayIsoDate();
+  if (filter === "future") return status === "blocked" && followUp > todayIsoDate();
+  if (filter === "assistant-ready") return assistantReady;
+  if (filter === "resolved") return ["attached", "converted", "ignored", "duplicate", "archived"].includes(status);
+  if (filter === "all") return true;
+  return status === "new" || status === "blocked" || assistantReady;
+}
+
+function intakeMeta(item) {
+  return [
+    item.source,
+    item.priority,
+    item.dataClass,
+    item.status === "blocked" && item.waitingFor ? `waiting for ${item.waitingFor}` : "",
+    item.status === "blocked" && item.followUpAt ? `follow up ${String(item.followUpAt).slice(0, 10)}` : "",
+    item.sourceReceivedAt ? String(item.sourceReceivedAt).slice(0, 10) : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function intakeStatusLabel(item) {
+  return item?.assistantReadiness?.status === "ready" ? "assistant ready" : String(item?.status || "new").replace(/-/g, " ");
+}
+
+async function refreshIntakeSnapshot(options = {}) {
+  try {
+    const [intakePayload, bundlePayload] = await Promise.all([
+      request(workApiUrl("/api/intake")),
+      request(workApiUrl("/api/bundles")),
+    ]);
+    intakeState = {
+      ...intakeState,
+      items: Array.isArray(intakePayload) ? intakePayload : intakePayload.items || [],
+      bundles: Array.isArray(bundlePayload) ? bundlePayload : bundlePayload.bundles || [],
+      loaded: true,
+      error: "",
+    };
+  } catch (error) {
+    intakeState = { ...intakeState, loaded: false, error: error.message || "Inbox could not be loaded" };
+  }
+  if (options.rerender && activeWorkspaceView === "inbox" && isOperationsHomeVisible()) renderInboxSurface();
+}
+
+async function mutateIntake(itemId, action, data, successMessage) {
+  try {
+    const payload = await request(workApiUrl(`/api/intake/${encodeURIComponent(itemId)}/${action}`), {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    });
+    setStatus(successMessage);
+    await refreshIntakeSnapshot({ rerender: true });
+    return payload;
+  } catch (error) {
+    reportError(error.message || "Intake action failed");
+    return null;
+  }
+}
+
+function renderInboxSurface() {
+  documentList.classList.add("is-operations-home");
+  documentList.classList.remove("is-unified-search");
+  libraryTitle.textContent = "Inbox";
+  setPageTitle("Inbox", "Inbox");
+  clearSelectionButton.hidden = true;
+
+  const wrap = document.createElement("div");
+  wrap.className = "operations-home ops-surface ops-inbox";
+  wrap.append(renderSurfaceHeader("Inbox", "Capture raw operational inputs, then attach, convert, defer, resolve, or prepare them for an assistant."));
+  wrap.append(renderManualIntakeForm());
+
+  const filters = document.createElement("nav");
+  filters.className = "ops-subnav intake-filter-bar";
+  filters.setAttribute("aria-label", "Inbox filters");
+  for (const [id, label] of [["actionable", "Actionable"], ["new", "New"], ["blocked", "Blocked"], ["due", "Due"], ["future", "Future"], ["assistant-ready", "Assistant-ready"], ["resolved", "Resolved"], ["all", "All"]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `ops-subnav-tab ${intakeState.filter === id ? "is-active" : ""}`;
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      intakeState.filter = id;
+      intakeState.selectedId = null;
+      renderInboxSurface();
+    });
+    filters.append(button);
+  }
+  wrap.append(filters);
+
+  if (intakeState.error) {
+    wrap.append(renderHonestState("Inbox unavailable", intakeState.error));
+    documentList.replaceChildren(wrap);
+    setStatus(`Inbox unavailable: ${intakeState.error}`);
+    return;
+  }
+  if (!intakeState.loaded) {
+    wrap.append(renderHonestState("Loading inbox", "Fetching intake items and workflow relationships."));
+    documentList.replaceChildren(wrap);
+    setStatus("Loading inbox…");
+    return;
+  }
+
+  const filtered = intakeState.items.filter((item) => intakeMatchesFilter(item, intakeState.filter));
+  const selected = intakeState.items.find((item) => item.id === intakeState.selectedId) || filtered[0] || null;
+  intakeState.selectedId = selected?.id || null;
+  const layout = document.createElement("div");
+  layout.className = "intake-layout";
+  layout.append(renderIntakeQueue(filtered), renderIntakeDetail(selected));
+  wrap.append(layout);
+  documentList.replaceChildren(wrap);
+  setStatus(`${filtered.length} inbox item${filtered.length === 1 ? "" : "s"} in ${intakeState.filter}.`);
+}
+
+function renderManualIntakeForm() {
+  const panel = document.createElement("section");
+  panel.className = "intake-panel";
+  panel.innerHTML = `<h3>Manual intake</h3><div class="intake-create-grid"><label class="wide">Note<textarea data-intake-create-note placeholder="Paste the request, context, and safe links"></textarea></label><label>Title<input data-intake-create-title placeholder="Short subject"></label><label>Data class<select data-intake-create-class><option>internal</option><option>public</option><option>private</option><option>sensitive</option></select></label><label>Tags<input data-intake-create-tags placeholder="comma,separated"></label><button class="primary-button" data-intake-create>Capture intake</button></div>`;
+  panel.querySelector("[data-intake-create]").addEventListener("click", async () => {
+    const note = panel.querySelector("[data-intake-create-note]").value.trim();
+    const title = panel.querySelector("[data-intake-create-title]").value.trim();
+    if (!note && !title) return reportError("Add a note or title before capturing intake.");
+    try {
+      await request(workApiUrl("/api/intake"), {
+        method: "POST",
+        body: JSON.stringify({
+          source: "manual",
+          title: title || note.split(/\r?\n/)[0],
+          note: note || title,
+          dataClass: panel.querySelector("[data-intake-create-class]").value,
+          tags: panel.querySelector("[data-intake-create-tags]").value.split(",").map((tag) => tag.trim()).filter(Boolean),
+        }),
+      });
+      intakeState.filter = "actionable";
+      setStatus("Manual intake captured.");
+      await refreshIntakeSnapshot({ rerender: true });
+    } catch (error) {
+      reportError(error.message || "Could not capture intake");
+    }
+  });
+  return panel;
+}
+
+function renderIntakeQueue(items) {
+  const panel = document.createElement("section");
+  panel.className = "intake-panel intake-queue";
+  const title = document.createElement("h3");
+  title.textContent = "Inbox queue";
+  panel.append(title);
+  if (!items.length) {
+    panel.append(renderHonestState("No matching intake", "Choose another filter or capture a new item."));
+    return panel;
+  }
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `intake-row ${item.id === intakeState.selectedId ? "is-selected" : ""}`;
+    button.innerHTML = `<span><strong>${escapeHtml(item.title || "Untitled intake")}</strong><small>${escapeHtml(intakeMeta(item))}</small><span>${escapeHtml(String(item.summary || "").slice(0, 180))}</span></span><em>${escapeHtml(intakeStatusLabel(item))}</em>`;
+    button.addEventListener("click", () => {
+      intakeState.selectedId = item.id;
+      setWorkspaceEntityParam("intakeId", item.id);
+      renderInboxSurface();
+    });
+    panel.append(button);
+  }
+  return panel;
+}
+
+function intakeRefList(label, values) {
+  const items = (values || []).filter(Boolean);
+  return `<div class="intake-reference-group"><strong>${escapeHtml(label)}</strong><span>${items.length ? items.map((value) => `<code>${escapeHtml(typeof value === "string" ? value : value.title || value.filename || value.url || value.normalizedUrl || value.artifactId || value.fileId || "reference")}</code>`).join(" ") : "None"}</span></div>`;
+}
+
+function renderIntakeDetail(item) {
+  const panel = document.createElement("section");
+  panel.className = "intake-panel intake-detail";
+  if (!item) {
+    panel.append(renderHonestState("Intake detail", "Select an intake item to triage it into normal workflow work."));
+    return panel;
+  }
+  const bundleOptions = [`<option value="">No workflow</option>`, ...intakeState.bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`)].join("");
+  const taskRelationships = (item.taskIds || []).map((id) => `<button type="button" data-open-intake-task="${escapeHtml(id)}">Task ${escapeHtml(id)}</button>`).join(" ") || "None";
+  const bundleRelationships = (item.bundleIds || []).map((id) => `<button type="button" data-open-intake-bundle="${escapeHtml(id)}">${escapeHtml(intakeState.bundles.find((bundle) => bundle.id === id)?.title || id)}</button>`).join(" ") || "None";
+  const history = (item.history || []).slice(-8).reverse().map((event) => `<li><strong>${escapeHtml(String(event.action || "event").replace(/-/g, " "))}</strong><span>${escapeHtml(event.createdAt || "")}${event.reason ? ` · ${escapeHtml(event.reason)}` : ""}</span></li>`).join("");
+  panel.innerHTML = `<header><div><h3>${escapeHtml(item.title || "Untitled intake")}</h3><small>${escapeHtml(intakeMeta(item))}</small></div><span class="intake-status">${escapeHtml(intakeStatusLabel(item))}</span></header><section><h4>Raw intake excerpt</h4><p>${escapeHtml(item.summary || "")}</p><small>Raw bodies and binaries remain behind storage references; this excerpt is not task proof.</small></section><section><h4>Relationships</h4><div><strong>Tasks:</strong> ${taskRelationships}</div><div><strong>Workflows:</strong> ${bundleRelationships}</div>${intakeRefList("Assistant jobs", item.assistantJobIds)}</section><section><h4>Links, files, and artifacts</h4>${intakeRefList("Links", item.linkRefs)}${intakeRefList("Files", item.fileRefs)}${intakeRefList("Artifacts", item.artifactRefs)}</section><section><h4>Triage actions</h4><div class="intake-action-grid"><label>Task ID<input data-intake-task placeholder="Existing task id"></label><label>Workflow<select data-intake-bundle>${bundleOptions}</select></label><button data-intake-action="attach">Attach</button><label>Task date<input type="date" data-intake-date value="${todayIsoDate()}"></label><label>Assignee<input data-intake-assignee value="${escapeHtml(item.assigneeId || "")}" placeholder="User id"></label><button class="primary-button" data-intake-action="convert-task">Convert to task</button><label>Duplicate of<input data-intake-duplicate placeholder="Intake item id"></label><label>Reason<input data-intake-reason placeholder="Required for resolved states"></label><button data-intake-action="mark-duplicate">Duplicate</button><label>Waiting for<input data-intake-waiting value="${escapeHtml(item.waitingFor || "")}" placeholder="Person or system"></label><label>Follow up<input type="date" data-intake-followup value="${escapeHtml(String(item.followUpAt || "").slice(0, 10))}"></label><button data-intake-action="block">Block</button><label>Next follow-up<input type="date" data-intake-next-followup value="${defaultNextFollowUpDate()}"></label><label class="wide">Operational note<input data-intake-note placeholder="Short operational note"></label><button data-intake-action="follow-up-sent">Follow-up sent</button><button data-intake-action="response-received">Response received</button><label>Assistant skill<input data-intake-assistant value="${escapeHtml(item.assistantReadiness?.assistantType || "podcast")}"></label><label>Create job<select data-intake-create-job><option value="false">Prepare refs</option><option value="true">Create draft job</option></select></label><button data-intake-action="prepare-assistant">Prepare assistant</button><button data-intake-action="ignore">Ignore</button><button data-intake-action="archive">Archive</button></div></section><section><h4>History</h4><ul class="intake-history">${history || "<li>No triage history recorded.</li>"}</ul></section>`;
+
+  panel.querySelectorAll("[data-open-intake-task]").forEach((button) => button.addEventListener("click", () => openTaskPanel(button.dataset.openIntakeTask)));
+  panel.querySelectorAll("[data-open-intake-bundle]").forEach((button) => button.addEventListener("click", () => openBundlePanel(button.dataset.openIntakeBundle)));
+  panel.querySelectorAll("[data-intake-action]").forEach((button) => button.addEventListener("click", async () => {
+    const value = (selector) => panel.querySelector(selector)?.value.trim() || "";
+    const action = button.dataset.intakeAction;
+    const taskId = value("[data-intake-task]");
+    const bundleId = value("[data-intake-bundle]");
+    const reason = value("[data-intake-reason]");
+    const payloadByAction = {
+      attach: { taskIds: taskId ? [taskId] : [], bundleIds: bundleId ? [bundleId] : [], note: value("[data-intake-note]") || undefined },
+      "convert-task": { date: value("[data-intake-date]"), assigneeId: value("[data-intake-assignee]") || undefined, bundleId: bundleId || undefined, waitingFor: value("[data-intake-waiting]") || undefined, followUpAt: value("[data-intake-followup]") || undefined, note: value("[data-intake-note]") || undefined },
+      "mark-duplicate": { duplicateOfIntakeItemId: value("[data-intake-duplicate]"), reason },
+      block: { reason, waitingFor: value("[data-intake-waiting]") || undefined, followUpAt: value("[data-intake-followup]") || undefined },
+      "follow-up-sent": { note: value("[data-intake-note]"), nextFollowUpAt: value("[data-intake-next-followup]"), channel: "intake" },
+      "response-received": { note: value("[data-intake-note]") },
+      "prepare-assistant": { assistantType: value("[data-intake-assistant]"), createJob: value("[data-intake-create-job]") === "true" },
+      ignore: { reason },
+      archive: { reason },
+    };
+    const result = await mutateIntake(item.id, action, payloadByAction[action], `Intake ${action.replace(/-/g, " ")} recorded.`);
+    if (result && action === "convert-task" && result.task?.id) openTaskPanel(result.task.id);
+    if (result && action === "attach" && taskId) openTaskPanel(taskId);
+    else if (result && action === "attach" && bundleId) openBundlePanel(bundleId);
+  }));
+  return panel;
+}
+
+function setWorkspaceEntityParam(name, value) {
+  const route = parseWorkspaceHash();
+  if (!route) return;
+  const params = new URLSearchParams(route.params);
+  if (value) params.set(name, value);
+  else params.delete(name);
+  const query = params.toString();
+  history.replaceState(history.state, "", `/#${route.path}${query ? `?${query}` : ""}`);
 }
 
 function renderArtifactsSurface() {
@@ -6670,15 +7277,100 @@ function folderExists(path) {
 
 function setDocumentUrl(path) {
   const visible = "/" + path.replace(/^content\//, "");
-  if (window.location.pathname !== visible) {
+  if (window.location.pathname !== visible || window.location.search || window.location.hash) {
     history.pushState({ path }, "", visible);
   }
 }
 
 function setFolderUrl(path) {
   const visible = path ? `/${path}` : "/";
-  if (window.location.pathname !== visible) {
+  if (window.location.pathname !== visible || window.location.search || window.location.hash) {
     history.pushState({ folder: path }, "", visible);
+  }
+}
+
+const WORKSPACE_HASH_BY_VIEW = {
+  home: "/",
+  inbox: "/inbox",
+  docs: "/processes",
+  admin: "/admin",
+  users: "/users",
+  bookkeeping: "/bookkeeping",
+  sponsors: "/sponsors",
+  newsletter: "/newsletter",
+  calendar: "/calendar",
+  "mailing-exports": "/mailing-exports",
+};
+
+function workspaceHashPath(view, tasksSection = "queue") {
+  if (view === "tasks") {
+    return {
+      queue: "/tasks",
+      workflows: "/bundles",
+      templates: "/templates",
+      assistants: "/assistants",
+      artifacts: "/artifacts",
+    }[tasksSection] || "/tasks";
+  }
+  return WORKSPACE_HASH_BY_VIEW[view] || "/";
+}
+
+function setWorkspaceUrl(view, tasksSection = "queue", options = {}) {
+  if (applyingLocationRoute) return;
+  const visible = `/#${workspaceHashPath(view, tasksSection)}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (current === visible) return;
+  const method = options.replace ? "replaceState" : "pushState";
+  history[method]({ workspace: view, tasksSection }, "", visible);
+}
+
+function parseWorkspaceHash() {
+  const raw = String(window.location.hash || "");
+  if (!raw.startsWith("#/")) return null;
+  const value = raw.slice(1);
+  const queryIndex = value.indexOf("?");
+  const path = (queryIndex >= 0 ? value.slice(0, queryIndex) : value).replace(/\/+$/, "") || "/";
+  const params = new URLSearchParams(queryIndex >= 0 ? value.slice(queryIndex + 1) : "");
+  const mapped = {
+    "/": ["home", "queue"],
+    "/inbox": ["inbox", "queue"],
+    "/tasks": ["tasks", "queue"],
+    "/bundles": ["tasks", "workflows"],
+    "/assistants": ["tasks", "assistants"],
+    "/templates": ["tasks", "templates"],
+    "/recurring": ["tasks", "templates"],
+    "/artifacts": ["tasks", "artifacts"],
+    "/notifications": ["home", "queue"],
+    "/bookkeeping": ["bookkeeping", "queue"],
+    "/sponsors": ["sponsors", "queue"],
+    "/newsletter": ["newsletter", "queue"],
+    "/calendar": ["calendar", "queue"],
+    "/mailing-exports": ["mailing-exports", "queue"],
+    "/processes": ["docs", "queue"],
+    "/admin": ["admin", "queue"],
+    "/users": ["users", "queue"],
+  }[path];
+  if (!mapped) return { view: "home", tasksSection: "queue", path, params };
+  return { view: mapped[0], tasksSection: mapped[1], path, params };
+}
+
+async function applyWorkspaceRoute(route, options = {}) {
+  if (!route || applyingLocationRoute) return;
+  applyingLocationRoute = true;
+  pendingLegacyRoute = route;
+  if (route.view === "tasks") activeTasksSection = route.tasksSection;
+  if (route.view === "inbox" && route.params.get("intakeId")) intakeState.selectedId = route.params.get("intakeId");
+  if (route.tasksSection === "assistants" && route.params.get("assistantJobId")) assistantQueueState.selectedJobId = route.params.get("assistantJobId");
+  try {
+    const requestedView = route.view === "tasks" && route.tasksSection !== "queue" ? route.tasksSection : route.view;
+    await showWorkspaceSurface(requestedView, { updateUrl: false, replace: options.replace });
+    const taskId = route.params.get("taskId");
+    const bundleId = route.params.get("bundleId");
+    if (taskId) openTaskPanel(taskId);
+    else if (bundleId) openBundlePanel(bundleId);
+    if (route.path === "/notifications") openWorkBellPanel();
+  } finally {
+    applyingLocationRoute = false;
   }
 }
 
@@ -6907,14 +7599,14 @@ const TASKS_SECTION_BY_LEGACY_VIEW = {
 };
 const LEGACY_VIEW_TO_TASKS_SECTION = (view) => TASKS_SECTION_BY_LEGACY_VIEW[view] || null;
 
-async function showOperationsHome() {
+async function showOperationsHome(options = {}) {
   activeWorkspaceView = "home";
   syncWorkspaceNav();
   if (!(await canLeaveCurrentDocument())) return;
   selectedFolder = "";
   searchInput.value = "";
   clearDocumentFilters();
-  setFolderUrl("");
+  if (options.updateUrl !== false) setWorkspaceUrl("home", "", { replace: options.replace });
   closeTaskPanel();
   closeBundlePanel();
   closeWorkBellPanel();
@@ -6923,10 +7615,10 @@ async function showOperationsHome() {
   closeSidebar();
 }
 
-async function showWorkspaceSurface(view) {
+async function showWorkspaceSurface(view, options = {}) {
   const nextView = view || "home";
   if (nextView === "home") {
-    await showOperationsHome();
+    await showOperationsHome(options);
     return;
   }
   if (!(await canLeaveCurrentDocument())) return;
@@ -6952,13 +7644,17 @@ async function showWorkspaceSurface(view) {
   selectedFolder = "";
   searchInput.value = "";
   clearDocumentFilters();
-  setFolderUrl("");
+  if (options.updateUrl !== false) setWorkspaceUrl(activeWorkspaceView, activeTasksSection, { replace: options.replace });
   closeTaskPanel();
   closeBundlePanel();
   closeWorkBellPanel();
   closeSettingsMenu();
   setView("library");
   if (nextView === "users") refreshUsersSurface({ rerender: true });
+  if (nextView === "inbox") refreshIntakeSnapshot({ rerender: true });
+  if (activeWorkspaceView === "tasks" && activeTasksSection === "templates") refreshRuntimeTemplates({ rerender: true });
+  if (activeWorkspaceView === "tasks" && activeTasksSection === "assistants") refreshOperationsAssistantSnapshot({ rerender: true });
+  if (activeWorkspaceView === "tasks" && activeTasksSection === "artifacts") refreshOperationsArtifactSnapshot({ rerender: true });
   refreshDocuments();
   closeSidebar();
 }

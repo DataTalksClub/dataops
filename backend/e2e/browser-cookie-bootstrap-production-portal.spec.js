@@ -35,9 +35,9 @@ test.describe('production portal browser-cookie bootstrap', () => {
         DATAOPS_DOCS_DOMAIN: '1',
         WORK_ENGINE_AUTH_MODE: 'portal',
         DTC_OFFLINE: '1',
-        // Match the deployed artifact, where the separate source frontend is
-        // absent and the packaged backend SPA is the fallback workspace.
-        FRONTEND_ROOT: path.resolve(__dirname, '..', '.tmp', 'not-packaged-frontend'),
+        // The built artifact packages this same canonical source at
+        // dist/frontend; source-mode E2E points to it explicitly.
+        FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
         AUTH_BASE_URL: 'https://auth.example.test',
         AUTH_ISSUER: 'https://issuer.example.test/pool',
         AUTH_CLIENT_ID: 'dataops-client',
@@ -61,7 +61,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
   test('loads the workspace from an HttpOnly cookie via /api/me without a browser bearer', async ({ browser }) => {
     const context = await browser.newContext({ baseURL: BASE_URL });
     const page = await context.newPage();
-    const meResponse = page.waitForResponse((response) => response.url() === `${BASE_URL}/api/me`);
+    const meResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/work/api/me');
 
     await page.goto('/__e2e__/browser-session');
     const response = await meResponse;
@@ -71,8 +71,9 @@ test.describe('production portal browser-cookie bootstrap', () => {
     expect(requestHeaders.authorization).toBeUndefined();
     expect(requestHeaders.cookie).toContain('dataops_session=');
     await expect(page).toHaveURL(`${BASE_URL}/#/`);
-    await expect(page.getByRole('heading', { name: 'Active Bundles' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Daily Queue' })).toBeVisible();
+    await expect(page.locator('#library-title')).toHaveText('Home');
+    await expect(page.getByRole('button', { name: 'New task' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start workflow' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0);
 
@@ -81,9 +82,8 @@ test.describe('production portal browser-cookie bootstrap', () => {
       user: localStorage.getItem('dataops_user'),
       legacyToken: localStorage.getItem('datatasks_token'),
       legacyUser: localStorage.getItem('datatasks_user'),
-      authMode: document.querySelector('meta[name="dataops-auth-mode"]')?.content,
     }));
-    expect(browserState).toEqual({ token: null, user: null, legacyToken: null, legacyUser: null, authMode: 'browser-cookie' });
+    expect(browserState).toEqual({ token: null, user: null, legacyToken: null, legacyUser: null });
     const sessionCookie = (await context.cookies()).find((cookie) => cookie.name === 'dataops_session');
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie.httpOnly).toBe(true);

@@ -227,7 +227,7 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
         "backend/docs/data.md",
         "backend/docs/templates.md",
         "backend/src/types.ts",
-        "backend/src/public/app.js",
+        "frontend/src/app.js",
         "content/tasks/templates/*.md",
         "assistants/podcast/README.md",
         "assistants/podcast/process/podcast.md",
