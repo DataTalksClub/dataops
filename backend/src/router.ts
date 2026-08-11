@@ -42,6 +42,7 @@ import {
   listTasksByStatus,
 } from './db/tasks';
 import { getBundle, updateBundle } from './db/bundles';
+import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
 import { listFilesByTask } from './db/files';
 import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from './types';
@@ -173,6 +174,7 @@ const ALLOWED_UPDATE_FIELDS = [
   'assigneeId',
   'tags',
   'templateId',
+  'sourceDocIds',
   'artifactRefs',
   'assistantJobRefs',
   'intakeRefs',
@@ -321,6 +323,9 @@ function validateTaskDocContext(fields: Record<string, unknown>): string | null 
   }
   if (fields.systems !== undefined && !isStringArray(fields.systems)) {
     return 'systems must be an array of strings';
+  }
+  if (fields.sourceDocIds !== undefined && !isStringArray(fields.sourceDocIds)) {
+    return 'sourceDocIds must be an array of strings';
   }
   if (fields.validation !== undefined && !isValidationPayload(fields.validation)) {
     return 'validation must be a string or object';
@@ -661,6 +666,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (portalMode && reqPath.startsWith('/api/auth')) {
       return jsonResponse(404, { error: 'Not found' });
     }
+    const testTemplateActorId = skipAuth ? process.env.E2E_TEMPLATE_ACTOR_ID || '' : '';
+    if (skipAuth && reqPath === '/api/me' && (headerValue(event.headers, 'x-user-id') || testTemplateActorId)) {
+      const user = await getUser(client, headerValue(event.headers, 'x-user-id') || testTemplateActorId);
+      return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
+    }
     if (portalMode && reqPath === '/api/me') {
       if (verifiedInteractiveUserId) {
         const user = await getUser(client, verifiedInteractiveUserId);
@@ -781,6 +791,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.assigneeId !== undefined) taskData.assigneeId = body.assigneeId;
       if (body.tags !== undefined) taskData.tags = body.tags;
       if (body.templateId !== undefined) taskData.templateId = body.templateId;
+      if (body.sourceDocIds !== undefined) taskData.sourceDocIds = body.sourceDocIds;
       if (body.artifactRefs !== undefined) taskData.artifactRefs = body.artifactRefs;
       if (body.assistantJobRefs !== undefined) taskData.assistantJobRefs = body.assistantJobRefs;
       if (body.auditEventRefs !== undefined) taskData.auditEventRefs = body.auditEventRefs;
@@ -809,6 +820,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const refsError = validateTaskRefs(taskData);
       if (refsError) {
         return jsonResponse(400, { error: refsError });
+      }
+      if (taskData.templateId !== undefined) {
+        if (!isNonEmptyString(taskData.templateId) || !await getTemplate(client, taskData.templateId)) {
+          return jsonResponse(404, { error: 'Template not found' });
+        }
       }
       if (taskData.status === 'done') {
         const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
@@ -1106,6 +1122,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (refsError) {
         return jsonResponse(400, { error: refsError });
       }
+      if (updates.templateId !== undefined) {
+        if (!isNonEmptyString(updates.templateId) || !await getTemplate(client, updates.templateId)) {
+          return jsonResponse(404, { error: 'Template not found' });
+        }
+      }
 
       // Verify task exists
       const existing = await getTask(client, id);
@@ -1248,7 +1269,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Template routes ────────────────────────────────────────────
 
     if (reqPath.startsWith('/api/templates')) {
-      const result = await handleTemplateRoutes(reqPath, method, event.body || null);
+      const result = await handleTemplateRoutes(reqPath, method, event.body || null, event);
       if (result) return result;
     }
 

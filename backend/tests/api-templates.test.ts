@@ -6,12 +6,18 @@ import { handler } from '../src/handler';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createTemplate } from '../src/db/templates';
+import { createUserWithId } from '../src/db/users';
 import type { LambdaResponse } from '../src/types';
 
 function invoke(method: string, path: string, body?: unknown): Promise<LambdaResponse> {
+  if ((method === 'PUT' || method === 'DELETE') && /^\/api\/templates\/[^/]+$/.test(path)) {
+    const input = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
+    body = { expectedVersion: 1, ...input };
+  }
   const event = {
     httpMethod: method,
     path,
+    headers: { 'x-user-id': 'template-test-admin' },
     body: body !== undefined ? (typeof body === 'string' ? body : JSON.stringify(body)) : null,
   };
   return handler(event, {});
@@ -24,6 +30,11 @@ describe('API — Templates', () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
+    await createUserWithId(client, 'template-test-admin', {
+      name: 'Template Test Admin',
+      email: 'template-admin@example.test',
+      role: 'admin',
+    });
   });
 
   after(async () => {

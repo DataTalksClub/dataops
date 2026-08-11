@@ -24,6 +24,12 @@ function isRecordArrayWithStringId(value: unknown, idField: string): boolean {
 }
 
 function validateBundleRefs(body: Record<string, unknown>): string | null {
+  if (body.sourceDocIds !== undefined && (
+    !Array.isArray(body.sourceDocIds)
+    || !body.sourceDocIds.every((item) => typeof item === 'string')
+  )) {
+    return 'sourceDocIds must be an array of strings';
+  }
   if (body.artifactRefs !== undefined && !isRecordArrayWithStringId(body.artifactRefs, 'artifactId')) {
     return 'artifactRefs must be an array of objects with artifactId';
   }
@@ -202,6 +208,11 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 
     // When templateId is provided, copy template fields to bundle (caller values take precedence)
     if (template) {
+      if (body.sourceDocIds !== undefined) {
+        bundleData.sourceDocIds = body.sourceDocIds;
+      } else if (template.sourceDocIds && template.sourceDocIds.length > 0) {
+        bundleData.sourceDocIds = template.sourceDocIds;
+      }
       // Copy references from template if caller didn't provide them
       if (body.references !== undefined) {
         bundleData.references = body.references;
@@ -245,6 +256,9 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       }
       if (body.tags !== undefined) {
         bundleData.tags = body.tags;
+      }
+      if (body.sourceDocIds !== undefined) {
+        bundleData.sourceDocIds = body.sourceDocIds;
       }
     }
     for (const field of ['artifactRefs', 'assistantJobRefs', 'auditEventRefs']) {
@@ -367,7 +381,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
     // Only allow updating known fields
     const allowedFields = [
       'title', 'description', 'anchorDate', 'references', 'bundleLinks', 'emoji', 'tags', 'stage', 'status',
-      'artifactRefs', 'assistantJobRefs', 'auditEventRefs',
+      'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'auditEventRefs',
     ];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {

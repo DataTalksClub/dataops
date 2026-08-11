@@ -8,6 +8,7 @@ import { URL } from 'url';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createBrowserSession } from '../src/db/sessions';
+import { createUserWithId } from '../src/db/users';
 import { seed as seedUsers } from './seed-users';
 import { seed as seedTemplates } from './seed-templates';
 import type { LambdaEvent } from '../src/types';
@@ -94,6 +95,13 @@ async function runSeeds() {
     await seedTemplates();
     const browserUserId = process.env.E2E_BROWSER_SESSION_USER_ID;
     if (browserUserId) {
+      if (process.env.E2E_BROWSER_SESSION_USER_ROLE) {
+        await createUserWithId(await getClient(), browserUserId, {
+          name: 'E2E browser actor',
+          email: 'browser-actor@example.test',
+          role: process.env.E2E_BROWSER_SESSION_USER_ROLE === 'admin' ? 'admin' : 'operator',
+        });
+      }
       const session = await createBrowserSession(await getClient(), browserUserId, { lifetimeSeconds: 3600 });
       e2eBrowserSessionToken = session.token;
     }

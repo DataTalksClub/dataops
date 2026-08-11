@@ -211,6 +211,32 @@ def test_dataops_execution_tables_match_backend_access_patterns():
     assert "AttributeName: taskId" in files
 
 
+def test_backend_template_transactions_are_scoped_to_templates_and_audit_events():
+    template = _load_template()
+    policies = template["Resources"]["BackendFunction"]["Properties"]["Policies"]
+    transaction_statements = [
+        policy["Statement"]
+        for policy in policies
+        if "dynamodb:TransactWriteItems" in policy.get("Statement", {}).get("Action", [])
+    ]
+    expected_resources = {
+        json.dumps({"GetAtt": "DataOpsTemplatesTable.Arn"}, sort_keys=True),
+        json.dumps({"GetAtt": "DataOpsAuditEventsTable.Arn"}, sort_keys=True),
+    }
+    matching = [
+        statement
+        for statement in transaction_statements
+        if {
+            json.dumps(resource, sort_keys=True)
+            for resource in statement.get("Resource", [])
+        } == expected_resources
+    ]
+
+    assert len(matching) == 1
+    assert matching[0]["Effect"] == "Allow"
+    assert matching[0]["Action"] == ["dynamodb:TransactWriteItems"]
+
+
 def test_conversational_state_table_is_retained_private_stream_ready_state():
     template = TEMPLATE.read_text(encoding="utf-8")
     table = _resource_block(template, "DataOpsConversationalStateTable")

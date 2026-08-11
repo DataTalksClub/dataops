@@ -181,6 +181,7 @@ test.describe('Template API - New fields (issue #17)', () => {
 
     const res = await request.put(`/api/templates/${template.id}`, {
       data: {
+        expectedVersion: template.version,
         emoji: '\u{1F399}\u{FE0F}',
         tags: ['podcast', 'content'],
         references: [{ name: 'Recording guide', url: 'https://docs.google.com/rec' }],
@@ -209,6 +210,7 @@ test.describe('Template API - New fields (issue #17)', () => {
 
     const res = await request.put(`/api/templates/${template.id}`, {
       data: {
+        expectedVersion: template.version,
         triggerType: 'automatic',
         triggerSchedule: '0 9 * * 1',
         triggerLeadDays: 14,
@@ -237,6 +239,7 @@ test.describe('Template API - New fields (issue #17)', () => {
 
     const res = await request.put(`/api/templates/${template.id}`, {
       data: {
+        expectedVersion: template.version,
         taskDefinitions: [
           {
             refId: 'milestone',

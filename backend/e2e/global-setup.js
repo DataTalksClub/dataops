@@ -51,6 +51,9 @@ function buildTestServerEnvironment(parentEnvironment = process.env) {
     SKIP_AUTH: 'true',
     PORT: String(TEST_SERVER_PORT),
     FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
+    // Server-owned actor for template-admin tests only. Other route permission
+    // tests retain their existing explicit actor/no-actor behavior.
+    E2E_TEMPLATE_ACTOR_ID: GRACE_USER.id,
     ...DARK_ROLLOUT_ENVIRONMENT,
   };
 }

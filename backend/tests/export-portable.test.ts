@@ -1,12 +1,13 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import crypto from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { createTables, TABLE_TEMPLATES } from '../src/db/setup';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
 import { createBundle, updateBundle } from '../src/db/bundles';
 import { createArtifact } from '../src/db/artifacts';
@@ -15,7 +16,7 @@ import { createIntakeItem } from '../src/db/intake';
 import { createNotification } from '../src/db/notifications';
 import { createRecurringConfig } from '../src/db/recurring';
 import { createTask, updateTask } from '../src/db/tasks';
-import { createTemplate } from '../src/db/templates';
+import { createTemplateWithAudit, deleteTemplateWithAudit, updateTemplateWithAudit } from '../src/db/templates';
 import { createUser } from '../src/db/users';
 import { validatePortableExport, writePortableExport } from '../src/export/portable';
 
@@ -41,9 +42,10 @@ describe('portable execution data export', () => {
       email: 'ops@example.com',
       passwordHash: 'must-not-export',
     });
-    const template = await createTemplate(client, {
+    let template = await createTemplateWithAudit(client, {
       name: 'Representative workflow',
       type: 'workflow',
+      emoji: '🧭',
       phases: [
         { id: 'preparation', name: 'Preparation', stage: 'preparation' },
       ],
@@ -53,23 +55,43 @@ describe('portable execution data export', () => {
           refId: 'send-follow-up',
           description: 'Send external follow-up',
           offsetDays: -7,
+          isMilestone: true,
+          stageOnComplete: 'announced',
           instructionDocId: 'sop.workflow.collect-inputs',
           instructionStepId: '4',
           phase: 'preparation',
           systems: ['google-drive'],
           validation: { requiredEvidence: 'Source document link' },
           requiredLinkName: 'Source document',
+          requiresFile: true,
           proofRequirement: { type: 'url', label: 'Source document' },
           artifactRefs: [{ artifactId: 'artifact-template-ref', type: 'document' }],
           assistantJobRefs: [{ assistantJobId: 'assistant-template-ref', assistantType: 'research' }],
+          intakeRefs: [{ intakeItemId: 'intake-template-ref', source: 'manual' }],
           auditEventRefs: [{ auditEventId: 'audit-template-ref', action: 'defined' }],
         },
       ],
-    });
+    }, user.id);
+    template = (await updateTemplateWithAudit(client, template.id, { triggerEnabled: true }, 1, user.id))!;
+    const archivedTemplate = await createTemplateWithAudit(client, {
+      name: 'Archived workflow', type: 'workflow', emoji: '📦', taskDefinitions: [],
+    }, user.id);
+    await deleteTemplateWithAudit(client, archivedTemplate.id, 1, user.id);
+    const legacyTemplateId = 'legacy-versionless-export';
+    await client.send(new PutCommand({
+      TableName: TABLE_TEMPLATES,
+      Item: {
+        PK: `TEMPLATE#${legacyTemplateId}`, SK: `TEMPLATE#${legacyTemplateId}`,
+        id: legacyTemplateId, name: 'Legacy versionless workflow', type: 'workflow', emoji: '🕰️',
+        taskDefinitions: [], createdAt: '2026-06-20T00:00:00.000Z', updatedAt: '2026-06-20T00:00:00.000Z',
+      },
+    }));
     const bundle = await createBundle(client, {
       title: 'Representative workflow run',
       anchorDate: '2026-06-27',
       templateId: template.id,
+      sourceDocIds: ['workflow.definition.example'],
+      emoji: template.emoji,
       status: 'active',
       artifactRefs: [{ artifactId: 'artifact-bundle-ref', type: 'document' }],
       assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
@@ -89,6 +111,9 @@ describe('portable execution data export', () => {
       bundleId: bundle.id,
       templateId: template.id,
       templateTaskRef: 'send-follow-up',
+      templateOffsetDays: -7,
+      isMilestone: true,
+      sourceDocIds: ['workflow.definition.example'],
       source: 'template',
       instructionDocId: 'sop.workflow.collect-inputs',
       instructionStepId: '4',
@@ -312,12 +337,12 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.users, 1);
     assert.strictEqual(result.manifest.entity_counts.tasks, 2);
     assert.strictEqual(result.manifest.entity_counts.bundles, 1);
-    assert.strictEqual(result.manifest.entity_counts.templates, 1);
+    assert.strictEqual(result.manifest.entity_counts.templates, 3);
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
-    assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
+    assert.strictEqual(result.manifest.entity_counts.audit_events, 5);
     assert.strictEqual(result.manifest.entity_counts.intake_items, 2);
     assert.strictEqual(result.manifest.entity_counts.notifications, 3);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
@@ -345,6 +370,9 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"validation":\{"requiredEvidence":"Source document link"\}/);
     assert.match(tasksJsonl, /"template_id"/);
     assert.match(tasksJsonl, /"template_task_ref":"send-follow-up"/);
+    assert.match(tasksJsonl, /"template_offset_days":-7/);
+    assert.match(tasksJsonl, /"is_milestone":true/);
+    assert.match(tasksJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
     assert.match(tasksJsonl, /"proof_requirement":\{"type":"url","label":"Source document"\}/);
     assert.match(tasksJsonl, /"required_link_name":"Source document"/);
     assert.match(tasksJsonl, /"link":"https:\/\/example.com\/source-document"/);
@@ -364,12 +392,20 @@ describe('portable execution data export', () => {
     assert.match(bundlesJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(bundlesJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
     assert.match(bundlesJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-bundle-ref","action":"created"\}\]/);
+    assert.match(bundlesJsonl, /"emoji":"🧭"/);
+    assert.match(bundlesJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
     assert.match(templatesJsonl, /"phases":\[\{"id":"preparation","name":"Preparation","stage":"preparation"\}\]/);
     assert.match(templatesJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
     assert.match(templatesJsonl, /"instructionDocId":"sop.workflow.collect-inputs"/);
     assert.match(templatesJsonl, /"proofRequirement":\{"type":"url","label":"Source document"\}/);
+    assert.match(templatesJsonl, /"emoji":"🧭"/);
+    assert.match(templatesJsonl, /"version":2/);
+    assert.match(templatesJsonl, /"template_id":"legacy-versionless-export"/);
+    assert.match(templatesJsonl, /"version":1/);
+    assert.match(templatesJsonl, /"archived_at":"/);
+    assert.match(templatesJsonl, /"archived_by":"/);
 
     const recurringConfigsJsonl = await fs.readFile(path.join(exportDir, 'recurring_configs.jsonl'), 'utf8');
     assert.match(recurringConfigsJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
@@ -410,6 +446,13 @@ describe('portable execution data export', () => {
     const auditEventsJsonl = await fs.readFile(path.join(exportDir, 'audit_events.jsonl'), 'utf8');
     assert.match(auditEventsJsonl, /"assistant_job_id":"assistant-job-export"/);
     assert.match(auditEventsJsonl, /"action":"approval-requested"/);
+    assert.match(auditEventsJsonl, /"record_type":"runtime_template_audit_event"/);
+    for (const action of ['create', 'update', 'delete']) {
+      assert.match(auditEventsJsonl, new RegExp(`"action":"${action}"`));
+    }
+    assert.match(auditEventsJsonl, /"prior_version":1/);
+    assert.match(auditEventsJsonl, /"result_version":2/);
+    assert.match(auditEventsJsonl, /"changed_fields":\["archivedAt","archivedBy"\]/);
     assert.doesNotMatch(auditEventsJsonl, /password|token|secret/i);
 
     const intakeJsonl = await fs.readFile(path.join(exportDir, 'intake_items.jsonl'), 'utf8');
@@ -508,6 +551,9 @@ describe('portable execution data export', () => {
           description: 'Invalid date fields',
           date: '2026-99-99',
           status: 'done',
+          template_offset_days: 'seven',
+          is_milestone: 'yes',
+          source_doc_ids: ['valid', 42],
           instruction_doc_id: 123,
           systems: ['github', 42],
           validation: ['not-valid'],
@@ -540,18 +586,22 @@ describe('portable execution data export', () => {
           template_id: 'template-broken-doc-context',
           name: 'Broken doc context',
           type: 'podcast',
+          emoji: 42,
+          version: 0,
           source_doc_ids: ['task-template.tasks.podcast', 42],
           task_definitions: [
             {
               refId: 'broken',
               description: 'Broken',
-              offsetDays: 0,
+              offsetDays: 'zero',
+              isMilestone: 'yes',
               instructionDocId: 42,
               systems: ['github', 42],
               validation: ['not-valid'],
               proofRequirement: { type: 'unsupported' },
               artifactRefs: [{ type: 'missing-id' }],
               assistantJobRefs: [{ assistantType: 'missing-id' }],
+              intakeRefs: [{ source: 'missing-id' }],
               auditEventRefs: [{ action: 'missing-id' }],
             },
           ],
@@ -573,6 +623,23 @@ describe('portable execution data export', () => {
           tags: ['daily', 42],
           created_at: '2026-06-27T00:00:00.000Z',
           updated_at: '2026-06-27T00:00:00.000Z',
+        }) + '\n',
+        'utf8'
+      );
+      await fs.appendFile(
+        path.join(brokenDir, 'audit_events.jsonl'),
+        JSON.stringify({
+          audit_event_id: 'template-audit-invalid',
+          record_type: 'runtime_template_audit_event',
+          template_id: 'template-broken-doc-context',
+          actor_id: 'missing-user',
+          action: 'purge',
+          outcome: 'rejected',
+          reason: 'unsafe_reason',
+          prior_version: 0,
+          result_version: 1.5,
+          changed_fields: ['name', 42],
+          created_at: '2026-06-27T00:00:00.000Z',
         }) + '\n',
         'utf8'
       );
@@ -637,6 +704,9 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field instruction_doc_id must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field validation must be a string or object when present')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field template_offset_days must be an integer')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field is_milestone must be a boolean')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field source_doc_ids must be an array of strings')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] taskId must match parent task_id')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field action has unknown value: unknown-action')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] references missing actorId: missing-user')));
@@ -646,13 +716,23 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field created_at must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field updated_at must be a parseable date or timestamp')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0] field source_doc_ids must be an array of strings when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0] field emoji must be a string when present')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0] field version must be an integer >= 1')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field offsetDays must be an integer')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field isMilestone must be a boolean')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field instructionDocId must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field validation must be a string or object when present')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0] field proofRequirement.type must be one of')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].artifactRefs[0] missing required string field artifactId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].assistantJobRefs[0] missing required string field assistantJobId')));
+      assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].intakeRefs[0] missing required string field intakeItemId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].auditEventRefs[0] missing required string field auditEventId')));
+      assert.ok(validation.errors.some((error) => error.includes('field action has unknown value: purge')));
+      assert.ok(validation.errors.some((error) => error.includes('field reason has unknown value: unsafe_reason')));
+      assert.ok(validation.errors.some((error) => error.includes('field prior_version must be an integer >= 1')));
+      assert.ok(validation.errors.some((error) => error.includes('field result_version must be an integer >= 1')));
+      assert.ok(validation.errors.some((error) => error.includes('field changed_fields must be an array of strings')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field instruction_doc_id must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field proof_requirement.type must be one of')));
@@ -670,6 +750,31 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('artifacts[0] checksum is required for DataOps-owned s3 artifacts')));
     } finally {
       await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
+
+  it('validates a mixed portable set of versionless and versioned templates', async () => {
+    const mixedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-export-mixed-template-versions-'));
+    try {
+      await fs.cp(exportDir, mixedDir, { recursive: true });
+      const templatesPath = path.join(mixedDir, 'templates.jsonl');
+      const records = (await fs.readFile(templatesPath, 'utf8')).trimEnd().split('\n').map((line) => JSON.parse(line));
+      const legacy = records.find((record) => record.template_id === 'legacy-versionless-export');
+      assert.ok(legacy);
+      delete legacy.version;
+      assert.ok(records.some((record) => record.version === 2));
+      const content = `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
+      await fs.writeFile(templatesPath, content, 'utf8');
+      const manifestPath = path.join(mixedDir, 'manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      manifest.checksums['templates.jsonl'] = `sha256:${crypto.createHash('sha256').update(content).digest('hex')}`;
+      await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+      const validation = await validatePortableExport(mixedDir);
+      assert.deepStrictEqual(validation.errors, []);
+      assert.strictEqual(validation.valid, true);
+    } finally {
+      await fs.rm(mixedDir, { recursive: true, force: true });
     }
   });
 
