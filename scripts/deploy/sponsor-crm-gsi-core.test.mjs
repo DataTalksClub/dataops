@@ -1125,6 +1125,7 @@ test("stage change-set validator accepts only one exact non-replacing modify", (
   liveShape.Parameters.reverse();
   for (const parameter of liveShape.Parameters) delete parameter.UsePreviousValue;
   liveShape.Tags = null;
+  delete liveShape.ChangeSetType;
   liveShape.Changes = [
     ...reevaluatedDependencyChanges(),
     liveShape.Changes[0],

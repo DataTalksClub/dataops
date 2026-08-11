@@ -526,7 +526,9 @@ export function validateStageChangeSet(
     "stage nested-stack inclusion must be false",
   );
   validateStageParameters(changeSet.Parameters, expectedParameters);
-  assert.equal(changeSet.ChangeSetType, "UPDATE", "stage type changed");
+  if (changeSet.ChangeSetType !== undefined) {
+    assert.equal(changeSet.ChangeSetType, "UPDATE", "stage type changed");
+  }
   assert.deepEqual(
     changeSet.RollbackConfiguration?.RollbackTriggers ?? [],
     [],
