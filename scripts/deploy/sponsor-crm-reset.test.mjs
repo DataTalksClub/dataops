@@ -485,6 +485,7 @@ test("S3 ledger uses exact bucket/prefix, conditional AES256 versioned checksum 
   const objects = new Map(); const calls = [];
   const fake = { async call(service, operation, args, options = {}) {
     calls.push({ service, operation, args: structuredClone(args), options });
+    if (operation === "get-bucket-location") return { LocationConstraint: CONTRACT.region };
     const key = value(args, "--key");
     if (operation === "put-object") {
       const bytes = readFileSync(value(args, "--body"));
@@ -496,7 +497,9 @@ test("S3 ledger uses exact bucket/prefix, conditional AES256 versioned checksum 
     if (operation === "get-object") { writeFileSync(args.at(-1), bytes); return { ServerSideEncryption: "AES256", VersionId: "v1", ChecksumSHA256: sha256Base64(bytes), ContentType: "application/json" }; }
     assert.fail(`unexpected ${operation}`);
   } };
-  const ledger = new S3PrivateLedger(fake); const key = `${CONTRACT.evidencePrefix}runs/${"1".repeat(64)}/operations/000-preflight-${"2".repeat(64)}/intent.json`;
+  const ledger = new S3PrivateLedger(fake); await ledger.verifyControlPlane();
+  assert.deepEqual(calls[0], { service: "s3api", operation: "get-bucket-location", args: ["--bucket", CONTRACT.evidenceBucket, "--expected-bucket-owner", CONTRACT.evidenceBucketOwner], options: {} });
+  const key = `${CONTRACT.evidencePrefix}runs/${"1".repeat(64)}/operations/000-preflight-${"2".repeat(64)}/intent.json`;
   const record = { canonical: true }; record.recordDigest = recordDigest(record); await ledger.putRecord(key, record); const collision = await ledger.putRecord(key, record); assert.equal(collision.created, false);
   const other = { canonical: false }; other.recordDigest = recordDigest(other); objects.set(key, Buffer.from(canonicalJson(other))); await assert.rejects(() => ledger.putRecord(key, record), /CAS collision/);
   const put = calls.find(({ operation }) => operation === "put-object");

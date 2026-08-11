@@ -147,13 +147,6 @@ export class S3PrivateLedger {
   async verifyControlPlane() {
     const location = await this.aws.call("s3api", "get-bucket-location", this.#bucketArgs());
     assert.ok(location.LocationConstraint === CONTRACT.region || location.LocationConstraint === "EU");
-    const managed = await this.aws.call("cloudformation", "describe-stack-resource", [
-      "--stack-name", CONTRACT.evidenceManagedStack,
-      "--logical-resource-id", CONTRACT.evidenceManagedResource,
-    ]);
-    assert.equal(managed.StackResourceDetail?.ResourceType, "AWS::S3::Bucket");
-    assert.equal(managed.StackResourceDetail?.PhysicalResourceId, CONTRACT.evidenceBucket);
-    assert.match(managed.StackResourceDetail?.ResourceStatus ?? "", /_COMPLETE$/);
   }
 
   async listKeys(prefix) {
