@@ -516,6 +516,20 @@ test("preflight intent is canonical valid JSON without undefined state fields", 
   assert.deepEqual(JSON.parse(canonicalJson(intent)), intent);
 });
 
+test("an exact missing table can recover through a root create without detached recreation", async () => {
+  const mock = new MockAws();
+  mock.present = false;
+  const ledger = new MemoryLedger();
+  const created = await phase(mock, ledger, "create");
+  const executed = await phase(mock, ledger, "execute", created);
+  const verified = await phase(mock, ledger, "verify", executed);
+  assert.equal(verified.status, "completed");
+  assert.equal(mock.present, true);
+  for (const record of ledger.records.values()) {
+    assert.deepEqual(JSON.parse(canonicalJson(record)), record);
+  }
+});
+
 test("S3 listing is bounded and rejects pagination cycles, foreign keys, missing encryption/version/checksum", async () => {
   const ledger = new S3PrivateLedger({ async call(_service, operation) {
     if (operation === "list-objects-v2") return { IsTruncated: true, NextContinuationToken: "repeat", Contents: [] };
