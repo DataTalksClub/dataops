@@ -507,6 +507,15 @@ test("S3 ledger uses exact bucket/prefix, conditional AES256 versioned checksum 
   assert.equal(value(put.args, "--if-none-match"), "*"); assert.equal(value(put.args, "--server-side-encryption"), "AES256"); assert.equal(value(put.args, "--content-type"), "application/json");
 });
 
+test("preflight intent is canonical valid JSON without undefined state fields", async () => {
+  const mock = new MockAws();
+  const ledger = new MemoryLedger();
+  await phase(mock, ledger, "preflight");
+  const intent = [...ledger.records.values()].find((record) => record.kind === "intent");
+  assert.ok(intent);
+  assert.deepEqual(JSON.parse(canonicalJson(intent)), intent);
+});
+
 test("S3 listing is bounded and rejects pagination cycles, foreign keys, missing encryption/version/checksum", async () => {
   const ledger = new S3PrivateLedger({ async call(_service, operation) {
     if (operation === "list-objects-v2") return { IsTruncated: true, NextContinuationToken: "repeat", Contents: [] };

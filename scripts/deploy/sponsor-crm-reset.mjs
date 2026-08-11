@@ -798,7 +798,7 @@ async function observeState(aws, env, knownStack, phase, prior, options = {}) {
     dependencyDigest: baseline.dependencyDigest,
     resourceInventoryDigest: digest(resources.map(stableStackResource)),
     candidates,
-    candidate: options.candidate,
+    ...(options.candidate === undefined ? {} : { candidate: options.candidate }),
     table,
   };
 }
