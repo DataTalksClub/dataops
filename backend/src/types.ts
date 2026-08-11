@@ -332,6 +332,10 @@ export interface Task {
   bundleId?: string;
   templateId?: string;
   templateTaskRef?: string;
+  templateOffsetDays?: number;
+  isMilestone?: boolean;
+  /** Source documents inherited from the runtime template at instantiation. */
+  sourceDocIds?: string[];
   stageOnComplete?: string;
   recurringConfigId?: string;
   artifactRefs?: ArtifactRef[];
@@ -374,6 +378,8 @@ export interface Bundle {
   description?: string | null;
   anchorDate?: string;
   templateId?: string;
+  /** Source documents inherited from the runtime template at instantiation. */
+  sourceDocIds?: string[];
   references?: BundleLink[];
   bundleLinks?: BundleLink[];
   emoji?: string;
@@ -437,8 +443,30 @@ export interface Template {
   triggerLeadDays?: number;
   triggerEnabled?: boolean;
   taskDefinitions?: TaskDefinition[];
+  /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
+  version: number;
+  /** Retained tombstone fields. Archived templates are not available for new use. */
+  archivedAt?: string;
+  archivedBy?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type TemplateAuditAction = 'create' | 'update' | 'delete';
+export type TemplateAuditOutcome = 'success' | 'rejected';
+
+export interface TemplateAuditEvent {
+  id: string;
+  recordType: 'runtime_template_audit_event';
+  actorId: string;
+  templateId: string;
+  action: TemplateAuditAction;
+  outcome: TemplateAuditOutcome;
+  reason?: 'template_in_use' | 'version_conflict';
+  priorVersion?: number;
+  resultVersion?: number;
+  changedFields: string[];
+  createdAt: string;
 }
 
 // --- Recurring ---

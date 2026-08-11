@@ -3,6 +3,7 @@ import assert from 'node:assert';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables, deleteTables } from '../src/db/setup';
+import { createTemplate } from '../src/db/templates';
 import type { LambdaResponse } from '../src/types';
 
 describe('API — CRUD for tasks', () => {
@@ -1457,10 +1458,7 @@ describe('API — CRUD for tasks', () => {
     });
 
     it('blocks schedule-email-newsletter from announcing until the Mailchimp shared bundle link is filled', async () => {
-      const templateRes = await handler({
-        httpMethod: 'POST',
-        path: '/api/templates',
-        body: JSON.stringify({
+      const template = await createTemplate(await getClient(port), {
           name: 'Newsletter shared-link gate',
           type: 'newsletter',
           bundleLinkDefinitions: [{ name: 'Mailchimp newsletter' }],
@@ -1472,10 +1470,7 @@ describe('API — CRUD for tasks', () => {
             proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
             validation: { requiredBundleLinks: ['Mailchimp newsletter'] },
           }],
-        }),
-      }, {});
-      assert.strictEqual(templateRes.statusCode, 201, templateRes.body);
-      const template = JSON.parse(templateRes.body).template;
+      });
 
       const bundleRes = await handler({
         httpMethod: 'POST',

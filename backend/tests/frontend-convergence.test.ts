@@ -133,8 +133,14 @@ describe('one canonical frontend', () => {
       'bundleLinkDefinitions',
       'triggerSchedule',
       'sourceDocIds',
-      'proof rules',
+      'Advanced JSON',
+      'validateRuntimeTemplateDraft',
+      'Move up',
+      'expectedVersion',
+      'template_in_use',
     ]) assert.ok(app.includes(marker), `Runtime template UI is missing ${marker}`);
     assert.match(styles, /\.runtime-template-json/);
+    assert.match(styles, /\.runtime-task-card/);
+    assert.match(styles, /:focus-visible/);
   });
 });

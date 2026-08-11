@@ -30,6 +30,7 @@ interface EntitySpec {
   filename: string;
   tableName: string;
   prefix?: string;
+  prefixes?: string[];
   recordType?: string;
   filter?: (item: Record<string, unknown>) => boolean;
   map: (item: Record<string, unknown>) => JsonRecord;
@@ -133,6 +134,9 @@ const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 's
 const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
 const VALID_ASSISTANT_JOB_STATUSES = new Set(['draft', 'queued', 'running', 'waiting_approval', 'approved', 'rejected', 'retrying', 'succeeded', 'failed', 'canceled']);
 const VALID_ASSISTANT_EVENT_ACTIONS = new Set(['created', 'queued', 'started', 'log-appended', 'artifact-attached', 'approval-requested', 'approved', 'rejected', 'retry-requested', 'failed', 'canceled', 'succeeded']);
+const VALID_TEMPLATE_AUDIT_ACTIONS = new Set(['create', 'update', 'delete']);
+const VALID_TEMPLATE_AUDIT_OUTCOMES = new Set(['success', 'rejected']);
+const VALID_TEMPLATE_AUDIT_REASONS = new Set(['template_in_use', 'version_conflict']);
 const VALID_INTAKE_SOURCES = new Set(['telegram', 'email', 'manual', 'file', 'link', 'import', 'assistant', 'unknown']);
 const VALID_INTAKE_STATUSES = new Set(['new', 'triaged', 'attached', 'converted', 'ignored', 'duplicate', 'blocked', 'archived']);
 const VALID_INTAKE_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
@@ -202,7 +206,7 @@ const ENTITY_SPECS: EntitySpec[] = [
     name: 'audit_events',
     filename: 'audit_events.jsonl',
     tableName: TABLE_AUDIT_EVENTS,
-    prefix: 'AUDIT_EVENT#',
+    prefixes: ['AUDIT_EVENT#', 'TEMPLATE_AUDIT#'],
     map: mapAuditEvent,
   },
   {
@@ -302,6 +306,9 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     bundle_id: optionalString(item.bundleId),
     template_id: optionalString(item.templateId),
     template_task_ref: optionalString(item.templateTaskRef),
+    template_offset_days: optionalNumber(item.templateOffsetDays),
+    is_milestone: optionalBoolean(item.isMilestone),
+    source_doc_ids: stringArray(item.sourceDocIds),
     recurring_config_id: optionalString(item.recurringConfigId),
     stage_on_complete: optionalString(item.stageOnComplete),
     artifact_refs: jsonArray(item.artifactRefs),
@@ -323,10 +330,12 @@ function mapBundle(item: Record<string, unknown>): JsonRecord {
     description: optionalString(item.description),
     anchor_date: optionalString(item.anchorDate),
     template_id: optionalString(item.templateId),
+    source_doc_ids: stringArray(item.sourceDocIds),
     status: optionalString(item.status),
     stage: optionalString(item.stage),
     references: jsonArray(item.references),
     bundle_links: jsonArray(item.bundleLinks),
+    emoji: optionalString(item.emoji),
     tags: stringArray(item.tags),
     artifact_refs: jsonArray(item.artifactRefs),
     assistant_job_refs: jsonArray(item.assistantJobRefs),
@@ -342,6 +351,7 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     template_id: optionalString(item.id),
     name: optionalString(item.name),
     type: optionalString(item.type),
+    emoji: optionalString(item.emoji),
     tags: stringArray(item.tags),
     default_assignee_id: optionalString(item.defaultAssigneeId),
     phases: jsonArray(item.phases),
@@ -353,6 +363,9 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     trigger_schedule: optionalString(item.triggerSchedule),
     trigger_lead_days: optionalNumber(item.triggerLeadDays),
     trigger_enabled: optionalBoolean(item.triggerEnabled),
+    version: optionalNumber(item.version) || 1,
+    archived_at: optionalString(item.archivedAt),
+    archived_by: optionalString(item.archivedBy),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
@@ -454,9 +467,16 @@ function mapAssistantJob(item: Record<string, unknown>): JsonRecord {
 function mapAuditEvent(item: Record<string, unknown>): JsonRecord {
   return stripEmpty({
     audit_event_id: optionalString(item.id),
+    record_type: optionalString(item.recordType),
     assistant_job_id: optionalString(item.assistantJobId),
+    template_id: optionalString(item.templateId),
     actor_id: optionalString(item.actorId),
     action: optionalString(item.action),
+    outcome: optionalString(item.outcome),
+    reason: optionalString(item.reason),
+    prior_version: optionalNumber(item.priorVersion),
+    result_version: optionalNumber(item.resultVersion),
+    changed_fields: stringArray(item.changedFields),
     summary: optionalString(item.summary),
     metadata: optionalJsonStringOrObject(item.metadata),
     created_at: optionalString(item.createdAt),
@@ -528,7 +548,8 @@ async function scanByPrefix(
   client: DynamoDBDocumentClient,
   tableName: string,
   prefix?: string,
-  recordType?: string
+  recordType?: string,
+  prefixes?: string[],
 ): Promise<Record<string, unknown>[]> {
   const items: Record<string, unknown>[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
@@ -543,10 +564,15 @@ async function scanByPrefix(
             ExpressionAttributeNames: { '#recordType': 'recordType' },
             ExpressionAttributeValues: { ':recordType': recordType },
           }
-          : {
-            FilterExpression: 'begins_with(PK, :prefix)',
-            ExpressionAttributeValues: { ':prefix': prefix },
-          }),
+          : prefixes && prefixes.length > 0
+            ? {
+              FilterExpression: prefixes.map((_, index) => `begins_with(PK, :prefix${index})`).join(' OR '),
+              ExpressionAttributeValues: Object.fromEntries(prefixes.map((value, index) => [`:prefix${index}`, value])),
+            }
+            : {
+              FilterExpression: 'begins_with(PK, :prefix)',
+              ExpressionAttributeValues: { ':prefix': prefix },
+            }),
         ExclusiveStartKey: lastEvaluatedKey,
       })
     );
@@ -588,7 +614,7 @@ async function writePortableExport(
   const checksums: Record<string, string> = {};
 
   for (const spec of ENTITY_SPECS) {
-    const rawItems = await scanByPrefix(client, spec.tableName, spec.prefix, spec.recordType);
+    const rawItems = await scanByPrefix(client, spec.tableName, spec.prefix, spec.recordType, spec.prefixes);
     const generatedAt = options.generatedAt || new Date().toISOString();
     const records = rawItems
       .filter((item) => (
@@ -757,6 +783,20 @@ function optionalNumberField(
   if (value === undefined || value === null) return;
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     errors.push(`${context} field ${field} must be a finite number when present`);
+  }
+}
+
+function optionalIntegerField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string,
+  minimum?: number,
+): void {
+  const value = record[field];
+  if (value === undefined || value === null) return;
+  if (!Number.isSafeInteger(value) || (minimum !== undefined && Number(value) < minimum)) {
+    errors.push(`${context} field ${field} must be an integer${minimum === undefined ? '' : ` >= ${minimum}`} when present`);
   }
 }
 
@@ -960,14 +1000,25 @@ function validateTaskDefinitionDocContext(
       continue;
     }
     const record = definition as JsonRecord;
-    for (const field of ['instructionDocId', 'instructionStepId', 'phase']) {
+    requireString(record, 'refId', errors, definitionContext);
+    requireString(record, 'description', errors, definitionContext);
+    if (!Number.isSafeInteger(record.offsetDays)) {
+      errors.push(`${definitionContext} field offsetDays must be an integer`);
+    }
+    for (const field of [
+      'stageOnComplete', 'assigneeId', 'instructionsUrl', 'instructionDocId',
+      'instructionStepId', 'phase', 'requiredLinkName',
+    ]) {
       optionalStringField(record, field, errors, definitionContext);
     }
+    optionalBooleanField(record, 'isMilestone', errors, definitionContext);
+    optionalBooleanField(record, 'requiresFile', errors, definitionContext);
     optionalStringArrayField(record, 'systems', errors, definitionContext);
     optionalStringOrObjectField(record, 'validation', errors, definitionContext);
     optionalProofRequirementField(record, 'proofRequirement', errors, definitionContext);
     optionalRefArrayField(record, 'artifactRefs', 'artifactId', errors, definitionContext);
     optionalRefArrayField(record, 'assistantJobRefs', 'assistantJobId', errors, definitionContext);
+    optionalRefArrayField(record, 'intakeRefs', 'intakeItemId', errors, definitionContext);
     optionalRefArrayField(record, 'auditEventRefs', 'auditEventId', errors, definitionContext);
   }
 }
@@ -1240,6 +1291,9 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalStringField(task, 'instruction_step_id', errors, context);
     optionalStringField(task, 'phase', errors, context);
     optionalStringArrayField(task, 'systems', errors, context);
+    optionalStringArrayField(task, 'source_doc_ids', errors, context);
+    optionalIntegerField(task, 'template_offset_days', errors, context);
+    optionalBooleanField(task, 'is_milestone', errors, context);
     optionalStringOrObjectField(task, 'validation', errors, context);
     const proofRequirement = optionalProofRequirementField(task, 'proof_requirement', errors, context);
     optionalStringField(task, 'external_status', errors, context);
@@ -1278,6 +1332,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(bundle, 'created_at', errors, context);
     validateDateOrTimestampField(bundle, 'updated_at', errors, context);
     optionalReference(bundle, 'template_id', templateIds, errors, context);
+    optionalStringArrayField(bundle, 'source_doc_ids', errors, context);
+    optionalStringField(bundle, 'emoji', errors, context);
     optionalRefArrayField(bundle, 'artifact_refs', 'artifactId', errors, context);
     optionalRefArrayField(bundle, 'assistant_job_refs', 'assistantJobId', errors, context);
     optionalRefArrayField(bundle, 'intake_refs', 'intakeItemId', errors, context);
@@ -1300,10 +1356,16 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   for (const [index, template] of (recordsByEntity.templates || []).entries()) {
     const context = `templates[${index}]`;
+    requireString(template, 'name', errors, context);
+    requireString(template, 'type', errors, context);
     validateDateOrTimestampField(template, 'created_at', errors, context);
     validateDateOrTimestampField(template, 'updated_at', errors, context);
+    validateDateOrTimestampField(template, 'archived_at', errors, context);
+    optionalReference(template, 'archived_by', userIds, errors, context);
+    optionalStringField(template, 'emoji', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
     optionalBooleanField(template, 'trigger_enabled', errors, context);
+    optionalIntegerField(template, 'version', errors, context, 1);
     validateWorkflowPhases(template, errors, context);
     validateTaskDefinitionDocContext(template, errors, context);
   }
@@ -1422,11 +1484,27 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   for (const [index, event] of (recordsByEntity.audit_events || []).entries()) {
     const context = `audit_events[${index}]`;
-    requireString(event, 'summary', errors, context);
-    requireString(event, 'action', errors, context);
-    optionalEnum(event, 'action', VALID_ASSISTANT_EVENT_ACTIONS, errors, context);
-    optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
-    optionalReference(event, 'actor_id', userIds, errors, context);
+    if (event.record_type === 'runtime_template_audit_event') {
+      requireString(event, 'template_id', errors, context);
+      requireString(event, 'actor_id', errors, context);
+      optionalReference(event, 'template_id', templateIds, errors, context);
+      optionalReference(event, 'actor_id', userIds, errors, context);
+      optionalEnum(event, 'action', VALID_TEMPLATE_AUDIT_ACTIONS, errors, context);
+      const outcome = optionalEnum(event, 'outcome', VALID_TEMPLATE_AUDIT_OUTCOMES, errors, context);
+      if (event.reason !== undefined) optionalEnum(event, 'reason', VALID_TEMPLATE_AUDIT_REASONS, errors, context);
+      if (outcome === 'rejected' && event.reason === undefined) {
+        errors.push(`${context} rejected template audit event requires reason`);
+      }
+      optionalIntegerField(event, 'prior_version', errors, context, 1);
+      optionalIntegerField(event, 'result_version', errors, context, 1);
+      optionalStringArrayField(event, 'changed_fields', errors, context);
+    } else {
+      requireString(event, 'summary', errors, context);
+      requireString(event, 'action', errors, context);
+      optionalEnum(event, 'action', VALID_ASSISTANT_EVENT_ACTIONS, errors, context);
+      optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
+      optionalReference(event, 'actor_id', userIds, errors, context);
+    }
     validateDateOrTimestampField(event, 'created_at', errors, context, true);
     validateNoSecretPayload(event, errors, context);
   }

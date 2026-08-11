@@ -49,6 +49,7 @@
   --do-density-compact-row: 32px;
   --do-density-control: 34px;
   --do-density-touch: 44px;
+  --do-mobile-topbar-height: 48px;
   --do-radius-xs: 4px;
   --do-radius-sm: 6px;
   --do-radius-md: 8px;
@@ -4697,7 +4698,7 @@ body[data-view="create"] #back-button {
     grid-template-columns: 48px minmax(0, 1fr) auto auto;
     gap: 8px;
     align-items: center;
-    height: 48px;
+    height: var(--do-mobile-topbar-height);
     position: sticky;
     top: 0;
     z-index: var(--do-z-sticky);
@@ -4727,7 +4728,7 @@ body[data-view="create"] #back-button {
   .app-shell {
     display: block;
     height: auto;
-    min-height: calc(100vh - 48px);
+    min-height: calc(100vh - var(--do-mobile-topbar-height));
     overflow: visible;
   }
 
@@ -4792,9 +4793,9 @@ body[data-view="create"] #back-button {
 
   .page-shell {
     height: auto;
-    min-height: calc(100vh - 48px);
+    min-height: calc(100vh - var(--do-mobile-topbar-height));
     overflow: visible;
-    grid-template-rows: 48px minmax(0, 1fr);
+    grid-template-rows: var(--do-mobile-topbar-height) minmax(0, 1fr);
   }
 
   body:not([data-view="library"]) .page-shell {
@@ -5523,6 +5524,11 @@ body[data-view="create"] #back-button {
   gap: 12px;
 }
 
+.runtime-template-support {
+  display: grid;
+  gap: 18px;
+}
+
 .runtime-template-admin > .ops-section-header > div {
   min-width: 0;
 }
@@ -5541,16 +5547,143 @@ body[data-view="create"] #back-button {
   align-content: start;
 }
 
+.runtime-mobile-back {
+  display: none;
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 3px 0;
+  font-weight: 750;
+}
+
+.runtime-mobile-back::before {
+  content: "←";
+  margin-right: 6px;
+}
+
 .runtime-template-row {
   display: block;
 }
 
 .runtime-template-json {
-  min-height: 440px;
+  min-height: 300px;
   resize: vertical;
   font-family: var(--do-font-mono);
   font-size: var(--do-text-sm);
   line-height: 1.45;
+}
+
+.runtime-template-editor > header,
+.runtime-task-order,
+.runtime-collection-row,
+.runtime-template-save-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-template-editor > header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.runtime-template-save-state {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--do-text-xs);
+  font-weight: 700;
+}
+
+.runtime-template-save-state[data-state="dirty"],
+.runtime-template-save-state[data-state="validation"] { background: #fff0b8; color: #654b00; }
+.runtime-template-save-state[data-state="saving"] { background: #e8f1ff; color: #174675; }
+.runtime-template-save-state[data-state="saved"] { background: #e9f5ec; color: #1f6a36; }
+.runtime-template-save-state[data-state="conflict"],
+.runtime-template-save-state[data-state="permission-error"],
+.runtime-template-save-state[data-state="network-error"],
+.runtime-template-save-state[data-state="delete-blocked"] { background: #fff1f1; color: var(--danger); }
+
+.runtime-template-form {
+  display: grid;
+  gap: 12px;
+}
+
+.runtime-fieldset,
+.runtime-task-card {
+  min-width: 0;
+  margin: 0;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  padding: 12px;
+}
+
+.runtime-fieldset > legend,
+.runtime-task-card > legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.runtime-grid > label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+}
+
+.runtime-grid > label.wide,
+.runtime-grid > .runtime-preserved-note {
+  grid-column: 1 / -1;
+}
+
+.runtime-grid input:not([type="checkbox"]),
+.runtime-grid select,
+.runtime-grid textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.runtime-grid textarea { min-height: 70px; resize: vertical; }
+.runtime-checkbox { display: flex; align-items: center; gap: 7px; min-height: 38px; color: var(--text); }
+.runtime-collection { display: grid; gap: 10px; }
+.runtime-collection-row { align-items: end; border-bottom: var(--do-border); padding-bottom: 10px; }
+.runtime-collection-row.runtime-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; }
+.runtime-collection-row > .runtime-remove-button { align-self: end; }
+.runtime-tasks { display: grid; gap: 12px; }
+.runtime-task-card { display: grid; gap: 10px; background: var(--surface); }
+.runtime-task-order { justify-content: flex-end; flex-wrap: wrap; }
+.runtime-add-button { justify-self: start; }
+.runtime-remove-button { color: var(--danger); }
+.runtime-field-error { color: var(--danger); font-weight: 700; }
+.runtime-preserved-note { color: var(--muted); }
+.runtime-template-advanced { border-top: var(--do-border); padding-top: 10px; }
+.runtime-template-advanced summary { cursor: pointer; font-weight: 700; margin-bottom: 10px; }
+
+.runtime-template-editor button:focus-visible,
+.runtime-template-editor input:focus-visible,
+.runtime-template-editor textarea:focus-visible,
+.runtime-template-editor select:focus-visible,
+.runtime-template-advanced summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .runtime-template-feedback {
@@ -5560,6 +5693,82 @@ body[data-view="create"] #back-button {
 
 .runtime-template-feedback.is-error {
   color: var(--danger);
+}
+
+.runtime-template-destructive {
+  display: flex;
+  justify-content: flex-end;
+  border-top: var(--do-border);
+  padding-top: 12px;
+}
+
+.runtime-template-readonly {
+  display: grid;
+  gap: 16px;
+}
+
+.runtime-template-readonly > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runtime-template-readonly h4,
+.runtime-template-readonly h5,
+.runtime-template-readonly p {
+  margin: 0;
+}
+
+.runtime-template-readonly > section {
+  display: grid;
+  gap: 8px;
+  border-top: var(--do-border);
+  padding-top: 12px;
+}
+
+.runtime-template-definition {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  gap: 7px 12px;
+  margin: 0;
+}
+
+.runtime-template-definition dt {
+  color: var(--muted);
+  font-size: var(--do-text-sm);
+  font-weight: 700;
+}
+
+.runtime-template-definition dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.runtime-template-readonly-tasks {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.runtime-template-readonly-tasks li {
+  padding: 7px 9px;
+  border: var(--do-border);
+  border-radius: var(--do-radius-sm);
+  background: var(--surface);
+}
+
+.runtime-template-readonly-tasks strong,
+.runtime-template-readonly-tasks span {
+  display: block;
+}
+
+.runtime-template-readonly-tasks span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--do-text-sm);
 }
 
 @media (max-width: 900px) {
@@ -5578,6 +5787,49 @@ body[data-view="create"] #back-button {
 }
 
 @media (max-width: 620px) {
+  .runtime-template-layout.is-detail .runtime-template-list,
+  .runtime-template-layout:not(.is-detail) .runtime-template-editor,
+  .runtime-template-admin.has-selection > .ops-section-header,
+  .runtime-template-admin.has-selection > .runtime-template-search,
+  .runtime-template-admin.has-selection + .runtime-template-support {
+    display: none;
+  }
+
+  .runtime-mobile-back {
+    display: inline-flex;
+  }
+
+  .runtime-template-admin.has-selection {
+    padding: 12px;
+  }
+
+  .runtime-template-actions {
+    position: sticky;
+    top: calc(var(--do-mobile-topbar-height) + var(--do-space-2));
+    z-index: 4;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: var(--do-border);
+    border-radius: var(--do-radius-sm);
+    background: var(--do-color-control);
+    padding: 8px;
+    box-shadow: var(--do-shadow-panel);
+  }
+
+  .runtime-template-readonly > header,
+  .runtime-template-definition {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-template-readonly > header {
+    display: grid;
+  }
+
+  .runtime-template-readonly > header > button,
+  .runtime-template-destructive > button {
+    width: 100%;
+  }
+
   .intake-create-grid,
   .intake-action-grid,
   .assistant-create-grid,
@@ -5588,6 +5840,27 @@ body[data-view="create"] #back-button {
   .intake-create-grid .wide,
   .intake-action-grid .wide {
     grid-column: auto;
+  }
+
+  .runtime-grid,
+  .runtime-collection-row.runtime-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .runtime-grid > label.wide,
+  .runtime-grid > .runtime-preserved-note {
+    grid-column: auto;
+  }
+
+  .runtime-collection-row > .runtime-remove-button,
+  .runtime-template-actions > button,
+  .runtime-task-order > button {
+    width: 100%;
+  }
+
+  .runtime-task-order {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .intake-reference-group,

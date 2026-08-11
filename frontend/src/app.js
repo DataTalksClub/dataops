@@ -219,7 +219,20 @@ let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
 let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
 let intakeState = { filter: "actionable", selectedId: null, items: [], bundles: [], loaded: false, error: "" };
 let assistantQueueState = { filter: "podcast", selectedJobId: null };
-let runtimeTemplateState = { loaded: false, templates: [], selectedId: null, search: "", error: "" };
+let runtimeTemplateState = {
+  loaded: false,
+  templates: [],
+  selectedId: null,
+  search: "",
+  error: "",
+  isAdmin: false,
+  draft: null,
+  baseline: null,
+  editorState: "clean",
+  feedback: "",
+  fieldErrors: {},
+  conflict: null,
+};
 let pendingLegacyRoute = null;
 let applyingLocationRoute = false;
 // Dedicated Users surface snapshot (#95). Kept separate from the home work
@@ -1031,7 +1044,8 @@ function renderTasksSubNav(activeSection) {
       tab.classList.add("is-active");
       tab.setAttribute("aria-current", "page");
     }
-    tab.addEventListener("click", () => {
+    tab.addEventListener("click", async () => {
+      if (id !== activeTasksSection && !(await confirmLeaveRuntimeDraft())) return;
       activeTasksSection = id;
       setWorkspaceUrl("tasks", id);
       renderTasksSurface(allDocuments, id);
@@ -1420,13 +1434,32 @@ function surfaceDescription(view) {
   return descriptions[view] || "";
 }
 
+function countLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function referenceCountLabel(category, count) {
+  const singular = {
+    bundles: "bundle",
+    tasks: "task",
+    recurrences: "recurrence",
+    schedules: "schedule",
+    calendar: "calendar item",
+    notifications: "notification",
+  }[category] || category;
+  return countLabel(count, singular, category);
+}
+
 function surfaceStatusText(view, model) {
-  if (view === "queue") return `${allWorkTasks(operationsWorkSnapshot).length} known work items · ${model.stats.followUpTasks} follow-ups due · ${model.stats.missingProofTasks} missing proof.`;
-  if (view === "workflows") return `${model.stats.activeBundles} active workflows · at-risk first.`;
-  if (view === "templates") return `${model.templates.length} workflow templates · ${model.recurring.configs.length} recurring configs.`;
-  if (view === "assistants") return operationsAssistantSnapshot.loaded ? `${operationsAssistantSnapshot.jobs.length} assistant jobs.` : "Assistant jobs not connected.";
-  if (view === "artifacts") return operationsArtifactSnapshot.loaded ? `${operationsArtifactSnapshot.artifacts.length} artifacts indexed.` : "Artifact index not connected.";
-  if (view === "processes") return operationsQualitySnapshot.loaded ? `${operationsQualitySnapshot.findings.length} process quality findings.` : "Process quality report unavailable.";
+  if (view === "queue") return `${countLabel(allWorkTasks(operationsWorkSnapshot).length, "known work item")} · ${countLabel(model.stats.followUpTasks, "follow-up")} due · ${countLabel(model.stats.missingProofTasks, "item")} missing proof.`;
+  if (view === "workflows") return `${countLabel(model.stats.activeBundles, "active workflow")} · at-risk first.`;
+  if (view === "templates") {
+    const runtimeCount = runtimeTemplateState.loaded ? runtimeTemplateState.templates.length : model.templates.length;
+    return `${countLabel(runtimeCount, "runtime template")} · ${countLabel(model.recurring.configs.length, "recurring config")}.`;
+  }
+  if (view === "assistants") return operationsAssistantSnapshot.loaded ? `${countLabel(operationsAssistantSnapshot.jobs.length, "assistant job")}.` : "Assistant jobs not connected.";
+  if (view === "artifacts") return operationsArtifactSnapshot.loaded ? `${countLabel(operationsArtifactSnapshot.artifacts.length, "artifact")} indexed.` : "Artifact index not connected.";
+  if (view === "processes") return operationsQualitySnapshot.loaded ? `${countLabel(operationsQualitySnapshot.findings.length, "process quality finding")}.` : "Process quality report unavailable.";
   if (view === "search") return "Unified operator search.";
   return "Workflow-first workspace.";
 }
@@ -2661,6 +2694,8 @@ function renderTemplatesRecurringSurface(model) {
   const section = document.createElement("section");
   section.className = "ops-split-surface";
   section.append(renderRuntimeTemplateAdmin());
+  const support = document.createElement("div");
+  support.className = "runtime-template-support";
   const templates = document.createElement("div");
   templates.className = "ops-section";
   const templateHeader = document.createElement("div");
@@ -2668,15 +2703,17 @@ function renderTemplatesRecurringSurface(model) {
   const templateTitle = document.createElement("h3");
   templateTitle.textContent = "Manual workflow templates";
   const templateMeta = document.createElement("span");
-  templateMeta.textContent = `${model.templates.length} available`;
+  const manualTemplates = model.templates.filter((template) => !template.recurring);
+  templateMeta.textContent = `${countLabel(manualTemplates.length, "template")} available`;
   templateHeader.append(templateTitle, templateMeta);
   templates.append(templateHeader);
   const grid = document.createElement("div");
   grid.className = "ops-template-grid";
-  for (const template of model.templates.filter((template) => !template.recurring)) grid.append(renderWorkflowTemplateCard(template));
+  for (const template of manualTemplates) grid.append(renderWorkflowTemplateCard(template));
   if (!grid.children.length) grid.append(renderHonestState("No manual templates indexed", "Process docs remain available under Processes."));
   templates.append(grid);
-  section.append(templates, renderRecurringOperationsSection(model.recurring));
+  support.append(templates, renderRecurringOperationsSection(model.recurring));
+  section.append(support);
   return section;
 }
 
@@ -2686,13 +2723,103 @@ const RUNTIME_TEMPLATE_FIELDS = [
   "triggerEnabled", "taskDefinitions",
 ];
 
+function runtimeTemplateDefinition(template) {
+  const editable = editableRuntimeTemplate(template);
+  return {
+    name: editable.name || "",
+    type: editable.type || "",
+    emoji: editable.emoji || "",
+    tags: [...(editable.tags || [])],
+    defaultAssigneeId: editable.defaultAssigneeId || "",
+    phases: structuredClone(editable.phases || []),
+    sourceDocIds: [...(editable.sourceDocIds || [])],
+    references: structuredClone(editable.references || []),
+    bundleLinkDefinitions: structuredClone(editable.bundleLinkDefinitions || []),
+    triggerType: editable.triggerType || "manual",
+    triggerSchedule: editable.triggerSchedule || "",
+    triggerLeadDays: Number(editable.triggerLeadDays || 0),
+    triggerEnabled: editable.triggerEnabled !== false,
+    taskDefinitions: structuredClone(editable.taskDefinitions || []),
+  };
+}
+
+function newRuntimeTemplateDraft() {
+  return runtimeTemplateDefinition({
+    name: "New workflow",
+    type: "workflow",
+    triggerType: "manual",
+    triggerEnabled: true,
+    taskDefinitions: [{ refId: "first-task", description: "First task", offsetDays: 0 }],
+  });
+}
+
+function runtimeDraftDirty() {
+  return Boolean(runtimeTemplateState.draft && runtimeTemplateState.baseline)
+    && JSON.stringify(runtimeTemplateState.draft) !== JSON.stringify(runtimeTemplateState.baseline);
+}
+
+function setRuntimeEditorState(state, feedback = "") {
+  runtimeTemplateState.editorState = state;
+  runtimeTemplateState.feedback = feedback;
+  const status = document.querySelector("[data-template-save-state]");
+  if (status) {
+    status.dataset.state = state;
+    status.textContent = runtimeTemplateStateLabel();
+  }
+  const feedbackNode = document.querySelector(".runtime-template-feedback");
+  if (feedbackNode) {
+    feedbackNode.textContent = feedback;
+    feedbackNode.classList.toggle("is-error", ["validation", "permission-error", "network-error", "conflict", "delete-blocked"].includes(state));
+  }
+}
+
+function runtimeTemplateStateLabel() {
+  const labels = {
+    clean: runtimeTemplateState.selectedId === "__new__" ? "Not yet saved" : "No unsaved changes",
+    dirty: "Unsaved changes",
+    saving: "Saving…",
+    saved: "Saved",
+    validation: "Fix validation errors",
+    "permission-error": "Permission error",
+    "network-error": "Save failed",
+    conflict: "Conflict — draft preserved",
+    "delete-blocked": "Delete blocked",
+  };
+  return labels[runtimeTemplateState.editorState] || "Saved";
+}
+
+function markRuntimeDraftChanged() {
+  runtimeTemplateState.conflict = null;
+  runtimeTemplateState.fieldErrors = {};
+  document.querySelectorAll(".runtime-field-error").forEach((message) => message.remove());
+  document.querySelectorAll(".runtime-template-form [aria-invalid='true']").forEach((control) => control.removeAttribute("aria-invalid"));
+  setRuntimeEditorState(runtimeDraftDirty() ? "dirty" : "clean");
+  const advanced = document.querySelector(".runtime-template-json");
+  if (advanced) advanced.value = JSON.stringify(runtimeTemplateState.draft, null, 2);
+}
+
+async function confirmLeaveRuntimeDraft() {
+  if (!runtimeDraftDirty()) return true;
+  return await confirmDialog("This runtime template has unsaved changes. Leave without saving them?", { okText: "Leave", danger: true });
+}
+
+window.addEventListener("beforeunload", (event) => {
+  if (!runtimeDraftDirty()) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 async function refreshRuntimeTemplates(options = {}) {
   try {
-    const payload = await request(workApiUrl("/api/templates"));
+    const [payload, me] = await Promise.all([
+      request(workApiUrl("/api/templates")),
+      request(workApiUrl("/api/me")).catch(() => ({})),
+    ]);
     runtimeTemplateState = {
       ...runtimeTemplateState,
       loaded: true,
       templates: Array.isArray(payload) ? payload : payload.templates || [],
+      isAdmin: me?.user?.role === "admin",
       error: "",
     };
   } catch (error) {
@@ -2711,21 +2838,332 @@ function editableRuntimeTemplate(template) {
   return editable;
 }
 
+function runtimeError(key) {
+  return runtimeTemplateState.fieldErrors[key] || "";
+}
+
+function runtimeField(labelText, value, onInput, options = {}) {
+  const label = document.createElement("label");
+  label.className = options.wide ? "wide" : "";
+  const title = document.createElement("span");
+  title.textContent = labelText;
+  const control = document.createElement(options.multiline ? "textarea" : options.select ? "select" : "input");
+  if (!options.multiline && !options.select) control.type = options.type || "text";
+  if (options.select) {
+    for (const choice of options.select) {
+      const option = document.createElement("option");
+      option.value = typeof choice === "string" ? choice : choice.value;
+      option.textContent = typeof choice === "string" ? choice : choice.label;
+      control.append(option);
+    }
+  }
+  control.value = value ?? "";
+  if (options.placeholder) control.placeholder = options.placeholder;
+  if (options.required) control.required = true;
+  if (options.min !== undefined) control.min = String(options.min);
+  control.addEventListener(options.select ? "change" : "input", () => {
+    const next = options.type === "number" ? (control.value === "" ? 0 : Number(control.value)) : control.value;
+    onInput(next);
+    markRuntimeDraftChanged();
+  });
+  label.append(title, control);
+  const error = runtimeError(options.errorKey || "");
+  if (error) {
+    control.setAttribute("aria-invalid", "true");
+    const message = document.createElement("small");
+    message.className = "runtime-field-error";
+    message.textContent = error;
+    label.append(message);
+  }
+  return label;
+}
+
+function runtimeCheckbox(labelText, checked, onChange) {
+  const label = document.createElement("label");
+  label.className = "runtime-checkbox";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(checked);
+  input.addEventListener("change", () => { onChange(input.checked); markRuntimeDraftChanged(); });
+  label.append(input, document.createTextNode(labelText));
+  return label;
+}
+
+function csvValues(value) {
+  return String(value || "").split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function renderRuntimeMetadataFields(draft) {
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "runtime-fieldset runtime-grid";
+  fieldset.innerHTML = "<legend>Template details</legend>";
+  fieldset.append(
+    runtimeField("Name", draft.name, (value) => { draft.name = value; }, { required: true, errorKey: "name" }),
+    runtimeField("Type", draft.type, (value) => { draft.type = value; }, { required: true, errorKey: "type" }),
+    runtimeField("Emoji", draft.emoji, (value) => { draft.emoji = value; }),
+    runtimeField("Tags", (draft.tags || []).join(", "), (value) => { draft.tags = csvValues(value); }, { placeholder: "newsletter, weekly" }),
+    runtimeField("Default assignee ID", draft.defaultAssigneeId, (value) => { draft.defaultAssigneeId = value; }, { wide: true }),
+  );
+  return fieldset;
+}
+
+function renderRuntimeTriggerFields(draft) {
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "runtime-fieldset runtime-grid";
+  fieldset.innerHTML = "<legend>Trigger settings</legend>";
+  fieldset.append(
+    runtimeField("Trigger type", draft.triggerType, (value) => { draft.triggerType = value; }, { select: ["manual", "automatic"] }),
+    runtimeField("Schedule", draft.triggerSchedule, (value) => { draft.triggerSchedule = value; }, { placeholder: "0 9 * * 1" }),
+    runtimeField("Lead time (days)", draft.triggerLeadDays, (value) => { draft.triggerLeadDays = value; }, { type: "number", min: 0 }),
+    runtimeCheckbox("Trigger enabled", draft.triggerEnabled, (value) => { draft.triggerEnabled = value; }),
+  );
+  return fieldset;
+}
+
+function renderRuntimeCollection(title, key, items, createItem, renderItem) {
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "runtime-fieldset runtime-collection";
+  const legend = document.createElement("legend");
+  legend.textContent = title;
+  fieldset.append(legend);
+  items.forEach((item, index) => {
+    const row = renderItem(item, index, key);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "runtime-remove-button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${title.toLowerCase()} item ${index + 1}`);
+    remove.addEventListener("click", () => {
+      items.splice(index, 1);
+      markRuntimeDraftChanged();
+      renderTasksSurface(allDocuments, "templates");
+    });
+    row.append(remove);
+    fieldset.append(row);
+  });
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "runtime-add-button";
+  add.textContent = `Add ${title.replace(/s$/, "").toLowerCase()}`;
+  add.addEventListener("click", () => {
+    items.push(createItem());
+    markRuntimeDraftChanged();
+    renderTasksSurface(allDocuments, "templates");
+  });
+  fieldset.append(add);
+  return fieldset;
+}
+
+function renderRuntimePhase(phase) {
+  const row = document.createElement("div");
+  row.className = "runtime-collection-row runtime-grid";
+  row.append(
+    runtimeField("Phase ID", phase.id, (value) => { phase.id = value; }),
+    runtimeField("Phase name", phase.name, (value) => { phase.name = value; }),
+    runtimeField("Stage", phase.stage || "", (value) => { phase.stage = value; }, { select: ["", "preparation", "announced", "after-event", "done"] }),
+  );
+  return row;
+}
+
+function renderRuntimeReference(reference) {
+  const row = document.createElement("div");
+  row.className = "runtime-collection-row runtime-grid";
+  row.append(
+    runtimeField("Reference name", reference.name, (value) => { reference.name = value; }),
+    runtimeField("Reference URL", reference.url, (value) => { reference.url = value; }, { type: "url", wide: true }),
+  );
+  return row;
+}
+
+function renderRuntimeBundleLink(link) {
+  const row = document.createElement("div");
+  row.className = "runtime-collection-row runtime-grid";
+  row.append(runtimeField("Bundle link name", link.name, (value) => { link.name = value; }, { wide: true }));
+  return row;
+}
+
+function renderRuntimeLineList(title, key, values, placeholder) {
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "runtime-fieldset";
+  const legend = document.createElement("legend");
+  legend.textContent = title;
+  fieldset.append(legend, runtimeField(title, (values || []).join("\n"), (value) => {
+    runtimeTemplateState.draft[key] = csvValues(value);
+  }, { multiline: true, placeholder, wide: true }));
+  return fieldset;
+}
+
+function refIds(refs, idField) {
+  return (refs || []).map((ref) => ref?.[idField]).filter(Boolean).join(", ");
+}
+
+function updateRefs(task, key, idField, value) {
+  const existing = new Map((task[key] || []).map((ref) => [ref?.[idField], ref]));
+  task[key] = csvValues(value).map((id) => existing.get(id) || { [idField]: id });
+}
+
+function renderRuntimeTasks(draft) {
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "runtime-fieldset runtime-tasks";
+  const legend = document.createElement("legend");
+  legend.textContent = "Ordered tasks";
+  fieldset.append(legend);
+  draft.taskDefinitions.forEach((task, index) => fieldset.append(renderRuntimeTask(task, index, draft.taskDefinitions)));
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "runtime-add-button";
+  add.textContent = "Add task";
+  add.addEventListener("click", () => {
+    draft.taskDefinitions.push({ refId: `task-${draft.taskDefinitions.length + 1}`, description: "New task", offsetDays: 0 });
+    markRuntimeDraftChanged();
+    renderTasksSurface(allDocuments, "templates");
+  });
+  fieldset.append(add);
+  const error = runtimeError("taskDefinitions");
+  if (error) {
+    const message = document.createElement("small");
+    message.className = "runtime-field-error";
+    message.textContent = error;
+    fieldset.append(message);
+  }
+  return fieldset;
+}
+
+function renderRuntimeTask(task, index, tasks) {
+  const card = document.createElement("fieldset");
+  card.className = "runtime-task-card";
+  const legend = document.createElement("legend");
+  legend.textContent = `Task ${index + 1}: ${task.description || task.refId || "Untitled"}`;
+  const order = document.createElement("div");
+  order.className = "runtime-task-order";
+  for (const [label, delta] of [["Move up", -1], ["Move down", 1]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.setAttribute("aria-label", `${label} task ${index + 1}`);
+    button.disabled = index + delta < 0 || index + delta >= tasks.length;
+    button.addEventListener("click", () => {
+      const nextIndex = index + delta;
+      const [moved] = tasks.splice(index, 1);
+      tasks.splice(nextIndex, 0, moved);
+      markRuntimeDraftChanged();
+      renderTasksSurface(allDocuments, "templates");
+      const contextualLabel = nextIndex === 0 && label === "Move up"
+        ? "Move down"
+        : nextIndex === tasks.length - 1 && label === "Move down"
+          ? "Move up"
+          : label;
+      document.querySelector(`[aria-label="${contextualLabel} task ${nextIndex + 1}"]`)?.focus();
+    });
+    order.append(button);
+  }
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "runtime-remove-button";
+  remove.textContent = "Remove task";
+  remove.setAttribute("aria-label", `Remove task ${index + 1}`);
+  remove.addEventListener("click", () => {
+    tasks.splice(index, 1);
+    markRuntimeDraftChanged();
+    renderTasksSurface(allDocuments, "templates");
+  });
+  order.append(remove);
+  const grid = document.createElement("div");
+  grid.className = "runtime-grid";
+  const errorPrefix = `taskDefinitions.${index}`;
+  grid.append(
+    runtimeField("Reference ID", task.refId, (value) => { task.refId = value; }, { required: true, errorKey: `${errorPrefix}.refId` }),
+    runtimeField("Day offset", task.offsetDays, (value) => { task.offsetDays = value; }, { type: "number", errorKey: `${errorPrefix}.offsetDays` }),
+    runtimeField("Description", task.description, (value) => { task.description = value; }, { multiline: true, wide: true, required: true, errorKey: `${errorPrefix}.description` }),
+    runtimeField("Phase", task.phase || "", (value) => { task.phase = value; }),
+    runtimeField("Assignee ID", task.assigneeId || "", (value) => { task.assigneeId = value; }),
+    runtimeField("Instructions URL", task.instructionsUrl || "", (value) => { task.instructionsUrl = value; }, { type: "url", wide: true }),
+    runtimeField("Instruction document ID", task.instructionDocId || "", (value) => { task.instructionDocId = value; }),
+    runtimeField("Instruction step", task.instructionStepId || "", (value) => { task.instructionStepId = value; }),
+    runtimeField("Systems", (task.systems || []).join(", "), (value) => { task.systems = csvValues(value); }),
+    runtimeField("Required bundle link", task.requiredLinkName || "", (value) => { task.requiredLinkName = value; }),
+    runtimeField("Completion stage", task.stageOnComplete || "", (value) => { task.stageOnComplete = value; }, { select: ["", "preparation", "announced", "after-event", "done"] }),
+  );
+  const validation = task.validation && typeof task.validation === "object" ? task.validation : {};
+  grid.append(
+    runtimeField("Validation guidance", typeof task.validation === "string" ? task.validation : "", (value) => {
+      if (value) task.validation = value;
+      else if (Object.keys(validation).length) task.validation = validation;
+      else delete task.validation;
+    }, { wide: true }),
+    runtimeField("Required bundle links", (validation.requiredBundleLinks || []).join(", "), (value) => {
+      const links = csvValues(value);
+      task.validation = { ...validation, requiredBundleLinks: links };
+      if (!links.length) delete task.validation.requiredBundleLinks;
+      if (!Object.keys(task.validation).length) delete task.validation;
+    }, { wide: true }),
+  );
+  if (task.validation && typeof task.validation === "object" && Object.keys(task.validation).some((key) => key !== "requiredBundleLinks")) {
+    const preserved = document.createElement("small");
+    preserved.className = "runtime-preserved-note";
+    preserved.textContent = "Additional validation settings are preserved and visible in Advanced JSON.";
+    grid.append(preserved);
+  }
+  const proof = task.proofRequirement || { type: "", label: "", required: true };
+  grid.append(
+    runtimeField("Proof type", proof.type || "", (value) => {
+      if (!value) delete task.proofRequirement;
+      else task.proofRequirement = { ...proof, type: value, required: proof.required !== false };
+    }, { select: ["", "url", "file", "artifact", "comment", "external-status"] }),
+    runtimeField("Proof label", proof.label || "", (value) => {
+      if (task.proofRequirement) task.proofRequirement.label = value;
+    }),
+    runtimeCheckbox("Proof required", proof.required !== false, (value) => {
+      if (task.proofRequirement) task.proofRequirement.required = value;
+    }),
+    runtimeCheckbox("Milestone", task.isMilestone, (value) => { task.isMilestone = value; }),
+    runtimeCheckbox("Required file", task.requiresFile, (value) => { task.requiresFile = value; }),
+    runtimeField("Artifact reference IDs", refIds(task.artifactRefs, "artifactId"), (value) => updateRefs(task, "artifactRefs", "artifactId", value), { wide: true }),
+    runtimeField("Assistant job reference IDs", refIds(task.assistantJobRefs, "assistantJobId"), (value) => updateRefs(task, "assistantJobRefs", "assistantJobId", value), { wide: true }),
+    runtimeField("Audit event reference IDs", refIds(task.auditEventRefs, "auditEventId"), (value) => updateRefs(task, "auditEventRefs", "auditEventId", value), { wide: true }),
+    runtimeField("Intake reference IDs", refIds(task.intakeRefs, "intakeItemId"), (value) => updateRefs(task, "intakeRefs", "intakeItemId", value), { wide: true }),
+  );
+  card.append(legend, order, grid);
+  return card;
+}
+
+function validateRuntimeTemplateDraft(draft) {
+  const errors = {};
+  if (!String(draft.name || "").trim()) errors.name = "Name is required.";
+  if (!String(draft.type || "").trim()) errors.type = "Type is required.";
+  if (!Array.isArray(draft.taskDefinitions) || !draft.taskDefinitions.length) errors.taskDefinitions = "Add at least one task.";
+  (draft.taskDefinitions || []).forEach((task, index) => {
+    if (!String(task.refId || "").trim()) errors[`taskDefinitions.${index}.refId`] = "Reference ID is required.";
+    if (!String(task.description || "").trim()) errors[`taskDefinitions.${index}.description`] = "Description is required.";
+    if (!Number.isFinite(Number(task.offsetDays))) errors[`taskDefinitions.${index}.offsetDays`] = "Day offset must be a number.";
+  });
+  return errors;
+}
+
 function renderRuntimeTemplateAdmin() {
   const section = document.createElement("section");
   section.className = "ops-section runtime-template-admin";
+  section.classList.toggle("has-selection", Boolean(runtimeTemplateState.selectedId));
   const header = document.createElement("div");
   header.className = "ops-section-header";
   header.innerHTML = `<div><h3>Runtime template administration</h3><span>Templates stored in the application database and used to instantiate workflows.</span></div>`;
-  const add = document.createElement("button");
-  add.type = "button";
-  add.className = "primary-button";
-  add.textContent = "New runtime template";
-  add.addEventListener("click", () => {
-    runtimeTemplateState.selectedId = "__new__";
-    renderTasksSurface(allDocuments, "templates");
-  });
-  header.append(add);
+  if (runtimeTemplateState.isAdmin) {
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "primary-button";
+    add.textContent = "New runtime template";
+    add.addEventListener("click", async () => {
+      if (!(await confirmLeaveRuntimeDraft())) return;
+      runtimeTemplateState.selectedId = "__new__";
+      runtimeTemplateState.draft = newRuntimeTemplateDraft();
+      runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
+      runtimeTemplateState.editorState = "clean";
+      runtimeTemplateState.feedback = "";
+      runtimeTemplateState.fieldErrors = {};
+      renderTasksSurface(allDocuments, "templates");
+    });
+    header.append(add);
+  }
   section.append(header);
 
   if (runtimeTemplateState.error) {
@@ -2750,6 +3188,7 @@ function renderRuntimeTemplateAdmin() {
 
   const layout = document.createElement("div");
   layout.className = "runtime-template-layout";
+  layout.classList.toggle("is-detail", Boolean(runtimeTemplateState.selectedId));
   const list = document.createElement("div");
   list.className = "runtime-template-list";
   const templates = runtimeTemplateState.templates.filter((template) => {
@@ -2761,9 +3200,16 @@ function renderRuntimeTemplateAdmin() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `runtime-template-row ${template.id === runtimeTemplateState.selectedId ? "is-selected" : ""}`;
-    button.innerHTML = `<strong>${escapeHtml(template.emoji ? `${template.emoji} ${template.name}` : template.name || "Unnamed template")}</strong><span>${escapeHtml(template.type || "untyped")} · ${(template.taskDefinitions || []).length} tasks · ${escapeHtml(template.triggerType || "manual")}</span>`;
-    button.addEventListener("click", () => {
+    button.innerHTML = `<strong>${escapeHtml(template.emoji ? `${template.emoji} ${template.name}` : template.name || "Unnamed template")}</strong><span>${escapeHtml(template.type || "untyped")} · ${countLabel((template.taskDefinitions || []).length, "task")} · ${escapeHtml(template.triggerType || "manual")}</span>`;
+    button.addEventListener("click", async () => {
+      if (template.id === runtimeTemplateState.selectedId) return;
+      if (!(await confirmLeaveRuntimeDraft())) return;
       runtimeTemplateState.selectedId = template.id;
+      runtimeTemplateState.draft = runtimeTemplateDefinition(template);
+      runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
+      runtimeTemplateState.editorState = "clean";
+      runtimeTemplateState.feedback = "";
+      runtimeTemplateState.fieldErrors = {};
       renderTasksSurface(allDocuments, "templates");
     });
     list.append(button);
@@ -2773,78 +3219,270 @@ function renderRuntimeTemplateAdmin() {
   return section;
 }
 
+function renderRuntimeTemplateBackButton() {
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "runtime-mobile-back";
+  back.textContent = "Back to template list";
+  back.addEventListener("click", async () => {
+    if (!(await confirmLeaveRuntimeDraft())) return;
+    runtimeTemplateState.selectedId = null;
+    runtimeTemplateState.draft = null;
+    runtimeTemplateState.baseline = null;
+    runtimeTemplateState.editorState = "clean";
+    runtimeTemplateState.feedback = "";
+    runtimeTemplateState.fieldErrors = {};
+    renderTasksSurface(allDocuments, "templates");
+    document.querySelector(".runtime-template-search")?.focus();
+  });
+  return back;
+}
+
+function appendRuntimeDefinitionRow(list, labelText, valueText) {
+  const term = document.createElement("dt");
+  term.textContent = labelText;
+  const value = document.createElement("dd");
+  value.textContent = valueText || "None";
+  list.append(term, value);
+}
+
+function renderRuntimeTemplateReadOnly(selected) {
+  const view = document.createElement("div");
+  view.className = "runtime-template-readonly";
+  const header = document.createElement("header");
+  const title = document.createElement("div");
+  const heading = document.createElement("h4");
+  heading.textContent = selected.emoji ? `${selected.emoji} ${selected.name}` : selected.name || selected.id;
+  const guidance = document.createElement("p");
+  guidance.textContent = "Read-only definition. Admin permission is required to change it.";
+  title.append(heading, guidance);
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "primary-button";
+  start.textContent = "Start workflow";
+  start.addEventListener("click", () => openQuickWorkflowForm({
+    template: { ...selected, templateId: selected.id, title: selected.name },
+  }));
+  header.append(title, start);
+
+  const definition = document.createElement("dl");
+  definition.className = "runtime-template-definition";
+  appendRuntimeDefinitionRow(definition, "Type", selected.type || "untyped");
+  appendRuntimeDefinitionRow(definition, "Trigger", [selected.triggerType || "manual", selected.triggerSchedule].filter(Boolean).join(" · "));
+  appendRuntimeDefinitionRow(definition, "Tasks", countLabel((selected.taskDefinitions || []).length, "task"));
+  appendRuntimeDefinitionRow(definition, "Tags", (selected.tags || []).join(", "));
+  appendRuntimeDefinitionRow(definition, "Default assignee", selected.defaultAssigneeId || "Unassigned");
+  appendRuntimeDefinitionRow(definition, "Source documents", (selected.sourceDocIds || []).join(", "));
+
+  const tasks = document.createElement("section");
+  const taskHeading = document.createElement("h5");
+  taskHeading.textContent = "Ordered tasks";
+  const taskList = document.createElement("ol");
+  taskList.className = "runtime-template-readonly-tasks";
+  for (const task of selected.taskDefinitions || []) {
+    const item = document.createElement("li");
+    const description = document.createElement("strong");
+    description.textContent = task.description || task.refId || "Untitled task";
+    const meta = document.createElement("span");
+    meta.textContent = [task.refId, `day ${Number(task.offsetDays || 0) >= 0 ? "+" : ""}${Number(task.offsetDays || 0)}`, task.phase, task.isMilestone ? "milestone" : ""].filter(Boolean).join(" · ");
+    item.append(description, meta);
+    taskList.append(item);
+  }
+  if (!taskList.children.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No task definitions. This template cannot create useful workflow work yet.";
+    taskList.append(empty);
+  }
+  tasks.append(taskHeading, taskList);
+
+  const references = document.createElement("section");
+  const referencesHeading = document.createElement("h5");
+  referencesHeading.textContent = "References and required links";
+  const referencesBody = document.createElement("p");
+  referencesBody.textContent = [
+    ...(selected.references || []).map((reference) => reference.name || reference.url),
+    ...(selected.bundleLinkDefinitions || []).map((link) => link.name),
+  ].filter(Boolean).join(" · ") || "None configured";
+  references.append(referencesHeading, referencesBody);
+  view.append(header, definition, tasks, references);
+  return view;
+}
+
 function renderRuntimeTemplateEditor() {
   const editor = document.createElement("div");
   editor.className = "runtime-template-editor";
   const creating = runtimeTemplateState.selectedId === "__new__";
   const selected = runtimeTemplateState.templates.find((template) => template.id === runtimeTemplateState.selectedId);
   if (!creating && !selected) {
-    editor.append(renderHonestState("Template editor", "Select a runtime template to edit its complete validated definition."));
+    editor.append(renderHonestState(
+      runtimeTemplateState.isAdmin ? "Template editor" : "Runtime templates",
+      runtimeTemplateState.isAdmin
+        ? "Select a runtime template to edit its complete validated definition."
+        : "Operators can inspect and instantiate templates. Template administration is restricted to admins.",
+    ));
     return editor;
   }
-  const value = creating
-    ? { name: "New workflow", type: "workflow", triggerType: "manual", taskDefinitions: [{ refId: "first-task", description: "First task", offsetDays: 0 }] }
-    : editableRuntimeTemplate(selected);
+  if (!runtimeTemplateState.isAdmin) {
+    editor.append(renderRuntimeTemplateBackButton(), renderRuntimeTemplateReadOnly(selected));
+    return editor;
+  }
+  if (!runtimeTemplateState.draft) {
+    runtimeTemplateState.draft = creating ? newRuntimeTemplateDraft() : runtimeTemplateDefinition(selected);
+    runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
+  }
+  const value = runtimeTemplateState.draft;
+  editor.append(renderRuntimeTemplateBackButton());
   const heading = document.createElement("h4");
   heading.textContent = creating ? "New runtime template" : `Edit ${selected.name || selected.id}`;
   const guidance = document.createElement("p");
-  guidance.textContent = "Edit the validated template JSON. This preserves advanced fields—phases, document context, proof rules, milestones, references, and automatic triggers—without maintaining a second bespoke form schema.";
+  guidance.textContent = "Use the structured fields below. Task order is the workflow order; Advanced JSON is a read-only review of the normalized draft.";
+  const saveState = document.createElement("span");
+  saveState.className = "runtime-template-save-state";
+  saveState.dataset.templateSaveState = "";
+  saveState.dataset.state = runtimeTemplateState.editorState;
+  saveState.setAttribute("role", "status");
+  saveState.setAttribute("aria-live", "polite");
+  saveState.textContent = runtimeTemplateStateLabel();
+
+  const form = document.createElement("div");
+  form.className = "runtime-template-form";
+  form.append(renderRuntimeMetadataFields(value), renderRuntimeTriggerFields(value));
+  form.append(renderRuntimeCollection("Phases", "phases", value.phases, () => ({ id: "new-phase", name: "New phase", stage: "preparation" }), renderRuntimePhase));
+  form.append(renderRuntimeLineList("Source document IDs", "sourceDocIds", value.sourceDocIds, "One document ID per line"));
+  form.append(renderRuntimeCollection("References", "references", value.references, () => ({ name: "New reference", url: "" }), renderRuntimeReference));
+  form.append(renderRuntimeCollection("Bundle links", "bundleLinkDefinitions", value.bundleLinkDefinitions, () => ({ name: "New link" }), renderRuntimeBundleLink));
+  form.append(renderRuntimeTasks(value));
+
+  const advanced = document.createElement("details");
+  advanced.className = "runtime-template-advanced";
+  const advancedSummary = document.createElement("summary");
+  advancedSummary.textContent = "Advanced JSON";
   const textarea = document.createElement("textarea");
   textarea.className = "runtime-template-json";
-  textarea.spellcheck = false;
+  textarea.readOnly = true;
+  textarea.setAttribute("aria-label", "Normalized runtime template JSON (read only)");
   textarea.value = JSON.stringify(value, null, 2);
+  advanced.append(advancedSummary, textarea);
   const feedback = document.createElement("p");
   feedback.className = "runtime-template-feedback";
+  feedback.setAttribute("role", "alert");
+  feedback.textContent = runtimeTemplateState.feedback;
+  feedback.classList.toggle("is-error", ["validation", "permission-error", "network-error", "conflict", "delete-blocked"].includes(runtimeTemplateState.editorState));
   const actions = document.createElement("div");
   actions.className = "runtime-template-actions";
+  const destructiveActions = document.createElement("div");
+  destructiveActions.className = "runtime-template-destructive";
   const save = document.createElement("button");
   save.type = "button";
   save.className = "primary-button";
   save.textContent = creating ? "Create template" : "Save template";
+  save.disabled = runtimeTemplateState.editorState === "saving";
   save.addEventListener("click", async () => {
-    let parsed;
-    try {
-      parsed = JSON.parse(textarea.value);
-    } catch (error) {
-      feedback.textContent = `Invalid JSON: ${error.message}`;
-      feedback.classList.add("is-error");
+    const errors = validateRuntimeTemplateDraft(value);
+    runtimeTemplateState.fieldErrors = errors;
+    if (Object.keys(errors).length) {
+      setRuntimeEditorState("validation", "Review the highlighted fields before saving.");
+      renderTasksSurface(allDocuments, "templates");
+      document.querySelector(".runtime-field-error")?.closest("label, fieldset")?.querySelector("input, textarea, select")?.focus();
       return;
     }
-    const payload = editableRuntimeTemplate(parsed);
+    if (runtimeTemplateState.editorState === "saving") return;
+    setRuntimeEditorState("saving", creating ? "Creating template…" : "Saving template…");
+    save.disabled = true;
+    const payload = runtimeTemplateDefinition(value);
+    if (!creating) payload.expectedVersion = selected.version;
     try {
       const response = await request(workApiUrl(creating ? "/api/templates" : `/api/templates/${encodeURIComponent(selected.id)}`), {
         method: creating ? "POST" : "PUT",
         body: JSON.stringify(payload),
       });
-      runtimeTemplateState.selectedId = (response.template || response).id || selected?.id || null;
+      const saved = response.template || response;
+      runtimeTemplateState.templates = runtimeTemplateState.templates.filter((item) => item.id !== saved.id).concat(saved);
+      runtimeTemplateState.selectedId = saved.id;
+      runtimeTemplateState.draft = runtimeTemplateDefinition(saved);
+      runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
+      runtimeTemplateState.conflict = null;
+      runtimeTemplateState.fieldErrors = {};
+      runtimeTemplateState.editorState = "saved";
+      runtimeTemplateState.feedback = `Saved version ${saved.version}.`;
       setStatus(creating ? "Runtime template created." : "Runtime template saved.");
-      await refreshRuntimeTemplates({ rerender: true });
+      renderTasksSurface(allDocuments, "templates");
     } catch (error) {
-      feedback.textContent = error.message || "Template save failed";
-      feedback.classList.add("is-error");
+      save.disabled = false;
+      if (error.status === 409) {
+        runtimeTemplateState.conflict = error.payload || {};
+        setRuntimeEditorState("conflict", `A newer server version${error.payload?.currentVersion ? ` (${error.payload.currentVersion})` : ""} exists. Your draft is preserved.`);
+        renderTasksSurface(allDocuments, "templates");
+      } else {
+        setRuntimeEditorState([401, 403].includes(error.status) ? "permission-error" : "network-error", error.message || "Template save failed. Your draft is preserved.");
+      }
     }
   });
   actions.append(save);
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel changes";
+  cancel.addEventListener("click", async () => {
+    if (runtimeDraftDirty() && !(await confirmDialog("Discard the unsaved template changes?", { okText: "Discard", danger: true }))) return;
+    runtimeTemplateState.draft = structuredClone(runtimeTemplateState.baseline);
+    runtimeTemplateState.fieldErrors = {};
+    runtimeTemplateState.conflict = null;
+    runtimeTemplateState.editorState = "clean";
+    runtimeTemplateState.feedback = "";
+    renderTasksSurface(allDocuments, "templates");
+  });
+  actions.append(cancel);
+  if (runtimeTemplateState.editorState === "conflict" && !creating) {
+    const reload = document.createElement("button");
+    reload.type = "button";
+    reload.textContent = "Reload server version";
+    reload.addEventListener("click", async () => {
+      if (!(await confirmDialog("Replace this local draft with the current server version?", { okText: "Reload", danger: true }))) return;
+      const response = await request(workApiUrl(`/api/templates/${encodeURIComponent(selected.id)}`));
+      const current = response.template || response;
+      runtimeTemplateState.templates = runtimeTemplateState.templates.map((item) => item.id === current.id ? current : item);
+      runtimeTemplateState.draft = runtimeTemplateDefinition(current);
+      runtimeTemplateState.baseline = structuredClone(runtimeTemplateState.draft);
+      runtimeTemplateState.editorState = "clean";
+      runtimeTemplateState.feedback = `Reloaded version ${current.version}.`;
+      runtimeTemplateState.conflict = null;
+      renderTasksSurface(allDocuments, "templates");
+    });
+    actions.append(reload);
+  }
   if (!creating) {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "danger-button";
     remove.textContent = "Delete template";
     remove.addEventListener("click", async () => {
-      if (!(await confirmDialog(`Delete runtime template “${selected.name || selected.id}”?`, { okText: "Delete", danger: true }))) return;
+      if (!(await confirmDialog(`Delete runtime template “${selected.name || selected.id}”? Referenced templates cannot be deleted.`, { okText: "Delete", danger: true }))) return;
       try {
-        await request(workApiUrl(`/api/templates/${encodeURIComponent(selected.id)}`), { method: "DELETE" });
+        await request(workApiUrl(`/api/templates/${encodeURIComponent(selected.id)}`), { method: "DELETE", body: JSON.stringify({ expectedVersion: selected.version }) });
         runtimeTemplateState.selectedId = null;
+        runtimeTemplateState.draft = null;
+        runtimeTemplateState.baseline = null;
         setStatus("Runtime template deleted.");
         await refreshRuntimeTemplates({ rerender: true });
       } catch (error) {
-        feedback.textContent = error.message || "Template deletion failed";
-        feedback.classList.add("is-error");
+        if (error.payload?.code === "template_in_use") {
+          const categories = Object.entries(error.payload.references?.categories || {}).map(([name, count]) => referenceCountLabel(name, count)).join(", ");
+          setRuntimeEditorState("delete-blocked", `This template is still referenced${categories ? ` by ${categories}` : ""}. Remove those references before deleting.`);
+        } else if (error.status === 409) {
+          runtimeTemplateState.conflict = error.payload || {};
+          setRuntimeEditorState("conflict", "The template changed before deletion. Your draft is preserved.");
+          renderTasksSurface(allDocuments, "templates");
+        } else {
+          setRuntimeEditorState([401, 403].includes(error.status) ? "permission-error" : "network-error", error.message || "Template deletion failed");
+        }
       }
     });
-    actions.append(remove);
+    destructiveActions.append(remove);
   }
-  editor.append(heading, guidance, textarea, feedback, actions);
+  const editorHeader = document.createElement("header");
+  editorHeader.append(heading, saveState);
+  editor.append(editorHeader, guidance, actions, feedback, form, advanced);
+  if (destructiveActions.children.length) editor.append(destructiveActions);
   return editor;
 }
 
@@ -7360,14 +7998,23 @@ function parseWorkspaceHash() {
 
 async function applyWorkspaceRoute(route, options = {}) {
   if (!route || applyingLocationRoute) return;
+  const previousView = activeWorkspaceView;
+  const previousTasksSection = activeTasksSection;
   applyingLocationRoute = true;
   pendingLegacyRoute = route;
-  if (route.view === "tasks") activeTasksSection = route.tasksSection;
   if (route.view === "inbox" && route.params.get("intakeId")) intakeState.selectedId = route.params.get("intakeId");
   if (route.tasksSection === "assistants" && route.params.get("assistantJobId")) assistantQueueState.selectedJobId = route.params.get("assistantJobId");
   try {
     const requestedView = route.view === "tasks" && route.tasksSection !== "queue" ? route.tasksSection : route.view;
-    await showWorkspaceSurface(requestedView, { updateUrl: false, replace: options.replace });
+    const changed = await showWorkspaceSurface(requestedView, { updateUrl: false, replace: options.replace });
+    if (!changed) {
+      activeWorkspaceView = previousView;
+      activeTasksSection = previousTasksSection;
+      pendingLegacyRoute = null;
+      syncWorkspaceNav();
+      history.replaceState(history.state, "", `/#${workspaceHashPath(previousView, previousTasksSection)}`);
+      return;
+    }
     const taskId = route.params.get("taskId");
     const bundleId = route.params.get("bundleId");
     if (taskId) openTaskPanel(taskId);
@@ -7569,6 +8216,7 @@ async function canLeaveCurrentDocument() {
     !(await activeSponsorReviewCleanup("navigation"))
   )
     return false;
+  if (!(await confirmLeaveRuntimeDraft())) return false;
   if (!currentDoc || editor.value === lastSavedContent) return true;
   return await confirmDialog("This page has unsaved local changes. Leave it anyway?", { okText: "Leave", danger: true });
 }
@@ -7604,9 +8252,9 @@ const TASKS_SECTION_BY_LEGACY_VIEW = {
 const LEGACY_VIEW_TO_TASKS_SECTION = (view) => TASKS_SECTION_BY_LEGACY_VIEW[view] || null;
 
 async function showOperationsHome(options = {}) {
+  if (!(await canLeaveCurrentDocument())) return false;
   activeWorkspaceView = "home";
   syncWorkspaceNav();
-  if (!(await canLeaveCurrentDocument())) return;
   selectedFolder = "";
   searchInput.value = "";
   clearDocumentFilters();
@@ -7617,15 +8265,15 @@ async function showOperationsHome(options = {}) {
   setView("library");
   refreshDocuments();
   closeSidebar();
+  return true;
 }
 
 async function showWorkspaceSurface(view, options = {}) {
   const nextView = view || "home";
   if (nextView === "home") {
-    await showOperationsHome(options);
-    return;
+    return await showOperationsHome(options);
   }
-  if (!(await canLeaveCurrentDocument())) return;
+  if (!(await canLeaveCurrentDocument())) return false;
   // Route the legacy 9-view nav onto the new Home / Tasks / Docs IA. Work
   // surfaces collapse into the Tasks tab at the matching sub-section; the
   // library surfaces (processes/search) route to Docs. New primary views
@@ -7661,6 +8309,7 @@ async function showWorkspaceSurface(view, options = {}) {
   if (activeWorkspaceView === "tasks" && activeTasksSection === "artifacts") refreshOperationsArtifactSnapshot({ rerender: true });
   refreshDocuments();
   closeSidebar();
+  return true;
 }
 
 function syncWorkspaceNav() {
@@ -8011,9 +8660,12 @@ function apiUrl(path) {
 }
 
 async function request(url, options = {}) {
+  const token = (() => { try { return localStorage.getItem("dataops_token"); } catch { return null; } })();
+  const headers = { "content-type": "application/json", ...(options.headers || {}) };
+  if (token && !headers.Authorization && !headers.authorization) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(url, {
-    headers: { "content-type": "application/json" },
     ...options,
+    headers,
   });
 
   const text = await response.text();
@@ -8035,7 +8687,10 @@ async function request(url, options = {}) {
 
   if (!response.ok) {
     const fallback = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
-    throw new Error(payload?.error || fallback);
+    const error = new Error(payload?.error || fallback);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
 
   return payload || {};
@@ -9838,6 +10493,7 @@ const confirmBackdrop = document.querySelector("#confirm-backdrop");
 const confirmOk = document.querySelector("#confirm-ok");
 const confirmCancel = document.querySelector("#confirm-cancel");
 let _confirmResolve = null;
+let _confirmOpener = null;
 
 confirmBackdrop.addEventListener("click", () => resolveConfirm(false));
 confirmCancel.addEventListener("click", () => resolveConfirm(false));
@@ -9847,30 +10503,37 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
     resolveConfirm(false);
-  } else if (event.key === "Enter") {
+  } else if (event.key === "Tab") {
     event.preventDefault();
-    resolveConfirm(true);
+    const next = document.activeElement === confirmCancel && !event.shiftKey ? confirmOk : confirmCancel;
+    next.focus();
   }
 });
 
 function confirmDialog(message, { okText = "Confirm", cancelText = "Cancel", danger = false } = {}) {
   return new Promise((resolve) => {
+    _confirmOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     confirmMessage.textContent = message;
     confirmOk.textContent = okText;
     confirmCancel.textContent = cancelText;
     confirmOk.classList.toggle("is-danger", !!danger);
     confirmModal.hidden = false;
-    confirmOk.focus();
     _confirmResolve = resolve;
+    confirmCancel.focus();
   });
 }
 
 function resolveConfirm(value) {
   if (_confirmResolve) {
     const resolve = _confirmResolve;
+    const opener = _confirmOpener;
     _confirmResolve = null;
+    _confirmOpener = null;
     confirmModal.hidden = true;
     resolve(value);
+    requestAnimationFrame(() => {
+      if (opener?.isConnected) opener.focus();
+    });
   }
 }
 

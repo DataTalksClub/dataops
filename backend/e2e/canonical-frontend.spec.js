@@ -105,19 +105,12 @@ test.describe('canonical DataOps frontend', () => {
     await page.goto('/#/templates');
     await expect(page.getByRole('button', { name: 'New runtime template' })).toBeVisible();
     await page.getByRole('button', { name: 'New runtime template' }).click();
-    const definition = {
-      name: `Canonical template ${id}`,
-      type: 'workflow',
-      triggerType: 'manual',
-      sourceDocIds: ['synthetic-process-doc'],
-      taskDefinitions: [{
-        refId: 'first-task',
-        description: 'Synthetic canonical task',
-        offsetDays: 0,
-        proofRequirement: { type: 'comment', label: 'Completion note', required: true },
-      }],
-    };
-    await page.locator('.runtime-template-json').fill(JSON.stringify(definition, null, 2));
+    await page.getByLabel('Name').fill(`Canonical template ${id}`);
+    await page.getByLabel('Source document IDs').fill('synthetic-process-doc');
+    await page.getByLabel('Description').fill('Synthetic canonical task');
+    await page.getByLabel('Proof type').selectOption('comment');
+    await page.getByLabel('Proof label').fill('Completion note');
+    await expect(page.locator('.runtime-template-json')).toHaveAttribute('readonly', '');
     await page.getByRole('button', { name: 'Create template' }).click();
     await expect(page.locator('.runtime-template-row', { hasText: `Canonical template ${id}` })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Delete template' })).toBeVisible();
