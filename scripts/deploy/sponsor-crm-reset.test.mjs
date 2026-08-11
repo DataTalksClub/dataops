@@ -219,7 +219,7 @@ class MockAws {
       const allChanges = candidateChanges();
       const response = {
         ChangeSetId: this.candidateArn, ChangeSetName: this.candidateName, Description: this.candidateDescription,
-        StackName: CONTRACT.stack, StackId: STACK_ID, ChangeSetType: "UPDATE", CreationTime: CANDIDATE_CREATED, Status: this.candidateStatus,
+        StackName: CONTRACT.stack, StackId: STACK_ID, ChangeSetType: "UPDATE", DeploymentMode: "REVERT_DRIFT", StackDriftStatus: "DRIFTED", CreationTime: CANDIDATE_CREATED, Status: this.candidateStatus,
         ExecutionStatus: this.candidateExecution,
         Parameters: [{ ParameterKey: "GitHubOwner", ParameterValue: "DataTalksClub", UsePreviousValue: true }, { ParameterKey: "PrivateValue", ParameterValue: "opaque", UsePreviousValue: true }],
         Capabilities: ["CAPABILITY_AUTO_EXPAND", "CAPABILITY_IAM"], NotificationARNs: [], IncludeNestedStacks: false,
@@ -297,7 +297,7 @@ test("runtime and StackId anchor reject every public identity or handoff mismatc
 
 test("candidate details reconstruct the exact fixture and reject every unreviewed effect", () => {
   const expected = { candidateArn: "arn:aws:cloudformation:eu-west-1:817685572750:changeSet/reset/33333333-3333-3333-3333-333333333333", name: "reset", stackId: STACK_ID, stackIdDigest: digest(STACK_ID), description: "desc", parameters: [{ ParameterKey: "A", UsePreviousValue: true }], capabilities: ["CAPABILITY_IAM"] };
-  const candidate = { ChangeSetId: expected.candidateArn, ChangeSetName: "reset", Description: "desc", StackName: CONTRACT.stack, StackId: STACK_ID, ChangeSetType: "UPDATE", CreationTime: CANDIDATE_CREATED, Status: "CREATE_COMPLETE", ExecutionStatus: "AVAILABLE", Parameters: structuredClone(expected.parameters), Capabilities: ["CAPABILITY_IAM"], NotificationARNs: [], IncludeNestedStacks: false, RollbackConfiguration: { RollbackTriggers: [] } };
+  const candidate = { ChangeSetId: expected.candidateArn, ChangeSetName: "reset", Description: "desc", StackName: CONTRACT.stack, StackId: STACK_ID, ChangeSetType: "UPDATE", DeploymentMode: "REVERT_DRIFT", StackDriftStatus: "DRIFTED", CreationTime: CANDIDATE_CREATED, Status: "CREATE_COMPLETE", ExecutionStatus: "AVAILABLE", Parameters: structuredClone(expected.parameters), Capabilities: ["CAPABILITY_IAM"], NotificationARNs: [], IncludeNestedStacks: false, RollbackConfiguration: { RollbackTriggers: [] } };
   const accepted = validateCandidate(candidate, expected, candidateChanges()); assert.equal(accepted.candidateDigest, digest(accepted.candidate));
   const firstPage = { ...structuredClone(candidate), Changes: [], NextToken: "page-2" };
   const secondPage = { ...structuredClone(candidate), Changes: candidateChanges() };

@@ -97,11 +97,13 @@ const TABLE_RECREATION = Object.freeze({
   TableName: "Always",
 });
 const CANDIDATE_REQUIRED_FIELDS = Object.freeze([
-  "Capabilities", "ChangeSetId", "ChangeSetName", "ChangeSetType", "CreationTime", "Description", "ExecutionStatus",
-  "IncludeNestedStacks", "NotificationARNs", "Parameters", "RollbackConfiguration", "StackId", "StackName", "Status",
+  "Capabilities", "ChangeSetId", "ChangeSetName", "ChangeSetType", "CreationTime", "DeploymentMode", "Description",
+  "ExecutionStatus", "IncludeNestedStacks", "NotificationARNs", "Parameters", "RollbackConfiguration", "StackDriftStatus",
+  "StackId", "StackName", "Status",
 ]);
 const CANDIDATE_OPTIONAL_FIELDS = Object.freeze([
-  "ImportExistingResources", "OnStackFailure", "ParentChangeSetId", "RoleARN", "RootChangeSetId", "StatusReason", "Tags",
+  "DeploymentConfig", "ImportExistingResources", "OnStackFailure", "ParentChangeSetId", "RoleARN", "RootChangeSetId",
+  "StatusReason", "Tags",
 ]);
 
 export function validateRuntimeEnvironment(env) {
@@ -418,6 +420,11 @@ export function validateCandidate(changeSet, expected, changes) {
   assert.equal(digest(changeSet.StackId), expected.stackIdDigest);
   assert.equal(changeSet.StackName, CONTRACT.stack);
   assert.equal(changeSet.ChangeSetType, "UPDATE");
+  assert.equal(changeSet.DeploymentMode, "REVERT_DRIFT");
+  assert.equal(changeSet.StackDriftStatus, "DRIFTED");
+  if (changeSet.DeploymentConfig !== undefined) {
+    assert.deepEqual(changeSet.DeploymentConfig, { Mode: "STANDARD", DisableRollback: false });
+  }
   assert.equal(changeSet.Status, "CREATE_COMPLETE");
   assert.equal(changeSet.ExecutionStatus, "AVAILABLE");
   assert.match(changeSet.CreationTime ?? "", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
