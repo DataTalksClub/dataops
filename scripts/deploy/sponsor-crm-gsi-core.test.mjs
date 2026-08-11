@@ -152,8 +152,10 @@ function resourceChange(properties = [
   return {
     Action: "Modify",
     LogicalResourceId: CONTRACT.logicalId,
+    PhysicalResourceId: CONTRACT.physicalTable,
     ResourceType: "AWS::DynamoDB::Table",
     Replacement: "False",
+    Scope: ["Properties"],
     Details: properties.map((Name) => ({
       Target: {
         Attribute: "Properties",
@@ -202,8 +204,38 @@ function stageChangeSet(template = processed(0), ordinal = 0) {
     },
     Tags: [],
     ImportExistingResources: false,
-    Changes: [{ ResourceChange: resourceChange() }],
+    Changes: [{ Type: "Resource", ResourceChange: resourceChange() }],
   };
+}
+
+function reevaluatedDependencyChanges() {
+  const definitions = {
+    BackendFunctionDailyBackendCronPermission: ["AWS::Lambda::Permission", "Conditional", "SourceArn", "Always", "BackendFunctionDailyBackendCron.Arn"],
+    BackendFunctionDailyBackendCron: ["AWS::Events::Rule", "False", "Targets", "Never", "BackendFunction.Arn"],
+    BackendFunctionDailyBackendExportPermission: ["AWS::Lambda::Permission", "Conditional", "SourceArn", "Always", "BackendFunctionDailyBackendExport.Arn"],
+    BackendFunctionDailyBackendExport: ["AWS::Events::Rule", "False", "Targets", "Never", "BackendFunction.Arn"],
+    BackendFunctionDailyMailingExportPermission: ["AWS::Lambda::Permission", "Conditional", "SourceArn", "Always", "BackendFunctionDailyMailingExport.Arn"],
+    BackendFunctionDailyMailingExport: ["AWS::Events::Rule", "False", "Targets", "Never", "BackendFunction.Arn"],
+    BackendFunctionRole: ["AWS::IAM::Role", "False", "Policies", "Never", "DataOpsSponsorCrmTable.Arn"],
+    BackendFunction: ["AWS::Lambda::Function", "False", "Role", "Never", "BackendFunctionRole.Arn"],
+  };
+  return Object.entries(definitions).map(([LogicalResourceId, [ResourceType, Replacement, Name, RequiresRecreation, CausingEntity]]) => ({
+    Type: "Resource",
+    ResourceChange: {
+      Action: "Modify",
+      LogicalResourceId,
+      PhysicalResourceId: `dataops-v1-${LogicalResourceId}-Abcdef123456`,
+      ResourceType,
+      Replacement,
+      Scope: ["Properties"],
+      Details: [{
+        Target: { Attribute: "Properties", Name, RequiresRecreation },
+        Evaluation: "Dynamic",
+        ChangeSource: "ResourceAttribute",
+        CausingEntity,
+      }],
+    },
+  }));
 }
 
 const FAKE_AWS = String.raw`#!/usr/bin/env node
@@ -429,11 +461,13 @@ if (service === "sts" && operation === "get-caller-identity") {
     ImportExistingResources: state.candidateImportExistingResources ?? false,
     ParentChangeSetId: state.candidateParentChangeSetId,
     RootChangeSetId: state.candidateRootChangeSetId,
-    Changes: [{ ResourceChange: {
+    Changes: [{ Type: "Resource", ResourceChange: {
       Action: "Modify",
       LogicalResourceId: "DataOpsSponsorCrmTable",
+      PhysicalResourceId: "dataops-v1-sponsor-crm",
       ResourceType: "AWS::DynamoDB::Table",
       Replacement: "False",
+      Scope: ["Properties"],
       Details: ["AttributeDefinitions", "GlobalSecondaryIndexes"].map((Name) => ({
         Target: { Attribute: "Properties", Name, RequiresRecreation: "Never" },
         ChangeSource: "DirectModification",
@@ -1086,6 +1120,38 @@ test("stage change-set validator accepts only one exact non-replacing modify", (
     STACK_ID,
     DESCRIBED_STAGE_PARAMETERS,
   );
+
+  const liveShape = stageChangeSet(template);
+  liveShape.Parameters.reverse();
+  for (const parameter of liveShape.Parameters) delete parameter.UsePreviousValue;
+  liveShape.Tags = null;
+  liveShape.Changes = [
+    ...reevaluatedDependencyChanges(),
+    liveShape.Changes[0],
+  ];
+  validateStageChangeSet(
+    liveShape,
+    identity(template),
+    0,
+    STACK_ID,
+    DESCRIBED_STAGE_PARAMETERS,
+  );
+
+  for (const mutate of [
+    (changeSet) => { changeSet.Changes[0].ResourceChange.Details[0].CausingEntity = "Other.Arn"; },
+    (changeSet) => { changeSet.Changes.splice(0, 1); },
+    (changeSet) => { changeSet.Changes.push({ Type: "Resource", ResourceChange: { ...resourceChange(), LogicalResourceId: "Other" } }); },
+  ]) {
+    const candidate = structuredClone(liveShape);
+    mutate(candidate);
+    assert.throws(() => validateStageChangeSet(
+      candidate,
+      identity(template),
+      0,
+      STACK_ID,
+      DESCRIBED_STAGE_PARAMETERS,
+    ));
+  }
 
   const mutations = [
     (changeSet) => {

@@ -39,6 +39,17 @@ const IN_PROGRESS_SUFFIXES = [
 const UUID_PATTERN =
   "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
+const REEVALUATED_DEPENDENCIES = Object.freeze({
+  BackendFunctionDailyBackendCronPermission: Object.freeze({ resourceType: "AWS::Lambda::Permission", replacement: "Conditional", property: "SourceArn", recreation: "Always", causingEntity: "BackendFunctionDailyBackendCron.Arn" }),
+  BackendFunctionDailyBackendCron: Object.freeze({ resourceType: "AWS::Events::Rule", replacement: "False", property: "Targets", recreation: "Never", causingEntity: "BackendFunction.Arn" }),
+  BackendFunctionDailyBackendExportPermission: Object.freeze({ resourceType: "AWS::Lambda::Permission", replacement: "Conditional", property: "SourceArn", recreation: "Always", causingEntity: "BackendFunctionDailyBackendExport.Arn" }),
+  BackendFunctionDailyBackendExport: Object.freeze({ resourceType: "AWS::Events::Rule", replacement: "False", property: "Targets", recreation: "Never", causingEntity: "BackendFunction.Arn" }),
+  BackendFunctionDailyMailingExportPermission: Object.freeze({ resourceType: "AWS::Lambda::Permission", replacement: "Conditional", property: "SourceArn", recreation: "Always", causingEntity: "BackendFunctionDailyMailingExport.Arn" }),
+  BackendFunctionDailyMailingExport: Object.freeze({ resourceType: "AWS::Events::Rule", replacement: "False", property: "Targets", recreation: "Never", causingEntity: "BackendFunction.Arn" }),
+  BackendFunctionRole: Object.freeze({ resourceType: "AWS::IAM::Role", replacement: "False", property: "Policies", recreation: "Never", causingEntity: "DataOpsSponsorCrmTable.Arn" }),
+  BackendFunction: Object.freeze({ resourceType: "AWS::Lambda::Function", replacement: "False", property: "Role", recreation: "Never", causingEntity: "BackendFunctionRole.Arn" }),
+});
+
 function stage(IndexName, hash, range) {
   return Object.freeze({
     IndexName,
@@ -514,11 +525,7 @@ export function validateStageChangeSet(
     false,
     "stage nested-stack inclusion must be false",
   );
-  assert.deepEqual(
-    changeSet.Parameters,
-    expectedParameters,
-    "stage parameters changed",
-  );
+  validateStageParameters(changeSet.Parameters, expectedParameters);
   assert.equal(changeSet.ChangeSetType, "UPDATE", "stage type changed");
   assert.deepEqual(
     changeSet.RollbackConfiguration?.RollbackTriggers ?? [],
@@ -551,11 +558,75 @@ export function validateStageChangeSet(
     undefined,
     "stage root change set must be absent",
   );
-  assert.equal(changeSet.Changes?.length, 1, "stage must contain exactly one resource change");
-  validateSponsorResourceChange(changeSet.Changes[0]?.ResourceChange, {
+  validateStageResourceChanges(changeSet.Changes);
+  assert.ok(ordinal >= 0 && ordinal < STAGES.length);
+}
+
+function validateStageParameters(actual, expected) {
+  const normalize = (parameters) => {
+    assert.ok(Array.isArray(parameters), "stage parameters are missing");
+    const normalized = parameters.map((parameter) => {
+      assert.match(parameter?.ParameterKey ?? "", /^[A-Za-z][A-Za-z0-9]*$/);
+      assert.equal(typeof parameter?.ParameterValue, "string");
+      if (parameter.UsePreviousValue !== undefined) {
+        assert.equal(parameter.UsePreviousValue, true);
+      }
+      return {
+        ParameterKey: parameter.ParameterKey,
+        ParameterValue: parameter.ParameterValue,
+      };
+    }).sort((left, right) => left.ParameterKey.localeCompare(right.ParameterKey));
+    assert.equal(new Set(normalized.map(({ ParameterKey }) => ParameterKey)).size, normalized.length);
+    return normalized;
+  };
+  assert.deepEqual(normalize(actual), normalize(expected), "stage parameters changed");
+}
+
+function validateStageResourceChanges(changes) {
+  assert.ok(Array.isArray(changes), "stage changes are missing");
+  const resources = new Map();
+  for (const change of changes) {
+    assert.equal(change?.Type, "Resource", "stage contains a non-resource change");
+    const resource = change.ResourceChange;
+    assert.equal(typeof resource?.LogicalResourceId, "string");
+    assert.ok(!resources.has(resource.LogicalResourceId), "duplicate stage resource change");
+    resources.set(resource.LogicalResourceId, resource);
+  }
+  const table = resources.get(CONTRACT.logicalId);
+  assert.ok(table, "stage is missing the Sponsor CRM table change");
+  resources.delete(CONTRACT.logicalId);
+  if (resources.size > 0) {
+    assert.deepEqual(
+      [...resources.keys()].sort(),
+      Object.keys(REEVALUATED_DEPENDENCIES).sort(),
+      "stage dependency reevaluation closure changed",
+    );
+    for (const [logicalId, expected] of Object.entries(REEVALUATED_DEPENDENCIES)) {
+      validateReevaluatedDependency(resources.get(logicalId), logicalId, expected);
+    }
+  }
+  validateSponsorResourceChange(table, {
     exactProperties: new Set(["AttributeDefinitions", "GlobalSecondaryIndexes"]),
   });
-  assert.ok(ordinal >= 0 && ordinal < STAGES.length);
+}
+
+function validateReevaluatedDependency(resource, logicalId, expected) {
+  assert.equal(resource.Action, "Modify");
+  assert.equal(resource.LogicalResourceId, logicalId);
+  assert.match(resource.PhysicalResourceId ?? "", new RegExp(`^dataops-v1-${logicalId}-[A-Za-z0-9]{8,32}$`));
+  assert.equal(resource.ResourceType, expected.resourceType);
+  assert.equal(resource.Replacement, expected.replacement);
+  assert.deepEqual(resource.Scope, ["Properties"]);
+  assert.deepEqual(resource.Details, [{
+    Target: {
+      Attribute: "Properties",
+      Name: expected.property,
+      RequiresRecreation: expected.recreation,
+    },
+    Evaluation: "Dynamic",
+    ChangeSource: "ResourceAttribute",
+    CausingEntity: expected.causingEntity,
+  }]);
 }
 
 export function validateChangeSetArn(changeSet) {
@@ -579,6 +650,7 @@ function validateSponsorResourceChange(
   assert.ok(isObject(resource), "missing resource change");
   assert.equal(resource.Action, "Modify", "Sponsor CRM change must be Modify");
   assert.equal(resource.LogicalResourceId, CONTRACT.logicalId, "logical ID mismatch");
+  assert.equal(resource.PhysicalResourceId, CONTRACT.physicalTable, "physical ID mismatch");
   assert.equal(resource.ResourceType, "AWS::DynamoDB::Table", "resource type mismatch");
   assert.ok(
     resource.Replacement === "False" || resource.Replacement === false,
@@ -586,6 +658,7 @@ function validateSponsorResourceChange(
   );
   assert.ok(Array.isArray(resource.Details), "resource change details are required");
   assert.ok(resource.Details.length > 0, "resource change details cannot be empty");
+  assert.deepEqual(resource.Scope, ["Properties"], "Sponsor CRM scope changed");
 
   const properties = new Set();
   for (const detail of resource.Details) {
