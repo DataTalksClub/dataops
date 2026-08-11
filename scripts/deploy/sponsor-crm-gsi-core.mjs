@@ -237,7 +237,9 @@ export function inspectLiveTransitionPrefix(table) {
 export function isResumableLiveTransition(table, expectedPrefix) {
   if (expectedPrefix <= 0) return false;
   if (inspectLiveTransitionPrefix(table) !== expectedPrefix) return false;
-  const target = table.GlobalSecondaryIndexes[expectedPrefix - 1];
+  const target = table.GlobalSecondaryIndexes.find(
+    ({ IndexName }) => IndexName === STAGES[expectedPrefix - 1].IndexName,
+  );
   return (
     target.IndexStatus === "CREATING" ||
     target.Backfilling === true
@@ -279,7 +281,8 @@ function inspectLiveTable(table, requireActive) {
     ],
     "live base key schema mismatch",
   );
-  const indexes = (table.GlobalSecondaryIndexes ?? []).map((item) => ({
+  const liveIndexes = canonicalLiveIndexes(table.GlobalSecondaryIndexes ?? []);
+  const indexes = liveIndexes.map((item) => ({
     IndexName: item.IndexName,
     KeySchema: item.KeySchema,
     Projection: item.Projection,
@@ -291,7 +294,7 @@ function inspectLiveTable(table, requireActive) {
     "live attributes are not the exact canonical prefix",
   );
   for (let ordinal = 0; ordinal < prefix; ordinal += 1) {
-    const live = table.GlobalSecondaryIndexes[ordinal];
+    const live = liveIndexes[ordinal];
     const targetMayBeCreating = !requireActive && ordinal === prefix - 1;
     if (targetMayBeCreating) {
       assert.ok(
@@ -313,6 +316,19 @@ function inspectLiveTable(table, requireActive) {
     }
   }
   return prefix;
+}
+
+function canonicalLiveIndexes(indexes) {
+  assert.ok(Array.isArray(indexes), "live GSIs must be an array");
+  const positions = new Map(STAGES.map(({ IndexName }, ordinal) => [IndexName, ordinal]));
+  const names = new Set();
+  const result = indexes.map((index) => {
+    assert.ok(positions.has(index?.IndexName), "unexpected live GSI");
+    assert.ok(!names.has(index.IndexName), "duplicate live GSI");
+    names.add(index.IndexName);
+    return index;
+  });
+  return result.sort((left, right) => positions.get(left.IndexName) - positions.get(right.IndexName));
 }
 
 function prefixFromIndexes(indexes) {

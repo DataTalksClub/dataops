@@ -825,6 +825,13 @@ for (let prefix = 0; prefix <= STAGES.length; prefix += 1) {
   });
 }
 
+test("live GSI inspection canonicalizes DynamoDB's unordered response", () => {
+  const table = live(3);
+  table.GlobalSecondaryIndexes.reverse();
+  assert.equal(inspectLivePrefix(table), 3);
+  assert.equal(assertSamePrefix(processed(3), table), 3);
+});
+
 test("stage generation preserves all unrelated normalized template content", () => {
   const before = processed(2);
   const after = buildStageTemplate(before, 2);
