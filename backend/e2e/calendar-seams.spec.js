@@ -159,12 +159,12 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await surface.locator('[data-layer="overlay"]').uncheck();
   await expect(surface.getByText("Synthetic Newsletter")).toHaveCount(0);
   await surface.getByRole("button", { name: "Dismiss" }).click();
-  await expect(surface.getByText("public-holiday-overlap")).toHaveCount(0);
+  await expect(surface.getByText("Activity overlaps a public holiday")).toHaveCount(0);
   await surface.locator("select[data-view]").selectOption("month");
   await surface.getByText("Synthetic Webinar").first().click();
   await surface.getByLabel("Title").fill("Changed Webinar");
   await surface.getByRole("button", { name: "Save activity" }).click();
-  await expect(surface.getByText("public-holiday-overlap")).toBeVisible();
+  await expect(surface.getByText("Activity overlaps a public holiday")).toBeVisible();
   await surface.locator("select[data-view]").selectOption("week");
   await surface.locator("[data-type]").selectOption("other");
   await expect(surface.getByText("No matching activities")).toBeVisible();
@@ -174,7 +174,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   failed = true;
   await surface.locator("[data-next]").click();
   await expect(surface.getByText("Calendar unavailable")).toBeVisible();
-  await expect(surface.getByText("public-holiday-overlap")).toHaveCount(0);
+  await expect(surface.getByText("Activity overlaps a public holiday")).toHaveCount(0);
   await surface.screenshot({ path: path.join(shots, "production-error.png") });
   failed = false;
   await page.setViewportSize({ width: 390, height: 844 });
@@ -234,7 +234,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   const surface = page.locator(".calendar-surface");
   await surface.locator("select[data-view]").selectOption("week");
   await expect(surface.getByText("Cross-year activity").first()).toBeVisible();
-  await expect(surface.getByText(/2027-01-01/)).toBeVisible();
+  await expect(surface.locator('time[datetime="2027-01-01"]')).toBeVisible();
   await expect(surface.locator(".calendar-grid>section")).toHaveCount(7);
   await expect(surface.locator(".iso-week")).toContainText(["ISO 53"]);
   await surface.screenshot({
@@ -242,7 +242,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   });
   await page.clock.setFixedTime(new Date("2026-03-29T12:00:00Z"));
   await surface.locator("[data-today]").click();
-  await expect(surface.getByText(/2026-03-29/)).toBeVisible();
+  await expect(surface.locator('time[datetime="2026-03-29"]')).toBeVisible();
   await expect(surface.getByText("DST-safe timed activity")).toBeVisible();
   await surface.screenshot({
     path: path.join(shots, "production-dst-boundary.png"),

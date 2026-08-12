@@ -117,7 +117,7 @@ test.describe("production newsletter planner", () => {
     await expect(page.locator("[data-slots]")).toContainText(
       "Booked by: Unbooked",
     );
-    await expect(page.getByText("near-term-open-unbooked")).toBeVisible();
+    await expect(page.getByText("An open slot needs booking soon")).toBeVisible();
     await page
       .locator(".newsletter-surface")
       .screenshot({ path: ".tmp/newsletter-production-populated-alert.png" });
@@ -162,7 +162,7 @@ test.describe("production newsletter planner", () => {
     await page.getByRole("button", { name: "Edit" }).first().click();
     await page.locator("dialog [name=status]").selectOption("cancelled");
     await page.getByRole("button", { name: "Save slot" }).click();
-    await expect(page.locator("[data-slots]")).toContainText("cancelled");
+    await expect(page.locator("[data-slots]")).toContainText("Cancelled");
     await page.getByRole("button", { name: "Edit" }).first().click();
     conflict = true;
     await page.getByRole("button", { name: "Save slot" }).click();
