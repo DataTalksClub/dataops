@@ -107,6 +107,9 @@ const newDocTitle = document.querySelector("#new-doc-title");
 const newDocType = document.querySelector("#new-doc-type");
 const newDocSummary = document.querySelector("#new-doc-summary");
 const workspaceNavButtons = [...document.querySelectorAll("[data-workspace-view]")];
+const tasksNavButton = document.querySelector("#tasks-nav-button");
+const tasksNavSubmenu = document.querySelector("#tasks-nav-submenu");
+const tasksNavSectionButtons = [...document.querySelectorAll("#tasks-nav-submenu [data-tasks-section]")];
 const docContextReturn = document.querySelector("#doc-context-return");
 
 const taskPanel = document.querySelector("#task-panel");
@@ -122,7 +125,9 @@ const bundlePanel = document.querySelector("#bundle-panel");
 const bundlePanelTitle = document.querySelector("#bundle-panel-title");
 const bundlePanelBody = document.querySelector("#bundle-panel-body");
 const bundlePanelClose = document.querySelector("#bundle-panel-close");
+const bundleModalBackdrop = document.querySelector("#bundle-modal-backdrop");
 bundlePanelClose.addEventListener("click", closeBundlePanel);
+bundleModalBackdrop?.addEventListener("click", closeBundlePanel);
 document.addEventListener("keydown", handleWorkspaceEntityModalKeydown);
 
 const workBellButton = document.querySelector("#work-bell-button");
@@ -486,6 +491,17 @@ for (const button of workspaceNavButtons) {
       }),
     ),
   );
+}
+tasksNavButton?.addEventListener("click", () => {
+  const expanded = tasksNavButton.getAttribute("aria-expanded") === "true";
+  setTasksNavExpanded(!expanded);
+});
+for (const button of tasksNavSectionButtons) {
+  button.addEventListener("click", async () => {
+    const section = button.dataset.tasksSection || "queue";
+    if (section !== activeTasksSection && !(await confirmLeaveRuntimeDraft())) return;
+    navigateCanonicalWorkspace(workspaceHashPath("tasks", section));
+  });
 }
 document.addEventListener("dataops:navigate-workspace", (event) =>
   showWorkspaceSurface(event.detail?.view || "home"),
@@ -1463,10 +1479,9 @@ function buildNeedsActionLane(model) {
   };
 }
 
-// Tasks tab: sub-nav (Queue / Workflows / Templates / Assistants / Artifacts)
-// over the existing per-section renderers. The sub-nav drives an internal
-// tasksSection state; each tab reuses the existing renderOperationsSurface
-// dispatch functions so no work surface is lost in the restructure.
+// Tasks owns Queue / Workflows / Templates / Assistants / Artifacts. Its
+// expandable sidebar group selects the canonical sub-route; the main canvas is
+// reserved for the selected work surface.
 function renderTasksSurface(documents, section) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
@@ -1485,8 +1500,9 @@ function renderTasksSurface(documents, section) {
 
   const wrap = document.createElement("div");
   wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
-  wrap.append(renderTasksSubNav(activeSection));
-  wrap.append(renderSurfaceHeader(title, surfaceDescription(activeSection)));
+  if (activeSection !== "workflows") {
+    wrap.append(renderSurfaceHeader(title, surfaceDescription(activeSection)));
+  }
   const runtimeState = renderOperationsRuntimeState(model.runtime);
   if (runtimeState && ["queue", "workflows"].includes(activeSection)) wrap.append(runtimeState);
 
@@ -1497,31 +1513,6 @@ function renderTasksSurface(documents, section) {
   else if (activeSection === "artifacts") wrap.append(renderArtifactsSurface());
 
   documentList.replaceChildren(wrap);
-}
-
-// Segmented sub-nav for the Tasks tab. Clicking a tab updates the internal
-// tasksSection state and re-renders without a full navigation round-trip.
-function renderTasksSubNav(activeSection) {
-  const nav = document.createElement("nav");
-  nav.className = "ops-subnav";
-  nav.setAttribute("aria-label", "Tasks sections");
-  for (const [id, label] of TASKS_SECTIONS) {
-    const tab = document.createElement("button");
-    tab.type = "button";
-    tab.className = "ops-subnav-tab";
-    tab.textContent = label;
-    tab.dataset.tasksSection = id;
-    if (id === activeSection) {
-      tab.classList.add("is-active");
-      tab.setAttribute("aria-current", "page");
-    }
-    tab.addEventListener("click", async () => {
-      if (id !== activeTasksSection && !(await confirmLeaveRuntimeDraft())) return;
-      navigateCanonicalWorkspace(workspaceHashPath("tasks", id));
-    });
-    nav.append(tab);
-  }
-  return nav;
 }
 
 // Process Docs owns a separate main-canvas surface. The global sidebar remains
@@ -3491,35 +3482,93 @@ function renderWorkQueueRow(task, today) {
 
 function renderWorkflowsSurface(model) {
   const section = document.createElement("section");
-  section.className = "ops-workflows-grid";
-  section.setAttribute("aria-label", "Workflow list");
+  section.className = "ops-workflows-board";
+  section.setAttribute("aria-labelledby", "workflow-board-title");
   const bundles = operationsWorkSnapshot.activeBundles || [];
+  const header = document.createElement("header");
+  header.className = "workflow-board-header";
+  const heading = document.createElement("div");
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "workflow-board-eyebrow";
+  eyebrow.textContent = "Operations board";
+  const title = document.createElement("h2");
+  title.id = "workflow-board-title";
+  title.textContent = "Workflows";
+  const summary = document.createElement("p");
+  summary.textContent = `${countLabel(bundles.length, "active workflow")} · open a card to see its tasks`;
+  heading.append(eyebrow, title, summary);
+  const actions = document.createElement("div");
+  actions.className = "workflow-board-actions";
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "primary-button";
+  start.textContent = "Start workflow";
+  start.addEventListener("click", () => openQuickWorkflowForm());
+  actions.append(start);
+  header.append(heading, actions);
+  section.append(header);
+
   if (bundles.length === 0) {
     section.append(renderHonestState("No active workflows", operationsWorkSnapshot.bundlesLoaded ? "Start a workflow from Templates / Recurring when new work arrives." : "Live workflow data is unavailable from /work/api/bundles."));
     return section;
   }
+
   const today = todayIsoDate();
-  for (const bundle of bundles) {
+  const board = document.createElement("div");
+  board.className = "ops-workflows-grid";
+  board.setAttribute("aria-label", "Active workflow board");
+  const columns = [
+    ["preparation", "Preparation"],
+    ["announced", "Announced"],
+    ["after-event", "After event"],
+    ["done", "Done"],
+  ];
+  const items = bundles.map((bundle) => {
     const tasks = operationsWorkSnapshot.bundleTasks[bundle.id] || [];
-    const item = operationItemFromBundle(bundle, tasks, { today });
-    section.append(renderWorkflowSurfaceCard(item));
+    return operationItemFromBundle(bundle, tasks, { today });
+  });
+  for (const [stage, label] of columns) {
+    const stageItems = items.filter((item) => String(item.stage || "preparation").toLowerCase() === stage);
+    const column = document.createElement("section");
+    column.className = "workflow-board-column";
+    column.setAttribute("aria-labelledby", `workflow-column-${stage}`);
+    const columnHeader = document.createElement("header");
+    columnHeader.className = "workflow-column-header";
+    const columnTitle = document.createElement("h3");
+    columnTitle.id = `workflow-column-${stage}`;
+    columnTitle.textContent = label;
+    const columnCount = document.createElement("span");
+    columnCount.textContent = String(stageItems.length);
+    columnCount.setAttribute("aria-label", countLabel(stageItems.length, "workflow"));
+    columnHeader.append(columnTitle, columnCount);
+    const list = document.createElement("div");
+    list.className = "workflow-board-list";
+    if (stageItems.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "workflow-column-empty";
+      empty.textContent = "No workflows";
+      list.append(empty);
+    } else {
+      for (const item of stageItems) list.append(renderWorkflowSurfaceCard(item));
+    }
+    column.append(columnHeader, list);
+    board.append(column);
   }
+  section.append(board);
   return section;
 }
 
 function renderWorkflowSurfaceCard(item) {
   const card = document.createElement("button");
   card.type = "button";
-  card.className = `ops-workflow-card ops-risk-${item.risk || "low"}`;
+  card.className = `ops-workflow-card workflow-board-card ops-risk-${item.risk || "low"}`;
   card.dataset.bundleId = item.bundleId;
   card.addEventListener("click", () => openBundlePanel(item.bundleId));
   const title = document.createElement("strong");
   title.textContent = item.title;
-  const summary = document.createElement("span");
-  summary.textContent = item.summary || "Workflow context";
   const meta = document.createElement("small");
   meta.textContent = item.meta || "";
-  card.append(title, summary);
+  card.append(title);
   if (item.progress) {
     const progress = document.createElement("div");
     progress.className = "ops-progress";
@@ -5846,7 +5895,7 @@ function handleWorkspaceEntityModalKeydown(event) {
   const activePanel = !taskPanel.hidden
     ? taskPanel.querySelector(".task-modal-panel")
     : !bundlePanel.hidden
-      ? bundlePanel
+      ? bundlePanel.querySelector(".workflow-modal-panel")
       : null;
   if (!activePanel) return;
   if (event.key === "Escape") {
@@ -6618,10 +6667,23 @@ function renderBundlePanel() {
 
   const today = todayIsoDate();
   const progress = summarizeBundleProgress(bundle, tasks, today);
+  const layout = document.createElement("div");
+  layout.className = "workflow-modal-layout";
+  const main = document.createElement("div");
+  main.className = "workflow-modal-main";
+  const sidebar = document.createElement("aside");
+  sidebar.className = "workflow-modal-sidebar";
+  sidebar.setAttribute("aria-label", "Workflow controls and status");
+  const sidebarHeading = document.createElement("strong");
+  sidebarHeading.className = "workflow-sidebar-heading";
+  sidebarHeading.textContent = "Workflow";
+  sidebar.append(sidebarHeading);
+  layout.append(main, sidebar);
+  bundlePanelBody.append(layout);
 
   // Stage + progress summary
   const meta = document.createElement("div");
-  meta.className = "task-detail-meta";
+  meta.className = "task-detail-meta workflow-detail-summary";
   const stageSelect = document.createElement("select");
   stageSelect.className = "bundle-stage-select";
   const STAGES = ["preparation", "announced", "after-event", "done"];
@@ -6634,15 +6696,18 @@ function renderBundlePanel() {
   }
   stageSelect.addEventListener("change", () => updateBundleStage(bundle.id, stageSelect.value));
   const stageLabel = document.createElement("label");
+  stageLabel.className = "workflow-stage-field";
   stageLabel.textContent = "Stage ";
   stageLabel.append(stageSelect);
-  meta.append(stageLabel);
+  sidebar.append(stageLabel);
   if (bundle.anchorDate) {
     const row = document.createElement("div");
+    row.className = "workflow-sidebar-meta";
     row.append(document.createTextNode("Anchor "), formatMetaDate(bundle.anchorDate, today));
-    meta.append(row);
+    sidebar.append(row);
   }
   const progressRow = document.createElement("div");
+  progressRow.className = "workflow-progress-copy";
   progressRow.textContent = progress.label;
   meta.append(progressRow);
   const riskRow = document.createElement("div");
@@ -6655,16 +6720,18 @@ function renderBundlePanel() {
     `${progress.missingProof || 0} missing proof`,
   ].filter(Boolean)) {
     const chip = document.createElement("small");
+    chip.className = "ops-card-chip";
     chip.textContent = chipText;
     riskRow.append(chip);
   }
   meta.append(riskRow);
   if (bundle.description) {
     const descRow = document.createElement("div");
+    descRow.className = "workflow-description";
     descRow.textContent = bundle.description;
     meta.append(descRow);
   }
-  bundlePanelBody.append(meta);
+  main.append(meta);
 
   // Progress bar
   if (progress.total > 0) {
@@ -6678,13 +6745,13 @@ function renderBundlePanel() {
     const fill = document.createElement("i");
     fill.style.width = `${progress.percent}%`;
     bar.append(fill);
-    bundlePanelBody.append(bar);
+    main.append(bar);
   }
 
   // Bundle links
   if (Array.isArray(bundle.bundleLinks) && bundle.bundleLinks.length > 0) {
     const linksSection = document.createElement("div");
-    linksSection.className = "task-history";
+    linksSection.className = "task-history workflow-detail-section workflow-links-section";
     const linksLabel = document.createElement("div");
     linksLabel.className = "task-history-label";
     linksLabel.textContent = "Links";
@@ -6705,13 +6772,13 @@ function renderBundlePanel() {
       wrap.append(label);
       linksSection.append(wrap);
     }
-    bundlePanelBody.append(linksSection);
+    main.append(linksSection);
   }
 
   // Task checklist
   if (tasks.length > 0) {
     const checklistSection = document.createElement("div");
-    checklistSection.className = "task-history";
+    checklistSection.className = "task-history workflow-detail-section workflow-checklist-section";
     const checklistLabel = document.createElement("div");
     checklistLabel.className = "task-history-label";
     checklistLabel.textContent = "Workflow tasks";
@@ -6733,12 +6800,12 @@ function renderBundlePanel() {
       }
     }
     checklistSection.append(list);
-    bundlePanelBody.append(checklistSection);
+    main.append(checklistSection);
   }
 
   // References and artifact links (always shown, with add capability)
   const refsSection = document.createElement("div");
-  refsSection.className = "task-history";
+  refsSection.className = "task-history workflow-detail-section workflow-references-section";
   const refsLabel = document.createElement("div");
   refsLabel.className = "task-history-label";
   refsLabel.textContent = "Process references";
@@ -6815,7 +6882,7 @@ function renderBundlePanel() {
       renderBundlePanel();
     },
   }));
-  bundlePanelBody.append(refsSection);
+  main.append(refsSection);
 }
 
 function sortBundleChecklistTasks(tasks, today) {
@@ -7962,6 +8029,7 @@ function operationItemFromBundle(bundle, tasks, options) {
   if (bundle.description) summaryParts.push(bundle.description);
   return {
     title: workBundleTitle(bundle),
+    stage: bundle.stage || "",
     summary: summaryParts.join(" - "),
     meta: progress.label,
     bundleId: bundle.id,
@@ -9398,11 +9466,12 @@ function resetTaskPanel() {
   activeTaskPanelTask = null;
   activeTaskPanelArtifacts = [];
   taskPanel.hidden = true;
-  body.classList.remove("task-panel-open");
-  body.classList.remove("task-modal-open");
   if (!bundlePanel.hidden) {
     bundlePanel.inert = false;
     bundlePanel.removeAttribute("aria-hidden");
+    body.classList.add("task-panel-open", "task-modal-open");
+  } else {
+    body.classList.remove("task-panel-open", "task-modal-open");
   }
 }
 
@@ -9411,6 +9480,7 @@ function resetBundlePanel() {
   activeBundlePanelData = null;
   bundlePanel.hidden = true;
   body.classList.remove("task-panel-open");
+  body.classList.remove("task-modal-open");
 }
 
 function prepareTaskPanel(taskId) {
@@ -9439,7 +9509,7 @@ function prepareBundlePanel(bundleId) {
   bundlePanel.inert = false;
   bundlePanel.removeAttribute("aria-hidden");
   bundlePanel.hidden = false;
-  body.classList.add("task-panel-open");
+  body.classList.add("task-panel-open", "task-modal-open");
   renderEntityLoadingState(bundlePanelBody, "workflow", bundleId);
   bundlePanelClose.focus();
 }
@@ -9931,6 +10001,26 @@ function syncWorkspaceNav() {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
+  const tasksActive = activeWorkspaceView === "tasks";
+  tasksNavButton?.classList.toggle("is-active", tasksActive);
+  if (tasksActive) {
+    tasksNavButton?.setAttribute("aria-current", "page");
+    setTasksNavExpanded(true);
+  } else {
+    tasksNavButton?.removeAttribute("aria-current");
+  }
+  for (const button of tasksNavSectionButtons) {
+    const active = tasksActive && button.dataset.tasksSection === activeTasksSection;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+}
+
+function setTasksNavExpanded(expanded) {
+  if (!tasksNavButton || !tasksNavSubmenu) return;
+  tasksNavButton.setAttribute("aria-expanded", String(expanded));
+  tasksNavSubmenu.hidden = !expanded;
 }
 
 async function showCreate() {
