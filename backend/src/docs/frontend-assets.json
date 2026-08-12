@@ -18,7 +18,13 @@
     "src/surfaces/document-editor.js",
     "src/surfaces/operations.js",
     "src/surfaces/planning.js",
-    "src/surfaces/tasks.js",
+    "src/surfaces/tasks/index.js",
+    "src/surfaces/tasks/cards.js",
+    "src/surfaces/tasks/queue.js",
+    "src/surfaces/tasks/quick-create.js",
+    "src/surfaces/tasks/recurring.js",
+    "src/surfaces/tasks/template-fields.js",
+    "src/surfaces/tasks/templates.js",
     "src/surfaces/work-detail.js"
   ]
 }

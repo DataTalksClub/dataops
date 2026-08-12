@@ -17,7 +17,6 @@ const oversizedMigrationBaseline = Object.freeze({
   "src/surfaces/document-editor.js": 3_292,
   "src/surfaces/knowledge.js": 2_236,
   "src/surfaces/operations.js": 2_145,
-  "src/surfaces/tasks.js": 2_566,
   "src/surfaces/work-detail.js": 1_779,
 });
 
@@ -26,16 +25,17 @@ function read(relativePath) {
 }
 
 function frontendJavaScriptFiles() {
-  const manifest = JSON.parse(
-    read("backend/src/docs/frontend-assets.json"),
-  );
+  const manifest = JSON.parse(read("backend/src/docs/frontend-assets.json"));
   return manifest.files.filter((file) => file.endsWith(".js"));
 }
 
 describe("frontend architecture contract", () => {
   test("prevents new or growing modules above 1,000 lines", () => {
     const oversized = frontendJavaScriptFiles()
-      .map((file) => ({ file, lines: read(`frontend/${file}`).split("\n").length }))
+      .map((file) => ({
+        file,
+        lines: read(`frontend/${file}`).split("\n").length,
+      }))
       .filter(({ lines }) => lines > 1_000);
 
     assert.deepEqual(

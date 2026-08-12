@@ -43,7 +43,7 @@ import {
   createOperationsSurface,
 } from "./surfaces/operations.js";
 import { createPlanningSurface } from "./surfaces/planning.js";
-import { createTasksSurface } from "./surfaces/tasks.js";
+import { createTasksSurface } from "./surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "./surfaces/work-detail.js";
 import { createKnowledgeSurface } from "./surfaces/knowledge.js";
 import { createDocumentEditor } from "./surfaces/document-editor.js";

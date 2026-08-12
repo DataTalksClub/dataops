@@ -20,7 +20,7 @@ import {
   workBundleTitle,
   workTaskTitle,
 } from "../src/core/workspace.js";
-import { createTasksSurface } from "../src/surfaces/tasks.js";
+import { createTasksSurface } from "../src/surfaces/tasks/index.js";
 import {
   FakeDocument,
   FakeElement,

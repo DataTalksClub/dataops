@@ -31,7 +31,18 @@ const knowledge = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'knowl
 const documentEditor = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'document-editor.js'), 'utf8');
 const operations = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations.js'), 'utf8');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
-const tasks = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'tasks.js'), 'utf8');
+const taskModules = [
+  'index.js',
+  'cards.js',
+  'queue.js',
+  'quick-create.js',
+  'recurring.js',
+  'template-fields.js',
+  'templates.js',
+];
+const tasks = taskModules
+  .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'tasks', file), 'utf8'))
+  .join('\n');
 const workDetail = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'work-detail.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
 const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
@@ -66,7 +77,7 @@ describe('one canonical frontend', () => {
       '/src/surfaces/document-editor.js',
       '/src/surfaces/operations.js',
       '/src/surfaces/planning.js',
-      '/src/surfaces/tasks.js',
+      ...taskModules.map((file) => `/src/surfaces/tasks/${file}`),
       '/src/surfaces/work-detail.js',
     ]) {
       const module = await handler({ httpMethod: 'GET', path: modulePath }, {});
@@ -110,7 +121,7 @@ describe('one canonical frontend', () => {
       'src/surfaces/document-editor.js',
       'src/surfaces/operations.js',
       'src/surfaces/planning.js',
-      'src/surfaces/tasks.js',
+      ...taskModules.map((file) => `src/surfaces/tasks/${file}`),
       'src/surfaces/work-detail.js',
     ]);
     assert.match(backendPackage.scripts.build, /copy-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
