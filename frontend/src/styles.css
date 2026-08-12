@@ -1726,9 +1726,22 @@ body[data-workspace-view="home"] #git-section {
   gap: 8px;
 }
 
+.workflow-board-actions .quiet-button[aria-pressed="true"] {
+  border-color: var(--control-hover-border);
+  background: var(--surface-hover);
+}
+
+.cards-archive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  width: 100%;
+  padding: 2px 4px 20px;
+}
+
 .ops-workflows-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, minmax(250px, 1fr));
   gap: 12px;
   width: 100%;
   min-width: 0;
@@ -1957,12 +1970,21 @@ body.task-modal-open {
   font-weight: 600;
 }
 
-.bundle-stage-select {
+.bundle-stage-select,
+.bundle-stage-static {
   width: 100%;
   min-height: 34px;
   border-color: transparent;
   background: var(--surface-hover);
   font-weight: 600;
+}
+
+.bundle-stage-static {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius);
+  color: var(--success-text);
+  padding: 7px 10px;
 }
 
 .workflow-sidebar-meta {
