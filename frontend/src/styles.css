@@ -722,12 +722,6 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   font-size: 14px;
 }
 
-.home-work-scope {
-  margin: 5px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
 .home-quick-actions {
   display: flex;
   flex-wrap: wrap;

@@ -1223,16 +1223,6 @@ function renderOperationsHome(documents) {
   date.dateTime = model.today;
   date.textContent = formatHomeCalendarDate(model.today);
   heading.append(title, date);
-  if (model.scope?.owner) {
-    const scope = document.createElement("p");
-    scope.className = "home-work-scope";
-    if (model.scope.isPeer) {
-      scope.textContent = `Showing ${model.scope.owner.name}’s work · You remain signed in as ${model.scope.actor?.name || "yourself"}`;
-    } else {
-      scope.textContent = "Showing my work";
-    }
-    heading.append(scope);
-  }
 
   const quickBar = document.createElement("div");
   quickBar.className = "home-quick-actions";
