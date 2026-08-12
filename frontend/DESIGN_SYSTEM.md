@@ -82,8 +82,10 @@ They intentionally follow the Course Management Platform names where practical.
   state.
 - In dark mode, keep CMP's roles separate: links and selected text use
   `#8bb7df`, while filled primary controls use `#4d7fa8` and hover at
-  `#6d99c2`. Dark surfaces use `#0d1117` / `#161b22` / `#21262d` and borders
-  use `#30363d`; do not synthesize these colors by inverting the light theme.
+  `#6d99c2`. Secondary controls use `#21262d`, hover at `#30363d`, and gain
+  a `#8b949e` hover border. Dark canvas and surfaces use `#0d1117` / `#161b22`
+  with normal `#30363d` borders; do not synthesize these colors by inverting
+  the light theme.
 
 ### Type, spacing, and shape
 
