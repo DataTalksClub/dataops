@@ -8,6 +8,7 @@
     "src/core/work-model.js",
     "src/surfaces/admin.js",
     "src/surfaces/finance.js",
+    "src/surfaces/home.js",
     "src/surfaces/operations.js",
     "src/surfaces/planning.js"
   ]

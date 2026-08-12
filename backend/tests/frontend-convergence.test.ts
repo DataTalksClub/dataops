@@ -16,6 +16,7 @@ const routing = readFileSync(path.join(frontendRoot, 'src', 'core', 'routing.js'
 const workModel = readFileSync(path.join(frontendRoot, 'src', 'core', 'work-model.js'), 'utf8');
 const admin = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'admin.js'), 'utf8');
 const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance.js'), 'utf8');
+const home = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'home.js'), 'utf8');
 const operations = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations.js'), 'utf8');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
@@ -36,7 +37,7 @@ describe('one canonical frontend', () => {
     const js = await handler({ httpMethod: 'GET', path: '/src/app.js' }, {});
     assert.strictEqual(js.statusCode, 200);
     assert.match(js.headers?.['Content-Type'] || '', /javascript/);
-    assert.match(js.body, /function renderOperationsHome/);
+    assert.match(js.body, /createHomeSurface/);
 
     const css = await handler({ httpMethod: 'GET', path: '/src/styles.css' }, {});
     assert.strictEqual(css.statusCode, 200);
@@ -48,6 +49,7 @@ describe('one canonical frontend', () => {
       '/src/core/work-model.js',
       '/src/surfaces/admin.js',
       '/src/surfaces/finance.js',
+      '/src/surfaces/home.js',
       '/src/surfaces/operations.js',
       '/src/surfaces/planning.js',
     ]) {
@@ -89,6 +91,7 @@ describe('one canonical frontend', () => {
       'src/core/work-model.js',
       'src/surfaces/admin.js',
       'src/surfaces/finance.js',
+      'src/surfaces/home.js',
       'src/surfaces/operations.js',
       'src/surfaces/planning.js',
     ]);
@@ -125,6 +128,20 @@ describe('one canonical frontend', () => {
     assert.match(styles, /\.bookkeeping-surface/);
     assert.match(styles, /\.newsletter-surface/);
     assert.match(styles, /\.calendar-surface/);
+  });
+
+  it('keeps Today attention, status, and process-quality modeling in the canonical Home module', () => {
+    assert.match(app, /createHomeSurface/);
+    for (const marker of [
+      'renderOperationsHome',
+      'renderHomeStatusStrip',
+      'renderHomeAttentionQueue',
+      'Needs your attention',
+      'View all tasks',
+      'buildOperationsHomeModel',
+      'buildProcessQualityModel',
+      'refreshOperationsWorkSnapshot',
+    ]) assert.ok(home.includes(marker), `Home surface is missing ${marker}`);
   });
 
   it('keeps Admin diagnostics and Users management in the canonical module graph', () => {
