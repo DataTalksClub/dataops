@@ -1,0 +1,18 @@
+{
+  "all": true,
+  "src": "frontend/src",
+  "include": [
+    "frontend/src/**/*.js"
+  ],
+  "exclude": [],
+  "reporter": [
+    "text",
+    "json-summary"
+  ],
+  "reportsDirectory": "coverage/frontend",
+  "checkCoverage": true,
+  "lines": 3.28,
+  "statements": 3.28,
+  "functions": 68,
+  "branches": 71
+}

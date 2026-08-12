@@ -3,6 +3,7 @@ node_modules/
 __pycache__/
 *.pyc
 reports/
+coverage/
 .tmp/
 dist/
 .aws-sam/

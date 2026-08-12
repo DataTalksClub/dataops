@@ -54,8 +54,8 @@ jobs:
       - name: Install backend Playwright Chromium
         run: npm exec --workspace dataops-backend -- playwright install --with-deps chromium
 
-      - name: Run frontend unit tests
-        run: npm run test:frontend:unit
+      - name: Run frontend unit coverage
+        run: npm run test:frontend:coverage
 
       - name: Run backend tests
         run: npm --prefix backend test
@@ -172,8 +172,8 @@ jobs:
       - name: Install Node workspace dependencies
         run: npm ci
 
-      - name: Run frontend unit tests
-        run: npm run test:frontend:unit
+      - name: Run frontend unit coverage
+        run: npm run test:frontend:coverage
 
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3

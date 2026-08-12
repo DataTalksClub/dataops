@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -15,6 +15,7 @@ help:
 	@printf '%-28s %s\n' 'make validate-planning-docs' 'Run planning/process docs contract validation.'
 	@printf '%-28s %s\n' 'make sop-lint FILES=...' 'Lint marked SOP files; FILES is required.'
 	@printf '%-28s %s\n' 'make test-frontend-unit' 'Run fast frontend routing and work-model unit tests.'
+	@printf '%-28s %s\n' 'make test-frontend-coverage' 'Run frontend unit tests with all production modules in coverage.'
 	@printf '%-28s %s\n' 'make test-backend' 'Run backend unit tests.'
 	@printf '%-28s %s\n' 'make typecheck-backend' 'Run backend TypeScript checks.'
 	@printf '%-28s %s\n' 'make build-backend' 'Build backend TypeScript/package assets.'
@@ -67,6 +68,9 @@ test-backend:
 test-frontend-unit:
 	npm run test:frontend:unit
 
+test-frontend-coverage:
+	npm run test:frontend:coverage
+
 typecheck-backend:
 	npm --prefix backend run typecheck
 
@@ -94,7 +98,7 @@ verify-sam-frontend:
 	node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
 
 ci:
-	$(MAKE) test-frontend-unit
+	$(MAKE) test-frontend-coverage
 	$(MAKE) test-backend
 	$(MAKE) typecheck-backend
 	$(MAKE) build-backend
