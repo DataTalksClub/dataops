@@ -70,10 +70,11 @@ They intentionally follow the Course Management Platform names where practical.
 
 ### Product and semantic colors
 
-- DataOps teal (`--accent`) is the product accent and primary-action color.
-  It replaces the Course Management Platform's blue button color without
-  changing the Primer component behavior.
-- Blue (`--link-color`) remains the conventional text-link color.
+- Course Management Platform blue (`#315f8f`) is the primary action,
+  selected-navigation, and conventional link color; its hover is `#244d78`.
+- The pale information blue (`#edf5ff`) is used for selected and informational
+  backgrounds. It must not be replaced by a product-specific accent on shared
+  components.
 - Green is reserved for completion and success.
 - Amber is reserved for waiting, caution, or follow-up.
 - Red is reserved for overdue, destructive, failed, or blocking states.
@@ -171,7 +172,7 @@ system.
 
 ## Buttons and links
 
-- Primary buttons use the DataOps accent with white text.
+- Primary buttons use the Course Management Platform blue with white text.
 - Secondary buttons use the muted surface, neutral border, and primary text.
 - Content-width is the default. Use wrapping action rows instead of stretching
   controls full width.
