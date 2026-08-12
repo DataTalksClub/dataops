@@ -25,6 +25,11 @@
     "src/surfaces/tasks/recurring.js",
     "src/surfaces/tasks/template-fields.js",
     "src/surfaces/tasks/templates.js",
-    "src/surfaces/work-detail.js"
+    "src/surfaces/work-detail/index.js",
+    "src/surfaces/work-detail/route-state.js",
+    "src/surfaces/work-detail/task-panel.js",
+    "src/surfaces/work-detail/task-actions.js",
+    "src/surfaces/work-detail/task-evidence.js",
+    "src/surfaces/work-detail/card-panel.js"
   ]
 }

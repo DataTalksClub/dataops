@@ -44,10 +44,9 @@ import {
 } from "./surfaces/operations.js";
 import { createPlanningSurface } from "./surfaces/planning.js";
 import { createTasksSurface } from "./surfaces/tasks/index.js";
-import { createWorkDetailSurface } from "./surfaces/work-detail.js";
+import { createWorkDetailSurface } from "./surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "./surfaces/knowledge.js";
 import { createDocumentEditor } from "./surfaces/document-editor.js";
-
 let knowledgeSurface;
 let documentEditorSurface;
 
@@ -403,7 +402,6 @@ const {
   usersFromWorkPayload,
   workApiUrl,
 });
-
 const taskPanel = document.querySelector("#task-panel");
 const taskPanelTitle = document.querySelector("#task-panel-title");
 const taskPanelBody = document.querySelector("#task-panel-body");
@@ -460,6 +458,7 @@ const {
   formatTaskDateMeta,
   getActiveTasksSection: () => activeTasksSection,
   getActiveWorkspaceRoute: () => activeWorkspaceRoute,
+  getActiveWorkspaceRouteToken: () => activeWorkspaceRouteToken,
   getActiveWorkspaceView: () => activeWorkspaceView,
   getAllDocuments: () => knowledgeState.allDocuments,
   getCurrentOperator: () => accountIdentityState.user,
@@ -482,6 +481,7 @@ const {
     renderTasksSurface(documents, section),
   reportError,
   request,
+  resolveDocReference,
   scheduleAnimationFrame: (callback) => requestAnimationFrame(callback),
   setStatus,
   settledPayload,

@@ -18,7 +18,7 @@ import {
   workflowTaskGroups,
   workTaskTitle,
 } from "../src/core/workspace.js";
-import { createWorkDetailSurface } from "../src/surfaces/work-detail.js";
+import { createWorkDetailSurface } from "../src/surfaces/work-detail/index.js";
 import {
   FakeDocument,
   FakeElement,

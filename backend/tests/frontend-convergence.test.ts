@@ -43,7 +43,17 @@ const taskModules = [
 const tasks = taskModules
   .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'tasks', file), 'utf8'))
   .join('\n');
-const workDetail = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'work-detail.js'), 'utf8');
+const workDetailModules = [
+  'index.js',
+  'route-state.js',
+  'task-panel.js',
+  'task-actions.js',
+  'task-evidence.js',
+  'card-panel.js',
+];
+const workDetail = workDetailModules
+  .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'work-detail', file), 'utf8'))
+  .join('\n');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
 const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
 
@@ -78,7 +88,7 @@ describe('one canonical frontend', () => {
       '/src/surfaces/operations.js',
       '/src/surfaces/planning.js',
       ...taskModules.map((file) => `/src/surfaces/tasks/${file}`),
-      '/src/surfaces/work-detail.js',
+      ...workDetailModules.map((file) => `/src/surfaces/work-detail/${file}`),
     ]) {
       const module = await handler({ httpMethod: 'GET', path: modulePath }, {});
       assert.strictEqual(module.statusCode, 200);
@@ -122,7 +132,7 @@ describe('one canonical frontend', () => {
       'src/surfaces/operations.js',
       'src/surfaces/planning.js',
       ...taskModules.map((file) => `src/surfaces/tasks/${file}`),
-      'src/surfaces/work-detail.js',
+      ...workDetailModules.map((file) => `src/surfaces/work-detail/${file}`),
     ]);
     assert.match(backendPackage.scripts.build, /copy-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
     assert.match(backendPackage.scripts.build, /verify-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
