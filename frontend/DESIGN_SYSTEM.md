@@ -106,11 +106,21 @@ They intentionally follow the Course Management Platform names where practical.
 - Use a persistent 268px sidebar and one main page canvas.
 - The sidebar shows the product mark, workspace name, search, and a short
   primary navigation list.
-- Primary navigation is `Today`, `Inbox`, `Workflows`, `Newsletter`,
+- Primary navigation is `Today`, `Inbox`, `Tasks`, `Newsletter`,
   `Calendar`, `Sponsors`, `Bookkeeping`, `Mailing exports`, and `Process Docs`.
   Every area remains visible as a first-level item with an icon. Do not add a
   `More`, overflow, disclosure, or contextual navigation section to this
   sidebar.
+- Tasks is an expandable sidebar group for `Queue`, `Workflows`, `Templates`,
+  `Assistants`, and `Artifacts`. Its child routes appear as indented sidebar
+  items only while the group is expanded; do not repeat them as tabs or a
+  selector above the page. Assistants and Artifacts remain in this group until
+  their long-term top-level placement is decided.
+- The Workflows surface uses a compact board of workflow cards. A card shows
+  only its title, stage, progress, and summary metadata; never render its task
+  list inside the card. Opening a card presents the full workflow and its tasks
+  in a modal overlay (full-screen on mobile) while preserving the board behind
+  it and restoring focus to the card when it closes.
 - Use icon plus text navigation rows, not icon-only navigation.
 - The selected row uses one accent-soft background with accent text and icon.
   Never add a left border, inset stripe, colored rail, or other edge accent to

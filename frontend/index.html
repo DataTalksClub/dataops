@@ -37,7 +37,16 @@
           <div class="section-label">Workspace</div>
           <button id="operations-home-button" class="workspace-nav-button is-active" type="button" data-workspace-view="home"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span><span>Today</span></button>
           <button id="inbox-nav-button" class="workspace-nav-button" type="button" data-workspace-view="inbox"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 5 2-2h12l2 2v15H4Z"/><path d="M4 14h5l2 3h2l2-3h5"/></svg></span><span>Inbox</span></button>
-          <button id="tasks-nav-button" class="workspace-nav-button" type="button" data-workspace-view="tasks" data-workspace-target="workflows"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v4l6 3m6-7v4l-6 3"/></svg></span><span>Workflows</span></button>
+          <div id="tasks-nav-group" class="workspace-nav-group">
+            <button id="tasks-nav-button" class="workspace-nav-button workspace-nav-parent" type="button" aria-expanded="false" aria-controls="tasks-nav-submenu"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="m8 9 1.5 1.5L12 8M8 15l1.5 1.5L12 14M14 9h2M14 15h2"/></svg></span><span>Tasks</span><svg class="workspace-nav-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+            <div id="tasks-nav-submenu" class="workspace-nav-submenu" aria-label="Task views" hidden>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="queue">Queue</button>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="workflows">Workflows</button>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="templates">Templates</button>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="assistants">Assistants</button>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="artifacts">Artifacts</button>
+            </div>
+          </div>
           <button id="newsletter-nav-button" class="workspace-nav-button" type="button" data-workspace-view="newsletter"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>Newsletter</span></button>
           <button id="calendar-nav-button" class="workspace-nav-button" type="button" data-workspace-view="calendar"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/></svg></span><span>Calendar</span></button>
           <button id="sponsors-nav-button" class="workspace-nav-button" type="button" data-workspace-view="sponsors"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6m1-6c3 0 5 2 5 5"/></svg></span><span>Sponsors</span></button>
@@ -177,12 +186,15 @@
               <div id="task-panel-body" class="task-panel-body"></div>
             </div>
           </section>
-          <section id="bundle-panel" class="task-panel" role="dialog" aria-modal="true" aria-labelledby="bundle-panel-title" hidden>
-            <header class="task-panel-header">
-              <strong id="bundle-panel-title">Workflow</strong>
-              <button id="bundle-panel-close" class="quiet-button" type="button" aria-label="Close workflow">Close</button>
-            </header>
-            <div id="bundle-panel-body" class="task-panel-body"></div>
+          <section id="bundle-panel" class="task-modal workflow-modal" aria-label="Workflow details" hidden>
+            <div id="bundle-modal-backdrop" class="task-modal-backdrop"></div>
+            <div class="task-modal-panel workflow-modal-panel" role="dialog" aria-modal="true" aria-labelledby="bundle-panel-title">
+              <header class="task-panel-header">
+                <strong id="bundle-panel-title">Workflow</strong>
+                <button id="bundle-panel-close" class="quiet-button workflow-modal-close" type="button" aria-label="Close workflow">×</button>
+              </header>
+              <div id="bundle-panel-body" class="task-panel-body"></div>
+            </div>
           </section>
         </section>
 
