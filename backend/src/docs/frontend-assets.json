@@ -5,6 +5,7 @@
     "src/app.js",
     "src/styles.css",
     "src/core/routing.js",
-    "src/core/work-model.js"
+    "src/core/work-model.js",
+    "src/surfaces/planning.js"
   ]
 }
