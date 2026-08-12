@@ -50,7 +50,21 @@ const knowledgeModules = [
 const knowledge = knowledgeModules
   .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'knowledge', file), 'utf8'))
   .join('\n');
-const documentEditor = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'document-editor.js'), 'utf8');
+const documentEditorModules = [
+  'index.js',
+  'lifecycle.js',
+  'changes.js',
+  'git.js',
+  'document-renderer.js',
+  'procedure-renderer.js',
+  'review-media.js',
+  'structured-editor.js',
+  'procedure-markdown.js',
+  'markdown.js',
+];
+const documentEditor = documentEditorModules
+  .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'document-editor', file), 'utf8'))
+  .join('\n');
 const operationsModules = [
   'index.js',
   'admin.js',
@@ -117,7 +131,7 @@ describe('one canonical frontend', () => {
       ...financeModules.map((file) => `/src/surfaces/finance/${file}`),
       '/src/surfaces/home.js',
       ...knowledgeModules.map((file) => `/src/surfaces/knowledge/${file}`),
-      '/src/surfaces/document-editor.js',
+      ...documentEditorModules.map((file) => `/src/surfaces/document-editor/${file}`),
       ...operationsModules.map((file) => `/src/surfaces/operations/${file}`),
       '/src/surfaces/planning.js',
       ...taskModules.map((file) => `/src/surfaces/tasks/${file}`),
@@ -162,7 +176,7 @@ describe('one canonical frontend', () => {
       ...financeModules.map((file) => `src/surfaces/finance/${file}`),
       'src/surfaces/home.js',
       ...knowledgeModules.map((file) => `src/surfaces/knowledge/${file}`),
-      'src/surfaces/document-editor.js',
+      ...documentEditorModules.map((file) => `src/surfaces/document-editor/${file}`),
       ...operationsModules.map((file) => `src/surfaces/operations/${file}`),
       'src/surfaces/planning.js',
       ...taskModules.map((file) => `src/surfaces/tasks/${file}`),

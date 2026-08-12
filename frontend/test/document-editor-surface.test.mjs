@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
-import { createDocumentEditor } from "../src/surfaces/document-editor.js";
+import { createDocumentEditor } from "../src/surfaces/document-editor/index.js";
 import {
   FakeDocument,
   FakeElement,

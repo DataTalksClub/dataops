@@ -14,7 +14,6 @@ const MAX_MODULE_LINES = 1_000;
 // measured pre-split ceiling and may never increase.
 const oversizedMigrationBaseline = Object.freeze({
   "src/app.js": 2_656,
-  "src/surfaces/document-editor.js": 3_292,
 });
 
 function read(relativePath) {
