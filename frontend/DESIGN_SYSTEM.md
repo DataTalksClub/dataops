@@ -24,7 +24,8 @@ Keep the object model visible in the UI:
 
 - a task says what to do next;
 - a process document says how to do it;
-- a workflow groups repeatable work and context;
+- a Template defines repeatable work, a Card is one active instance, and Tasks
+  are the checklist items inside that Card;
 - an assistant prepares an output for review;
 - an artifact is evidence that an output exists.
 
@@ -111,17 +112,24 @@ They intentionally follow the Course Management Platform names where practical.
   Every area remains visible as a first-level item with an icon. Do not add a
   `More`, overflow, disclosure, or contextual navigation section to this
   sidebar.
-- Tasks is an expandable sidebar group for `Queue`, `Workflows`, `Templates`,
+- Tasks is an expandable sidebar group for `Queue`, `Cards`, `Templates`,
   `Assistants`, and `Artifacts`. Its child routes appear as indented sidebar
   items only while the group is expanded; do not repeat them as tabs or a
   selector above the page. Assistants and Artifacts remain in this group until
   their long-term top-level placement is decided.
-- The Workflows surface uses a compact board of workflow cards. A card shows
+- The Cards surface uses a compact board of cards. A card shows
   only its title, stage, progress, and summary metadata; never render its task
-  list inside the card. Opening a card presents the full workflow and its tasks
+  list inside the card. Opening a card presents the full card and its tasks
   in a modal overlay (full-screen on mobile) while preserving the board behind
   it and restoring focus to the card when it closes.
+- The active board contains `Preparation`, `Announced`, and `After event` only.
+  Do not add a `Done` column. Completed Cards move out of the active board and
+  remain discoverable through the separate Archive control and view.
 - Use icon plus text navigation rows, not icon-only navigation.
+- Every meaningful view and inspectable entity state has one canonical URL.
+  This includes nested sidebar destinations, archives, filters that define the
+  view, and open Card/Task detail. Refresh and browser back/forward must restore
+  the same state; do not implement navigable views as component-local toggles.
 - The selected row uses one accent-soft background with accent text and icon.
   Never add a left border, inset stripe, colored rail, or other edge accent to
   selected navigation. One selection signal is enough and keeps the navigation

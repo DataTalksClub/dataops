@@ -1192,7 +1192,7 @@ function operationsViewPath(view) {
 function tasksSectionTitle(section) {
   const titles = {
     queue: "Tasks - Work Queue",
-    workflows: "Tasks - Workflows",
+    workflows: "Tasks - Cards",
     templates: "Tasks - Templates",
     assistants: "Tasks - Assistants",
     artifacts: "Tasks - Artifacts",
@@ -1203,7 +1203,7 @@ function tasksSectionTitle(section) {
 // The Tasks sub-nav tabs. Order is fixed for consistency across the Tasks tab.
 const TASKS_SECTIONS = [
   ["queue", "Queue"],
-  ["workflows", "Workflows"],
+  ["workflows", "Cards"],
   ["templates", "Templates"],
   ["assistants", "Assistants"],
   ["artifacts", "Artifacts"],
@@ -1222,9 +1222,9 @@ function renderOperationsHome(documents) {
   setPageTitle("Today", "Today");
   clearSelectionButton.hidden = true;
   if (model.stats.liveLoaded) {
-    setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active workflows.`);
+    setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active cards.`);
   } else {
-    setStatus(`${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} workflow templates · ${model.stats.recurringTemplates} recurring.`);
+    setStatus(`${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} Templates · ${model.stats.recurringTemplates} recurring.`);
   }
 
   const wrap = document.createElement("div");
@@ -1258,7 +1258,7 @@ function renderOperationsHome(documents) {
   const quickWorkflow = document.createElement("button");
   quickWorkflow.type = "button";
   quickWorkflow.className = "home-quick-action home-quick-action-primary";
-  quickWorkflow.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Start workflow</span>';
+  quickWorkflow.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Create card</span>';
   quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
   quickBar.append(quickTask, quickWorkflow);
   header.append(heading, quickBar);
@@ -1843,7 +1843,7 @@ function renderOperationsSurface(documents, view) {
   });
   const titles = {
     queue: "Tasks - Work Queue",
-    workflows: "Tasks - Workflows",
+    workflows: "Tasks - Cards",
     templates: "Tasks - Templates",
     assistants: "Tasks - Assistants",
     artifacts: "Tasks - Artifacts",
@@ -1880,13 +1880,13 @@ function renderOperationsSurface(documents, view) {
 
 function surfaceDescription(view) {
   const descriptions = {
-    queue: "Inspect work across workflows by overdue, follow-up, waiting, missing proof, owner, source, and next action.",
-    workflows: "Open concrete operating runs with stage, proof, waiting, artifacts, assistants, and process context.",
-    templates: "Start known workflows and maintain recurring operation configuration below active work.",
-    assistants: "Workflow support jobs appear here only when the assistant job lifecycle is connected.",
-    artifacts: "Review proof and operational outputs linked to workflows and tasks.",
+    queue: "Inspect tasks across cards by overdue, follow-up, waiting, missing proof, owner, source, and next action.",
+    workflows: "Open active cards by stage, then inspect their tasks, proof, waiting, artifacts, and process context.",
+    templates: "Create cards from reusable Templates and maintain recurring configuration.",
+    assistants: "Card support jobs appear here only when the assistant job lifecycle is connected.",
+    artifacts: "Review proof and operational outputs linked to cards and tasks.",
     processes: "SOPs, templates, and references are contextual support for work.",
-    search: "Find live work, workflows, artifacts, assistant jobs, templates, and process docs from one operator search.",
+    search: "Find Cards, Tasks, Artifacts, Assistant jobs, Templates, and Process Docs from one operator search.",
     admin: "Maintainer tools for process docs, content publishing, diagnostics, and configuration.",
   };
   return descriptions[view] || "";
@@ -1910,7 +1910,7 @@ function referenceCountLabel(category, count) {
 
 function surfaceStatusText(view, model) {
   if (view === "queue") return `${countLabel(allWorkTasks(operationsWorkSnapshot).length, "known work item")} · ${countLabel(model.stats.followUpTasks, "follow-up")} due · ${countLabel(model.stats.missingProofTasks, "item")} missing proof.`;
-  if (view === "workflows") return `${countLabel(model.stats.activeBundles, "active workflow")} · at-risk first.`;
+  if (view === "workflows") return `${countLabel(model.stats.activeBundles, "active card")} · at-risk first.`;
   if (view === "templates") {
     const runtimeCount = runtimeTemplateState.loaded ? runtimeTemplateState.templates.length : model.templates.length;
     return `${countLabel(runtimeCount, "runtime template")} · ${countLabel(model.recurring.configs.length, "recurring config")}.`;
@@ -1919,7 +1919,7 @@ function surfaceStatusText(view, model) {
   if (view === "artifacts") return operationsArtifactSnapshot.loaded ? `${countLabel(operationsArtifactSnapshot.artifacts.length, "artifact")} indexed.` : "Artifact index not connected.";
   if (view === "processes") return operationsQualitySnapshot.loaded ? `${countLabel(operationsQualitySnapshot.findings.length, "process quality finding")}.` : "Process quality report unavailable.";
   if (view === "search") return "Unified operator search.";
-  return "Workflow-first workspace.";
+  return "Card and task workspace.";
 }
 
 function renderSurfaceHeader(titleText, descriptionText) {
@@ -1935,7 +1935,7 @@ function renderSurfaceHeader(titleText, descriptionText) {
 
 async function renderCalendarSurface() {
   documentList.replaceChildren();
-  const surface=document.createElement("section");surface.className="calendar-surface";surface.innerHTML=`<header><div><h2>Operations calendar</h2><p>Europe/Berlin · Monday–Sunday · ISO weeks</p></div><button class="primary-button" data-add>Add activity</button></header><div class="calendar-controls"><button data-prev>Previous</button><button data-today>Today</button><button data-next>Next</button><label>View <select data-view><option value="month">Month</option><option value="week">Week</option></select></label><label>Activity <select data-type><option value="">All</option>${["podcast-live","podcast-release","webinar","workshop","book-of-the-week","course","cohort","other"].map(v=>`<option>${v}</option>`).join("")}</select></label><label><input data-layer="activities" type="checkbox" checked> Activities</label><label><input data-layer="public" type="checkbox" checked> Public holidays</label><label><input data-layer="school" type="checkbox" checked> School holidays</label><label><input data-layer="overlay" type="checkbox" checked> Newsletter overlay</label></div><p role="status">Loading calendar…</p><div data-alerts></div><div data-calendar></div><dialog><form><h3>Calendar activity</h3><input name="id" type="hidden"><input name="version" type="hidden"><label>Title <input name="title" required maxlength="200"></label><label>Type <select name="activityType">${["podcast-live","podcast-release","webinar","workshop","book-of-the-week","course","cohort","other"].map(v=>`<option>${v}</option>`).join("")}</select></label><label>Status <select name="status">${["tentative","confirmed","announced","published","cancelled"].map(v=>`<option>${v}</option>`).join("")}</select></label><label>Start <input name="startDate" type="date" required></label><label>End <input name="endDate" type="date" required></label><label>Bundle ID <input name="bundleId"></label><label>Notes <textarea name="notes" maxlength="2000"></textarea></label><p role="alert"></p><button type="button" data-cancel>Cancel</button><button class="primary-button">Save activity</button></form></dialog>`;documentList.append(surface);
+  const surface=document.createElement("section");surface.className="calendar-surface";surface.innerHTML=`<header><div><h2>Operations calendar</h2><p>Europe/Berlin · Monday–Sunday · ISO weeks</p></div><button class="primary-button" data-add>Add activity</button></header><div class="calendar-controls"><button data-prev>Previous</button><button data-today>Today</button><button data-next>Next</button><label>View <select data-view><option value="month">Month</option><option value="week">Week</option></select></label><label>Activity <select data-type><option value="">All</option>${["podcast-live","podcast-release","webinar","workshop","book-of-the-week","course","cohort","other"].map(v=>`<option>${v}</option>`).join("")}</select></label><label><input data-layer="activities" type="checkbox" checked> Activities</label><label><input data-layer="public" type="checkbox" checked> Public holidays</label><label><input data-layer="school" type="checkbox" checked> School holidays</label><label><input data-layer="overlay" type="checkbox" checked> Newsletter overlay</label></div><p role="status">Loading calendar…</p><div data-alerts></div><div data-calendar></div><dialog><form><h3>Calendar activity</h3><input name="id" type="hidden"><input name="version" type="hidden"><label>Title <input name="title" required maxlength="200"></label><label>Type <select name="activityType">${["podcast-live","podcast-release","webinar","workshop","book-of-the-week","course","cohort","other"].map(v=>`<option>${v}</option>`).join("")}</select></label><label>Status <select name="status">${["tentative","confirmed","announced","published","cancelled"].map(v=>`<option>${v}</option>`).join("")}</select></label><label>Start <input name="startDate" type="date" required></label><label>End <input name="endDate" type="date" required></label><label>Card ID <input name="bundleId"></label><label>Notes <textarea name="notes" maxlength="2000"></textarea></label><p role="alert"></p><button type="button" data-cancel>Cancel</button><button class="primary-button">Save activity</button></form></dialog>`;documentList.append(surface);
   const status=surface.querySelector('[role="status"]'),grid=surface.querySelector('[data-calendar]'),alertsBox=surface.querySelector('[data-alerts]'),dialog=surface.querySelector('dialog'),form=dialog.querySelector('form');let cursor=new Date(),items=[],holidays=[],overlays=[];const api=(path,options={})=>request(workApiUrl(`/api/calendar-items${path}`),{headers:{"content-type":"application/json",...(options.headers||{})},...options}),iso=d=>d.toISOString().slice(0,10),monday=d=>{const x=new Date(d),n=(x.getUTCDay()+6)%7;x.setUTCDate(x.getUTCDate()-n);return x},sunday=d=>{const x=monday(d);x.setUTCDate(x.getUTCDate()+6);return x},weekNumber=d=>{const x=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));x.setUTCDate(x.getUTCDate()+4-(x.getUTCDay()||7));const y=new Date(Date.UTC(x.getUTCFullYear(),0,1));return String(Math.ceil((((x-y)/86400000)+1)/7)).padStart(2,"0")};
   function bounds(){if(surface.querySelector('[data-view]').value==="week")return[iso(monday(cursor)),iso(sunday(cursor))];const first=new Date(Date.UTC(cursor.getUTCFullYear(),cursor.getUTCMonth(),1)),last=new Date(Date.UTC(cursor.getUTCFullYear(),cursor.getUTCMonth()+1,0));return[iso(monday(first)),iso(sunday(last))]}
   function render(){const [from,to]=bounds(),showA=surface.querySelector('[data-layer="activities"]').checked,showP=surface.querySelector('[data-layer="public"]').checked,showS=surface.querySelector('[data-layer="school"]').checked,showO=surface.querySelector('[data-layer="overlay"]').checked,type=surface.querySelector('[data-type]').value,visibleItems=showA?items.filter(i=>!type||i.activityType===type):[];let html=`<h3 class="calendar-period">${surface.querySelector('[data-view]').value==='week'?`Week of ${from}`:new Date(`${from}T00:00:00Z`).toLocaleDateString('en',{month:'long',year:'numeric',timeZone:'UTC'})}</h3>${visibleItems.length?'':'<div class="calendar-empty"><strong>No matching activities</strong><p>Adjust the activity filter or add an activity.</p></div>'}<div class="calendar-grid"><div class="calendar-weekdays">${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day=>`<strong>${day}</strong>`).join('')}</div>`;for(let d=new Date(`${from}T00:00:00Z`);d<=new Date(`${to}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+1)){const date=iso(d),week=d.getUTCDay()===1?`<small class="iso-week">ISO ${weekNumber(d)}</small>`:"",dayItems=visibleItems.filter(i=>i.startKey.slice(0,10)<=date&&i.endKey.slice(0,10)>=date),dayH=holidays.filter(h=>h.startDate<=date&&h.endDate>=date&&((h.kind==="berlin-public-holiday"&&showP)||(h.kind!=="berlin-public-holiday"&&showS))),dayO=showO?overlays.filter(o=>o.startDate<=date&&o.endDate>=date):[];html+=`<section aria-label="${date}"><strong>${date} · ${d.toLocaleDateString("en",{weekday:"short",timeZone:"UTC"})}</strong>${week}${dayH.map(h=>`<span class="calendar-holiday ${h.name==="Summer holidays"?"summer":""}"><small>${h.kind==='berlin-public-holiday'?'Public holiday':h.kind==='school-free-day'?'School-free':'School holiday'}</small>${escapeHtml(h.name)}</span>`).join("")}${dayItems.map(i=>`<button class="calendar-activity" data-edit="${escapeHtml(i.id)}"><small>${escapeHtml(i.activityType)}</small>${escapeHtml(i.title)}</button>`).join("")}${dayO.map(o=>`<a class="calendar-overlay" href="${escapeHtml(o.href||"#")}"><small>Newsletter</small>${escapeHtml(o.label)}</a>`).join("")}</section>`}grid.innerHTML=html+'</div>'}
@@ -1947,7 +1947,7 @@ async function renderNewsletterSurface() {
   documentList.replaceChildren();
   const surface = document.createElement("section");
   surface.className = "newsletter-surface";
-  surface.innerHTML = `<header><div><h2>Newsletter planner</h2><p>Europe/Berlin · chronological campaign slots.</p></div><button class="primary-button" data-newsletter-add>Add slot</button></header><div class="newsletter-filters"><label>From <input data-from type="date"></label><label>To <input data-to type="date"></label><label>View <select data-view><option value="month">Month</option><option value="week">Week</option></select></label><label>Status <select data-status><option value="">All</option>${["open", "reserved", "drafting", "scheduled", "sent", "cancelled"].map((v) => `<option>${v}</option>`).join("")}</select></label><label>Booking <select data-booked><option value="">All</option><option value="true">Booked</option><option value="false">Unbooked</option></select></label></div><p role="status">Loading newsletter slots…</p><div data-alerts></div><div data-slots>Loading slots…</div><dialog><form method="dialog"><h3>Newsletter slot</h3><input name="id" type="hidden"><input name="version" type="hidden"><label>Publication date <input name="publicationDate" type="date"></label><label>Campaign label <input name="campaignLabel"></label><label>Campaign number <input name="campaignNumber" type="number"></label><label>Status <select name="status">${["open", "reserved", "drafting", "scheduled", "sent", "cancelled"].map((v) => `<option>${v}</option>`).join("")}</select></label><label>Booked by <input name="bookedByDisplayName"></label><label>Sponsor booking ID <input name="sponsorBookingId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Public campaign URL <input name="publicUrl" type="url"></label><label>Planning note <textarea name="planningNote"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-save>Save slot</button></form></dialog>`;
+  surface.innerHTML = `<header><div><h2>Newsletter planner</h2><p>Europe/Berlin · chronological campaign slots.</p></div><button class="primary-button" data-newsletter-add>Add slot</button></header><div class="newsletter-filters"><label>From <input data-from type="date"></label><label>To <input data-to type="date"></label><label>View <select data-view><option value="month">Month</option><option value="week">Week</option></select></label><label>Status <select data-status><option value="">All</option>${["open", "reserved", "drafting", "scheduled", "sent", "cancelled"].map((v) => `<option>${v}</option>`).join("")}</select></label><label>Booking <select data-booked><option value="">All</option><option value="true">Booked</option><option value="false">Unbooked</option></select></label></div><p role="status">Loading newsletter slots…</p><div data-alerts></div><div data-slots>Loading slots…</div><dialog><form method="dialog"><h3>Newsletter slot</h3><input name="id" type="hidden"><input name="version" type="hidden"><label>Publication date <input name="publicationDate" type="date"></label><label>Campaign label <input name="campaignLabel"></label><label>Campaign number <input name="campaignNumber" type="number"></label><label>Status <select name="status">${["open", "reserved", "drafting", "scheduled", "sent", "cancelled"].map((v) => `<option>${v}</option>`).join("")}</select></label><label>Booked by <input name="bookedByDisplayName"></label><label>Sponsor booking ID <input name="sponsorBookingId"></label><label>Newsletter Card ID <input name="bundleId"></label><label>Public campaign URL <input name="publicUrl" type="url"></label><label>Planning note <textarea name="planningNote"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-save>Save slot</button></form></dialog>`;
   documentList.append(surface);
   setPageTitle("Newsletter", "Newsletter planner");
   const status = surface.querySelector('[role="status"]'),
@@ -2063,7 +2063,7 @@ async function renderSponsorCrmSurface() {
   <dialog data-contact-dialog><form method="dialog"><h3>Contact</h3><input name="organizationId" type="hidden"><label>Name <input name="name"></label><label>Email <input name="email" type="email"></label><label>Role <input name="role"></label><label><input name="primary" type="checkbox"> Primary contact</label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-contact-save>Save contact</button></form></dialog>
   <dialog data-suppression-dialog><form method="dialog"><h3>Suppress sponsor email</h3><p>This immediately blocks future review and dispatch for the selected verified address. It cannot recall a message after dispatch starts.</p><label>Recipient <select name="recipient" required></select></label><label>Reason <textarea name="reason" maxlength="240" required></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-save-suppression>Suppress future messages</button></form></dialog>
   <dialog data-suppression-orphan-dialog><form method="dialog"><h3>Suppression migration exceptions</h3><p>These redacted records need an administrator decision before the retired key can be removed.</p><div data-suppression-orphans></div><button value="cancel">Close</button></form></dialog>
-  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter bundle ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>
+  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter Card ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>
   <dialog data-communication-draft-dialog><form method="dialog"><h3>Draft sponsor message</h3><input name="suggestionId" type="hidden"><label>Recipient <select name="recipient" required></select></label><label>Subject <input name="subject" maxlength="998" required></label><label>Plain-text message <textarea name="body" maxlength="100000" required rows="12"></textarea></label><label>Public link <input name="publicLink" type="url"></label><p class="muted">Choose one verified active contact address. The selection is bound into the immutable preview and cannot change at approval or dispatch.</p><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-create-review>Save draft</button></form></dialog>
   <dialog data-communication-review-dialog><form method="dialog"><h3>Exact message review</h3><p class="error-banner" data-review-warning></p><dl class="communication-preview" data-review-addresses></dl><h4 data-review-subject></h4><pre data-review-body></pre><div data-review-links></div><p data-review-status role="status"></p><button type="button" data-review-close>Reject / close</button><button type="button" class="primary-button" data-approve-message hidden>Approve and queue</button></form></dialog>`;
   documentList.append(surface);
@@ -3087,14 +3087,14 @@ function renderWorkQueueSurface(model) {
     const summary = document.createElement("p");
     summary.textContent = [
       taskRouteContext.date ? `Date ${taskRouteContext.date}` : "",
-      taskRouteContext.bundleId ? `Filtered to workflow ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}` : "",
-      taskRouteContext.contextBundleId ? `Return workflow ${taskRouteContext.contextBundle?.title || taskRouteContext.contextBundleId}` : "",
+      taskRouteContext.bundleId ? `Filtered to card ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}` : "",
+      taskRouteContext.contextBundleId ? `Return card ${taskRouteContext.contextBundle?.title || taskRouteContext.contextBundleId}` : "",
     ].filter(Boolean).join(" · ");
     context.append(heading, summary);
     if (taskRouteContext.contextBundleId && taskRouteContext.contextBundle) {
       const open = document.createElement("button");
       open.type = "button";
-      open.textContent = "Open return workflow";
+      open.textContent = "Open return card";
       open.addEventListener("click", () => openBundlePanel(taskRouteContext.contextBundleId));
       context.append(open);
     }
@@ -3132,9 +3132,9 @@ function renderWorkQueueSurface(model) {
 
 function renderTaskRouteContextFailure(failure) {
   const labels = {
-    "filter-bundle": ["Filter workflow", "The workflow filter could not be verified."],
+    "filter-bundle": ["Filter card", "The card filter could not be verified."],
     "task-query": ["Filtered task queue", "The requested task slice could not be loaded."],
-    "return-context": ["Return workflow", "The return context could not be loaded."],
+    "return-context": ["Return card", "The return context could not be loaded."],
   };
   const [label, explanation] = labels[failure.source] || ["Route context", "This route context could not be loaded."];
   const state = document.createElement("section");
@@ -3172,7 +3172,7 @@ function renderWorkQueueRow(task, today) {
     status,
     task.date ? `Due ${formatTaskDateMeta(task.date, today)}` : "",
     task.assigneeId ? `Owner ${resolveAssigneeLabel(task.assigneeId)}` : "Unassigned",
-    task.bundleId ? "Workflow-linked" : "Ad hoc",
+    task.bundleId ? "Card task" : "Independent task",
     taskSourceLabel(task),
     taskProofState(task).label,
   ].filter(Boolean)) {
@@ -3193,43 +3193,69 @@ function renderWorkflowsSurface(model) {
   section.className = "ops-workflows-board";
   section.setAttribute("aria-labelledby", "workflow-board-title");
   const bundles = operationsWorkSnapshot.activeBundles || [];
+  const archivedCards = (operationsWorkSnapshot.bundles || []).filter(isArchivedWorkBundle);
+  const archiveVisible = activeWorkspaceRoute?.path === "/cards/archive";
+  const displayedCards = archiveVisible ? archivedCards : bundles;
   const header = document.createElement("header");
   header.className = "workflow-board-header";
   const heading = document.createElement("div");
   const eyebrow = document.createElement("span");
   eyebrow.className = "workflow-board-eyebrow";
-  eyebrow.textContent = "Operations board";
+  eyebrow.textContent = "Task board";
   const title = document.createElement("h2");
   title.id = "workflow-board-title";
-  title.textContent = "Workflows";
+  title.textContent = "Cards";
   const summary = document.createElement("p");
-  summary.textContent = `${countLabel(bundles.length, "active workflow")} · open a card to see its tasks`;
+  summary.textContent = archiveVisible
+    ? `${countLabel(archivedCards.length, "archived card")} · completed work remains available`
+    : `${countLabel(bundles.length, "active card")} · open a card to see its tasks`;
   heading.append(eyebrow, title, summary);
   const actions = document.createElement("div");
   actions.className = "workflow-board-actions";
+  const archive = document.createElement("button");
+  archive.type = "button";
+  archive.className = "quiet-button";
+  archive.textContent = archiveVisible ? "Back to board" : `Archive (${archivedCards.length})`;
+  archive.setAttribute("aria-pressed", String(archiveVisible));
+  archive.addEventListener("click", () => navigateCanonicalWorkspace(archiveVisible ? "/cards" : "/cards/archive"));
   const start = document.createElement("button");
   start.type = "button";
   start.className = "primary-button";
-  start.textContent = "Start workflow";
+  start.textContent = "Create card";
   start.addEventListener("click", () => openQuickWorkflowForm());
-  actions.append(start);
+  actions.append(archive);
+  if (!archiveVisible) actions.append(start);
   header.append(heading, actions);
   section.append(header);
 
-  if (bundles.length === 0) {
-    section.append(renderHonestState("No active workflows", operationsWorkSnapshot.bundlesLoaded ? "Start a workflow from Templates / Recurring when new work arrives." : "Live workflow data is unavailable from /work/api/bundles."));
+  if (displayedCards.length === 0) {
+    section.append(archiveVisible
+      ? renderHonestState("Archive is empty", "Cards appear here after all of their Tasks are complete.")
+      : renderHonestState("No active cards", operationsWorkSnapshot.bundlesLoaded ? "Create a card from a Template when new work arrives." : "Live card data is unavailable."));
     return section;
   }
 
   const today = todayIsoDate();
+  if (archiveVisible) {
+    const archiveGrid = document.createElement("div");
+    archiveGrid.className = "cards-archive-grid";
+    archiveGrid.setAttribute("aria-label", "Archived cards");
+    for (const bundle of archivedCards) {
+      const tasks = operationsWorkSnapshot.bundleTasks[bundle.id] || [];
+      const item = operationItemFromBundle(bundle, tasks, { today });
+      archiveGrid.append(renderWorkflowSurfaceCard(item));
+    }
+    section.append(archiveGrid);
+    return section;
+  }
+
   const board = document.createElement("div");
   board.className = "ops-workflows-grid";
-  board.setAttribute("aria-label", "Active workflow board");
+  board.setAttribute("aria-label", "Active card board");
   const columns = [
     ["preparation", "Preparation"],
     ["announced", "Announced"],
     ["after-event", "After event"],
-    ["done", "Done"],
   ];
   const items = bundles.map((bundle) => {
     const tasks = operationsWorkSnapshot.bundleTasks[bundle.id] || [];
@@ -3247,14 +3273,14 @@ function renderWorkflowsSurface(model) {
     columnTitle.textContent = label;
     const columnCount = document.createElement("span");
     columnCount.textContent = String(stageItems.length);
-    columnCount.setAttribute("aria-label", countLabel(stageItems.length, "workflow"));
+    columnCount.setAttribute("aria-label", countLabel(stageItems.length, "card"));
     columnHeader.append(columnTitle, columnCount);
     const list = document.createElement("div");
     list.className = "workflow-board-list";
     if (stageItems.length === 0) {
       const empty = document.createElement("p");
       empty.className = "workflow-column-empty";
-      empty.textContent = "No workflows";
+      empty.textContent = "No cards";
       list.append(empty);
     } else {
       for (const item of stageItems) list.append(renderWorkflowSurfaceCard(item));
@@ -3300,7 +3326,7 @@ function renderTemplatesRecurringSurface(model) {
   const templateHeader = document.createElement("div");
   templateHeader.className = "ops-section-header";
   const templateTitle = document.createElement("h3");
-  templateTitle.textContent = "Manual workflow templates";
+  templateTitle.textContent = "Templates";
   const templateMeta = document.createElement("span");
   const manualTemplates = model.templates.filter((template) => !template.recurring);
   templateMeta.textContent = `${countLabel(manualTemplates.length, "template")} available`;
@@ -3344,7 +3370,7 @@ function runtimeTemplateDefinition(template) {
 
 function newRuntimeTemplateDraft() {
   return runtimeTemplateDefinition({
-    name: "New workflow",
+    name: "New card template",
     type: "workflow",
     triggerType: "manual",
     triggerEnabled: true,
@@ -3755,7 +3781,7 @@ function renderRuntimeTemplateAdmin() {
   section.classList.toggle("has-selection", Boolean(runtimeTemplateState.selectedId));
   const header = document.createElement("div");
   header.className = "ops-section-header";
-  header.innerHTML = `<div><h3>Runtime template administration</h3><span>Templates stored in the application database and used to instantiate workflows.</span></div>`;
+  header.innerHTML = `<div><h3>Template administration</h3><span>Templates define the tasks used when a Card is created.</span></div>`;
   if (runtimeTemplateState.isAdmin) {
     const add = document.createElement("button");
     add.type = "button";
@@ -3857,7 +3883,7 @@ function renderRuntimeTemplateReadOnly(selected) {
   const start = document.createElement("button");
   start.type = "button";
   start.className = "primary-button";
-  start.textContent = "Start workflow";
+  start.textContent = "Create card";
   start.addEventListener("click", () => openQuickWorkflowForm({
     template: { ...selected, templateId: selected.id, title: selected.name },
   }));
@@ -3888,7 +3914,7 @@ function renderRuntimeTemplateReadOnly(selected) {
   }
   if (!taskList.children.length) {
     const empty = document.createElement("li");
-    empty.textContent = "No task definitions. This template cannot create useful workflow work yet.";
+    empty.textContent = "No task definitions. This Template cannot create a useful Card yet.";
     taskList.append(empty);
   }
   tasks.append(taskHeading, taskList);
@@ -3943,7 +3969,7 @@ function renderRuntimeTemplateEditor() {
   const heading = document.createElement("h4");
   heading.textContent = creating ? "New runtime template" : `Edit ${selected.name || selected.id}`;
   const guidance = document.createElement("p");
-  guidance.textContent = "Use the structured fields below. Task order is the workflow order; Advanced JSON is a read-only review of the normalized draft.";
+  guidance.textContent = "Use the structured fields below. Task order becomes the Card checklist order; Advanced JSON is a read-only review of the normalized draft.";
   const saveState = document.createElement("span");
   saveState.className = "runtime-template-save-state";
   saveState.dataset.templateSaveState = "";
@@ -4137,7 +4163,7 @@ function renderAssistantsSurface() {
   const heading = document.createElement("h3");
   heading.textContent = "Operational assistant queue";
   queue.append(heading);
-  if (!filtered.length) queue.append(renderHonestState("No matching assistant jobs", "Choose another filter or request assistant help for a workflow."));
+  if (!filtered.length) queue.append(renderHonestState("No matching assistant jobs", "Choose another filter or request assistant help for a Card."));
   for (const job of filtered) queue.append(renderAssistantJobRow(job));
   const detail = document.createElement("section");
   detail.className = "assistant-panel assistant-detail";
@@ -4202,8 +4228,8 @@ function assistantCanCancel(job) {
 
 function assistantContextLabel(job) {
   const bundle = (operationsWorkSnapshot.bundles || []).find((candidate) => candidate.id === job.bundleId);
-  if (bundle) return `workflow ${bundle.title || bundle.id}`;
-  if (job.bundleId) return `workflow ${job.bundleId}`;
+  if (bundle) return `card ${bundle.title || bundle.id}`;
+  if (job.bundleId) return `card ${job.bundleId}`;
   if (job.taskId) return `task ${job.taskId}`;
   return "";
 }
@@ -4212,11 +4238,11 @@ function renderAssistantCreatePanel() {
   const panel = document.createElement("section");
   panel.className = "assistant-panel";
   const bundles = operationsWorkSnapshot.bundles || [];
-  panel.innerHTML = `<h3>Request DataOps Assistant help</h3><div class="assistant-create-grid"><label>Workflow<select data-assistant-bundle><option value="">Select workflow</option>${bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`).join("")}</select></label><label>Task<select data-assistant-task><option value="">Workflow-level job</option></select></label><label>Assistant type<input data-assistant-type value="podcast"></label><label>Title<input data-assistant-title placeholder="DataOps Assistant podcast prep"></label><button class="primary-button" data-assistant-create>Ask DataOps Assistant</button></div>`;
+  panel.innerHTML = `<h3>Request DataOps Assistant help</h3><div class="assistant-create-grid"><label>Card<select data-assistant-bundle><option value="">Select card</option>${bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`).join("")}</select></label><label>Task<select data-assistant-task><option value="">Card-level job</option></select></label><label>Assistant type<input data-assistant-type value="podcast"></label><label>Title<input data-assistant-title placeholder="DataOps Assistant podcast prep"></label><button class="primary-button" data-assistant-create>Ask DataOps Assistant</button></div>`;
   const bundleSelect = panel.querySelector("[data-assistant-bundle]");
   const taskSelect = panel.querySelector("[data-assistant-task]");
   bundleSelect.addEventListener("change", async () => {
-    taskSelect.innerHTML = `<option value="">Workflow-level job</option>`;
+    taskSelect.innerHTML = `<option value="">Card-level job</option>`;
     if (!bundleSelect.value) return;
     try {
       const payload = await request(workApiUrl("/api/tasks", { bundleId: bundleSelect.value }));
@@ -4227,13 +4253,13 @@ function renderAssistantCreatePanel() {
         taskSelect.append(option);
       }
     } catch (error) {
-      reportError(error.message || "Could not load workflow tasks");
+      reportError(error.message || "Could not load card tasks");
     }
   });
   panel.querySelector("[data-assistant-create]").addEventListener("click", async () => {
     const bundleId = bundleSelect.value;
     const taskId = taskSelect.value;
-    if (!bundleId && !taskId) return reportError("Select a workflow or task before requesting assistant help.");
+    if (!bundleId && !taskId) return reportError("Select a Card or Task before requesting assistant help.");
     const assistantType = panel.querySelector("[data-assistant-type]").value.trim() || "podcast";
     const title = panel.querySelector("[data-assistant-title]").value.trim() || `DataOps Assistant: ${assistantType}`;
     const inputRefs = [];
@@ -4423,7 +4449,7 @@ function renderInboxSurface() {
     return;
   }
   if (!intakeState.loaded) {
-    wrap.append(renderHonestState("Loading inbox", "Fetching intake items and workflow relationships."));
+    wrap.append(renderHonestState("Loading inbox", "Fetching intake items and Card relationships."));
     documentList.replaceChildren(wrap);
     setStatus("Loading inbox…");
     return;
@@ -4518,16 +4544,16 @@ function renderIntakeDetail(item) {
       });
       return panel;
     }
-    panel.append(renderHonestState("Intake detail", "Select an intake item to triage it into normal workflow work."));
+    panel.append(renderHonestState("Intake detail", "Select an intake item to triage it into a Task or Card."));
     return panel;
   }
-  const bundleOptions = [`<option value="">No workflow</option>`, ...intakeState.bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`)].join("");
+  const bundleOptions = [`<option value="">No card</option>`, ...intakeState.bundles.map((bundle) => `<option value="${escapeHtml(bundle.id)}">${escapeHtml(bundle.title || bundle.id)}</option>`)].join("");
   const taskRelationships = (item.taskIds || []).map((id) => `<button type="button" data-open-intake-task="${escapeHtml(id)}">Task ${escapeHtml(id)}</button>`).join(" ") || "None";
   const bundleRelationships = (item.bundleIds || []).map((id) => `<button type="button" data-open-intake-bundle="${escapeHtml(id)}">${escapeHtml(intakeState.bundles.find((bundle) => bundle.id === id)?.title || id)}</button>`).join(" ") || "None";
   const assistantRelationships = (item.assistantJobIds || []).map((id) => `<button type="button" data-open-intake-assistant="${escapeHtml(id)}">Assistant job ${escapeHtml(id)}</button>`).join(" ") || "None";
   const history = renderIntakeHistoryMarkup(item.history || []);
   const actionMarkup = intakeActionMarkup(item, bundleOptions);
-  panel.innerHTML = `<header><div><h3>${escapeHtml(item.title || "Untitled intake")}</h3><small>${escapeHtml(intakeMeta(item))}</small></div><div class="intake-detail-heading-actions"><span class="intake-status">${escapeHtml(intakeStatusLabel(item))}</span><button type="button" data-close-intake>Return to Inbox</button></div></header><section><h4>Intake context</h4><p>${escapeHtml(item.summary || "")}</p><small>Raw bodies and binaries remain behind storage references; this excerpt is not task proof.</small></section>${actionMarkup}<section><h4>Relationships</h4><div><strong>Tasks:</strong> ${taskRelationships}</div><div><strong>Workflows:</strong> ${bundleRelationships}</div><div><strong>Assistants:</strong> ${assistantRelationships}</div></section><section><h4>Links, files, and artifacts</h4>${intakeRefList("Links", item.linkRefs)}${intakeRefList("Files", item.fileRefs)}${intakeRefList("Artifacts", item.artifactRefs)}</section><section aria-labelledby="intake-history-heading"><h4 id="intake-history-heading">History <small>(newest first)</small></h4><ol class="intake-history">${history || "<li>No triage history recorded.</li>"}</ol></section>`;
+  panel.innerHTML = `<header><div><h3>${escapeHtml(item.title || "Untitled intake")}</h3><small>${escapeHtml(intakeMeta(item))}</small></div><div class="intake-detail-heading-actions"><span class="intake-status">${escapeHtml(intakeStatusLabel(item))}</span><button type="button" data-close-intake>Return to Inbox</button></div></header><section><h4>Intake context</h4><p>${escapeHtml(item.summary || "")}</p><small>Raw bodies and binaries remain behind storage references; this excerpt is not task proof.</small></section>${actionMarkup}<section><h4>Relationships</h4><div><strong>Tasks:</strong> ${taskRelationships}</div><div><strong>Cards:</strong> ${bundleRelationships}</div><div><strong>Assistants:</strong> ${assistantRelationships}</div></section><section><h4>Links, files, and artifacts</h4>${intakeRefList("Links", item.linkRefs)}${intakeRefList("Files", item.fileRefs)}${intakeRefList("Artifacts", item.artifactRefs)}</section><section aria-labelledby="intake-history-heading"><h4 id="intake-history-heading">History <small>(newest first)</small></h4><ol class="intake-history">${history || "<li>No triage history recorded.</li>"}</ol></section>`;
 
   panel.querySelector("[data-close-intake]").addEventListener("click", () => {
     navigateCanonicalWorkspace("/inbox");
@@ -4567,15 +4593,15 @@ function intakeActionMarkup(item, bundleOptions) {
       : taskId
         ? `<button type="button" class="primary-button" data-open-intake-task="${escapeHtml(taskId)}">Continue task</button>`
         : bundleId
-          ? `<button type="button" class="primary-button" data-open-intake-bundle="${escapeHtml(bundleId)}">Continue workflow</button>`
+          ? `<button type="button" class="primary-button" data-open-intake-bundle="${escapeHtml(bundleId)}">Open card</button>`
           : "";
     const createAssistant = item.assistantReadiness?.status === "ready" && !assistantJobId
       ? disclosure("prepare-assistant", "Create assistant draft", `<label>Assistant type<input name="assistantType" value="${value("assistantType", item.assistantReadiness?.assistantType || "podcast")}"></label><input name="createJob" value="true" type="hidden">`, !continuation)
       : "";
     return `<section class="intake-next-actions"><h4>Continue work</h4><p>Continue from the exact linked record.</p>${continuation}${createAssistant}</section>${intakeMutationFeedback(item)}`;
   }
-  const convert = disclosure("convert-task", "Convert to task", `<label>Task date<input name="date" type="date" value="${value("date", todayIsoDate())}"></label><label>Assignee<input name="assigneeId" value="${value("assigneeId", item.assigneeId || "")}" placeholder="User id"></label><label>Workflow<select name="bundleId">${bundleOptions}</select></label>`, true);
-  const attach = disclosure("attach", "Attach to existing work", `<label>Task ID<input name="taskId" value="${value("taskId")}" placeholder="Existing task id"></label><label>Workflow<select name="bundleId">${bundleOptions}</select></label><label>Note<input name="note" value="${value("note")}" placeholder="Optional context"></label>`);
+  const convert = disclosure("convert-task", "Convert to task", `<label>Task date<input name="date" type="date" value="${value("date", todayIsoDate())}"></label><label>Assignee<input name="assigneeId" value="${value("assigneeId", item.assigneeId || "")}" placeholder="User id"></label><label>Card<select name="bundleId">${bundleOptions}</select></label>`, true);
+  const attach = disclosure("attach", "Attach to existing work", `<label>Task ID<input name="taskId" value="${value("taskId")}" placeholder="Existing task id"></label><label>Card<select name="bundleId">${bundleOptions}</select></label><label>Note<input name="note" value="${value("note")}" placeholder="Optional context"></label>`);
   const block = disclosure("block", "Block and schedule follow-up", `<label>Reason<input name="reason" value="${value("reason", item.blockedReason || "")}" required></label><label>Waiting for<input name="waitingFor" value="${value("waitingFor", item.waitingFor || "")}" required></label><label>Follow up<input name="followUpAt" type="date" value="${value("followUpAt", String(item.followUpAt || "").slice(0, 10) || defaultNextFollowUpDate())}" required></label>`);
   const follow = disclosure("follow-up-sent", "Record follow-up sent", `<label>Operational note<input name="note" value="${value("note")}" required></label><label>Next follow-up<input name="nextFollowUpAt" type="date" value="${value("nextFollowUpAt", defaultNextFollowUpDate())}" required></label>`, due);
   const response = disclosure("response-received", "Record response received", `<label>Operational note<input name="note" value="${value("note")}" required></label>`, status === "blocked" && !due);
@@ -4665,7 +4691,7 @@ function formatBerlinDateTime(value) {
 function renderIntakeHistoryMarkup(events) {
   return [...events].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).map((event) => {
     const when = formatBerlinDateTime(event.createdAt);
-    const context = [event.actorId ? `by ${event.actorId}` : "", event.reason || "", event.metadata?.waitingFor ? `waiting for ${event.metadata.waitingFor}` : "", event.metadata?.followUpAt ? `follow-up ${formatBerlinDateTime(event.metadata.followUpAt).text}` : "", event.metadata?.taskId ? `task ${event.metadata.taskId}` : "", event.metadata?.bundleId ? `workflow ${event.metadata.bundleId}` : "", event.metadata?.assistantJobId ? `assistant ${event.metadata.assistantJobId}` : ""].filter(Boolean).join(" · ");
+    const context = [event.actorId ? `by ${event.actorId}` : "", event.reason || "", event.metadata?.waitingFor ? `waiting for ${event.metadata.waitingFor}` : "", event.metadata?.followUpAt ? `follow-up ${formatBerlinDateTime(event.metadata.followUpAt).text}` : "", event.metadata?.taskId ? `task ${event.metadata.taskId}` : "", event.metadata?.bundleId ? `card ${event.metadata.bundleId}` : "", event.metadata?.assistantJobId ? `assistant ${event.metadata.assistantJobId}` : ""].filter(Boolean).join(" · ");
     return `<li><strong>${escapeHtml(humanizeIntakeAction(event.action))}</strong><span>${when.datetime ? `<time datetime="${escapeHtml(when.datetime)}">${escapeHtml(when.text)}</time>` : escapeHtml(when.text)}${context ? ` · ${escapeHtml(context)}` : ""}</span></li>`;
   }).join("");
 }
@@ -4675,7 +4701,7 @@ function renderArtifactsSurface() {
   section.className = "ops-state-list";
   section.setAttribute("aria-label", "Artifacts");
   if (!operationsArtifactSnapshot.loaded) {
-    section.append(renderHonestState("Artifact review index not connected", "Task and workflow panels still show artifacts that are loaded in context. This surface will list cross-workflow proof/output rows when the artifact index is available."));
+    section.append(renderHonestState("Artifact review index not connected", "Task and Card panels still show artifacts loaded in context. This surface will list proof and output across Cards when the artifact index is available."));
     return section;
   }
   if (operationsArtifactSnapshot.artifacts.length === 0) {
@@ -4695,7 +4721,7 @@ function renderArtifactSurfaceRow(artifact) {
   meta.textContent = [
     artifact.status || "draft",
     artifact.type || artifact.sourceType || "",
-    artifact.bundleId ? `workflow ${artifact.bundleId}` : "",
+    artifact.bundleId ? `card ${artifact.bundleId}` : "",
     artifact.taskId ? `task ${artifact.taskId}` : "",
     artifact.storageUri ? "storage linked" : "storage missing",
   ].filter(Boolean).join(" · ");
@@ -4715,7 +4741,7 @@ function renderProcessesSurface(documents, model) {
   const section = document.createElement("section");
   section.className = "ops-processes-surface";
   const quality = model?.quality || buildProcessQualityModel(operationsQualitySnapshot, operationsWorkSnapshot);
-  const note = renderHonestState("Processes support work", "Use SOPs, templates, and references from task or workflow context first. Process quality findings below focus on runnable workflow risk and maintainer gaps.");
+  const note = renderHonestState("Processes support work", "Use internal Process Docs from Task or Card context first. Findings below focus on runnable Template/Card risk and maintainer gaps.");
   section.append(note);
 
   section.append(renderProcessQualityDrilldown(quality));
@@ -4748,7 +4774,7 @@ function renderProcessQualityDrilldown(quality) {
     return wrap;
   }
   if (!quality.activeWorkLoaded) {
-    wrap.append(renderHonestState("Live work unavailable", "Active task/workflow impact cannot be confirmed. Severity below reflects template and process-doc risk only."));
+    wrap.append(renderHonestState("Live work unavailable", "Active Task/Card impact cannot be confirmed. Severity below reflects Template and Process Doc risk only."));
   }
 
   const filters = document.createElement("div");
@@ -5220,8 +5246,8 @@ function buildOperationsHomeModel(documents, options) {
     },
     {
       id: "bundles",
-      title: "At-Risk Workflows",
-      empty: work.bundlesLoaded ? "No active workflows." : "No live workflow data loaded.",
+      title: "At-risk Cards",
+      empty: work.bundlesLoaded ? "No active Cards." : "No live Card data loaded.",
       items: bundleItems,
     },
   ];
@@ -5453,7 +5479,7 @@ async function refreshOperationsWorkSnapshot(options = {}) {
     .filter((result) => result.status === "rejected")
     .map((result) => result.reason?.message || "Work API request failed");
 
-  const activeBundles = snapshot.bundles.filter(isActiveWorkBundle).slice(0, 8);
+  const activeBundles = snapshot.bundles.filter(isActiveWorkBundle);
   const bundleTaskResults = await Promise.allSettled(activeBundles.map((bundle) => request(workApiUrl("/api/tasks", { bundleId: bundle.id }))));
   activeBundles.forEach((bundle, index) => {
     const result = bundleTaskResults[index];
@@ -5519,7 +5545,8 @@ function taskRouteParams(taskId) {
     return { path: "/tasks", params };
   }
   if (activeBundlePanelId) {
-    return { path: "/bundles", params: { bundleId: activeBundlePanelId, taskId } };
+    const path = activeWorkspaceRoute?.path === "/cards/archive" ? "/cards/archive" : "/cards";
+    return { path, params: { cardId: activeBundlePanelId, taskId } };
   }
   return { path: "/tasks", params: { taskId } };
 }
@@ -5527,7 +5554,9 @@ function taskRouteParams(taskId) {
 function openTaskPanel(taskId, options = {}) {
   let target = taskRouteParams(taskId);
   if (options.preserveBundle && options.expectedBundleId) {
-    target = { path: "/bundles", params: { bundleId: options.expectedBundleId, taskId } };
+    const expected = operationsWorkSnapshot.bundlesById?.get(options.expectedBundleId);
+    const path = isArchivedWorkBundle(expected) ? "/cards/archive" : "/cards";
+    target = { path, params: { cardId: options.expectedBundleId, taskId } };
   }
   return navigateCanonicalWorkspace(target.path, target.params).ready;
 }
@@ -5541,14 +5570,14 @@ async function hydrateTaskPanel(taskId, token, options = {}) {
       activeTaskPanelTask = null;
       activeTaskPanelArtifacts = [];
       renderEntityLoadState(taskPanelBody, {
-        kind: "task/workflow",
+        kind: "task/card",
         id: taskId,
         status: "mismatch",
-        error: `Task belongs to workflow ${fetched.bundleId || "none"}, not ${options.expectedBundleId}.`,
+        error: `Task belongs to card ${fetched.bundleId || "none"}, not ${options.expectedBundleId}.`,
         retry: () => navigateCanonicalWorkspace(activeWorkspaceRoute.path, activeWorkspaceRoute.params, { history: "none" }),
         returnToList: () => closeTaskPanel(),
       });
-      taskPanelTitle.textContent = "Task/workflow mismatch";
+      taskPanelTitle.textContent = "Task/card mismatch";
       return;
     }
     if (fetched) {
@@ -5589,7 +5618,7 @@ function closeTaskPanel(options = {}) {
       restoreFocus: {
         kind: "task",
         id: taskId,
-        surface: route.path === "/bundles" ? "workflows" : "tasks",
+        surface: route.path === "/cards" || route.path === "/cards/archive" ? "workflows" : "tasks",
       },
     }).ready;
   }
@@ -5640,7 +5669,7 @@ function renderTaskPanel() {
 
   const routeContextParts = [
     taskRouteContext.date ? `Queue date ${taskRouteContext.date}` : "",
-    taskRouteContext.bundleId ? `Filtered to workflow ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}` : "",
+    taskRouteContext.bundleId ? `Filtered to card ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}` : "",
     taskRouteContext.contextBundleId
       ? `Return to ${taskRouteContext.contextBundle?.title || taskRouteContext.contextBundleId}`
       : "",
@@ -5683,7 +5712,7 @@ function renderTaskPanel() {
   }
   if (task.bundleId) {
     const bundleRow = document.createElement("div");
-    bundleRow.append(document.createTextNode("Workflow "));
+    bundleRow.append(document.createTextNode("Card "));
     const link = document.createElement("button");
     link.type = "button";
     link.className = "task-instruction-doc-link";
@@ -6125,7 +6154,7 @@ function formatMetaText(value) {
 // work snapshot, which can still be hydrating on a fresh deep link. The route
 // context and active bundle data are both token-guarded before assignment.
 function resolveBundleLabel(bundleId) {
-  if (!bundleId) return "Open workflow";
+  if (!bundleId) return "Open card";
   const exactBundles = [
     taskRouteContext.filterBundle,
     taskRouteContext.contextBundle,
@@ -6135,7 +6164,7 @@ function resolveBundleLabel(bundleId) {
   if (exact?.title) return exact.title;
   const bundle = operationsWorkSnapshot.bundlesById?.get(bundleId);
   if (bundle && bundle.title) return bundle.title;
-  return "Open workflow";
+  return "Open card";
 }
 
 function resolveAssigneeLabel(assigneeId) {
@@ -6277,7 +6306,9 @@ async function recordTaskFollowUpSent(taskId, nextDate) {
 // ---------- Bundle (workflow) detail panel ----------
 
 function openBundlePanel(bundleId) {
-  return navigateCanonicalWorkspace("/bundles", { bundleId }).ready;
+  const bundle = operationsWorkSnapshot.bundlesById?.get(bundleId);
+  const path = isArchivedWorkBundle(bundle) ? "/cards/archive" : "/cards";
+  return navigateCanonicalWorkspace(path, { cardId: bundleId }).ready;
 }
 
 async function hydrateBundlePanel(bundleId, token) {
@@ -6300,9 +6331,9 @@ async function hydrateBundlePanel(bundleId, token) {
     }
   } catch (err) {
     if (isWorkspaceRouteFresh(token) && activeBundlePanelId === bundleId) {
-      bundlePanelTitle.textContent = err.status === 404 ? "Workflow not found" : "Workflow unavailable";
+      bundlePanelTitle.textContent = err.status === 404 ? "Card not found" : "Card unavailable";
       renderEntityLoadState(bundlePanelBody, {
-        kind: "workflow",
+        kind: "card",
         id: bundleId,
         status: err.status === 404 ? "not-found" : "error",
         error: err.message,
@@ -6315,12 +6346,12 @@ async function hydrateBundlePanel(bundleId, token) {
 
 function closeBundlePanel(options = {}) {
   const route = parseWorkspaceHash();
-  if (options.updateUrl === false || !route || route.invalid || route.path !== "/bundles") {
+  if (options.updateUrl === false || !route || route.invalid || !["/cards", "/cards/archive"].includes(route.path)) {
     resetBundlePanel();
     return;
   }
-  return navigateCanonicalWorkspace("/bundles", {}, {
-    restoreFocus: { kind: "workflow", id: route.params.get("bundleId"), surface: "workflows" },
+  return navigateCanonicalWorkspace(route.path, {}, {
+    restoreFocus: { kind: "workflow", id: route.params.get("cardId"), surface: "workflows" },
   }).ready;
 }
 
@@ -6333,7 +6364,7 @@ function renderEntityLoadState(container, { kind, id, status, error, retry, retu
   heading.textContent = status === "not-found"
     ? `${labelizeWorkValue(kind)} not found`
     : status === "mismatch"
-      ? "Task and workflow do not match"
+      ? "Task and card do not match"
       : `${labelizeWorkValue(kind)} unavailable`;
   const detail = document.createElement("p");
   detail.textContent = status === "not-found"
@@ -6347,7 +6378,7 @@ function renderEntityLoadState(container, { kind, id, status, error, retry, retu
   retryButton.addEventListener("click", retry);
   const returnButton = document.createElement("button");
   returnButton.type = "button";
-  returnButton.textContent = `Return to ${kind === "intake" ? "Inbox" : kind === "template" ? "templates" : kind === "workflow" || kind === "task/workflow" ? "workflows" : `${kind}s`}`;
+  returnButton.textContent = `Return to ${kind === "intake" ? "Inbox" : kind === "template" ? "templates" : kind === "card" || kind === "task/card" ? "cards" : `${kind}s`}`;
   returnButton.addEventListener("click", returnToList);
   actions.append(retryButton, returnButton);
   state.append(heading, detail, actions);
@@ -6369,7 +6400,7 @@ function renderBundlePanel() {
   const bundle = data?.bundle;
   const tasks = data?.tasks || [];
   const artifacts = data?.artifacts || [];
-  bundlePanelTitle.textContent = bundle ? workBundleTitle(bundle) : "Workflow";
+  bundlePanelTitle.textContent = bundle ? workBundleTitle(bundle) : "Card";
   bundlePanelBody.replaceChildren();
   if (!bundle) return;
 
@@ -6381,10 +6412,10 @@ function renderBundlePanel() {
   main.className = "workflow-modal-main";
   const sidebar = document.createElement("aside");
   sidebar.className = "workflow-modal-sidebar";
-  sidebar.setAttribute("aria-label", "Workflow controls and status");
+  sidebar.setAttribute("aria-label", "Card controls and status");
   const sidebarHeading = document.createElement("strong");
   sidebarHeading.className = "workflow-sidebar-heading";
-  sidebarHeading.textContent = "Workflow";
+  sidebarHeading.textContent = "Card";
   sidebar.append(sidebarHeading);
   layout.append(main, sidebar);
   bundlePanelBody.append(layout);
@@ -6392,21 +6423,28 @@ function renderBundlePanel() {
   // Stage + progress summary
   const meta = document.createElement("div");
   meta.className = "task-detail-meta workflow-detail-summary";
-  const stageSelect = document.createElement("select");
-  stageSelect.className = "bundle-stage-select";
-  const STAGES = ["preparation", "announced", "after-event", "done"];
-  for (const stage of STAGES) {
-    const opt = document.createElement("option");
-    opt.value = stage;
-    opt.textContent = labelizeWorkValue(stage);
-    if (bundle.stage === stage) opt.selected = true;
-    stageSelect.append(opt);
-  }
-  stageSelect.addEventListener("change", () => updateBundleStage(bundle.id, stageSelect.value));
   const stageLabel = document.createElement("label");
   stageLabel.className = "workflow-stage-field";
-  stageLabel.textContent = "Stage ";
-  stageLabel.append(stageSelect);
+  if (isArchivedWorkBundle(bundle)) {
+    stageLabel.textContent = "Status";
+    const completed = document.createElement("span");
+    completed.className = "bundle-stage-static";
+    completed.textContent = "Completed";
+    stageLabel.append(completed);
+  } else {
+    stageLabel.textContent = "Stage ";
+    const stageSelect = document.createElement("select");
+    stageSelect.className = "bundle-stage-select";
+    for (const stage of ["preparation", "announced", "after-event"]) {
+      const opt = document.createElement("option");
+      opt.value = stage;
+      opt.textContent = labelizeWorkValue(stage);
+      if (bundle.stage === stage) opt.selected = true;
+      stageSelect.append(opt);
+    }
+    stageSelect.addEventListener("change", () => updateBundleStage(bundle.id, stageSelect.value));
+    stageLabel.append(stageSelect);
+  }
   sidebar.append(stageLabel);
   if (bundle.anchorDate) {
     const row = document.createElement("div");
@@ -6489,7 +6527,7 @@ function renderBundlePanel() {
     checklistSection.className = "task-history workflow-detail-section workflow-checklist-section";
     const checklistLabel = document.createElement("div");
     checklistLabel.className = "task-history-label";
-    checklistLabel.textContent = "Workflow tasks";
+    checklistLabel.textContent = "Tasks";
     checklistSection.append(checklistLabel);
     const list = document.createElement("div");
     list.className = "task-history-list";
@@ -6551,15 +6589,15 @@ function renderBundlePanel() {
   if (!refsList.children.length) {
     const empty = document.createElement("div");
     empty.className = "task-history-event";
-    empty.textContent = "No process references linked to this workflow.";
+    empty.textContent = "No internal Process Docs linked to this Card.";
     refsList.append(empty);
   }
 
   const assistantState = document.createElement("div");
   assistantState.className = "task-history-event";
   assistantState.textContent = operationsAssistantSnapshot.loaded
-    ? "Assistant jobs are available from the Assistants surface when linked to this workflow."
-    : "Assistant jobs not connected for this workflow; no fake assistant output is shown.";
+    ? "Assistant jobs are available from the Assistants surface when linked to this Card."
+    : "Assistant jobs are not connected to this Card.";
   refsSection.append(assistantState);
 
   // Add artifact/reference link form
@@ -6682,7 +6720,9 @@ function renderBundleChecklistItem(task, bundleId, today) {
 
 async function navigateTaskToWorkflow(task) {
   if (!task?.bundleId) return;
-  await navigateCanonicalWorkspace("/bundles", { bundleId: task.bundleId, taskId: task.id }).ready;
+  const bundle = operationsWorkSnapshot.bundlesById?.get(task.bundleId);
+  const path = isArchivedWorkBundle(bundle) ? "/cards/archive" : "/cards";
+  await navigateCanonicalWorkspace(path, { cardId: task.bundleId, taskId: task.id }).ready;
 }
 
 function dedupeArtifacts(artifacts) {
@@ -7065,7 +7105,7 @@ function openQuickTaskForm() {
 
 async function openQuickWorkflowForm(options = {}) {
   const requestedTemplate = options.template || null;
-  const overlay = createQuickFormOverlay("Start workflow");
+  const overlay = createQuickFormOverlay("Create card");
   const form = document.createElement("div");
   form.className = "quick-form";
 
@@ -7082,12 +7122,12 @@ async function openQuickWorkflowForm(options = {}) {
   selectLabel.append(templateSelect);
 
   const anchorInput = createQuickInput("Anchor date", "date", todayIsoDate());
-  const titleInput = createQuickInput("Workflow title (optional)", "text", "");
+  const titleInput = createQuickInput("Card title (optional)", "text", "");
 
   const createBtn = document.createElement("button");
   createBtn.type = "button";
   createBtn.className = "task-action-btn is-primary";
-  createBtn.textContent = "Start workflow";
+  createBtn.textContent = "Create card";
   createBtn.disabled = true;
 
   form.append(selectLabel, titleInput.label, anchorInput.label, createBtn);
@@ -7146,9 +7186,9 @@ async function openQuickWorkflowForm(options = {}) {
       if (bundle?.id) openBundlePanel(bundle.id);
       await refreshOperationsWorkSnapshot({ rerender: true });
     } catch (err) {
-      reportError(`Could not start workflow: ${err.message || "request failed"}`);
+      reportError(`Could not create card: ${err.message || "request failed"}`);
       createBtn.disabled = false;
-      createBtn.textContent = "Start workflow";
+      createBtn.textContent = "Create card";
     }
   });
 }
@@ -7593,7 +7633,15 @@ function taskDate(task) {
 function isActiveWorkBundle(bundle) {
   if (!bundle || typeof bundle !== "object") return false;
   const status = String(bundle.status || "active").toLowerCase();
-  return status !== "done" && status !== "archived";
+  const stage = String(bundle.stage || "preparation").toLowerCase();
+  return status !== "done" && status !== "archived" && stage !== "done";
+}
+
+function isArchivedWorkBundle(bundle) {
+  if (!bundle || typeof bundle !== "object") return false;
+  const status = String(bundle.status || "active").toLowerCase();
+  const stage = String(bundle.stage || "").toLowerCase();
+  return status === "done" || status === "archived" || stage === "done";
 }
 
 function sortActiveWorkBundles(bundles, bundleTasks, today) {
@@ -7609,7 +7657,7 @@ function sortActiveWorkBundles(bundles, bundleTasks, today) {
     if (byDate !== 0) return byDate;
     return workBundleTitle(a.bundle).localeCompare(workBundleTitle(b.bundle));
   });
-  return scored.map((entry) => entry.bundle).slice(0, 8);
+  return scored.map((entry) => entry.bundle);
 }
 
 function summarizeBundleProgress(bundle, tasks, today) {
@@ -7677,7 +7725,7 @@ function taskProofState(task) {
 function taskSourceLabel(task) {
   if (task?.source) return labelizeWorkValue(task.source);
   if (task?.recurringConfigId) return "Recurring";
-  if (task?.templateId || task?.bundleId) return "Workflow";
+  if (task?.templateId || task?.bundleId) return "Card";
   return "Ad hoc";
 }
 
@@ -7702,7 +7750,7 @@ function operationItemFromTask(task, options) {
   const meta = [];
   if (task.date) meta.push(`Due ${formatTaskDateMeta(task.date, today)}`);
   if (task.status) meta.push(task.status);
-  meta.push(task.bundleId ? "Workflow" : "Ad hoc");
+  meta.push(task.bundleId ? "Card" : "Independent");
   meta.push(taskSourceLabel(task));
   if (task.assigneeId) meta.push(`Owner ${resolveAssigneeLabel(task.assigneeId)}`);
   meta.push(proof.label);
@@ -7839,7 +7887,7 @@ function summarizeWorkflowTemplate(doc) {
   const tags = Array.isArray(doc.tags) ? doc.tags.filter((tag) => tag && tag !== "task-template") : [];
   return {
     title: (doc.title || basename(doc.path || "")).replace(/\s+Task Template$/i, ""),
-    summary: doc.summary || "Git-backed operational workflow template.",
+    summary: doc.summary || "Git-backed Card template.",
     path: doc.path,
     slug,
     tags,
@@ -7893,7 +7941,7 @@ function operationItemFromTemplate(template) {
   return {
     title: template.title,
     summary: template.summary,
-    meta: badges.join(" · ") || "Workflow",
+    meta: badges.join(" · ") || "Template",
     path: template.path,
   };
 }
@@ -8050,16 +8098,16 @@ function renderProcessQualityHomeSection(quality) {
     return section;
   }
   if (!quality.activeWorkLoaded) {
-    section.append(renderHonestState("Active-work impact cannot be confirmed", "Live /work/api task and workflow data is unavailable. Template and process-doc findings below are maintainer warnings, not confirmed production blockers."));
+    section.append(renderHonestState("Active-work impact cannot be confirmed", "Live Task and Card data is unavailable. Template and Process Doc findings below are maintainer warnings, not confirmed production blockers."));
   } else if (quality.activeFindings.length === 0) {
-    section.append(renderHonestState("No active process blockers", "Loaded tasks and active workflows have no unresolved instruction-doc, proof-guidance, or linked-SOP quality blockers."));
+    section.append(renderHonestState("No active process blockers", "Loaded Tasks and active Cards have no unresolved internal Process Doc or proof-guidance blockers."));
   }
 
   const list = document.createElement("div");
   list.className = "ops-quality-list";
   const findings = quality.visibleHomeFindings;
   if (findings.length === 0) {
-    list.append(renderHonestState("No process quality findings", "The deterministic report returned no findings for workflow templates or process docs."));
+    list.append(renderHonestState("No process quality findings", "The deterministic report returned no findings for Templates or Process Docs."));
   } else {
     for (const finding of findings) {
       const displayFinding = quality.activeWorkLoaded ? finding : { ...finding, severity: finding.severity === "blocking" ? "warning" : finding.severity };
@@ -8358,7 +8406,7 @@ function renderWorkflowTemplateCard(template) {
   const start = document.createElement("button");
   start.type = "button";
   start.className = "task-action-btn is-primary";
-  start.textContent = "Start workflow";
+  start.textContent = "Create card";
   start.addEventListener("click", () => openQuickWorkflowForm({ template }));
   const docs = document.createElement("button");
   docs.type = "button";
@@ -8479,7 +8527,7 @@ function renderUnifiedSearchResults(results, sources, query) {
   if (safeResults.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = query ? "No work or process context matches this search." : "Search for work, workflows, artifacts, assistant jobs, templates, or process docs.";
+    empty.textContent = query ? "No work or process context matches this search." : "Search for Cards, Tasks, Artifacts, Assistant jobs, Templates, or Process Docs.";
     wrap.append(empty);
     documentList.replaceChildren(wrap);
     return;
@@ -8525,7 +8573,7 @@ function renderSearchSourceState(sources) {
 function groupSearchResults(results) {
   const labels = {
     task: "Tasks",
-    workflow: "Workflows",
+    workflow: "Cards",
     template: "Runtime Templates",
     doc: "Process Docs",
     artifact: "Artifacts",
@@ -8569,7 +8617,7 @@ function renderUnifiedSearchRow(result, query) {
     result.doc_type || result.fields?.status || result.fields?.stage || "",
     result.fields?.due_date ? `due ${result.fields.due_date}` : "",
     result.fields?.assignee ? `owner ${result.fields.assignee}` : "",
-    result.fields?.workflow_title ? `workflow ${result.fields.workflow_title}` : "",
+    result.fields?.workflow_title ? `card ${result.fields.workflow_title}` : "",
     result.fields?.proof || "",
     result.path || "",
   ].filter(Boolean);
@@ -8966,12 +9014,12 @@ function renderDocReturnContext() {
   docContextReturn.hidden = false;
   const text = document.createElement("span");
   text.textContent = docReturnContext.type === "workflow"
-    ? `Opened from workflow: ${docReturnContext.title || docReturnContext.id || "Workflow"}`
+    ? `Opened from Card: ${docReturnContext.title || docReturnContext.id || "Card"}`
     : `Opened from task: ${docReturnContext.title || docReturnContext.id || "Task"}`;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "quiet-button";
-  button.textContent = docReturnContext.type === "workflow" ? "Back to workflow" : "Back to task";
+  button.textContent = docReturnContext.type === "workflow" ? "Back to Card" : "Back to Task";
   button.addEventListener("click", () => {
     const context = docReturnContext;
     docReturnContext = null;
@@ -9048,7 +9096,7 @@ function workspaceHashPath(view, tasksSection = "queue") {
   if (view === "tasks") {
     return {
       queue: "/tasks",
-      workflows: "/bundles",
+      workflows: "/cards",
       templates: "/templates",
       assistants: "/assistants",
       artifacts: "/artifacts",
@@ -9061,7 +9109,8 @@ const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/": { view: "home", tasksSection: "queue", params: [] },
   "/inbox": { view: "inbox", tasksSection: "queue", params: ["intakeId"] },
   "/tasks": { view: "tasks", tasksSection: "queue", params: ["taskId", "date", "bundleId", "contextBundleId"] },
-  "/bundles": { view: "tasks", tasksSection: "workflows", params: ["bundleId", "taskId"] },
+  "/cards": { view: "tasks", tasksSection: "workflows", params: ["cardId", "taskId"] },
+  "/cards/archive": { view: "tasks", tasksSection: "workflows", params: ["cardId", "taskId"] },
   "/assistants": { view: "tasks", tasksSection: "assistants", params: ["assistantJobId"] },
   "/templates": { view: "tasks", tasksSection: "templates", params: ["templateId"] },
   "/recurring": { view: "tasks", tasksSection: "templates", params: [] },
@@ -9124,8 +9173,8 @@ function parseWorkspaceHash(rawHash = window.location.hash) {
     if (values[0]) params.set(name, values[0]);
   }
   if (params.has("date") && !isRealIsoDate(params.get("date"))) return { invalid: true, reason: "invalid date" };
-  if (path === "/bundles" && params.has("taskId") && !params.has("bundleId")) {
-    return { invalid: true, reason: "taskId requires bundleId" };
+  if (["/cards", "/cards/archive"].includes(path) && params.has("taskId") && !params.has("cardId")) {
+    return { invalid: true, reason: "taskId requires cardId" };
   }
   const canonicalUrl = canonicalWorkspaceUrl(path, params);
   const currentUrl = `${window.location.pathname}${window.location.search}${raw}`;
@@ -9212,13 +9261,13 @@ function prepareBundlePanel(bundleId) {
   if (!bundleId) return;
   activeBundlePanelId = bundleId;
   activeBundlePanelData = null;
-  bundlePanelTitle.textContent = "Loading workflow...";
+  bundlePanelTitle.textContent = "Loading card...";
   bundlePanelBody.replaceChildren();
   bundlePanel.inert = false;
   bundlePanel.removeAttribute("aria-hidden");
   bundlePanel.hidden = false;
   body.classList.add("task-panel-open", "task-modal-open");
-  renderEntityLoadingState(bundlePanelBody, "workflow", bundleId);
+  renderEntityLoadingState(bundlePanelBody, "card", bundleId);
   bundlePanelClose.focus();
 }
 
@@ -9302,7 +9351,7 @@ function commitWorkspaceRoute(route, token, options = {}) {
   refreshDocuments();
   closeSidebar();
 
-  const bundleId = route.path === "/bundles" ? route.params.get("bundleId") : "";
+  const bundleId = ["/cards", "/cards/archive"].includes(route.path) ? route.params.get("cardId") : "";
   const taskId = route.params.get("taskId");
   if (bundleId) prepareBundlePanel(bundleId);
   if (taskId) prepareTaskPanel(taskId);
@@ -9318,7 +9367,7 @@ function hydrateWorkspaceRoute(route, token) {
   if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
   if (route.path === "/artifacts") jobs.push(refreshOperationsArtifactSnapshot({ rerender: true }));
   if (route.path === "/users") jobs.push(refreshUsersSurface({ rerender: true }));
-  const bundleId = route.path === "/bundles" ? route.params.get("bundleId") : "";
+  const bundleId = ["/cards", "/cards/archive"].includes(route.path) ? route.params.get("cardId") : "";
   const taskId = route.params.get("taskId");
   if (bundleId) jobs.push(hydrateBundlePanel(bundleId, token));
   if (taskId) jobs.push(hydrateTaskPanel(taskId, token, { expectedBundleId: bundleId || "" }));

@@ -41,7 +41,7 @@
             <button id="tasks-nav-button" class="workspace-nav-button workspace-nav-parent" type="button" aria-expanded="false" aria-controls="tasks-nav-submenu"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="m8 9 1.5 1.5L12 8M8 15l1.5 1.5L12 14M14 9h2M14 15h2"/></svg></span><span>Tasks</span><svg class="workspace-nav-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
             <div id="tasks-nav-submenu" class="workspace-nav-submenu" aria-label="Task views" hidden>
               <button class="workspace-subnav-button" type="button" data-tasks-section="queue">Queue</button>
-              <button class="workspace-subnav-button" type="button" data-tasks-section="workflows">Workflows</button>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="workflows">Cards</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="templates">Templates</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="assistants">Assistants</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="artifacts">Artifacts</button>
@@ -186,12 +186,12 @@
               <div id="task-panel-body" class="task-panel-body"></div>
             </div>
           </section>
-          <section id="bundle-panel" class="task-modal workflow-modal" aria-label="Workflow details" hidden>
+          <section id="bundle-panel" class="task-modal workflow-modal" aria-label="Card details" hidden>
             <div id="bundle-modal-backdrop" class="task-modal-backdrop"></div>
             <div class="task-modal-panel workflow-modal-panel" role="dialog" aria-modal="true" aria-labelledby="bundle-panel-title">
               <header class="task-panel-header">
                 <strong id="bundle-panel-title">Workflow</strong>
-                <button id="bundle-panel-close" class="quiet-button workflow-modal-close" type="button" aria-label="Close workflow">×</button>
+                <button id="bundle-panel-close" class="quiet-button workflow-modal-close" type="button" aria-label="Close card">×</button>
               </header>
               <div id="bundle-panel-body" class="task-panel-body"></div>
             </div>
