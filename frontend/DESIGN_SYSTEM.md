@@ -80,6 +80,10 @@ They intentionally follow the Course Management Platform names where practical.
 - Red is reserved for overdue, destructive, failed, or blocking states.
 - Never use color alone. Pair it with text, an icon, position, or accessible
   state.
+- In dark mode, keep CMP's roles separate: links and selected text use
+  `#8bb7df`, while filled primary controls use `#4d7fa8` and hover at
+  `#6d99c2`. Dark surfaces use `#0d1117` / `#161b22` / `#21262d` and borders
+  use `#30363d`; do not synthesize these colors by inverting the light theme.
 
 ### Type, spacing, and shape
 

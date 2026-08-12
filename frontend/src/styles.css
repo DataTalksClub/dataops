@@ -34,6 +34,8 @@
   --accent: #315f8f;
   --accent-hover: #244d78;
   --accent-soft: #edf5ff;
+  --primary-bg: #315f8f;
+  --primary-hover: #244d78;
 
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --radius: 6px;
@@ -132,6 +134,8 @@ body.dark {
   --accent: #8bb7df;
   --accent-hover: #a7cbed;
   --accent-soft: rgba(77, 127, 168, 0.22);
+  --primary-bg: #4d7fa8;
+  --primary-hover: #6d99c2;
   --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.48);
 }
 
@@ -200,6 +204,21 @@ textarea::placeholder {
   color: var(--text-faint);
 }
 
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--link-color);
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(208, 215, 222, 0.2), 0 0 0 3px rgba(49, 95, 143, 0.16);
+}
+
+body.dark input:focus,
+body.dark select:focus,
+body.dark textarea:focus {
+  border-color: #8bb7df;
+  box-shadow: 0 0 0 3px rgba(139, 183, 223, 0.18);
+}
+
 a {
   color: var(--link-color);
 }
@@ -264,7 +283,7 @@ body.sidebar-collapsed .sidebar {
   height: 32px;
   place-items: center;
   border-radius: var(--radius);
-  background: var(--accent);
+  background: var(--primary-bg);
   color: #fff;
   font-size: 16px;
   font-weight: 700;
@@ -539,14 +558,22 @@ body.sidebar-collapsed #sidebar-expand-button {
 }
 
 .primary-button {
-  border: 1px solid var(--accent);
-  background: var(--accent);
+  border: 1px solid var(--primary-bg);
+  background: var(--primary-bg);
   color: #fff;
 }
 
 .primary-button:hover {
-  border-color: var(--accent-hover);
-  background: var(--accent-hover);
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+body.dark .primary-button:disabled,
+body.dark .primary-button[aria-disabled="true"] {
+  border-color: #30363d;
+  background: #21262d;
+  color: #8b949e;
+  opacity: 1;
 }
 
 .work-bell-button {
@@ -679,14 +706,14 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 }
 
 .home-quick-action-primary {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--primary-bg);
+  background: var(--primary-bg);
   color: #fff;
 }
 
 .home-quick-action-primary:hover {
-  border-color: var(--accent-hover);
-  background: var(--accent-hover);
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
 }
 
 .home-status-strip {
@@ -1078,14 +1105,14 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 }
 
 .work-bell-action-primary {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--primary-bg);
+  background: var(--primary-bg);
   color: #fff;
 }
 
 .work-bell-action-primary:hover {
-  border-color: var(--accent-hover);
-  background: var(--accent-hover);
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
 }
 
 .work-bell-item-error {
@@ -1204,7 +1231,7 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 }
 
 .settings-theme-toggle[aria-pressed="true"] .settings-toggle-track {
-  background: var(--accent);
+  background: var(--primary-bg);
 }
 
 .settings-theme-toggle[aria-pressed="true"] .settings-toggle-track span {
