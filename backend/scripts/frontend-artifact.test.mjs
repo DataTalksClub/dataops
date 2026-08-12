@@ -32,9 +32,10 @@ function fixture(name) {
     writeFileSync(join(source, sourcePath), bytes);
     writeFileSync(join(artifact, artifactPath), bytes);
   }
-  const surfaceImports = allowlist
+  const moduleImports = allowlist
     .map(([sourcePath]) => sourcePath)
-    .filter((sourcePath) => sourcePath.startsWith('src/surfaces/') && sourcePath.endsWith('.js'))
+    .filter((sourcePath) => sourcePath.startsWith('src/') && sourcePath.endsWith('.js'))
+    .filter((sourcePath) => !['src/app.js', 'src/core/workspace.js'].includes(sourcePath))
     .map((sourcePath) => `import "./${sourcePath.slice('src/'.length)}";`)
     .join('\n');
   const moduleContents = new Map([
@@ -42,7 +43,7 @@ function fixture(name) {
       'src/app.js',
       [
         'import { routeMarker, workMarker } from "./core/workspace.js";',
-        surfaceImports,
+        moduleImports,
         'void routeMarker;',
         'void workMarker;',
         '',

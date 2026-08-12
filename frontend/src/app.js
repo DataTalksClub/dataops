@@ -47,8 +47,44 @@ import { createTasksSurface } from "./surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "./surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "./surfaces/knowledge.js";
 import { createDocumentEditor } from "./surfaces/document-editor.js";
+import { createApiClient, resolveApiBase } from "./shell/api.js";
+import { createFeedbackShell } from "./shell/feedback.js";
+import { createPreferencesShell } from "./shell/preferences.js";
+import { createAccountShell } from "./shell/account.js";
+import { createNotificationsShell } from "./shell/notifications.js";
+import { createNavigationShell } from "./shell/navigation.js";
+import { initializeAppShell } from "./shell/bootstrap.js";
 let knowledgeSurface;
 let documentEditorSurface;
+let navigationShell;
+
+function getActiveWorkspaceRoute() {
+  return navigationShell?.getActiveWorkspaceRoute() || null;
+}
+function getActiveWorkspaceRouteToken() {
+  return navigationShell?.getActiveWorkspaceRouteToken() || 0;
+}
+function getPendingLegacyRoute() {
+  return navigationShell?.getPendingLegacyRoute() || null;
+}
+function getWorkspaceEntityState() {
+  return navigationShell?.getWorkspaceEntityState() || null;
+}
+function setWorkspaceEntityState(snapshot) {
+  navigationShell?.setWorkspaceEntityState(snapshot);
+}
+function isWorkspaceRouteFresh(token) {
+  return navigationShell?.isWorkspaceRouteFresh(token) || false;
+}
+function navigateCanonicalWorkspace(...args) {
+  return navigationShell.navigateCanonicalWorkspace(...args);
+}
+function applyWorkspaceRoute(...args) {
+  return navigationShell.applyWorkspaceRoute(...args);
+}
+function beginDocumentNavigation(...args) {
+  return navigationShell.beginDocumentNavigation(...args);
+}
 
 function knowledgeCall(name, args) {
   return knowledgeSurface[name](...args);
@@ -129,18 +165,12 @@ function updateQuickNavMatches(...args) {
   return knowledgeCall("updateQuickNavMatches", args);
 }
 
-const API_BASE = resolveApiBase();
-
-function resolveApiBase() {
-  const meta = document.querySelector('meta[name="api-base"]')?.content?.trim();
-  if (meta) return meta;
-  // Default: same origin. The frontend server proxies /docs and /search to
-  // the lambda backend, so we never need to cross origins from the browser.
-  try {
-    return window.location.origin;
-  } catch {}
-  return "";
-}
+const API_BASE = resolveApiBase({ documentRef: document, windowRef: window });
+const { apiUrl, request } = createApiClient({
+  apiBase: API_BASE,
+  fetchImpl: (...args) => fetch(...args),
+  storage: localStorage,
+});
 
 const body = document.body;
 const sidebar = document.querySelector("#sidebar");
@@ -222,6 +252,22 @@ helpButton?.addEventListener("click", () => {
 });
 const documentList = document.querySelector("#document-list");
 const {
+  confirmDialog,
+  renderEntityLoadState,
+  renderEntityLoadingState,
+  reportError,
+  showErrorToast,
+  showUndoToast,
+} = createFeedbackShell({
+  clearTimeoutImpl: clearTimeout,
+  documentRef: document,
+  HTMLElementClass: HTMLElement,
+  labelizeWorkValue,
+  requestAnimationFrameImpl: requestAnimationFrame,
+  setStatus,
+  setTimeoutImpl: setTimeout,
+});
+const {
   canLeaveFinanceSurface,
   renderBookkeepingSurface,
   renderMailingExportsSurface,
@@ -230,7 +276,7 @@ const {
   documentList,
   escapeHtml,
   formatTaskDateMeta,
-  getPendingLegacyRoute: () => pendingLegacyRoute,
+  getPendingLegacyRoute,
   humanizeOptionLabel,
   isWorkspaceRouteFresh,
   navigateCanonicalWorkspace,
@@ -284,6 +330,82 @@ const tasksNavSectionButtons = [
   ...document.querySelectorAll("#tasks-nav-submenu [data-tasks-section]"),
 ];
 const docContextReturn = document.querySelector("#doc-context-return");
+const {
+  attachSidebarResize,
+  closeSidebar,
+  isMobileShell,
+  openSidebar,
+  restoreDarkMode,
+  restoreSidebarCollapsed,
+  restoreSidebarWidth,
+  setDarkMode,
+  setSidebarCollapsed,
+  syncSidebarShellState,
+  syncThemeToggleLabel,
+} = createPreferencesShell({
+  body,
+  documentRef: document,
+  getMobileWorkBellButton: () =>
+    document.querySelector("#mobile-work-bell-button"),
+  HTMLElementClass: HTMLElement,
+  matchMedia: (query) => window.matchMedia(query),
+  mobileMenuButton,
+  mobileNewButton,
+  pageShell,
+  sidebar,
+  sidebarExpandButton,
+  sidebarResize,
+  sidebarScrim,
+  storage: localStorage,
+  themeToggleButton,
+});
+const {
+  activeWorkOwner,
+  activeWorkOwnerId,
+  closeSettingsMenu,
+  currentOperatorFromPayload,
+  getAccountIdentityState,
+  isSettingsMenuOpen,
+  readLocalPreviewContext,
+  refreshAccountIdentity,
+} = createAccountShell({
+  canLeaveCurrentDocument,
+  closeNotifications: (...args) => closeWorkBellPanel(...args),
+  documentRef: document,
+  fetchImpl: (...args) => fetch(...args),
+  getActiveWorkspaceView: () => activeWorkspaceView,
+  gitCommitButton,
+  gitPullButton,
+  HTMLElementClass: HTMLElement,
+  isOperationsHomeVisible,
+  locationRef: window.location,
+  refreshDocuments,
+  showWorkspaceSurface,
+  syncThemeToggleLabel,
+  themeToggleButton,
+});
+const notificationsShell = createNotificationsShell({
+  closeSettingsMenu,
+  documentRef: document,
+  encodeURIComponentImpl: encodeURIComponent,
+  formatHomeShortDate,
+  formatTaskDateMeta,
+  HTMLElementClass: HTMLElement,
+  isWorkspaceRouteFresh,
+  isoDayDistance,
+  navigateCanonicalWorkspace,
+  openTaskPanel: (...args) => openTaskPanel(...args),
+  parseWorkspaceHash,
+  request,
+  todayIsoDate,
+  workApiUrl,
+});
+const {
+  closeWorkBellPanel,
+  openWorkBellPanel,
+  refreshWorkBell,
+} = notificationsShell;
+notificationsShell.bindToggle(canLeaveCurrentDocument);
 const homeSurfaceState = {
   get workSnapshot() {
     return operationsWorkSnapshot;
@@ -301,7 +423,7 @@ const homeSurfaceState = {
     operationsQualitySnapshot = snapshot;
   },
   get accountIdentity() {
-    return accountIdentityState;
+    return getAccountIdentityState();
   },
 };
 const {
@@ -457,11 +579,11 @@ const {
     'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
   formatTaskDateMeta,
   getActiveTasksSection: () => activeTasksSection,
-  getActiveWorkspaceRoute: () => activeWorkspaceRoute,
-  getActiveWorkspaceRouteToken: () => activeWorkspaceRouteToken,
+  getActiveWorkspaceRoute,
+  getActiveWorkspaceRouteToken,
   getActiveWorkspaceView: () => activeWorkspaceView,
   getAllDocuments: () => knowledgeState.allDocuments,
-  getCurrentOperator: () => accountIdentityState.user,
+  getCurrentOperator: () => getAccountIdentityState().user,
   hasApprovedArtifactEvidence,
   hasTaskFileEvidence,
   isArchivedWorkBundle,
@@ -542,12 +664,12 @@ const {
   escapeHtml,
   formatTaskDateMeta,
   getActiveTasksSection: () => activeTasksSection,
-  getActiveWorkspaceRoute: () => activeWorkspaceRoute,
-  getActiveWorkspaceRouteToken: () => activeWorkspaceRouteToken,
+  getActiveWorkspaceRoute,
+  getActiveWorkspaceRouteToken,
   getAllDocuments: () => knowledgeState.allDocuments,
-  getPendingLegacyRoute: () => pendingLegacyRoute,
+  getPendingLegacyRoute,
   getTaskRouteContext,
-  getWorkspaceEntityState: () => workspaceEntityState,
+  getWorkspaceEntityState,
   groupCardItemsByStage,
   isArchivedWorkBundle,
   isFollowUpDueTask,
@@ -580,9 +702,7 @@ const {
   scheduleAnimationFrame: (callback) => requestAnimationFrame(callback),
   setPageTitle,
   setStatus,
-  setWorkspaceEntityState: (snapshot) => {
-    workspaceEntityState = snapshot;
-  },
+  setWorkspaceEntityState,
   shellBody: body,
   showErrorToast,
   sortWorkTasks,
@@ -600,340 +720,6 @@ const {
   workBundleTitle,
   workTaskTitle,
 });
-
-const workBellButton = document.querySelector("#work-bell-button");
-const workBellCount = workBellButton?.querySelector(".work-bell-count");
-const mobileWorkBellButton = document.querySelector("#mobile-work-bell-button");
-const mobileWorkBellCount =
-  mobileWorkBellButton?.querySelector(".work-bell-count");
-const workBellPanel = document.querySelector("#work-bell-panel");
-const workBellBody = document.querySelector("#work-bell-body");
-const workBellClose = document.querySelector("#work-bell-close");
-async function toggleWorkBellPanel() {
-  if (workBellPanel.hidden) {
-    if (!(await canLeaveCurrentDocument())) return false;
-    await navigateCanonicalWorkspace("/notifications").ready;
-    return true;
-  }
-  closeWorkBellPanel();
-  return true;
-}
-workBellButton.addEventListener("click", toggleWorkBellPanel);
-mobileWorkBellButton?.addEventListener("click", toggleWorkBellPanel);
-workBellClose.addEventListener("click", closeWorkBellPanel);
-
-const settingsButton = document.querySelector("#settings-button");
-const mobileSettingsButton = document.querySelector("#mobile-settings-button");
-const settingsMenu = document.querySelector("#settings-menu");
-const settingsMenuClose = document.querySelector("#settings-menu-close");
-const settingsAdminButton = document.querySelector("#settings-admin-button");
-const settingsUsersButton = document.querySelector("#settings-users-button");
-const settingsSignOutButton = document.querySelector(
-  "#settings-sign-out-button",
-);
-const accountIdentity = document.querySelector("#account-identity");
-const accountWorkScopeList = document.querySelector("#account-work-scope-list");
-const accountMenuAvatarNodes = [
-  ...document.querySelectorAll("[data-account-menu-avatar]"),
-];
-const accountMenuNameNodes = [
-  ...document.querySelectorAll("[data-account-menu-name]"),
-];
-const accountActorAvatarNode = document.querySelector(
-  "[data-account-actor-avatar]",
-);
-const accountActorNameNode = document.querySelector(
-  "[data-account-actor-name]",
-);
-const accountMetaNode = document.querySelector("[data-account-meta]");
-const settingsButtons = [settingsButton, mobileSettingsButton].filter(Boolean);
-let settingsMenuOpener = null;
-
-function openSettingsMenu() {
-  settingsMenuOpener =
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : settingsButton;
-  closeWorkBellPanel();
-  syncThemeToggleLabel();
-  renderAccountIdentity();
-  settingsMenu.hidden = false;
-  for (const button of settingsButtons) {
-    button.setAttribute("aria-expanded", "true");
-  }
-  settingsMenuClose.focus();
-}
-
-function closeSettingsMenu() {
-  settingsMenu.hidden = true;
-  for (const button of settingsButtons) {
-    button.setAttribute("aria-expanded", "false");
-  }
-  if (settingsMenuOpener?.isConnected) settingsMenuOpener.focus();
-  settingsMenuOpener = null;
-}
-
-function accountInitials(name) {
-  const parts = String(name || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (parts.length === 0) return "?";
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
-function activeWorkOwner() {
-  const selectedId = String(accountIdentityState.selectedOwnerId || "");
-  return (
-    accountIdentityState.members.find(
-      (member) => String(member.id || "") === selectedId,
-    ) ||
-    accountIdentityState.user ||
-    null
-  );
-}
-
-function activeWorkOwnerId() {
-  return String(activeWorkOwner()?.id || "");
-}
-
-function renderAccountIdentity() {
-  const actor = accountIdentityState.user;
-  const actorName = actor?.name || "Account";
-  const workOwner = activeWorkOwner();
-  const menuName = workOwner?.name || actorName;
-  const menuInitials = accountInitials(workOwner?.name || actor?.name);
-  for (const node of accountMenuAvatarNodes) node.textContent = menuInitials;
-  for (const node of accountMenuNameNodes) node.textContent = menuName;
-  if (accountActorAvatarNode)
-    accountActorAvatarNode.textContent = accountInitials(actor?.name);
-  if (accountActorNameNode) accountActorNameNode.textContent = actorName;
-  for (const button of settingsButtons) {
-    const scopeDiffers =
-      actor && workOwner && String(actor.id) !== String(workOwner.id);
-    button.title = scopeDiffers
-      ? `Showing ${menuName}’s work · Signed in as ${actorName}`
-      : `Account: ${actorName}`;
-    button.setAttribute(
-      "aria-label",
-      scopeDiffers
-        ? `Showing work for ${menuName}; signed in as ${actorName}`
-        : `Account for ${actorName}`,
-    );
-  }
-
-  if (accountIdentity) {
-    accountIdentity.dataset.state = actor
-      ? "ready"
-      : accountIdentityState.loaded
-        ? "unavailable"
-        : "loading";
-  }
-  if (accountMetaNode) {
-    if (actor?.email) accountMetaNode.textContent = actor.email;
-    else if (!accountIdentityState.loaded)
-      accountMetaNode.textContent = "Loading signed-in identity…";
-    else
-      accountMetaNode.textContent =
-        accountIdentityState.error || "Signed-in identity unavailable";
-  }
-
-  if (!accountWorkScopeList) return;
-  if (!accountIdentityState.loaded) {
-    const loading = document.createElement("p");
-    loading.className = "account-scope-loading";
-    loading.textContent = "Loading workspace members…";
-    accountWorkScopeList.replaceChildren(loading);
-    return;
-  }
-
-  const members = [...accountIdentityState.members]
-    .filter((member) => member && member.id && member.disabled !== true)
-    .sort((left, right) => {
-      if (String(left.id) === String(actor?.id || "")) return -1;
-      if (String(right.id) === String(actor?.id || "")) return 1;
-      return String(left.name || "").localeCompare(String(right.name || ""));
-    });
-  if (members.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "account-scope-loading";
-    empty.textContent = "No workspace members available.";
-    accountWorkScopeList.replaceChildren(empty);
-    return;
-  }
-
-  const options = members.map((member) => {
-    const isActor = String(member.id) === String(actor?.id || "");
-    const isSelected =
-      String(member.id) === String(accountIdentityState.selectedOwnerId || "");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "account-scope-option";
-    button.setAttribute("role", "radio");
-    button.setAttribute("aria-checked", String(isSelected));
-    button.setAttribute(
-      "aria-label",
-      `${isSelected ? "Showing" : "Show"} work for ${member.name || "workspace member"}`,
-    );
-
-    const avatar = document.createElement("span");
-    avatar.className = "account-avatar account-scope-avatar";
-    avatar.setAttribute("aria-hidden", "true");
-    avatar.textContent = accountInitials(member.name);
-    const copy = document.createElement("span");
-    copy.className = "account-scope-copy";
-    const name = document.createElement("strong");
-    name.textContent = member.name || "Workspace member";
-    const detail = document.createElement("small");
-    detail.textContent = isActor ? "My work" : "Teammate’s work";
-    copy.append(name, detail);
-    const check = document.createElement("span");
-    check.className = "account-scope-check";
-    check.setAttribute("aria-hidden", "true");
-    check.textContent = isSelected ? "✓" : "";
-    button.append(avatar, copy, check);
-    button.addEventListener("click", () => {
-      if (
-        String(accountIdentityState.selectedOwnerId || "") === String(member.id)
-      ) {
-        closeSettingsMenu();
-        return;
-      }
-      accountIdentityState.selectedOwnerId = String(member.id);
-      renderAccountIdentity();
-      closeSettingsMenu();
-      if (activeWorkspaceView === "home" && isOperationsHomeVisible())
-        refreshDocuments();
-    });
-    return button;
-  });
-  accountWorkScopeList.replaceChildren(...options);
-}
-
-function currentOperatorFromPayload(payload) {
-  if (!payload || typeof payload !== "object") return null;
-  if (payload.user && typeof payload.user === "object") return payload.user;
-  if (payload.actor && typeof payload.actor === "object") return payload.actor;
-  return payload.id ? payload : null;
-}
-
-async function readLocalPreviewContext() {
-  if (
-    window.location.hostname !== "localhost" &&
-    window.location.hostname !== "127.0.0.1"
-  )
-    return null;
-  try {
-    const response = await fetch("/__dataops/dev-context", {
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-function localPreviewActor(members, payload) {
-  const actorEmail = String(payload?.actorEmail || "")
-    .trim()
-    .toLowerCase();
-  if (!actorEmail) return null;
-  const user = members.find(
-    (member) =>
-      String(member?.email || "")
-        .trim()
-        .toLowerCase() === actorEmail,
-  );
-  return user ? { user, localPreview: payload?.localPreview === true } : null;
-}
-
-async function refreshAccountIdentity(mePayload, members, localContext) {
-  const availableMembers = Array.isArray(members)
-    ? members.filter((member) => member && member.id)
-    : [];
-  let actor = currentOperatorFromPayload(mePayload);
-  let localPreview = false;
-  if (actor?.id) {
-    actor =
-      availableMembers.find(
-        (member) => String(member.id) === String(actor.id),
-      ) || actor;
-  } else {
-    const preview = localPreviewActor(
-      availableMembers,
-      localContext || (await readLocalPreviewContext()),
-    );
-    actor = preview?.user || null;
-    localPreview = Boolean(preview?.localPreview);
-  }
-
-  const priorOwnerId = String(accountIdentityState.selectedOwnerId || "");
-  const selectedOwnerId = availableMembers.some(
-    (member) => String(member.id) === priorOwnerId,
-  )
-    ? priorOwnerId
-    : String(actor?.id || "");
-  accountIdentityState = {
-    loaded: true,
-    localPreview,
-    user: actor,
-    members: availableMembers,
-    selectedOwnerId,
-    error: actor ? "" : "Signed-in identity unavailable",
-  };
-  renderAccountIdentity();
-}
-
-function toggleSettingsMenu() {
-  if (settingsMenu.hidden) openSettingsMenu();
-  else closeSettingsMenu();
-}
-
-settingsButton.addEventListener("click", toggleSettingsMenu);
-mobileSettingsButton?.addEventListener("click", toggleSettingsMenu);
-settingsMenuClose.addEventListener("click", closeSettingsMenu);
-settingsAdminButton.addEventListener("click", () => {
-  closeSettingsMenu();
-  showWorkspaceSurface("admin");
-});
-settingsUsersButton.addEventListener("click", () => {
-  closeSettingsMenu();
-  showWorkspaceSurface("users");
-});
-settingsSignOutButton.addEventListener("click", async () => {
-  if (!(await canLeaveCurrentDocument())) return;
-  settingsSignOutButton.disabled = true;
-  settingsSignOutButton.querySelector("span").textContent =
-    "Ending this browser session…";
-  window.location.assign("/logout");
-});
-// Close the dropdown when the theme toggle or a git action is invoked, then
-// let the existing handlers run. Stop propagation so the outside-click closer
-// does not also fire on the same event.
-for (const el of [themeToggleButton, gitPullButton, gitCommitButton]) {
-  el.addEventListener("click", (event) => {
-    event.stopPropagation();
-    closeSettingsMenu();
-  });
-}
-document.addEventListener("click", (event) => {
-  if (settingsMenu.hidden) return;
-  if (settingsMenu.contains(event.target)) return;
-  if (settingsButtons.some((button) => button.contains(event.target))) return;
-  closeSettingsMenu();
-});
-let workBellNotifications = [];
-let workBellError = "";
-const workBellDismissErrors = new Map();
-let workBellOpener = null;
-
-let lastSidebarOpener = null;
 
 const knowledgeState = {
   allDocuments: [],
@@ -961,14 +747,6 @@ const qualityFiltersState = {
   },
 };
 
-function beginDocumentNavigation() {
-  ++activeWorkspaceRouteToken;
-  activeWorkspaceRoute = null;
-  resetTaskPanel();
-  resetBundlePanel();
-  closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
-}
-
 const diffModal = document.querySelector("#diff-modal");
 const diffTitle = document.querySelector("#diff-title");
 const diffBody = document.querySelector("#diff-body");
@@ -983,14 +761,6 @@ let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
 let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
 let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
 let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
-let accountIdentityState = {
-  loaded: false,
-  localPreview: false,
-  user: null,
-  members: [],
-  selectedOwnerId: "",
-  error: "",
-};
 let intakeState = {
   filter: "actionable",
   selectedId: null,
@@ -1008,12 +778,6 @@ let intakeMutationState = {
   status: "",
 };
 let assistantQueueState = { filter: "podcast", selectedJobId: null };
-let pendingLegacyRoute = null;
-let activeWorkspaceRouteToken = 0;
-let activeWorkspaceRoute = null;
-let locationRouteTimer = null;
-let initialRouteReady = false;
-let workspaceEntityState = null;
 // Dedicated Users surface snapshot (#95). Kept separate from the home work
 // snapshot so create/edit/disable mutations can refresh just this surface
 // without forcing the whole operations snapshot to reload.
@@ -1065,10 +829,10 @@ const operationsSurfaceState = {
     assistantQueueState = snapshot;
   },
   get workspaceEntity() {
-    return workspaceEntityState;
+    return getWorkspaceEntityState();
   },
   set workspaceEntity(snapshot) {
-    workspaceEntityState = snapshot;
+    setWorkspaceEntityState(snapshot);
   },
 };
 
@@ -1088,7 +852,7 @@ const {
   defaultNextFollowUpDate,
   documentList,
   escapeHtml,
-  getActiveWorkspaceRoute: () => activeWorkspaceRoute,
+  getActiveWorkspaceRoute,
   getActiveWorkspaceView: () => activeWorkspaceView,
   isMobileShell,
   isOperationsHomeVisible,
@@ -1320,6 +1084,73 @@ documentEditorSurface = createDocumentEditor({
   promptUser: (message, initialValue) => window.prompt(message, initialValue),
 });
 
+navigationShell = createNavigationShell({
+  canLeaveCurrentDocument,
+  canonicalWorkspaceUrl,
+  clearDocumentFilters,
+  closeSettingsMenu,
+  closeSidebar,
+  closeWorkBellPanel,
+  docPathFromLocation,
+  documentList,
+  documentRef: document,
+  folderExists,
+  folderPathFromLocation,
+  getAssistantQueueState: () => assistantQueueState,
+  getIntakeState: () => intakeState,
+  getKnowledgeState: () => knowledgeState,
+  getTasksSectionForLegacyView: (view) =>
+    LEGACY_VIEW_TO_TASKS_SECTION(view),
+  historyRef: history,
+  HTMLElementClass: HTMLElement,
+  hydrateBundlePanel,
+  hydrateTaskPanel,
+  libraryTitle,
+  locationRef: window.location,
+  openDocument,
+  openWorkBellPanel,
+  operationsViewTitle,
+  parseWorkspaceHash,
+  prepareBundlePanel,
+  prepareTaskPanel,
+  refreshDocuments,
+  refreshOperationsArtifactSnapshot,
+  refreshOperationsAssistantSnapshot,
+  refreshUsersSurface,
+  refreshWorkBell,
+  renderWorkspaceNav: () => {
+    syncWorkspaceNav();
+    return { activeWorkspaceView, activeTasksSection };
+  },
+  requestAnimationFrameImpl: requestAnimationFrame,
+  resetBundlePanel,
+  resetTaskPanel,
+  resolveIntakeRouteEntity,
+  resolveTaskQueueRouteContext,
+  resolveTemplateRouteEntity,
+  searchInput,
+  setActiveTasksSection: (section) => {
+    activeTasksSection = section;
+  },
+  setActiveWorkspaceView: (view) => {
+    activeWorkspaceView = view;
+  },
+  setRuntimeTemplateRoute,
+  setTaskRouteContextFromRoute,
+  setView,
+  showLibrary,
+  showOperationsHome,
+  workspaceRouteFor,
+});
+window.addEventListener(
+  "popstate",
+  navigationShell.scheduleCurrentBrowserLocation,
+);
+window.addEventListener(
+  "hashchange",
+  navigationShell.scheduleCurrentBrowserLocation,
+);
+
 mobileMenuButton.addEventListener("click", openSidebar);
 sidebarCloseButton.addEventListener("click", closeSidebar);
 sidebarScrim?.addEventListener("click", closeSidebar);
@@ -1477,226 +1308,39 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     helpModal.hidden = true;
   }
-  if (event.key === "Escape" && workBellPanel && !workBellPanel.hidden) {
+  if (event.key === "Escape" && notificationsShell.isOpen()) {
     event.preventDefault();
     closeWorkBellPanel();
   }
-  if (event.key === "Escape" && settingsMenu && !settingsMenu.hidden) {
+  if (event.key === "Escape" && isSettingsMenuOpen()) {
     event.preventDefault();
     closeSettingsMenu();
   }
 });
 
-enhanceSelect(domainFilter);
-enhanceSelect(typeFilter);
-enhanceSelect(systemFilter);
-enhanceSelect(tagFilter);
-enhanceSelect(newDocType);
-restoreDarkMode();
-restoreSidebarCollapsed();
-restoreSidebarWidth();
-attachSidebarResize();
-syncSidebarShellState();
-
-function setDarkMode(on) {
-  body.classList.toggle("dark", on);
-  syncThemeToggleLabel(on);
-  try {
-    localStorage.setItem("dtc-theme", on ? "dark" : "light");
-  } catch {}
-}
-
-// Keeps the relocated theme-toggle control (now inside the Settings dropdown)
-// in sync: label, title, and checked state reflect the current theme.
-function syncThemeToggleLabel(on = body.classList.contains("dark")) {
-  themeToggleButton.title = on ? "Switch to light mode" : "Switch to dark mode";
-  const label = themeToggleButton.querySelector(".settings-theme-label");
-  if (label) label.textContent = on ? "Light mode" : "Dark mode";
-  else themeToggleButton.textContent = on ? "Light mode" : "Dark mode";
-  themeToggleButton.setAttribute("aria-label", themeToggleButton.title);
-  themeToggleButton.setAttribute("aria-pressed", String(on));
-}
-
-function restoreDarkMode() {
-  try {
-    const saved = localStorage.getItem("dtc-theme");
-    if (saved === "dark") setDarkMode(true);
-    else setDarkMode(false);
-  } catch {
-    setDarkMode(false);
-  }
-}
-showLibrary({ updateUrl: false });
-refreshChangesPanel();
-updateSaveState();
-const documentsReady = loadDocuments();
-// Hash workspace routes do not depend on the Git-backed document catalog.
-// Open them immediately so a slow/unavailable docs provider cannot strand the
-// entire app on the legacy "Loading documents" shell. Legacy pathname-based
-// document links still wait for the catalog so they can resolve honestly.
-// Defer route parsing until this script has initialized its route-definition
-// constants. This still runs in the next microtask and does not wait for docs.
-const initialRouteReadyPromise = Promise.resolve().then(() =>
-  window.location.hash || window.location.pathname === "/"
-    ? openInitialRoute()
-    : documentsReady.then(() => openInitialRoute()),
-);
-initialRouteReadyPromise.then(() => {
-  initialRouteReady = true;
+initializeAppShell({
+  attachSidebarResize,
+  enhanceSelect,
+  filterSelects: [
+    domainFilter,
+    typeFilter,
+    systemFilter,
+    tagFilter,
+    newDocType,
+  ],
+  loadDocuments,
+  navigationShell,
+  refreshChangesPanel,
+  refreshGitStatus,
+  refreshOperationsWorkSnapshot,
+  restoreDarkMode,
+  restoreSidebarCollapsed,
+  restoreSidebarWidth,
+  showLibrary,
+  syncSidebarShellState,
+  updateSaveState,
+  windowRef: window,
 });
-refreshGitStatus();
-
-// Test-only seam: force a fresh work-snapshot fetch + re-render of Operations
-// Home. Specs use this to recover from a hydrated-but-stale snapshot (the home
-// fetched its snapshot before the spec created its task). Not user-facing.
-if (typeof window !== "undefined") {
-  window.__dataopsRefreshWork = function refreshOperationsWorkForTests() {
-    return refreshOperationsWorkSnapshot({ rerender: true });
-  };
-}
-
-function setSidebarCollapsed(collapsed) {
-  body.classList.toggle("sidebar-collapsed", collapsed);
-  sidebarExpandButton.hidden = !collapsed;
-  try {
-    localStorage.setItem("dtc-sidebar-collapsed", collapsed ? "1" : "0");
-  } catch {}
-}
-
-function restoreSidebarCollapsed() {
-  try {
-    if (localStorage.getItem("dtc-sidebar-collapsed") === "1") {
-      setSidebarCollapsed(true);
-    }
-  } catch {}
-}
-
-function restoreSidebarWidth() {
-  try {
-    const w = parseInt(localStorage.getItem("dtc-sidebar-width") || "0", 10);
-    if (w >= 180 && w <= 600) setSidebarWidth(w);
-  } catch {}
-}
-
-function setSidebarWidth(px) {
-  document.documentElement.style.setProperty("--sidebar-width", `${px}px`);
-}
-
-function attachSidebarResize() {
-  let dragging = false;
-  let startX = 0;
-  let startW = 0;
-  sidebarResize.addEventListener("pointerdown", (event) => {
-    if (body.classList.contains("sidebar-collapsed")) return;
-    if (window.matchMedia("(max-width: 820px)").matches) return;
-    dragging = true;
-    startX = event.clientX;
-    startW = sidebar.getBoundingClientRect().width;
-    document.body.classList.add("is-resizing-sidebar");
-    sidebarResize.setPointerCapture(event.pointerId);
-  });
-  sidebarResize.addEventListener("pointermove", (event) => {
-    if (!dragging) return;
-    const next = Math.max(
-      200,
-      Math.min(560, startW + (event.clientX - startX)),
-    );
-    setSidebarWidth(next);
-  });
-  const endDrag = (event) => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.classList.remove("is-resizing-sidebar");
-    try {
-      sidebarResize.releasePointerCapture(event.pointerId);
-    } catch {}
-    const w = parseInt(sidebar.getBoundingClientRect().width, 10);
-    try {
-      localStorage.setItem("dtc-sidebar-width", String(w));
-    } catch {}
-  };
-  sidebarResize.addEventListener("pointerup", endDrag);
-  sidebarResize.addEventListener("pointercancel", endDrag);
-}
-
-async function openInitialRoute() {
-  let workspaceRoute = parseWorkspaceHash();
-  if (workspaceRoute && !workspaceRoute.invalid) {
-    if (workspaceRoute.normalized) {
-      history.replaceState(history.state, "", workspaceRoute.canonicalUrl);
-      workspaceRoute = parseWorkspaceHash();
-    }
-    await applyWorkspaceRoute(workspaceRoute);
-    return;
-  }
-  if (window.location.hash || window.location.pathname === "/") {
-    await applyWorkspaceRoute(replaceWithWorkspaceHome());
-    return;
-  }
-  const docPath = docPathFromLocation();
-  if (docPath) {
-    const exists = knowledgeState.allDocuments.some((doc) => doc.path === docPath);
-    if (exists)
-      await openDocument(docPath, { updateUrl: false, revealInTree: true });
-    return;
-  }
-  const folderPath = folderPathFromLocation();
-  if (folderPath && folderExists(folderPath)) {
-    knowledgeState.selectedFolder = folderPath;
-    showLibrary({ updateUrl: false });
-    refreshDocuments();
-    return;
-  }
-  await showOperationsHome({ replace: true });
-}
-
-async function applyCurrentBrowserLocation() {
-  let workspaceRoute = parseWorkspaceHash();
-  if (workspaceRoute && !workspaceRoute.invalid) {
-    if (workspaceRoute.normalized) {
-      history.replaceState(history.state, "", workspaceRoute.canonicalUrl);
-      workspaceRoute = parseWorkspaceHash();
-    }
-    await applyWorkspaceRoute(workspaceRoute);
-    return;
-  }
-  if (window.location.hash || window.location.pathname === "/") {
-    await applyWorkspaceRoute(replaceWithWorkspaceHome());
-    return;
-  }
-  const docPath = docPathFromLocation();
-  if (docPath) {
-    openDocument(docPath, { updateUrl: false });
-    return;
-  }
-  knowledgeState.selectedFolder = folderPathFromLocation();
-  showLibrary({ updateUrl: false });
-  refreshDocuments();
-}
-
-function scheduleCurrentBrowserLocation() {
-  if (!initialRouteReady) {
-    // The initial workspace shell is committed synchronously, while its
-    // hydration promise settles on a later microtask. Preserve any hash change
-    // that lands in that window instead of leaving the visible route stale.
-    initialRouteReadyPromise.then(() => scheduleCurrentBrowserLocation());
-    return;
-  }
-  if (locationRouteTimer) clearTimeout(locationRouteTimer);
-  locationRouteTimer = setTimeout(() => {
-    locationRouteTimer = null;
-    applyCurrentBrowserLocation();
-  }, 0);
-}
-
-window.addEventListener("popstate", scheduleCurrentBrowserLocation);
-
-window.addEventListener("hashchange", scheduleCurrentBrowserLocation);
-
-
-
-
-
 
 function renderOperationsWorkspace(documents) {
   syncWorkspaceNav();
@@ -1948,264 +1592,6 @@ function allWorkTasks(work = operationsWorkSnapshot) {
       tasksFromWorkPayload(tasks),
     ),
   ]);
-}
-
-// ---------- Task action panel ----------
-
-function renderEntityLoadState(
-  container,
-  { kind, id, status, error, retry, returnToList },
-) {
-  const state = document.createElement("section");
-  state.className = `entity-route-state entity-route-${status}`;
-  state.tabIndex = -1;
-  state.setAttribute("role", status === "error" ? "alert" : "status");
-  const heading = document.createElement("h3");
-  heading.textContent =
-    status === "not-found"
-      ? `${labelizeWorkValue(kind)} not found`
-      : status === "mismatch"
-        ? "Task and card do not match"
-        : `${labelizeWorkValue(kind)} unavailable`;
-  const detail = document.createElement("p");
-  detail.textContent =
-    status === "not-found"
-      ? `No ${kind} exists with ID ${id}. It may be stale or no longer available.`
-      : `${error || `Could not load ${kind}.`} Requested ID: ${id}.`;
-  const actions = document.createElement("div");
-  actions.className = "entity-route-actions";
-  const retryButton = document.createElement("button");
-  retryButton.type = "button";
-  retryButton.textContent = "Retry";
-  retryButton.addEventListener("click", retry);
-  const returnButton = document.createElement("button");
-  returnButton.type = "button";
-  returnButton.textContent = `Return to ${kind === "intake" ? "Inbox" : kind === "template" ? "templates" : kind === "card" || kind === "task/card" ? "cards" : `${kind}s`}`;
-  returnButton.addEventListener("click", returnToList);
-  actions.append(retryButton, returnButton);
-  state.append(heading, detail, actions);
-  container.replaceChildren(state);
-  requestAnimationFrame(() => state.focus());
-  return state;
-}
-
-function renderEntityLoadingState(container, kind, id) {
-  const state = document.createElement("section");
-  state.className = "entity-route-state entity-route-loading";
-  state.setAttribute("role", "status");
-  state.textContent = `Loading ${kind} ${id}…`;
-  container.replaceChildren(state);
-}
-
-async function refreshWorkBell(options = {}) {
-  try {
-    const payload = await request(workApiUrl("/api/notifications"));
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
-    workBellNotifications = Array.isArray(payload)
-      ? payload
-      : payload.notifications || [];
-    workBellError = "";
-  } catch (err) {
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
-    workBellNotifications = [];
-    workBellError = err?.message || "Notifications API request failed";
-  }
-  syncWorkBellIndicators();
-  if (!workBellPanel.hidden) renderWorkBellPanel();
-}
-
-function syncWorkBellIndicators() {
-  const count = workBellNotifications.length;
-  const indicatorText = workBellError ? "!" : String(count);
-  for (const indicator of [workBellCount, mobileWorkBellCount]) {
-    if (!indicator) continue;
-    indicator.textContent = indicatorText;
-    indicator.classList.toggle(
-      "is-visible",
-      Boolean(workBellError) || count > 0,
-    );
-    indicator.classList.toggle("is-error", Boolean(workBellError));
-  }
-}
-
-function openWorkBellPanel() {
-  workBellOpener =
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : workBellButton;
-  renderWorkBellPanel();
-  workBellPanel.hidden = false;
-  workBellClose.focus();
-}
-
-function closeWorkBellPanel(options = {}) {
-  if (workBellPanel.hidden) return;
-  const route = parseWorkspaceHash();
-  if (
-    options.updateUrl !== false &&
-    route &&
-    !route.invalid &&
-    route.path === "/notifications"
-  ) {
-    navigateCanonicalWorkspace("/");
-    return;
-  }
-  workBellPanel.hidden = true;
-  if (options.restoreFocus !== false && workBellOpener?.isConnected)
-    workBellOpener.focus();
-  workBellOpener = null;
-}
-
-function renderWorkBellPanel() {
-  workBellBody.replaceChildren();
-  if (workBellError) {
-    const empty = document.createElement("p");
-    empty.className = "work-bell-empty is-error";
-    empty.textContent = `Notifications unavailable: ${workBellError}`;
-    workBellBody.append(empty);
-    return;
-  }
-  if (workBellNotifications.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "work-bell-empty-state";
-    empty.innerHTML = `
-      <span class="work-bell-empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24">
-          <path d="m7 13 3 3 7-8" />
-          <circle cx="12" cy="12" r="9" />
-        </svg>
-      </span>
-      <strong>You’re all caught up.</strong>
-      <p class="work-bell-empty">No active notifications.</p>
-    `;
-    workBellBody.append(empty);
-    return;
-  }
-  for (const notification of workBellNotifications) {
-    const item = document.createElement("div");
-    item.className = "work-bell-item";
-    item.classList.add(notificationUrgencyClass(notification));
-    const message = document.createElement("div");
-    message.className = "work-bell-item-message";
-    const icon = document.createElement("span");
-    icon.className = "work-bell-item-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML = notification.taskId
-      ? '<svg viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5M12 17h.01"/></svg>'
-      : '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-    const text = document.createElement("span");
-    text.textContent = notificationDisplayMessage(notification);
-    message.append(icon, text);
-    item.append(message);
-    const meta = document.createElement("div");
-    meta.className = "work-bell-item-meta";
-    const metaParts = [];
-    if (notification.dueAt)
-      metaParts.push(notificationDueLabel(notification.dueAt));
-    else if (notification.createdAt)
-      metaParts.push(
-        `Added ${formatHomeShortDate(String(notification.createdAt).slice(0, 10))}`,
-      );
-    meta.textContent = metaParts.join(" · ");
-    item.append(meta);
-    const actions = document.createElement("div");
-    actions.className = "work-bell-item-actions";
-    if (notification.taskId) {
-      const open = document.createElement("button");
-      open.type = "button";
-      open.className = "work-bell-action work-bell-action-primary";
-      open.textContent = "Open task";
-      open.addEventListener("click", () => {
-        closeWorkBellPanel({ updateUrl: false });
-        openTaskPanel(notification.taskId);
-      });
-      actions.append(open);
-    }
-    const dismiss = document.createElement("button");
-    dismiss.type = "button";
-    dismiss.className = "work-bell-action";
-    dismiss.textContent = "Dismiss";
-    dismiss.dataset.dismissNotification = notification.id;
-    dismiss.setAttribute(
-      "aria-label",
-      `Dismiss notification: ${notification.message || notification.type || notification.id}`,
-    );
-    dismiss.addEventListener("click", () =>
-      dismissWorkNotification(notification, dismiss),
-    );
-    actions.append(dismiss);
-    item.append(actions);
-    const failure = workBellDismissErrors.get(notification.id);
-    if (failure) {
-      const error = document.createElement("p");
-      error.className = "work-bell-item-error";
-      error.setAttribute("role", "alert");
-      error.textContent = `${failure} Select Dismiss to retry.`;
-      item.append(error);
-    }
-    workBellBody.append(item);
-  }
-}
-
-function notificationDisplayMessage(notification) {
-  const message = String(
-    notification?.message || notification?.type || "Notification",
-  );
-  if (notification?.type === "recurring-due") {
-    return message
-      .replace(/^Recurring task generated:\s*/i, "")
-      .replace(/\s+for\s+\d{4}-\d{2}-\d{2}\s*$/i, "");
-  }
-  return message;
-}
-
-function notificationDueLabel(value) {
-  const date = String(value || "").slice(0, 10);
-  const relative = formatTaskDateMeta(date, todayIsoDate());
-  if (relative === "Today") return "Due today";
-  if (relative === "Yesterday") return "Due yesterday";
-  if (relative === "Tomorrow") return "Due tomorrow";
-  return relative ? `Due ${formatHomeShortDate(date)}` : "";
-}
-
-function notificationUrgencyClass(notification) {
-  const dueDate = String(notification?.dueAt || "").slice(0, 10);
-  if (!dueDate) return "is-info";
-  const days = isoDayDistance(dueDate, todayIsoDate());
-  if (days < 0) return "is-overdue";
-  if (days === 0) return "is-due";
-  return "is-info";
-}
-
-async function dismissWorkNotification(notification, button) {
-  button.disabled = true;
-  button.textContent = "Dismissing…";
-  try {
-    await request(
-      workApiUrl(
-        `/api/notifications/${encodeURIComponent(notification.id)}/dismiss`,
-      ),
-      { method: "PUT" },
-    );
-    workBellNotifications = workBellNotifications.filter(
-      (item) => item.id !== notification.id,
-    );
-    workBellDismissErrors.delete(notification.id);
-    syncWorkBellIndicators();
-    renderWorkBellPanel();
-  } catch (error) {
-    workBellDismissErrors.set(
-      notification.id,
-      error.message || "Notification could not be dismissed",
-    );
-    renderWorkBellPanel();
-    [...workBellBody.querySelectorAll("[data-dismiss-notification]")]
-      .find(
-        (candidate) =>
-          candidate.dataset.dismissNotification === notification.id,
-      )
-      ?.focus();
-  }
 }
 
 // ---------- Quick create: ad-hoc task and workflow ----------
@@ -3085,220 +2471,6 @@ function renderOperationsReference(ref) {
 
 
 
-function replaceWithWorkspaceHome() {
-  const target = canonicalWorkspaceUrl("/");
-  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (current !== target)
-    history.replaceState(
-      { workspace: "home", tasksSection: "queue" },
-      "",
-      target,
-    );
-  return parseWorkspaceHash("#/");
-}
-
-function isWorkspaceRouteFresh(token) {
-  return token === activeWorkspaceRouteToken;
-}
-
-function visibleEntityFocusTarget(restoreFocus) {
-  if (restoreFocus?.kind === "runtime-template-list") {
-    const search = document.querySelector(".runtime-template-search");
-    return search instanceof HTMLElement &&
-      search.isConnected &&
-      search.offsetParent !== null
-      ? search
-      : null;
-  }
-  if (!restoreFocus?.id) return null;
-  const candidates =
-    restoreFocus.kind === "workflow"
-      ? [...document.querySelectorAll(".ops-workflow-card[data-bundle-id]")]
-      : restoreFocus.surface === "workflows"
-        ? [
-            ...document.querySelectorAll(
-              ".bundle-checklist-label[data-task-id]",
-            ),
-          ]
-        : [...document.querySelectorAll(".ops-queue-row[data-task-id]")];
-  const dataKey = restoreFocus.kind === "workflow" ? "bundleId" : "taskId";
-  return (
-    candidates.find(
-      (candidate) =>
-        candidate.dataset[dataKey] === restoreFocus.id &&
-        candidate.isConnected &&
-        candidate.offsetParent !== null,
-    ) || null
-  );
-}
-
-function restoreWorkspaceEntityFocus(restoreFocus, token) {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      if (!isWorkspaceRouteFresh(token)) {
-        resolve();
-        return;
-      }
-      const recreatedRow = visibleEntityFocusTarget(restoreFocus);
-      const target = recreatedRow || libraryTitle;
-      if (target === libraryTitle) target.tabIndex = -1;
-      if (target instanceof HTMLElement && target.isConnected) target.focus();
-      resolve();
-    });
-  });
-}
-
-function commitWorkspaceRoute(route, token, options = {}) {
-  activeWorkspaceRoute = route;
-  pendingLegacyRoute = { ...route, token };
-  workspaceEntityState = null;
-  if (route.view === "tasks") activeTasksSection = route.tasksSection;
-  intakeState.selectedId =
-    route.view === "inbox" ? route.params.get("intakeId") : null;
-  assistantQueueState.selectedJobId =
-    route.tasksSection === "assistants"
-      ? route.params.get("assistantJobId")
-      : null;
-  setRuntimeTemplateRoute(route, options.entity);
-  setTaskRouteContextFromRoute(route);
-
-  resetTaskPanel();
-  resetBundlePanel();
-  closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
-  closeSettingsMenu();
-
-  const requestedView =
-    route.view === "tasks" && route.tasksSection !== "queue"
-      ? route.tasksSection
-      : route.view;
-  const tasksSection = LEGACY_VIEW_TO_TASKS_SECTION(requestedView);
-  if (tasksSection) {
-    activeWorkspaceView = "tasks";
-    activeTasksSection = tasksSection;
-  } else if (requestedView === "tasks") {
-    activeWorkspaceView = "tasks";
-    activeTasksSection = "queue";
-  } else if (requestedView === "processes" || requestedView === "search") {
-    activeWorkspaceView = "docs";
-  } else {
-    activeWorkspaceView = requestedView || "home";
-  }
-  syncWorkspaceNav();
-  libraryTitle.textContent = operationsViewTitle(
-    activeWorkspaceView,
-    activeTasksSection,
-  );
-  knowledgeState.selectedFolder = "";
-  searchInput.value = "";
-  clearDocumentFilters();
-  setView("library");
-  // Each top-level area owns the complete main canvas. Clear the old route
-  // before dispatch so none of its status, filters, headings, or content can
-  // travel into the next view while that renderer starts.
-  documentList.replaceChildren();
-  refreshDocuments();
-  closeSidebar();
-
-  const bundleId = ["/cards", "/cards/archive"].includes(route.path)
-    ? route.params.get("cardId")
-    : "";
-  const taskId = route.params.get("taskId");
-  if (bundleId) prepareBundlePanel(bundleId);
-  if (taskId) prepareTaskPanel(taskId);
-  if (route.path === "/notifications") openWorkBellPanel();
-}
-
-function hydrateWorkspaceRoute(route, token) {
-  const jobs = [];
-  if (route.path === "/inbox")
-    jobs.push(resolveIntakeRouteEntity(route, token));
-  if (route.path === "/tasks")
-    jobs.push(resolveTaskQueueRouteContext(route, token));
-  if (route.path === "/templates")
-    jobs.push(resolveTemplateRouteEntity(route, token));
-  if (route.path === "/assistants")
-    jobs.push(refreshOperationsAssistantSnapshot({ rerender: true, token }));
-  if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
-  if (route.path === "/artifacts")
-    jobs.push(refreshOperationsArtifactSnapshot({ rerender: true }));
-  if (route.path === "/users")
-    jobs.push(refreshUsersSurface({ rerender: true }));
-  const bundleId = ["/cards", "/cards/archive"].includes(route.path)
-    ? route.params.get("cardId")
-    : "";
-  const taskId = route.params.get("taskId");
-  if (bundleId) jobs.push(hydrateBundlePanel(bundleId, token));
-  if (taskId)
-    jobs.push(
-      hydrateTaskPanel(taskId, token, { expectedBundleId: bundleId || "" }),
-    );
-  if (route.path === "/recurring") {
-    requestAnimationFrame(() => {
-      if (!isWorkspaceRouteFresh(token)) return;
-      const recurring = document.querySelector(".ops-recurring-section");
-      if (recurring) {
-        recurring.tabIndex = -1;
-        recurring.focus();
-      }
-    });
-  }
-  return Promise.allSettled(jobs);
-}
-
-function navigateCanonicalWorkspace(path, params = {}, options = {}) {
-  const route = options.route || workspaceRouteFor(path, params);
-  if (!route || route.invalid)
-    return {
-      route,
-      token: activeWorkspaceRouteToken,
-      ready: Promise.resolve(),
-    };
-  const token = ++activeWorkspaceRouteToken;
-  const visible = route.canonicalUrl;
-  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  const historyMode = options.history || "push";
-  if (historyMode !== "none" && current !== visible) {
-    history[historyMode === "replace" ? "replaceState" : "pushState"](
-      { workspace: route.view, tasksSection: route.tasksSection },
-      "",
-      visible,
-    );
-  }
-  commitWorkspaceRoute(route, token, options);
-  const hydration =
-    options.hydrate === false
-      ? Promise.resolve()
-      : hydrateWorkspaceRoute(route, token);
-  const ready = hydration.then(() =>
-    options.restoreFocus
-      ? restoreWorkspaceEntityFocus(options.restoreFocus, token)
-      : undefined,
-  );
-  return { route, token, ready };
-}
-
-async function applyWorkspaceRoute(route) {
-  if (!route || route.invalid) return;
-  const previousRoute = activeWorkspaceRoute;
-  if (initialRouteReady && !(await canLeaveCurrentDocument())) {
-    if (previousRoute?.canonicalUrl) {
-      history.replaceState(
-        {
-          workspace: previousRoute.view,
-          tasksSection: previousRoute.tasksSection,
-        },
-        "",
-        previousRoute.canonicalUrl,
-      );
-    }
-    return;
-  }
-  await navigateCanonicalWorkspace(route.path, route.params, {
-    route,
-    history: "none",
-  }).ready;
-}
-
 // Refresh "Saved · 2 min ago" every minute so the relative time stays current.
 setInterval(() => {
   if (documentState.currentDoc && editor.value === documentState.lastSavedContent) updateSaveState();
@@ -3399,100 +2571,6 @@ function setView(view) {
   body.dataset.view = view;
 }
 
-const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function isMobileShell() {
-  return window.matchMedia("(max-width: 820px)").matches;
-}
-
-function syncSidebarShellState() {
-  const open = body.classList.contains("sidebar-open");
-  if (!isMobileShell()) {
-    body.classList.remove("sidebar-open");
-    sidebarScrim.hidden = true;
-    mobileMenuButton.setAttribute("aria-expanded", "false");
-    sidebar.removeAttribute("role");
-    sidebar.removeAttribute("aria-modal");
-    sidebar.removeAttribute("aria-hidden");
-    sidebar.inert = false;
-    pageShell.inert = false;
-    if (mobileWorkBellButton) mobileWorkBellButton.inert = false;
-    mobileNewButton.inert = false;
-    document.removeEventListener("keydown", handleSidebarKeydown);
-    return;
-  }
-  sidebarScrim.hidden = !open;
-  mobileMenuButton.setAttribute("aria-expanded", open ? "true" : "false");
-  if (open) {
-    sidebar.setAttribute("role", "dialog");
-    sidebar.setAttribute("aria-modal", "true");
-    sidebar.removeAttribute("aria-hidden");
-    sidebar.inert = false;
-  } else {
-    sidebar.removeAttribute("role");
-    sidebar.removeAttribute("aria-modal");
-    sidebar.setAttribute("aria-hidden", "true");
-    sidebar.inert = true;
-  }
-  pageShell.inert = open;
-  if (mobileWorkBellButton) mobileWorkBellButton.inert = open;
-  mobileNewButton.inert = open;
-}
-
-function openSidebar() {
-  lastSidebarOpener =
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : mobileMenuButton;
-  body.classList.add("sidebar-open");
-  syncSidebarShellState();
-  document.addEventListener("keydown", handleSidebarKeydown);
-  const first = sidebar.querySelector(FOCUSABLE_SELECTOR);
-  first?.focus();
-}
-
-function closeSidebar() {
-  if (!body.classList.contains("sidebar-open")) return;
-  body.classList.remove("sidebar-open");
-  syncSidebarShellState();
-  document.removeEventListener("keydown", handleSidebarKeydown);
-  const focusTarget = lastSidebarOpener?.isConnected
-    ? lastSidebarOpener
-    : mobileMenuButton;
-  if (focusTarget instanceof HTMLElement) focusTarget.focus();
-  lastSidebarOpener = null;
-}
-
-function handleSidebarKeydown(event) {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeSidebar();
-    return;
-  }
-  if (event.key !== "Tab") return;
-
-  const focusables = [...sidebar.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
-    (el) => el.offsetParent !== null,
-  );
-  if (focusables.length === 0) return;
-
-  const first = focusables[0];
-  const last = focusables[focusables.length - 1];
-  const active = document.activeElement;
-
-  if (event.shiftKey && (active === first || !sidebar.contains(active))) {
-    event.preventDefault();
-    last.focus();
-  } else if (
-    !event.shiftKey &&
-    (active === last || !sidebar.contains(active))
-  ) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
 function setPageTitle(title, path) {
   toolbarTitle.textContent = title;
   mobileTitle.textContent = title;
@@ -3521,65 +2599,6 @@ function cleanPath(path) {
   return path.replace(/^content\//, "");
 }
 
-function apiUrl(path) {
-  return new URL(path, API_BASE);
-}
-
-async function request(url, options = {}) {
-  const token = (() => {
-    try {
-      return localStorage.getItem("dataops_token");
-    } catch {
-      return null;
-    }
-  })();
-  const headers = {
-    "content-type": "application/json",
-    ...(options.headers || {}),
-  };
-  if (token && !headers.Authorization && !headers.authorization)
-    headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  const text = await response.text();
-  let payload = null;
-  let parsedJson = false;
-  if (text) {
-    try {
-      payload = JSON.parse(text);
-      parsedJson = true;
-    } catch {
-      // Non-JSON response (HTML error page, plain text, etc.).
-    }
-  }
-
-  if (text && !parsedJson) {
-    const fallback = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
-    const error = new Error(
-      response.ok ? "Unexpected non-JSON API response" : fallback,
-    );
-    error.status = response.status;
-    throw error;
-  }
-
-  if (!response.ok) {
-    const fallback = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
-    const error = new Error(payload?.error || fallback);
-    error.status = response.status;
-    error.code = payload?.code;
-    error.payload = payload;
-    throw error;
-  }
-
-  return payload || {};
-}
-
-
-
-
 function debounce(fn, delay) {
   let timeout;
   return (...args) => {
@@ -3600,67 +2619,6 @@ document.addEventListener("keydown", (event) => {
     closeDiff();
   }
 });
-
-// ---------- Confirmation modal ----------
-
-const confirmModal = document.querySelector("#confirm-modal");
-const confirmMessage = document.querySelector("#confirm-message");
-const confirmBackdrop = document.querySelector("#confirm-backdrop");
-const confirmOk = document.querySelector("#confirm-ok");
-const confirmCancel = document.querySelector("#confirm-cancel");
-let _confirmResolve = null;
-let _confirmOpener = null;
-
-confirmBackdrop.addEventListener("click", () => resolveConfirm(false));
-confirmCancel.addEventListener("click", () => resolveConfirm(false));
-confirmOk.addEventListener("click", () => resolveConfirm(true));
-document.addEventListener("keydown", (event) => {
-  if (confirmModal.hidden) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    resolveConfirm(false);
-  } else if (event.key === "Tab") {
-    event.preventDefault();
-    const next =
-      document.activeElement === confirmCancel && !event.shiftKey
-        ? confirmOk
-        : confirmCancel;
-    next.focus();
-  }
-});
-
-function confirmDialog(
-  message,
-  { okText = "Confirm", cancelText = "Cancel", danger = false } = {},
-) {
-  return new Promise((resolve) => {
-    _confirmOpener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    confirmMessage.textContent = message;
-    confirmOk.textContent = okText;
-    confirmCancel.textContent = cancelText;
-    confirmOk.classList.toggle("is-danger", !!danger);
-    confirmModal.hidden = false;
-    _confirmResolve = resolve;
-    confirmCancel.focus();
-  });
-}
-
-function resolveConfirm(value) {
-  if (_confirmResolve) {
-    const resolve = _confirmResolve;
-    const opener = _confirmOpener;
-    _confirmResolve = null;
-    _confirmOpener = null;
-    confirmModal.hidden = true;
-    requestAnimationFrame(() => {
-      if (opener?.isConnected) opener.focus();
-      resolve(value);
-    });
-  }
-}
 
 // ---------- Lightbox ----------
 
@@ -3688,60 +2646,6 @@ quickNavInput.addEventListener("input", () =>
 quickNavInput.addEventListener("keydown", (event) => {
   knowledgeSurface.handleQuickNavKeydown(event);
 });
-
-const undoToast = document.querySelector("#undo-toast");
-const undoToastText = document.querySelector("#undo-toast-text");
-const undoToastButton = document.querySelector("#undo-toast-button");
-let _undoTimer = null;
-let _undoAction = null;
-
-undoToastButton.addEventListener("click", () => {
-  if (_undoAction) {
-    const action = _undoAction;
-    _undoAction = null;
-    hideUndoToast();
-    action();
-  }
-});
-
-function showUndoToast(message, restoreFn) {
-  undoToastText.textContent = message;
-  _undoAction = restoreFn;
-  undoToast.hidden = false;
-  if (_undoTimer) clearTimeout(_undoTimer);
-  _undoTimer = setTimeout(hideUndoToast, 8000);
-}
-
-function hideUndoToast() {
-  undoToast.hidden = true;
-  _undoAction = null;
-  if (_undoTimer) {
-    clearTimeout(_undoTimer);
-    _undoTimer = null;
-  }
-}
-
-const errorToast = document.querySelector("#error-toast");
-const errorToastText = document.querySelector("#error-toast-text");
-const errorToastClose = document.querySelector("#error-toast-close");
-let _errorTimer = null;
-errorToastClose.addEventListener("click", () => {
-  errorToast.hidden = true;
-});
-
-function showErrorToast(message) {
-  errorToastText.textContent = message;
-  errorToast.hidden = false;
-  if (_errorTimer) clearTimeout(_errorTimer);
-  _errorTimer = setTimeout(() => {
-    errorToast.hidden = true;
-  }, 10000);
-}
-
-function reportError(message) {
-  setStatus(message);
-  showErrorToast(message);
-}
 
 function escapeHtml(s) {
   return String(s)

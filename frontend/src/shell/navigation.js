@@ -1,0 +1,427 @@
+export function createNavigationShell(context) {
+  const {
+    canLeaveCurrentDocument,
+    canonicalWorkspaceUrl,
+    clearDocumentFilters,
+    closeSettingsMenu,
+    closeSidebar,
+    closeWorkBellPanel,
+    documentList,
+    documentRef,
+    folderExists,
+    folderPathFromLocation,
+    getAssistantQueueState,
+    getIntakeState,
+    getKnowledgeState,
+    getTasksSectionForLegacyView,
+    historyRef,
+    HTMLElementClass,
+    hydrateBundlePanel,
+    hydrateTaskPanel,
+    libraryTitle,
+    locationRef,
+    openDocument,
+    openWorkBellPanel,
+    operationsViewTitle,
+    parseWorkspaceHash,
+    prepareBundlePanel,
+    prepareTaskPanel,
+    refreshDocuments,
+    refreshOperationsArtifactSnapshot,
+    refreshOperationsAssistantSnapshot,
+    refreshUsersSurface,
+    refreshWorkBell,
+    renderWorkspaceNav,
+    requestAnimationFrameImpl,
+    resetBundlePanel,
+    resetTaskPanel,
+    resolveIntakeRouteEntity,
+    resolveTaskQueueRouteContext,
+    resolveTemplateRouteEntity,
+    searchInput,
+    setActiveTasksSection,
+    setActiveWorkspaceView,
+    setRuntimeTemplateRoute,
+    setTaskRouteContextFromRoute,
+    setView,
+    showLibrary,
+    showOperationsHome,
+    workspaceRouteFor,
+  } = context;
+  let pendingLegacyRoute = null;
+  let activeRouteToken = 0;
+  let activeRoute = null;
+  let workspaceEntityState = null;
+  let initialRouteReady = false;
+  let initialRouteReadyPromise = Promise.resolve();
+  let locationRouteTimer = null;
+
+  function getActiveWorkspaceRoute() {
+    return activeRoute;
+  }
+
+  function getActiveWorkspaceRouteToken() {
+    return activeRouteToken;
+  }
+
+  function getPendingLegacyRoute() {
+    return pendingLegacyRoute;
+  }
+
+  function getWorkspaceEntityState() {
+    return workspaceEntityState;
+  }
+
+  function setWorkspaceEntityState(snapshot) {
+    workspaceEntityState = snapshot;
+  }
+
+  function isWorkspaceRouteFresh(token) {
+    return token === activeRouteToken;
+  }
+
+  function beginDocumentNavigation() {
+    activeRouteToken += 1;
+    activeRoute = null;
+    resetTaskPanel();
+    resetBundlePanel();
+    closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
+  }
+
+  function replaceWithWorkspaceHome() {
+    const target = canonicalWorkspaceUrl("/");
+    const current = `${locationRef.pathname}${locationRef.search}${
+      locationRef.hash
+    }`;
+    if (current !== target) {
+      historyRef.replaceState(
+        { workspace: "home", tasksSection: "queue" },
+        "",
+        target,
+      );
+    }
+    return parseWorkspaceHash("#/");
+  }
+
+  function visibleEntityFocusTarget(restoreFocus) {
+    if (restoreFocus?.kind === "runtime-template-list") {
+      const search = documentRef.querySelector(".runtime-template-search");
+      return search instanceof HTMLElementClass &&
+        search.isConnected &&
+        search.offsetParent !== null
+        ? search
+        : null;
+    }
+    if (!restoreFocus?.id) return null;
+    const candidates =
+      restoreFocus.kind === "workflow"
+        ? [
+            ...documentRef.querySelectorAll(
+              ".ops-workflow-card[data-bundle-id]",
+            ),
+          ]
+        : restoreFocus.surface === "workflows"
+          ? [
+              ...documentRef.querySelectorAll(
+                ".bundle-checklist-label[data-task-id]",
+              ),
+            ]
+          : [
+              ...documentRef.querySelectorAll(
+                ".ops-queue-row[data-task-id]",
+              ),
+            ];
+    const dataKey = restoreFocus.kind === "workflow" ? "bundleId" : "taskId";
+    return (
+      candidates.find(
+        (candidate) =>
+          candidate.dataset[dataKey] === restoreFocus.id &&
+          candidate.isConnected &&
+          candidate.offsetParent !== null,
+      ) || null
+    );
+  }
+
+  function restoreWorkspaceEntityFocus(restoreFocus, token) {
+    return new Promise((resolve) => {
+      requestAnimationFrameImpl(() => {
+        if (!isWorkspaceRouteFresh(token)) {
+          resolve();
+          return;
+        }
+        const target = visibleEntityFocusTarget(restoreFocus) || libraryTitle;
+        if (target === libraryTitle) target.tabIndex = -1;
+        if (target instanceof HTMLElementClass && target.isConnected) {
+          target.focus();
+        }
+        resolve();
+      });
+    });
+  }
+
+  function commitWorkspaceRoute(route, token, options = {}) {
+    activeRoute = route;
+    pendingLegacyRoute = { ...route, token };
+    workspaceEntityState = null;
+    if (route.view === "tasks") setActiveTasksSection(route.tasksSection);
+    getIntakeState().selectedId =
+      route.view === "inbox" ? route.params.get("intakeId") : null;
+    getAssistantQueueState().selectedJobId =
+      route.tasksSection === "assistants"
+        ? route.params.get("assistantJobId")
+        : null;
+    setRuntimeTemplateRoute(route, options.entity);
+    setTaskRouteContextFromRoute(route);
+    resetTaskPanel();
+    resetBundlePanel();
+    closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
+    closeSettingsMenu();
+
+    const requestedView =
+      route.view === "tasks" && route.tasksSection !== "queue"
+        ? route.tasksSection
+        : route.view;
+    const tasksSection = getTasksSectionForLegacyView(requestedView);
+    if (tasksSection) {
+      setActiveWorkspaceView("tasks");
+      setActiveTasksSection(tasksSection);
+    } else if (requestedView === "tasks") {
+      setActiveWorkspaceView("tasks");
+      setActiveTasksSection("queue");
+    } else if (requestedView === "processes" || requestedView === "search") {
+      setActiveWorkspaceView("docs");
+    } else {
+      setActiveWorkspaceView(requestedView || "home");
+    }
+    const { activeWorkspaceView, activeTasksSection } = renderWorkspaceNav();
+    libraryTitle.textContent = operationsViewTitle(
+      activeWorkspaceView,
+      activeTasksSection,
+    );
+    getKnowledgeState().selectedFolder = "";
+    searchInput.value = "";
+    clearDocumentFilters();
+    setView("library");
+    documentList.replaceChildren();
+    refreshDocuments();
+    closeSidebar();
+
+    const bundleId = ["/cards", "/cards/archive"].includes(route.path)
+      ? route.params.get("cardId")
+      : "";
+    const taskId = route.params.get("taskId");
+    if (bundleId) prepareBundlePanel(bundleId);
+    if (taskId) prepareTaskPanel(taskId);
+    if (route.path === "/notifications") openWorkBellPanel();
+  }
+
+  function hydrateWorkspaceRoute(route, token) {
+    const jobs = [];
+    if (route.path === "/inbox") {
+      jobs.push(resolveIntakeRouteEntity(route, token));
+    }
+    if (route.path === "/tasks") {
+      jobs.push(resolveTaskQueueRouteContext(route, token));
+    }
+    if (route.path === "/templates") {
+      jobs.push(resolveTemplateRouteEntity(route, token));
+    }
+    if (route.path === "/assistants") {
+      jobs.push(refreshOperationsAssistantSnapshot({ rerender: true, token }));
+    }
+    if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
+    if (route.path === "/artifacts") {
+      jobs.push(refreshOperationsArtifactSnapshot({ rerender: true }));
+    }
+    if (route.path === "/users") {
+      jobs.push(refreshUsersSurface({ rerender: true }));
+    }
+    const bundleId = ["/cards", "/cards/archive"].includes(route.path)
+      ? route.params.get("cardId")
+      : "";
+    const taskId = route.params.get("taskId");
+    if (bundleId) jobs.push(hydrateBundlePanel(bundleId, token));
+    if (taskId) {
+      jobs.push(
+        hydrateTaskPanel(taskId, token, {
+          expectedBundleId: bundleId || "",
+        }),
+      );
+    }
+    if (route.path === "/recurring") {
+      requestAnimationFrameImpl(() => {
+        if (!isWorkspaceRouteFresh(token)) return;
+        const recurring = documentRef.querySelector(".ops-recurring-section");
+        if (recurring) {
+          recurring.tabIndex = -1;
+          recurring.focus();
+        }
+      });
+    }
+    return Promise.allSettled(jobs);
+  }
+
+  function navigateCanonicalWorkspace(path, params = {}, options = {}) {
+    const route = options.route || workspaceRouteFor(path, params);
+    if (!route || route.invalid) {
+      return {
+        route,
+        token: activeRouteToken,
+        ready: Promise.resolve(),
+      };
+    }
+    const token = ++activeRouteToken;
+    const visible = route.canonicalUrl;
+    const current = `${locationRef.pathname}${locationRef.search}${
+      locationRef.hash
+    }`;
+    const historyMode = options.history || "push";
+    if (historyMode !== "none" && current !== visible) {
+      historyRef[historyMode === "replace" ? "replaceState" : "pushState"](
+        { workspace: route.view, tasksSection: route.tasksSection },
+        "",
+        visible,
+      );
+    }
+    commitWorkspaceRoute(route, token, options);
+    const hydration =
+      options.hydrate === false
+        ? Promise.resolve()
+        : hydrateWorkspaceRoute(route, token);
+    const ready = hydration.then(() =>
+      options.restoreFocus
+        ? restoreWorkspaceEntityFocus(options.restoreFocus, token)
+        : undefined,
+    );
+    return { route, token, ready };
+  }
+
+  async function applyWorkspaceRoute(route) {
+    if (!route || route.invalid) return;
+    const previousRoute = activeRoute;
+    if (initialRouteReady && !(await canLeaveCurrentDocument())) {
+      if (previousRoute?.canonicalUrl) {
+        historyRef.replaceState(
+          {
+            workspace: previousRoute.view,
+            tasksSection: previousRoute.tasksSection,
+          },
+          "",
+          previousRoute.canonicalUrl,
+        );
+      }
+      return;
+    }
+    await navigateCanonicalWorkspace(route.path, route.params, {
+      route,
+      history: "none",
+    }).ready;
+  }
+
+  async function openInitialRoute() {
+    let workspaceRoute = parseWorkspaceHash();
+    if (workspaceRoute && !workspaceRoute.invalid) {
+      if (workspaceRoute.normalized) {
+        historyRef.replaceState(
+          historyRef.state,
+          "",
+          workspaceRoute.canonicalUrl,
+        );
+        workspaceRoute = parseWorkspaceHash();
+      }
+      await applyWorkspaceRoute(workspaceRoute);
+      return;
+    }
+    if (locationRef.hash || locationRef.pathname === "/") {
+      await applyWorkspaceRoute(replaceWithWorkspaceHome());
+      return;
+    }
+    const docPath = context.docPathFromLocation();
+    if (docPath) {
+      const exists = getKnowledgeState().allDocuments.some(
+        (doc) => doc.path === docPath,
+      );
+      if (exists) {
+        await openDocument(docPath, {
+          updateUrl: false,
+          revealInTree: true,
+        });
+      }
+      return;
+    }
+    const folderPath = folderPathFromLocation();
+    if (folderPath && folderExists(folderPath)) {
+      getKnowledgeState().selectedFolder = folderPath;
+      showLibrary({ updateUrl: false });
+      refreshDocuments();
+      return;
+    }
+    await showOperationsHome({ replace: true });
+  }
+
+  async function applyCurrentBrowserLocation() {
+    let workspaceRoute = parseWorkspaceHash();
+    if (workspaceRoute && !workspaceRoute.invalid) {
+      if (workspaceRoute.normalized) {
+        historyRef.replaceState(
+          historyRef.state,
+          "",
+          workspaceRoute.canonicalUrl,
+        );
+        workspaceRoute = parseWorkspaceHash();
+      }
+      await applyWorkspaceRoute(workspaceRoute);
+      return;
+    }
+    if (locationRef.hash || locationRef.pathname === "/") {
+      await applyWorkspaceRoute(replaceWithWorkspaceHome());
+      return;
+    }
+    const docPath = context.docPathFromLocation();
+    if (docPath) {
+      openDocument(docPath, { updateUrl: false });
+      return;
+    }
+    getKnowledgeState().selectedFolder = folderPathFromLocation();
+    showLibrary({ updateUrl: false });
+    refreshDocuments();
+  }
+
+  function scheduleCurrentBrowserLocation() {
+    if (!initialRouteReady) {
+      initialRouteReadyPromise.then(scheduleCurrentBrowserLocation);
+      return;
+    }
+    if (locationRouteTimer) clearTimeout(locationRouteTimer);
+    locationRouteTimer = setTimeout(() => {
+      locationRouteTimer = null;
+      applyCurrentBrowserLocation();
+    }, 0);
+  }
+
+  function initializeRouting(documentsReady) {
+    initialRouteReadyPromise = Promise.resolve().then(() =>
+      locationRef.hash || locationRef.pathname === "/"
+        ? openInitialRoute()
+        : documentsReady.then(openInitialRoute),
+    );
+    initialRouteReadyPromise.then(() => {
+      initialRouteReady = true;
+    });
+    return initialRouteReadyPromise;
+  }
+
+  return {
+    applyWorkspaceRoute,
+    beginDocumentNavigation,
+    getActiveWorkspaceRoute,
+    getActiveWorkspaceRouteToken,
+    getPendingLegacyRoute,
+    getWorkspaceEntityState,
+    initializeRouting,
+    isWorkspaceRouteFresh,
+    navigateCanonicalWorkspace,
+    scheduleCurrentBrowserLocation,
+    setWorkspaceEntityState,
+  };
+}

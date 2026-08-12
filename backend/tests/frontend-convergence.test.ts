@@ -13,6 +13,15 @@ const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
 const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
 const workspace = readFileSync(path.join(frontendRoot, 'src', 'core', 'workspace.js'), 'utf8');
+const shellModules = [
+  'api.js',
+  'feedback.js',
+  'preferences.js',
+  'account.js',
+  'notifications.js',
+  'navigation.js',
+  'bootstrap.js',
+];
 const financeModules = [
   'index.js',
   'bookkeeping.js',
@@ -90,6 +99,7 @@ describe('one canonical frontend', () => {
     assert.match(css.body, /\.operations-home/);
 
     for (const modulePath of [
+      ...shellModules.map((file) => `/src/shell/${file}`),
       '/src/core/workspace.js',
       ...financeModules.map((file) => `/src/surfaces/finance/${file}`),
       '/src/surfaces/home.js',
@@ -134,6 +144,7 @@ describe('one canonical frontend', () => {
       'index.html',
       'src/app.js',
       'src/styles.css',
+      ...shellModules.map((file) => `src/shell/${file}`),
       'src/core/workspace.js',
       ...financeModules.map((file) => `src/surfaces/finance/${file}`),
       'src/surfaces/home.js',
