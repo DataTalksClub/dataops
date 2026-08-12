@@ -106,13 +106,25 @@ They intentionally follow the Course Management Platform names where practical.
 - Use a persistent 268px sidebar and one main page canvas.
 - The sidebar shows the product mark, workspace name, search, and a short
   primary navigation list.
-- Primary navigation is `Today`, `Inbox`, `Workflows`, `Sponsors`, and
-  `Process Docs`. Lower-frequency areas live behind a labelled `More` control.
+- Primary navigation is `Today`, `Inbox`, `Workflows`, `Newsletter`,
+  `Calendar`, `Sponsors`, and `Process Docs`. These daily planning surfaces
+  remain visible and must not move behind `More`. Lower-frequency operational
+  areas such as Bookkeeping and Mailing exports live behind a labelled `More`
+  control.
 - Use icon plus text navigation rows, not icon-only navigation.
-- The selected row uses the accent-soft background and accent text.
+- The selected row uses one accent-soft background with accent text and icon.
+  Never add a left border, inset stripe, colored rail, or other edge accent to
+  selected navigation. One selection signal is enough and keeps the navigation
+  calm in both themes.
 - The top toolbar owns global actions such as notifications, help, identity,
   and settings. Page-specific editor controls appear only on pages that need
   them.
+- The global sidebar is navigation-only on every route. Never append a process
+  document tree, document filters, pending changes, recent documents, or a
+  `New process doc` control below it.
+- Process Docs is a separate main-canvas view. Its library, search/filter
+  controls, document tree or list, pending state, editor, and creation actions
+  belong inside that view—not inside the global sidebar.
 - Home Settings does not expose Process Docs Git/review tools. Those controls
   remain contextual to the knowledge workspace.
 - Collapsing the sidebar must leave a visible, keyboard-operable restore
@@ -150,8 +162,8 @@ system.
 - Lead with the human calendar date and content-width `New task` / `Start
   workflow` actions.
 - Show Overdue, Due today, and Waiting as one compact segmented strip.
-- Center one 900px `Needs your attention` container in the main canvas, aligned
-  with the daily header and summary strip.
+- Center one CMP-standard `56rem` (896px) `Needs your attention` container in
+  the main canvas, aligned with the daily header and summary strip.
 - Cap the visible queue at six rows and link to the complete work queue.
 - Order once by priority: overdue, follow-up due, due today, missing proof;
   then by applicable date and stable title.

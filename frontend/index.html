@@ -38,22 +38,22 @@
           <button id="operations-home-button" class="workspace-nav-button is-active" type="button" data-workspace-view="home"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span><span>Today</span></button>
           <button id="inbox-nav-button" class="workspace-nav-button" type="button" data-workspace-view="inbox"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 5 2-2h12l2 2v15H4Z"/><path d="M4 14h5l2 3h2l2-3h5"/></svg></span><span>Inbox</span></button>
           <button id="tasks-nav-button" class="workspace-nav-button" type="button" data-workspace-view="tasks" data-workspace-target="workflows"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v4l6 3m6-7v4l-6 3"/></svg></span><span>Workflows</span></button>
+          <button id="newsletter-nav-button" class="workspace-nav-button" type="button" data-workspace-view="newsletter"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>Newsletter</span></button>
+          <button id="calendar-nav-button" class="workspace-nav-button" type="button" data-workspace-view="calendar"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/></svg></span><span>Calendar</span></button>
           <button id="sponsors-nav-button" class="workspace-nav-button" type="button" data-workspace-view="sponsors"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6m1-6c3 0 5 2 5 5"/></svg></span><span>Sponsors</span></button>
           <button id="docs-nav-button" class="workspace-nav-button" type="button" data-workspace-view="docs"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span><span>Process Docs</span></button>
           <button id="home-more-nav-button" class="workspace-nav-button home-more-nav" type="button" aria-expanded="false"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span><span>More</span></button>
           <button id="bookkeeping-nav-button" class="workspace-nav-button home-secondary-nav" type="button" data-workspace-view="bookkeeping">Bookkeeping</button>
-          <button id="newsletter-nav-button" class="workspace-nav-button home-secondary-nav" type="button" data-workspace-view="newsletter">Newsletter</button>
-          <button id="calendar-nav-button" class="workspace-nav-button home-secondary-nav" type="button" data-workspace-view="calendar">Calendar</button>
           <button id="mailing-exports-nav-button" class="workspace-nav-button home-secondary-nav" type="button" data-workspace-view="mailing-exports">Mailing exports</button>
         </nav>
 
-        <button id="new-document-button" class="new-page-button admin-create-button" type="button">+ New process doc</button>
+        <button id="new-document-button" class="new-page-button admin-create-button docs-sidebar-only" type="button">+ New process doc</button>
 
         <form id="search-form" class="search-form">
           <input id="search-input" type="search" autocomplete="off" placeholder="Search work and docs">
         </form>
 
-        <details id="filters-section" class="sidebar-details filters-section">
+        <details id="filters-section" class="sidebar-details filters-section docs-sidebar-only">
           <summary>
             <span>Search filters</span>
             <span id="filter-count" class="filter-count" hidden></span>
@@ -90,7 +90,7 @@
           </div>
         </details>
 
-        <section class="tree-section" aria-label="Document tree">
+        <section class="tree-section docs-sidebar-only" aria-label="Document tree">
           <div class="section-label tree-label-row">
             <span>Processes</span>
           </div>
@@ -104,7 +104,7 @@
           <div id="doc-tree" class="doc-tree"></div>
         </section>
 
-        <section id="changes-section" class="changes-section" aria-label="Pending changes" hidden>
+        <section id="changes-section" class="changes-section docs-sidebar-only" aria-label="Pending changes" hidden>
           <button id="changes-toggle" class="changes-toggle" type="button" aria-expanded="true">
             <span class="changes-toggle-label">Pending changes</span>
             <span id="changes-count" class="changes-count">0</span>
@@ -116,7 +116,7 @@
           </div>
         </section>
 
-        <details class="sidebar-details">
+        <details class="sidebar-details docs-sidebar-only">
           <summary>Recent</summary>
           <section id="pinned-section" class="recent-section pinned-section" aria-label="Pinned" hidden>
             <div class="section-label">Pinned</div>

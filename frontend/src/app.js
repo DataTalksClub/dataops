@@ -1351,9 +1351,8 @@ function renderTasksSubNav(activeSection) {
   return nav;
 }
 
-// Docs tab: the library surface. The doc tree (sidebar) is the primary nav
-// here; the Processes/reference landing renders as the main content when no
-// document or folder is selected, and search results fold in in-context.
+// Process Docs owns a separate main-canvas surface. The global sidebar remains
+// navigation-only; library, filtering, creation, and editor tools belong here.
 function renderDocsSurface(documents) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
