@@ -37,13 +37,13 @@ describe('production portal bookkeeping frontend', () => {
   });
 
   it('serves the complete bookkeeping operator surface and responsive styles', async () => {
-    const app = await invoke('/src/app.js');
+    const finance = await invoke('/src/surfaces/finance.js');
     const css = await invoke('/src/styles.css');
-    assert.equal(app.statusCode, 200);
-    for (const marker of ['renderBookkeepingSurface', '/transactions', '/documents/prepare', '/complete', 'idempotencyKey', 'runId', 'crypto.subtle.digest', '/accounts/setup', '/reports/snapshot', 'data-unlink', 'missingEvidence']) assert.ok(app.body.includes(marker), marker);
-    assert.ok(!app.body.includes('/documents/upload'), 'retired non-atomic upload route must stay absent');
+    assert.equal(finance.statusCode, 200);
+    for (const marker of ['renderBookkeepingSurface', '/transactions', '/documents/prepare', '/complete', 'idempotencyKey', 'runId', 'crypto.subtle.digest', '/accounts/setup', '/reports/snapshot', 'data-unlink', 'missingEvidence']) assert.ok(finance.body.includes(marker), marker);
+    assert.ok(!finance.body.includes('/documents/upload'), 'retired non-atomic upload route must stay absent');
     assert.equal(css.statusCode, 200);
     assert.match(css.body, /\.bookkeeping-surface/);
-    assert.match(css.body, /@media \(max-width: 720px\)/);
+    assert.match(css.body, /@media \(max-width: 820px\)/);
   });
 });

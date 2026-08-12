@@ -14,6 +14,8 @@ const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
 const routing = readFileSync(path.join(frontendRoot, 'src', 'core', 'routing.js'), 'utf8');
 const workModel = readFileSync(path.join(frontendRoot, 'src', 'core', 'work-model.js'), 'utf8');
+const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance.js'), 'utf8');
+const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
 const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
 
@@ -39,7 +41,12 @@ describe('one canonical frontend', () => {
     assert.match(css.headers?.['Content-Type'] || '', /text\/css/);
     assert.match(css.body, /\.operations-home/);
 
-    for (const modulePath of ['/src/core/routing.js', '/src/core/work-model.js']) {
+    for (const modulePath of [
+      '/src/core/routing.js',
+      '/src/core/work-model.js',
+      '/src/surfaces/finance.js',
+      '/src/surfaces/planning.js',
+    ]) {
       const module = await handler({ httpMethod: 'GET', path: modulePath }, {});
       assert.strictEqual(module.statusCode, 200);
       assert.match(module.headers?.['Content-Type'] || '', /javascript/);
@@ -76,6 +83,8 @@ describe('one canonical frontend', () => {
       'src/styles.css',
       'src/core/routing.js',
       'src/core/work-model.js',
+      'src/surfaces/finance.js',
+      'src/surfaces/planning.js',
     ]);
     assert.match(backendPackage.scripts.build, /copy-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
     assert.match(backendPackage.scripts.build, /verify-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
@@ -98,12 +107,13 @@ describe('one canonical frontend', () => {
       'requiredLinkName',
       'openBundlePanel',
       'updateBundleStage',
-      'renderBookkeepingSurface',
-      'PDF evidence',
-      'monthly package',
-      'renderNewsletterSurface',
-      'renderCalendarSurface',
     ]) assert.ok(app.includes(marker), `canonical app is missing ${marker}`);
+    for (const marker of ['renderBookkeepingSurface', 'PDF evidence', 'monthly package']) {
+      assert.ok(finance.includes(marker), `finance surface is missing ${marker}`);
+    }
+    for (const marker of ['renderNewsletterSurface', 'renderCalendarSurface']) {
+      assert.ok(planning.includes(marker), `planning surface is missing ${marker}`);
+    }
     assert.match(workModel, /function taskRequiresApprovedArtifact/);
     assert.match(styles, /\.bundle-checklist/);
     assert.match(styles, /\.bookkeeping-surface/);
@@ -122,7 +132,8 @@ describe('one canonical frontend', () => {
       'prepare-assistant',
       'archive',
     ]) assert.ok(app.includes(marker), `Inbox is missing ${marker}`);
-    assert.match(styles, /\.intake-layout/);
+    assert.match(app, /className = "intake-layout"/);
+    assert.match(styles, /\.ops-surface,/);
   });
 
   it('provides the full assistant lifecycle in the canonical shell', () => {
@@ -138,7 +149,8 @@ describe('one canonical frontend', () => {
       'cancel',
       'output artifacts',
     ]) assert.ok(app.toLowerCase().includes(marker.toLowerCase()), `Assistant UI is missing ${marker}`);
-    assert.match(styles, /\.assistant-layout/);
+    assert.match(app, /className = "assistant-layout"/);
+    assert.match(styles, /\.assistant-card,/);
   });
 
   it('provides schema-complete runtime-template administration', () => {
@@ -156,8 +168,9 @@ describe('one canonical frontend', () => {
       'expectedVersion',
       'template_in_use',
     ]) assert.ok(app.includes(marker), `Runtime template UI is missing ${marker}`);
-    assert.match(styles, /\.runtime-template-json/);
-    assert.match(styles, /\.runtime-task-card/);
+    assert.match(app, /className = "runtime-template-json"/);
+    assert.match(app, /className = "runtime-task-card"/);
+    assert.match(styles, /\.ops-section,/);
     assert.match(styles, /:focus-visible/);
   });
 });
