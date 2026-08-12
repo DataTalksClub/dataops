@@ -1094,7 +1094,8 @@ function renderHomeStatusStrip(model) {
     item.className = `home-status-item home-status-${stat.id}`;
     item.dataset.state = stat.loaded ? "ready" : "unavailable";
     const label = document.createElement("span");
-    label.textContent = stat.label;
+    label.className = "home-status-label";
+    label.innerHTML = `${homeStatusIcon(stat.id)}<span>${stat.label}</span>`;
     const value = document.createElement("strong");
     value.textContent = stat.loaded ? String(stat.value) : "—";
     if (!stat.loaded) value.setAttribute("aria-label", `${stat.label} unavailable`);
@@ -1102,6 +1103,16 @@ function renderHomeStatusStrip(model) {
     summary.append(item);
   }
   return summary;
+}
+
+function homeStatusIcon(id) {
+  if (id === "overdue") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5M12 17h.01"/></svg>';
+  }
+  if (id === "waiting") {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9v6M14.5 9v6"/></svg>';
+  }
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 }
 
 function renderHomeAttentionQueue(model) {

@@ -141,7 +141,8 @@ system.
 - Lead with the human calendar date and content-width `New task` / `Start
   workflow` actions.
 - Show Overdue, Due today, and Waiting as one compact segmented strip.
-- Center one 820px `Needs your attention` container in the main canvas.
+- Center one 900px `Needs your attention` container in the main canvas, aligned
+  with the daily header and summary strip.
 - Cap the visible queue at six rows and link to the complete work queue.
 - Order once by priority: overdue, follow-up due, due today, missing proof;
   then by applicable date and stable title.
@@ -278,4 +279,3 @@ operator's decision. Do not add a pill to every row by default.
 - Reference implementation tokens/components:
   `../course-management-platform/courses/static/courses.css`
 - Interaction baseline: GitHub Primer, without GitHub branding
-

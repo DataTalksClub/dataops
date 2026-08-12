@@ -294,13 +294,25 @@ body.sidebar-collapsed .sidebar {
 }
 
 .sidebar-toggle-button {
-  min-width: 44px;
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
   min-height: 36px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+.sidebar-toggle-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sidebar-toggle-button:hover {
@@ -389,6 +401,13 @@ body.sidebar-collapsed .sidebar {
 
 body.home-more-open .home-secondary-nav {
   display: flex;
+}
+
+.home-secondary-nav {
+  min-height: 36px;
+  padding-left: 44px;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .home-more-nav {
@@ -590,12 +609,13 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   display: grid;
   width: 100%;
   gap: 24px;
+  justify-items: center;
 }
 
 .home-daily-header,
 .home-status-strip,
 .ops-runtime-state {
-  width: min(820px, 100%);
+  width: min(900px, 100%);
 }
 
 .home-daily-header {
@@ -688,6 +708,30 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   font-weight: 600;
 }
 
+.home-status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-status-label svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.home-status-overdue .home-status-label {
+  color: var(--danger-text);
+}
+
+.home-status-waiting .home-status-label {
+  color: var(--warning-text);
+}
+
 .home-status-item strong {
   color: var(--accent);
   font-size: 18px;
@@ -707,7 +751,7 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 }
 
 .home-attention {
-  width: min(820px, 100%);
+  width: min(900px, 100%);
   justify-self: center;
   overflow: hidden;
   border: 1px solid var(--border-muted);
@@ -748,7 +792,7 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 
 .home-attention-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1.25fr) minmax(100px, 0.62fr) minmax(112px, 0.7fr) auto;
+  grid-template-columns: 28px minmax(0, 1.45fr) minmax(130px, 0.7fr) minmax(112px, 0.65fr) auto;
   gap: 12px;
   align-items: center;
   min-height: 76px;
@@ -821,10 +865,13 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 .home-task-content strong {
   overflow: hidden;
   color: var(--text-heading);
+  display: -webkit-box;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.35;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .home-task-workflow,
@@ -1274,6 +1321,15 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 
   .home-status-item span {
     font-size: 13px;
+  }
+
+  .home-status-label {
+    gap: 5px;
+  }
+
+  .home-status-label svg {
+    width: 18px;
+    height: 18px;
   }
 
   .home-attention {
