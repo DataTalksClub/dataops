@@ -4,12 +4,18 @@ import {
   loadMailingExportConfigs,
   publicMailingExportConfigs,
   runMailingExport,
+  type MailingExportDependencies,
 } from '../mailingExports/service';
 import type { MailingExportJob } from '../mailingExports/types';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const headers = { 'Content-Type': 'application/json' };
 const response = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers, body: JSON.stringify(body) });
+let mailingExportDependencies: MailingExportDependencies = {};
+
+export function setMailingExportDependenciesForTests(dependencies: MailingExportDependencies): void {
+  mailingExportDependencies = dependencies;
+}
 
 function publicJob(job: MailingExportJob): Omit<MailingExportJob, 'leaseOwner' | 'leaseExpiresAt'> {
   const { leaseOwner: _leaseOwner, leaseExpiresAt: _leaseExpiresAt, ...safe } = job;
@@ -29,7 +35,7 @@ export async function handleMailingExportRoutes(path: string, method: string, ev
     if (!config) return response(404, { error: 'Mailing export configuration not found' });
     const runKey = typeof body.runKey === 'string' && body.runKey ? body.runKey : new Date().toISOString().slice(0, 10);
     if (runKey.length > 120 || !/^[a-zA-Z0-9._:-]+$/.test(runKey)) return response(400, { error: 'runKey must use 1-120 letters, numbers, dot, colon, underscore, or dash' });
-    const job = await runMailingExport(client, config, runKey);
+    const job = await runMailingExport(client, config, runKey, mailingExportDependencies);
     return response(job.status === 'failed' ? 502 : job.status === 'completed' ? 200 : 202, { export: publicJob(job) });
   }
   return null;

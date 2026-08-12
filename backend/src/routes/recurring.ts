@@ -9,9 +9,44 @@ import {
   listRecurringConfigs,
   generateRecurringTasks,
 } from '../db/recurring';
-import type { LambdaResponse } from '../types';
+import { getUser } from '../db/users';
+import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
+
+function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
+  if (!headers) return '';
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  return match ? String(match[1]) : '';
+}
+
+async function requireRecurringAdmin(
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse | null> {
+  // Unit-level API tests deliberately bypass authentication. Real routed
+  // requests receive x-user-id only after the router verifies a session or
+  // trusted portal request, so browser-supplied identity headers cannot grant
+  // this permission.
+  if (process.env.NODE_ENV === 'test' && process.env.SKIP_AUTH === 'true') return null;
+  const actorId = headerValue(event.headers, 'x-user-id');
+  const actor = actorId ? await getUser(client, actorId) : null;
+  if (!actor || actor.disabled) {
+    return {
+      statusCode: 401,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Unauthorized' }),
+    };
+  }
+  if (actor.role !== 'admin') {
+    return {
+      statusCode: 403,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Admin access required' }),
+    };
+  }
+  return null;
+}
 
 /**
  * Validate that a cron expression has exactly 5 space-separated fields.
@@ -64,7 +99,7 @@ function validateRecurringData(body: Record<string, unknown>, isUpdate: boolean)
 /**
  * Handle all /api/recurring routes.
  */
-async function handleRecurringRoutes(path: string, method: string, rawBody: string | null): Promise<LambdaResponse | null> {
+async function handleRecurringRoutes(path: string, method: string, rawBody: string | null, event: LambdaEvent): Promise<LambdaResponse | null> {
   if (!path.startsWith('/api/recurring')) {
     return null;
   }
@@ -81,14 +116,14 @@ async function handleRecurringRoutes(path: string, method: string, rawBody: stri
 
     // Route: /api/recurring (collection)
     if (suffix === '' || suffix === '/') {
-      return await handleCollection(method, rawBody, client);
+      return await handleCollection(method, rawBody, client, event);
     }
 
     // Route: /api/recurring/:id
     const idMatch = suffix.match(/^\/([^/]+)\/?$/);
     if (idMatch) {
       const id = idMatch[1];
-      return await handleSingle(method, id, rawBody, client);
+      return await handleSingle(method, id, rawBody, client, event);
     }
 
     // No match within /api/recurring
@@ -110,7 +145,12 @@ async function handleRecurringRoutes(path: string, method: string, rawBody: stri
 /**
  * Handle /api/recurring collection routes (GET list, POST create).
  */
-async function handleCollection(method: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleCollection(
+  method: string,
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
   if (method === 'GET') {
     const recurringConfigs = await listRecurringConfigs(client);
     return {
@@ -121,6 +161,9 @@ async function handleCollection(method: string, rawBody: string | null, client: 
   }
 
   if (method === 'POST') {
+    const denied = await requireRecurringAdmin(event, client);
+    if (denied) return denied;
+
     let body: Record<string, unknown>;
     try {
       body = JSON.parse(rawBody!);
@@ -167,7 +210,13 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 /**
  * Handle /api/recurring/:id single resource routes (GET, PUT, DELETE).
  */
-async function handleSingle(method: string, id: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleSingle(
+  method: string,
+  id: string,
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
   if (method === 'GET') {
     const recurringConfig = await getRecurringConfig(client, id);
     if (!recurringConfig) {
@@ -185,6 +234,9 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
   }
 
   if (method === 'PUT') {
+    const denied = await requireRecurringAdmin(event, client);
+    if (denied) return denied;
+
     let body: Record<string, unknown>;
     try {
       body = JSON.parse(rawBody!);
@@ -249,6 +301,9 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
   }
 
   if (method === 'DELETE') {
+    const denied = await requireRecurringAdmin(event, client);
+    if (denied) return denied;
+
     const existing = await getRecurringConfig(client, id);
     if (!existing) {
       return {

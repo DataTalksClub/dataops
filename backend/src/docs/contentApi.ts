@@ -73,6 +73,7 @@ export const DOCS_ROUTE_PREFIXES = [
   '/parse',
   '/health',
   '/search',
+  '/git',
 ] as const;
 
 export type DocsRoutePrefix = (typeof DOCS_ROUTE_PREFIXES)[number];
@@ -234,7 +235,11 @@ async function dispatch(event: LambdaEvent, path: string): Promise<LambdaRespons
 
   if (path === '/health') return jsonResponse(200, { ok: true });
   if (path === '/search') return search(rt, event);
+  if (path === '/git/status' && m === 'GET') return gitStatus();
+  if (path === '/git/log' && m === 'GET') return gitLog(queryParam(event, 'path'));
+  if (path.startsWith('/git/')) return jsonResponse(405, { error: 'Git mutations are unavailable' });
 
+  if (path === '/docs/process-quality' && m === 'GET') return processQuality(rt);
   if (path === '/docs/registry' && m === 'GET') return getDocRegistry(rt);
   if (path === '/docs/resolve' && m === 'GET') return resolveDoc(rt, queryParam(event, 'ref'));
   if (path === '/docs/backlinks' && m === 'GET') return listBacklinks(rt, queryParam(event, 'path'));
@@ -430,6 +435,71 @@ async function runCorpusLint(rt: DocsRuntime): Promise<LambdaResponse> {
   }
   const totalViolations = results.reduce((sum, doc) => sum + doc.violations.length, 0);
   return jsonResponse(200, { docs: results, total_violations: totalViolations });
+}
+
+async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
+  await rt.ensureSynced();
+  const findings: Record<string, unknown>[] = [];
+  const validationErrors: string[] = [];
+  try {
+    buildRegistry(rt.contentRoot);
+  } catch (error) {
+    validationErrors.push((error as Error).message);
+  }
+  for (const file of collectMarkdown(rt.contentRoot).sort()) {
+    const text = readFileSync(file, 'utf-8');
+    if (!text.includes('schema_version: 1')) continue;
+    const path = repoRelative(rt.repoRoot, file);
+    let violations: string[];
+    try {
+      violations = lintText(text);
+    } catch (error) {
+      violations = [`lint failed: ${(error as Error).message}`];
+    }
+    for (const [index, violation] of violations.entries()) {
+      findings.push({
+        id: `docs-lint:${path}:${index + 1}`,
+        category: 'process-doc',
+        severity: 'warning',
+        title: 'Process document needs attention',
+        summary: violation,
+        source: 'local docs validation',
+        nextAction: 'open doc',
+        status: 'open',
+        docPath: path,
+      });
+    }
+  }
+  const warning = findings.length;
+  return jsonResponse(200, {
+    ok: validationErrors.length === 0 && warning === 0,
+    findings,
+    summary: { total: warning, blocking: 0, warning, info: 0, byCategory: warning ? { 'process-doc': warning } : {} },
+    validationErrors,
+  });
+}
+
+function gitStatus(): LambdaResponse {
+  return jsonResponse(200, {
+    ok: false,
+    available: false,
+    error: 'Git diagnostics are unavailable in the packaged runtime',
+    branch: 'unavailable',
+    count: 0,
+    files: [],
+    readOnly: true,
+  });
+}
+
+function gitLog(path: string | null): LambdaResponse {
+  return jsonResponse(200, {
+    ok: false,
+    available: false,
+    error: 'Git history is unavailable in the packaged runtime',
+    path: path || '',
+    commits: [],
+    readOnly: true,
+  });
 }
 
 function parseContent(body: Record<string, unknown>): LambdaResponse {

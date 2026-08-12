@@ -19,6 +19,7 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(warmUp.statusCode, 200);
     const client = await getClient();
     await createUserWithId(client, 'ops-manager', { name: 'Ops Manager', email: 'ops-manager@datatalks.club', role: 'operator' });
+    await createUserWithId(client, 'ops-admin', { name: 'Ops Admin', email: 'ops-admin@datatalks.club', role: 'admin' });
     await createUserWithId(client, 'legacy-user', { name: 'Legacy client', email: 'legacy@datatalks.club', role: 'operator' });
   });
 
@@ -414,7 +415,7 @@ describe('Portal broker authentication', () => {
     assert.deepStrictEqual(updatedBundle.bundleLinks, [{ name: 'Podcast doc', url: 'https://example.com/doc' }]);
     assert.deepStrictEqual(updatedBundle.references, [{ name: 'Guest notes', url: 'https://example.com/notes' }]);
 
-    const createRecurringResponse = await handler(
+    const deniedRecurringResponse = await handler(
       {
         httpMethod: 'POST',
         path: '/api/recurring',
@@ -424,6 +425,22 @@ describe('Portal broker authentication', () => {
           enabled: true,
         }),
         headers,
+      },
+      {},
+    );
+    assert.strictEqual(deniedRecurringResponse.statusCode, 403);
+
+    const adminHeaders = { ...headers, 'x-user-id': 'ops-admin' };
+    const createRecurringResponse = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/recurring',
+        body: JSON.stringify({
+          description: `Portal recurring ${suffix}`,
+          cronExpression: '0 9 * * *',
+          enabled: true,
+        }),
+        headers: adminHeaders,
       },
       {},
     );

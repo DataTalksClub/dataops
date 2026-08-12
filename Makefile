@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -86,12 +86,16 @@ sam-validate: sam-local-aws-config
 sam-build:
 	sam build --config-env full-sandbox
 
+verify-sam-frontend:
+	node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
+
 ci:
 	$(MAKE) test-backend
 	$(MAKE) typecheck-backend
 	$(MAKE) build-backend
 	$(MAKE) sam-validate
 	$(MAKE) sam-build
+	$(MAKE) verify-sam-frontend
 
 clean:
 	rm -f .tmp/dataops-content-search.index

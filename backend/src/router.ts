@@ -1276,7 +1276,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Recurring routes ───────────────────────────────────────────
 
     if (reqPath.startsWith('/api/recurring')) {
-      const result = await handleRecurringRoutes(reqPath, method, event.body || null);
+      const result = await handleRecurringRoutes(reqPath, method, event.body || null, event);
       if (result) return result;
     }
 

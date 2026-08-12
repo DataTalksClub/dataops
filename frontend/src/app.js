@@ -835,7 +835,7 @@ async function refreshDocuments() {
 
 async function loadUnifiedWorkSearch(query, signal) {
   const definitions = [
-    { source: "tasks", path: "/api/tasks", items: tasksFromWorkPayload, type: "task" },
+    { source: "tasks", path: "/api/tasks?startDate=2000-01-01&endDate=2100-12-31", items: tasksFromWorkPayload, type: "task" },
     { source: "workflows", path: "/api/bundles", items: bundlesFromWorkPayload, type: "workflow" },
     { source: "templates", path: "/api/templates", items: (payload) => Array.isArray(payload) ? payload : payload?.templates || [], type: "template" },
     { source: "artifacts", path: "/api/artifacts", items: (payload) => Array.isArray(payload) ? payload : payload?.artifacts || [], type: "artifact" },
@@ -1085,6 +1085,11 @@ function renderOperationsHome(documents) {
   lanes.setAttribute("aria-label", "Needs your action");
   lanes.append(renderOperationsLane(actionLane));
   wrap.append(lanes);
+
+  // Keep the existing process-quality drill-down reachable from Home. The
+  // report is read-only and comes from the authenticated local docs seam; it
+  // must never be replaced by fabricated findings when that feed is down.
+  wrap.append(renderProcessQualityHomeSection(model.quality));
 
   documentList.replaceChildren(wrap);
 }
@@ -2699,7 +2704,7 @@ async function renderBookkeepingSurface() {
   async function refreshEvidence() {
     const [docResult, linkResult, accountResult] = await Promise.all([api("/documents"),api("/links"),api("/accounts")]); documents=docResult.items||[];links=linkResult.items||[];
     surface.querySelector("[data-account]").innerHTML = `<option value="">No account</option>${(accountResult.items||[]).map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.displayName)} (${escapeHtml(a.kind)})</option>`).join("")}`;
-    surface.querySelector(".bookkeeping-documents").innerHTML = documents.length ? documents.map(d=>`<article><strong>${escapeHtml(d.originalFilename)}</strong> <span>${escapeHtml(d.documentType)}</span> <button data-download="${escapeHtml(d.id)}">Download</button>${links.filter(l=>l.documentId===d.id).map(l=>` <button data-unlink="${escapeHtml(l.id)}">Unlink ${escapeHtml(String(l.transactionId).slice(0,8))}</button>`).join("")}</article>`).join("") : "No private documents uploaded.";
+    surface.querySelector(".bookkeeping-documents").innerHTML = documents.length ? documents.map(d=>`<article><strong>${escapeHtml(d.originalFilename || "Private PDF")}</strong> <span>${escapeHtml(d.documentType)}</span> <button data-download="${escapeHtml(d.id)}">Download</button>${links.filter(l=>l.documentId===d.id).map(l=>` <button data-unlink="${escapeHtml(l.id)}">Unlink ${escapeHtml(String(l.transactionId).slice(0,8))}</button>`).join("")}</article>`).join("") : "No private documents uploaded.";
     const privateStatements=documents.filter(d=>d.documentType==="private-account-statement");surface.querySelector("[data-private-statements]").innerHTML=privateStatements.length?privateStatements.map(d=>`<label><input type="checkbox" value="${escapeHtml(d.id)}"> ${escapeHtml(d.originalFilename)}</label>`).join(""):"No eligible private statements.";
   }
   try { const result=await api("/transactions");entries=result.items||[];const years=[...new Set(entries.map(e=>e.transactionDate.slice(0,4)))].sort().reverse();surface.querySelector('[data-filter="year"]').insertAdjacentHTML("beforeend",years.map(y=>`<option>${y}</option>`).join(""));surface.querySelector("[data-transaction]").insertAdjacentHTML("beforeend",entries.map(e=>`<option value="${escapeHtml(e.id)}">${escapeHtml(`${e.transactionDate} · ${e.counterparty}`)}</option>`).join(""));renderLedger();await refreshEvidence();} catch (error) { ledger.textContent=`Could not load bookkeeping: ${error.message}`;surface.querySelector(".bookkeeping-documents").textContent="Could not load private documents.";status.textContent="Retry by reopening Bookkeeping."; }
@@ -2710,7 +2715,7 @@ async function renderBookkeepingSurface() {
   surface.querySelector("[data-save]").addEventListener("click",event=>{event.preventDefault();safeAction(async()=>{const data=Object.fromEntries([...new FormData(form)].filter(([,v])=>v!==""));const missing=["transactionDate","counterparty","description","amount","currency"].find(k=>!data[k]);if(missing){const field=form.elements[missing];field.setAttribute("aria-invalid","true");field.focus();surface.querySelector("[data-form-error]").textContent=`${({transactionDate:"Transaction date",counterparty:"Provider / payee",description:"Description",amount:"Amount",currency:"Currency"})[missing]} is required.`;return;}data.currency=data.currency.toUpperCase();const id=form.elements.id.value;const saved=await api(`/transactions${id?`/${id}`:""}`,{method:id?"PUT":"POST",body:JSON.stringify(data)});entries=id?entries.map(e=>e.id===id?saved:e):[saved,...entries];entryDialog.close();renderLedger();},"Could not save entry");});
   surface.querySelector("[data-delete-cancel]").addEventListener("click",()=>surface.querySelector(".bookkeeping-delete-dialog").close());surface.querySelector("[data-delete-confirm]").addEventListener("click",()=>safeAction(async()=>{const dialog=surface.querySelector(".bookkeeping-delete-dialog");await api(`/transactions/${dialog.dataset.id}`,{method:"DELETE"});entries=entries.filter(e=>e.id!==dialog.dataset.id);dialog.close();renderLedger();},"Could not delete entry"));
   surface.querySelector("[data-setup-accounts]").addEventListener("click",()=>safeAction(async()=>{const result=await api("/accounts/setup",{method:"POST"});status.textContent=`${result.accounts.length} business accounts ready.`;await refreshEvidence();},"Could not set up accounts"));
-  surface.querySelector("[data-upload]").addEventListener("click",()=>safeAction(async()=>{const file=surface.querySelector("[data-pdf]").files[0];if(!file){status.textContent="Choose a PDF first.";return;}const prepared=await api("/documents/upload",{method:"POST",body:JSON.stringify({filename:file.name,contentType:file.type,byteSize:file.size,documentType:surface.querySelector("[data-document-type]").value,accountId:surface.querySelector("[data-account]").value||undefined,statementMonth:surface.querySelector("[data-statement-month]").value||undefined})});const uploaded=await fetch(prepared.uploadUrl,{method:"PUT",headers:{"content-type":"application/pdf"},body:file});if(!uploaded.ok)throw new Error("Upload failed");const completed=await api(`/documents/${prepared.document.id}/complete`,{method:"POST"});const transactionId=surface.querySelector("[data-transaction]").value;if(transactionId)await api("/links",{method:"POST",body:JSON.stringify({documentId:completed.document.id,transactionId,coverageType:"evidence"})});status.textContent="PDF uploaded and verified.";await refreshEvidence();},"Could not upload PDF"));
+  surface.querySelector("[data-upload]").addEventListener("click",()=>safeAction(async()=>{const file=surface.querySelector("[data-pdf]").files[0];if(!file){status.textContent="Choose a PDF first.";return;}const bytes=await file.arrayBuffer(),sha256=[...new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))].map(value=>value.toString(16).padStart(2,"0")).join(""),runId=crypto.randomUUID(),idempotencyKey=crypto.randomUUID(),documentType=surface.querySelector("[data-document-type]").value;const ownership={idempotencyKey,runId};const prepared=await api("/documents/prepare",{method:"POST",body:JSON.stringify({sha256,byteSize:file.size,documentType,...ownership,sourceRef:`portal-${sha256.slice(0,24)}`,accountId:["bank-statement","private-account-statement"].includes(documentType)?surface.querySelector("[data-account]").value||undefined:undefined,statementMonth:["bank-statement","private-account-statement"].includes(documentType)?surface.querySelector("[data-statement-month]").value||undefined:undefined})});let completed=prepared;if(prepared.outcome!=="existing"){const uploaded=await fetch(prepared.uploadUrl,{method:"PUT",headers:prepared.uploadHeaders||{"content-type":"application/pdf"},body:file});if(!uploaded.ok)throw new Error("Upload failed");completed=await api(`/documents/${prepared.document.id}/complete`,{method:"POST",body:JSON.stringify(ownership)});}const transactionId=surface.querySelector("[data-transaction]").value;if(transactionId)await api("/links",{method:"POST",body:JSON.stringify({documentId:completed.document.id,transactionId,coverageType:"evidence"})});status.textContent=prepared.outcome==="existing"?"Matching PDF already verified.":"PDF uploaded and verified.";await refreshEvidence();},"Could not upload PDF"));
   surface.querySelector(".bookkeeping-documents").addEventListener("click",event=>safeAction(async()=>{const download=event.target.closest("[data-download]")?.dataset.download,unlink=event.target.closest("[data-unlink]")?.dataset.unlink;if(download){const result=await api(`/documents/${download}/download`);openPrivateDownload(result.downloadUrl);}if(unlink){await api(`/links/${unlink}`,{method:"DELETE"});await refreshEvidence();}},"Could not update document"));
   surface.querySelector("[data-report]").addEventListener("click",()=>safeAction(async()=>{const month=surface.querySelector("[data-report-month]").value;if(!month){status.textContent="Choose a report month.";return;}const privateDocumentIds=[...surface.querySelectorAll("[data-private-statements] input:checked")].map(input=>input.value);const snapshot=await api("/reports/snapshot",{method:"POST",body:JSON.stringify({month,privateDocumentIds})});status.textContent=snapshot.warnings?.missingEvidence?`${snapshot.warnings.missingEvidence} missing-evidence warning(s).`:"Snapshot ready.";const archive=await api(`/reports/${snapshot.report.id}/archive`,{method:"POST"});openPrivateDownload(archive.downloadUrl);},"Could not create monthly package"));
 }
@@ -4197,7 +4202,38 @@ function intakeMutationFeedback(item) {
 async function submitIntakeAction(panel, item, action) {
   if (intakeMutationState.busy) return;
   const details = panel.querySelector(`[data-intake-submit="${CSS.escape(action)}"]`)?.closest("details");
+  details.querySelectorAll("[aria-invalid]").forEach((field) => field.removeAttribute("aria-invalid"));
   const values = Object.fromEntries([...details.querySelectorAll("input,select,textarea")].map((field) => [field.name, field.value.trim()]));
+  const missing = [...details.querySelectorAll("input[required],select[required],textarea[required]")]
+    .find((field) => !values[field.name]);
+  if (missing) {
+    const labels = {
+      duplicateOfIntakeItemId: "Duplicate of",
+      reason: "Reason",
+      waitingFor: "Waiting for",
+      followUpAt: "Follow up",
+      note: "Operational note",
+      nextFollowUpAt: "Next follow-up",
+    };
+    intakeMutationState = {
+      itemId: item.id,
+      action,
+      values,
+      error: `${labels[missing.name] || "This field"} is required.`,
+      busy: false,
+      status: "",
+    };
+    missing.setAttribute("aria-invalid", "true");
+    const error = panel.querySelector("[data-intake-inline-error]");
+    if (error) {
+      error.classList.add("is-error");
+      error.setAttribute("role", "alert");
+      error.setAttribute("aria-live", "assertive");
+      error.textContent = intakeMutationState.error;
+    }
+    missing.focus();
+    return;
+  }
   intakeMutationState = { itemId: item.id, action, values, error: "", busy: true, status: "Saving…" };
   renderInboxSurface();
   const payloadByAction = {
@@ -4415,11 +4451,7 @@ function renderAdminSurface(model) {
   const cards = [
     ["New process doc", "Create SOPs, templates, references, and playbooks in the git-backed content tree.", showCreate],
     ["Recurring config", `${model.recurring.configs.length} configs loaded. Generated tasks appear in Home and Work Queue.`, () => showWorkspaceSurface("templates")],
-    ["Git/content tools", "Review, lint, pull, and publish controls live under the Settings dropdown.", () => {
-      closeWorkBellPanel();
-      openSettingsMenu();
-    }],
-    ["Diagnostics", "Runtime unavailable states are shown in-place. Production diagnostics stay out of the daily loop.", () => workBellButton.focus()],
+    ["Diagnostics", "Inspect local process quality and runtime availability without a mutation action.", () => section.querySelector(".ops-admin-diagnostics h3")?.focus()],
   ];
   for (const [title, body, action] of cards) {
     const card = document.createElement("button");
@@ -4433,6 +4465,31 @@ function renderAdminSurface(model) {
     card.addEventListener("click", action);
     section.append(card);
   }
+  const diagnostics = document.createElement("section");
+  diagnostics.className = "ops-section ops-admin-diagnostics";
+  diagnostics.setAttribute("aria-label", "Read-only diagnostics");
+  diagnostics.innerHTML = `<header><h3>Read-only diagnostics</h3><span>No pull, commit, publish, or provider action is available here.</span></header><article data-diagnostic="quality"><strong>Process quality</strong><span>Loading local validation…</span></article><article data-diagnostic="git-status"><strong>Git status</strong><span>Loading availability…</span></article><article data-diagnostic="git-history"><strong>Git history</strong><span>Loading availability…</span></article>`;
+  diagnostics.querySelector("h3").tabIndex = -1;
+  section.append(diagnostics);
+  const diagnosticText = (name, value) => {
+    const target = diagnostics.querySelector(`[data-diagnostic="${name}"] span`);
+    if (target && diagnostics.isConnected) target.textContent = value;
+  };
+  Promise.allSettled([
+    request(apiUrl("/docs/process-quality")),
+    request(apiUrl("/git/status")),
+    request(apiUrl("/git/log")),
+  ]).then(([quality, gitStatus, gitHistory]) => {
+    diagnosticText("quality", quality.status === "fulfilled"
+      ? `${quality.value.summary?.total || 0} finding(s); ${quality.value.validationErrors?.length || 0} validation error(s).`
+      : `Unavailable: ${quality.reason?.message || "request failed"}`);
+    diagnosticText("git-status", gitStatus.status === "fulfilled"
+      ? gitStatus.value.ok ? `${gitStatus.value.count || 0} changed file(s) on ${gitStatus.value.branch || "unknown"}.` : gitStatus.value.error || "Unavailable in this runtime."
+      : `Unavailable: ${gitStatus.reason?.message || "request failed"}`);
+    diagnosticText("git-history", gitHistory.status === "fulfilled"
+      ? gitHistory.value.available === false ? gitHistory.value.error || "Unavailable in this runtime." : `${gitHistory.value.commits?.length || 0} commit(s) returned.`
+      : `Unavailable: ${gitHistory.reason?.message || "request failed"}`);
+  });
   return section;
 }
 
@@ -5310,8 +5367,28 @@ function renderTaskPanel() {
 
   taskPanelBody.append(actions);
 
-  // History / comment
-  if (task.comment) {
+  // History / comment. New transitions use the backend's atomic task-action
+  // contract and return structured history; legacy comment history remains
+  // visible for records created before that contract.
+  const structuredHistory = Array.isArray(task.taskHistory)
+    ? task.taskHistory.map((event) => {
+      const labels = {
+        "waiting-started": `Marked waiting for ${event.waitingFor || "a response"}${event.followUpAt ? `; follow up ${String(event.followUpAt).slice(0, 10)}` : ""}`,
+        "follow-up-sent": `Follow-up sent${event.followUpAt ? `; next follow-up ${String(event.followUpAt).slice(0, 10)}` : ""}`,
+        "response-received": "Response received",
+        unblocked: "Task unblocked",
+        "wait-resolved": "Wait resolved",
+        completed: "Task completed",
+        reopened: "Task reopened",
+      };
+      const label = labels[event.action] || labelizeWorkValue(event.action || "updated");
+      const detail = event.note && event.note !== label ? ` — ${event.note}` : "";
+      return `[${event.createdAt || task.updatedAt || new Date().toISOString()}] ${label}${detail}`;
+    })
+    : [];
+  const legacyHistory = task.comment ? String(task.comment).split("\n").filter(Boolean) : [];
+  const historyLines = [...legacyHistory, ...structuredHistory];
+  if (historyLines.length) {
     const history = document.createElement("div");
     history.className = "task-history";
     const historyLabel = document.createElement("div");
@@ -5320,10 +5397,10 @@ function renderTaskPanel() {
     history.append(historyLabel);
     const list = document.createElement("div");
     list.className = "task-history-list";
-    for (const line of String(task.comment).split("\n").filter(Boolean)) {
+    for (const line of historyLines) {
       const event = document.createElement("div");
       event.className = "task-history-event";
-      event.append(formatHistoryLine(line));
+      event.append(...formatHistoryLine(line));
       list.append(event);
     }
     history.append(list);
@@ -5724,13 +5801,13 @@ async function markTaskWaiting(taskId) {
     return;
   }
   try {
-    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
-      method: "PUT",
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}/actions/mark-waiting`), {
+      method: "POST",
       body: JSON.stringify({
-        status: "waiting",
         waitingFor: waitingFor.trim(),
         followUpAt: followUp,
-        comment: appendTaskEventComment(activeTaskPanelTask?.comment || "", `Marked waiting for ${waitingFor.trim()}; follow up ${followUp}`),
+        channel: "portal",
+        note: "Marked waiting from the Task panel",
       }),
     });
     await refreshOperationsWorkSnapshot({ rerender: true });
@@ -5741,13 +5818,12 @@ async function markTaskWaiting(taskId) {
 }
 
 async function recordTaskResponseReceived(taskId) {
-  const existingNote = activeTaskPanelTask?.comment || "";
   try {
-    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
-      method: "PUT",
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}/actions/response-received`), {
+      method: "POST",
       body: JSON.stringify({
-        status: "todo",
-        comment: appendTaskEventComment(existingNote, "Response received"),
+        channel: "portal",
+        note: "Response received in the Task panel",
       }),
     });
     await refreshOperationsWorkSnapshot({ rerender: true });
@@ -5762,14 +5838,13 @@ async function recordTaskFollowUpSent(taskId, nextDate) {
     reportError("Choose the next follow-up date.");
     return;
   }
-  const existingNote = activeTaskPanelTask?.comment || "";
   try {
-    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
-      method: "PUT",
+    await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}/actions/follow-up-sent`), {
+      method: "POST",
       body: JSON.stringify({
-        status: "waiting",
-        followUpAt: nextDate,
-        comment: appendTaskEventComment(existingNote, `Follow-up sent; next follow-up ${nextDate}`),
+        nextFollowUpAt: nextDate,
+        channel: "portal",
+        note: "Follow-up sent from the Task panel",
       }),
     });
     await refreshOperationsWorkSnapshot({ rerender: true });
@@ -5777,12 +5852,6 @@ async function recordTaskFollowUpSent(taskId, nextDate) {
   } catch (err) {
     reportError(`Could not record follow-up: ${err.message || "request failed"}`);
   }
-}
-
-function appendTaskEventComment(existing, eventText) {
-  const stamp = new Date().toISOString();
-  const line = `[${stamp}] ${eventText}`;
-  return existing ? `${existing}\n${line}` : line;
 }
 
 // ---------- Bundle (workflow) detail panel ----------

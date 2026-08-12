@@ -2728,7 +2728,7 @@ test("workflows separate manual migration from guarded unchanged app deploy", ()
   );
   assert.equal(
     digest(deploy),
-    "4611d88891fcb3031a94b0140b7238686e6e68feb68824ac7332d1a71180b14c",
+    "80c0c53768c250da7ba1c3f958bc91b1b28291757d1d9e77d55c6c447fb47f48",
     "the ordinary application deployment workflow changed",
   );
   const deployJob = deploy.slice(deploy.indexOf("\n  deploy:\n"));

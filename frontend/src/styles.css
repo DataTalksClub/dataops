@@ -4725,7 +4725,7 @@ body[data-view="create"] #back-button {
 
   .mobile-topbar {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: 8px;
     align-items: center;
     height: var(--do-mobile-topbar-height);
@@ -4739,8 +4739,15 @@ body[data-view="create"] #back-button {
 
   .mobile-topbar .icon-button,
   .mobile-topbar .quiet-button {
+    min-width: var(--do-density-touch);
     min-height: var(--do-density-touch);
+    padding-inline: var(--do-space-2);
     font-size: var(--do-text-sm);
+  }
+
+  #mobile-menu-button,
+  #mobile-new-button {
+    width: auto;
   }
 
   body:not([data-view="library"]) .mobile-topbar {

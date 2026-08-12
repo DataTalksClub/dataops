@@ -12,7 +12,7 @@
  */
 
 import { Buffer } from 'node:buffer';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -107,17 +107,33 @@ function fileResponse(bytes: Buffer, contentType: string): LambdaResponse {
   };
 }
 
-function resolveUnder(root: string, rel: string): string | null {
-  if (rel.split('/').includes('..')) return null;
-  const target = resolve(root, rel);
-  if (target !== root && !target.startsWith(root + sep)) return null;
-  if (!existsSync(target) || !statSync(target).isFile()) return null;
-  return target;
+const DEPLOYED_FRONTEND_FILES = new Set(['index.html', 'src/app.js', 'src/styles.css']);
+const FORBIDDEN_BROWSER_NAMESPACES = new Set(['assets', 'frontend', 'pages', 'public', 'static', 'ui']);
+
+function resolveFrontendFile(root: string, rel: string): string | null {
+  const normalized = rel.replace(/\\/g, '/').replace(/^\/+/, '');
+  const parts = normalized.split('/');
+  if (!DEPLOYED_FRONTEND_FILES.has(normalized) || parts.includes('..') || parts.includes('')) return null;
+  let current = root;
+  try {
+    const rootStat = lstatSync(root);
+    if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) return null;
+    for (let index = 0; index < parts.length; index += 1) {
+      current = resolve(current, parts[index]);
+      if (current !== root && !current.startsWith(root + sep)) return null;
+      const stat = lstatSync(current);
+      if (stat.isSymbolicLink()) return null;
+      if (index < parts.length - 1 ? !stat.isDirectory() : !stat.isFile()) return null;
+    }
+  } catch {
+    return null;
+  }
+  return current;
 }
 
 function serveIndex(): LambdaResponse {
-  const index = resolve(frontendRoot(), 'index.html');
-  if (!existsSync(index)) {
+  const index = resolveFrontendFile(frontendRoot(), 'index.html');
+  if (!index) {
     return {
       statusCode: 500,
       headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
@@ -132,14 +148,28 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
 
   if (path === '/' || path === '/index.html') return serveIndex();
 
-  // Static assets (e.g. /src/app.js, /src/styles.css, favicon).
-  if (path.startsWith('/src/') || extOf(path)) {
-    const target = resolveUnder(frontendRoot(), path.replace(/^\/+/, ''));
+  const firstSegment = path.replace(/^\/+/, '').split('/')[0].toLowerCase();
+  if (FORBIDDEN_BROWSER_NAMESPACES.has(firstSegment)) return null;
+
+  // The deployed static namespace is an exact two-file allowlist.
+  if (path.startsWith('/src/')) {
+    const target = resolveFrontendFile(frontendRoot(), path);
     if (target) return fileResponse(readFileSync(target), guessType(target));
+    return null;
   }
 
-  // SPA fallback: extensionless or markdown routes render the app shell.
-  if (!extOf(path) || path.endsWith('.md')) return serveIndex();
+  // Canonical document routes intentionally expose the repository-relative
+  // markdown path in browser history. A fresh load still needs the one app
+  // shell so the client can resolve that exact document through /docs. The
+  // forbidden namespace check above runs first.
+  if (path.endsWith('.md')) return serveIndex();
+
+  // Other unknown static-looking requests never fall through to the app shell.
+  if (extOf(path)) return null;
+
+  // Extensionless browser deep links render the one app shell. Hash fragments
+  // are client-only and therefore arrive here as their extensionless path.
+  if (!extOf(path)) return serveIndex();
 
   return null;
 }
@@ -168,6 +198,9 @@ function isDataPath(path: string): boolean {
   return (
     path.startsWith('/api/') ||
     path === '/api' ||
+    path.startsWith('/work/api/') ||
+    path === '/work/api' ||
+    path === '/work/health' ||
     isDocsRoute(path) ||
     path.startsWith('/content/')
   );
@@ -206,7 +239,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     event.path = '/api/health';
     return { authorized: true, userId: user?.id };
   }
-  if (path.startsWith('/work/api/')) {
+  if (path === '/work/api' || path.startsWith('/work/api/')) {
     event.path = path.slice('/work'.length);
     return { authorized: true, userId: user?.id };
   }

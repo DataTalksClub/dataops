@@ -60,9 +60,13 @@ describe('one canonical frontend', () => {
   });
 
   it('packages only frontend/ into the backend artifact', () => {
-    assert.match(backendPackage.scripts.build, /\.\.\/frontend dist\/frontend/);
-    assert.match(backendPackage.scripts.build, /verify-frontend-artifact/);
-    assert.doesNotMatch(backendPackage.scripts.build, /src\/public|src\/pages/);
+    for (const copy of [
+      'cp ../frontend/index.html dist/frontend/index.html',
+      'cp ../frontend/src/app.js dist/frontend/src/app.js',
+      'cp ../frontend/src/styles.css dist/frontend/src/styles.css',
+    ]) assert.ok(backendPackage.scripts.build.includes(copy), `missing exact frontend allowlist copy: ${copy}`);
+    assert.match(backendPackage.scripts.build, /verify-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
+    assert.doesNotMatch(backendPackage.scripts.build, /cp\s+-[Rr]|frontend\/DESIGN\.md|frontend\/Dockerfile|src\/public|src\/pages/);
   });
 
   it('maps established hash routes and entity deep links into the canonical shell', () => {

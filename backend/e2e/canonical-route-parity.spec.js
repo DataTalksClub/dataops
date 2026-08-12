@@ -8,6 +8,13 @@ function suffix() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function berlinToday() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 async function createFixtures(request) {
   const id = suffix();
   const bundle = (await (await request.post('/api/bundles', {
@@ -513,7 +520,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       data: { title: `Focus workflow ${id}`, anchorDate: '1900-01-01' },
     })).json()).bundle;
     const task = await (await request.post('/api/tasks', {
-      data: { description: `Focus task ${id}`, date: '2026-08-11', bundleId: bundle.id },
+      data: { description: `Focus task ${id}`, date: berlinToday(), bundleId: bundle.id },
     })).json();
     const fixture = { bundle, task };
 

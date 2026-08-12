@@ -92,6 +92,9 @@ jobs:
       - name: Build SAM artifact
         run: make sam-build
 
+      - name: Verify packaged canonical frontend
+        run: node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
+
   deploy:
     name: Deploy DataOps v1 app
     runs-on: ubuntu-latest
@@ -184,6 +187,9 @@ jobs:
 
       - name: Build SAM artifact
         run: make sam-build
+
+      - name: Verify packaged canonical frontend
+        run: node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
 
       - name: Deploy DataOps v1 stack
         run: |

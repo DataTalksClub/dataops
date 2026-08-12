@@ -5,16 +5,30 @@ process.env.IS_LOCAL = 'true';
 
 import http from 'http';
 import { URL } from 'url';
+import { Readable } from 'stream';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createBrowserSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
+import { backfillDocumentHashClaims } from '../src/db/bookkeeping';
+import {
+  setBookkeepingArchiveUploaderForTests,
+  setBookkeepingStorageForTests,
+} from '../src/routes/bookkeeping';
+import { setMailingExportDependenciesForTests } from '../src/routes/mailingExports';
+import { MailingExportProviderError } from '../src/mailingExports/mailchimp';
+import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../src/docs/githubStore';
+import { configureDocsRuntime } from '../src/docs/contentApi';
+import { configurePortalStore } from '../src/docs/portal';
 import { seed as seedUsers } from './seed-users';
 import { seed as seedTemplates } from './seed-templates';
 import type { LambdaEvent } from '../src/types';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 let e2eBrowserSessionToken = '';
+const e2eBookkeepingObjects = new Map<string, Buffer>();
 type E2eRouteFault = {
   method?: string;
   path: string;
@@ -24,6 +38,102 @@ type E2eRouteFault = {
   remaining?: number;
 };
 let e2eRouteFaults: E2eRouteFault[] = [];
+let e2eMailingProviderMode: 'pending' | 'complete' | 'fail' = 'pending';
+
+async function bufferBody(body: unknown): Promise<Buffer> {
+  if (Buffer.isBuffer(body)) return body;
+  if (body instanceof Uint8Array) return Buffer.from(body);
+  if (typeof body === 'string') return Buffer.from(body);
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+function missingObject(): Error & { $metadata: { httpStatusCode: number } } {
+  return Object.assign(new Error('Synthetic object not found'), {
+    name: 'NotFound',
+    $metadata: { httpStatusCode: 404 },
+  });
+}
+
+function configureBookkeepingStorage(): void {
+  process.env.BOOKKEEPING_DOCUMENTS_BUCKET ||= 'synthetic-e2e-versioned-bucket';
+  process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY ||= 'synthetic-e2e-kms-key';
+  const client = {
+    send: async (command: { constructor: { name: string }; input: { Key?: string; VersionId?: string } }) => {
+      const key = String(command.input.Key || '');
+      const bytes = e2eBookkeepingObjects.get(key);
+      if (command.constructor.name === 'GetObjectCommand') {
+        if (!bytes) throw missingObject();
+        return { Body: Readable.from(bytes), ContentLength: bytes.length, ContentType: 'application/pdf', VersionId: 'synthetic-version-1' };
+      }
+      if (command.constructor.name === 'HeadObjectCommand') {
+        if (!bytes) throw missingObject();
+        return { ContentLength: bytes.length, ContentType: 'application/pdf', VersionId: 'synthetic-version-1' };
+      }
+      if (command.constructor.name === 'DeleteObjectCommand') {
+        if (command.input.VersionId !== 'synthetic-version-1') throw new Error('Synthetic version mismatch');
+        e2eBookkeepingObjects.delete(key);
+      }
+      return {};
+    },
+  };
+  setBookkeepingStorageForTests(client as never, (async (_client: unknown, command: { constructor: { name: string }; input: { Key?: string } }) => {
+    const key = encodeURIComponent(String(command.input.Key || ''));
+    const mode = command.constructor.name === 'PutObjectCommand' ? 'upload' : 'download';
+    return `http://127.0.0.1:${PORT}/__e2e__/bookkeeping-object/${key}?mode=${mode}`;
+  }) as never);
+  setBookkeepingArchiveUploaderForTests(async (params) => {
+    const key = String(params.Key || '');
+    e2eBookkeepingObjects.set(key, await bufferBody(params.Body));
+    return { VersionId: 'synthetic-version-1' };
+  });
+}
+
+configureBookkeepingStorage();
+setMailingExportDependenciesForTests({
+  provider: {
+    minimumIntervalMs: 0,
+    async requestExport() {
+      if (e2eMailingProviderMode === 'fail') throw new MailingExportProviderError('provider-api', 'Synthetic local provider failure');
+      return e2eMailingProviderMode === 'complete'
+        ? { status: 'completed', providerJobId: 'synthetic-local-job', downloadUrl: 'local://synthetic-export', filename: 'synthetic-export.zip' }
+        : { status: 'pending', providerJobId: 'synthetic-local-job' };
+    },
+    async checkExport() {
+      if (e2eMailingProviderMode === 'fail') throw new MailingExportProviderError('provider-api', 'Synthetic local provider failure');
+      return e2eMailingProviderMode === 'complete'
+        ? { status: 'completed', providerJobId: 'synthetic-local-job', downloadUrl: 'local://synthetic-export', filename: 'synthetic-export.zip' }
+        : { status: 'pending', providerJobId: 'synthetic-local-job' };
+    },
+    async download() {
+      return Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+    },
+  },
+  async store(key) {
+    return `local://synthetic-e2e/${encodeURIComponent(key)}`;
+  },
+  log() {},
+});
+
+function configureOfflineDocsStore(): void {
+  if (process.env.DTC_OFFLINE !== '1') return;
+  const store = new ContentsApiGithubStore(githubStoreConfigFromEnv());
+  store.writeFile = async (repoPath, content) => {
+    const target = store.localPath(repoPath);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+  };
+  store.deleteFile = async (repoPath) => {
+    rmSync(store.localPath(repoPath), { force: true });
+  };
+  store.commitLocalFile = async () => {};
+  store.deleteRepoFile = async () => {};
+  configureDocsRuntime(store);
+  configurePortalStore(store);
+}
+
+configureOfflineDocsStore();
 
 function matchesRouteFault(fault: E2eRouteFault, method: string, parsed: URL): boolean {
   const apiPath = parsed.pathname.replace(/^\/work(?=\/api\/)/, '');
@@ -59,6 +169,50 @@ const server = http.createServer(async (req, res) => {
   const body = chunks.length > 0
     ? Buffer.concat(chunks).toString(isMultipart ? 'binary' : 'utf-8')
     : null;
+
+  const bookkeepingObject = parsed.pathname.match(/^\/__e2e__\/bookkeeping-object\/(.+)$/);
+  if (bookkeepingObject) {
+    const key = decodeURIComponent(bookkeepingObject[1]);
+    if (req.method === 'PUT' && parsed.searchParams.get('mode') === 'upload') {
+      if (req.headers['if-none-match'] === '*' && e2eBookkeepingObjects.has(key)) {
+        res.writeHead(412);
+        res.end();
+        return;
+      }
+      e2eBookkeepingObjects.set(key, Buffer.concat(chunks));
+      res.writeHead(200, { etag: '"synthetic-etag"', 'x-amz-version-id': 'synthetic-version-1' });
+      res.end();
+      return;
+    }
+    if (req.method === 'GET' && parsed.searchParams.get('mode') === 'download') {
+      const object = e2eBookkeepingObjects.get(key);
+      if (!object) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': key.endsWith('.zip') ? 'application/zip' : 'application/pdf' });
+      res.end(object);
+      return;
+    }
+    res.writeHead(405);
+    res.end();
+    return;
+  }
+
+  if (parsed.pathname === '/__e2e__/mailing-provider' && req.method === 'POST') {
+    let mode: unknown;
+    try { mode = JSON.parse(body || '{}').mode; } catch { mode = null; }
+    if (!['pending', 'complete', 'fail'].includes(String(mode))) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid synthetic provider mode' }));
+      return;
+    }
+    e2eMailingProviderMode = mode as typeof e2eMailingProviderMode;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ mode: e2eMailingProviderMode }));
+    return;
+  }
 
   // Deterministic server-side faults for route E2E. Requests still traverse
   // the browser, HTTP server, and real handler; a delay falls through to the
@@ -139,6 +293,7 @@ async function runSeeds() {
   try {
     await seedUsers();
     await seedTemplates();
+    await backfillDocumentHashClaims(await getClient(), true);
     const browserUserId = process.env.E2E_BROWSER_SESSION_USER_ID;
     if (browserUserId) {
       if (process.env.E2E_BROWSER_SESSION_USER_ROLE) {
@@ -146,9 +301,12 @@ async function runSeeds() {
           name: 'E2E browser actor',
           email: 'browser-actor@example.test',
           role: process.env.E2E_BROWSER_SESSION_USER_ROLE === 'admin' ? 'admin' : 'operator',
+          disabled: process.env.E2E_BROWSER_SESSION_USER_DISABLED === 'true',
         });
       }
-      const session = await createBrowserSession(await getClient(), browserUserId, { lifetimeSeconds: 3600 });
+      const session = await createBrowserSession(await getClient(), browserUserId, {
+        lifetimeSeconds: Number(process.env.E2E_BROWSER_SESSION_LIFETIME_SECONDS || 3600),
+      });
       e2eBrowserSessionToken = session.token;
     }
     console.log('Test server seed data initialized.');

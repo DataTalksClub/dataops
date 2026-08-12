@@ -212,6 +212,26 @@ describe('contentApi - docs endpoints (GitHub mocked)', () => {
     assert.ok(!body.docs.some((d: any) => d.path.includes('newsletter')));
   });
 
+  it('returns public-safe process quality and read-only Git availability diagnostics', async () => {
+    const quality = await call(ev('GET', '/docs/process-quality'));
+    assert.strictEqual(quality.status, 200);
+    assert.ok(Array.isArray(quality.body.findings));
+    assert.strictEqual(quality.body.summary.total, quality.body.findings.length);
+    assert.ok(quality.body.findings.every((finding: any) => finding.source === 'local docs validation'));
+
+    const status = await call(ev('GET', '/git/status'));
+    assert.deepStrictEqual(
+      { status: status.status, ok: status.body.ok, available: status.body.available, files: status.body.files },
+      { status: 200, ok: false, available: false, files: [] },
+    );
+    const history = await call(ev('GET', '/git/log', { query: { path: 'content/accounts/sops/reset-password.md' } }));
+    assert.deepStrictEqual(
+      { status: history.status, available: history.body.available, commits: history.body.commits },
+      { status: 200, available: false, commits: [] },
+    );
+    assert.strictEqual((await call(ev('POST', '/git/pull'))).status, 405);
+  });
+
   it('parse returns structured SOP for valid content and error for invalid', async () => {
     const ok = await call(ev('POST', '/parse', { body: { content: SOP } }));
     assert.strictEqual(ok.status, 200);

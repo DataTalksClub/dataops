@@ -113,10 +113,13 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   });
 
   it('returns JSON 401 for unauthenticated API/data requests without a Basic challenge', async () => {
-    const res = await route(ev('GET', '/api/tasks'), client);
-    assert.strictEqual(res.statusCode, 401);
-    assert.deepStrictEqual(JSON.parse(res.body), { error: 'Unauthorized' });
-    assert.strictEqual(res.headers?.['www-authenticate'], undefined);
+    for (const path of ['/api/tasks', '/work/api/tasks', '/work/api/me', '/work/health']) {
+      const res = await route(ev('GET', path), client);
+      assert.strictEqual(res.statusCode, 401, path);
+      assert.deepStrictEqual(JSON.parse(res.body), { error: 'Unauthorized' }, path);
+      assert.strictEqual(res.headers?.['www-authenticate'], undefined, path);
+      assert.match(res.headers?.['content-type'] || '', /application\/json/, path);
+    }
   });
 
   it('redirects /login to the shared authorize endpoint', async () => {
@@ -172,10 +175,33 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
     assert.deepStrictEqual(JSON.parse(res.body), { status: 'ok' });
   });
 
+  it('keeps the exact authenticated /work/api boundary JSON-only', async () => {
+    const res = await route(ev('GET', '/work/api', { headers: { cookie: browserCookie } }), client);
+    assert.strictEqual(res.statusCode, 404);
+    assert.match(res.headers?.['Content-Type'] || res.headers?.['content-type'] || '', /application\/json/);
+    assert.deepStrictEqual(JSON.parse(res.body), { error: 'Not found' });
+    assert.doesNotMatch(res.body, /<html|DataOps Portal/i);
+  });
+
   it('renders the SPA shell for an extensionless app route', async () => {
     const res = await route(ev('GET', '/work', { headers: { cookie: browserCookie } }), client);
     assert.strictEqual(res.statusCode, 200);
     assert.match(res.body, /DataOps Portal/);
+  });
+
+  it('reloads canonical markdown document routes without reviving alternate static namespaces', async () => {
+    const doc = await route(ev('GET', '/a/reference/guide.md', { headers: { cookie: browserCookie } }), client);
+    assert.strictEqual(doc.statusCode, 200);
+    assert.match(doc.headers?.['Content-Type'] || '', /text\/html/);
+    assert.match(doc.body, /DataOps Portal/);
+
+    const forbidden = await route(ev('GET', '/public/guide.md', { headers: { cookie: browserCookie } }), client);
+    assert.strictEqual(forbidden.statusCode, 404);
+    assert.doesNotMatch(forbidden.body, /DataOps Portal/);
+
+    const unknownStatic = await route(ev('GET', '/a/reference/guide.js', { headers: { cookie: browserCookie } }), client);
+    assert.strictEqual(unknownStatic.statusCode, 404);
+    assert.doesNotMatch(unknownStatic.body, /DataOps Portal/);
   });
 });
 
