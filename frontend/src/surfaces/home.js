@@ -523,6 +523,32 @@ export function createHomeSurface(context) {
     return findings;
   }
 
+  function buildTaskProcessQualityFindings(task, qualitySnapshot) {
+    const runtimeFindings = runtimeTaskQualityFindings(task);
+    const doc = task.instructionDocId
+      ? resolveDocReference(task.instructionDocId)
+      : null;
+    const docFindings = doc
+      ? qualitySnapshot.findings
+          .filter((finding) =>
+            findingMatchesDoc(normalizeQualityFinding(finding), doc),
+          )
+          .map((finding) =>
+            normalizeQualityFinding({
+              ...finding,
+              id: `${finding.id}:panel:${task.id}`,
+              severity: "blocking",
+              taskId: task.id,
+              bundleId: task.bundleId,
+              nextAction: "open doc",
+            }),
+          )
+      : [];
+    return dedupeQualityFindings([...runtimeFindings, ...docFindings]).sort(
+      compareQualityFindings,
+    );
+  }
+
   function taskNeedsProofInstruction(task) {
     if (!task || typeof task !== "object") return false;
     if (task.requiredLinkName || task.requiresFile) return true;
@@ -928,6 +954,7 @@ export function createHomeSurface(context) {
     buildNeedsActionLane,
     buildOperationsHomeModel,
     buildProcessQualityModel,
+    buildTaskProcessQualityFindings,
     refreshOperationsQualitySnapshot,
     refreshOperationsWorkSnapshot,
     renderOperationsHome,

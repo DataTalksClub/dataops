@@ -19,6 +19,8 @@ const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance
 const home = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'home.js'), 'utf8');
 const operations = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations.js'), 'utf8');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
+const tasks = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'tasks.js'), 'utf8');
+const workDetail = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'work-detail.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
 const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
 
@@ -52,6 +54,8 @@ describe('one canonical frontend', () => {
       '/src/surfaces/home.js',
       '/src/surfaces/operations.js',
       '/src/surfaces/planning.js',
+      '/src/surfaces/tasks.js',
+      '/src/surfaces/work-detail.js',
     ]) {
       const module = await handler({ httpMethod: 'GET', path: modulePath }, {});
       assert.strictEqual(module.statusCode, 200);
@@ -94,6 +98,8 @@ describe('one canonical frontend', () => {
       'src/surfaces/home.js',
       'src/surfaces/operations.js',
       'src/surfaces/planning.js',
+      'src/surfaces/tasks.js',
+      'src/surfaces/work-detail.js',
     ]);
     assert.match(backendPackage.scripts.build, /copy-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
     assert.match(backendPackage.scripts.build, /verify-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
@@ -116,7 +122,15 @@ describe('one canonical frontend', () => {
       'requiredLinkName',
       'openBundlePanel',
       'updateBundleStage',
-    ]) assert.ok(app.includes(marker), `canonical app is missing ${marker}`);
+    ]) assert.ok(workDetail.includes(marker), `work detail is missing ${marker}`);
+    for (const marker of [
+      'renderWorkQueueSurface',
+      'renderWorkflowsSurface',
+      'renderTemplatesRecurringSurface',
+      'renderRecurringOperationsSection',
+      'openQuickTaskForm',
+      'openQuickWorkflowForm',
+    ]) assert.ok(tasks.includes(marker), `Tasks surface is missing ${marker}`);
     for (const marker of ['renderBookkeepingSurface', 'PDF evidence', 'monthly package']) {
       assert.ok(finance.includes(marker), `finance surface is missing ${marker}`);
     }
@@ -211,9 +225,9 @@ describe('one canonical frontend', () => {
       'Move up',
       'expectedVersion',
       'template_in_use',
-    ]) assert.ok(app.includes(marker), `Runtime template UI is missing ${marker}`);
-    assert.match(app, /className = "runtime-template-json"/);
-    assert.match(app, /className = "runtime-task-card"/);
+    ]) assert.ok(tasks.includes(marker), `Runtime template UI is missing ${marker}`);
+    assert.match(tasks, /className = "runtime-template-json"/);
+    assert.match(tasks, /className = "runtime-task-card"/);
     assert.match(styles, /\.ops-section,/);
     assert.match(styles, /:focus-visible/);
   });

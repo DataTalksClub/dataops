@@ -10,6 +10,8 @@
     "src/surfaces/finance.js",
     "src/surfaces/home.js",
     "src/surfaces/operations.js",
-    "src/surfaces/planning.js"
+    "src/surfaces/planning.js",
+    "src/surfaces/tasks.js",
+    "src/surfaces/work-detail.js"
   ]
 }

@@ -187,6 +187,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     const routes = [
       ["/tasks", "Tasks - Work Queue", ".ops-work-queue"],
       ["/templates", "Tasks - Templates", ".runtime-template-admin"],
+      ["/recurring", "Tasks - Templates", ".ops-recurring-section"],
       ["/inbox", "Inbox", ".ops-inbox"],
       ["/assistants", "Tasks - Assistants", ".assistant-workspace"],
       ["/artifacts", "Tasks - Artifacts", '[aria-label="Artifacts"]'],
@@ -254,6 +255,7 @@ test.describe("pre-refactor frontend module characterization", () => {
       "/cards",
       "/cards/archive",
       "/templates",
+      "/recurring",
       "/assistants",
       "/artifacts",
       "/newsletter",
