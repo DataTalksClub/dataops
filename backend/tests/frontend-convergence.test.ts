@@ -16,6 +16,7 @@ const routing = readFileSync(path.join(frontendRoot, 'src', 'core', 'routing.js'
 const workModel = readFileSync(path.join(frontendRoot, 'src', 'core', 'work-model.js'), 'utf8');
 const admin = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'admin.js'), 'utf8');
 const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance.js'), 'utf8');
+const operations = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations.js'), 'utf8');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
 const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
@@ -47,6 +48,7 @@ describe('one canonical frontend', () => {
       '/src/core/work-model.js',
       '/src/surfaces/admin.js',
       '/src/surfaces/finance.js',
+      '/src/surfaces/operations.js',
       '/src/surfaces/planning.js',
     ]) {
       const module = await handler({ httpMethod: 'GET', path: modulePath }, {});
@@ -87,6 +89,7 @@ describe('one canonical frontend', () => {
       'src/core/work-model.js',
       'src/surfaces/admin.js',
       'src/surfaces/finance.js',
+      'src/surfaces/operations.js',
       'src/surfaces/planning.js',
     ]);
     assert.match(backendPackage.scripts.build, /copy-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
@@ -135,6 +138,7 @@ describe('one canonical frontend', () => {
   });
 
   it('provides complete Inbox triage in the canonical shell', () => {
+    assert.match(app, /createOperationsSurface/);
     for (const marker of [
       'renderInboxSurface',
       '/api/intake',
@@ -144,8 +148,8 @@ describe('one canonical frontend', () => {
       'response-received',
       'prepare-assistant',
       'archive',
-    ]) assert.ok(app.includes(marker), `Inbox is missing ${marker}`);
-    assert.match(app, /className = "intake-layout"/);
+    ]) assert.ok(operations.includes(marker), `Inbox is missing ${marker}`);
+    assert.match(operations, /className = "intake-layout"/);
     assert.match(styles, /\.ops-surface,/);
   });
 
@@ -161,9 +165,19 @@ describe('one canonical frontend', () => {
       'retry',
       'cancel',
       'output artifacts',
-    ]) assert.ok(app.toLowerCase().includes(marker.toLowerCase()), `Assistant UI is missing ${marker}`);
-    assert.match(app, /className = "assistant-layout"/);
+    ]) assert.ok(operations.toLowerCase().includes(marker.toLowerCase()), `Assistant UI is missing ${marker}`);
+    assert.match(operations, /className = "assistant-layout"/);
     assert.match(styles, /\.assistant-card,/);
+  });
+
+  it('keeps the Artifacts index in the canonical Operations module graph', () => {
+    for (const marker of [
+      'renderArtifactsSurface',
+      'renderArtifactSurfaceRow',
+      '/api/artifacts',
+      'Artifact review index not connected',
+      'No artifacts registered',
+    ]) assert.ok(operations.includes(marker), `Artifacts UI is missing ${marker}`);
   });
 
   it('provides schema-complete runtime-template administration', () => {
