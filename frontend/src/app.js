@@ -2437,6 +2437,7 @@ async function renderSponsorCrmSurface() {
     };
     const onClose = () => finish(false);
     const onAccept = () => {
+      confirmDialog.removeEventListener("close", onClose);
       confirmDialog.close();
       finish(true);
     };
@@ -2641,12 +2642,13 @@ async function renderSponsorCrmSurface() {
       link.click();
     }, "Could not prepare the private invoice download"));
     panel.querySelector("[data-finance-unlink-invoice]")?.addEventListener("click", (event) => safe(async () => {
+      const documentId = event.currentTarget.dataset.financeUnlinkInvoice;
       if (!await confirmSponsorAction(
         "Unlink invoice evidence?",
         "The file stays in Bookkeeping, but this booking will no longer count it as invoice evidence.",
         "Unlink invoice",
       )) return;
-      await financeMutation(booking, `/invoice/${encodeURIComponent(event.currentTarget.dataset.financeUnlinkInvoice)}`, "DELETE", { expectedVersion: projection.finance.version });
+      await financeMutation(booking, `/invoice/${encodeURIComponent(documentId)}`, "DELETE", { expectedVersion: projection.finance.version });
       await reopenBookingDetail(booking);
     }, "Could not unlink invoice"));
     panel.querySelectorAll("[data-finance-unlink-payment]").forEach((button) => button.addEventListener("click", () => safe(async () => {

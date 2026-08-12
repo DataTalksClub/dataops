@@ -103,6 +103,7 @@ async function routeBookkeeping(page) {
 }
 
 async function routeSponsors(page) {
+  let unlinkInvoiceRequests = 0;
   const organization = { id: "organization-example", displayName: "Example Learning Lab", version: 1 };
   const contact = {
     id: "contact-example",
@@ -142,6 +143,10 @@ async function routeSponsors(page) {
     if (pathname.endsWith("/contacts")) return route.fulfill({ json: { items: [contact] } });
     if (pathname.endsWith("/bookings")) return route.fulfill({ json: { items: [booking] } });
     if (pathname.endsWith(`/bookings/${booking.id}/history`)) return route.fulfill({ json: { items: [{ oldStatus: "confirmed", newStatus: "materials-pending", createdAt: "2026-08-28T09:00:00Z", note: "Waiting for reviewed copy." }] } });
+    if (pathname.endsWith(`/bookings/${booking.id}/finance/invoice/invoice-example`) && request.method() === "DELETE") {
+      unlinkInvoiceRequests += 1;
+      return route.fulfill({ json: { status: "unlinked" } });
+    }
     if (pathname.endsWith(`/bookings/${booking.id}/finance`)) return route.fulfill({ json: {
       enabled: true,
       classified: true,
@@ -183,6 +188,7 @@ async function routeSponsors(page) {
     if (pathname.endsWith("/communications/communication-example/presentations/presentation-example/reject") && request.method() === "POST") return route.fulfill({ json: { status: "revoked" } });
     return route.fulfill({ status: 404, json: { error: "Synthetic route unavailable" } });
   });
+  return { unlinkInvoiceRequests: () => unlinkInvoiceRequests };
 }
 
 test.describe("Bookkeeping and Sponsors design prototype", () => {
@@ -261,7 +267,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
   test("Sponsors uses booking master/detail sections and preserves exact review safety", async ({ browser }) => {
     const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
-    await routeSponsors(page);
+    const sponsorRouteState = await routeSponsors(page);
     await page.goto("/#/sponsors");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
     await page.getByLabel("Bookings").getByRole("button", { name: "Open booking" }).click();
@@ -290,6 +296,9 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(confirm).toContainText("The file stays in Bookkeeping");
     await confirm.getByRole("button", { name: "Keep current record" }).click();
     await expect(page.getByRole("button", { name: "Unlink invoice" })).toBeFocused();
+    await page.getByRole("button", { name: "Unlink invoice" }).click();
+    await confirm.getByRole("button", { name: "Unlink invoice" }).click();
+    await expect.poll(sponsorRouteState.unlinkInvoiceRequests).toBe(1);
 
     for (const width of [820, 420]) {
       await page.setViewportSize({ width, height: 844 });
