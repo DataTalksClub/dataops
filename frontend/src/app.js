@@ -2016,7 +2016,7 @@ async function renderCalendarSurface() {
           <label>Status <select name="status">${["tentative", "confirmed", "announced", "published", "cancelled"].map((value) => `<option value="${value}">${plannerLabel(value)}</option>`).join("")}</select></label>
           <label>Start date <input name="startDate" type="date" required></label>
           <label>End date <input name="endDate" type="date" required></label>
-          <label class="planner-field-wide">Workflow bundle reference <input name="bundleId" autocomplete="off"></label>
+          <label class="planner-field-wide">Card reference <input name="bundleId" autocomplete="off"></label>
           <label class="planner-field-wide">Planning notes <textarea name="notes" maxlength="2000" rows="4"></textarea></label>
         </div>
         <p class="planner-form-error" role="alert"></p>
@@ -8401,7 +8401,7 @@ function renderOperationsRuntimeState(runtime) {
   const body = document.createElement("span");
   body.textContent = runtime?.connected
     ? "Some /work/api calls failed. Loaded tasks remain visible, and unavailable parts are not replaced with fake data."
-    : "Operations Home could not load /work/api task and workflow data. Workflow templates and process docs remain below as contextual help.";
+    : "Operations Home could not load Card and Task data. Templates and internal Processes remain available from their dedicated views.";
   section.append(title, body);
 
   if (errors.length > 0) {
