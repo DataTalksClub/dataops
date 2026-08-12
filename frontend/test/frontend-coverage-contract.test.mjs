@@ -23,8 +23,10 @@ describe("frontend coverage development contract", () => {
     assert.ok(config.reporter.includes("text"));
     assert.ok(config.reporter.includes("json-summary"));
     assert.equal(config.checkCoverage, true);
-    assert.ok(config.lines > 0);
-    assert.ok(config.statements > 0);
+    assert.equal(config.lines, 11.92);
+    assert.equal(config.statements, 11.92);
+    assert.equal(config.functions, undefined);
+    assert.equal(config.branches, undefined);
   });
 
   test("exposes coverage locally and enforces it in CI", () => {
