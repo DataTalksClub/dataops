@@ -15,7 +15,7 @@
         <span class="work-bell-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span>
         <span class="work-bell-count" aria-hidden="true">0</span>
       </button>
-      <button id="mobile-settings-button" class="account-button mobile-account-button" type="button" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-avatar aria-hidden="true">?</span></button>
+      <button id="mobile-settings-button" class="account-button mobile-account-button" type="button" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-menu-avatar aria-hidden="true">?</span></button>
       <button id="mobile-new-button" class="quiet-button" type="button">New</button>
     </div>
     <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
@@ -149,7 +149,7 @@
               <span class="work-bell-count" aria-hidden="true">0</span>
             </button>
             <button id="help-button" class="icon-button home-help-button" type="button" title="Help" aria-label="Help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.8 2c-1 .7-1.6 1.2-1.6 2.5M12 17h.01"/></svg></button>
-            <button id="settings-button" class="account-button desktop-account-button" type="button" title="Account" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-avatar aria-hidden="true">?</span><span class="account-button-name" data-account-name>Account</span><svg class="account-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+            <button id="settings-button" class="account-button desktop-account-button" type="button" title="Account" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-menu-avatar aria-hidden="true">?</span><span class="account-button-name" data-account-menu-name>Account</span><svg class="account-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
             <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
             <button id="doc-pin-button" class="quiet-button" type="button" hidden title="Pin to sidebar" aria-label="Pin to sidebar">Pin</button>
             <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions">⋯</button>
@@ -283,8 +283,8 @@
       </header>
       <div class="settings-menu-body work-bell-body">
         <section id="account-identity" class="account-identity" aria-live="polite">
-          <span class="account-avatar account-avatar-large" data-account-avatar aria-hidden="true">?</span>
-          <span class="account-identity-copy"><small>Signed in as</small><strong data-account-name>Identity unavailable</strong><span data-account-meta>Retry or sign out</span></span>
+          <span class="account-avatar account-avatar-large" data-account-actor-avatar aria-hidden="true">?</span>
+          <span class="account-identity-copy"><small>Signed in as</small><strong data-account-actor-name>Identity unavailable</strong><span data-account-meta>Retry or sign out</span></span>
         </section>
         <p class="settings-section-label">Show work for</p>
         <div id="account-work-scope-list" class="account-work-scope-list" role="radiogroup" aria-label="Show work for"><p class="account-scope-loading">Loading workspace members…</p></div>

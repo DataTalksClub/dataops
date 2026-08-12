@@ -126,6 +126,9 @@ They intentionally follow the Course Management Platform names where practical.
   control may change whose tasks are visible, but it must not imply an identity
   switch. When a teammate's task is open, state both the signed-in actor and
   the teammate who remains assigned.
+- The closed account control reflects the selected work owner so the current
+  scope stays visible without adding copy to the page heading. The open account
+  panel separately and explicitly identifies the authenticated actor.
 - Teammate scope rows show names and ownership context, not peer email
   addresses. The signed-in person may see their own email in the account
   summary.

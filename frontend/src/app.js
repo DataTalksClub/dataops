@@ -154,8 +154,10 @@ const settingsUsersButton = document.querySelector("#settings-users-button");
 const settingsSignOutButton = document.querySelector("#settings-sign-out-button");
 const accountIdentity = document.querySelector("#account-identity");
 const accountWorkScopeList = document.querySelector("#account-work-scope-list");
-const accountAvatarNodes = [...document.querySelectorAll("[data-account-avatar]")];
-const accountNameNodes = [...document.querySelectorAll("[data-account-name]")];
+const accountMenuAvatarNodes = [...document.querySelectorAll("[data-account-menu-avatar]")];
+const accountMenuNameNodes = [...document.querySelectorAll("[data-account-menu-name]")];
+const accountActorAvatarNode = document.querySelector("[data-account-actor-avatar]");
+const accountActorNameNode = document.querySelector("[data-account-actor-name]");
 const accountMetaNode = document.querySelector("[data-account-meta]");
 const settingsButtons = [settingsButton, mobileSettingsButton].filter(Boolean);
 let settingsMenuOpener = null;
@@ -201,12 +203,17 @@ function activeWorkOwnerId() {
 function renderAccountIdentity() {
   const actor = accountIdentityState.user;
   const actorName = actor?.name || "Account";
-  const initials = accountInitials(actor?.name);
-  for (const node of accountAvatarNodes) node.textContent = initials;
-  for (const node of accountNameNodes) node.textContent = actorName;
+  const workOwner = activeWorkOwner();
+  const menuName = workOwner?.name || actorName;
+  const menuInitials = accountInitials(workOwner?.name || actor?.name);
+  for (const node of accountMenuAvatarNodes) node.textContent = menuInitials;
+  for (const node of accountMenuNameNodes) node.textContent = menuName;
+  if (accountActorAvatarNode) accountActorAvatarNode.textContent = accountInitials(actor?.name);
+  if (accountActorNameNode) accountActorNameNode.textContent = actorName;
   for (const button of settingsButtons) {
-    button.title = actor ? `Account: ${actorName}` : "Account";
-    button.setAttribute("aria-label", actor ? `Account for ${actorName}` : "Account");
+    const scopeDiffers = actor && workOwner && String(actor.id) !== String(workOwner.id);
+    button.title = scopeDiffers ? `Showing ${menuName}’s work · Signed in as ${actorName}` : `Account: ${actorName}`;
+    button.setAttribute("aria-label", scopeDiffers ? `Showing work for ${menuName}; signed in as ${actorName}` : `Account for ${actorName}`);
   }
 
   if (accountIdentity) {
