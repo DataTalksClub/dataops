@@ -36,7 +36,7 @@ import {
   workspaceHashPath,
   workspaceRouteFor,
 } from "./core/workspace.js";
-import { createFinanceSurface } from "./surfaces/finance.js";
+import { createFinanceSurface } from "./surfaces/finance/index.js";
 import { createHomeSurface } from "./surfaces/home.js";
 import {
   createAdminSurface,

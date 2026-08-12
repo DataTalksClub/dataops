@@ -15,7 +15,6 @@ const MAX_MODULE_LINES = 1_000;
 const oversizedMigrationBaseline = Object.freeze({
   "src/app.js": 3_752,
   "src/surfaces/document-editor.js": 3_292,
-  "src/surfaces/finance.js": 3_001,
   "src/surfaces/knowledge.js": 2_236,
   "src/surfaces/operations.js": 2_145,
   "src/surfaces/tasks.js": 2_566,

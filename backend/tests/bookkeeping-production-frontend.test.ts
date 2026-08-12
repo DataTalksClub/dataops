@@ -37,7 +37,7 @@ describe('production portal bookkeeping frontend', () => {
   });
 
   it('serves the complete bookkeeping operator surface and responsive styles', async () => {
-    const finance = await invoke('/src/surfaces/finance.js');
+    const finance = await invoke('/src/surfaces/finance/bookkeeping.js');
     const css = await invoke('/src/styles.css');
     assert.equal(finance.statusCode, 200);
     for (const marker of ['renderBookkeepingSurface', '/transactions', '/documents/prepare', '/complete', 'idempotencyKey', 'runId', 'crypto.subtle.digest', '/accounts/setup', '/reports/snapshot', 'data-unlink', 'missingEvidence']) assert.ok(finance.body.includes(marker), marker);

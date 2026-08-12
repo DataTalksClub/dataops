@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
-import { createFinanceSurface } from "../src/surfaces/finance.js";
+import { createFinanceSurface } from "../src/surfaces/finance/index.js";
 
 const originalGlobals = {
   document: globalThis.document,
