@@ -161,6 +161,17 @@ npm run dry-run:import:backend -- <export-dir>
 npm run clean:backend
 ```
 
+For the live-representative local portal with Vite hot reload, keep
+workstation-specific values such as `DATAOPS_DEV_ACTOR_EMAIL` in the ignored
+root `.env`, then run:
+
+```bash
+scripts/dev/run-home-vite.sh
+```
+
+The launcher binds the frontend, backend, and representative Dynalite only to
+loopback interfaces and keeps external provider execution disabled.
+
 `package-lock.json` at the repo root is the npm lockfile for the workspace. The
 backend Lambda packaging, CI cache, and Docker Lambda image all use that root
 lockfile; there is no nested `backend/package-lock.json`.
