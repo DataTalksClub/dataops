@@ -272,7 +272,7 @@
     <div id="work-bell-panel" class="work-bell-panel" hidden role="dialog" aria-modal="false" aria-labelledby="work-bell-title">
       <header class="work-bell-header">
         <strong id="work-bell-title">Notifications</strong>
-        <button id="work-bell-close" class="quiet-button" type="button" aria-label="Close">Close</button>
+        <button id="work-bell-close" class="icon-button overlay-close-button" type="button" aria-label="Close notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
       <div id="work-bell-body" class="work-bell-body"></div>
     </div>
@@ -280,26 +280,31 @@
     <div id="settings-menu" class="settings-menu work-bell-panel" hidden role="dialog" aria-modal="false" aria-labelledby="settings-menu-title">
       <header class="work-bell-header">
         <strong id="settings-menu-title">Settings</strong>
-        <button id="settings-menu-close" class="quiet-button" type="button" aria-label="Close settings">Close</button>
+        <button id="settings-menu-close" class="icon-button overlay-close-button" type="button" aria-label="Close settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
       </header>
       <div class="settings-menu-body work-bell-body">
-       <button id="settings-admin-button" class="settings-menu-item" type="button">
-         <strong>Admin</strong>
-         <span>Process docs, recurring config, diagnostics.</span>
-       </button>
+        <p class="settings-section-label">Workspace</p>
+        <button id="settings-admin-button" class="settings-menu-item settings-menu-link" type="button">
+          <span class="settings-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 21V5l8-3 8 3v16M8 8h1m6 0h1M8 12h1m6 0h1M8 16h1m6 0h1M2 21h20"/></svg></span>
+          <span><strong>Admin</strong><small>Processes, recurring work, and system health.</small></span>
+          <span class="settings-menu-chevron" aria-hidden="true">›</span>
+        </button>
         <button id="settings-users-button" class="settings-menu-item" type="button">
-          <strong>Users</strong>
-          <span>People, roles, and account access.</span>
+          <span class="settings-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6m1-6c3 0 5 2 5 5"/></svg></span>
+          <span><strong>Users</strong><small>People, roles, and account access.</small></span>
+          <span class="settings-menu-chevron" aria-hidden="true">›</span>
         </button>
-       <button id="theme-toggle-button" class="settings-menu-item" type="button" aria-pressed="false">Dark mode</button>
-        <button id="settings-sign-out-button" class="settings-menu-item settings-sign-out" type="button">
-          <strong>Sign out</strong>
-          <span>End this browser session and return to shared login.</span>
-        </button>
+        <p class="settings-section-label">Appearance</p>
+        <button id="theme-toggle-button" class="settings-menu-item settings-theme-toggle" type="button" aria-pressed="false"><span class="settings-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg></span><span class="settings-theme-label">Dark mode</span><span class="settings-toggle-track" aria-hidden="true"><span></span></span></button>
         <div class="settings-menu-item settings-version-row">
+          <span class="settings-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></span>
           <span>Version</span>
           <code id="app-version">local</code>
         </div>
+        <button id="settings-sign-out-button" class="settings-menu-item settings-sign-out" type="button">
+          <span class="settings-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></svg></span>
+          <span><strong>Sign out</strong><small>End this browser session.</small></span>
+        </button>
         <section id="git-section" class="git-section settings-menu-item" aria-label="Git">
           <div class="git-status-line">
             <span class="git-status-dot" aria-hidden="true"></span>

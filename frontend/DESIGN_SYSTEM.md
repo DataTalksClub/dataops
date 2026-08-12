@@ -106,6 +106,8 @@ They intentionally follow the Course Management Platform names where practical.
 - The top toolbar owns global actions such as notifications, help, identity,
   and settings. Page-specific editor controls appear only on pages that need
   them.
+- Home Settings does not expose Process Docs Git/review tools. Those controls
+  remain contextual to the knowledge workspace.
 - Collapsing the sidebar must leave a visible, keyboard-operable restore
   control.
 

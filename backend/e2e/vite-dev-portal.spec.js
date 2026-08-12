@@ -457,7 +457,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     const traffic = observeBrowserTraffic(page, stack);
     const canonicalRoute = `${stack.origin}/#/tasks?date=2026-08-12`;
     await page.goto(canonicalRoute, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('#dataops-local-mode-banner')).toHaveText(/Local representative replica/);
+    await expect(page.locator('#dataops-local-mode-banner')).toHaveCount(0);
 
     const copiedSessionCannotAuthenticate = await browserJson(page, '/work/api/me', {
       headers: { Authorization: 'Bearer synthetic-copied-session' },

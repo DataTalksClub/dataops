@@ -35,26 +35,6 @@ function portalRoutingPlugin(config) {
         next();
       });
     },
-    transformIndexHtml(html) {
-      if (!config.representative) return html;
-      return {
-        html,
-        tags: [
-          {
-            tag: 'style',
-            attrs: { id: 'dataops-local-mode-style' },
-            children: '#dataops-local-mode-banner{position:fixed;right:16px;bottom:16px;z-index:2147483647;padding:7px 11px;border:1px solid #9d6d00;border-radius:6px;background:#fff4c2;color:#553800;font:600 12px/1.35 ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 18px rgb(0 0 0 / 15%)}',
-            injectTo: 'head',
-          },
-          {
-            tag: 'div',
-            attrs: { id: 'dataops-local-mode-banner', role: 'status' },
-            children: 'Local representative replica · changes stay on this computer',
-            injectTo: 'body',
-          },
-        ],
-      };
-    },
   };
 }
 

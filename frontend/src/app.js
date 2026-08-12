@@ -444,10 +444,13 @@ function setDarkMode(on) {
 // in sync: label, title, and checked state reflect the current theme.
 function syncThemeToggleLabel(on = body.classList.contains("dark")) {
   themeToggleButton.title = on ? "Switch to light mode" : "Switch to dark mode";
-  themeToggleButton.textContent = on ? "Light mode" : "Dark mode";
+  const label = themeToggleButton.querySelector(".settings-theme-label");
+  if (label) label.textContent = on ? "Light mode" : "Dark mode";
+  else themeToggleButton.textContent = on ? "Light mode" : "Dark mode";
   themeToggleButton.setAttribute("aria-label", themeToggleButton.title);
   themeToggleButton.setAttribute("aria-pressed", String(on));
 }
+
 
 function restoreDarkMode() {
   try {
@@ -6647,32 +6650,41 @@ function renderWorkBellPanel() {
     return;
   }
   if (workBellNotifications.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "work-bell-empty";
-    empty.textContent = "No active notifications.";
+    const empty = document.createElement("div");
+    empty.className = "work-bell-empty-state";
+    empty.innerHTML = '<span class="work-bell-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m7 13 3 3 7-8"/><circle cx="12" cy="12" r="9"/></svg></span><strong>You’re all caught up.</strong><p class="work-bell-empty">No active notifications.</p>';
     workBellBody.append(empty);
     return;
   }
   for (const notification of workBellNotifications) {
     const item = document.createElement("div");
     item.className = "work-bell-item";
+    item.classList.add(notificationUrgencyClass(notification));
     const message = document.createElement("div");
     message.className = "work-bell-item-message";
-    message.textContent = notification.message || notification.type || "Notification";
+    const icon = document.createElement("span");
+    icon.className = "work-bell-item-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.innerHTML = notification.taskId
+      ? '<svg viewBox="0 0 24 24"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5M12 17h.01"/></svg>'
+      : '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    const text = document.createElement("span");
+    text.textContent = notificationDisplayMessage(notification);
+    message.append(icon, text);
     item.append(message);
     const meta = document.createElement("div");
     meta.className = "work-bell-item-meta";
     const metaParts = [];
-    if (notification.type) metaParts.push(notification.type);
-    if (notification.dueAt) metaParts.push(`due ${formatTaskDateMeta(notification.dueAt, todayIsoDate())}`);
-    if (notification.taskId) metaParts.push("task");
-    meta.textContent = metaParts.join(" - ");
+    if (notification.dueAt) metaParts.push(notificationDueLabel(notification.dueAt));
+    else if (notification.createdAt) metaParts.push(`Added ${formatHomeShortDate(String(notification.createdAt).slice(0, 10))}`);
+    meta.textContent = metaParts.join(" · ");
     item.append(meta);
     const actions = document.createElement("div");
     actions.className = "work-bell-item-actions";
     if (notification.taskId) {
       const open = document.createElement("button");
       open.type = "button";
+      open.className = "work-bell-action work-bell-action-primary";
       open.textContent = "Open task";
       open.addEventListener("click", () => {
         closeWorkBellPanel({ updateUrl: false });
@@ -6682,6 +6694,7 @@ function renderWorkBellPanel() {
     }
     const dismiss = document.createElement("button");
     dismiss.type = "button";
+    dismiss.className = "work-bell-action";
     dismiss.textContent = "Dismiss";
     dismiss.dataset.dismissNotification = notification.id;
     dismiss.setAttribute("aria-label", `Dismiss notification: ${notification.message || notification.type || notification.id}`);
@@ -6698,6 +6711,32 @@ function renderWorkBellPanel() {
     }
     workBellBody.append(item);
   }
+}
+
+function notificationDisplayMessage(notification) {
+  const message = String(notification?.message || notification?.type || "Notification");
+  if (notification?.type === "recurring-due") {
+    return message.replace(/^Recurring task generated:\s*/i, "").replace(/\s+for\s+\d{4}-\d{2}-\d{2}\s*$/i, "");
+  }
+  return message;
+}
+
+function notificationDueLabel(value) {
+  const date = String(value || "").slice(0, 10);
+  const relative = formatTaskDateMeta(date, todayIsoDate());
+  if (relative === "Today") return "Due today";
+  if (relative === "Yesterday") return "Due yesterday";
+  if (relative === "Tomorrow") return "Due tomorrow";
+  return relative ? `Due ${formatHomeShortDate(date)}` : "";
+}
+
+function notificationUrgencyClass(notification) {
+  const dueDate = String(notification?.dueAt || "").slice(0, 10);
+  if (!dueDate) return "is-info";
+  const days = isoDayDistance(dueDate, todayIsoDate());
+  if (days < 0) return "is-overdue";
+  if (days === 0) return "is-due";
+  return "is-info";
 }
 
 async function dismissWorkNotification(notification, button) {

@@ -932,7 +932,7 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   top: 58px;
   right: 16px;
   z-index: 30;
-  width: min(360px, calc(100vw - 32px));
+  width: min(380px, calc(100vw - 32px));
   max-height: calc(100vh - 80px);
   overflow: auto;
   border: 1px solid var(--border-muted);
@@ -948,7 +948,26 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   gap: 12px;
   border-bottom: 1px solid var(--border-muted);
   background: var(--surface-muted);
-  padding: 10px 12px;
+  min-height: 54px;
+  padding: 8px 10px 8px 16px;
+}
+
+.work-bell-header strong {
+  color: var(--text-heading);
+  font-size: 16px;
+}
+
+.overlay-close-button svg,
+.settings-menu-icon svg,
+.work-bell-item-icon svg,
+.work-bell-empty-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .work-bell-body {
@@ -957,20 +976,49 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 
 .work-bell-item,
 .settings-menu-item {
-  display: grid;
-  gap: 4px;
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--border-muted);
   background: var(--surface-bg);
   color: var(--text-primary);
-  padding: 12px;
   text-align: left;
+}
+
+.work-bell-item {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
 }
 
 .work-bell-item:hover,
 .settings-menu-item:hover {
   background: var(--surface-hover);
+}
+
+.work-bell-item-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-heading);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.work-bell-item-icon {
+  display: grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--info-text);
+}
+
+.work-bell-item.is-overdue .work-bell-item-icon {
+  color: var(--danger-text);
+}
+
+.work-bell-item.is-due .work-bell-item-icon {
+  color: var(--warning-text);
 }
 
 .work-bell-item-actions,
@@ -981,9 +1029,187 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 }
 
 .work-bell-item-meta,
-.settings-menu-item span {
+.settings-menu-item small {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.work-bell-item-meta,
+.work-bell-item-actions,
+.work-bell-item-error {
+  margin-left: 34px;
+}
+
+.work-bell-action {
+  min-height: 34px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 5px 12px;
+  font-weight: 600;
+}
+
+.work-bell-action:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.work-bell-action-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.work-bell-action-primary:hover {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.work-bell-item-error {
+  margin-block: 0;
+  color: var(--danger-text);
+  font-size: 12px;
+}
+
+.work-bell-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 44px 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.work-bell-empty-state strong {
+  color: var(--text-heading);
+  font-size: 16px;
+}
+
+.work-bell-empty {
+  margin: 0;
+}
+
+.work-bell-empty-icon {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 6px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.work-bell-empty-state.is-error,
+.work-bell-empty.is-error {
+  justify-items: start;
+  color: var(--danger-text);
+  text-align: left;
+}
+
+.settings-section-label {
+  margin: 0;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-menu-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 16px;
+}
+
+.settings-menu-item > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+}
+
+.settings-menu-item strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.settings-menu-item small {
+  display: block;
+  font-weight: 400;
+}
+
+.settings-menu-icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.settings-menu-chevron {
+  color: var(--text-muted);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.settings-theme-label {
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.settings-toggle-track {
+  display: flex !important;
+  width: 36px;
+  height: 20px;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--border-strong);
+  padding: 2px;
+  transition: background 140ms ease;
+}
+
+.settings-toggle-track span {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 140ms ease;
+}
+
+.settings-theme-toggle[aria-pressed="true"] .settings-toggle-track {
+  background: var(--accent);
+}
+
+.settings-theme-toggle[aria-pressed="true"] .settings-toggle-track span {
+  transform: translateX(16px);
+}
+
+.settings-version-row code {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.settings-sign-out,
+.settings-sign-out strong,
+.settings-sign-out .settings-menu-icon {
+  color: var(--danger-text);
+}
+
+.git-section.settings-menu-item {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  border-bottom: 0;
+  background: var(--surface-muted);
+}
+
+body[data-workspace-view="home"] #git-section {
+  display: none;
 }
 
 .task-modal,
@@ -1397,11 +1623,36 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 
   .work-bell-panel,
   .settings-menu {
-    inset: var(--mobile-header-height) 0 0;
+    inset: 0;
+    z-index: 60;
     width: 100%;
     max-height: none;
     border: 0;
     border-radius: 0;
+  }
+
+  .work-bell-header {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    min-height: var(--mobile-header-height);
+    padding: 0 8px;
+  }
+
+  .work-bell-header strong {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: center;
+  }
+
+  .overlay-close-button {
+    grid-column: 1;
+    grid-row: 1;
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .work-bell-action {
+    min-height: 44px;
   }
 }
 
