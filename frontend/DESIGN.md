@@ -1,71 +1,63 @@
-# Product Design Guidelines
+# Process Docs design pattern
 
-This app should feel closer to Notion than to a file manager or admin dashboard: calm, predictable, and focused on one page at a time.
+The shared DataOps tokens, components, shell, responsive rules, states, and
+accessibility requirements are defined in [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md).
+This document narrows those rules for the Process Docs experience.
 
-## Product Shape
+Process Docs should feel calm, predictable, and focused on one page at a time.
 
-The app has three primary states:
+## Product shape
 
-- **Library**: find and understand documents.
-- **Editor**: read and edit one document.
-- **Create**: create a new document and then continue editing it.
+The Docs route has three primary states:
 
-On mobile, only one state is visible at a time. Do not combine navigation, editing, and creation in one long page.
+- **Library:** find and understand documents.
+- **Editor:** read or edit one document.
+- **Create:** capture document metadata, then continue in the editor.
 
-## Layout Model
-
-- Desktop uses a persistent left workspace sidebar and one main page canvas.
-- Mobile uses a compact top bar for Library and a drawer for the workspace tree.
-- Editor and Create use their own top toolbar on mobile; avoid stacked global navigation.
-- The main content should read like a page, not a dashboard.
+On mobile, only one state is visible at a time. Do not combine navigation,
+editing, and creation into one long page.
 
 ## Library
 
-Library is the mental map of the documentation system.
-
-- The file tree is the primary navigation object and lives in the sidebar/drawer.
-- The tree starts below `docs/`; do not show a redundant root `docs` folder.
-- Folders use explicit expand/collapse controls.
-- Selecting a folder changes the document list to that folder.
-- Selecting a file opens it in the Editor screen.
-- Search and filters live in the sidebar/drawer.
-- Domain and Type filters sit in one compact two-column row.
-- Document rows are tappable as a whole and open documents inside the app.
-- Do not make GitHub a primary action in the UI.
+- The document tree is the primary Docs navigation object and lives in the
+  sidebar or drawer only while the Docs route owns the shell.
+- The tree starts below the repository content root; do not render a redundant
+  root folder.
+- Folders use explicit expand and collapse controls.
+- Selecting a folder changes the document list; selecting a file opens the
+  editor.
+- Search and document filters live in the Docs sidebar or drawer.
+- Document rows are compact, divided, and whole-row actionable.
+- Do not make GitHub or repository plumbing a primary operator action.
 
 ## Editor
 
-Editor is for one document only.
-
-- The document title/path and save status must remain visible.
-- Editing should not move the user unexpectedly back to Explore.
-- Save is explicit.
-- Unsaved local changes are shown clearly but quietly.
-- Local drafts stay in `localStorage` until saved or discarded.
-- On mobile, content area should dominate; navigation chrome should be minimal.
-- Until TipTap is implemented, the editor is a Markdown textarea styled as a page canvas.
+- The title, path, save status, and relevant return context remain visible.
+- Editing must not navigate unexpectedly back to the library.
+- Save is explicit. Unsaved local changes are shown clearly but quietly.
+- Local drafts remain recoverable until saved or deliberately discarded.
+- On mobile, the editor owns the viewport and global workspace chrome recedes.
+- Until a structured editor is adopted, style the Markdown textarea as a page
+  canvas using the shared form and focus tokens.
 
 ## Create
 
-Create is a short intake flow, not a second editor.
+- Create is a short intake flow, not a second editor.
+- Ask only for path, title, type, summary, and scaffold choice.
+- Use the shared stacked form language and footer action row.
+- After creation, open the new document directly in the editor.
 
-- Ask for path, title, type, and summary.
-- After creation, immediately open the new document in Editor.
-- Prefer creating inside the currently selected folder later.
+## Responsive rules
 
-## Mobile Rules
+- The 390×844 workspace baseline applies.
+- Search, filters, and the tree belong in the drawer, not above document
+  content.
+- Reader and editor content use a readable maximum width.
+- Document summaries clamp before the title or primary action is lost.
+- Avoid layout jumps among loading, browsing, reading, and editing states.
 
-- Pixel 7 is the baseline mobile viewport.
-- Avoid long stacked navigation/control blocks.
-- Do not expose implementation settings such as API endpoint fields.
-- Keep header/navigation compact.
-- Search and filters belong in the drawer, not above every content screen.
-- Document rows should be compact and scannable, with summaries clamped.
-- Avoid layout jumps between loading, browsing, and editing.
+## Additional references
 
-## Inspiration
-
-- **Notion**: sidebar/page navigation, one page workspace, low-chrome editing.
-- **Confluence**: page tree as hierarchy, create/edit as explicit workflows.
-- **GitBook**: content structure and editor are related but separate modes.
-- **Google Drive mobile**: search plus filters help narrow large collections.
+- Notion: sidebar and page navigation, one-page workspace, low-chrome editing.
+- Confluence: explicit page tree and create/edit workflows.
+- GitBook: related but distinct content structure and editor modes.

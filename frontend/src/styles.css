@@ -18,10 +18,16 @@
   --input-border: #d0d7de;
   --success-bg: #e6f6ea;
   --success-text: #116329;
+  --success-border: #b7dfc2;
   --warning-bg: #fff6d7;
   --warning-text: #7d4e00;
+  --warning-border: rgba(191, 135, 0, 0.32);
   --danger-bg: #fff0ee;
   --danger-text: #cf222e;
+  --danger-border: rgba(207, 34, 46, 0.24);
+  --info-bg: #edf5ff;
+  --info-text: #315f8f;
+  --info-border: rgba(49, 95, 143, 0.22);
   --focus-ring: rgba(49, 95, 143, 0.4);
 
   /* DataOps product accent, retained from the approved ImageGen boards */
@@ -112,10 +118,16 @@ body.dark {
   --input-border: #30363d;
   --success-bg: rgba(31, 111, 59, 0.3);
   --success-text: #7ee787;
+  --success-border: rgba(35, 134, 54, 0.4);
   --warning-bg: #2d2516;
   --warning-text: #f0d98c;
+  --warning-border: rgba(187, 128, 9, 0.5);
   --danger-bg: rgba(218, 54, 51, 0.2);
   --danger-text: #ff7b72;
+  --danger-border: rgba(218, 54, 51, 0.4);
+  --info-bg: rgba(77, 127, 168, 0.22);
+  --info-text: #8bb7df;
+  --info-border: rgba(77, 127, 168, 0.42);
   --focus-ring: rgba(139, 183, 223, 0.4);
   --accent: #5fb39d;
   --accent-hover: #75c0ac;
@@ -752,10 +764,53 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 }
 
 .home-task-marker {
+  display: grid;
   width: 22px;
   height: 22px;
+  place-items: center;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-task-marker::before {
+  content: "·";
+  transform: translateY(-1px);
+}
+
+.home-attention-overdue .home-task-marker {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.home-attention-overdue .home-task-marker::before {
+  content: "!";
+  transform: none;
+}
+
+.home-attention-follow-up .home-task-marker {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.home-attention-follow-up .home-task-marker::before {
+  content: "↻";
+  transform: none;
+}
+
+.home-attention-missing-proof .home-task-marker {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.home-attention-missing-proof .home-task-marker::before {
+  content: "+";
+  transform: none;
 }
 
 .home-task-content,
@@ -1209,18 +1264,6 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
     min-height: 44px;
   }
 
-  .home-quick-action:first-child {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: #fff;
-  }
-
-  .home-quick-action-primary {
-    border-color: var(--border-muted);
-    background: var(--surface-muted);
-    color: var(--accent);
-  }
-
   .home-status-item {
     display: grid;
     justify-items: center;
@@ -1317,5 +1360,16 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
 
   .home-status-item span {
     font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
