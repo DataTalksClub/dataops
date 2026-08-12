@@ -41,7 +41,7 @@ import { createHomeSurface } from "./surfaces/home.js";
 import {
   createAdminSurface,
   createOperationsSurface,
-} from "./surfaces/operations.js";
+} from "./surfaces/operations/index.js";
 import { createPlanningSurface } from "./surfaces/planning.js";
 import { createTasksSurface } from "./surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "./surfaces/work-detail/index.js";

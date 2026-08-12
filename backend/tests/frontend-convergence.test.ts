@@ -29,7 +29,17 @@ const finance = financeModules
 const home = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'home.js'), 'utf8');
 const knowledge = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'knowledge.js'), 'utf8');
 const documentEditor = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'document-editor.js'), 'utf8');
-const operations = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations.js'), 'utf8');
+const operationsModules = [
+  'index.js',
+  'admin.js',
+  'artifacts.js',
+  'assistants.js',
+  'inbox.js',
+  'inbox-actions.js',
+];
+const operations = operationsModules
+  .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations', file), 'utf8'))
+  .join('\n');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const taskModules = [
   'index.js',
@@ -85,7 +95,7 @@ describe('one canonical frontend', () => {
       '/src/surfaces/home.js',
       '/src/surfaces/knowledge.js',
       '/src/surfaces/document-editor.js',
-      '/src/surfaces/operations.js',
+      ...operationsModules.map((file) => `/src/surfaces/operations/${file}`),
       '/src/surfaces/planning.js',
       ...taskModules.map((file) => `/src/surfaces/tasks/${file}`),
       ...workDetailModules.map((file) => `/src/surfaces/work-detail/${file}`),
@@ -129,7 +139,7 @@ describe('one canonical frontend', () => {
       'src/surfaces/home.js',
       'src/surfaces/knowledge.js',
       'src/surfaces/document-editor.js',
-      'src/surfaces/operations.js',
+      ...operationsModules.map((file) => `src/surfaces/operations/${file}`),
       'src/surfaces/planning.js',
       ...taskModules.map((file) => `src/surfaces/tasks/${file}`),
       ...workDetailModules.map((file) => `src/surfaces/work-detail/${file}`),

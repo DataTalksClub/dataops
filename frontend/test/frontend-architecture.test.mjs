@@ -16,7 +16,6 @@ const oversizedMigrationBaseline = Object.freeze({
   "src/app.js": 3_752,
   "src/surfaces/document-editor.js": 3_292,
   "src/surfaces/knowledge.js": 2_236,
-  "src/surfaces/operations.js": 2_145,
 });
 
 function read(relativePath) {

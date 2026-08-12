@@ -4,7 +4,7 @@ import { afterEach, describe, test } from "node:test";
 import {
   createAdminSurface,
   createOperationsSurface,
-} from "../src/surfaces/operations.js";
+} from "../src/surfaces/operations/index.js";
 import {
   FakeDocument,
   FakeElement,
