@@ -11,6 +11,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const frontendRoot = path.join(repoRoot, 'frontend');
 const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
 const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
+const application = readFileSync(path.join(frontendRoot, 'src', 'runtime', 'application.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
 const workspace = readFileSync(path.join(frontendRoot, 'src', 'core', 'workspace.js'), 'utf8');
 const shellModules = [
@@ -21,6 +22,16 @@ const shellModules = [
   'notifications.js',
   'navigation.js',
   'bootstrap.js',
+  'dom-bindings.js',
+];
+const coreModules = ['workspace.js', 'operations-model.js'];
+const runtimeModules = [
+  'application.js',
+  'application-events.js',
+  'operation-kernel.js',
+  'shell-composition.js',
+  'surface-composition.js',
+  'workspace-state.js',
 ];
 const financeModules = [
   'index.js',
@@ -118,7 +129,12 @@ describe('one canonical frontend', () => {
     const js = await handler({ httpMethod: 'GET', path: '/src/app.js' }, {});
     assert.strictEqual(js.statusCode, 200);
     assert.match(js.headers?.['Content-Type'] || '', /javascript/);
-    assert.match(js.body, /createHomeSurface/);
+    assert.match(js.body, /import "\.\/runtime\/application\.js"/);
+
+    const runtime = await handler({ httpMethod: 'GET', path: '/src/runtime/application.js' }, {});
+    assert.strictEqual(runtime.statusCode, 200);
+    assert.match(runtime.headers?.['Content-Type'] || '', /javascript/);
+    assert.match(runtime.body, /createHomeSurface/);
 
     const css = await handler({ httpMethod: 'GET', path: '/src/styles.css' }, {});
     assert.strictEqual(css.statusCode, 200);
@@ -127,9 +143,11 @@ describe('one canonical frontend', () => {
 
     for (const modulePath of [
       ...shellModules.map((file) => `/src/shell/${file}`),
-      '/src/core/workspace.js',
+      ...coreModules.map((file) => `/src/core/${file}`),
+      ...runtimeModules.map((file) => `/src/runtime/${file}`),
       ...financeModules.map((file) => `/src/surfaces/finance/${file}`),
       '/src/surfaces/home.js',
+      '/src/surfaces/operations-overview.js',
       ...knowledgeModules.map((file) => `/src/surfaces/knowledge/${file}`),
       ...documentEditorModules.map((file) => `/src/surfaces/document-editor/${file}`),
       ...operationsModules.map((file) => `/src/surfaces/operations/${file}`),
@@ -172,9 +190,11 @@ describe('one canonical frontend', () => {
       'src/app.js',
       'src/styles.css',
       ...shellModules.map((file) => `src/shell/${file}`),
-      'src/core/workspace.js',
+      ...coreModules.map((file) => `src/core/${file}`),
+      ...runtimeModules.map((file) => `src/runtime/${file}`),
       ...financeModules.map((file) => `src/surfaces/finance/${file}`),
       'src/surfaces/home.js',
+      'src/surfaces/operations-overview.js',
       ...knowledgeModules.map((file) => `src/surfaces/knowledge/${file}`),
       ...documentEditorModules.map((file) => `src/surfaces/document-editor/${file}`),
       ...operationsModules.map((file) => `src/surfaces/operations/${file}`),
@@ -188,7 +208,8 @@ describe('one canonical frontend', () => {
   });
 
   it('maps established hash routes and entity deep links into the canonical shell', () => {
-    assert.match(app, /from "\.\/core\/workspace\.js"/);
+    assert.match(app, /import "\.\/runtime\/application\.js"/);
+    assert.match(application, /from "\.\.\/core\/workspace\.js"/);
     for (const route of ['/', '/inbox', '/tasks', '/cards', '/cards/archive', '/assistants', '/templates', '/recurring', '/notifications', '/bookkeeping', '/sponsors', '/newsletter', '/calendar', '/mailing-exports']) {
       assert.ok(workspace.includes(`"${route}"`), `missing canonical route ${route}`);
     }
@@ -226,7 +247,7 @@ describe('one canonical frontend', () => {
   });
 
   it('keeps Today attention, status, and process-quality modeling in the canonical Home module', () => {
-    assert.match(app, /createHomeSurface/);
+    assert.match(application, /createHomeSurface/);
     for (const marker of [
       'renderOperationsHome',
       'renderHomeStatusStrip',
@@ -270,7 +291,7 @@ describe('one canonical frontend', () => {
   });
 
   it('provides complete Inbox triage in the canonical shell', () => {
-    assert.match(app, /createOperationsSurface/);
+    assert.match(application, /createOperationsSurface/);
     for (const marker of [
       'renderInboxSurface',
       '/api/intake',

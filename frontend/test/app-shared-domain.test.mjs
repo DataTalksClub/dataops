@@ -3,9 +3,25 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
-import vm from "node:vm";
 
 import * as workspace from "../src/core/workspace.js";
+import {
+  assistantJobsFromPayload,
+  bundlesFromWorkPayload,
+  createOperationsModel,
+  currentOperatorIdFromPayload,
+  emptyOperationsArtifactSnapshot,
+  emptyOperationsAssistantSnapshot,
+  emptyOperationsQualitySnapshot,
+  emptyOperationsRecurringSnapshot,
+  emptyOperationsWorkSnapshot,
+  labelizeWorkValue,
+  normalizeTemplateMatchValue,
+  recurringConfigsFromPayload,
+  settledPayload,
+  usersFromWorkPayload,
+} from "../src/core/operations-model.js";
+import { createOperationsOverview } from "../src/surfaces/operations-overview.js";
 import {
   FakeDocument,
   findAllByClass,
@@ -16,8 +32,16 @@ const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-const appSource = readFileSync(
-  path.join(repoRoot, "frontend/src/app.js"),
+const applicationSource = readFileSync(
+  path.join(repoRoot, "frontend/src/runtime/application.js"),
+  "utf8",
+);
+const operationsModelSource = readFileSync(
+  path.join(repoRoot, "frontend/src/core/operations-model.js"),
+  "utf8",
+);
+const operationsOverviewSource = readFileSync(
+  path.join(repoRoot, "frontend/src/surfaces/operations-overview.js"),
   "utf8",
 );
 const browserCharacterization = readFileSync(
@@ -27,83 +51,6 @@ const browserCharacterization = readFileSync(
   ),
   "utf8",
 );
-
-function functionSource(name) {
-  const match = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(
-    appSource,
-  );
-  assert.ok(match, `production function ${name} must exist in app.js`);
-  const start = match.index;
-  const parametersStart = appSource.indexOf("(", start);
-  let parameterDepth = 0;
-  let parametersEnd = -1;
-  for (let index = parametersStart; index < appSource.length; index += 1) {
-    if (appSource[index] === "(") parameterDepth += 1;
-    if (appSource[index] === ")") {
-      parameterDepth -= 1;
-      if (parameterDepth === 0) {
-        parametersEnd = index;
-        break;
-      }
-    }
-  }
-  assert.ok(parametersEnd > parametersStart, `${name} parameters must balance`);
-  const open = appSource.indexOf("{", parametersEnd);
-  let depth = 0;
-  let quote = "";
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
-  for (let index = open; index < appSource.length; index += 1) {
-    const character = appSource[index];
-    const next = appSource[index + 1];
-    if (lineComment) {
-      if (character === "\n") lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (character === "*" && next === "/") {
-        blockComment = false;
-        index += 1;
-      }
-      continue;
-    }
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (character === "\\") escaped = true;
-      else if (character === quote) quote = "";
-      continue;
-    }
-    if (character === "/" && next === "/") {
-      lineComment = true;
-      index += 1;
-      continue;
-    }
-    if (character === "/" && next === "*") {
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-    if (character === '"' || character === "'" || character === "`") {
-      quote = character;
-      continue;
-    }
-    if (character === "{") depth += 1;
-    if (character === "}") {
-      depth -= 1;
-      if (depth === 0) return appSource.slice(start, index + 1);
-    }
-  }
-  assert.fail(`production function ${name} is not balanced`);
-}
-
-function productionFunctions(names, globals = {}) {
-  const declarations = names.map(functionSource).join("\n\n");
-  return vm.runInNewContext(
-    `(function () {\n${declarations}\nreturn { ${names.join(", ")} };\n})()`,
-    globals,
-  );
-}
 
 function plain(value) {
   return JSON.parse(JSON.stringify(value));
@@ -128,12 +75,23 @@ const workModelNames = [
   "sortActiveWorkBundles",
 ];
 
+function operationsModel(overrides = {}) {
+  return {
+    normalizeTemplateMatchValue,
+    ...createOperationsModel({
+      basename: (value) => String(value).split("/").pop(),
+      cleanPath: (value) => String(value).replace(/^\/+/, ""),
+      getRecurringConfigTitle: (config) => config.title,
+      resolveAssigneeLabel: (id) => ({ grace: "Grace" })[id] || id,
+      ...overrides,
+    }),
+  };
+}
+
 describe("app shared operations domain characterization", () => {
   test("pins the remaining app-owned model, quality, reference, and surface boundaries", () => {
-    const expected = [
-      ...adapterNames,
+    const appOwned = [
       "normalizeOperationsRecurringSnapshot",
-      ...workModelNames.slice(2),
       "operationItemFromTask",
       "operationItemFromBundle",
       "summarizeWorkflowTemplate",
@@ -143,56 +101,59 @@ describe("app shared operations domain characterization", () => {
       "renderOperationsLane",
       "renderOperationsReference",
     ];
-    for (const name of new Set(expected)) functionSource(name);
+    for (const name of appOwned.slice(5)) {
+      assert.match(
+        operationsOverviewSource,
+        new RegExp(`function\\s+${name}\\b|\\b${name},`),
+      );
+    }
+
+    for (const name of [...adapterNames, ...workModelNames.slice(2)]) {
+      assert.match(
+        operationsModelSource,
+        new RegExp(`(?:export\\s+)?function\\s+${name}\\b|\\b${name},`),
+      );
+    }
 
     assert.match(
-      appSource,
-      /createHomeSurface\([\s\S]*buildOperationsReferenceLinks,[\s\S]*normalizeOperationsWorkSnapshot,/,
+      applicationSource,
+      /from "\.\.\/core\/operations-model\.js"/,
     );
     assert.match(
-      appSource,
+      applicationSource,
       /createTasksSurface\([\s\S]*operationItemFromBundle,[\s\S]*sortWorkTasks,/,
     );
     assert.match(
-      appSource,
+      applicationSource,
       /createKnowledgeSurface\([\s\S]*buildOperationsReferenceLinks,[\s\S]*renderQualityFindingRow,/,
     );
   });
 
   test("normalizes work API collection envelopes and authenticated operator ids", () => {
-    const adapters = productionFunctions(adapterNames);
     const bundle = { id: "card-1" };
     const user = { id: "grace" };
     const recurring = { id: "weekly" };
     const job = { id: "job-1" };
 
-    assert.equal(adapters.settledPayload({ status: "fulfilled", value: bundle }), bundle);
-    assert.deepEqual(plain(adapters.settledPayload({ status: "rejected" })), {});
-    assert.equal(adapters.bundlesFromWorkPayload({ bundles: [bundle] })[0], bundle);
-    assert.equal(adapters.bundlesFromWorkPayload({ items: [bundle] })[0], bundle);
-    assert.equal(adapters.usersFromWorkPayload({ users: [user] })[0], user);
+    assert.equal(settledPayload({ status: "fulfilled", value: bundle }), bundle);
+    assert.deepEqual(plain(settledPayload({ status: "rejected" })), {});
+    assert.equal(bundlesFromWorkPayload({ bundles: [bundle] })[0], bundle);
+    assert.equal(bundlesFromWorkPayload({ items: [bundle] })[0], bundle);
+    assert.equal(usersFromWorkPayload({ users: [user] })[0], user);
     assert.equal(
-      adapters.recurringConfigsFromPayload({ configs: [recurring] })[0],
+      recurringConfigsFromPayload({ configs: [recurring] })[0],
       recurring,
     );
-    assert.equal(adapters.assistantJobsFromPayload({ jobs: [job] })[0], job);
-    assert.deepEqual(plain(adapters.assistantJobsFromPayload(null)), []);
-    assert.equal(adapters.currentOperatorIdFromPayload({ user }), "grace");
-    assert.equal(adapters.currentOperatorIdFromPayload({ actor: { id: 42 } }), "42");
-    assert.equal(adapters.currentOperatorIdFromPayload({ id: "alexey" }), "alexey");
-    assert.equal(adapters.currentOperatorIdFromPayload({}), "");
+    assert.equal(assistantJobsFromPayload({ jobs: [job] })[0], job);
+    assert.deepEqual(assistantJobsFromPayload(null), []);
+    assert.equal(currentOperatorIdFromPayload({ user }), "grace");
+    assert.equal(currentOperatorIdFromPayload({ actor: { id: 42 } }), "42");
+    assert.equal(currentOperatorIdFromPayload({ id: "alexey" }), "alexey");
+    assert.equal(currentOperatorIdFromPayload({}), "");
   });
 
   test("creates honest empty snapshots for each independently loaded source", () => {
-    const snapshots = productionFunctions([
-      "emptyOperationsWorkSnapshot",
-      "emptyOperationsRecurringSnapshot",
-      "emptyOperationsArtifactSnapshot",
-      "emptyOperationsAssistantSnapshot",
-      "emptyOperationsQualitySnapshot",
-    ]);
-
-    assert.deepEqual(plain(snapshots.emptyOperationsWorkSnapshot()), {
+    assert.deepEqual(emptyOperationsWorkSnapshot(), {
       loaded: false,
       currentOperatorId: "",
       todayTasks: [],
@@ -208,35 +169,27 @@ describe("app shared operations domain characterization", () => {
       bundlesLoaded: false,
       usersLoaded: false,
     });
-    assert.deepEqual(plain(snapshots.emptyOperationsRecurringSnapshot()), {
+    assert.deepEqual(emptyOperationsRecurringSnapshot(), {
       loaded: false,
       recurringConfigs: [],
       errors: [],
     });
-    assert.deepEqual(plain(snapshots.emptyOperationsArtifactSnapshot()), {
+    assert.deepEqual(emptyOperationsArtifactSnapshot(), {
       loaded: false,
       artifacts: [],
       errors: [],
     });
-    assert.deepEqual(plain(snapshots.emptyOperationsAssistantSnapshot()), {
+    assert.deepEqual(emptyOperationsAssistantSnapshot(), {
       loaded: false,
       jobs: [],
       errors: [],
     });
-    assert.equal(snapshots.emptyOperationsQualitySnapshot().summary.total, 0);
-    assert.deepEqual(plain(snapshots.emptyOperationsQualitySnapshot().validationErrors), []);
+    assert.equal(emptyOperationsQualitySnapshot().summary.total, 0);
+    assert.deepEqual(emptyOperationsQualitySnapshot().validationErrors, []);
   });
 
   test("sorts recurring configs into enabled and disabled operational states", () => {
-    const model = productionFunctions(
-      [
-        "recurringConfigsFromPayload",
-        "normalizeOperationsRecurringSnapshot",
-      ],
-      {
-        recurringConfigTitle: (config) => config.title,
-      },
-    ).normalizeOperationsRecurringSnapshot({
+    const model = operationsModel().normalizeOperationsRecurringSnapshot({
       loaded: true,
       configs: [
         { id: "off", title: "Alpha", enabled: false },
@@ -258,7 +211,7 @@ describe("app shared operations domain characterization", () => {
   });
 
   test("derives per-lane work state, counts, maps, ordering, and partial truth", () => {
-    const functions = productionFunctions(workModelNames, { ...workspace });
+    const functions = operationsModel();
     const snapshot = functions.normalizeOperationsWorkSnapshot(
       {
         loaded: true,
@@ -306,19 +259,7 @@ describe("app shared operations domain characterization", () => {
   });
 
   test("maps Tasks and Cards to operator-facing source, proof, risk, and next actions", () => {
-    const functions = productionFunctions(
-      [
-        "labelizeWorkValue",
-        "taskSourceLabel",
-        "taskNextActionLabel",
-        "operationItemFromTask",
-        "operationItemFromBundle",
-      ],
-      {
-        ...workspace,
-        resolveAssigneeLabel: (id) => ({ grace: "Grace" })[id] || id,
-      },
-    );
+    const functions = operationsModel();
     const waiting = {
       id: "task-1",
       title: "Confirm guest",
@@ -362,25 +303,7 @@ describe("app shared operations domain characterization", () => {
   });
 
   test("projects Template and Process Doc vocabulary without duplicate operation rows", () => {
-    const functions = productionFunctions(
-      [
-        "labelizeWorkValue",
-        "normalizeTemplateMatchValue",
-        "isWorkflowTemplateDoc",
-        "summarizeWorkflowTemplate",
-        "workflowSlugFromDoc",
-        "isRecurringWorkflowSlug",
-        "isAtRiskWorkflowSlug",
-        "isFollowUpDoc",
-        "operationItemFromTemplate",
-        "operationItemFromDoc",
-        "dedupeOperationItems",
-      ],
-      {
-        basename: (value) => String(value).split("/").pop(),
-        cleanPath: (value) => String(value).replace(/^\/+/, ""),
-      },
-    );
+    const functions = operationsModel();
     const template = functions.summarizeWorkflowTemplate({
       path: "tasks/templates/newsletter.md",
       title: "Newsletter Task Template",
@@ -420,10 +343,7 @@ describe("app shared operations domain characterization", () => {
   });
 
   test("builds curated internal Process references before public planning references", () => {
-    const { buildOperationsReferenceLinks } = productionFunctions(
-      ["buildOperationsReferenceLinks"],
-      { basename: (value) => String(value).split("/").pop() },
-    );
+    const { buildOperationsReferenceLinks } = operationsModel();
     const references = buildOperationsReferenceLinks([
       {
         path: "content/tasks/templates/newsletter.md",
@@ -447,22 +367,21 @@ describe("app shared operations domain characterization", () => {
   });
 
   test("keeps surface titles, descriptions, counts, and connection status honest", () => {
-    const functions = productionFunctions(
-      [
-        "operationsViewTitle",
-        "operationsViewPath",
-        "surfaceDescription",
-        "countLabel",
-        "referenceCountLabel",
-        "surfaceStatusText",
-      ],
-      {
-        operationsAssistantSnapshot: { loaded: true, jobs: [{}, {}] },
-        operationsArtifactSnapshot: { loaded: false, artifacts: [] },
-        operationsQualitySnapshot: { loaded: true, findings: [{}] },
-        tasksSectionTitle: workspace.tasksSectionTitle,
+    const functions = createOperationsOverview({
+      document: new FakeDocument(),
+      labelizeWorkValue,
+      openBundlePanel() {},
+      openDocument() {},
+      openTaskPanel() {},
+      resolveDocReference() {},
+      showWorkspaceSurface() {},
+      state: {
+        assistantSnapshot: { loaded: true, jobs: [{}, {}] },
+        artifactSnapshot: { loaded: false, artifacts: [] },
+        qualitySnapshot: { loaded: true, findings: [{}] },
       },
-    );
+      tasksSectionTitle: workspace.tasksSectionTitle,
+    });
     assert.equal(functions.operationsViewTitle("home"), "Today");
     assert.equal(functions.operationsViewTitle("tasks", "templates"), "Tasks - Templates");
     assert.equal(functions.operationsViewPath("docs"), "Docs");
@@ -479,27 +398,21 @@ describe("app shared operations domain characterization", () => {
   test("renders accessible honest states, lanes, references, and quality actions", async () => {
     const document = new FakeDocument();
     const opened = [];
-    const functions = productionFunctions(
-      [
-        "labelizeWorkValue",
-        "renderSurfaceHeader",
-        "renderHonestState",
-        "renderOperationsRuntimeState",
-        "renderOperationsLane",
-        "renderOperationsLaneItem",
-        "renderOperationsReference",
-        "renderQualityFindingRow",
-        "openQualityFinding",
-      ],
-      {
-        document,
-        openBundlePanel: (id) => opened.push(["card", id]),
-        openDocument: (docPath) => opened.push(["doc", docPath]),
-        openTaskPanel: (id) => opened.push(["task", id]),
-        resolveDocReference: () => null,
-        showWorkspaceSurface: (view) => opened.push(["surface", view]),
+    const functions = createOperationsOverview({
+      document,
+      labelizeWorkValue,
+      openBundlePanel: (id) => opened.push(["card", id]),
+      openDocument: (docPath) => opened.push(["doc", docPath]),
+      openTaskPanel: (id) => opened.push(["task", id]),
+      resolveDocReference: () => null,
+      showWorkspaceSurface: (view) => opened.push(["surface", view]),
+      state: {
+        assistantSnapshot: { loaded: false, jobs: [] },
+        artifactSnapshot: { loaded: false, artifacts: [] },
+        qualitySnapshot: { loaded: false, findings: [] },
       },
-    );
+      tasksSectionTitle: workspace.tasksSectionTitle,
+    });
     const header = functions.renderSurfaceHeader("Cards", "Open work");
     assert.equal(header.className, "ops-surface-header");
     assert.equal(findByText(header, "Cards", "h3").textContent, "Cards");

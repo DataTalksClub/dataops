@@ -12,9 +12,7 @@ const repoRoot = path.resolve(
 const MAX_MODULE_LINES = 1_000;
 // Remove an entry as soon as that responsibility is split. Values are the
 // measured pre-split ceiling and may never increase.
-const oversizedMigrationBaseline = Object.freeze({
-  "src/app.js": 2_656,
-});
+const oversizedMigrationBaseline = Object.freeze({});
 
 function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");

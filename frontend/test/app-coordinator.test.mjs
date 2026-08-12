@@ -23,6 +23,14 @@ const appSource = readFileSync(
   path.join(repoRoot, "frontend/src/app.js"),
   "utf8",
 );
+const applicationSource = readFileSync(
+  path.join(repoRoot, "frontend/src/runtime/application.js"),
+  "utf8",
+);
+const applicationEventsSource = readFileSync(
+  path.join(repoRoot, "frontend/src/runtime/application-events.js"),
+  "utf8",
+);
 const feedbackSource = readFileSync(
   path.join(repoRoot, "frontend/src/shell/feedback.js"),
   "utf8",
@@ -45,6 +53,10 @@ const navigationSource = readFileSync(
 );
 const bootstrapSource = readFileSync(
   path.join(repoRoot, "frontend/src/shell/bootstrap.js"),
+  "utf8",
+);
+const domBindingsSource = readFileSync(
+  path.join(repoRoot, "frontend/src/shell/dom-bindings.js"),
   "utf8",
 );
 const shellMarkup = readFileSync(
@@ -345,8 +357,18 @@ describe("app shell coordinator characterization", () => {
       initialize,
       /locationRef\.hash \|\| locationRef\.pathname === "\/"[\s\S]*\? openInitialRoute\(\)[\s\S]*: documentsReady\.then\(openInitialRoute\)/,
     );
-    assert.match(appSource, /"popstate",[\s\S]*navigationShell\.scheduleCurrentBrowserLocation/);
-    assert.match(appSource, /"hashchange",[\s\S]*navigationShell\.scheduleCurrentBrowserLocation/);
+    assert.match(
+      domBindingsSource,
+      /"popstate",[\s\S]*handlers\.scheduleCurrentBrowserLocation/,
+    );
+    assert.match(
+      domBindingsSource,
+      /"hashchange",[\s\S]*handlers\.scheduleCurrentBrowserLocation/,
+    );
+    assert.match(
+      applicationEventsSource,
+      /scheduleCurrentBrowserLocation:\s*navigationShell\.scheduleCurrentBrowserLocation/,
+    );
   });
 
   test("keeps isolated browser pointers for shell interaction and invalid-route recovery", () => {

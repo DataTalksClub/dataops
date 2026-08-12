@@ -1,0 +1,657 @@
+import {
+  compareIsoDate,
+  dedupeWorkTasks,
+  formatTaskDateMeta,
+  isActiveWorkBundle,
+  isBeforeIsoDate,
+  isOpenWorkTask,
+  isTaskDueToday,
+  isTaskOverdue,
+  isWaitingOrFollowUpTask,
+  summarizeBundleProgress,
+  taskDate,
+  taskProofState,
+  tasksFromWorkPayload,
+  todayIsoDate,
+  workBundleTitle,
+  workTaskTitle,
+} from "./workspace.js";
+
+export function emptyOperationsWorkSnapshot() {
+  return {
+    loaded: false,
+    currentOperatorId: "",
+    todayTasks: [],
+    overdueTasks: [],
+    waitingTasks: [],
+    bundles: [],
+    users: [],
+    bundleTasks: {},
+    errors: [],
+    todayLoaded: false,
+    overdueLoaded: false,
+    waitingLoaded: false,
+    bundlesLoaded: false,
+    usersLoaded: false,
+  };
+}
+
+export function emptyOperationsRecurringSnapshot() {
+  return { loaded: false, recurringConfigs: [], errors: [] };
+}
+
+export function emptyOperationsArtifactSnapshot() {
+  return { loaded: false, artifacts: [], errors: [] };
+}
+
+export function emptyOperationsAssistantSnapshot() {
+  return { loaded: false, jobs: [], errors: [] };
+}
+
+export function emptyOperationsQualitySnapshot() {
+  return {
+    loaded: false,
+    ok: false,
+    findings: [],
+    summary: {
+      total: 0,
+      blocking: 0,
+      warning: 0,
+      info: 0,
+      byCategory: {},
+    },
+    errors: [],
+    validationErrors: [],
+  };
+}
+
+export function settledPayload(result) {
+  return result && result.status === "fulfilled" ? result.value : {};
+}
+
+export function bundlesFromWorkPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.bundles)) return payload.bundles;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+export function usersFromWorkPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.users)) return payload.users;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+export function recurringConfigsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.recurringConfigs)) return payload.recurringConfigs;
+  if (Array.isArray(payload.configs)) return payload.configs;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+export function assistantJobsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  if (Array.isArray(payload.assistantJobs)) return payload.assistantJobs;
+  if (Array.isArray(payload.jobs)) return payload.jobs;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+export function currentOperatorIdFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (payload.user && typeof payload.user === "object" && payload.user.id) {
+    return String(payload.user.id);
+  }
+  if (payload.actor && typeof payload.actor === "object" && payload.actor.id) {
+    return String(payload.actor.id);
+  }
+  if (payload.id) return String(payload.id);
+  return "";
+}
+
+export function labelizeWorkValue(value) {
+  return String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+export function normalizeTemplateMatchValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+task template$/i, "")
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function createOperationsModel({
+  basename,
+  cleanPath,
+  getRecurringConfigTitle,
+  resolveAssigneeLabel,
+} = {}) {
+  function recurringTitle(config) {
+    return getRecurringConfigTitle
+      ? getRecurringConfigTitle(config)
+      : config?.title || config?.name || config?.id || "Recurring config";
+  }
+
+  function normalizeOperationsRecurringSnapshot(input) {
+    const snapshot = input && typeof input === "object" ? input : {};
+    const configs = recurringConfigsFromPayload(
+      snapshot.recurringConfigs || snapshot.configs || [],
+    );
+    const normalized = configs
+      .filter((config) => config && typeof config === "object")
+      .map((config) => ({ ...config, enabled: config.enabled !== false }))
+      .sort((left, right) => {
+        if (left.enabled !== right.enabled) return left.enabled ? -1 : 1;
+        return recurringTitle(left).localeCompare(recurringTitle(right));
+      });
+    return {
+      loaded: Boolean(snapshot.loaded),
+      configs: normalized,
+      enabled: normalized.filter((config) => config.enabled !== false),
+      disabled: normalized.filter((config) => config.enabled === false),
+      errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
+    };
+  }
+
+  function normalizeBundleTaskMap(bundleTasks, fallbackTasks) {
+    const output = {};
+    if (
+      bundleTasks &&
+      typeof bundleTasks === "object" &&
+      !Array.isArray(bundleTasks)
+    ) {
+      for (const [bundleId, tasks] of Object.entries(bundleTasks)) {
+        output[bundleId] = tasksFromWorkPayload(tasks);
+      }
+    }
+    for (const task of tasksFromWorkPayload(fallbackTasks || [])) {
+      if (!task || !task.bundleId) continue;
+      if (!output[task.bundleId]) output[task.bundleId] = [];
+      output[task.bundleId].push(task);
+    }
+    for (const [bundleId, tasks] of Object.entries(output)) {
+      output[bundleId] = dedupeWorkTasks(tasks);
+    }
+    return output;
+  }
+
+  function taskSortDate(task, mode) {
+    if (mode === "waiting") return task.followUpAt || task.date || "";
+    return task.date || task.followUpAt || "";
+  }
+
+  function sortWorkTasks(tasks, mode, today) {
+    const sorted = dedupeWorkTasks(tasks).filter(isOpenWorkTask);
+    sorted.sort((left, right) => {
+      const dateLeft = taskSortDate(left, mode);
+      const dateRight = taskSortDate(right, mode);
+      const byDate = compareIsoDate(dateLeft, dateRight);
+      if (byDate !== 0) return byDate;
+      if (mode === "overdue") {
+        return compareIsoDate(
+          taskDate(left) || today,
+          taskDate(right) || today,
+        );
+      }
+      return workTaskTitle(left).localeCompare(workTaskTitle(right));
+    });
+    return sorted.slice(0, 12);
+  }
+
+  function sortActiveWorkBundles(bundles, bundleTasks, today) {
+    const scored = bundles.map((bundle) => ({
+      bundle,
+      progress: summarizeBundleProgress(
+        bundle,
+        bundleTasks[bundle.id] || [],
+        today,
+      ),
+    }));
+    scored.sort((left, right) => {
+      const riskOrder = { high: 0, medium: 1, low: 2 };
+      const byRisk =
+        (riskOrder[left.progress.risk] ?? 2) -
+        (riskOrder[right.progress.risk] ?? 2);
+      if (byRisk !== 0) return byRisk;
+      const byDate = compareIsoDate(
+        left.bundle.anchorDate || "",
+        right.bundle.anchorDate || "",
+      );
+      if (byDate !== 0) return byDate;
+      return workBundleTitle(left.bundle).localeCompare(
+        workBundleTitle(right.bundle),
+      );
+    });
+    return scored.map((entry) => entry.bundle);
+  }
+
+  function normalizeOperationsWorkSnapshot(input, options = {}) {
+    const today = options.today || todayIsoDate();
+    const snapshot = input && typeof input === "object" ? input : {};
+    const allTasks = dedupeWorkTasks([
+      ...tasksFromWorkPayload(snapshot.tasks || []),
+      ...tasksFromWorkPayload(snapshot.todayTasks || []),
+      ...tasksFromWorkPayload(snapshot.overdueTasks || []),
+      ...tasksFromWorkPayload(snapshot.waitingTasks || []),
+    ]);
+    const explicitToday = tasksFromWorkPayload(snapshot.todayTasks || []);
+    const explicitOverdue = tasksFromWorkPayload(snapshot.overdueTasks || []);
+    const explicitWaiting = tasksFromWorkPayload(snapshot.waitingTasks || []);
+    const bundles = bundlesFromWorkPayload(snapshot.bundles || []);
+    const users = usersFromWorkPayload(snapshot.users || []);
+    const bundleTasks = normalizeBundleTaskMap(
+      snapshot.bundleTasks || {},
+      allTasks,
+    );
+    const laneLoaded = (flag) =>
+      snapshot[flag] === undefined
+        ? Boolean(snapshot.loaded)
+        : Boolean(snapshot[flag]);
+    const taskCount = (value, fallback) =>
+      Number.isFinite(Number(value)) ? Number(value) : fallback;
+    const normalizedTodayTasks = dedupeWorkTasks([
+      ...explicitToday,
+      ...allTasks.filter((task) => isTaskDueToday(task, today)),
+    ]);
+    const normalizedOverdueTasks = dedupeWorkTasks([
+      ...explicitOverdue,
+      ...allTasks.filter((task) => isTaskOverdue(task, today)),
+    ]);
+    const normalizedWaitingTasks = dedupeWorkTasks([
+      ...explicitWaiting,
+      ...allTasks.filter((task) => isWaitingOrFollowUpTask(task)),
+    ]);
+
+    return {
+      loaded: Boolean(snapshot.loaded),
+      todayLoaded: laneLoaded("todayLoaded"),
+      overdueLoaded: laneLoaded("overdueLoaded"),
+      waitingLoaded: laneLoaded("waitingLoaded"),
+      bundlesLoaded: laneLoaded("bundlesLoaded"),
+      usersLoaded: laneLoaded("usersLoaded"),
+      currentOperatorId: String(snapshot.currentOperatorId || ""),
+      todayTasks: sortWorkTasks(normalizedTodayTasks, "today", today),
+      overdueTasks: sortWorkTasks(normalizedOverdueTasks, "overdue", today),
+      waitingTasks: sortWorkTasks(normalizedWaitingTasks, "waiting", today),
+      todayTaskCount: taskCount(
+        snapshot.todayTaskCount,
+        normalizedTodayTasks.length,
+      ),
+      overdueTaskCount: taskCount(
+        snapshot.overdueTaskCount,
+        normalizedOverdueTasks.length,
+      ),
+      waitingTaskCount: taskCount(
+        snapshot.waitingTaskCount,
+        normalizedWaitingTasks.length,
+      ),
+      activeBundles: sortActiveWorkBundles(
+        bundles.filter(isActiveWorkBundle),
+        bundleTasks,
+        today,
+      ),
+      bundles,
+      bundlesById: new Map(
+        bundles
+          .filter((bundle) => bundle && bundle.id)
+          .map((bundle) => [bundle.id, bundle]),
+      ),
+      users,
+      usersById: new Map(
+        users
+          .filter((user) => user && user.id)
+          .map((user) => [user.id, user]),
+      ),
+      bundleTasks,
+      errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
+    };
+  }
+
+  function isCurrentOperatorTodayTask(task, currentOperatorId) {
+    if (!isOpenWorkTask(task)) return false;
+    const assigneeId = String(task.assigneeId || "");
+    return !assigneeId || assigneeId === String(currentOperatorId || "");
+  }
+
+  function isTaskAssignedTo(task, userId) {
+    return (
+      isOpenWorkTask(task) &&
+      String(task?.assigneeId || "") === String(userId || "")
+    );
+  }
+
+  function isSyntheticCurrentOperatorId(currentOperatorId) {
+    return String(currentOperatorId || "").trim().toLowerCase() === "portal-admin";
+  }
+
+  function currentOperatorIdForTodayScope(currentOperatorId) {
+    const id = String(currentOperatorId || "").trim();
+    if (!id || isSyntheticCurrentOperatorId(id)) return "";
+    return id;
+  }
+
+  function taskSourceLabel(task) {
+    if (task?.source) return labelizeWorkValue(task.source);
+    if (task?.recurringConfigId) return "Recurring";
+    if (task?.templateId || task?.bundleId) return "Card";
+    return "Ad hoc";
+  }
+
+  function taskNextActionLabel(task, today) {
+    const status = String(task?.status || "todo").toLowerCase();
+    if (status === "waiting") {
+      if (
+        task?.followUpAt &&
+        !isBeforeIsoDate(today, String(task.followUpAt).slice(0, 10))
+      ) {
+        return "Follow up";
+      }
+      return "Mark response received";
+    }
+    const proof = taskProofState(task);
+    if (!proof.ok) {
+      const first = proof.missing[0] || "proof";
+      return first === "required file" ? "Attach file" : `Add ${first}`;
+    }
+    return "Mark done";
+  }
+
+  function operationItemFromTask(task, options = {}) {
+    const today = options.today || todayIsoDate();
+    const proof = taskProofState(task);
+    const meta = [];
+    if (task.date) meta.push(`Due ${formatTaskDateMeta(task.date, today)}`);
+    if (task.status) meta.push(task.status);
+    meta.push(task.bundleId ? "Card" : "Independent");
+    meta.push(taskSourceLabel(task));
+    if (task.assigneeId) {
+      meta.push(`Owner ${resolveAssigneeLabel(task.assigneeId)}`);
+    }
+    meta.push(proof.label);
+    meta.push(`Next: ${taskNextActionLabel(task, today)}`);
+    const summary = task.waitingFor
+      ? `Waiting for ${task.waitingFor}${
+          task.followUpAt
+            ? `; follow up ${formatTaskDateMeta(task.followUpAt, today)}`
+            : ""
+        }`
+      : !proof.ok
+        ? proof.label
+        : task.comment ||
+          task.instructionsUrl ||
+          task.link ||
+          "Ready for the next operating action.";
+    return {
+      title: workTaskTitle(task),
+      summary,
+      meta: meta.join(" - "),
+      taskId: task.id,
+      bundleId: task.bundleId,
+      dueDate: taskDate(task),
+      followUpDate: String(task.followUpAt || "").slice(0, 10),
+      nextAction: taskNextActionLabel(task, today),
+      proof,
+      risk: options.overdue
+        ? "high"
+        : options.waiting || !proof.ok
+          ? "medium"
+          : "low",
+    };
+  }
+
+  function operationItemFromBundle(bundle, tasks, options = {}) {
+    const today = options.today || todayIsoDate();
+    const progress = summarizeBundleProgress(bundle, tasks, today);
+    const summaryParts = [];
+    if (bundle.stage) summaryParts.push(labelizeWorkValue(bundle.stage));
+    if (bundle.anchorDate) {
+      summaryParts.push(
+        `Anchor ${formatTaskDateMeta(bundle.anchorDate, today)}`,
+      );
+    }
+    if (progress.nextDueTask) {
+      const nextDate = taskDate(progress.nextDueTask);
+      const timing = nextDate
+        ? ` (${formatTaskDateMeta(nextDate, today)})`
+        : "";
+      summaryParts.push(
+        `Next: ${workTaskTitle(progress.nextDueTask)}${timing}`,
+      );
+    }
+    if (bundle.description) summaryParts.push(bundle.description);
+    return {
+      title: workBundleTitle(bundle),
+      stage: bundle.stage || "",
+      summary: summaryParts.join(" - "),
+      meta: progress.label,
+      bundleId: bundle.id,
+      progress,
+      risk: progress.risk,
+    };
+  }
+
+  function isWorkflowTemplateDoc(doc) {
+    if (!doc || !doc.path) return false;
+    return (
+      doc.doc_type === "task-template" ||
+      cleanPath(doc.path).startsWith("tasks/templates/")
+    );
+  }
+
+  function workflowSlugFromDoc(doc) {
+    const docPath = cleanPath(doc.path || "");
+    const filename = docPath.split("/").pop() || "";
+    return filename.replace(/\.md$/, "");
+  }
+
+  function isRecurringWorkflowSlug(slug) {
+    return ["newsletter", "social-media", "tax-report"].includes(slug);
+  }
+
+  function isAtRiskWorkflowSlug(slug) {
+    return [
+      "podcast",
+      "webinar",
+      "workshop",
+      "newsletter",
+      "tax-report",
+    ].includes(slug);
+  }
+
+  function summarizeWorkflowTemplate(doc) {
+    const slug = workflowSlugFromDoc(doc);
+    const tags = Array.isArray(doc.tags)
+      ? doc.tags.filter((tag) => tag && tag !== "task-template")
+      : [];
+    return {
+      title: (doc.title || basename(doc.path || "")).replace(
+        /\s+Task Template$/i,
+        "",
+      ),
+      summary: doc.summary || "Git-backed Card template.",
+      path: doc.path,
+      slug,
+      tags,
+      recurring: isRecurringWorkflowSlug(slug),
+      atRisk: isAtRiskWorkflowSlug(slug),
+    };
+  }
+
+  function workflowPriority(slug) {
+    const order = [
+      "newsletter",
+      "podcast",
+      "webinar",
+      "workshop",
+      "book-of-the-week",
+      "course",
+      "office-hours",
+      "tax-report",
+      "social-media",
+      "oss",
+      "maven-ll",
+    ];
+    const index = order.indexOf(slug);
+    return index === -1 ? order.length : index;
+  }
+
+  function isFollowUpDoc(doc) {
+    if (!doc || isWorkflowTemplateDoc(doc)) return false;
+    const haystack = [
+      doc.title || "",
+      doc.summary || "",
+      (doc.tags || []).join(" "),
+      doc.path || "",
+    ]
+      .join(" ")
+      .toLowerCase();
+    return /\b(waiting|follow[- ]?up|remind|reminder|reach[- ]?out|contact|reply|email)\b/.test(
+      haystack,
+    );
+  }
+
+  function operationItemFromTemplate(template) {
+    const badges = [];
+    if (template.recurring) badges.push("Recurring");
+    if (template.atRisk) badges.push("Watch");
+    return {
+      title: template.title,
+      summary: template.summary,
+      meta: badges.join(" · ") || "Template",
+      path: template.path,
+    };
+  }
+
+  function operationItemFromDoc(doc, meta) {
+    return {
+      title: doc.title || basename(doc.path || ""),
+      summary: doc.summary || doc.path || "",
+      meta,
+      path: doc.path,
+    };
+  }
+
+  function dedupeOperationItems(items) {
+    const seen = new Set();
+    const output = [];
+    for (const item of items) {
+      const key = item.path || item.title;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      output.push(item);
+    }
+    return output;
+  }
+
+  function buildOperationsFutureSections() {
+    return [
+      {
+        id: "inbox",
+        title: "Inbox",
+        status: "Not connected yet",
+        body:
+          "Telegram, email, manual notes, files, and assistant-ready inputs " +
+          "will land here when the durable inbox model ships in #31.",
+      },
+      {
+        id: "assistant-jobs",
+        title: "Assistant Jobs",
+        status: "Not connected yet",
+        body:
+          "Assistant run status, approvals, retries, logs, and outputs will " +
+          "appear here after the assistant job lifecycle ships in #30.",
+      },
+    ];
+  }
+
+  function buildOperationsReferenceLinks(docs) {
+    const indexed = [
+      docs.find(
+        (doc) => doc.path === "content/tasks/templates/newsletter.md",
+      ),
+      docs.find((doc) => doc.path === "content/tasks/templates/podcast.md"),
+      docs.find(
+        (doc) =>
+          doc.path ===
+          "content/finance/reference/invoices-receipts-and-statements.md",
+      ),
+      docs.find(
+        (doc) => doc.path === "content/courses/reference/course-guide.md",
+      ),
+      docs.find(
+        (doc) => doc.path === "content/overview/reference/schedule.md",
+      ),
+    ]
+      .filter(Boolean)
+      .map((doc) => ({
+        title: doc.title || basename(doc.path),
+        summary: doc.summary || doc.path,
+        path: doc.path,
+      }));
+
+    const repoReferences = [
+      [
+        "DataOps V1 Goal",
+        "https://github.com/DataTalksClub/dataops/blob/main/.goal-v1.md",
+      ],
+      [
+        "Project Plan",
+        "https://github.com/DataTalksClub/dataops/blob/main/PROJECT_PLAN.md",
+      ],
+      [
+        "Portal Analysis",
+        "https://github.com/DataTalksClub/dataops/blob/main/PORTAL_ANALYSIS.md",
+      ],
+      [
+        "Merge Plan",
+        "https://github.com/DataTalksClub/dataops/blob/main/_docs/MERGE_PLAN.md",
+      ],
+    ].map(([title, href]) => ({
+      title,
+      href,
+      summary: "Planning reference",
+    }));
+
+    return [...indexed, ...repoReferences];
+  }
+
+  return {
+    buildOperationsFutureSections,
+    buildOperationsReferenceLinks,
+    dedupeOperationItems,
+    isAtRiskWorkflowSlug,
+    isCurrentOperatorTodayTask,
+    isFollowUpDoc,
+    isRecurringWorkflowSlug,
+    isSyntheticCurrentOperatorId,
+    isTaskAssignedTo,
+    isWorkflowTemplateDoc,
+    currentOperatorIdForTodayScope,
+    normalizeBundleTaskMap,
+    normalizeOperationsRecurringSnapshot,
+    normalizeOperationsWorkSnapshot,
+    operationItemFromBundle,
+    operationItemFromDoc,
+    operationItemFromTask,
+    operationItemFromTemplate,
+    sortActiveWorkBundles,
+    sortWorkTasks,
+    summarizeWorkflowTemplate,
+    taskNextActionLabel,
+    taskSortDate,
+    taskSourceLabel,
+    workflowPriority,
+    workflowSlugFromDoc,
+  };
+}
