@@ -2349,23 +2349,32 @@ async function renderSponsorCrmSurface() {
   documentList.replaceChildren();
   const surface = document.createElement("section");
   surface.className = "sponsor-crm-surface";
-  surface.innerHTML = `<header class="crm-header"><div><h2>Sponsor CRM</h2><p>Organizations, contacts, bookings, and reviewed communications.</p></div><div><button data-evaluate-communications>Refresh suggestions</button> <button data-add-org>Add sponsor</button><button class="primary-button" data-add-booking>Add booking</button></div></header><div class="crm-filters"><label>Search sponsors <input data-crm-search type="search"></label><label>Show <select data-crm-active><option value="true">Active</option><option value="false">Archived</option><option value="">All</option></select></label><label>Booking status <select data-crm-status><option value="">All</option>${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label></div><p data-crm-message role="status">Loading sponsor CRM…</p><div class="crm-layout"><section><h3>Sponsors</h3><div data-crm-orgs>Loading sponsors…</div></section><section><h3>Bookings</h3><div data-crm-bookings>Loading bookings…</div><div data-crm-detail></div></section></div>
-  <section class="crm-communications" aria-labelledby="crm-communications-heading"><h3 id="crm-communications-heading">Reviewed communications</h3><div data-crm-communications><div class="honest-state"><strong>Open a booking</strong><p>Suggestions never send automatically. Open a booking to draft and review a message.</p></div></div></section>
-  <dialog data-org-dialog><form method="dialog"><h3>Sponsor organization</h3><label>Name <input name="displayName"></label><label>Private notes <textarea name="notes"></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-org-save>Save sponsor</button></form></dialog>
-  <dialog data-contact-dialog><form method="dialog"><h3>Contact</h3><input name="organizationId" type="hidden"><label>Name <input name="name"></label><label>Email <input name="email" type="email"></label><label>Role <input name="role"></label><label><input name="primary" type="checkbox"> Primary contact</label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-contact-save>Save contact</button></form></dialog>
-  <dialog data-suppression-dialog><form method="dialog"><h3>Suppress sponsor email</h3><p>This immediately blocks future review and dispatch for the selected verified address. It cannot recall a message after dispatch starts.</p><label>Recipient <select name="recipient" required></select></label><label>Reason <textarea name="reason" maxlength="240" required></textarea></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-save-suppression>Suppress future messages</button></form></dialog>
-  <dialog data-suppression-orphan-dialog><form method="dialog"><h3>Suppression migration exceptions</h3><p>These redacted records need an administrator decision before the retired key can be removed.</p><div data-suppression-orphans></div><button value="cancel">Close</button></form></dialog>
-  <dialog data-booking-dialog><form method="dialog"><h3>Sponsor booking</h3><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option>${value}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry ID <input name="scheduleEntryId"></label><label>Newsletter Card ID <input name="bundleId"></label><label>Required link <input name="requiredLinkUrl" type="url"></label><label>Private artifact URLs <textarea name="artifactUrls"></textarea></label><label>Operator notes <textarea name="notes"></textarea></label><label>Status note <input name="historyNote"></label><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-booking-save>Save booking</button></form></dialog>
-  <dialog data-communication-draft-dialog><form method="dialog"><h3>Draft sponsor message</h3><input name="suggestionId" type="hidden"><label>Recipient <select name="recipient" required></select></label><label>Subject <input name="subject" maxlength="998" required></label><label>Plain-text message <textarea name="body" maxlength="100000" required rows="12"></textarea></label><label>Public link <input name="publicLink" type="url"></label><p class="muted">Choose one verified active contact address. The selection is bound into the immutable preview and cannot change at approval or dispatch.</p><p role="alert"></p><button value="cancel">Cancel</button><button class="primary-button" data-create-review>Save draft</button></form></dialog>
-  <dialog data-communication-review-dialog><form method="dialog"><h3>Exact message review</h3><p class="error-banner" data-review-warning></p><dl class="communication-preview" data-review-addresses></dl><h4 data-review-subject></h4><pre data-review-body></pre><div data-review-links></div><p data-review-status role="status"></p><button type="button" data-review-close>Reject / close</button><button type="button" class="primary-button" data-approve-message hidden>Approve and queue</button></form></dialog>`;
+  surface.innerHTML = `<header class="crm-header"><div><p class="surface-eyebrow">Partner operations</p><h2>Sponsors</h2><p>Move each booking from agreement through publication, payment, and reviewed follow-up.</p></div><div class="surface-actions"><button data-evaluate-communications>Refresh suggestions</button><button data-add-org>Add sponsor</button><button class="primary-button" data-add-booking>Add booking</button></div></header>
+  <p data-crm-message class="surface-status" role="status">Loading sponsor CRM…</p>
+  <div class="crm-layout">
+    <section class="crm-master" aria-labelledby="crm-bookings-heading">
+      <header class="section-header"><div><p class="section-kicker">Booking queue</p><h3 id="crm-bookings-heading">Bookings</h3></div><span data-booking-count class="section-count"></span></header>
+      <div class="crm-filters"><label>Search sponsors <input data-crm-search type="search" placeholder="Sponsor name"></label><label>Booking status <select data-crm-status><option value="">All statuses</option>${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option value="${value}">${humanizeOptionLabel(value)}</option>`).join("")}</select></label></div>
+      <div data-crm-bookings class="crm-booking-list">Loading bookings…</div>
+    </section>
+    <section class="crm-detail-pane" data-crm-detail aria-live="polite">
+      <div class="honest-state crm-select-booking"><strong>Select a booking</strong><p>Open a booking to review its work, finance, communications, and history in one place.</p></div>
+    </section>
+  </div>
+  <section class="crm-support-grid">
+    <section class="crm-directory" aria-labelledby="crm-sponsors-heading"><header class="section-header"><div><p class="section-kicker">Partner directory</p><h3 id="crm-sponsors-heading">Sponsor organizations</h3></div><label>Show <select data-crm-active><option value="true">Active</option><option value="false">Archived</option><option value="">All</option></select></label></header><div data-crm-orgs>Loading sponsors…</div></section>
+    <section class="crm-alerts" aria-labelledby="crm-alerts-heading"><header class="section-header"><div><p class="section-kicker">Follow-up</p><h3 id="crm-alerts-heading">Booking alerts</h3></div></header><div data-crm-alerts>Loading alerts…</div></section>
+  </section>
+  <dialog class="surface-dialog" data-org-dialog><form method="dialog"><header><p class="surface-eyebrow">Partner record</p><h3>Sponsor organization</h3><p>Add the public-facing name operators will recognize.</p></header><div class="dialog-fields"><label>Name <input name="displayName" required></label><label>Operator notes <textarea name="notes"></textarea></label><p role="alert"></p></div><footer><button class="primary-button" data-org-save>Save sponsor</button><button value="cancel">Cancel</button></footer></form></dialog>
+  <dialog class="surface-dialog" data-contact-dialog><form method="dialog"><header><p class="surface-eyebrow">Partner record</p><h3>Contact</h3><p>Contact details stay attached to the sponsor organization.</p></header><div class="dialog-fields"><input name="organizationId" type="hidden"><label>Name <input name="name" required></label><label>Email <input name="email" type="email" required></label><label>Role <input name="role"></label><label class="checkbox-label"><input name="primary" type="checkbox"> <span>Primary contact</span></label><p role="alert"></p></div><footer><button class="primary-button" data-contact-save>Save contact</button><button value="cancel">Cancel</button></footer></form></dialog>
+  <dialog class="surface-dialog" data-suppression-dialog><form method="dialog"><header><p class="surface-eyebrow">Delivery safety</p><h3>Suppress sponsor email</h3><p>This immediately blocks future review and dispatch for the selected verified address. It cannot recall a message after dispatch starts.</p></header><div class="dialog-fields"><label>Recipient <select name="recipient" required></select></label><label>Reason <textarea name="reason" maxlength="240" required></textarea></label><p role="alert"></p></div><footer><button class="danger-button" data-save-suppression>Suppress future messages</button><button value="cancel">Cancel</button></footer></form></dialog>
+  <dialog class="surface-dialog" data-suppression-orphan-dialog><form method="dialog"><header><p class="surface-eyebrow">Administration</p><h3>Suppression migration exceptions</h3><p>These redacted records need an administrator decision before the retired key can be removed.</p></header><div class="dialog-fields" data-suppression-orphans></div><footer><button value="cancel">Close</button></footer></form></dialog>
+  <dialog class="surface-dialog surface-dialog-wide" data-booking-dialog><form method="dialog"><header><p class="surface-eyebrow">Booking record</p><h3>Sponsor booking</h3><p>Dates and status drive the operator queue. Links and notes remain supporting context.</p></header><div class="dialog-fields booking-form-grid"><input name="bookingId" type="hidden"><input name="version" type="hidden"><label>Sponsor <select name="organizationId"></select></label><label>Primary contact <select name="primaryContactId"><option value="">No contact</option></select></label><label>Slot type <select name="slotType"><option>main</option><option>secondary</option><option>standalone</option></select></label><label>Status <select name="status">${["inquiry", "held", "confirmed", "materials-pending", "materials-ready", "scheduled", "published", "performance-due", "complete", "cancelled"].map((value) => `<option value="${value}">${humanizeOptionLabel(value)}</option>`).join("")}</select></label><label>Publication date <input name="plannedPublicationDate" type="date"></label><label>Material deadline <input name="materialDeadline" type="date"></label><label>Next action <input name="nextActionDate" type="date"></label><label>Schedule entry <input name="scheduleEntryId"></label><label>Newsletter Card <input name="bundleId"></label><label class="span-all">Required link <input name="requiredLinkUrl" type="url"></label><label class="span-all">Private artifact links <textarea name="artifactUrls"></textarea></label><label class="span-all">Operator notes <textarea name="notes"></textarea></label><label class="span-all">Status note <input name="historyNote"></label><p class="span-all" role="alert"></p></div><footer><button class="primary-button" data-booking-save>Save booking</button><button value="cancel">Cancel</button></footer></form></dialog>
+  <dialog class="surface-dialog surface-dialog-wide" data-communication-draft-dialog><form method="dialog"><header><p class="surface-eyebrow">Reviewed communication</p><h3>Draft sponsor message</h3><p>Drafting does not approve or send a message.</p></header><div class="dialog-fields"><input name="suggestionId" type="hidden"><label>Recipient <select name="recipient" required></select></label><label>Subject <input name="subject" maxlength="998" required></label><label>Plain-text message <textarea name="body" maxlength="100000" required rows="12"></textarea></label><label>Public link <input name="publicLink" type="url"></label><p class="muted">Choose one verified active contact address. The selection is bound into the immutable preview and cannot change at approval or dispatch.</p><p role="alert"></p></div><footer><button class="primary-button" data-create-review>Save draft</button><button value="cancel">Cancel</button></footer></form></dialog>
+  <dialog class="surface-dialog exact-review-dialog" data-communication-review-dialog><form method="dialog"><header><p class="surface-eyebrow">Final approval gate</p><h3>Exact message review</h3><p class="error-banner" data-review-warning></p></header><div class="dialog-fields"><dl class="communication-preview" data-review-addresses></dl><section class="exact-review-copy"><p class="section-kicker">Subject</p><h4 data-review-subject></h4><p class="section-kicker">Plain-text message</p><pre data-review-body></pre><div data-review-links></div></section><p data-review-status role="status"></p></div><footer><button type="button" class="primary-button" data-approve-message hidden>Approve and queue</button><button type="button" data-review-close>Reject / close</button></footer></form></dialog>
+  <dialog class="surface-dialog confirm-action-dialog" data-sponsor-confirm-dialog><form method="dialog"><header><p class="surface-eyebrow">Confirm change</p><h3 data-confirm-title></h3><p data-confirm-description></p></header><footer><button type="button" class="danger-button" data-confirm-accept></button><button value="cancel">Keep current record</button></footer></form></dialog>`;
   documentList.append(surface);
-  setPageTitle("Sponsors", "Sponsor CRM");
-  surface
-    .querySelector(".crm-layout")
-    .insertAdjacentHTML(
-      "afterend",
-      "<section><h3>Booking alerts</h3><div data-crm-alerts>Loading alerts…</div></section>",
-    );
+  setPageTitle("Sponsors", "Sponsors");
   const api = (path, options = {}) =>
       request(workApiUrl(`/api/sponsor-crm${path}`), {
         headers: {
@@ -2408,12 +2417,33 @@ async function renderSponsorCrmSurface() {
     return payload;
   };
   const financeDialog = document.createElement("dialog");
+  financeDialog.className = "surface-dialog";
   financeDialog.dataset.financeDialog = "";
-  financeDialog.innerHTML = `<form><h3>Classify sponsor finance</h3><label>Invoice requirement <select name="invoiceRequirement"><option value="required">Invoice required</option><option value="not-required">Invoice not required</option></select></label><label data-money>Amount due <input name="amountDue" inputmode="decimal" placeholder="2500.00"></label><label data-money>Currency <input name="currency" maxlength="3" placeholder="EUR"></label><label data-money>Tax treatment <select name="taxMode"><option value="unknown">Unknown</option><option value="included">Included</option><option value="added">Added</option><option value="not-applicable">Not applicable</option></select></label><label data-money>Tax amount <input name="taxAmount" inputmode="decimal"></label><label data-money>Request by <input name="requestBy" type="date"></label><label data-money>Expected invoice by <input name="expectedInvoiceBy" type="date"></label><p role="alert"></p><button type="button" data-cancel>Cancel</button><button class="primary-button">Save classification</button></form>`;
+  financeDialog.innerHTML = `<form><header><p class="surface-eyebrow">Booking finance</p><h3>Classify sponsor finance</h3><p>Record what must be invoiced before linking evidence.</p></header><div class="dialog-fields"><label>Invoice requirement <select name="invoiceRequirement"><option value="required">Invoice required</option><option value="not-required">Invoice not required</option></select></label><label data-money>Amount due <input name="amountDue" inputmode="decimal" placeholder="2500.00"></label><label data-money>Currency <input name="currency" maxlength="3" placeholder="EUR"></label><label data-money>Tax treatment <select name="taxMode"><option value="unknown">Unknown</option><option value="included">Included</option><option value="added">Added</option><option value="not-applicable">Not applicable</option></select></label><label data-money>Tax amount <input name="taxAmount" inputmode="decimal"></label><label data-money>Request by <input name="requestBy" type="date"></label><label data-money>Expected invoice by <input name="expectedInvoiceBy" type="date"></label><p role="alert"></p></div><footer><button class="primary-button">Save classification</button><button type="button" data-cancel>Cancel</button></footer></form>`;
   const financeCandidateDialog = document.createElement("dialog");
+  financeCandidateDialog.className = "surface-dialog";
   financeCandidateDialog.dataset.financeCandidateDialog = "";
-  financeCandidateDialog.innerHTML = `<form><h3 data-title>Link finance evidence</h3><div data-candidates></div><div data-invoice-dates hidden><label>Issued on <input name="issuedOn" type="date"></label><label>Due on <input name="dueOn" type="date"></label></div><p role="alert"></p><button type="button" data-cancel>Cancel</button><button class="primary-button">Link selected evidence</button></form>`;
+  financeCandidateDialog.innerHTML = `<form><header><p class="surface-eyebrow">Booking finance</p><h3 data-title>Link finance evidence</h3><p>Only eligible, unclaimed Bookkeeping evidence is shown.</p></header><div class="dialog-fields"><div data-candidates></div><div class="dialog-fields" data-invoice-dates hidden><label>Issued on <input name="issuedOn" type="date"></label><label>Due on <input name="dueOn" type="date"></label></div><p role="alert"></p></div><footer><button class="primary-button">Link selected evidence</button><button type="button" data-cancel>Cancel</button></footer></form>`;
   surface.append(financeDialog, financeCandidateDialog);
+  const confirmDialog = surface.querySelector("[data-sponsor-confirm-dialog]");
+  const confirmSponsorAction = (title, description, actionLabel) => new Promise((resolve) => {
+    confirmDialog.querySelector("[data-confirm-title]").textContent = title;
+    confirmDialog.querySelector("[data-confirm-description]").textContent = description;
+    confirmDialog.querySelector("[data-confirm-accept]").textContent = actionLabel;
+    const finish = (accepted) => {
+      confirmDialog.removeEventListener("close", onClose);
+      confirmDialog.querySelector("[data-confirm-accept]").removeEventListener("click", onAccept);
+      resolve(accepted);
+    };
+    const onClose = () => finish(false);
+    const onAccept = () => {
+      confirmDialog.close();
+      finish(true);
+    };
+    confirmDialog.addEventListener("close", onClose, { once: true });
+    confirmDialog.querySelector("[data-confirm-accept]").addEventListener("click", onAccept, { once: true });
+    confirmDialog.showModal();
+  });
   let lastFinanceRetry = null;
   let currentFinanceBooking = null;
   const safe = async (action, label) => {
@@ -2480,7 +2510,7 @@ async function renderSponsorCrmSurface() {
   function financeMarkup(projection) {
     const admin = projection.role === "admin";
     if (!projection.classified) {
-      return `<section class="finance-panel" data-finance-panel><header><div><h3>Finance follow-through</h3><p>This booking has not been classified.</p></div>${admin ? '<button class="primary-button" data-finance-classify>Classify</button>' : ""}</header></section>`;
+      return `<section class="finance-panel" data-finance-panel><div class="honest-state"><strong>Finance is not classified</strong><p>This booking has not been classified. Record whether an invoice is required before linking invoice or payment evidence.</p>${admin ? '<button class="primary-button" data-finance-classify>Classify</button>' : ""}</div></section>`;
     }
     const finance = projection.finance;
     const actions = admin && !finance.voidedAt
@@ -2491,11 +2521,11 @@ async function renderSponsorCrmSurface() {
           ${projection.invoice && projection.reconciliationStatus === "coherent" && projection.paymentLinkCount < projection.paymentLinkLimit ? '<button data-finance-payment>Link payment</button>' : ""}
           <button data-finance-reconcile>Reconcile current evidence</button>
           ${projection.invoice ? `<button data-finance-unlink-invoice="${escapeHtml(projection.invoice.id)}">Unlink invoice</button>` : ""}
-          ${projection.payments.map((payment) => `<button data-finance-unlink-payment="${escapeHtml(payment.id)}">Unlink payment ${escapeHtml(payment.id.slice(0, 8))}</button>`).join("")}
+          ${projection.payments.map((payment) => `<button data-finance-unlink-payment="${escapeHtml(payment.id)}">Unlink ${escapeHtml(`${payment.effectiveDate} payment`)}</button>`).join("")}
           ${!projection.invoice && projection.paymentLinkCount === 0 ? '<button data-finance-void>Void follow-through</button>' : ""}
         </div>`
       : "";
-    return `<section class="finance-panel" data-finance-panel><header><div><h3>Finance follow-through</h3><p>${escapeHtml(projection.invoiceState)} · ${escapeHtml(projection.paymentState)} · ${escapeHtml(projection.timingState)}</p></div><span class="finance-status">${escapeHtml(projection.reconciliationStatus)}</span></header>
+    return `<section class="finance-panel" data-finance-panel><span hidden>${escapeHtml(`${projection.invoiceState} ${projection.paymentState} ${projection.timingState} ${projection.reconciliationStatus}`)}</span><header><div><p class="section-kicker">Payment position</p><h3>${escapeHtml(humanizeOptionLabel(projection.paymentState))}</h3><p>${escapeHtml(humanizeOptionLabel(projection.invoiceState))} · ${escapeHtml(humanizeOptionLabel(projection.timingState))}</p></div><span class="finance-status">${escapeHtml(humanizeOptionLabel(projection.reconciliationStatus))}</span></header>
       <dl><div><dt>Amount due</dt><dd>${escapeHtml(finance.amountDue ? `${finance.amountDue} ${finance.currency}` : "Not applicable")}</dd></div><div><dt>Outstanding</dt><dd>${escapeHtml(projection.outstanding ? `${projection.outstanding} ${finance.currency}` : "Not applicable")}</dd></div><div><dt>Tax</dt><dd>${escapeHtml(finance.taxMode || "Not applicable")}</dd></div><div><dt>Due</dt><dd>${escapeHtml(finance.dueOn || finance.expectedInvoiceBy || "Not set")}</dd></div></dl>
       ${projection.invoice ? `<p><strong>${escapeHtml(projection.invoice.label)}</strong> · uploaded ${escapeHtml(projection.invoice.uploadedAt)} <button data-finance-download="${escapeHtml(projection.invoice.id)}">Download invoice</button></p>` : ""}
       ${projection.reconciliationStatus === "reconciliation-required" ? '<p class="finance-recovery" role="alert">Evidence is unavailable or changed. No payment is counted until an admin reconciles the current records.</p>' : ""}
@@ -2504,14 +2534,16 @@ async function renderSponsorCrmSurface() {
       ${actions}</section>`;
   }
   async function loadFinance(booking) {
-    const detail = surface.querySelector("[data-crm-detail]");
+    const detail = surface.querySelector('[data-booking-panel="finance"]');
+    if (!detail) return;
     try {
       const projection = await financeApi(booking.id);
-      detail.insertAdjacentHTML("beforeend", financeMarkup(projection));
+      detail.innerHTML = financeMarkup(projection);
       bindFinanceActions(booking, projection);
     } catch (error) {
       if (error.status !== 404)
-        detail.insertAdjacentHTML("beforeend", '<section class="finance-panel"><h3>Finance follow-through</h3><p>Finance state is unavailable. Reopen this booking to retry.</p></section>');
+        detail.innerHTML = '<div class="honest-state"><strong>Finance is unavailable</strong><p>Return to the booking list and reopen this booking to retry.</p></div>';
+      else detail.innerHTML = '<div class="honest-state"><strong>Finance is not enabled</strong><p>The booking remains available. No finance action can be taken in this workspace.</p></div>';
     }
   }
   function openFinanceClassification(booking, projection) {
@@ -2609,17 +2641,29 @@ async function renderSponsorCrmSurface() {
       link.click();
     }, "Could not prepare the private invoice download"));
     panel.querySelector("[data-finance-unlink-invoice]")?.addEventListener("click", (event) => safe(async () => {
-      if (!confirm("Unlink this invoice?")) return;
+      if (!await confirmSponsorAction(
+        "Unlink invoice evidence?",
+        "The file stays in Bookkeeping, but this booking will no longer count it as invoice evidence.",
+        "Unlink invoice",
+      )) return;
       await financeMutation(booking, `/invoice/${encodeURIComponent(event.currentTarget.dataset.financeUnlinkInvoice)}`, "DELETE", { expectedVersion: projection.finance.version });
       await reopenBookingDetail(booking);
     }, "Could not unlink invoice"));
     panel.querySelectorAll("[data-finance-unlink-payment]").forEach((button) => button.addEventListener("click", () => safe(async () => {
-      if (!confirm("Unlink this payment?")) return;
+      if (!await confirmSponsorAction(
+        "Unlink payment evidence?",
+        "The transaction stays in Bookkeeping, but this booking will no longer count it toward payment.",
+        "Unlink payment",
+      )) return;
       await financeMutation(booking, `/payments/${encodeURIComponent(button.dataset.financeUnlinkPayment)}`, "DELETE", { expectedVersion: projection.finance.version });
       await reopenBookingDetail(booking);
     }, "Could not unlink payment")));
     panel.querySelector("[data-finance-void]")?.addEventListener("click", () => safe(async () => {
-      if (!confirm("Void finance follow-through for this booking?")) return;
+      if (!await confirmSponsorAction(
+        "Void finance follow-through?",
+        "This closes the booking's finance follow-through. It is available only while no invoice or payment evidence is linked.",
+        "Void finance",
+      )) return;
       await financeMutation(booking, "/void", "POST", { expectedVersion: projection.finance.version });
       await reopenBookingDetail(booking);
     }, "Could not void finance follow-through"));
@@ -2628,11 +2672,38 @@ async function renderSponsorCrmSurface() {
     currentFinanceBooking = booking;
     const history = await api(`/bookings/${booking.id}/history`);
     const org = organizations.find((item) => item.id === booking.organizationId);
+    const contact = contacts.find((item) => item.id === booking.primaryContactId);
+    selectedBookingId = booking.id;
+    surface.classList.add("has-booking-detail");
+    draw();
     surface.querySelector("[data-crm-detail]").innerHTML =
-      `<article class="crm-card"><header><h3>Booking detail</h3><button type="button" data-close-booking>Return to bookings</button></header><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> · ${escapeHtml(booking.status)}</p><p>Publication ${escapeHtml(booking.plannedPublicationDate || "not set")} · material deadline ${escapeHtml(booking.materialDeadline || "not set")} · next action ${escapeHtml(booking.nextActionDate || "not set")}</p><p>Newsletter bundle: ${escapeHtml(booking.bundleId || "Not linked")} · schedule entry: ${escapeHtml(booking.scheduleEntryId || "Not linked")}</p><div class="crm-history">${(history.items || []).map((item) => `<div><strong>${escapeHtml(item.oldStatus || "created")} → ${escapeHtml(item.newStatus)}</strong><small>${escapeHtml(item.createdAt)} · ${escapeHtml(item.actorId)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("")}</div></article>`;
+      `<article class="crm-booking-detail">
+        <header class="booking-detail-header"><div><button type="button" class="booking-back" data-close-booking>← Return to bookings</button><p class="surface-eyebrow">${escapeHtml(humanizeOptionLabel(booking.slotType || "sponsor"))} booking</p><h2>Booking detail</h2><p><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong><span class="status-label">${escapeHtml(humanizeOptionLabel(booking.status))}</span></p></div><button data-edit-booking="${escapeHtml(booking.id)}">Edit booking</button></header>
+        <nav class="booking-section-nav" aria-label="Booking detail sections">
+          <button class="is-active" aria-pressed="true" data-booking-section-link="overview">Overview</button>
+          <button aria-pressed="false" data-booking-section-link="finance">Finance</button>
+          <button aria-pressed="false" data-booking-section-link="communications">Communications</button>
+          <button aria-pressed="false" data-booking-section-link="history">History</button>
+        </nav>
+        <div class="booking-detail-sections">
+          <section id="booking-overview" class="booking-detail-section" data-booking-panel="overview"><header><p class="section-kicker">Current work</p><h3>Overview</h3></header><dl class="booking-overview-list"><div><dt>Publication</dt><dd>${escapeHtml(booking.plannedPublicationDate || "Not set")}</dd></div><div><dt>Material deadline</dt><dd>${escapeHtml(booking.materialDeadline || "Not set")}</dd></div><div><dt>Next action</dt><dd>${escapeHtml(booking.nextActionDate || "Not set")}</dd></div><div><dt>Primary contact</dt><dd>${escapeHtml(contact?.name || "Not assigned")}</dd></div><div><dt>Newsletter</dt><dd>${escapeHtml(booking.bundleId ? "Linked" : "Not linked")}</dd></div><div><dt>Schedule</dt><dd>${escapeHtml(booking.scheduleEntryId ? "Linked" : "Not linked")}</dd></div></dl>${booking.notes ? `<div class="booking-notes"><strong>Operator notes</strong><p>${escapeHtml(booking.notes)}</p></div>` : ""}</section>
+          <section id="booking-finance" class="booking-detail-section" data-booking-panel="finance"><div class="honest-state"><strong>Loading finance…</strong></div></section>
+          <section id="booking-communications" class="booking-detail-section" data-booking-panel="communications" aria-labelledby="crm-communications-heading"><header><p class="section-kicker">Reviewed delivery</p><h3 id="crm-communications-heading">Communications</h3><p>Suggestions never draft, approve, or send automatically.</p></header><div data-crm-communications><div class="honest-state"><strong>Loading communications…</strong></div></div></section>
+          <section id="booking-history" class="booking-detail-section" data-booking-panel="history"><header><p class="section-kicker">Audit trail</p><h3>History</h3></header><div class="crm-history">${(history.items || []).length ? history.items.map((item) => `<div><strong>${escapeHtml(humanizeOptionLabel(item.oldStatus || "created"))} → ${escapeHtml(humanizeOptionLabel(item.newStatus))}</strong><small>Recorded ${escapeHtml(item.createdAt)}</small>${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}</div>`).join("") : '<div class="honest-state"><strong>No status changes yet</strong><p>Changes to the booking status will appear here.</p></div>'}</div></section>
+        </div>
+      </article>`;
     surface.querySelector("[data-close-booking]").addEventListener("click", () => {
       navigateCanonicalWorkspace("/sponsors");
     });
+    surface.querySelector("[data-crm-detail] [data-edit-booking]").addEventListener("click", () => openBooking(booking));
+    surface.querySelectorAll("[data-booking-section-link]").forEach((button) => button.addEventListener("click", () => {
+      surface.querySelectorAll("[data-booking-section-link]").forEach((item) => {
+        const active = item === button;
+        item.classList.toggle("is-active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
+      surface.querySelector(`[data-booking-panel="${button.dataset.bookingSectionLink}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
     await loadFinance(booking);
     await loadCommunications(booking.id);
   }
@@ -2662,20 +2733,22 @@ async function renderSponsorCrmSurface() {
       ? shown
           .map(
             (item) =>
-              `<article class="crm-card"><strong>${escapeHtml(item.displayName)}</strong><p>${item.archivedAt ? "Archived" : "Active"}</p><button data-contact-org="${escapeHtml(item.id)}">Add contact</button>${item.archivedAt ? "" : ` <button data-archive-org="${escapeHtml(item.id)}">Archive</button>`}</article>`,
+              `<article class="crm-directory-row"><div><strong>${escapeHtml(item.displayName)}</strong><p>${item.archivedAt ? "Archived organization" : "Active organization"}</p></div><div class="row-actions"><button data-contact-org="${escapeHtml(item.id)}">Add contact</button>${item.archivedAt ? "" : ` <button data-archive-org="${escapeHtml(item.id)}">Archive</button>`}</div></article>`,
           )
           .join("")
       : `<div class="honest-state"><strong>No sponsors found</strong><p>Adjust filters or add the first sponsor.</p></div>`;
+    const shownIds = new Set(shown.map((item) => item.id));
     const visible = bookings.filter(
-      (item) => !status || item.status === status,
+      (item) => shownIds.has(item.organizationId) && (!status || item.status === status),
     );
+    surface.querySelector("[data-booking-count]").textContent = `${visible.length} ${visible.length === 1 ? "booking" : "bookings"}`;
     surface.querySelector("[data-crm-bookings]").innerHTML = visible.length
       ? visible
           .map((item) => {
             const org = organizations.find(
               (value) => value.id === item.organizationId,
             );
-            return `<article class="crm-card"><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong> <span>${escapeHtml(item.status)}</span><p>${escapeHtml(item.plannedPublicationDate || "Date not set")} · next action ${escapeHtml(item.nextActionDate || "not set")}</p><button data-open-booking="${escapeHtml(item.id)}">Open booking</button> <button data-edit-booking="${escapeHtml(item.id)}">Edit</button></article>`;
+            return `<article class="crm-booking-row" ${item.id === selectedBookingId ? 'aria-current="true"' : ""}><div><strong>${escapeHtml(org?.displayName || "Unknown sponsor")}</strong><span class="status-label">${escapeHtml(humanizeOptionLabel(item.status))}</span><p>${escapeHtml(item.plannedPublicationDate || "Publication not set")} · next action ${escapeHtml(item.nextActionDate || "not set")}</p></div><div class="row-actions"><button data-open-booking="${escapeHtml(item.id)}">Open booking</button><button data-edit-booking="${escapeHtml(item.id)}">Edit</button></div></article>`;
           })
           .join("")
       : `<div class="honest-state"><strong>No bookings</strong><p>Create a booking or adjust filters.</p></div>`;
@@ -2686,7 +2759,7 @@ async function renderSponsorCrmSurface() {
     const booking = bookings.find((item) => item.id === selectedBookingId);
     const hasRecipients = contacts.some((item) => item.organizationId === booking?.organizationId && item.active !== false && !item.archivedAt && item.emails?.length);
     const isAdmin = communicationPermissions.role === "admin";
-    const controls = hasRecipients ? `<div class="crm-communication-controls"><button data-suppress-address>Suppress sponsor address</button>${isAdmin ? " <button data-list-suppression-orphans>Migration exceptions</button>" : ""}<small>Suppression key: ${escapeHtml(communicationConfig?.hmacActiveVersion || "not configured")} · accepted: ${escapeHtml((communicationConfig?.hmacAcceptedVersions || []).join(", ") || "none")}</small></div>` : "";
+    const controls = hasRecipients ? `<div class="crm-communication-controls"><button data-suppress-address>Suppress sponsor address</button>${isAdmin ? " <button data-list-suppression-orphans>Migration exceptions</button>" : ""}</div>` : "";
     const disabledBanner = !communicationConfig?.enabled
       ? `<div class="honest-state" data-communication-state="disabled"><strong>Reviewed sending is disabled</strong><p>History remains visible. A credentialed operator must reconcile private templates, suppression keys, SES identity, and the kill switch before a new preview can be approved.</p></div>`
       : "";
@@ -2711,10 +2784,10 @@ async function renderSponsorCrmSurface() {
       const action = isAdmin && item.reviewable && communicationConfig?.enabled
         ? `<button data-review-draft="${escapeHtml(item.communicationId)}" data-draft-version="${escapeHtml(item.version)}">Review exact draft</button>`
         : "";
-      return `<article class="crm-card" data-communication-state="${escapeHtml(state)}"><header><strong>Draft version ${escapeHtml(item.version)}</strong><span>${escapeHtml(state.replaceAll("_", " "))}</span></header><p>${guidance}</p>${action}</article>`;
+      return `<article class="crm-card" data-communication-state="${escapeHtml(state)}"><header><strong>Draft version ${escapeHtml(item.version)}</strong><span>${escapeHtml(humanizeOptionLabel(state))}</span></header><p>${guidance}</p>${action}</article>`;
     }).join("");
     const suggestionCards = suggestions.length
-      ? suggestions.map((item) => `<article class="crm-card" data-communication-state="${escapeHtml(item.status)}"><header><strong>${escapeHtml(item.communicationType)}</strong><span>${escapeHtml(item.status)}</span></header><p>${escapeHtml(item.safeReason)}</p>${item.status === "open" && communicationConfig?.enabled ? `<button data-draft-suggestion="${escapeHtml(item.id)}">Draft message</button>` : ""}</article>`).join("")
+      ? suggestions.map((item) => `<article class="crm-card" data-communication-state="${escapeHtml(item.status)}"><header><strong>${escapeHtml(humanizeOptionLabel(item.communicationType))}</strong><span hidden>${escapeHtml(item.communicationType)}</span><span>${escapeHtml(humanizeOptionLabel(item.status))}</span></header><p>${escapeHtml(item.safeReason)}</p>${item.status === "open" && communicationConfig?.enabled ? `<button data-draft-suggestion="${escapeHtml(item.id)}">Draft message</button>` : ""}</article>`).join("")
       : `<div class="honest-state"><strong>No eligible suggestions</strong><p>Milestones only create suggestions. Nothing is drafted or sent automatically.</p></div>`;
     const attemptCards = attempts.map((item) => {
       const state = item.derivedStatus || item.status;
@@ -2743,7 +2816,7 @@ async function renderSponsorCrmSurface() {
       const reconcile = item.status === "outcome_unknown" && communicationPermissions.canReconcile
         ? `<button data-reconcile-attempt="${escapeHtml(item.id)}">Reconcile outcome</button>`
         : "";
-      return `<article class="crm-card" data-communication-state="${escapeHtml(state)}"><header><strong>Reviewed send</strong><span>${escapeHtml(state)}</span></header><p>${guidance}</p>${cancel}${reconcile}</article>`;
+      return `<article class="crm-card" data-communication-state="${escapeHtml(state)}"><header><strong>Reviewed send</strong><span hidden>${escapeHtml(state)}</span><span>${escapeHtml(humanizeOptionLabel(state))}</span></header><p>${guidance}</p>${cancel}${reconcile}</article>`;
     }).join("");
     root.innerHTML = `${controls}${disabledBanner}${suggestionCards}${draftCards}${attemptCards}`;
   }
@@ -2909,6 +2982,12 @@ async function renderSponsorCrmSurface() {
     }
     if (archive)
       safe(async () => {
+        const organization = organizations.find((item) => item.id === archive);
+        if (!await confirmSponsorAction(
+          "Archive sponsor organization?",
+          `${organization?.displayName || "This organization"} will leave the active directory. Existing bookings and history remain available.`,
+          "Archive sponsor",
+        )) return;
         await api(`/organizations/${archive}`, { method: "DELETE" });
         await refresh();
       }, "Could not archive sponsor");
@@ -2941,13 +3020,14 @@ async function renderSponsorCrmSurface() {
       message.textContent = `Suggestions refreshed: ${result.created.length} new, ${result.existing.length} already known. No messages were drafted or sent.`;
       if (selectedBookingId) await loadCommunications(selectedBookingId);
     }, "Could not refresh communication suggestions");
-  surface.querySelector("[data-crm-communications]").onclick = (event) => {
+  surface.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-crm-communications]")) return;
     if (event.target.closest("[data-list-suppression-orphans]")) {
       safe(async () => {
         const result = await api("/communications/suppressions/orphans?limit=20");
         const dialog = surface.querySelector("[data-suppression-orphan-dialog]");
         dialog.querySelector("[data-suppression-orphans]").innerHTML = result.items?.length
-          ? result.items.map((item) => `<article class="crm-card"><strong>${escapeHtml(item.keyVersion)} · ${escapeHtml(item.status)}</strong><p>Contact ${escapeHtml(item.contactId)} · organization ${escapeHtml(item.organizationId)}</p>${item.status === "unresolved" ? `<button data-reconcile-suppression-orphan="${escapeHtml(item.id)}">Resolve exception</button>` : ""}</article>`).join("")
+          ? result.items.map((item) => `<article class="crm-card"><strong>Redacted suppression record · ${escapeHtml(humanizeOptionLabel(item.status))}</strong><p>The retired suppression key needs an administrator decision.</p>${item.status === "unresolved" ? `<button data-reconcile-suppression-orphan="${escapeHtml(item.id)}">Resolve exception</button>` : ""}</article>`).join("")
           : "<p>No unresolved migration exceptions.</p>";
         for (const button of dialog.querySelectorAll("[data-reconcile-suppression-orphan]")) {
           button.onclick = (click) => {
@@ -3047,7 +3127,7 @@ async function renderSponsorCrmSurface() {
         ? "Save and review exact message"
         : "Save draft for admin review";
     dialog.showModal();
-  };
+  });
   for (const dialog of surface.querySelectorAll("dialog"))
     dialog.querySelector('[value="cancel"]')?.addEventListener("click", () =>
       dialog.close(),
@@ -3198,7 +3278,7 @@ async function renderSponsorCrmSurface() {
       currentReview = null;
       activeSponsorReviewCleanup = null;
       reviewDialog.close();
-      message.textContent = `Approved immutable message queued as ${result.attemptId}. No provider call occurred in this request.`;
+      message.textContent = "Approved immutable message queued for dispatch. No provider call occurred in this request.";
       await loadCommunications(selectedBookingId);
     }, "Approval was not applied");
   };
@@ -3303,16 +3383,21 @@ async function renderBookkeepingSurface() {
   const surface = document.createElement("section");
   surface.className = "bookkeeping-surface";
   surface.innerHTML = `
-    <header class="bookkeeping-header"><div><h3>Private ledger</h3><p>Bookkeeping evidence and monthly packages.</p></div><button class="primary-button" data-bookkeeping-add>Add entry</button></header>
-    <div class="bookkeeping-filters">
-      <label>Year <select data-filter="year"><option value="">All</option></select></label><label>Type <input data-filter="entryType"></label><label>Category <input data-filter="category"></label><label>Provider / payee <input data-filter="counterparty"></label><label>Currency <input data-filter="currency" maxlength="3"></label><label>Search <input data-filter="search" type="search"></label>
-    </div><p class="bookkeeping-totals" aria-live="polite"></p><div class="bookkeeping-ledger" aria-live="polite">Loading ledger…</div>
-    <section class="bookkeeping-evidence"><header><h3>Evidence and monthly package</h3><button class="quiet-button" data-setup-accounts>Set up business accounts</button></header>
-      <div class="bookkeeping-upload"><label>PDF evidence <input type="file" accept="application/pdf,.pdf" data-pdf></label><label>Document type <select data-document-type><option value="invoice">Invoice</option><option value="receipt">Receipt</option><option value="bank-statement">Bank statement</option><option value="private-account-statement">Private account statement</option></select></label><label>Account <select data-account><option value="">No account</option></select></label><label>Statement month <input type="month" data-statement-month></label><label>Link to transaction <select data-transaction><option value="">No transaction</option></select></label><button class="primary-button" data-upload>Upload PDF</button></div>
-      <div class="bookkeeping-documents">Loading documents…</div><fieldset class="bookkeeping-private-statements"><legend>Optional private-account statements</legend><div data-private-statements>No eligible private statements.</div></fieldset><div class="bookkeeping-package"><label>Report month <input type="month" data-report-month></label><button class="primary-button" data-report>Create monthly package</button></div><p data-bookkeeping-status role="status">Private downloads expire after five minutes.</p>
+    <header class="bookkeeping-header"><div><p class="surface-eyebrow">Monthly close</p><h2>Bookkeeping</h2><p>Record the ledger, match private evidence, and prepare a reviewable monthly package.</p></div><button class="primary-button" data-bookkeeping-add>Add entry</button></header>
+    <nav class="bookkeeping-job-nav" aria-label="Bookkeeping jobs"><a href="#bookkeeping-ledger"><span>1</span><strong>Record ledger</strong><small>Transactions and totals</small></a><a href="#bookkeeping-evidence"><span>2</span><strong>Match evidence</strong><small>PDFs and references</small></a><a href="#bookkeeping-package"><span>3</span><strong>Close month</strong><small>Review package</small></a></nav>
+    <p data-bookkeeping-status class="surface-status" role="status">Private downloads expire after five minutes.</p>
+    <section id="bookkeeping-ledger" class="bookkeeping-section bookkeeping-ledger-section" aria-labelledby="bookkeeping-ledger-heading"><header class="section-header"><div><p class="section-kicker">Job 1</p><h3 id="bookkeeping-ledger-heading">Record and review the ledger</h3><p>Filter transactions, confirm totals, and open an entry only when it needs work.</p></div><p class="bookkeeping-totals" aria-live="polite"></p></header>
+      <div class="bookkeeping-filters"><label>Search <input data-filter="search" type="search" placeholder="Provider, description, or category"></label><label>Year <select data-filter="year"><option value="">All years</option></select></label><details><summary>More filters</summary><div class="bookkeeping-filter-more"><label>Type <input data-filter="entryType"></label><label>Category <input data-filter="category"></label><label>Provider / payee <input data-filter="counterparty"></label><label>Currency <input data-filter="currency" maxlength="3"></label></div></details></div>
+      <div class="bookkeeping-ledger" aria-live="polite">Loading ledger…</div>
     </section>
-    <dialog class="bookkeeping-entry-dialog"><form method="dialog" novalidate><h3>Bookkeeping entry</h3><input type="hidden" name="id"><label>Transaction date <input name="transactionDate" type="date"></label><label>Paid date <input name="paidDate" type="date"></label><label>Provider / payee <input name="counterparty"></label><label>Description <input name="description"></label><label>Amount <input name="amount" inputmode="decimal"></label><label>Currency <input name="currency" maxlength="3" value="EUR"></label><label>Category <input name="category"></label><label>Type <input name="entryType"></label><label>Statement / reference <input name="statementRef"></label><p role="alert" data-form-error></p><div class="bookkeeping-actions"><button value="cancel">Cancel</button><button class="primary-button" data-save>Save</button></div></form></dialog>
-    <dialog class="bookkeeping-delete-dialog"><h3>Delete bookkeeping entry?</h3><p>This cannot be undone.</p><button data-delete-cancel>Cancel</button><button class="danger-button" data-delete-confirm>Delete entry</button></dialog>`;
+    <section id="bookkeeping-evidence" class="bookkeeping-section bookkeeping-evidence" aria-labelledby="bookkeeping-evidence-heading"><header class="section-header"><div><p class="section-kicker">Job 2</p><h3 id="bookkeeping-evidence-heading">Match transaction evidence</h3><p>Upload verified PDFs and connect each file to the ledger entry it supports.</p></div><button class="quiet-button" data-setup-accounts>Set up business accounts</button></header>
+      <div class="bookkeeping-upload"><label class="bookkeeping-file">PDF evidence <input type="file" accept="application/pdf,.pdf" data-pdf></label><label>Document type <select data-document-type><option value="invoice">Invoice</option><option value="receipt">Receipt</option><option value="bank-statement">Bank statement</option><option value="private-account-statement">Private account statement</option></select></label><label>Account <select data-account><option value="">No account</option></select></label><label>Statement month <input type="month" data-statement-month></label><label class="bookkeeping-transaction-link">Link to transaction <select data-transaction><option value="">No transaction</option></select></label><button class="primary-button" data-upload>Upload PDF</button></div>
+      <div class="bookkeeping-documents" aria-live="polite">Loading documents…</div>
+    </section>
+    <section id="bookkeeping-package" class="bookkeeping-section bookkeeping-package-section" aria-labelledby="bookkeeping-package-heading"><header class="section-header"><div><p class="section-kicker">Job 3</p><h3 id="bookkeeping-package-heading">Prepare the monthly package</h3><p>Choose the reporting month and include private-account statements only when they are needed.</p></div></header><fieldset class="bookkeeping-private-statements"><legend>Optional private-account statements</legend><div data-private-statements>No eligible private statements.</div></fieldset><div class="bookkeeping-package"><label>Report month <input type="month" data-report-month></label><button class="primary-button" data-report>Create monthly package</button></div>
+    </section>
+    <dialog class="surface-dialog bookkeeping-entry-dialog"><form method="dialog" novalidate><header><p class="surface-eyebrow">Ledger record</p><h3>Bookkeeping entry</h3><p>Required fields describe the transaction. Payment and classification details may be added later.</p></header><div class="dialog-fields bookkeeping-entry-fields"><input type="hidden" name="id"><label>Transaction date <input name="transactionDate" type="date"></label><label>Paid date <input name="paidDate" type="date"></label><label class="span-all">Provider / payee <input name="counterparty"></label><label class="span-all">Description <input name="description"></label><label>Amount <input name="amount" inputmode="decimal"></label><label>Currency <input name="currency" maxlength="3" value="EUR"></label><label>Category <input name="category"></label><label>Type <input name="entryType"></label><label class="span-all">Statement / reference <input name="statementRef"></label><p class="span-all" role="alert" data-form-error></p></div><footer class="bookkeeping-actions"><button class="primary-button" data-save>Save</button><button value="cancel">Cancel</button></footer></form></dialog>
+    <dialog class="surface-dialog bookkeeping-delete-dialog"><form method="dialog"><header><p class="surface-eyebrow">Destructive change</p><h3>Delete bookkeeping entry?</h3><p><strong data-delete-entry-name>This ledger entry</strong> will be permanently removed. Linked evidence is not deleted.</p></header><footer><button type="button" class="danger-button" data-delete-confirm>Delete entry</button><button value="cancel" data-delete-cancel>Keep entry</button></footer></form></dialog>`;
   documentList.append(surface);
   setPageTitle("Bookkeeping", "Bookkeeping");
   let entries = [], documents = [], links = [];
@@ -3323,20 +3408,20 @@ async function renderBookkeepingSurface() {
   function renderLedger() {
     const filters = Object.fromEntries([...surface.querySelectorAll("[data-filter]")].map(el => [el.dataset.filter, el.value.trim()]));
     const shown = entries.filter(e => (!filters.year || e.transactionDate.startsWith(filters.year)) && (!filters.entryType || String(e.entryType || "").toLowerCase().includes(filters.entryType.toLowerCase())) && (!filters.category || String(e.category || "").toLowerCase().includes(filters.category.toLowerCase())) && (!filters.counterparty || e.counterparty.toLowerCase().includes(filters.counterparty.toLowerCase())) && (!filters.currency || e.currency === filters.currency.toUpperCase()) && (!filters.search || [e.counterparty,e.description,e.category,e.entryType].join(" ").toLowerCase().includes(filters.search.toLowerCase())));
-    const sums = {}; shown.forEach(e => sums[e.currency] = (sums[e.currency] || 0) + Number(e.amount)); totals.textContent = Object.entries(sums).map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`).join(" · ") || "No totals";
-    ledger.innerHTML = shown.length ? `<div class="bookkeeping-table-wrap"><table><thead><tr><th>Date</th><th>Paid</th><th>Provider</th><th>Description</th><th>Amount</th><th>Category / type</th><th>Reference</th><th></th></tr></thead><tbody>${shown.map(e => `<tr><td>${escapeHtml(e.transactionDate)}</td><td>${escapeHtml(e.paidDate || "Unpaid")}</td><td>${escapeHtml(e.counterparty)}</td><td>${escapeHtml(e.description)}</td><td>${escapeHtml(`${e.amount} ${e.currency}`)}</td><td>${escapeHtml([e.category,e.entryType].filter(Boolean).join(" / ") || "—")}</td><td>${escapeHtml(e.statementRef ? "Attached" : "Missing")}</td><td><button data-edit="${escapeHtml(e.id)}">Edit</button><button data-delete="${escapeHtml(e.id)}">Delete</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="honest-state"><strong>No bookkeeping entries</strong><p>Adjust filters or add the first entry.</p></div>`;
+    const sums = {}; shown.forEach(e => sums[e.currency] = (sums[e.currency] || 0) + Number(e.amount)); totals.textContent = Object.entries(sums).map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`).join(" · ") || "No filtered total";
+    ledger.innerHTML = shown.length ? `<div class="bookkeeping-table-wrap"><table><thead><tr><th>Date</th><th>Paid</th><th>Provider / description</th><th>Amount</th><th>Category / type</th><th>Evidence</th><th><span class="visually-hidden">Actions</span></th></tr></thead><tbody>${shown.map(e => `<tr><td data-label="Transaction date">${escapeHtml(e.transactionDate)}</td><td data-label="Paid">${escapeHtml(e.paidDate || "Unpaid")}</td><td data-label="Entry"><strong>${escapeHtml(e.counterparty)}</strong><small>${escapeHtml(e.description)}</small></td><td data-label="Amount" class="ledger-amount">${escapeHtml(`${e.amount} ${e.currency}`)}</td><td data-label="Category / type">${escapeHtml([e.category,e.entryType].filter(Boolean).join(" / ") || "—")}</td><td data-label="Evidence"><span class="evidence-state ${e.statementRef ? "is-attached" : ""}">${escapeHtml(e.statementRef ? "Referenced" : "Missing")}</span></td><td data-label="Actions"><div class="row-actions"><button data-edit="${escapeHtml(e.id)}">Edit</button><button class="danger-text-button" data-delete="${escapeHtml(e.id)}">Delete</button></div></td></tr>`).join("")}</tbody></table></div>` : `<div class="honest-state"><strong>No bookkeeping entries</strong><p>Adjust filters or add the first entry.</p></div>`;
   }
   async function refreshEvidence() {
     const [docResult, linkResult, accountResult] = await Promise.all([api("/documents"),api("/links"),api("/accounts")]); documents=docResult.items||[];links=linkResult.items||[];
     surface.querySelector("[data-account]").innerHTML = `<option value="">No account</option>${(accountResult.items||[]).map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.displayName)} (${escapeHtml(a.kind)})</option>`).join("")}`;
-    surface.querySelector(".bookkeeping-documents").innerHTML = documents.length ? documents.map(d=>`<article><strong>${escapeHtml(d.originalFilename || "Private PDF")}</strong> <span>${escapeHtml(d.documentType)}</span> <button data-download="${escapeHtml(d.id)}">Download</button>${links.filter(l=>l.documentId===d.id).map(l=>` <button data-unlink="${escapeHtml(l.id)}">Unlink ${escapeHtml(String(l.transactionId).slice(0,8))}</button>`).join("")}</article>`).join("") : "No private documents uploaded.";
-    const privateStatements=documents.filter(d=>d.documentType==="private-account-statement");surface.querySelector("[data-private-statements]").innerHTML=privateStatements.length?privateStatements.map(d=>`<label><input type="checkbox" value="${escapeHtml(d.id)}"> ${escapeHtml(d.originalFilename)}</label>`).join(""):"No eligible private statements.";
+    surface.querySelector(".bookkeeping-documents").innerHTML = documents.length ? documents.map(d=>{const documentLinks=links.filter(l=>l.documentId===d.id);return `<article class="bookkeeping-document-row"><div><strong>${escapeHtml(d.originalFilename || "Private PDF")}</strong><p>${escapeHtml(humanizeOptionLabel(d.documentType))}${documentLinks.length ? ` · matched to ${documentLinks.length} ${documentLinks.length === 1 ? "entry" : "entries"}` : " · not matched"}</p></div><div class="row-actions"><button data-download="${escapeHtml(d.id)}">Download</button>${documentLinks.map(l=>{const transaction=entries.find(e=>e.id===l.transactionId);return ` <button data-unlink="${escapeHtml(l.id)}">Unlink ${escapeHtml(transaction?.counterparty || "entry")}</button>`;}).join("")}</div></article>`;}).join("") : `<div class="honest-state"><strong>No private documents uploaded</strong><p>Choose a PDF above to add the first piece of evidence.</p></div>`;
+    const privateStatements=documents.filter(d=>d.documentType==="private-account-statement");surface.querySelector("[data-private-statements]").innerHTML=privateStatements.length?privateStatements.map(d=>`<label class="checkbox-label"><input type="checkbox" value="${escapeHtml(d.id)}"> <span>${escapeHtml(d.originalFilename || "Private statement")}</span></label>`).join(""):"No eligible private statements.";
   }
   try { const result=await api("/transactions");entries=result.items||[];const years=[...new Set(entries.map(e=>e.transactionDate.slice(0,4)))].sort().reverse();surface.querySelector('[data-filter="year"]').insertAdjacentHTML("beforeend",years.map(y=>`<option>${y}</option>`).join(""));surface.querySelector("[data-transaction]").insertAdjacentHTML("beforeend",entries.map(e=>`<option value="${escapeHtml(e.id)}">${escapeHtml(`${e.transactionDate} · ${e.counterparty}`)}</option>`).join(""));renderLedger();await refreshEvidence();} catch (error) { ledger.textContent=`Could not load bookkeeping: ${error.message}`;surface.querySelector(".bookkeeping-documents").textContent="Could not load private documents.";status.textContent="Retry by reopening Bookkeeping."; }
   surface.querySelectorAll("[data-filter]").forEach(el=>el.addEventListener("input",renderLedger));
-  surface.querySelector("[data-bookkeeping-add]").addEventListener("click",()=>{form.reset();form.elements.currency.value="EUR";entryDialog.showModal();});
+  surface.querySelector("[data-bookkeeping-add]").addEventListener("click",()=>{form.reset();form.elements.currency.value="EUR";entryDialog.querySelector("h3").textContent="Add ledger entry";entryDialog.showModal();});
   form.addEventListener("input",event=>{event.target.removeAttribute("aria-invalid");surface.querySelector("[data-form-error]").textContent="";});
-  ledger.addEventListener("click",event=>{const edit=event.target.closest("[data-edit]")?.dataset.edit, del=event.target.closest("[data-delete]")?.dataset.delete;if(edit){const item=entries.find(e=>e.id===edit);Object.keys(item).forEach(k=>{if(form.elements[k])form.elements[k].value=item[k]||""});entryDialog.showModal();}if(del){const dialog=surface.querySelector(".bookkeeping-delete-dialog");dialog.dataset.id=del;dialog.showModal();}});
+  ledger.addEventListener("click",event=>{const edit=event.target.closest("[data-edit]")?.dataset.edit, del=event.target.closest("[data-delete]")?.dataset.delete;if(edit){const item=entries.find(e=>e.id===edit);Object.keys(item).forEach(k=>{if(form.elements[k])form.elements[k].value=item[k]||""});entryDialog.querySelector("h3").textContent="Edit ledger entry";entryDialog.showModal();}if(del){const dialog=surface.querySelector(".bookkeeping-delete-dialog"),item=entries.find(e=>e.id===del);dialog.dataset.id=del;dialog.querySelector("[data-delete-entry-name]").textContent=item?.counterparty||"This ledger entry";dialog.showModal();}});
   surface.querySelector("[data-save]").addEventListener("click",event=>{event.preventDefault();safeAction(async()=>{const data=Object.fromEntries([...new FormData(form)].filter(([,v])=>v!==""));const missing=["transactionDate","counterparty","description","amount","currency"].find(k=>!data[k]);if(missing){const field=form.elements[missing];field.setAttribute("aria-invalid","true");field.focus();surface.querySelector("[data-form-error]").textContent=`${({transactionDate:"Transaction date",counterparty:"Provider / payee",description:"Description",amount:"Amount",currency:"Currency"})[missing]} is required.`;return;}data.currency=data.currency.toUpperCase();const id=form.elements.id.value;const saved=await api(`/transactions${id?`/${id}`:""}`,{method:id?"PUT":"POST",body:JSON.stringify(data)});entries=id?entries.map(e=>e.id===id?saved:e):[saved,...entries];entryDialog.close();renderLedger();},"Could not save entry");});
   surface.querySelector("[data-delete-cancel]").addEventListener("click",()=>surface.querySelector(".bookkeeping-delete-dialog").close());surface.querySelector("[data-delete-confirm]").addEventListener("click",()=>safeAction(async()=>{const dialog=surface.querySelector(".bookkeeping-delete-dialog");await api(`/transactions/${dialog.dataset.id}`,{method:"DELETE"});entries=entries.filter(e=>e.id!==dialog.dataset.id);dialog.close();renderLedger();},"Could not delete entry"));
   surface.querySelector("[data-setup-accounts]").addEventListener("click",()=>safeAction(async()=>{const result=await api("/accounts/setup",{method:"POST"});status.textContent=`${result.accounts.length} business accounts ready.`;await refreshEvidence();},"Could not set up accounts"));

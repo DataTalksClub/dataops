@@ -1626,6 +1626,805 @@ body[data-workspace-view="home"] #git-section {
   border-color: var(--danger-text);
 }
 
+/* Bookkeeping and Sponsors: job-first operational surfaces. */
+body[data-workspace-view="bookkeeping"] .document-list,
+body[data-workspace-view="sponsors"] .document-list {
+  width: 100%;
+  max-width: 1120px;
+}
+
+.bookkeeping-surface,
+.sponsor-crm-surface {
+  display: grid;
+  min-width: 0;
+  gap: 24px;
+}
+
+.bookkeeping-surface h2,
+.bookkeeping-surface h3,
+.bookkeeping-surface p,
+.sponsor-crm-surface h2,
+.sponsor-crm-surface h3,
+.sponsor-crm-surface h4,
+.sponsor-crm-surface p {
+  margin-top: 0;
+}
+
+.bookkeeping-surface button:not(.primary-button, .quiet-button, .danger-button, .danger-text-button),
+.sponsor-crm-surface button:not(.primary-button, .quiet-button, .danger-button, .danger-text-button),
+.surface-dialog button:not(.primary-button, .danger-button) {
+  min-height: 34px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 5px 10px;
+  font-weight: 600;
+}
+
+.bookkeeping-surface button:not(.primary-button, .quiet-button, .danger-button, .danger-text-button):hover,
+.sponsor-crm-surface button:not(.primary-button, .quiet-button, .danger-button, .danger-text-button):hover,
+.surface-dialog button:not(.primary-button, .danger-button):hover {
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
+}
+
+.danger-button {
+  min-height: 34px;
+  border: 1px solid var(--danger-text);
+  border-radius: var(--radius);
+  background: var(--danger-text);
+  color: var(--surface-bg);
+  padding: 5px 12px;
+  font-weight: 600;
+}
+
+body.dark .danger-button {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.danger-text-button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--danger-text);
+  padding: 5px 9px;
+  font-weight: 600;
+}
+
+.danger-text-button:hover {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.bookkeeping-header,
+.crm-header,
+.section-header,
+.booking-detail-header,
+.finance-panel > header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bookkeeping-header h2,
+.crm-header h2,
+.booking-detail-header h2 {
+  margin-bottom: 4px;
+  color: var(--text-heading);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.bookkeeping-header > div > p:last-child,
+.crm-header > div > p:last-child,
+.section-header p,
+.booking-detail-header p,
+.booking-detail-section > header > p:last-child {
+  margin-bottom: 0;
+  color: var(--text-muted);
+}
+
+.surface-eyebrow,
+.section-kicker {
+  margin-bottom: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.surface-actions,
+.row-actions,
+.finance-actions,
+.crm-communication-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bookkeeping-header > button,
+.section-header > button,
+.booking-detail-header > button {
+  justify-self: start;
+}
+
+.surface-status {
+  margin: -12px 0 0;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.section-header {
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 14px 16px;
+}
+
+.section-header h3,
+.booking-detail-section h3,
+.finance-panel h3 {
+  margin-bottom: 2px;
+  color: var(--text-heading);
+  font-size: 16px;
+}
+
+.section-count,
+.status-label,
+.finance-status,
+.evidence-state {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bookkeeping-job-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+}
+
+.bookkeeping-job-nav a {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 1px 10px;
+  min-width: 0;
+  color: var(--text-primary);
+  padding: 12px 14px;
+  text-decoration: none;
+}
+
+.bookkeeping-job-nav a + a {
+  border-left: 1px solid var(--border-muted);
+}
+
+.bookkeeping-job-nav a:hover {
+  background: var(--surface-hover);
+}
+
+.bookkeeping-job-nav span {
+  display: grid;
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bookkeeping-job-nav strong {
+  min-width: 0;
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.bookkeeping-job-nav small {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookkeeping-section,
+.crm-master,
+.crm-detail-pane,
+.crm-directory,
+.crm-alerts {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+}
+
+.bookkeeping-filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 150px auto;
+  align-items: end;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 12px 16px;
+}
+
+.bookkeeping-filters label,
+.bookkeeping-upload label,
+.bookkeeping-package label,
+.crm-filters label,
+.crm-directory .section-header label,
+.dialog-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  color: var(--text-heading);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bookkeeping-filters input,
+.bookkeeping-filters select,
+.bookkeeping-upload input,
+.bookkeeping-upload select,
+.bookkeeping-package input,
+.crm-filters input,
+.crm-filters select,
+.crm-directory .section-header select,
+.dialog-fields input:not([type="checkbox"], [type="radio"]),
+.dialog-fields select,
+.dialog-fields textarea {
+  width: 100%;
+  min-height: 36px;
+  font-weight: 400;
+}
+
+.bookkeeping-filters details {
+  position: relative;
+}
+
+.bookkeeping-filters summary {
+  min-height: 36px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  padding: 7px 10px;
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.bookkeeping-filter-more {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  width: 360px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  box-shadow: var(--shadow-overlay);
+  padding: 12px;
+}
+
+.bookkeeping-totals {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--text-heading) !important;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bookkeeping-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.bookkeeping-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.bookkeeping-table-wrap th,
+.bookkeeping-table-wrap td {
+  border-bottom: 1px solid var(--border-muted);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.bookkeeping-table-wrap th {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bookkeeping-table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.bookkeeping-table-wrap td strong,
+.bookkeeping-table-wrap td small {
+  display: block;
+}
+
+.bookkeeping-table-wrap td small {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.ledger-amount {
+  color: var(--text-heading);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.evidence-state.is-attached {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.bookkeeping-upload {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(140px, 0.8fr));
+  align-items: end;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 16px;
+}
+
+.bookkeeping-transaction-link {
+  grid-column: span 2;
+}
+
+.bookkeeping-document-row,
+.crm-directory-row,
+.crm-booking-row,
+.crm-alerts .crm-card,
+.booking-detail-section .crm-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 0;
+  border-bottom: 1px solid var(--border-muted);
+  border-radius: 0;
+  background: var(--surface-bg);
+  padding: 12px 16px;
+}
+
+.bookkeeping-document-row:last-child,
+.crm-directory-row:last-child,
+.crm-booking-row:last-child,
+.crm-alerts .crm-card:last-child,
+.booking-detail-section .crm-card:last-child {
+  border-bottom: 0;
+}
+
+.bookkeeping-document-row p,
+.crm-directory-row p,
+.crm-booking-row p,
+.crm-alerts .crm-card p,
+.booking-detail-section .crm-card p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.bookkeeping-private-statements {
+  margin: 16px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.bookkeeping-private-statements legend {
+  color: var(--text-heading);
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bookkeeping-private-statements [data-private-statements] {
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 8px !important;
+}
+
+.checkbox-label input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.bookkeeping-package {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  border-top: 1px solid var(--border-muted);
+  padding: 16px;
+}
+
+.bookkeeping-package label {
+  width: 220px;
+}
+
+.crm-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.55fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.crm-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.7fr);
+  gap: 8px;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 12px;
+}
+
+.crm-booking-list,
+[data-crm-orgs],
+[data-crm-alerts] {
+  min-width: 0;
+}
+
+.crm-booking-row {
+  display: grid;
+  align-items: start;
+}
+
+.crm-booking-row[aria-current="true"] {
+  background: var(--accent-soft);
+}
+
+.crm-booking-row strong,
+.booking-detail-header strong {
+  margin-right: 8px;
+  color: var(--text-heading);
+}
+
+.crm-booking-row .row-actions {
+  margin-top: 8px;
+}
+
+.crm-support-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.6fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.crm-directory .section-header label {
+  width: 130px;
+}
+
+.crm-select-booking {
+  min-height: 260px;
+}
+
+.booking-detail-header {
+  padding: 16px;
+}
+
+.booking-detail-header h2 {
+  font-size: 24px;
+}
+
+.booking-back {
+  margin-bottom: 12px;
+}
+
+.booking-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--border-muted);
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 6px;
+}
+
+.booking-section-nav button {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--text-muted) !important;
+}
+
+.booking-section-nav button.is-active {
+  background: var(--accent-soft) !important;
+  color: var(--accent) !important;
+}
+
+.booking-detail-section {
+  min-width: 0;
+  scroll-margin-top: 56px;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 16px;
+}
+
+.booking-detail-section:last-child {
+  border-bottom: 0;
+}
+
+.booking-detail-section > header {
+  margin-bottom: 12px;
+}
+
+.booking-overview-list,
+.finance-panel dl,
+.communication-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+}
+
+.booking-overview-list > div,
+.finance-panel dl > div {
+  min-width: 0;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 10px 12px;
+}
+
+.booking-overview-list > div:nth-child(odd),
+.finance-panel dl > div:nth-child(odd) {
+  border-right: 1px solid var(--border-muted);
+}
+
+.booking-overview-list > div:nth-last-child(-n + 2),
+.finance-panel dl > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.booking-overview-list dt,
+.finance-panel dt,
+.communication-preview dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.booking-overview-list dd,
+.finance-panel dd,
+.communication-preview dd {
+  min-width: 0;
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-heading);
+  font-weight: 600;
+}
+
+.booking-notes,
+.finance-recovery,
+.bookkeeping-surface .honest-state,
+.sponsor-crm-surface .honest-state {
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 14px;
+}
+
+.booking-notes {
+  margin-top: 12px;
+}
+
+.booking-notes p,
+.bookkeeping-surface .honest-state p,
+.sponsor-crm-surface .honest-state p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+}
+
+.finance-panel > header {
+  margin-bottom: 12px;
+}
+
+.finance-panel > p,
+.finance-payments,
+.finance-actions {
+  margin-top: 12px;
+}
+
+.finance-payments p {
+  margin-bottom: 4px;
+}
+
+.finance-recovery {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.crm-communication-controls {
+  margin-bottom: 12px;
+}
+
+.crm-history > div {
+  border-bottom: 1px solid var(--border-muted);
+  padding: 10px 0;
+}
+
+.crm-history > div:first-child {
+  padding-top: 0;
+}
+
+.crm-history > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.crm-history small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.surface-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  margin: 24px auto;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-overlay);
+  padding: 0;
+}
+
+.surface-dialog-wide,
+.exact-review-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.surface-dialog::backdrop {
+  background: rgba(1, 4, 9, 0.58);
+}
+
+.surface-dialog form {
+  display: flex;
+  max-height: calc(100vh - 50px);
+  flex-direction: column;
+  margin: 0;
+}
+
+.surface-dialog form > header {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.surface-dialog form > header h3 {
+  margin: 0 0 3px;
+  color: var(--text-heading);
+  font-size: 18px;
+}
+
+.surface-dialog form > header p:last-child {
+  margin-bottom: 0;
+  color: var(--text-muted);
+}
+
+.dialog-fields {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 12px;
+  overflow: auto;
+  padding: 16px;
+}
+
+.dialog-fields [role="alert"] {
+  margin: 0;
+  color: var(--danger-text);
+}
+
+.surface-dialog form > footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 12px 16px;
+}
+
+.booking-form-grid,
+.bookkeeping-entry-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.span-all {
+  grid-column: 1 / -1;
+}
+
+.finance-candidate {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 10px 0;
+}
+
+.communication-preview {
+  padding: 10px 12px;
+}
+
+.exact-review-copy {
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.exact-review-copy h4 {
+  overflow-wrap: anywhere;
+}
+
+.exact-review-copy pre {
+  max-height: 38vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font: inherit;
+}
+
 /* Non-Home routes remain structurally usable while their redesign is pending. */
 .ops-surface,
 .ops-section,
@@ -2875,6 +3674,249 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   .work-bell-action {
     min-height: 44px;
   }
+
+  body[data-workspace-view="bookkeeping"] .library-view,
+  body[data-workspace-view="sponsors"] .library-view {
+    padding: 16px 14px 28px;
+  }
+
+  .bookkeeping-surface,
+  .sponsor-crm-surface {
+    gap: 16px;
+  }
+
+  .bookkeeping-header,
+  .crm-header,
+  .section-header,
+  .booking-detail-header,
+  .finance-panel > header {
+    display: grid;
+  }
+
+  .bookkeeping-header h2,
+  .crm-header h2 {
+    font-size: 22px;
+  }
+
+  .bookkeeping-header .primary-button,
+  .crm-header button,
+  .section-header button,
+  .booking-detail-header button,
+  .bookkeeping-surface button,
+  .sponsor-crm-surface button {
+    min-height: 44px;
+  }
+
+  .surface-actions {
+    align-items: stretch;
+  }
+
+  .bookkeeping-job-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .bookkeeping-job-nav a + a {
+    border-top: 1px solid var(--border-muted);
+    border-left: 0;
+  }
+
+  .bookkeeping-filters {
+    grid-template-columns: minmax(0, 1fr) 120px;
+  }
+
+  .bookkeeping-filters details {
+    grid-column: 1 / -1;
+  }
+
+  .bookkeeping-filter-more {
+    position: static;
+    width: 100%;
+    grid-template-columns: 1fr;
+    margin-top: 8px;
+    box-shadow: none;
+  }
+
+  .bookkeeping-table-wrap {
+    overflow: visible;
+  }
+
+  .bookkeeping-table-wrap table,
+  .bookkeeping-table-wrap tbody,
+  .bookkeeping-table-wrap tr,
+  .bookkeeping-table-wrap td {
+    display: block;
+    width: 100%;
+  }
+
+  .bookkeeping-table-wrap thead {
+    display: none;
+  }
+
+  .bookkeeping-table-wrap tr {
+    border-bottom: 1px solid var(--border-muted);
+    padding: 10px 14px;
+  }
+
+  .bookkeeping-table-wrap tr:last-child {
+    border-bottom: 0;
+  }
+
+  .bookkeeping-table-wrap td {
+    display: grid;
+    grid-template-columns: minmax(106px, 0.42fr) minmax(0, 1fr);
+    gap: 10px;
+    border: 0;
+    padding: 4px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .bookkeeping-table-wrap td::before {
+    color: var(--text-muted);
+    content: attr(data-label);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .bookkeeping-table-wrap td:last-child {
+    margin-top: 4px;
+  }
+
+  .bookkeeping-table-wrap td:last-child .row-actions {
+    justify-content: flex-start;
+  }
+
+  .bookkeeping-upload {
+    grid-template-columns: 1fr;
+  }
+
+  .bookkeeping-transaction-link {
+    grid-column: auto;
+  }
+
+  .bookkeeping-document-row,
+  .crm-directory-row,
+  .crm-alerts .crm-card,
+  .booking-detail-section .crm-card {
+    display: grid;
+  }
+
+  .bookkeeping-document-row .row-actions,
+  .crm-directory-row .row-actions {
+    justify-content: flex-start;
+  }
+
+  .bookkeeping-package {
+    display: grid;
+  }
+
+  .bookkeeping-package label {
+    width: 100%;
+  }
+
+  .crm-layout,
+  .crm-support-grid {
+    display: block;
+  }
+
+  .crm-detail-pane,
+  .sponsor-crm-surface.has-booking-detail > .crm-header,
+  .sponsor-crm-surface.has-booking-detail > .surface-status,
+  .sponsor-crm-surface.has-booking-detail .crm-master,
+  .sponsor-crm-surface.has-booking-detail > .crm-support-grid {
+    display: none;
+  }
+
+  .sponsor-crm-surface.has-booking-detail .crm-detail-pane {
+    display: block;
+    overflow: visible;
+    border: 0;
+  }
+
+  .crm-master {
+    width: 100%;
+  }
+
+  .crm-support-grid > section {
+    margin-top: 16px;
+  }
+
+  .booking-detail-header {
+    padding: 0 0 16px;
+  }
+
+  .booking-section-nav {
+    top: var(--mobile-header-height);
+    gap: 2px;
+    margin-inline: -14px;
+    padding-inline: 8px;
+  }
+
+  .booking-section-nav button {
+    min-width: 0;
+    padding-inline: 4px !important;
+    font-size: 12px;
+  }
+
+  .booking-detail-section {
+    margin-inline: -14px;
+    scroll-margin-top: 120px;
+    padding: 16px 14px;
+  }
+
+  .booking-overview-list,
+  .finance-panel dl,
+  .communication-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-overview-list > div,
+  .finance-panel dl > div,
+  .booking-overview-list > div:nth-last-child(-n + 2),
+  .finance-panel dl > div:nth-last-child(-n + 2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  .booking-overview-list > div:last-child,
+  .finance-panel dl > div:last-child {
+    border-bottom: 0;
+  }
+
+  .surface-dialog,
+  .surface-dialog-wide,
+  .exact-review-dialog {
+    width: 100%;
+    max-width: none;
+    max-height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .surface-dialog form {
+    min-height: 100vh;
+    max-height: 100vh;
+  }
+
+  .surface-dialog form > header,
+  .surface-dialog form > footer,
+  .dialog-fields {
+    padding-inline: 14px;
+  }
+
+  .surface-dialog form > footer button {
+    min-height: 44px;
+  }
+
+  .booking-form-grid,
+  .bookkeeping-entry-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .span-all {
+    grid-column: auto;
+  }
 }
 
 @media (max-width: 420px) {
@@ -2899,6 +3941,23 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
 
   .home-status-item span {
     font-size: 12px;
+  }
+
+  .bookkeeping-filters,
+  .crm-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .bookkeeping-filters details {
+    grid-column: auto;
+  }
+
+  .bookkeeping-table-wrap td {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .booking-section-nav button {
+    font-size: 11px;
   }
 }
 
