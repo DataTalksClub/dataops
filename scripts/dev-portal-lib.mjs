@@ -34,10 +34,6 @@ export const FORBIDDEN_BROWSER_NAMESPACES = Object.freeze([
 ]);
 
 const LOCAL_CREDENTIAL_MARKER = /^(?:fake|local|test|dummy|offline|dynalite)(?:[-_.][a-z0-9.-]+)?$/i;
-const DEPLOYED_BROWSER_ASSETS = new Set(
-  readFrontendAssetManifest().files.map((asset) => `/${asset}`),
-);
-
 export class DevPortalConfigError extends Error {
   constructor(message) {
     super(message);
@@ -183,12 +179,19 @@ function extensionOf(pathname) {
   return dot >= 0 ? name.slice(dot).toLowerCase() : '';
 }
 
-export function classifyBrowserPath(pathname, method = 'GET') {
+export function classifyBrowserPath(pathname, method = 'GET', assetFiles) {
   const normalizedMethod = method.toUpperCase();
   if (isProxyPath(pathname)) return 'proxy';
   if (normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD') return 'not-found';
   if (pathname === '/' || pathname === '/index.html') return 'frontend';
-  if (DEPLOYED_BROWSER_ASSETS.has(pathname)) return 'frontend';
+  // The manifest changes as a surface module is extracted. Read it at request
+  // time so the long-running Vite server can serve a new module immediately;
+  // restarting the local backend or frontend should never be part of the edit
+  // loop. Tests may provide an explicit file list without mutating the repo.
+  const deployedBrowserAssets = new Set(
+    (assetFiles || readFrontendAssetManifest().files).map((asset) => `/${asset}`),
+  );
+  if (deployedBrowserAssets.has(pathname)) return 'frontend';
   if (
     pathname.startsWith('/@vite/')
     || pathname.startsWith('/@id/')

@@ -236,6 +236,15 @@ test('classifies deep links, canonical assets, and fail-closed static paths', ()
   assert.equal(classifyBrowserPath('/tasks', 'POST'), 'not-found');
 });
 
+test('accepts a newly manifested module without restarting the development server', () => {
+  const modulePath = 'src/surfaces/new-checkpoint.js';
+  assert.equal(classifyBrowserPath(`/${modulePath}`), 'not-found');
+  assert.equal(
+    classifyBrowserPath(`/${modulePath}`, 'GET', [...FRONTEND_ASSETS, modulePath]),
+    'frontend',
+  );
+});
+
 test('representative child environment is visibly labeled and fail-closed', () => {
   const parentEnv = {
     DYNAMODB_ENDPOINT: 'http://127.0.0.1:4567',
