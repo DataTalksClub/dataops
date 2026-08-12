@@ -14,6 +14,7 @@ const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
 const routing = readFileSync(path.join(frontendRoot, 'src', 'core', 'routing.js'), 'utf8');
 const workModel = readFileSync(path.join(frontendRoot, 'src', 'core', 'work-model.js'), 'utf8');
+const admin = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'admin.js'), 'utf8');
 const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance.js'), 'utf8');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
@@ -44,6 +45,7 @@ describe('one canonical frontend', () => {
     for (const modulePath of [
       '/src/core/routing.js',
       '/src/core/work-model.js',
+      '/src/surfaces/admin.js',
       '/src/surfaces/finance.js',
       '/src/surfaces/planning.js',
     ]) {
@@ -83,6 +85,7 @@ describe('one canonical frontend', () => {
       'src/styles.css',
       'src/core/routing.js',
       'src/core/work-model.js',
+      'src/surfaces/admin.js',
       'src/surfaces/finance.js',
       'src/surfaces/planning.js',
     ]);
@@ -119,6 +122,16 @@ describe('one canonical frontend', () => {
     assert.match(styles, /\.bookkeeping-surface/);
     assert.match(styles, /\.newsletter-surface/);
     assert.match(styles, /\.calendar-surface/);
+  });
+
+  it('keeps Admin diagnostics and Users management in the canonical module graph', () => {
+    for (const marker of [
+      'renderAdminSurface',
+      'renderUsersSurfaceView',
+      '/api/users',
+      'Read-only diagnostics',
+      'Add user',
+    ]) assert.ok(admin.includes(marker), `admin surface is missing ${marker}`);
   });
 
   it('provides complete Inbox triage in the canonical shell', () => {
