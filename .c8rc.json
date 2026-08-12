@@ -11,6 +11,6 @@
   ],
   "reportsDirectory": "coverage/frontend",
   "checkCoverage": true,
-  "lines": 28.07,
-  "statements": 28.07
+  "lines": 36.19,
+  "statements": 36.19
 }
