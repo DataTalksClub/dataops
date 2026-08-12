@@ -426,25 +426,6 @@ body.sidebar-collapsed .sidebar {
   stroke-linejoin: round;
 }
 
-.home-secondary-nav {
-  display: none;
-}
-
-body.home-more-open .home-secondary-nav {
-  display: flex;
-}
-
-.home-secondary-nav {
-  min-height: 36px;
-  padding-left: 44px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.home-more-nav {
-  display: flex;
-}
-
 .new-page-button,
 .sidebar-details,
 .tree-section {
@@ -509,10 +490,10 @@ body.home-more-open .home-secondary-nav {
   min-width: 0;
 }
 
-body[data-workspace-view="home"] .page-context > :not(#sidebar-expand-button),
-body[data-workspace-view="home"] #discard-button,
-body[data-workspace-view="home"] #save-button,
-body[data-workspace-view="home"] .save-state {
+.page-context > :not(#sidebar-expand-button),
+#discard-button,
+#save-button,
+.save-state {
   display: none !important;
 }
 
@@ -639,22 +620,12 @@ body[data-view="create"] .editor-view {
 }
 
 .library-heading {
-  max-width: 760px;
-  margin: 0 auto 20px;
-}
-
-.library-heading h2,
-.library-heading p {
-  margin: 0;
+  display: none;
 }
 
 .document-list {
   max-width: 760px;
   margin: 0 auto;
-}
-
-body[data-workspace-view="home"] .library-heading {
-  display: none;
 }
 
 body[data-workspace-view="home"] .document-list.is-operations-home {

@@ -107,10 +107,10 @@ They intentionally follow the Course Management Platform names where practical.
 - The sidebar shows the product mark, workspace name, search, and a short
   primary navigation list.
 - Primary navigation is `Today`, `Inbox`, `Workflows`, `Newsletter`,
-  `Calendar`, `Sponsors`, and `Process Docs`. These daily planning surfaces
-  remain visible and must not move behind `More`. Lower-frequency operational
-  areas such as Bookkeeping and Mailing exports live behind a labelled `More`
-  control.
+  `Calendar`, `Sponsors`, `Bookkeeping`, `Mailing exports`, and `Process Docs`.
+  Every area remains visible as a first-level item with an icon. Do not add a
+  `More`, overflow, disclosure, or contextual navigation section to this
+  sidebar.
 - Use icon plus text navigation rows, not icon-only navigation.
 - The selected row uses one accent-soft background with accent text and icon.
   Never add a left border, inset stripe, colored rail, or other edge accent to
@@ -125,6 +125,16 @@ They intentionally follow the Course Management Platform names where practical.
 - Process Docs is a separate main-canvas view. Its library, search/filter
   controls, document tree or list, pending state, editor, and creation actions
   belong inside that view—not inside the global sidebar.
+- Top-level routes own and replace the entire main canvas. Clear the previous
+  route before rendering the next one; never retain a shared page title, status
+  summary, filter strip, quality count, or content fragment across areas.
+- The desktop toolbar contains global controls only. Do not show an `All docs /
+  Workspace / Current area` breadcrumb or duplicate route title above a
+  top-level page. The selected sidebar item and the page's own main heading
+  provide context.
+- Never put `Save`, `Discard`, or mutation state in the global toolbar. Form and
+  editor actions live in the relevant main-canvas form footer, primary first and
+  secondary/cancel actions after it.
 - Home Settings does not expose Process Docs Git/review tools. Those controls
   remain contextual to the knowledge workspace.
 - Collapsing the sidebar must leave a visible, keyboard-operable restore

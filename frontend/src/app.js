@@ -51,7 +51,6 @@ const gitCommitSubmit = document.querySelector("#git-commit-submit");
 const gitResult = document.querySelector("#git-result");
 const mobileNewButton = document.querySelector("#mobile-new-button");
 const operationsHomeButton = document.querySelector("#operations-home-button");
-const homeMoreNavButton = document.querySelector("#home-more-nav-button");
 const newDocumentButton = document.querySelector("#new-document-button");
 const searchForm = document.querySelector("#search-form");
 const searchInput = document.querySelector("#search-input");
@@ -310,10 +309,6 @@ for (const button of workspaceNavButtons) {
     ),
   );
 }
-homeMoreNavButton?.addEventListener("click", () => {
-  const expanded = body.classList.toggle("home-more-open");
-  homeMoreNavButton.setAttribute("aria-expanded", String(expanded));
-});
 document.addEventListener("dataops:navigate-workspace", (event) =>
   showWorkspaceSurface(event.detail?.view || "home"),
 );
@@ -9020,6 +9015,10 @@ function commitWorkspaceRoute(route, token, options = {}) {
   searchInput.value = "";
   clearDocumentFilters();
   setView("library");
+  // Each top-level area owns the complete main canvas. Clear the old route
+  // before dispatch so none of its status, filters, headings, or content can
+  // travel into the next view while that renderer starts.
+  documentList.replaceChildren();
   refreshDocuments();
   closeSidebar();
 
@@ -9430,7 +9429,6 @@ function syncWorkspaceNav() {
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
-  if (activeWorkspaceView !== "home") body.classList.remove("home-more-open");
 }
 
 async function showCreate() {

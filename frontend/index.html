@@ -41,10 +41,9 @@
           <button id="newsletter-nav-button" class="workspace-nav-button" type="button" data-workspace-view="newsletter"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>Newsletter</span></button>
           <button id="calendar-nav-button" class="workspace-nav-button" type="button" data-workspace-view="calendar"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/></svg></span><span>Calendar</span></button>
           <button id="sponsors-nav-button" class="workspace-nav-button" type="button" data-workspace-view="sponsors"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6m1-6c3 0 5 2 5 5"/></svg></span><span>Sponsors</span></button>
+          <button id="bookkeeping-nav-button" class="workspace-nav-button" type="button" data-workspace-view="bookkeeping"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 3h14v18H5Z"/><path d="M8 7h8M8 11h8M8 15h3M15 15h1M8 18h3M15 18h1"/></svg></span><span>Bookkeeping</span></button>
+          <button id="mailing-exports-nav-button" class="workspace-nav-button" type="button" data-workspace-view="mailing-exports"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 15v5h14v-5"/></svg></span><span>Mailing exports</span></button>
           <button id="docs-nav-button" class="workspace-nav-button" type="button" data-workspace-view="docs"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span><span>Process Docs</span></button>
-          <button id="home-more-nav-button" class="workspace-nav-button home-more-nav" type="button" aria-expanded="false"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span><span>More</span></button>
-          <button id="bookkeeping-nav-button" class="workspace-nav-button home-secondary-nav" type="button" data-workspace-view="bookkeeping">Bookkeeping</button>
-          <button id="mailing-exports-nav-button" class="workspace-nav-button home-secondary-nav" type="button" data-workspace-view="mailing-exports">Mailing exports</button>
         </nav>
 
         <button id="new-document-button" class="new-page-button admin-create-button docs-sidebar-only" type="button">+ New process doc</button>
@@ -160,7 +159,7 @@
         </header>
 
         <section id="library-view" class="view library-view">
-          <div class="library-heading">
+          <div class="library-heading" hidden>
             <div>
               <p id="status-text" class="status-text">Loading documents...</p>
               <h2 id="library-title">Documents</h2>
