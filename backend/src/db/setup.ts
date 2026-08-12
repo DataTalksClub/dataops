@@ -13,6 +13,7 @@ function tableName(envName: string, fallback: string, stackSuffix: string): stri
 }
 
 function shouldAutoCreateTables(): boolean {
+  if (process.env.DATAOPS_AUTO_CREATE_TABLES === 'false') return false;
   return (
     process.env.DATAOPS_AUTO_CREATE_TABLES === 'true' ||
     process.env.IS_LOCAL === 'true' ||

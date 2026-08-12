@@ -8,6 +8,7 @@
   "scripts": {
     "build:backend": "npm run build --workspace dataops-backend",
     "clean:backend": "npm run clean --workspace dataops-backend",
+    "dev": "node scripts/dev-portal.mjs",
     "dev:backend": "npm run dev --workspace dataops-backend",
     "dry-run:import:backend": "npm run dry-run:import --workspace dataops-backend --",
     "export:data:backend": "npm run export:data --workspace dataops-backend --",
@@ -22,6 +23,7 @@
     "restore:drill:backend": "npm run restore:drill --workspace dataops-backend --"
   },
   "devDependencies": {
-    "js-yaml": "^3.15.0"
+    "js-yaml": "^3.15.0",
+    "vite": "^6.4.3"
   }
 }
