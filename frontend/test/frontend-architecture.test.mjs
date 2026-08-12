@@ -15,7 +15,6 @@ const MAX_MODULE_LINES = 1_000;
 const oversizedMigrationBaseline = Object.freeze({
   "src/app.js": 2_656,
   "src/surfaces/document-editor.js": 3_292,
-  "src/surfaces/knowledge.js": 2_236,
 });
 
 function read(relativePath) {

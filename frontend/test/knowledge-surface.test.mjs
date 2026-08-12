@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
-import { createKnowledgeSurface } from "../src/surfaces/knowledge.js";
+import { createKnowledgeSurface } from "../src/surfaces/knowledge/index.js";
 import {
   FakeDocument,
   FakeElement,

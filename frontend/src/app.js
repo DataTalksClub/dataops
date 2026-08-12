@@ -45,7 +45,7 @@ import {
 import { createPlanningSurface } from "./surfaces/planning.js";
 import { createTasksSurface } from "./surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "./surfaces/work-detail/index.js";
-import { createKnowledgeSurface } from "./surfaces/knowledge.js";
+import { createKnowledgeSurface } from "./surfaces/knowledge/index.js";
 import { createDocumentEditor } from "./surfaces/document-editor.js";
 import { createApiClient, resolveApiBase } from "./shell/api.js";
 import { createFeedbackShell } from "./shell/feedback.js";
