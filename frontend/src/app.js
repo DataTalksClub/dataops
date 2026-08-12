@@ -1,13 +1,7 @@
 import {
-  canonicalWorkspaceUrl,
-  parseWorkspaceHash,
-  tasksSectionTitle,
-  workspaceHashPath,
-  workspaceRouteFor,
-} from "./core/routing.js";
-import {
   addDaysIso,
   buildHomeAttentionItems,
+  canonicalWorkspaceUrl,
   cardsHeaderViewModel,
   compareIsoDate,
   dedupeWorkTasks,
@@ -27,16 +21,20 @@ import {
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
+  parseWorkspaceHash,
   summarizeBundleProgress,
   taskDate,
   taskProofState,
   taskRequiresApprovedArtifact,
   tasksFromWorkPayload,
+  tasksSectionTitle,
   todayIsoDate,
   workBundleTitle,
   workTaskTitle,
   workflowTaskGroups,
-} from "./core/work-model.js";
+  workspaceHashPath,
+  workspaceRouteFor,
+} from "./core/workspace.js";
 import { createAdminSurface } from "./surfaces/admin.js";
 import { createFinanceSurface } from "./surfaces/finance.js";
 import { createHomeSurface } from "./surfaces/home.js";

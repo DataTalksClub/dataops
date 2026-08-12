@@ -12,8 +12,7 @@ const frontendRoot = path.join(repoRoot, 'frontend');
 const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
 const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
-const routing = readFileSync(path.join(frontendRoot, 'src', 'core', 'routing.js'), 'utf8');
-const workModel = readFileSync(path.join(frontendRoot, 'src', 'core', 'work-model.js'), 'utf8');
+const workspace = readFileSync(path.join(frontendRoot, 'src', 'core', 'workspace.js'), 'utf8');
 const admin = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'admin.js'), 'utf8');
 const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance.js'), 'utf8');
 const home = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'home.js'), 'utf8');
@@ -47,8 +46,7 @@ describe('one canonical frontend', () => {
     assert.match(css.body, /\.operations-home/);
 
     for (const modulePath of [
-      '/src/core/routing.js',
-      '/src/core/work-model.js',
+      '/src/core/workspace.js',
       '/src/surfaces/admin.js',
       '/src/surfaces/finance.js',
       '/src/surfaces/home.js',
@@ -91,8 +89,7 @@ describe('one canonical frontend', () => {
       'index.html',
       'src/app.js',
       'src/styles.css',
-      'src/core/routing.js',
-      'src/core/work-model.js',
+      'src/core/workspace.js',
       'src/surfaces/admin.js',
       'src/surfaces/finance.js',
       'src/surfaces/home.js',
@@ -107,12 +104,12 @@ describe('one canonical frontend', () => {
   });
 
   it('maps established hash routes and entity deep links into the canonical shell', () => {
-    assert.match(app, /from "\.\/core\/routing\.js"/);
+    assert.match(app, /from "\.\/core\/workspace\.js"/);
     for (const route of ['/', '/inbox', '/tasks', '/cards', '/cards/archive', '/assistants', '/templates', '/recurring', '/notifications', '/bookkeeping', '/sponsors', '/newsletter', '/calendar', '/mailing-exports']) {
-      assert.ok(routing.includes(`"${route}"`), `missing canonical route ${route}`);
+      assert.ok(workspace.includes(`"${route}"`), `missing canonical route ${route}`);
     }
     for (const param of ['taskId', 'cardId', 'bundleId', 'intakeId', 'assistantJobId']) {
-      assert.ok(routing.includes(`"${param}"`), `missing deep-link parameter ${param}`);
+      assert.ok(workspace.includes(`"${param}"`), `missing deep-link parameter ${param}`);
     }
   });
 
@@ -137,7 +134,7 @@ describe('one canonical frontend', () => {
     for (const marker of ['renderNewsletterSurface', 'renderCalendarSurface']) {
       assert.ok(planning.includes(marker), `planning surface is missing ${marker}`);
     }
-    assert.match(workModel, /function taskRequiresApprovedArtifact/);
+    assert.match(workspace, /function taskRequiresApprovedArtifact/);
     assert.match(styles, /\.bundle-checklist/);
     assert.match(styles, /\.bookkeeping-surface/);
     assert.match(styles, /\.newsletter-surface/);

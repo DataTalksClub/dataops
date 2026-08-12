@@ -18,12 +18,12 @@ import {
   summarizeBundleProgress,
   taskProofState,
   workflowTaskGroups,
-} from "../src/core/work-model.js";
+} from "../src/core/workspace.js";
 
 const TODAY = "2026-08-12";
 
 describe("frontend work model", () => {
-  test("directly imports the production work-model module", () => {
+  test("directly imports the work model from the production workspace module", () => {
     assert.equal(typeof buildHomeAttentionItems, "function");
     assert.equal(typeof summarizeBundleProgress, "function");
   });

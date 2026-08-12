@@ -11,12 +11,12 @@ import {
   tasksSectionTitle,
   workspaceHashPath,
   workspaceRouteFor,
-} from "../src/core/routing.js";
+} from "../src/core/workspace.js";
 
 const browserLocation = (hash = "") => ({ pathname: "/", search: "", hash });
 
 describe("canonical workspace routing", () => {
-  test("directly imports the production routing module", () => {
+  test("directly imports routing from the production workspace module", () => {
     assert.equal(typeof parseWorkspaceHash, "function");
     assert.equal(typeof canonicalWorkspaceUrl, "function");
   });

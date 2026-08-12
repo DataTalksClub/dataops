@@ -32,14 +32,28 @@ function fixture(name) {
     writeFileSync(join(source, sourcePath), bytes);
     writeFileSync(join(artifact, artifactPath), bytes);
   }
+  const surfaceImports = allowlist
+    .map(([sourcePath]) => sourcePath)
+    .filter((sourcePath) => sourcePath.startsWith('src/surfaces/') && sourcePath.endsWith('.js'))
+    .map((sourcePath) => `import "./${sourcePath.slice('src/'.length)}";`)
+    .join('\n');
   const moduleContents = new Map([
     [
       'src/app.js',
-      'import { routeMarker } from "./core/routing.js";\nimport { workMarker } from "./core/work-model.js";\nvoid routeMarker;\nvoid workMarker;\n',
+      [
+        'import { routeMarker, workMarker } from "./core/workspace.js";',
+        surfaceImports,
+        'void routeMarker;',
+        'void workMarker;',
+        '',
+      ].join('\n'),
     ],
-    ['src/core/routing.js', 'export const routeMarker = true;\n'],
-    ['src/core/work-model.js', 'export const workMarker = true;\n'],
+    ['src/core/workspace.js', 'export const routeMarker = true;\nexport const workMarker = true;\n'],
   ]);
+  for (const [sourcePath] of allowlist) {
+    if (!sourcePath.endsWith('.js') || moduleContents.has(sourcePath)) continue;
+    moduleContents.set(sourcePath, `export const syntheticMarker = ${JSON.stringify(sourcePath)};\n`);
+  }
   for (const [sourcePath, bytes] of moduleContents) {
     writeFileSync(join(source, sourcePath), bytes);
     writeFileSync(join(artifact, `frontend/${sourcePath}`), bytes);
@@ -182,8 +196,8 @@ describe('deterministic canonical frontend artifact verifier', () => {
   test('rejects unsupported module specifiers, non-literal imports, and omitted export-from modules', () => {
     for (const [name, source, pattern] of [
       ['bare-import', 'import "package-name";\n', /module specifier must be relative/],
-      ['absolute-import', 'import "/src/core/routing.js";\n', /module specifier must be relative/],
-      ['dynamic-expression', 'const path = "./core/routing.js";\nimport(path);\n', /dynamic import must use a literal relative path/],
+      ['absolute-import', 'import "/src/core/workspace.js";\n', /module specifier must be relative/],
+      ['dynamic-expression', 'const path = "./core/workspace.js";\nimport(path);\n', /dynamic import must use a literal relative path/],
       ['export-from', 'export { omitted } from "./core/omitted.js";\n', /import is missing from asset manifest/],
     ]) {
       const current = fixture(name);
@@ -197,7 +211,7 @@ describe('deterministic canonical frontend artifact verifier', () => {
     const current = fixture('copy-fails-safe');
     const marker = join(current.artifact, 'frontend', 'existing-marker.txt');
     writeFileSync(marker, 'preserve me');
-    rmSync(join(current.source, 'src/core/work-model.js'));
+    rmSync(join(current.source, 'src/core/workspace.js'));
     assert.throws(() => copyFrontendArtifact({
       sourceRoot: current.source,
       artifactRoot: current.artifact,

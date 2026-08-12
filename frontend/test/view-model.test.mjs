@@ -4,7 +4,7 @@ import { describe, test } from "node:test";
 import {
   cardsHeaderViewModel,
   groupCardItemsByStage,
-} from "../src/core/work-model.js";
+} from "../src/core/workspace.js";
 
 describe("Cards renderer view models", () => {
   test("builds the active board heading and archive route", () => {
