@@ -8,6 +8,11 @@ const path = require('node:path');
 const dynalite = require('dynalite');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+const FRONTEND_ASSETS = JSON.parse(fs.readFileSync(
+  path.join(ROOT, 'backend', 'src', 'docs', 'frontend-assets.json'),
+  'utf8',
+)).files;
+
 const OWNED_STACKS = new Set();
 const SYNTHETIC_DOC = `---
 id: reference.synthetic-vite-development
@@ -88,11 +93,11 @@ function createSyntheticRoots(testInfo) {
   const cacheRoot = path.join(scratch, 'cache');
   const stateRoot = path.join(scratch, 'state');
   const uploadRoot = path.join(scratch, 'uploads');
-  fs.mkdirSync(path.join(frontendRoot, 'src'), { recursive: true });
   fs.mkdirSync(path.join(cacheRoot, 'content', 'testing'), { recursive: true });
   fs.mkdirSync(stateRoot, { recursive: true });
   fs.mkdirSync(uploadRoot, { recursive: true });
-  for (const relative of ['index.html', 'src/app.js', 'src/styles.css']) {
+  for (const relative of FRONTEND_ASSETS) {
+    fs.mkdirSync(path.dirname(path.join(frontendRoot, relative)), { recursive: true });
     fs.copyFileSync(path.join(ROOT, 'frontend', relative), path.join(frontendRoot, relative));
   }
   fs.writeFileSync(path.join(cacheRoot, 'content', 'testing', 'synthetic-vite-development.md'), SYNTHETIC_DOC);

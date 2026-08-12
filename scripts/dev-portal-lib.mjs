@@ -1,6 +1,8 @@
 import net from 'node:net';
 import path from 'node:path';
 
+import { readFrontendAssetManifest } from '../backend/scripts/frontend-assets.mjs';
+
 export const DEV_HOST = '127.0.0.1';
 export const DEFAULT_FRONTEND_PORT = 3000;
 export const DEFAULT_BACKEND_PORT = 3001;
@@ -32,6 +34,9 @@ export const FORBIDDEN_BROWSER_NAMESPACES = Object.freeze([
 ]);
 
 const LOCAL_CREDENTIAL_MARKER = /^(?:fake|local|test|dummy|offline|dynalite)(?:[-_.][a-z0-9.-]+)?$/i;
+const DEPLOYED_BROWSER_ASSETS = new Set(
+  readFrontendAssetManifest().files.map((asset) => `/${asset}`),
+);
 
 export class DevPortalConfigError extends Error {
   constructor(message) {
@@ -183,7 +188,7 @@ export function classifyBrowserPath(pathname, method = 'GET') {
   if (isProxyPath(pathname)) return 'proxy';
   if (normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD') return 'not-found';
   if (pathname === '/' || pathname === '/index.html') return 'frontend';
-  if (pathname === '/src/app.js' || pathname === '/src/styles.css') return 'frontend';
+  if (DEPLOYED_BROWSER_ASSETS.has(pathname)) return 'frontend';
   if (
     pathname.startsWith('/@vite/')
     || pathname.startsWith('/@id/')

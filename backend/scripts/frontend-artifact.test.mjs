@@ -1,20 +1,22 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
+
+import { readFrontendAssetManifest } from './frontend-assets.mjs';
+import { copyFrontendArtifact } from './copy-frontend-artifact.mjs';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const verifier = join(repoRoot, 'backend', 'scripts', 'verify-frontend-artifact.mjs');
 const runtimeProbe = join(repoRoot, 'backend', 'scripts', 'packaged-handler-probe.mjs');
 const sourceFrontend = join(repoRoot, 'frontend');
 const generatedRoot = join(repoRoot, '.tmp', 'issue-159', 'frontend-artifact-fixtures');
-const allowlist = [
-  ['index.html', 'dist/frontend/index.html'],
-  ['src/app.js', 'dist/frontend/src/app.js'],
-  ['src/styles.css', 'dist/frontend/src/styles.css'],
-];
+const allowlist = readFrontendAssetManifest().files.map((sourcePath) => [
+  sourcePath,
+  `dist/frontend/${sourcePath}`,
+]);
 
 function fixture(name) {
   const root = mkdtempSync(join(generatedRoot, `${name}-`));
@@ -29,6 +31,18 @@ function fixture(name) {
     const bytes = Buffer.from(`synthetic-${sourcePath}\n`);
     writeFileSync(join(source, sourcePath), bytes);
     writeFileSync(join(artifact, artifactPath), bytes);
+  }
+  const moduleContents = new Map([
+    [
+      'src/app.js',
+      'import { routeMarker } from "./core/routing.js";\nimport { workMarker } from "./core/work-model.js";\nvoid routeMarker;\nvoid workMarker;\n',
+    ],
+    ['src/core/routing.js', 'export const routeMarker = true;\n'],
+    ['src/core/work-model.js', 'export const workMarker = true;\n'],
+  ]);
+  for (const [sourcePath, bytes] of moduleContents) {
+    writeFileSync(join(source, sourcePath), bytes);
+    writeFileSync(join(artifact, `frontend/${sourcePath}`), bytes);
   }
   return { root, source, artifact };
 }
@@ -46,7 +60,7 @@ describe('deterministic canonical frontend artifact verifier', () => {
   before(() => mkdirSync(generatedRoot, { recursive: true }));
   after(() => rmSync(generatedRoot, { recursive: true, force: true }));
 
-  test('accepts exactly the three byte-identical deployable files and reports sorted hashes', () => {
+  test('accepts exactly the manifest-declared byte-identical deployable files and reports sorted hashes', () => {
     const { source, artifact } = fixture('success');
     const result = run(source, artifact);
     assert.equal(result.status, 0, result.stderr);
@@ -67,6 +81,27 @@ describe('deterministic canonical frontend artifact verifier', () => {
       const result = spawnSync(process.execPath, [verifier, ...args], { encoding: 'utf8' });
       expectFailure(result, pattern);
     }
+  });
+
+  test('validates manifest version, paths, duplicates, and extensions', () => {
+    const root = mkdtempSync(join(generatedRoot, 'manifest-validation-'));
+    const manifestPath = join(root, 'manifest.json');
+    for (const [payload, pattern] of [
+      [{ version: 2, files: allowlist.map(([source]) => source) }, /version must be 1/],
+      [{ version: 1, files: [] }, /non-empty array/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css', 'src/../escape.js'] }, /must be normalized/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css', 'src/app.js'] }, /Duplicate/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css', 'src/data.json'] }, /Unsupported.*extension/],
+      [{ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css'], extra: true }, /schema only permits/],
+    ]) {
+      writeFileSync(manifestPath, JSON.stringify(payload));
+      assert.throws(() => readFrontendAssetManifest(manifestPath), pattern);
+    }
+    const target = join(root, 'real-manifest.json');
+    const link = join(root, 'linked-manifest.json');
+    writeFileSync(target, JSON.stringify({ version: 1, files: ['index.html', 'src/app.js', 'src/styles.css'] }));
+    symlinkSync(target, link);
+    assert.throws(() => readFrontendAssetManifest(link), /non-symlink/);
   });
 
   test('fails closed for missing, unreadable-shaped, and non-directory roots', () => {
@@ -129,6 +164,48 @@ describe('deterministic canonical frontend artifact verifier', () => {
     expectFailure(run(directory.source, directory.artifact), /must be a regular file|missing artifact file/);
   });
 
+  test('rejects a production app import omitted from the explicit manifest', () => {
+    const current = fixture('omitted-import');
+    writeFileSync(
+      join(current.source, 'src/app.js'),
+      'import { omitted } from "./core/omitted.js";\nvoid omitted;\n',
+    );
+    writeFileSync(
+      join(current.artifact, 'frontend/src/app.js'),
+      readFileSync(join(current.source, 'src/app.js')),
+    );
+    mkdirSync(join(current.source, 'src/core'), { recursive: true });
+    writeFileSync(join(current.source, 'src/core/omitted.js'), 'export const omitted = true;\n');
+    expectFailure(run(current.source, current.artifact), /frontend import is missing from asset manifest/);
+  });
+
+  test('rejects unsupported module specifiers, non-literal imports, and omitted export-from modules', () => {
+    for (const [name, source, pattern] of [
+      ['bare-import', 'import "package-name";\n', /module specifier must be relative/],
+      ['absolute-import', 'import "/src/core/routing.js";\n', /module specifier must be relative/],
+      ['dynamic-expression', 'const path = "./core/routing.js";\nimport(path);\n', /dynamic import must use a literal relative path/],
+      ['export-from', 'export { omitted } from "./core/omitted.js";\n', /import is missing from asset manifest/],
+    ]) {
+      const current = fixture(name);
+      writeFileSync(join(current.source, 'src/app.js'), source);
+      writeFileSync(join(current.artifact, 'frontend/src/app.js'), source);
+      expectFailure(run(current.source, current.artifact), pattern);
+    }
+  });
+
+  test('validates every source before replacing an existing artifact', () => {
+    const current = fixture('copy-fails-safe');
+    const marker = join(current.artifact, 'frontend', 'existing-marker.txt');
+    writeFileSync(marker, 'preserve me');
+    rmSync(join(current.source, 'src/core/work-model.js'));
+    assert.throws(() => copyFrontendArtifact({
+      sourceRoot: current.source,
+      artifactRoot: current.artifact,
+    }), /ENOENT|regular file/);
+    assert.equal(existsSync(marker), true);
+    assert.equal(readFileSync(marker, 'utf8'), 'preserve me');
+  });
+
   test('rejects ambiguous layouts and accepts dependency HTML and un-followed dependency symlinks', () => {
     const ambiguous = fixture('ambiguous');
     mkdirSync(join(ambiguous.artifact, 'dist/frontend'), { recursive: true });
@@ -188,7 +265,8 @@ describe('isolated SAM handler frontend runtime', () => {
       child.once('exit', (status) => resolveProbe({ status, stdout, stderr }));
     });
     try {
-      const positive = await probe(isolated, ['/', '/workspace/deep-link', '/src/app.js', '/src/styles.css', '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api']);
+      const manifestAssets = readFrontendAssetManifest().files.map((asset) => `/${asset}`);
+      const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api']);
       assert.equal(positive.status, 0, positive.stderr);
       const result = JSON.parse(positive.stdout);
       assert.equal(result.outsideModuleResolution, false);
@@ -199,14 +277,12 @@ describe('isolated SAM handler frontend runtime', () => {
         assert.match(response.contentType, /^text\/html/);
         assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend/index.html'), 'utf8'));
       }
-      for (const [path, type, file] of [
-        ['/src/app.js', /javascript/, 'app.js'],
-        ['/src/styles.css', /text\/css/, 'styles.css'],
-      ]) {
-        const response = responses.get(path);
+      for (const asset of readFrontendAssetManifest().files) {
+        const requestPath = `/${asset}`;
+        const response = responses.get(requestPath);
         assert.equal(response.statusCode, 200);
-        assert.match(response.contentType, type);
-        assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend/src', file), 'utf8'));
+        assert.match(response.contentType, asset.endsWith('.css') ? /text\/css/ : asset.endsWith('.html') ? /text\/html/ : /javascript/);
+        assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend', asset), 'utf8'));
       }
       for (const path of ['/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js']) {
         const response = responses.get(path);

@@ -19,7 +19,7 @@
     "test:frontend-artifact": "make -C .. sam-build && node --test scripts/frontend-artifact.test.mjs",
     "test:e2e:frontend-parity": "node scripts/frontend-parity.mjs",
     "test:integration": "bash scripts/integration-test.sh",
-    "build": "tsc && rm -rf dist/frontend dist/pages dist/public dist/static dist/assets && mkdir -p dist/frontend/src && cp ../frontend/index.html dist/frontend/index.html && cp ../frontend/src/app.js dist/frontend/src/app.js && cp ../frontend/src/styles.css dist/frontend/src/styles.css && node scripts/verify-frontend-artifact.mjs --source ../frontend --artifact dist",
+    "build": "tsc && rm -rf dist/frontend dist/pages dist/public dist/static dist/assets && node scripts/copy-frontend-artifact.mjs --source ../frontend --artifact dist && node scripts/verify-frontend-artifact.mjs --source ../frontend --artifact dist",
     "start": "IS_LOCAL=true tsx scripts/dev-server.ts",
     "seed": "IS_LOCAL=true tsx scripts/seed-templates.ts",
     "seed:users": "IS_LOCAL=true tsx scripts/seed-users.ts",

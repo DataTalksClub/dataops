@@ -20,6 +20,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { handleDocsRoutes, isDocsRoute } from './contentApi';
+import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
 import { createGithubStore, githubStoreConfigFromEnv, type ContentsApiGithubStore } from './githubStore';
 
 /** Result of the portal pre-processing pass. */
@@ -107,7 +108,6 @@ function fileResponse(bytes: Buffer, contentType: string): LambdaResponse {
   };
 }
 
-const DEPLOYED_FRONTEND_FILES = new Set(['index.html', 'src/app.js', 'src/styles.css']);
 const FORBIDDEN_BROWSER_NAMESPACES = new Set(['assets', 'frontend', 'pages', 'public', 'static', 'ui']);
 
 function resolveFrontendFile(root: string, rel: string): string | null {
@@ -151,7 +151,7 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
   const firstSegment = path.replace(/^\/+/, '').split('/')[0].toLowerCase();
   if (FORBIDDEN_BROWSER_NAMESPACES.has(firstSegment)) return null;
 
-  // The deployed static namespace is an exact two-file allowlist.
+  // The deployed static namespace is the exact validated manifest allowlist.
   if (path.startsWith('/src/')) {
     const target = resolveFrontendFile(frontendRoot(), path);
     if (target) return fileResponse(readFileSync(target), guessType(target));

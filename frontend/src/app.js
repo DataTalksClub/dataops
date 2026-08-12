@@ -1,3 +1,43 @@
+import {
+  canonicalWorkspaceUrl,
+  parseWorkspaceHash,
+  tasksSectionTitle,
+  workspaceHashPath,
+  workspaceRouteFor,
+} from "./core/routing.js";
+import {
+  addDaysIso,
+  buildHomeAttentionItems,
+  cardsHeaderViewModel,
+  compareIsoDate,
+  dedupeWorkTasks,
+  deriveHomeWorkState,
+  formatHomeCalendarDate,
+  formatHomeShortDate,
+  formatHomeTaskTiming,
+  formatTaskDateMeta,
+  groupCardItemsByStage,
+  hasApprovedArtifactEvidence,
+  hasTaskFileEvidence,
+  isActiveWorkBundle,
+  isArchivedWorkBundle,
+  isBeforeIsoDate,
+  isFollowUpDueTask,
+  isOpenWorkTask,
+  isTaskDueToday,
+  isTaskOverdue,
+  isWaitingOrFollowUpTask,
+  summarizeBundleProgress,
+  taskDate,
+  taskProofState,
+  taskRequiresApprovedArtifact,
+  tasksFromWorkPayload,
+  todayIsoDate,
+  workBundleTitle,
+  workTaskTitle,
+  workflowTaskGroups,
+} from "./core/work-model.js";
+
 const API_BASE = resolveApiBase();
 
 function resolveApiBase() {
@@ -1189,26 +1229,6 @@ function operationsViewPath(view) {
   return "Workspace";
 }
 
-function tasksSectionTitle(section) {
-  const titles = {
-    queue: "Tasks - Work Queue",
-    workflows: "Tasks - Cards",
-    templates: "Tasks - Templates",
-    assistants: "Tasks - Assistants",
-    artifacts: "Tasks - Artifacts",
-  };
-  return titles[section] || "Tasks - Work Queue";
-}
-
-// The Tasks sub-nav tabs. Order is fixed for consistency across the Tasks tab.
-const TASKS_SECTIONS = [
-  ["queue", "Queue"],
-  ["workflows", "Cards"],
-  ["templates", "Templates"],
-  ["assistants", "Assistants"],
-  ["artifacts", "Artifacts"],
-];
-
 function renderOperationsHome(documents) {
   const model = buildOperationsHomeModel(documents, {
     draftPaths: listDraftPaths(),
@@ -1347,32 +1367,6 @@ function renderHomeAttentionQueue(model) {
   return section;
 }
 
-function buildHomeAttentionItems(model) {
-  const byId = (id) => model.lanes.find((lane) => lane.id === id)?.items || [];
-  const groups = [
-    ["overdue", "Overdue", byId("overdue")],
-    ["follow-up", "Follow-up due", byId("followups")],
-    ["today", "Due today", byId("today")],
-    ["missing-proof", "Missing proof", byId("missing-proof")],
-  ];
-  const seen = new Set();
-  const items = [];
-  for (const [priority, exception, group] of groups) {
-    const prioritized = [...group].sort((left, right) => {
-      const leftDate = priority === "follow-up" ? left.followUpDate : left.dueDate || left.followUpDate || "9999-12-31";
-      const rightDate = priority === "follow-up" ? right.followUpDate : right.dueDate || right.followUpDate || "9999-12-31";
-      return compareIsoDate(leftDate, rightDate) || String(left.title || "").localeCompare(String(right.title || ""));
-    });
-    for (const item of prioritized) {
-      const key = item.taskId || `${item.title}:${item.dueDate || item.followUpDate || ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({ ...item, priority, exception });
-    }
-  }
-  return items;
-}
-
 function renderHomeAttentionItem(item, today) {
   const row = document.createElement("li");
   row.className = `home-attention-row home-attention-${item.priority}`;
@@ -1412,45 +1406,11 @@ function renderHomeAttentionItem(item, today) {
   return row;
 }
 
-function formatHomeCalendarDate(value) {
-  const date = parseIsoDateValue(value);
-  if (!date) return value || "";
-  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(date);
-}
-
-function formatHomeTaskTiming(item, today) {
-  const value = String(item.priority === "follow-up" ? item.followUpDate : item.dueDate || item.followUpDate || "").slice(0, 10);
-  if (!value) return item.priority === "missing-proof" ? "Proof required" : "Open task";
-  const days = isoDayDistance(value, today);
-  if (item.priority === "follow-up") {
-    if (days === 0) return "Follow up today";
-    if (days < 0) return `Follow-up ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
-  }
-  if (days === 0) return "Due today";
-  if (days === -1) return "Due yesterday";
-  if (days === 1) return "Due tomorrow";
-  if (days < 0) return `${Math.abs(days)} days overdue`;
-  return `Due ${formatHomeShortDate(value)}`;
-}
-
-function formatHomeShortDate(value) {
-  const date = parseIsoDateValue(value);
-  if (!date) return value || "";
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
-}
-
 function homeTaskActionLabel(value) {
   const label = String(value || "Open").trim();
   if (/^add /i.test(label)) return "Add proof";
   if (/^mark (done|response received)$/i.test(label)) return "Open";
   return label;
-}
-
-function isoDayDistance(value, today) {
-  const target = parseIsoDateValue(value);
-  const origin = parseIsoDateValue(today);
-  if (!target || !origin) return 0;
-  return Math.round((target.getTime() - origin.getTime()) / 86400000);
 }
 
 // Builds the single Home "Needs your action" lane by merging overdue, today,
@@ -3575,35 +3535,38 @@ function renderWorkflowsSurface(model) {
   const archivedCards = (operationsWorkSnapshot.bundles || []).filter(isArchivedWorkBundle);
   const archiveVisible = activeWorkspaceRoute?.path === "/cards/archive";
   const displayedCards = archiveVisible ? archivedCards : bundles;
+  const headerModel = cardsHeaderViewModel({
+    archiveVisible,
+    activeCount: bundles.length,
+    archivedCount: archivedCards.length,
+  });
   const header = document.createElement("header");
   header.className = "workflow-board-header";
   const heading = document.createElement("div");
   const eyebrow = document.createElement("span");
   eyebrow.className = "workflow-board-eyebrow";
-  eyebrow.textContent = "Task board";
+  eyebrow.textContent = headerModel.eyebrow;
   const title = document.createElement("h2");
   title.id = "workflow-board-title";
-  title.textContent = "Cards";
+  title.textContent = headerModel.title;
   const summary = document.createElement("p");
-  summary.textContent = archiveVisible
-    ? `${countLabel(archivedCards.length, "archived card")} · completed work remains available`
-    : `${countLabel(bundles.length, "active card")} · open a card to see its tasks`;
+  summary.textContent = headerModel.summary;
   heading.append(eyebrow, title, summary);
   const actions = document.createElement("div");
   actions.className = "workflow-board-actions";
   const archive = document.createElement("button");
   archive.type = "button";
   archive.className = "quiet-button";
-  archive.textContent = archiveVisible ? "Back to board" : `Archive (${archivedCards.length})`;
+  archive.textContent = headerModel.archiveAction;
   archive.setAttribute("aria-pressed", String(archiveVisible));
-  archive.addEventListener("click", () => navigateCanonicalWorkspace(archiveVisible ? "/cards" : "/cards/archive"));
+  archive.addEventListener("click", () => navigateCanonicalWorkspace(headerModel.archiveRoute));
   const start = document.createElement("button");
   start.type = "button";
   start.className = "primary-button";
   start.textContent = "Create card";
   start.addEventListener("click", () => openQuickWorkflowForm());
   actions.append(archive);
-  if (!archiveVisible) actions.append(start);
+  if (headerModel.createVisible) actions.append(start);
   header.append(heading, actions);
   section.append(header);
 
@@ -3631,17 +3594,11 @@ function renderWorkflowsSurface(model) {
   const board = document.createElement("div");
   board.className = "ops-workflows-grid";
   board.setAttribute("aria-label", "Active card board");
-  const columns = [
-    ["preparation", "Preparation"],
-    ["announced", "Announced"],
-    ["after-event", "After event"],
-  ];
   const items = bundles.map((bundle) => {
     const tasks = operationsWorkSnapshot.bundleTasks[bundle.id] || [];
     return operationItemFromBundle(bundle, tasks, { today });
   });
-  for (const [stage, label] of columns) {
-    const stageItems = items.filter((item) => String(item.stage || "preparation").toLowerCase() === stage);
+  for (const { stage, label, items: stageItems } of groupCardItemsByStage(items)) {
     const column = document.createElement("section");
     column.className = "workflow-board-column";
     column.setAttribute("aria-labelledby", `workflow-column-${stage}`);
@@ -5557,33 +5514,30 @@ function buildOperationsHomeModel(documents, options) {
   const recurringItems = templates.filter((template) => template.recurring).map(operationItemFromTemplate);
   const selectedOwnerId = activeWorkOwnerId();
   const scopedCurrentOperatorId = selectedOwnerId || currentOperatorIdForTodayScope(work.currentOperatorId);
-  const hasExplicitOwnerScope = Boolean(selectedOwnerId);
-  const scopeTasks = (tasks) => {
-    if (hasExplicitOwnerScope) return tasks.filter((task) => isTaskAssignedTo(task, selectedOwnerId));
-    if (scopedCurrentOperatorId) return tasks.filter((task) => isCurrentOperatorTodayTask(task, scopedCurrentOperatorId));
-    return tasks;
-  };
-  const todayWorkTasks = scopeTasks(work.todayTasks);
-  const overdueWorkTasks = hasExplicitOwnerScope ? scopeTasks(work.overdueTasks) : work.overdueTasks;
-  const waitingWorkTasks = hasExplicitOwnerScope ? scopeTasks(work.waitingTasks) : work.waitingTasks;
+  const homeWork = deriveHomeWorkState(work, {
+    today,
+    selectedOwnerId,
+    currentOperatorId: scopedCurrentOperatorId,
+  });
+  const todayWorkTasks = homeWork.tasks.today;
+  const overdueWorkTasks = homeWork.tasks.overdue;
   const todayItems = work.todayLoaded
     ? todayWorkTasks.map((task) => operationItemFromTask(task, { today }))
     : [];
   const overdueItems = work.overdueLoaded
     ? overdueWorkTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
     : [];
-  const followUpTasks = waitingWorkTasks.filter((task) => isFollowUpDueTask(task, today));
+  const followUpTasks = homeWork.tasks.followUps;
   const followUpItems = work.waitingLoaded
     ? followUpTasks.map((task) => operationItemFromTask(task, { today, followUp: true }))
     : [];
   const waitingItems = work.waitingLoaded
-    ? waitingWorkTasks.filter((task) => !isFollowUpDueTask(task, today)).map((task) => operationItemFromTask(task, { today, waiting: true }))
+    ? homeWork.tasks.waiting.map((task) => operationItemFromTask(task, { today, waiting: true }))
     : [];
   const bundleItems = work.bundlesLoaded
     ? work.activeBundles.map((bundle) => operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], { today }))
     : [];
-  const allKnownTasks = hasExplicitOwnerScope ? scopeTasks(allWorkTasks(work)) : allWorkTasks(work);
-  const missingProofTasks = allKnownTasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok);
+  const missingProofTasks = homeWork.tasks.missingProof;
   const missingProofItems = tasksLoaded
     ? missingProofTasks.map((task) => operationItemFromTask(task, { today }))
     : [];
@@ -5666,11 +5620,11 @@ function buildOperationsHomeModel(documents, options) {
       bundlesLoaded: work.bundlesLoaded,
       usersLoaded: work.usersLoaded,
       missingProofLoaded: tasksLoaded,
-      todayTasks: scopedCurrentOperatorId ? todayWorkTasks.length : work.todayTaskCount,
-      overdueTasks: hasExplicitOwnerScope ? overdueWorkTasks.length : work.overdueTaskCount,
-      waitingTasks: hasExplicitOwnerScope ? waitingWorkTasks.length : work.waitingTaskCount,
-      followUpTasks: followUpTasks.length,
-      missingProofTasks: missingProofTasks.length,
+      todayTasks: homeWork.counts.today,
+      overdueTasks: homeWork.counts.overdue,
+      waitingTasks: homeWork.counts.waiting,
+      followUpTasks: homeWork.counts.followUps,
+      missingProofTasks: homeWork.counts.missingProof,
       activeBundles: work.activeBundles.length,
       recurringConfigs: recurring.configs.length,
       enabledRecurringConfigs: recurring.enabled.length,
@@ -7010,38 +6964,6 @@ function renderBundlePanel() {
   main.append(refsSection);
 }
 
-function sortBundleChecklistTasks(tasks, today) {
-  const sorted = [...tasks];
-  sorted.sort((a, b) => {
-    const aDone = String(a.status || "").toLowerCase() === "done";
-    const bDone = String(b.status || "").toLowerCase() === "done";
-    if (aDone !== bDone) return aDone ? 1 : -1;
-    return compareIsoDate(taskDate(a) || today, taskDate(b) || today);
-  });
-  return sorted;
-}
-
-function workflowTaskGroups(tasks, today) {
-  const sorted = sortBundleChecklistTasks(tasks, today);
-  return [
-    {
-      title: "Active",
-      empty: "No active tasks.",
-      tasks: sorted.filter((task) => isOpenWorkTask(task) && !isWaitingOrFollowUpTask(task)),
-    },
-    {
-      title: "Waiting / follow-up",
-      empty: "No waiting tasks.",
-      tasks: sorted.filter((task) => isWaitingOrFollowUpTask(task)),
-    },
-    {
-      title: "Done / history",
-      empty: "No completed tasks yet.",
-      tasks: sorted.filter((task) => String(task.status || "").toLowerCase() === "done"),
-    },
-  ];
-}
-
 function renderBundleChecklistItem(task, bundleId, today) {
   const row = document.createElement("div");
   row.className = "bundle-checklist-item";
@@ -7114,18 +7036,6 @@ function dedupeArtifacts(artifacts) {
     out.push(artifact);
   }
   return out;
-}
-
-function taskRequiresApprovedArtifact(task) {
-  const proof = task?.proofRequirement;
-  return proof && proof.required !== false && proof.type === "artifact";
-}
-
-function hasApprovedArtifactEvidence(task, artifacts) {
-  const direct = (artifacts || []).some((artifact) => artifact && artifact.status === "approved");
-  if (direct) return true;
-  const refs = Array.isArray(task?.artifactRefs) ? task.artifactRefs : [];
-  return refs.some((ref) => ref && ref.status === "approved");
 }
 
 function renderArtifactList(options) {
@@ -7786,14 +7696,6 @@ function settledPayload(result) {
   return result && result.status === "fulfilled" ? result.value : {};
 }
 
-function tasksFromWorkPayload(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (!payload || typeof payload !== "object") return [];
-  if (Array.isArray(payload.tasks)) return payload.tasks;
-  if (Array.isArray(payload.items)) return payload.items;
-  return [];
-}
-
 function bundlesFromWorkPayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
@@ -7925,19 +7827,6 @@ function normalizeBundleTaskMap(bundleTasks, fallbackTasks) {
   return out;
 }
 
-function dedupeWorkTasks(tasks) {
-  const seen = new Set();
-  const out = [];
-  for (const task of tasksFromWorkPayload(tasks)) {
-    if (!task || typeof task !== "object") continue;
-    const key = task.id || `${task.description || task.title || ""}:${task.date || ""}:${task.bundleId || ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(task);
-  }
-  return out;
-}
-
 function sortWorkTasks(tasks, mode, today) {
   const sorted = dedupeWorkTasks(tasks).filter(isOpenWorkTask);
   sorted.sort((a, b) => {
@@ -7954,16 +7843,6 @@ function sortWorkTasks(tasks, mode, today) {
 function taskSortDate(task, mode) {
   if (mode === "waiting") return task.followUpAt || task.date || "";
   return task.date || task.followUpAt || "";
-}
-
-function isOpenWorkTask(task) {
-  if (!task || typeof task !== "object") return false;
-  const status = String(task.status || "todo").toLowerCase();
-  return status !== "done" && status !== "archived";
-}
-
-function isTaskDueToday(task, today) {
-  return isOpenWorkTask(task) && taskDate(task) === today;
 }
 
 function isCurrentOperatorTodayTask(task, currentOperatorId) {
@@ -7987,42 +7866,6 @@ function isSyntheticCurrentOperatorId(currentOperatorId) {
   return id === "portal-admin";
 }
 
-function isTaskOverdue(task, today) {
-  const date = taskDate(task);
-  return isOpenWorkTask(task) && !!date && isBeforeIsoDate(date, today);
-}
-
-function isWaitingOrFollowUpTask(task) {
-  if (!isOpenWorkTask(task)) return false;
-  const status = String(task.status || "").toLowerCase();
-  return status === "waiting" || !!task.waitingFor || !!task.followUpAt;
-}
-
-function isFollowUpDueTask(task, today = todayIsoDate()) {
-  if (!isWaitingOrFollowUpTask(task)) return false;
-  const followUpAt = String(task.followUpAt || "").slice(0, 10);
-  return !!followUpAt && !isBeforeIsoDate(today, followUpAt);
-}
-
-function taskDate(task) {
-  if (!task || !task.date) return "";
-  return String(task.date).slice(0, 10);
-}
-
-function isActiveWorkBundle(bundle) {
-  if (!bundle || typeof bundle !== "object") return false;
-  const status = String(bundle.status || "active").toLowerCase();
-  const stage = String(bundle.stage || "preparation").toLowerCase();
-  return status !== "done" && status !== "archived" && stage !== "done";
-}
-
-function isArchivedWorkBundle(bundle) {
-  if (!bundle || typeof bundle !== "object") return false;
-  const status = String(bundle.status || "active").toLowerCase();
-  const stage = String(bundle.stage || "").toLowerCase();
-  return status === "done" || status === "archived" || stage === "done";
-}
-
 function sortActiveWorkBundles(bundles, bundleTasks, today) {
   const scored = bundles.map((bundle) => ({
     bundle,
@@ -8037,68 +7880,6 @@ function sortActiveWorkBundles(bundles, bundleTasks, today) {
     return workBundleTitle(a.bundle).localeCompare(workBundleTitle(b.bundle));
   });
   return scored.map((entry) => entry.bundle);
-}
-
-function summarizeBundleProgress(bundle, tasks, today) {
-  const taskList = dedupeWorkTasks(tasks);
-  const total = taskList.length;
-  const done = taskList.filter((task) => String(task.status || "").toLowerCase() === "done").length;
-  const open = taskList.filter(isOpenWorkTask).length;
-  const overdue = taskList.filter((task) => isTaskOverdue(task, today)).length;
-  const waiting = taskList.filter(isWaitingOrFollowUpTask).length;
-  const missingLinks = taskList.filter((task) => isOpenWorkTask(task) && task.requiredLinkName && !task.link).length
-    + missingBundleLinks(bundle).length;
-  const missingFiles = taskList.filter((task) => isOpenWorkTask(task) && task.requiresFile && !hasTaskFileEvidence(task)).length;
-  const missingProof = taskList.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok).length + missingBundleLinks(bundle).length;
-  const nextDueTask = nextDueOpenTask(taskList, today);
-  let risk = "low";
-  if (overdue > 0) risk = "high";
-  else if (waiting > 0 || missingProof > 0 || (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))) risk = "medium";
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
-  const parts = total > 0 ? [`${done}/${total} tasks`] : ["No tasks loaded"];
-  if (overdue > 0) parts.push(`${overdue} overdue`);
-  if (waiting > 0) parts.push(`${waiting} waiting`);
-  if (missingLinks > 0) parts.push(`${missingLinks} missing link${missingLinks === 1 ? "" : "s"}`);
-  if (missingFiles > 0) parts.push(`${missingFiles} missing file${missingFiles === 1 ? "" : "s"}`);
-  if (missingProof > 0) parts.push(`${missingProof} missing proof`);
-  return { total, done, open, overdue, waiting, missingLinks, missingFiles, missingProof, nextDueTask, percent, risk, label: parts.join(" - ") };
-}
-
-function nextDueOpenTask(tasks, today) {
-  const openTasks = dedupeWorkTasks(tasks).filter(isOpenWorkTask);
-  openTasks.sort((a, b) => {
-    const byDate = compareIsoDate(taskDate(a) || a.followUpAt || today, taskDate(b) || b.followUpAt || today);
-    if (byDate !== 0) return byDate;
-    return workTaskTitle(a).localeCompare(workTaskTitle(b));
-  });
-  return openTasks[0] || null;
-}
-
-function missingBundleLinks(bundle) {
-  if (!Array.isArray(bundle?.bundleLinks)) return [];
-  return bundle.bundleLinks.filter((link) => {
-    if (!link || typeof link !== "object") return false;
-    return !String(link.url || "").trim();
-  });
-}
-
-function hasTaskFileEvidence(task) {
-  if (!task || typeof task !== "object") return false;
-  if (task._hasFiles) return true;
-  if (Number(task.fileCount || 0) > 0) return true;
-  if (Array.isArray(task.files) && task.files.length > 0) return true;
-  if (Array.isArray(task.fileRefs) && task.fileRefs.length > 0) return true;
-  return false;
-}
-
-function taskProofState(task) {
-  const missing = [];
-  if (task?.requiredLinkName && !task.link) missing.push(task.requiredLinkName);
-  if (task?.requiresFile && !hasTaskFileEvidence(task)) missing.push("required file");
-  if (taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, [])) missing.push("approved artifact");
-  if (missing.length > 0) return { ok: false, label: `Missing proof: ${missing.join(", ")}`, missing };
-  if (task?.requiredLinkName || task?.requiresFile || taskRequiresApprovedArtifact(task)) return { ok: true, label: "Proof ready", missing: [] };
-  return { ok: true, label: "No proof required", missing: [] };
 }
 
 function taskSourceLabel(task) {
@@ -8173,87 +7954,10 @@ function operationItemFromBundle(bundle, tasks, options) {
   };
 }
 
-function workTaskTitle(task) {
-  return stripTitleSuffix(task.description || task.title || task.name || task.id || "Untitled task");
-}
-
-// Strips a leaked Trello shortLink token (e.g. "p3by19", "qVB6fAUG") from the
-// end of a task title before display. The token is data-layer noise from a
-// legacy Trello import, not a deliberate run id (see issue #91). Kept in sync
-// with the backend scrubber in backend/scripts/scrub-task-titles.ts.
-//
-// Safety: the leaked token is a short alphanumeric id that mixes letters and
-// digits (Trello shortLink shape). Legitimate trailing words are either
-// all-letters ("guest", "Alice") or all-digits ("2026"), so requiring the
-// TRAILING TOKEN ITSELF to mix a letter and a digit, plus a prior normal word,
-// is what keeps real titles intact.
-function stripTitleSuffix(value) {
-  if (value == null) return "";
-  const title = typeof value === "string" ? value : String(value);
-  const m = title.match(/^(.+[ ].+)[ \t]+([a-zA-Z0-9]{4,8})$/);
-  if (!m) return title;
-  const [, head, token] = m;
-  if (/[a-zA-Z]/.test(token) && /[0-9]/.test(token)) return head.trimEnd();
-  return title;
-}
-
-function workBundleTitle(bundle) {
-  return bundle.title || bundle.name || bundle.id || "Untitled bundle";
-}
-
-function formatTaskDateMeta(value, today) {
-  const date = String(value || "").slice(0, 10);
-  if (!date) return "";
-  if (date === today) return "Today";
-  if (date === addDaysIso(today, -1)) return "Yesterday";
-  if (date === addDaysIso(today, 1)) return "Tomorrow";
-  return date;
-}
-
 function labelizeWorkValue(value) {
   return String(value || "")
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function todayIsoDate() {
-  const date = new Date();
-  return toIsoDate(date);
-}
-
-function addDaysIso(isoDate, days) {
-  const date = parseIsoDateValue(isoDate) || new Date();
-  date.setDate(date.getDate() + days);
-  return toIsoDate(date);
-}
-
-function toIsoDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseIsoDateValue(value) {
-  if (!value) return null;
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return null;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function compareIsoDate(a, b) {
-  const left = String(a || "");
-  const right = String(b || "");
-  if (!left && !right) return 0;
-  if (!left) return 1;
-  if (!right) return -1;
-  return left.localeCompare(right);
-}
-
-function isBeforeIsoDate(a, b) {
-  if (!a || !b) return false;
-  return String(a).slice(0, 10) < String(b).slice(0, 10);
 }
 
 function isWorkflowTemplateDoc(doc) {
@@ -9458,125 +9162,11 @@ function setFolderUrl(path) {
   }
 }
 
-const WORKSPACE_HASH_BY_VIEW = {
-  home: "/",
-  inbox: "/inbox",
-  docs: "/processes",
-  admin: "/admin",
-  users: "/users",
-  bookkeeping: "/bookkeeping",
-  sponsors: "/sponsors",
-  newsletter: "/newsletter",
-  calendar: "/calendar",
-  "mailing-exports": "/mailing-exports",
-};
-
-function workspaceHashPath(view, tasksSection = "queue") {
-  if (view === "tasks") {
-    return {
-      queue: "/tasks",
-      workflows: "/cards",
-      templates: "/templates",
-      assistants: "/assistants",
-      artifacts: "/artifacts",
-    }[tasksSection] || "/tasks";
-  }
-  return WORKSPACE_HASH_BY_VIEW[view] || "/";
-}
-
-const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
-  "/": { view: "home", tasksSection: "queue", params: [] },
-  "/inbox": { view: "inbox", tasksSection: "queue", params: ["intakeId"] },
-  "/tasks": { view: "tasks", tasksSection: "queue", params: ["taskId", "date", "bundleId", "contextBundleId"] },
-  "/cards": { view: "tasks", tasksSection: "workflows", params: ["cardId", "taskId"] },
-  "/cards/archive": { view: "tasks", tasksSection: "workflows", params: ["cardId", "taskId"] },
-  "/assistants": { view: "tasks", tasksSection: "assistants", params: ["assistantJobId"] },
-  "/templates": { view: "tasks", tasksSection: "templates", params: ["templateId"] },
-  "/recurring": { view: "tasks", tasksSection: "templates", params: [] },
-  "/artifacts": { view: "tasks", tasksSection: "artifacts", params: [] },
-  "/notifications": { view: "home", tasksSection: "queue", params: [] },
-  "/bookkeeping": { view: "bookkeeping", tasksSection: "queue", params: [] },
-  "/sponsors": { view: "sponsors", tasksSection: "queue", params: ["bookingId"] },
-  "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
-  "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
-  "/mailing-exports": { view: "mailing-exports", tasksSection: "queue", params: [] },
-  "/processes": { view: "docs", tasksSection: "queue", params: [] },
-  "/admin": { view: "admin", tasksSection: "queue", params: [] },
-  "/users": { view: "users", tasksSection: "queue", params: [] },
-});
-
-function isRealIsoDate(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
-function canonicalWorkspaceUrl(path, params = new URLSearchParams()) {
-  const definition = WORKSPACE_ROUTE_DEFINITIONS[path] || WORKSPACE_ROUTE_DEFINITIONS["/"];
-  const ordered = new URLSearchParams();
-  for (const name of definition.params) {
-    const value = params instanceof URLSearchParams ? params.get(name) : params?.[name];
-    if (value) ordered.set(name, value);
-  }
-  const query = ordered.toString();
-  return `/#${path}${query ? `?${query}` : ""}`;
-}
-
-function parseWorkspaceHash(rawHash = window.location.hash) {
-  const raw = String(rawHash || "");
-  if (!raw) return { invalid: true, reason: "empty hash" };
-  if (!raw.startsWith("#/") || raw.includes("#", 1)) return { invalid: true, reason: "malformed hash" };
-  const value = raw.slice(1);
-  const queryIndex = value.indexOf("?");
-  const rawPath = queryIndex >= 0 ? value.slice(0, queryIndex) : value;
-  const rawQuery = queryIndex >= 0 ? value.slice(queryIndex + 1) : "";
-  if (rawQuery.includes("?")) return { invalid: true, reason: "malformed query" };
-  try {
-    decodeURIComponent(rawPath);
-    for (const component of rawQuery.split("&").filter(Boolean)) {
-      const separator = component.indexOf("=");
-      decodeURIComponent((separator >= 0 ? component.slice(0, separator) : component).replace(/\+/g, " "));
-      decodeURIComponent((separator >= 0 ? component.slice(separator + 1) : "").replace(/\+/g, " "));
-    }
-  } catch {
-    return { invalid: true, reason: "malformed encoding" };
-  }
-  const path = rawPath.endsWith("/") && rawPath !== "/" ? rawPath.slice(0, -1) : rawPath;
-  const definition = WORKSPACE_ROUTE_DEFINITIONS[path];
-  if (!definition) return { invalid: true, reason: "unknown path" };
-  const incoming = new URLSearchParams(rawQuery);
-  const params = new URLSearchParams();
-  for (const name of definition.params) {
-    const values = incoming.getAll(name);
-    if (values.length > 1 || (values.length === 1 && !values[0])) return { invalid: true, reason: `invalid ${name}` };
-    if (values[0]) params.set(name, values[0]);
-  }
-  if (params.has("date") && !isRealIsoDate(params.get("date"))) return { invalid: true, reason: "invalid date" };
-  if (["/cards", "/cards/archive"].includes(path) && params.has("taskId") && !params.has("cardId")) {
-    return { invalid: true, reason: "taskId requires cardId" };
-  }
-  const canonicalUrl = canonicalWorkspaceUrl(path, params);
-  const currentUrl = `${window.location.pathname}${window.location.search}${raw}`;
-  return {
-    view: definition.view,
-    tasksSection: definition.tasksSection,
-    path,
-    params,
-    canonicalUrl,
-    normalized: currentUrl !== canonicalUrl,
-  };
-}
-
 function replaceWithWorkspaceHome() {
   const target = canonicalWorkspaceUrl("/");
   const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (current !== target) history.replaceState({ workspace: "home", tasksSection: "queue" }, "", target);
   return parseWorkspaceHash("#/");
-}
-
-function workspaceRouteFor(path, params = {}) {
-  const visible = canonicalWorkspaceUrl(path, params);
-  return parseWorkspaceHash(visible.slice(visible.indexOf("#")));
 }
 
 function isWorkspaceRouteFresh(token) {

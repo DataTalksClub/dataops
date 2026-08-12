@@ -1,18 +1,20 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { basename, relative, resolve, sep } from 'node:path';
+import { basename, dirname, posix, relative, resolve, sep } from 'node:path';
 
-export const FRONTEND_ALLOWLIST = Object.freeze([
-  'dist/frontend/index.html',
-  'dist/frontend/src/app.js',
-  'dist/frontend/src/styles.css',
-]);
+import {
+  manifestDirectories,
+  readFrontendAssetManifest,
+  resolveManifestFile,
+} from './frontend-assets.mjs';
 
-const SOURCE_BY_CANONICAL = Object.freeze({
-  'dist/frontend/index.html': 'index.html',
-  'dist/frontend/src/app.js': 'src/app.js',
-  'dist/frontend/src/styles.css': 'src/styles.css',
-});
+const frontendManifest = readFrontendAssetManifest();
+export const FRONTEND_ALLOWLIST = Object.freeze(
+  frontendManifest.files.map((path) => `dist/frontend/${path}`),
+);
+const SOURCE_BY_CANONICAL = new Map(
+  frontendManifest.files.map((path) => [`dist/frontend/${path}`, path]),
+);
 const RESERVED_UI_NAMES = new Set(['index.html', 'app.js', 'styles.css']);
 const FORBIDDEN_UI_ROOTS = new Set(['pages', 'public', 'static', 'assets', 'ui']);
 
@@ -79,6 +81,57 @@ function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+function validateManifestImports(sourceBytes) {
+  const declared = new Set(frontendManifest.files);
+  const errors = [];
+  const dependencyPatterns = [
+    /(?:^|\n)\s*import\s+(?:\{[\s\S]*?\}\s+from\s+|[\w*$]+(?:\s*,\s*\{[\s\S]*?\})?\s+from\s+)?["']([^"']+)["']/g,
+    /(?:^|\n)\s*export\s+(?:\*|\{[^}]*\})\s*from\s*["']([^"']+)["']/g,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ];
+  const graph = new Map();
+  for (const [canonical, bytes] of sourceBytes) {
+    const sourcePath = SOURCE_BY_CANONICAL.get(canonical);
+    if (!sourcePath.endsWith('.js')) continue;
+    const source = bytes.toString('utf8');
+    const dependencies = [];
+    if (/\bimport\s*\(\s*(?!["'])/.test(source)) {
+      errors.push(`frontend dynamic import must use a literal relative path: ${sourcePath}`);
+    }
+    for (const pattern of dependencyPatterns) {
+      for (const match of source.matchAll(pattern)) {
+        const specifier = match[1];
+        if (!specifier.startsWith('.')) {
+          errors.push(`frontend module specifier must be relative: ${sourcePath} -> ${specifier}`);
+          continue;
+        }
+        const imported = posix.normalize(posix.join(dirname(sourcePath), specifier));
+        if (!declared.has(imported)) {
+          errors.push(`frontend import is missing from asset manifest: ${sourcePath} -> ${imported}`);
+          continue;
+        }
+        dependencies.push(imported);
+      }
+    }
+    graph.set(sourcePath, dependencies);
+  }
+
+  const reachable = new Set();
+  const pending = ['src/app.js'];
+  while (pending.length) {
+    const sourcePath = pending.pop();
+    if (reachable.has(sourcePath)) continue;
+    reachable.add(sourcePath);
+    for (const imported of graph.get(sourcePath) || []) pending.push(imported);
+  }
+  for (const sourcePath of graph.keys()) {
+    if (!reachable.has(sourcePath)) {
+      errors.push(`frontend module is not reachable from src/app.js: ${sourcePath}`);
+    }
+  }
+  return errors;
+}
+
 function layoutFor(entries) {
   const paths = new Set(entries.map((entry) => entry.path));
   const backendPresent = paths.has('handler.js') || paths.has('frontend');
@@ -110,16 +163,15 @@ export function verifyFrontendArtifact({ sourceRoot, artifactRoot }) {
   const errors = [];
   const sourceBytes = new Map();
   for (const canonical of FRONTEND_ALLOWLIST) {
-    const sourcePath = SOURCE_BY_CANONICAL[canonical];
-    const absolute = resolve(sourceRoot, sourcePath);
+    const sourcePath = SOURCE_BY_CANONICAL.get(canonical);
     try {
-      const stat = lstatSync(absolute);
-      if (stat.isSymbolicLink() || !stat.isFile()) errors.push(`source entry must be a regular file: ${sourcePath}`);
-      else sourceBytes.set(canonical, readFileSync(absolute));
+      const absolute = resolveManifestFile(sourceRoot, sourcePath, 'Frontend source entry');
+      sourceBytes.set(canonical, readFileSync(absolute));
     } catch {
       errors.push(`missing or unreadable source file: ${sourcePath}`);
     }
   }
+  errors.push(...validateManifestImports(sourceBytes));
 
   const entries = inventory(artifactRoot);
   const layout = layoutFor(entries);
@@ -128,7 +180,10 @@ export function verifyFrontendArtifact({ sourceRoot, artifactRoot }) {
     layout.name === 'backend' ? canonical.replace(/^dist\//, '') : canonical,
   ]));
   const actualAllowed = new Set(allowedActual.values());
-  const allowedDirectories = new Set([layout.uiRoot, `${layout.uiRoot}/src`]);
+  const allowedDirectories = new Set([
+    layout.uiRoot,
+    ...manifestDirectories(frontendManifest.files, layout.uiRoot),
+  ]);
   const fileByPath = new Map(entries.filter((entry) => entry.kind === 'file').map((entry) => [entry.path, entry]));
   if (!fileByPath.has(layout.handler)) errors.push(`artifact handler must be a regular file: ${layout.handler}`);
 

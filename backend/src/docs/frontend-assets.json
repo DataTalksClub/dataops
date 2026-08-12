@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": [
+    "index.html",
+    "src/app.js",
+    "src/styles.css",
+    "src/core/routing.js",
+    "src/core/work-model.js"
+  ]
+}

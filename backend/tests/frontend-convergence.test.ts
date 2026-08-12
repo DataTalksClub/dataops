@@ -12,7 +12,10 @@ const frontendRoot = path.join(repoRoot, 'frontend');
 const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
 const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
+const routing = readFileSync(path.join(frontendRoot, 'src', 'core', 'routing.js'), 'utf8');
+const workModel = readFileSync(path.join(frontendRoot, 'src', 'core', 'work-model.js'), 'utf8');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
+const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
 
 describe('one canonical frontend', () => {
   after(async () => {
@@ -35,6 +38,13 @@ describe('one canonical frontend', () => {
     assert.strictEqual(css.statusCode, 200);
     assert.match(css.headers?.['Content-Type'] || '', /text\/css/);
     assert.match(css.body, /\.operations-home/);
+
+    for (const modulePath of ['/src/core/routing.js', '/src/core/work-model.js']) {
+      const module = await handler({ httpMethod: 'GET', path: modulePath }, {});
+      assert.strictEqual(module.statusCode, 200);
+      assert.match(module.headers?.['Content-Type'] || '', /javascript/);
+      assert.match(module.body, /export function/);
+    }
   });
 
   it('does not serve the retired fallback asset namespace', async () => {
@@ -60,22 +70,25 @@ describe('one canonical frontend', () => {
   });
 
   it('packages only frontend/ into the backend artifact', () => {
-    for (const copy of [
-      'cp ../frontend/index.html dist/frontend/index.html',
-      'cp ../frontend/src/app.js dist/frontend/src/app.js',
-      'cp ../frontend/src/styles.css dist/frontend/src/styles.css',
-    ]) assert.ok(backendPackage.scripts.build.includes(copy), `missing exact frontend allowlist copy: ${copy}`);
+    assert.deepStrictEqual(frontendManifest.files, [
+      'index.html',
+      'src/app.js',
+      'src/styles.css',
+      'src/core/routing.js',
+      'src/core/work-model.js',
+    ]);
+    assert.match(backendPackage.scripts.build, /copy-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
     assert.match(backendPackage.scripts.build, /verify-frontend-artifact\.mjs --source \.\.\/frontend --artifact dist/);
     assert.doesNotMatch(backendPackage.scripts.build, /cp\s+-[Rr]|frontend\/DESIGN\.md|frontend\/Dockerfile|src\/public|src\/pages/);
   });
 
   it('maps established hash routes and entity deep links into the canonical shell', () => {
-    assert.match(app, /function parseWorkspaceHash/);
-    for (const route of ['/', '/inbox', '/tasks', '/bundles', '/assistants', '/templates', '/recurring', '/notifications', '/bookkeeping', '/sponsors', '/newsletter', '/calendar', '/mailing-exports']) {
-      assert.ok(app.includes(`"${route}"`), `missing compatibility route ${route}`);
+    assert.match(app, /from "\.\/core\/routing\.js"/);
+    for (const route of ['/', '/inbox', '/tasks', '/cards', '/cards/archive', '/assistants', '/templates', '/recurring', '/notifications', '/bookkeeping', '/sponsors', '/newsletter', '/calendar', '/mailing-exports']) {
+      assert.ok(routing.includes(`"${route}"`), `missing canonical route ${route}`);
     }
-    for (const param of ['taskId', 'bundleId', 'intakeId', 'assistantJobId']) {
-      assert.ok(app.includes(`"${param}"`), `missing deep-link parameter ${param}`);
+    for (const param of ['taskId', 'cardId', 'bundleId', 'intakeId', 'assistantJobId']) {
+      assert.ok(routing.includes(`"${param}"`), `missing deep-link parameter ${param}`);
     }
   });
 
@@ -83,7 +96,6 @@ describe('one canonical frontend', () => {
     for (const marker of [
       'openTaskPanel',
       'requiredLinkName',
-      'taskRequiresApprovedArtifact',
       'openBundlePanel',
       'updateBundleStage',
       'renderBookkeepingSurface',
@@ -92,6 +104,7 @@ describe('one canonical frontend', () => {
       'renderNewsletterSurface',
       'renderCalendarSurface',
     ]) assert.ok(app.includes(marker), `canonical app is missing ${marker}`);
+    assert.match(workModel, /function taskRequiresApprovedArtifact/);
     assert.match(styles, /\.bundle-checklist/);
     assert.match(styles, /\.bookkeeping-surface/);
     assert.match(styles, /\.newsletter-surface/);

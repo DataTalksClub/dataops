@@ -2439,6 +2439,20 @@ body.dark .danger-button {
   padding: 14px;
 }
 
+/* Dense tables may scroll inside their route; they must never widen the page. */
+.ops-surface-users,
+.ops-users-surface,
+.ops-users-toolbar,
+.ops-users-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ops-users-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
 .ops-subnav,
 .ops-quick-bar,
 .ops-section-header {

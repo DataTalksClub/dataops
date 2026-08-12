@@ -11,6 +11,10 @@ const screenshotRoot = join(repoRoot, '.tmp', 'screenshots', 'issue-159');
 const targetServer = join(repoRoot, 'backend', 'scripts', 'frontend-parity-target.mjs');
 const samSource = join(repoRoot, '.aws-sam', 'build', 'BackendFunction');
 const samCopy = join(tempRoot, 'isolated-sam');
+const frontendAssets = JSON.parse(readFileSync(
+  join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'),
+  'utf8',
+)).files;
 const fixedTime = new Date('2026-08-12T10:15:00.000Z');
 const states = [
   'home-ready',
@@ -243,13 +247,15 @@ async function navigateState(page, baseURL, state) {
 }
 
 async function assetHashes(page) {
-  return page.evaluate(async () => {
+  return page.evaluate(async (assets) => {
     const digest = async (path) => {
       const bytes = await (await fetch(path, { credentials: 'same-origin' })).arrayBuffer();
       return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((byte) => byte.toString(16).padStart(2, '0')).join('');
     };
-    return { index: await digest('/'), app: await digest('/src/app.js'), styles: await digest('/src/styles.css') };
-  });
+    const hashes = {};
+    for (const asset of assets) hashes[asset] = await digest(`/${asset}`);
+    return hashes;
+  }, frontendAssets);
 }
 
 async function captureTarget(target, baseURL, browser) {

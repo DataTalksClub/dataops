@@ -20,6 +20,10 @@ import {
 } from './dev-portal-lib.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const FRONTEND_ASSETS = JSON.parse(readFileSync(
+  path.join(ROOT, 'backend', 'src', 'docs', 'frontend-assets.json'),
+  'utf8',
+)).files;
 const SCRATCH_PARENT = path.join(ROOT, '.tmp');
 let scratchRoot;
 let fixturePath;
@@ -214,7 +218,7 @@ test('matches every proxy family exactly without prefix collisions', () => {
 });
 
 test('classifies deep links, canonical assets, and fail-closed static paths', () => {
-  for (const pathname of ['/', '/index.html', '/src/app.js', '/src/styles.css']) {
+  for (const pathname of ['/', ...FRONTEND_ASSETS.map((asset) => `/${asset}`)]) {
     assert.equal(classifyBrowserPath(pathname), 'frontend', pathname);
   }
   for (const pathname of ['/tasks', '/workflows/current', '/content/process/example.md']) {

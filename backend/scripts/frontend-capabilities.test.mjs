@@ -304,6 +304,7 @@ test("local CI and both deployment workflow paths verify the SAM frontend immedi
   const ciTarget = makefile.match(/^ci:\s*\n((?:\t.*\n)+)/m);
   assert.ok(ciTarget, "Makefile needs ci target");
   const ciCommands = ciTarget[1].trim().split("\n").map((line) => line.trim());
+  assert.equal(ciCommands.filter((line) => line === "$(MAKE) test-frontend-unit").length, 1, "make ci must run frontend unit tests exactly once");
   assert.equal(ciCommands.filter((line) => line === "$(MAKE) sam-build").length, 1, "make ci must build SAM exactly once");
   assert.equal(ciCommands.filter((line) => line === "$(MAKE) verify-sam-frontend").length, 1, "make ci must verify SAM exactly once");
   const makeBuild = ciCommands.indexOf("$(MAKE) sam-build");
@@ -320,6 +321,7 @@ test("local CI and both deployment workflow paths verify the SAM frontend immedi
     return workflow.slice(start, end);
   }
   for (const [name, body] of [["checks", workflowJob("checks", "deploy")], ["deploy", workflowJob("deploy")]]) {
+    assert.equal(body.split("run: npm run test:frontend:unit").length - 1, 1, `${name} must run frontend unit tests exactly once`);
     const buildCommand = "run: make sam-build";
     const verifyCommand = `run: ${verifier}`;
     assert.equal(body.split(buildCommand).length - 1, 1, `${name} must build SAM exactly once`);
