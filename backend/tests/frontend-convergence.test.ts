@@ -13,9 +13,10 @@ const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
 const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
 const workspace = readFileSync(path.join(frontendRoot, 'src', 'core', 'workspace.js'), 'utf8');
-const admin = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'admin.js'), 'utf8');
 const finance = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance.js'), 'utf8');
 const home = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'home.js'), 'utf8');
+const knowledge = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'knowledge.js'), 'utf8');
+const documentEditor = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'document-editor.js'), 'utf8');
 const operations = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations.js'), 'utf8');
 const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const tasks = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'tasks.js'), 'utf8');
@@ -47,9 +48,10 @@ describe('one canonical frontend', () => {
 
     for (const modulePath of [
       '/src/core/workspace.js',
-      '/src/surfaces/admin.js',
       '/src/surfaces/finance.js',
       '/src/surfaces/home.js',
+      '/src/surfaces/knowledge.js',
+      '/src/surfaces/document-editor.js',
       '/src/surfaces/operations.js',
       '/src/surfaces/planning.js',
       '/src/surfaces/tasks.js',
@@ -90,9 +92,10 @@ describe('one canonical frontend', () => {
       'src/app.js',
       'src/styles.css',
       'src/core/workspace.js',
-      'src/surfaces/admin.js',
       'src/surfaces/finance.js',
       'src/surfaces/home.js',
+      'src/surfaces/knowledge.js',
+      'src/surfaces/document-editor.js',
       'src/surfaces/operations.js',
       'src/surfaces/planning.js',
       'src/surfaces/tasks.js',
@@ -155,6 +158,26 @@ describe('one canonical frontend', () => {
     ]) assert.ok(home.includes(marker), `Home surface is missing ${marker}`);
   });
 
+  it('keeps Process Docs, Search, and document editing in the canonical Knowledge graph', () => {
+    for (const marker of [
+      'renderDocsSurface',
+      'renderUnifiedSearchSurface',
+      'renderTree',
+      'openDocument',
+      'resolveMarkdownDocLink',
+      '/docs/backlinks',
+    ]) assert.ok(knowledge.includes(marker), `Knowledge surface is missing ${marker}`);
+    for (const marker of [
+      'saveCurrentDocument',
+      'createDocument',
+      'renderParsedDocument',
+      'renderFrontmatterBlock',
+      'renderSectionBlock',
+      'renderMarkdown',
+      '/git/status',
+    ]) assert.ok(documentEditor.includes(marker), `Document editor is missing ${marker}`);
+  });
+
   it('keeps Admin diagnostics and Users management in the canonical module graph', () => {
     for (const marker of [
       'renderAdminSurface',
@@ -162,7 +185,7 @@ describe('one canonical frontend', () => {
       '/api/users',
       'Read-only diagnostics',
       'Add user',
-    ]) assert.ok(admin.includes(marker), `admin surface is missing ${marker}`);
+    ]) assert.ok(operations.includes(marker), `Operations module is missing ${marker}`);
   });
 
   it('provides complete Inbox triage in the canonical shell', () => {

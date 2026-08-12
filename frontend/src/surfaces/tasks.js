@@ -2551,6 +2551,7 @@ export function createTasksSurface(context) {
     confirmLeaveRuntimeDraft,
     openQuickTaskForm,
     openQuickWorkflowForm,
+    recurringConfigTitle,
     refreshRuntimeTemplates,
     renderTasksSurface,
     resolveTemplateRouteEntity,
