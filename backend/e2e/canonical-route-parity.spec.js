@@ -517,12 +517,13 @@ test.describe('issue 156 canonical route and operator parity', () => {
     })).json();
     const fixture = { bundle, task };
 
-    await page.goto('/#/tasks');
+    const filteredTasksRoute = new RegExp(`/#/tasks\\?bundleId=${fixture.bundle.id}$`);
+    await page.goto(`/#/tasks?bundleId=${fixture.bundle.id}`);
     const taskRow = page.locator(`.ops-queue-row[data-task-id="${fixture.task.id}"]`).first();
     await expect(taskRow).toBeVisible();
     await taskRow.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${fixture.task.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${fixture.task.id}&bundleId=${fixture.bundle.id}$`));
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
@@ -530,7 +531,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Tab');
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#\/tasks$/);
+    await expect(page).toHaveURL(filteredTasksRoute);
     await expect(page.locator('#task-panel')).toBeHidden();
     await expect(taskRow).toBeFocused();
 
