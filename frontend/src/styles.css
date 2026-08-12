@@ -564,6 +564,57 @@ body.sidebar-collapsed #sidebar-expand-button {
   color: var(--text-primary);
 }
 
+.account-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.account-button:hover {
+  background: var(--surface-hover);
+}
+
+.account-avatar {
+  display: inline-grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary-bg);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.account-button-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-chevron {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .primary-button {
   border: 1px solid var(--primary-bg);
   background: var(--primary-bg);
@@ -669,6 +720,12 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   margin-top: 2px;
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.home-work-scope {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .home-quick-actions {
@@ -1167,6 +1224,105 @@ body[data-workspace-view="home"] .document-list.is-operations-home {
   text-transform: uppercase;
 }
 
+.account-identity {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  padding: 14px 16px;
+}
+
+.account-avatar-large {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+}
+
+.account-identity-copy,
+.account-scope-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.account-identity-copy small,
+.account-scope-copy small,
+.account-identity-copy > span,
+.account-scope-loading {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.account-identity-copy strong,
+.account-identity-copy > span,
+.account-scope-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-identity-copy strong,
+.account-scope-copy strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.account-work-scope-list {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  padding: 6px;
+}
+
+.account-scope-loading {
+  margin: 0;
+  padding: 10px;
+}
+
+.account-scope-option {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.account-scope-option:hover {
+  background: var(--surface-hover);
+}
+
+.account-scope-option[aria-checked="true"] {
+  background: var(--accent-soft);
+}
+
+.account-scope-avatar {
+  width: 32px;
+  height: 32px;
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.account-scope-option[aria-checked="true"] .account-scope-avatar {
+  background: var(--primary-bg);
+  color: #fff;
+}
+
+.account-scope-check {
+  color: var(--accent);
+  font-weight: 700;
+  text-align: center;
+}
+
 .settings-menu-item {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) auto;
@@ -1323,10 +1479,23 @@ body[data-workspace-view="home"] #git-section {
 
 .task-detail-meta,
 .task-panel-route-context,
+.task-delegation-notice,
 .task-history-event,
 .task-file-item {
   border-top: 1px solid var(--border-muted);
   padding-top: 10px;
+}
+
+.task-delegation-notice {
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  color: var(--info-text);
+  padding: 12px;
+}
+
+.task-delegation-notice p {
+  margin: 2px 0 0;
 }
 
 .task-action-btn {
@@ -1484,10 +1653,15 @@ body[data-workspace-view="home"] #git-section {
   }
 
   .mobile-topbar .icon-button,
-  .mobile-topbar .quiet-button {
+  .mobile-topbar .quiet-button,
+  .mobile-topbar .account-button {
     min-width: 44px;
     min-height: 44px;
     padding: 0;
+  }
+
+  .mobile-account-button {
+    width: 44px;
   }
 
   #mobile-title {

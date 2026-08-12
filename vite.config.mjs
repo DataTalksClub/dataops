@@ -20,6 +20,20 @@ function portalRoutingPlugin(config) {
           return;
         }
 
+        if (url.pathname === '/__dataops/dev-context' && request.method === 'GET') {
+          if (!config.actorEmail) {
+            response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+            response.end(JSON.stringify({ error: 'Not found' }));
+            return;
+          }
+          response.writeHead(200, {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+          });
+          response.end(JSON.stringify({ actorEmail: config.actorEmail, localPreview: true }));
+          return;
+        }
+
         const classification = classifyBrowserPath(url.pathname, request.method);
         if (classification === 'not-found') {
           response.writeHead(404, {

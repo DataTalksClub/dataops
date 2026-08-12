@@ -152,6 +152,11 @@ const settingsMenuClose = document.querySelector("#settings-menu-close");
 const settingsAdminButton = document.querySelector("#settings-admin-button");
 const settingsUsersButton = document.querySelector("#settings-users-button");
 const settingsSignOutButton = document.querySelector("#settings-sign-out-button");
+const accountIdentity = document.querySelector("#account-identity");
+const accountWorkScopeList = document.querySelector("#account-work-scope-list");
+const accountAvatarNodes = [...document.querySelectorAll("[data-account-avatar]")];
+const accountNameNodes = [...document.querySelectorAll("[data-account-name]")];
+const accountMetaNode = document.querySelector("[data-account-meta]");
 const settingsButtons = [settingsButton, mobileSettingsButton].filter(Boolean);
 let settingsMenuOpener = null;
 
@@ -159,6 +164,7 @@ function openSettingsMenu() {
   settingsMenuOpener = document.activeElement instanceof HTMLElement ? document.activeElement : settingsButton;
   closeWorkBellPanel();
   syncThemeToggleLabel();
+  renderAccountIdentity();
   settingsMenu.hidden = false;
   for (const button of settingsButtons) {
     button.setAttribute("aria-expanded", "true");
@@ -173,6 +179,163 @@ function closeSettingsMenu() {
   }
   if (settingsMenuOpener?.isConnected) settingsMenuOpener.focus();
   settingsMenuOpener = null;
+}
+
+function accountInitials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
+
+function activeWorkOwner() {
+  const selectedId = String(accountIdentityState.selectedOwnerId || "");
+  return accountIdentityState.members.find((member) => String(member.id || "") === selectedId)
+    || accountIdentityState.user
+    || null;
+}
+
+function activeWorkOwnerId() {
+  return String(activeWorkOwner()?.id || "");
+}
+
+function renderAccountIdentity() {
+  const actor = accountIdentityState.user;
+  const actorName = actor?.name || "Account";
+  const initials = accountInitials(actor?.name);
+  for (const node of accountAvatarNodes) node.textContent = initials;
+  for (const node of accountNameNodes) node.textContent = actorName;
+  for (const button of settingsButtons) {
+    button.title = actor ? `Account: ${actorName}` : "Account";
+    button.setAttribute("aria-label", actor ? `Account for ${actorName}` : "Account");
+  }
+
+  if (accountIdentity) {
+    accountIdentity.dataset.state = actor ? "ready" : accountIdentityState.loaded ? "unavailable" : "loading";
+  }
+  if (accountMetaNode) {
+    if (actor?.email) accountMetaNode.textContent = actor.email;
+    else if (!accountIdentityState.loaded) accountMetaNode.textContent = "Loading signed-in identity…";
+    else accountMetaNode.textContent = accountIdentityState.error || "Signed-in identity unavailable";
+  }
+
+  if (!accountWorkScopeList) return;
+  if (!accountIdentityState.loaded) {
+    const loading = document.createElement("p");
+    loading.className = "account-scope-loading";
+    loading.textContent = "Loading workspace members…";
+    accountWorkScopeList.replaceChildren(loading);
+    return;
+  }
+
+  const members = [...accountIdentityState.members]
+    .filter((member) => member && member.id && member.disabled !== true)
+    .sort((left, right) => {
+      if (String(left.id) === String(actor?.id || "")) return -1;
+      if (String(right.id) === String(actor?.id || "")) return 1;
+      return String(left.name || "").localeCompare(String(right.name || ""));
+    });
+  if (members.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "account-scope-loading";
+    empty.textContent = "No workspace members available.";
+    accountWorkScopeList.replaceChildren(empty);
+    return;
+  }
+
+  const options = members.map((member) => {
+    const isActor = String(member.id) === String(actor?.id || "");
+    const isSelected = String(member.id) === String(accountIdentityState.selectedOwnerId || "");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "account-scope-option";
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(isSelected));
+    button.setAttribute("aria-label", `${isSelected ? "Showing" : "Show"} work for ${member.name || "workspace member"}`);
+
+    const avatar = document.createElement("span");
+    avatar.className = "account-avatar account-scope-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    avatar.textContent = accountInitials(member.name);
+    const copy = document.createElement("span");
+    copy.className = "account-scope-copy";
+    const name = document.createElement("strong");
+    name.textContent = member.name || "Workspace member";
+    const detail = document.createElement("small");
+    detail.textContent = isActor ? "My work" : "Teammate’s work";
+    copy.append(name, detail);
+    const check = document.createElement("span");
+    check.className = "account-scope-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = isSelected ? "✓" : "";
+    button.append(avatar, copy, check);
+    button.addEventListener("click", () => {
+      if (String(accountIdentityState.selectedOwnerId || "") === String(member.id)) {
+        closeSettingsMenu();
+        return;
+      }
+      accountIdentityState.selectedOwnerId = String(member.id);
+      renderAccountIdentity();
+      closeSettingsMenu();
+      if (activeWorkspaceView === "home" && isOperationsHomeVisible()) refreshDocuments();
+    });
+    return button;
+  });
+  accountWorkScopeList.replaceChildren(...options);
+}
+
+function currentOperatorFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  if (payload.user && typeof payload.user === "object") return payload.user;
+  if (payload.actor && typeof payload.actor === "object") return payload.actor;
+  return payload.id ? payload : null;
+}
+
+async function readLocalPreviewContext() {
+  if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") return null;
+  try {
+    const response = await fetch("/__dataops/dev-context", {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function localPreviewActor(members, payload) {
+  const actorEmail = String(payload?.actorEmail || "").trim().toLowerCase();
+  if (!actorEmail) return null;
+  const user = members.find((member) => String(member?.email || "").trim().toLowerCase() === actorEmail);
+  return user ? { user, localPreview: payload?.localPreview === true } : null;
+}
+
+async function refreshAccountIdentity(mePayload, members, localContext) {
+  const availableMembers = Array.isArray(members) ? members.filter((member) => member && member.id) : [];
+  let actor = currentOperatorFromPayload(mePayload);
+  let localPreview = false;
+  if (actor?.id) {
+    actor = availableMembers.find((member) => String(member.id) === String(actor.id)) || actor;
+  } else {
+    const preview = localPreviewActor(availableMembers, localContext || await readLocalPreviewContext());
+    actor = preview?.user || null;
+    localPreview = Boolean(preview?.localPreview);
+  }
+
+  const priorOwnerId = String(accountIdentityState.selectedOwnerId || "");
+  const selectedOwnerId = availableMembers.some((member) => String(member.id) === priorOwnerId)
+    ? priorOwnerId
+    : String(actor?.id || "");
+  accountIdentityState = {
+    loaded: true,
+    localPreview,
+    user: actor,
+    members: availableMembers,
+    selectedOwnerId,
+    error: actor ? "" : "Signed-in identity unavailable",
+  };
+  renderAccountIdentity();
 }
 
 function toggleSettingsMenu() {
@@ -241,6 +404,14 @@ let operationsRecurringSnapshot = emptyOperationsRecurringSnapshot();
 let operationsArtifactSnapshot = emptyOperationsArtifactSnapshot();
 let operationsAssistantSnapshot = emptyOperationsAssistantSnapshot();
 let operationsQualitySnapshot = emptyOperationsQualitySnapshot();
+let accountIdentityState = {
+  loaded: false,
+  localPreview: false,
+  user: null,
+  members: [],
+  selectedOwnerId: "",
+  error: "",
+};
 let intakeState = { filter: "actionable", selectedId: null, items: [], bundles: [], loaded: false, error: "" };
 let intakeMutationState = { itemId: "", action: "", values: {}, error: "", busy: false, status: "" };
 let assistantQueueState = { filter: "podcast", selectedJobId: null };
@@ -1052,6 +1223,16 @@ function renderOperationsHome(documents) {
   date.dateTime = model.today;
   date.textContent = formatHomeCalendarDate(model.today);
   heading.append(title, date);
+  if (model.scope?.owner) {
+    const scope = document.createElement("p");
+    scope.className = "home-work-scope";
+    if (model.scope.isPeer) {
+      scope.textContent = `Showing ${model.scope.owner.name}’s work · You remain signed in as ${model.scope.actor?.name || "yourself"}`;
+    } else {
+      scope.textContent = "Showing my work";
+    }
+    heading.append(scope);
+  }
 
   const quickBar = document.createElement("div");
   quickBar.className = "home-quick-actions";
@@ -4923,27 +5104,34 @@ function buildOperationsHomeModel(documents, options) {
     .sort((a, b) => workflowPriority(a.slug) - workflowPriority(b.slug) || a.title.localeCompare(b.title));
 
   const recurringItems = templates.filter((template) => template.recurring).map(operationItemFromTemplate);
-  const scopedCurrentOperatorId = currentOperatorIdForTodayScope(work.currentOperatorId);
-  const todayWorkTasks = scopedCurrentOperatorId
-    ? work.todayTasks.filter((task) => isCurrentOperatorTodayTask(task, scopedCurrentOperatorId))
-    : work.todayTasks;
+  const selectedOwnerId = activeWorkOwnerId();
+  const scopedCurrentOperatorId = selectedOwnerId || currentOperatorIdForTodayScope(work.currentOperatorId);
+  const hasExplicitOwnerScope = Boolean(selectedOwnerId);
+  const scopeTasks = (tasks) => {
+    if (hasExplicitOwnerScope) return tasks.filter((task) => isTaskAssignedTo(task, selectedOwnerId));
+    if (scopedCurrentOperatorId) return tasks.filter((task) => isCurrentOperatorTodayTask(task, scopedCurrentOperatorId));
+    return tasks;
+  };
+  const todayWorkTasks = scopeTasks(work.todayTasks);
+  const overdueWorkTasks = hasExplicitOwnerScope ? scopeTasks(work.overdueTasks) : work.overdueTasks;
+  const waitingWorkTasks = hasExplicitOwnerScope ? scopeTasks(work.waitingTasks) : work.waitingTasks;
   const todayItems = work.todayLoaded
     ? todayWorkTasks.map((task) => operationItemFromTask(task, { today }))
     : [];
   const overdueItems = work.overdueLoaded
-    ? work.overdueTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
+    ? overdueWorkTasks.map((task) => operationItemFromTask(task, { today, overdue: true }))
     : [];
-  const followUpTasks = work.waitingTasks.filter((task) => isFollowUpDueTask(task, today));
+  const followUpTasks = waitingWorkTasks.filter((task) => isFollowUpDueTask(task, today));
   const followUpItems = work.waitingLoaded
     ? followUpTasks.map((task) => operationItemFromTask(task, { today, followUp: true }))
     : [];
   const waitingItems = work.waitingLoaded
-    ? work.waitingTasks.filter((task) => !isFollowUpDueTask(task, today)).map((task) => operationItemFromTask(task, { today, waiting: true }))
+    ? waitingWorkTasks.filter((task) => !isFollowUpDueTask(task, today)).map((task) => operationItemFromTask(task, { today, waiting: true }))
     : [];
   const bundleItems = work.bundlesLoaded
     ? work.activeBundles.map((bundle) => operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], { today }))
     : [];
-  const allKnownTasks = allWorkTasks(work);
+  const allKnownTasks = hasExplicitOwnerScope ? scopeTasks(allWorkTasks(work)) : allWorkTasks(work);
   const missingProofTasks = allKnownTasks.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok);
   const missingProofItems = tasksLoaded
     ? missingProofTasks.map((task) => operationItemFromTask(task, { today }))
@@ -4999,6 +5187,11 @@ function buildOperationsHomeModel(documents, options) {
 
   return {
     today,
+    scope: {
+      actor: accountIdentityState.user,
+      owner: activeWorkOwner(),
+      isPeer: Boolean(accountIdentityState.user && activeWorkOwner() && String(accountIdentityState.user.id) !== String(activeWorkOwner().id)),
+    },
     lanes,
     templates,
     references: buildOperationsReferenceLinks(docs),
@@ -5023,8 +5216,8 @@ function buildOperationsHomeModel(documents, options) {
       usersLoaded: work.usersLoaded,
       missingProofLoaded: tasksLoaded,
       todayTasks: scopedCurrentOperatorId ? todayWorkTasks.length : work.todayTaskCount,
-      overdueTasks: work.overdueTaskCount,
-      waitingTasks: work.waitingTaskCount,
+      overdueTasks: hasExplicitOwnerScope ? overdueWorkTasks.length : work.overdueTaskCount,
+      waitingTasks: hasExplicitOwnerScope ? waitingWorkTasks.length : work.waitingTaskCount,
       followUpTasks: followUpTasks.length,
       missingProofTasks: missingProofTasks.length,
       activeBundles: work.activeBundles.length,
@@ -5175,13 +5368,15 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   const bundlesUrl = workApiUrl("/api/bundles");
   const usersUrl = workApiUrl("/api/users");
   const meUrl = workApiUrl("/api/me");
+  const localContext = await readLocalPreviewContext();
+  const meRequest = localContext?.actorEmail ? Promise.resolve({}) : request(meUrl);
   const [todayResult, overdueResult, waitingResult, bundlesResult, usersResult, meResult] = await Promise.allSettled([
     request(todayUrl),
     request(overdueUrl),
     request(waitingUrl),
     request(bundlesUrl),
     request(usersUrl),
-    request(meUrl),
+    meRequest,
   ]);
 
   const snapshot = emptyOperationsWorkSnapshot();
@@ -5224,6 +5419,7 @@ async function refreshOperationsWorkSnapshot(options = {}) {
   });
 
   operationsWorkSnapshot = normalizeOperationsWorkSnapshot(snapshot, { today });
+  await refreshAccountIdentity(settledPayload(meResult), operationsWorkSnapshot.users, localContext);
   if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
   refreshWorkBell();
 }
@@ -5413,6 +5609,19 @@ function renderTaskPanel() {
     description.textContent = routeContextParts.join(" · ");
     routeContext.append(heading, description);
     taskPanelBody.append(routeContext);
+  }
+
+  const actor = accountIdentityState.user;
+  const assignee = task.assigneeId ? operationsWorkSnapshot.usersById?.get(task.assigneeId) : null;
+  if (actor && assignee && String(actor.id) !== String(assignee.id)) {
+    const delegation = document.createElement("section");
+    delegation.className = "task-delegation-notice";
+    const heading = document.createElement("strong");
+    heading.textContent = `Working on ${assignee.name || "a teammate"}’s task`;
+    const description = document.createElement("p");
+    description.textContent = `You remain signed in as ${actor.name || "yourself"}. ${assignee.name || "Your teammate"} stays assigned.`;
+    delegation.append(heading, description);
+    taskPanelBody.append(delegation);
   }
 
   const meta = document.createElement("div");
@@ -7278,6 +7487,10 @@ function isCurrentOperatorTodayTask(task, currentOperatorId) {
   if (!isOpenWorkTask(task)) return false;
   const assigneeId = String(task.assigneeId || "");
   return !assigneeId || assigneeId === String(currentOperatorId || "");
+}
+
+function isTaskAssignedTo(task, userId) {
+  return isOpenWorkTask(task) && String(task?.assigneeId || "") === String(userId || "");
 }
 
 function currentOperatorIdForTodayScope(currentOperatorId) {

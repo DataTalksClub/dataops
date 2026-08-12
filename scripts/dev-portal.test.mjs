@@ -239,6 +239,7 @@ test('representative child environment is visibly labeled and fail-closed', () =
     AWS_SECRET_ACCESS_KEY: 'local',
     DATAOPS_DEV_SEED_MODE: 'none',
     IS_LOCAL: 'true',
+    DATAOPS_DEV_ACTOR_EMAIL: 'operator@example.invalid',
     GITHUB_TOKEN: 'must-not-survive',
     AUTH_BASE_URL: 'https://auth.example.test',
     SPONSOR_COMMUNICATION_SEND_ENABLED: 'true',
@@ -247,6 +248,7 @@ test('representative child environment is visibly labeled and fail-closed', () =
   const config = readDevConfig(parentEnv, ROOT);
   const child = buildChildEnvironment(config, parentEnv);
   assert.equal(config.representative, true);
+  assert.equal(config.actorEmail, 'operator@example.invalid');
   assert.equal(child.DATAOPS_LOCAL_MODE_LABEL, 'local representative replica');
   assert.equal(child.DATAOPS_DEV_SEED_MODE, 'none');
   assert.equal(child.DATAOPS_AUTO_CREATE_TABLES, 'false');
@@ -257,6 +259,14 @@ test('representative child environment is visibly labeled and fail-closed', () =
   assert.equal(child.AWS_EC2_METADATA_DISABLED, 'true');
   assert.equal(child.GITHUB_TOKEN, undefined);
   assert.equal(child.AUTH_BASE_URL, undefined);
+  assert.throws(
+    () => readDevConfig({ DATAOPS_DEV_ACTOR_EMAIL: 'operator@example.invalid' }, ROOT),
+    /requires a local representative replica/,
+  );
+  assert.throws(
+    () => readDevConfig({ ...parentEnv, DATAOPS_DEV_ACTOR_EMAIL: 'not-an-email' }, ROOT),
+    /must be a single email address/,
+  );
 });
 
 test('rewrites only internal backend redirects to the browser origin', () => {

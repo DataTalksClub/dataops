@@ -117,8 +117,18 @@ They intentionally follow the Course Management Platform names where practical.
   selected navigation. One selection signal is enough and keeps the navigation
   calm in both themes.
 - The top toolbar owns global actions such as notifications, help, identity,
-  and settings. Page-specific editor controls appear only on pages that need
-  them.
+  and account access. Page-specific editor controls appear only on pages that
+  need them.
+- Show the authenticated person with an avatar/initials and name on desktop,
+  and the same avatar/initials on mobile. Do not use an anonymous settings gear
+  as the account entry point.
+- Account scope and actor identity are separate concepts. A `Show work for`
+  control may change whose tasks are visible, but it must not imply an identity
+  switch. When a teammate's task is open, state both the signed-in actor and
+  the teammate who remains assigned.
+- Teammate scope rows show names and ownership context, not peer email
+  addresses. The signed-in person may see their own email in the account
+  summary.
 - The global sidebar is navigation-only on every route. Never append a process
   document tree, document filters, pending changes, recent documents, or a
   `New process doc` control below it.
