@@ -51,6 +51,7 @@ const gitCommitSubmit = document.querySelector("#git-commit-submit");
 const gitResult = document.querySelector("#git-result");
 const mobileNewButton = document.querySelector("#mobile-new-button");
 const operationsHomeButton = document.querySelector("#operations-home-button");
+const homeMoreNavButton = document.querySelector("#home-more-nav-button");
 const newDocumentButton = document.querySelector("#new-document-button");
 const searchForm = document.querySelector("#search-form");
 const searchInput = document.querySelector("#search-input");
@@ -70,8 +71,13 @@ const recentlyViewedList = document.querySelector("#recently-viewed-list");
 const helpModal = document.querySelector("#help-modal");
 const helpBackdrop = document.querySelector("#help-backdrop");
 const helpClose = document.querySelector("#help-close");
+const helpButton = document.querySelector("#help-button");
 helpBackdrop.addEventListener("click", () => { helpModal.hidden = true; });
 helpClose.addEventListener("click", () => { helpModal.hidden = true; });
+helpButton?.addEventListener("click", () => {
+  helpModal.hidden = false;
+  helpClose.focus();
+});
 const documentList = document.querySelector("#document-list");
 const pageShell = document.querySelector(".page-shell");
 const documentRowTemplate = document.querySelector("#document-row-template");
@@ -299,11 +305,15 @@ for (const button of workspaceNavButtons) {
   button.addEventListener("click", () =>
     document.dispatchEvent(
       new CustomEvent("dataops:navigate-workspace", {
-        detail: { view: button.dataset.workspaceView || "home" },
+        detail: { view: button.dataset.workspaceTarget || button.dataset.workspaceView || "home" },
       }),
     ),
   );
 }
+homeMoreNavButton?.addEventListener("click", () => {
+  const expanded = body.classList.toggle("home-more-open");
+  homeMoreNavButton.setAttribute("aria-expanded", String(expanded));
+});
 document.addEventListener("dataops:navigate-workspace", (event) =>
   showWorkspaceSurface(event.detail?.view || "home"),
 );
@@ -965,7 +975,7 @@ function renderOperationsWorkspace(documents) {
 
 // Title/path helpers for the new Home / Tasks / Docs IA.
 function operationsViewTitle(view, tasksSection) {
-  if (view === "home") return "Home";
+  if (view === "home") return "Today";
   if (view === "inbox") return "Inbox";
   if (view === "tasks") return tasksSectionTitle(tasksSection);
   if (view === "docs") return "Docs";
@@ -1017,7 +1027,7 @@ function renderOperationsHome(documents) {
   documentList.classList.add("is-operations-home");
   documentList.classList.remove("is-unified-search");
   libraryTitle.textContent = "Home";
-  setPageTitle("Home", "Home");
+  setPageTitle("Today", "Today");
   clearSelectionButton.hidden = true;
   if (model.stats.liveLoaded) {
     setStatus(`${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active workflows.`);
@@ -1026,7 +1036,7 @@ function renderOperationsHome(documents) {
   }
 
   const wrap = document.createElement("div");
-  wrap.className = "operations-home";
+  wrap.className = "operations-home operations-home-daily";
 
   // Read-only load signal for tests: reflects whether the async work snapshot
   // (/work/api/tasks, /work/api/bundles) has finished hydrating. The home view
@@ -1035,63 +1045,209 @@ function renderOperationsHome(documents) {
   // distinguish the hydrated render from the skeleton render without polling rows.
   wrap.dataset.operationsWorkLoaded = String(Boolean(model.stats.liveLoaded));
 
-  // Home keeps only the three action-driving counts: Overdue, Today, Waiting.
-  const summary = document.createElement("section");
-  summary.className = "ops-summary";
-  summary.setAttribute("aria-label", "Operations summary");
-  const byId = (id) => model.lanes.find((lane) => lane.id === id);
-  for (const stat of [
-    ["Overdue", (byId("overdue")?.items || []).length],
-    ["Today", (byId("today")?.items || []).length],
-    ["Waiting", (byId("waiting")?.items || []).length],
-  ]) {
-    const box = document.createElement("div");
-    box.className = "ops-stat";
-    const value = document.createElement("strong");
-    value.textContent = String(stat[1]);
-    const label = document.createElement("span");
-    label.textContent = stat[0];
-    box.append(value, label);
-    summary.append(box);
-  }
-  wrap.append(summary);
+  const header = document.createElement("header");
+  header.className = "home-daily-header";
+  const heading = document.createElement("div");
+  const title = document.createElement("h2");
+  title.textContent = "Today";
+  const date = document.createElement("time");
+  date.dateTime = model.today;
+  date.textContent = formatHomeCalendarDate(model.today);
+  heading.append(title, date);
+
+  const quickBar = document.createElement("div");
+  quickBar.className = "home-quick-actions";
+  quickBar.setAttribute("aria-label", "Quick actions");
+  const quickTask = document.createElement("button");
+  quickTask.type = "button";
+  quickTask.className = "home-quick-action";
+  quickTask.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>New task</span>';
+  quickTask.addEventListener("click", () => openQuickTaskForm());
+  const quickWorkflow = document.createElement("button");
+  quickWorkflow.type = "button";
+  quickWorkflow.className = "home-quick-action home-quick-action-primary";
+  quickWorkflow.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Start workflow</span>';
+  quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
+  quickBar.append(quickTask, quickWorkflow);
+  header.append(heading, quickBar);
+  wrap.append(header, renderHomeStatusStrip(model));
 
   const runtimeState = renderOperationsRuntimeState(model.runtime);
   if (runtimeState) wrap.append(runtimeState);
 
-  // Quick actions: New task and Start workflow. Recurring config lives under
-  // Tasks > Templates, so it is no longer a Home quick action.
-  const quickBar = document.createElement("section");
-  quickBar.className = "ops-quick-bar";
-  quickBar.setAttribute("aria-label", "Quick actions");
-  const quickTask = document.createElement("button");
-  quickTask.type = "button";
-  quickTask.className = "ops-quick-btn";
-  quickTask.textContent = "New task";
-  quickTask.addEventListener("click", () => openQuickTaskForm());
-  const quickWorkflow = document.createElement("button");
-  quickWorkflow.type = "button";
-  quickWorkflow.className = "ops-quick-btn";
-  quickWorkflow.textContent = "Start workflow";
-  quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
-  quickBar.append(quickTask, quickWorkflow);
-  wrap.append(quickBar);
-
-  // One focused "Needs your action" lane: overdue + today + missing-proof
-  // tasks merged into a single prioritized list. Reuses the lane machinery.
-  const actionLane = buildNeedsActionLane(model);
-  const lanes = document.createElement("section");
-  lanes.className = "ops-lanes";
-  lanes.setAttribute("aria-label", "Needs your action");
-  lanes.append(renderOperationsLane(actionLane));
-  wrap.append(lanes);
-
-  // Keep the existing process-quality drill-down reachable from Home. The
-  // report is read-only and comes from the authenticated local docs seam; it
-  // must never be replaced by fabricated findings when that feed is down.
-  wrap.append(renderProcessQualityHomeSection(model.quality));
+  wrap.append(renderHomeAttentionQueue(model));
 
   documentList.replaceChildren(wrap);
+}
+
+function renderHomeStatusStrip(model) {
+  const summary = document.createElement("section");
+  summary.className = "home-status-strip";
+  summary.setAttribute("aria-label", "Daily work summary");
+  const stats = [
+    { id: "overdue", label: "Overdue", value: model.stats.overdueTasks, loaded: model.stats.overdueLoaded },
+    { id: "today", label: "Due today", value: model.stats.todayTasks, loaded: model.stats.todayLoaded },
+    { id: "waiting", label: "Waiting", value: model.stats.waitingTasks, loaded: model.stats.waitingLoaded },
+  ];
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    item.className = `home-status-item home-status-${stat.id}`;
+    item.dataset.state = stat.loaded ? "ready" : "unavailable";
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.loaded ? String(stat.value) : "—";
+    if (!stat.loaded) value.setAttribute("aria-label", `${stat.label} unavailable`);
+    item.append(label, value);
+    summary.append(item);
+  }
+  return summary;
+}
+
+function renderHomeAttentionQueue(model) {
+  const section = document.createElement("section");
+  section.className = "home-attention";
+  section.setAttribute("aria-labelledby", "home-attention-title");
+
+  const header = document.createElement("header");
+  const title = document.createElement("h3");
+  title.id = "home-attention-title";
+  title.textContent = "Needs your attention";
+  header.append(title);
+  section.append(header);
+
+  const items = buildHomeAttentionItems(model);
+  if (items.length === 0) {
+    const empty = renderHonestState(
+      model.stats.missingProofLoaded ? "No work needs your attention" : "Action queue unavailable",
+      model.stats.missingProofLoaded
+        ? "Nothing is overdue, due for follow-up, due today, or waiting on proof."
+        : "Task data is still loading or unavailable; no false work items are shown.",
+    );
+    empty.classList.add("home-attention-empty");
+    section.append(empty);
+  } else {
+    const list = document.createElement("ul");
+    list.className = "home-attention-list";
+    for (const item of items.slice(0, 6)) list.append(renderHomeAttentionItem(item, model.today));
+    section.append(list);
+  }
+
+  const footer = document.createElement("footer");
+  const allTasks = document.createElement("button");
+  allTasks.type = "button";
+  allTasks.className = "home-view-all";
+  allTasks.textContent = "View all tasks";
+  allTasks.addEventListener("click", () => navigateCanonicalWorkspace("/tasks").ready);
+  footer.append(allTasks);
+  section.append(footer);
+  return section;
+}
+
+function buildHomeAttentionItems(model) {
+  const byId = (id) => model.lanes.find((lane) => lane.id === id)?.items || [];
+  const groups = [
+    ["overdue", "Overdue", byId("overdue")],
+    ["follow-up", "Follow-up due", byId("followups")],
+    ["today", "Due today", byId("today")],
+    ["missing-proof", "Missing proof", byId("missing-proof")],
+  ];
+  const seen = new Set();
+  const items = [];
+  for (const [priority, exception, group] of groups) {
+    const prioritized = [...group].sort((left, right) => {
+      const leftDate = priority === "follow-up" ? left.followUpDate : left.dueDate || left.followUpDate || "9999-12-31";
+      const rightDate = priority === "follow-up" ? right.followUpDate : right.dueDate || right.followUpDate || "9999-12-31";
+      return compareIsoDate(leftDate, rightDate) || String(left.title || "").localeCompare(String(right.title || ""));
+    });
+    for (const item of prioritized) {
+      const key = item.taskId || `${item.title}:${item.dueDate || item.followUpDate || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ ...item, priority, exception });
+    }
+  }
+  return items;
+}
+
+function renderHomeAttentionItem(item, today) {
+  const row = document.createElement("li");
+  row.className = `home-attention-row home-attention-${item.priority}`;
+
+  const marker = document.createElement("span");
+  marker.className = "home-task-marker";
+  marker.setAttribute("aria-hidden", "true");
+
+  const content = document.createElement("div");
+  content.className = "home-task-content";
+  const title = document.createElement("strong");
+  title.textContent = item.title;
+  const workflow = document.createElement("span");
+  workflow.className = "home-task-workflow";
+  workflow.textContent = item.bundleId ? resolveBundleLabel(item.bundleId) : "Independent task";
+  content.append(title, workflow);
+
+  const state = document.createElement("div");
+  state.className = "home-task-state";
+  const timing = document.createElement("time");
+  const timingDate = item.priority === "follow-up" ? item.followUpDate : item.dueDate || item.followUpDate;
+  if (timingDate) timing.dateTime = timingDate;
+  timing.textContent = formatHomeTaskTiming(item, today);
+  const badge = document.createElement("span");
+  badge.className = `home-exception home-exception-${item.priority}`;
+  badge.textContent = item.exception;
+  state.append(timing, badge);
+
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "home-task-action";
+  action.textContent = homeTaskActionLabel(item.nextAction);
+  action.setAttribute("aria-label", `${action.textContent}: ${item.title}`);
+  action.addEventListener("click", () => openTaskPanel(item.taskId));
+
+  row.append(marker, content, state, action);
+  return row;
+}
+
+function formatHomeCalendarDate(value) {
+  const date = parseIsoDateValue(value);
+  if (!date) return value || "";
+  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(date);
+}
+
+function formatHomeTaskTiming(item, today) {
+  const value = String(item.priority === "follow-up" ? item.followUpDate : item.dueDate || item.followUpDate || "").slice(0, 10);
+  if (!value) return item.priority === "missing-proof" ? "Proof required" : "Open task";
+  const days = isoDayDistance(value, today);
+  if (item.priority === "follow-up") {
+    if (days === 0) return "Follow up today";
+    if (days < 0) return `Follow-up ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+  }
+  if (days === 0) return "Due today";
+  if (days === -1) return "Due yesterday";
+  if (days === 1) return "Due tomorrow";
+  if (days < 0) return `${Math.abs(days)} days overdue`;
+  return `Due ${formatHomeShortDate(value)}`;
+}
+
+function formatHomeShortDate(value) {
+  const date = parseIsoDateValue(value);
+  if (!date) return value || "";
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
+}
+
+function homeTaskActionLabel(value) {
+  const label = String(value || "Open").trim();
+  if (/^add /i.test(label)) return "Add proof";
+  if (/^mark (done|response received)$/i.test(label)) return "Open";
+  return label;
+}
+
+function isoDayDistance(value, today) {
+  const target = parseIsoDateValue(value);
+  const origin = parseIsoDateValue(today);
+  if (!target || !origin) return 0;
+  return Math.round((target.getTime() - origin.getTime()) / 86400000);
 }
 
 // Builds the single Home "Needs your action" lane by merging overdue, today,
@@ -4834,6 +4990,7 @@ function buildOperationsHomeModel(documents, options) {
   ];
 
   return {
+    today,
     lanes,
     templates,
     references: buildOperationsReferenceLinks(docs),
@@ -4857,9 +5014,9 @@ function buildOperationsHomeModel(documents, options) {
       bundlesLoaded: work.bundlesLoaded,
       usersLoaded: work.usersLoaded,
       missingProofLoaded: tasksLoaded,
-      todayTasks: todayWorkTasks.length,
-      overdueTasks: work.overdueTasks.length,
-      waitingTasks: work.waitingTasks.length,
+      todayTasks: scopedCurrentOperatorId ? todayWorkTasks.length : work.todayTaskCount,
+      overdueTasks: work.overdueTaskCount,
+      waitingTasks: work.waitingTaskCount,
       followUpTasks: followUpTasks.length,
       missingProofTasks: missingProofTasks.length,
       activeBundles: work.activeBundles.length,
@@ -6987,6 +7144,10 @@ function normalizeOperationsWorkSnapshot(input, options) {
   // the buildOperationsHomeModel fallback path). When per-source flags ARE
   // present, use them directly so a single failed endpoint only degrades its lane.
   const laneLoaded = (flag) => (snapshot[flag] === undefined ? Boolean(snapshot.loaded) : Boolean(snapshot[flag]));
+  const taskCount = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const normalizedTodayTasks = dedupeWorkTasks([...explicitToday, ...allTasks.filter((task) => isTaskDueToday(task, today))]);
+  const normalizedOverdueTasks = dedupeWorkTasks([...explicitOverdue, ...allTasks.filter((task) => isTaskOverdue(task, today))]);
+  const normalizedWaitingTasks = dedupeWorkTasks([...explicitWaiting, ...allTasks.filter((task) => isWaitingOrFollowUpTask(task))]);
 
   return {
     loaded: Boolean(snapshot.loaded),
@@ -6996,9 +7157,12 @@ function normalizeOperationsWorkSnapshot(input, options) {
     bundlesLoaded: laneLoaded("bundlesLoaded"),
     usersLoaded: laneLoaded("usersLoaded"),
     currentOperatorId: String(snapshot.currentOperatorId || ""),
-    todayTasks: sortWorkTasks(dedupeWorkTasks([...explicitToday, ...allTasks.filter((task) => isTaskDueToday(task, today))]), "today", today),
-    overdueTasks: sortWorkTasks(dedupeWorkTasks([...explicitOverdue, ...allTasks.filter((task) => isTaskOverdue(task, today))]), "overdue", today),
-    waitingTasks: sortWorkTasks(dedupeWorkTasks([...explicitWaiting, ...allTasks.filter((task) => isWaitingOrFollowUpTask(task))]), "waiting", today),
+    todayTasks: sortWorkTasks(normalizedTodayTasks, "today", today),
+    overdueTasks: sortWorkTasks(normalizedOverdueTasks, "overdue", today),
+    waitingTasks: sortWorkTasks(normalizedWaitingTasks, "waiting", today),
+    todayTaskCount: taskCount(snapshot.todayTaskCount, normalizedTodayTasks.length),
+    overdueTaskCount: taskCount(snapshot.overdueTaskCount, normalizedOverdueTasks.length),
+    waitingTaskCount: taskCount(snapshot.waitingTaskCount, normalizedWaitingTasks.length),
     activeBundles: sortActiveWorkBundles(bundles.filter(isActiveWorkBundle), bundleTasks, today),
     bundles,
     bundlesById: new Map(bundles.filter((bundle) => bundle && bundle.id).map((bundle) => [bundle.id, bundle])),
@@ -7233,6 +7397,8 @@ function operationItemFromTask(task, options) {
     meta: meta.join(" - "),
     taskId: task.id,
     bundleId: task.bundleId,
+    dueDate: taskDate(task),
+    followUpDate: String(task.followUpAt || "").slice(0, 10),
     nextAction: taskNextActionLabel(task, today),
     proof,
     risk: options.overdue ? "high" : options.waiting || !proof.ok ? "medium" : "low",
@@ -9207,12 +9373,15 @@ async function showWorkspaceSurface(view, options = {}) {
 }
 
 function syncWorkspaceNav() {
+  body.dataset.workspaceView = activeWorkspaceView;
+  searchInput.placeholder = activeWorkspaceView === "home" ? "Search" : "Search work and docs";
   for (const button of workspaceNavButtons) {
     const active = (button.dataset.workspaceView || "home") === activeWorkspaceView;
     button.classList.toggle("is-active", active);
     if (active) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   }
+  if (activeWorkspaceView !== "home") body.classList.remove("home-more-open");
 }
 
 async function showCreate() {
