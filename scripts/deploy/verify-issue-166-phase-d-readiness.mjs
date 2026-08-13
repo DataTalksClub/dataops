@@ -165,8 +165,8 @@ requireArtifactRoot(backendRoot, 'BackendFunction');
 requireArtifactRoot(workerRoot, 'ConversationalExecutionWorkerFunction');
 const backendBundle = readArtifact(backendRoot, 'dist/handler.js');
 const workerBundle = readArtifact(workerRoot, 'dist/execution-worker-handler.js');
-const workspace = readArtifact(backendRoot, 'frontend/src/core/workspace.js');
-const taskActions = readArtifact(backendRoot, 'frontend/src/surfaces/work-detail/task-actions.js');
+const workspace = readArtifact(backendRoot, 'dist/frontend/src/core/workspace.js');
+const taskActions = readArtifact(backendRoot, 'dist/frontend/src/surfaces/work-detail/task-actions.js');
 
 requireSemantics(backendBundle, 'backend bundle', [
   /TaskVersionConflictError/,

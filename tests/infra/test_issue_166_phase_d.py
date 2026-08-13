@@ -92,8 +92,8 @@ def _artifact(tmp_path: Path) -> tuple[Path, dict, dict[str, Path]]:
     worker_root = tmp_path / "worker-artifact"
     for root in (backend_root, worker_root):
         (root / "dist").mkdir(parents=True)
-    (backend_root / "frontend/src/core").mkdir(parents=True)
-    (backend_root / "frontend/src/surfaces/work-detail").mkdir(parents=True)
+    (backend_root / "dist/frontend/src/core").mkdir(parents=True)
+    (backend_root / "dist/frontend/src/surfaces/work-detail").mkdir(parents=True)
 
     (backend_root / "dist/handler.js").write_text(
         """
@@ -107,11 +107,11 @@ def _artifact(tmp_path: Path) -> tuple[Path, dict, dict[str, Path]]:
     (worker_root / "dist/execution-worker-handler.js").write_text(
         "const task = { version: 1, taskHistory: [] };", encoding="utf-8"
     )
-    (backend_root / "frontend/src/core/workspace.js").write_text(
+    (backend_root / "dist/frontend/src/core/workspace.js").write_text(
         'return card.status === "archived" && card.stage === "done";',
         encoding="utf-8",
     )
-    (backend_root / "frontend/src/surfaces/work-detail/task-actions.js").write_text(
+    (backend_root / "dist/frontend/src/surfaces/work-detail/task-actions.js").write_text(
         "expectedVersion task_version_conflict card_lifecycle_conflict",
         encoding="utf-8",
     )
@@ -176,9 +176,9 @@ def _artifact(tmp_path: Path) -> tuple[Path, dict, dict[str, Path]]:
         "worker_root": worker_root,
         "backend": backend_root / "dist/handler.js",
         "worker": worker_root / "dist/execution-worker-handler.js",
-        "workspace": backend_root / "frontend/src/core/workspace.js",
+        "workspace": backend_root / "dist/frontend/src/core/workspace.js",
         "task_actions": (
-            backend_root / "frontend/src/surfaces/work-detail/task-actions.js"
+            backend_root / "dist/frontend/src/surfaces/work-detail/task-actions.js"
         ),
     }
 
