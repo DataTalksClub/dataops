@@ -10,6 +10,15 @@ Treat "continue where we stopped" as a prompt to check `_docs/PROCESS.md`,
 inspect the current issue/worktree/process state, and resume the next pipeline
 step.
 
+Commit regularly and always:
+
+- Commit working increments as you go rather than leaving a large uncommitted
+  tree at the end of a session. A passing checkpoint is worth committing.
+- Commit your own work even when another session is working in the same tree;
+  stage your paths explicitly instead of `git add -A`, and never commit another
+  session's staged index as if it were yours.
+- Finish a task with the work committed, not just described.
+
 No backwards compatibility:
 
 - This project has no external consumers and no released API to protect. When
