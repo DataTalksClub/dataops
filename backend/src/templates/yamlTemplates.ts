@@ -175,6 +175,12 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     if (typeof phaseId === 'string' && phaseIds.size > 0 && !phaseIds.has(phaseId)) {
       fail(`task '${id}' references unknown phase '${phaseId}'`);
     }
+    if (
+      task.stage_on_complete !== undefined
+      && !['preparation', 'announced', 'after-event'].includes(String(task.stage_on_complete))
+    ) {
+      fail(`task '${id}' stage_on_complete must be preparation, announced, or after-event`);
+    }
     const link = task.required_link;
     if (typeof link === 'string' && linkNames.size > 0 && !linkNames.has(link)) {
       fail(`task '${id}' requires card link '${link}' which the template does not define`);

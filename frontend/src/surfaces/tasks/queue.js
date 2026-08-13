@@ -1,3 +1,5 @@
+import { isCanonicalWorkTask } from "../../core/workspace.js";
+
 export function createTaskQueue(context) {
   const {
     allWorkTasks,
@@ -67,7 +69,7 @@ export function createTaskQueue(context) {
       [
         "Done / history",
         tasks.filter(
-          (task) => String(task.status || "").toLowerCase() === "done",
+          (task) => isCanonicalWorkTask(task) && task.status === "done",
         ),
       ],
     ];
@@ -202,6 +204,9 @@ export function createTaskQueue(context) {
   }
 
   function renderWorkQueueRow(task, today) {
+    if (!isCanonicalWorkTask(task)) {
+      throw new Error("Task payload is not in the canonical versioned shape");
+    }
     const button = document.createElement("button");
     button.type = "button";
     button.className = "ops-queue-row";
@@ -211,7 +216,7 @@ export function createTaskQueue(context) {
     title.textContent = workTaskTitle(task);
     const meta = document.createElement("div");
     meta.className = "ops-queue-meta";
-    const status = String(task.status || "todo").toLowerCase();
+    const status = task.status;
     for (const value of [
       status,
       task.date ? `Due ${formatTaskDateMeta(task.date, today)}` : "",

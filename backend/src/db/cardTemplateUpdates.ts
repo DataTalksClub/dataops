@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   DeleteCommand,
@@ -15,6 +15,12 @@ import {
   TABLE_TEMPLATES,
 } from './tableNames';
 import type { AuditEventRef, Card, Task, Template } from '../types';
+import { usesLocalTransactionEmulation } from './client';
+import {
+  applyCardAggregateDelta,
+  isOpenStatus,
+  type CardLifecycleAuditEvent,
+} from './taskCardLifecycle';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
 import {
   buildCardTemplateUpdatePlan,
@@ -34,7 +40,7 @@ export interface CardTemplateUpdateAuditEvent {
   actorId: string;
   cardId: string;
   templateId: string;
-  sourceTemplateVersion: number | null;
+  sourceTemplateVersion: number;
   targetTemplateVersion: number;
   sourceRevision: string | null;
   targetRevision: string | null;
@@ -88,9 +94,9 @@ function deterministicTaskId(cardId: string, templateId: string, taskRef: string
 
 function entityVersionCondition(version: number) {
   return {
-    ConditionExpression: '#version = :expectedVersion OR (attribute_not_exists(#version) AND :expectedVersion = :versionOne)',
+    ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion',
     ExpressionAttributeNames: { '#version': 'version' },
-    ExpressionAttributeValues: { ':expectedVersion': version, ':versionOne': 1 },
+    ExpressionAttributeValues: { ':expectedVersion': version },
   };
 }
 
@@ -153,7 +159,7 @@ function appliedCard(
   next.templateSourceRevision = template.sourceRevision;
   next.templateDefinitionSnapshot = structuredClone(plan.targetCardSnapshot);
   next.auditEventRefs = appendAuditRef(card.auditEventRefs, event);
-  next.version = (card.version || 1) + 1;
+  next.version = card.version + 1;
   next.updatedAt = now;
   return compact(next) as Card;
 }
@@ -165,6 +171,8 @@ function clearDefinitionFields(task: Task & Dict): void {
 function appliedExistingTask(
   update: PlannedTaskUpdate,
   template: Template,
+  card: Card,
+  actorId: string,
   now: string,
 ): Task {
   const before = update.before as Task;
@@ -173,12 +181,39 @@ function appliedExistingTask(
     if (update.action === 'archive-removed') next.status = 'archived';
     next.templateRetiredAt = now;
     next.templateRetiredReason = update.target ? 'completed-modified' : 'removed';
+    next.taskHistory = [
+      ...before.taskHistory,
+      {
+        id: randomUUID(),
+        taskId: before.id,
+        cardId: card.id,
+        action: 'template-retired',
+        actorId,
+        createdAt: now,
+      },
+    ];
   } else {
     if (update.action === 'update') {
       clearDefinitionFields(next);
       Object.assign(next, structuredClone(update.target));
     }
-    if (before.templateRetiredReason === 'removed' && before.status === 'archived') next.status = 'todo';
+    if (before.templateRetiredReason === 'removed' && before.status === 'archived') {
+      next.status = 'todo';
+      delete next.waitingFor;
+      delete next.followUpAt;
+      delete next.followUpChannel;
+      next.taskHistory = [
+        ...before.taskHistory,
+        {
+          id: randomUUID(),
+          taskId: before.id,
+          cardId: card.id,
+          action: 'template-restored',
+          actorId,
+          createdAt: now,
+        },
+      ];
+    }
     delete next.templateRetiredAt;
     delete next.templateRetiredReason;
     next.templateVersion = template.version;
@@ -234,6 +269,25 @@ function resultTasks(tasks: Task[], replacements: Map<string, Task>): Task[] {
   ];
 }
 
+function replacementAggregateDelta(
+  tasks: Task[],
+  replacements: Map<string, Task>,
+): { taskCount: number; openTaskCount: number } {
+  const existing = new Map(tasks.map((task) => [task.id, task]));
+  let taskCount = 0;
+  let openTaskCount = 0;
+  for (const [taskId, after] of replacements) {
+    const before = existing.get(taskId);
+    if (!before) {
+      taskCount += 1;
+      if (isOpenStatus(after.status)) openTaskCount += 1;
+      continue;
+    }
+    openTaskCount += Number(isOpenStatus(after.status)) - Number(isOpenStatus(before.status));
+  }
+  return { taskCount, openTaskCount };
+}
+
 function itemKey(item: Dict): Dict {
   return { PK: item.PK, SK: item.SK };
 }
@@ -267,13 +321,8 @@ async function testTransaction(
       throw new CardTemplateUpdateConflictError();
     }
     if (expected !== undefined) {
-      const permitsMissingVersion = condition.includes('attribute_not_exists(#version)');
       const versionMatches = current?.version === expected;
-      const missingVersionMatches = permitsMissingVersion
-        && current !== undefined
-        && current.version === undefined
-        && expected === 1;
-      if (!current || (!versionMatches && !missingVersionMatches)) {
+      if (!current || !versionMatches) {
         throw new CardTemplateUpdateConflictError();
       }
     }
@@ -306,7 +355,7 @@ async function executeTransaction(
   client: DynamoDBDocumentClient,
   transaction: TransactionItems,
 ): Promise<void> {
-  if (process.env.NODE_ENV === 'test') return testTransaction(client, transaction);
+  if (usesLocalTransactionEmulation()) return testTransaction(client, transaction);
   await client.send(new TransactWriteCommand({ TransactItems: transaction }));
 }
 
@@ -352,14 +401,42 @@ export async function applyCardTemplateUpdate(
     result: 'applied',
     createdAt: now,
   };
-  const nextCard = appliedCard(card, template, plan, auditEvent, now);
   const replacements = new Map<string, Task>();
+  for (const update of plan.taskUpdates) {
+    if (update.action === 'add') {
+      const task = addedTask(update, template, card, now);
+      replacements.set(task.id, task);
+      continue;
+    }
+    const task = appliedExistingTask(update, template, card, actorId, now);
+    replacements.set(task.id, task);
+  }
+
+  let nextCard = appliedCard(card, template, plan, auditEvent, now);
+  let lifecycleAudit: CardLifecycleAuditEvent | null = null;
+  const delta = replacementAggregateDelta(tasks, replacements);
+  if (delta.taskCount !== 0 || delta.openTaskCount !== 0) {
+    const firstTaskId = replacements.keys().next().value as string | undefined;
+    const lifecycle = applyCardAggregateDelta(
+      { ...nextCard, version: card.version },
+      delta,
+      {
+        actorId,
+        triggerTaskId: firstTaskId || `template:${template.id}`,
+        triggerKind: 'card-template-update',
+      },
+      now,
+    );
+    nextCard = lifecycle.card;
+    lifecycleAudit = lifecycle.auditEvent;
+  }
+
   const transaction: TransactionItems = [
     {
       Put: {
         TableName: TABLE_CARDS,
         Item: compact({ PK: `CARD#${card.id}`, SK: `CARD#${card.id}`, ...nextCard }) as Dict,
-        ...entityVersionCondition(card.version || 1),
+        ...entityVersionCondition(card.version),
       },
     },
     {
@@ -370,17 +447,13 @@ export async function applyCardTemplateUpdate(
       },
     },
   ];
-
   for (const update of plan.taskUpdates) {
-    if (update.action === 'add') {
-      const task = addedTask(update, template, card, now);
-      replacements.set(task.id, task);
-      transaction.push(taskPut(task));
-      continue;
-    }
-    const task = appliedExistingTask(update, template, now);
-    replacements.set(task.id, task);
-    transaction.push(taskPut(task, update.before!.version));
+    const taskId = update.action === 'add'
+      ? deterministicTaskId(card.id, template.id, update.taskRef)
+      : update.before!.id;
+    const task = replacements.get(taskId);
+    if (!task) throw new CardTemplateUpdateConflictError();
+    transaction.push(taskPut(task, update.action === 'add' ? undefined : update.before!.version));
   }
 
   transaction.push({
@@ -390,6 +463,15 @@ export async function applyCardTemplateUpdate(
       ConditionExpression: 'attribute_not_exists(PK)',
     },
   });
+  if (lifecycleAudit) {
+    transaction.push({
+      Put: {
+        TableName: TABLE_AUDIT_EVENTS,
+        Item: compact({ ...auditKey(lifecycleAudit.id), ...lifecycleAudit }) as Dict,
+        ConditionExpression: 'attribute_not_exists(PK)',
+      },
+    });
+  }
   if (transaction.length > 100) {
     throw new Error(`Card Template update requires ${transaction.length} transaction items; maximum is 100`);
   }

@@ -4,7 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { getClient } from '../db/client';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
-import { getCard, updateCard } from '../db/cards';
+import { getCard, updateCardAdditive } from '../db/cards';
 import { getFile } from '../db/files';
 import { getTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tasks';
 import { isLocalFilesystemStorageAllowed } from '../storage';
@@ -287,7 +287,9 @@ async function handleAttach(id: string, event: LambdaEvent, client: DynamoDBDocu
     const card = await getCard(client, cardId);
     if (!card) return jsonResponse(404, { error: 'Card not found' });
     updates.cardId = cardId;
-    await updateCard(client, cardId, { artifactRefs: mergeArtifactRef(card.artifactRefs, ref) });
+    await updateCardAdditive(client, card, (currentCard) => ({
+      artifactRefs: mergeArtifactRef(currentCard.artifactRefs, ref),
+    }));
   }
 
   const artifact = await updateArtifact(client, id, updates);

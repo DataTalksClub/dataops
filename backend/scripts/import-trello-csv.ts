@@ -34,9 +34,9 @@ import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { TABLE_TASKS } from '../src/db/tableNames';
 import { createTemplate, listTemplates } from '../src/db/templates';
-import { createCard, getCard, updateCard } from '../src/db/cards';
-import { createTask, getTask, updateTask } from '../src/db/tasks';
-import { createArtifact, getArtifact, updateArtifact } from '../src/db/artifacts';
+import { createCard, getCard } from '../src/db/cards';
+import { createTask, getTask } from '../src/db/tasks';
+import { createArtifact, getArtifact } from '../src/db/artifacts';
 import { appendAssistantJobEvent } from '../src/db/assistantJobs';
 import { createDueFollowUpNotifications } from '../src/db/notifications';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
@@ -1111,43 +1111,39 @@ function planTrelloActiveCard(
   return { sourceKey, listName, card, tasks, artifacts, warnings };
 }
 
-async function upsertTrelloActiveCardPlan(
+async function createTrelloActiveCardPlan(
   client: DynamoDBDocumentClient,
   plan: TrelloActiveCardPlan,
   report: TrelloActiveCardReport
 ): Promise<void> {
   const cardId = String(plan.card.id);
   const existingCard = await getCard(client, cardId);
-  if (existingCard) {
-    await updateCard(client, cardId, plan.card);
-    report.stats.cardsUpdated++;
-  } else {
-    await createCard(client, plan.card);
-    report.stats.cardsCreated++;
-  }
+  if (existingCard) throw new Error(`Raw Trello import target Card already exists: ${cardId}`);
 
   for (const task of plan.tasks) {
     const taskId = String(task.id);
-    const existingTask = await getTask(client, taskId);
-    if (existingTask) {
-      await updateTask(client, taskId, task);
-      report.stats.tasksUpdated++;
-    } else {
-      await createTask(client, task);
-      report.stats.tasksCreated++;
+    if (await getTask(client, taskId)) {
+      throw new Error(`Raw Trello import target Task already exists: ${taskId}`);
+    }
+  }
+  for (const artifactPlan of plan.artifacts) {
+    const artifactId = String(artifactPlan.artifact.id);
+    if (await getArtifact(client, artifactId)) {
+      throw new Error(`Raw Trello import target Artifact already exists: ${artifactId}`);
     }
   }
 
+  await createCard(client, plan.card);
+  report.stats.cardsCreated++;
+
+  for (const task of plan.tasks) {
+    await createTask(client, task);
+    report.stats.tasksCreated++;
+  }
+
   for (const artifactPlan of plan.artifacts) {
-    const artifactId = String(artifactPlan.artifact.id);
-    const existingArtifact = await getArtifact(client, artifactId);
-    if (existingArtifact) {
-      await updateArtifact(client, artifactId, artifactPlan.artifact);
-      report.stats.artifactsUpdated++;
-    } else {
-      await createArtifact(client, artifactPlan.artifact);
-      report.stats.artifactsCreated++;
-    }
+    await createArtifact(client, artifactPlan.artifact);
+    report.stats.artifactsCreated++;
   }
 
   await appendAssistantJobEvent(client, {
@@ -1192,7 +1188,7 @@ async function migrateTrelloActiveCards(
     report.stats.proofRequirements += plan.tasks.filter((task) => task.proofRequirement).length;
     for (const warning of plan.warnings) addReportWarning(report, warning, `${plan.sourceKey}`);
 
-    if (client) await upsertTrelloActiveCardPlan(client, plan, report);
+    if (client) await createTrelloActiveCardPlan(client, plan, report);
   }
 
   if (client) {

@@ -6,7 +6,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
-import { createCard } from '../src/db/cards';
+import { createCard, listCards } from '../src/db/cards';
 import { createTemplate } from '../src/db/templates';
 import { createTask } from '../src/db/tasks';
 import type { LambdaResponse } from '../src/types';
@@ -106,7 +106,7 @@ describe('API — Cards', () => {
       assert.strictEqual(body.card.status, 'active');
     });
 
-    it('creates a card with only required fields (backward compatibility)', async () => {
+    it('creates a canonical empty Card from only required input fields', async () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'Simple Card',
         anchorDate: '2026-04-01',
@@ -146,6 +146,8 @@ describe('API — Cards', () => {
       assert.ok(body.card);
       assert.strictEqual(body.card.templateId, template.id);
       assert.strictEqual(body.card.version, 1);
+      assert.strictEqual(body.card.taskCount, 3);
+      assert.strictEqual(body.card.openTaskCount, 3);
       assert.strictEqual(body.card.templateVersion, template.version);
       assert.strictEqual(body.card.templateSourceRevision, 'synthetic-revision-1');
       assert.deepStrictEqual(body.card.templateDefinitionSnapshot.tags, ['event']);
@@ -166,6 +168,29 @@ describe('API — Cards', () => {
         assert.strictEqual(task.templateDefinitionSnapshot.description, task.description);
         assert.strictEqual(task.templateDefinitionSnapshot.date, task.date);
       }
+    });
+
+    it('returns an actionable 409 with no writes when the Template version races creation', async () => {
+      const template = await createTemplate(client, {
+        name: 'Racing Template',
+        taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
+      });
+      process.env.TEMPLATE_CARD_CREATE_TEST_TEMPLATE_RACE = 'true';
+      try {
+        const response = await invoke('POST', '/api/cards', {
+          title: 'Must not exist after race',
+          anchorDate: '2026-09-10',
+          templateId: template.id,
+        });
+        assert.strictEqual(response.statusCode, 409);
+        assert.deepStrictEqual(JSON.parse(response.body), {
+          code: 'template_version_conflict',
+          error: 'Template changed while the Card was being created. Review the latest Template and retry.',
+        });
+      } finally {
+        delete process.env.TEMPLATE_CARD_CREATE_TEST_TEMPLATE_RACE;
+      }
+      assert.equal((await listCards(client)).some(({ title }) => title === 'Must not exist after race'), false);
     });
 
     it('returns 404 when templateId does not exist', async () => {
@@ -312,6 +337,7 @@ describe('API — Cards', () => {
       await new Promise((r) => setTimeout(r, 10));
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
         title: 'New Title',
       });
 
@@ -329,6 +355,7 @@ describe('API — Cards', () => {
       });
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
         stage: 'announced',
       });
 
@@ -344,6 +371,7 @@ describe('API — Cards', () => {
       });
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
         stage: 'invalid-stage',
       });
 
@@ -359,12 +387,13 @@ describe('API — Cards', () => {
       });
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
         status: 'invalid-status',
       });
 
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
-      assert.ok(body.error.includes('Invalid status'));
+      assert.ok(body.error.includes('system-owned'));
     });
 
     it('updates references and cardLinks', async () => {
@@ -374,6 +403,7 @@ describe('API — Cards', () => {
       });
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
         references: [{ name: 'Process doc', url: 'https://docs.google.com/proc' }],
         cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }],
       });
@@ -391,6 +421,7 @@ describe('API — Cards', () => {
       });
 
       const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
         emoji: '📰',
         tags: ['newsletter', 'weekly'],
       });
@@ -403,12 +434,43 @@ describe('API — Cards', () => {
 
     it('returns 404 when updating a non-existent card', async () => {
       const res = await invoke('PUT', '/api/cards/does-not-exist', {
+        expectedVersion: 1,
         title: 'New',
       });
 
       assert.strictEqual(res.statusCode, 404);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.error, 'Card not found');
+    });
+
+    it('returns the strongly current canonical Card for a stale direct write', async () => {
+      const created = await createCard(client, { title: 'Conflict', anchorDate: '2026-01-01' });
+      const winner = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
+        title: 'Winner',
+      });
+      assert.strictEqual(winner.statusCode, 200);
+
+      const loser = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: created.version,
+        title: 'Loser',
+      });
+      assert.strictEqual(loser.statusCode, 409);
+      const body = JSON.parse(loser.body);
+      assert.deepStrictEqual(
+        {
+          code: body.code,
+          expectedVersion: body.expectedVersion,
+          currentVersion: body.currentVersion,
+          title: body.currentCard.title,
+        },
+        {
+          code: 'card_version_conflict',
+          expectedVersion: 1,
+          currentVersion: 2,
+          title: 'Winner',
+        },
+      );
     });
 
     it('returns 400 when body is empty', async () => {
@@ -433,87 +495,40 @@ describe('API — Cards', () => {
     });
   });
 
-  // ---- PUT /api/cards/:id/archive ----
-
-  describe('PUT /api/cards/:id/archive', () => {
-    it('archives a card and returns 200', async () => {
-      const created = await createCard(client, {
-        title: 'Archive me',
-        anchorDate: '2026-01-01',
-        status: 'active',
-      });
-
-      const res = await invoke('PUT', `/api/cards/${created.id}/archive`);
-      assert.strictEqual(res.statusCode, 200);
-
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.card.status, 'archived');
-      assert.strictEqual(body.card.id, created.id);
+  describe('removed manual lifecycle routes', () => {
+    it('does not expose a manual archive route', async () => {
+      const created = await createCard(client, { title: 'Lifecycle', anchorDate: '2026-01-01' });
+      assert.strictEqual((await invoke('PUT', `/api/cards/${created.id}/archive`)).statusCode, 404);
     });
 
-    it('returns 404 for a non-existent card', async () => {
-      const res = await invoke('PUT', '/api/cards/does-not-exist/archive');
-      assert.strictEqual(res.statusCode, 404);
+    it('does not expose Card deletion', async () => {
+      const created = await createCard(client, { title: 'Retained', anchorDate: '2026-01-01' });
+      assert.strictEqual((await invoke('DELETE', `/api/cards/${created.id}`)).statusCode, 405);
+      assert.strictEqual((await invoke('GET', `/api/cards/${created.id}`)).statusCode, 200);
     });
 
-    it('returns 405 for non-PUT methods', async () => {
+    it('does not let a direct stage edit reactivate a completed Card', async () => {
       const created = await createCard(client, {
-        title: 'Method test',
+        title: 'Completed stage is lifecycle-owned',
         anchorDate: '2026-01-01',
       });
-
-      const res = await invoke('GET', `/api/cards/${created.id}/archive`);
-      assert.strictEqual(res.statusCode, 405);
-    });
-  });
-
-  // ---- DELETE /api/cards/:id ----
-
-  describe('DELETE /api/cards/:id', () => {
-    it('deletes an archived card and returns 204', async () => {
-      const created = await createCard(client, {
-        title: 'Delete me',
-        anchorDate: '2026-01-01',
-        status: 'archived',
+      await createTask(client, {
+        description: 'Finished work',
+        date: '2026-01-01',
+        status: 'done',
+        cardId: created.id,
       });
-
-      const res = await invoke('DELETE', `/api/cards/${created.id}`);
-      assert.strictEqual(res.statusCode, 204);
-
-      const getRes = await invoke('GET', `/api/cards/${created.id}`);
-      assert.strictEqual(getRes.statusCode, 404);
-    });
-
-    it('returns 400 when deleting a non-archived card', async () => {
-      const created = await createCard(client, {
-        title: 'Active card',
-        anchorDate: '2026-01-01',
-        status: 'active',
+      const current = JSON.parse((await invoke('GET', `/api/cards/${created.id}`)).body).card;
+      assert.strictEqual(current.status, 'archived');
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
+        expectedVersion: current.version,
+        stage: 'preparation',
       });
-
-      const res = await invoke('DELETE', `/api/cards/${created.id}`);
-      assert.strictEqual(res.statusCode, 400);
-
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Only archived cards can be deleted');
-    });
-
-    it('returns 400 when deleting a card without status set', async () => {
-      const created = await createCard(client, {
-        title: 'No status card',
-        anchorDate: '2026-01-01',
-      });
-
-      const res = await invoke('DELETE', `/api/cards/${created.id}`);
-      assert.strictEqual(res.statusCode, 400);
-
-      const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Only archived cards can be deleted');
-    });
-
-    it('returns 404 when deleting a non-existent card', async () => {
-      const res = await invoke('DELETE', '/api/cards/does-not-exist');
-      assert.strictEqual(res.statusCode, 404);
+      assert.strictEqual(res.statusCode, 400, res.body);
+      assert.match(JSON.parse(res.body).error, /stage is system-owned/);
+      const unchanged = JSON.parse((await invoke('GET', `/api/cards/${created.id}`)).body).card;
+      assert.strictEqual(unchanged.stage, 'done');
+      assert.strictEqual(unchanged.version, current.version);
     });
   });
 
@@ -830,7 +845,6 @@ describe('API — Cards', () => {
         templateId: template.id,
         artifactRefs: [{ artifactId: 'card-artifact-planned', type: 'package' }],
         assistantJobRefs: [{ assistantJobId: 'card-assistant-planned', assistantType: 'orchestration' }],
-        auditEventRefs: [{ auditEventId: 'card-audit-planned', action: 'created' }],
       });
 
       assert.strictEqual(res.statusCode, 201);
@@ -846,7 +860,6 @@ describe('API — Cards', () => {
       assert.deepStrictEqual(body.card.tags, ['ops', 'model']);
       assert.deepStrictEqual(body.card.artifactRefs, [{ artifactId: 'card-artifact-planned', type: 'package' }]);
       assert.deepStrictEqual(body.card.assistantJobRefs, [{ assistantJobId: 'card-assistant-planned', assistantType: 'orchestration' }]);
-      assert.deepStrictEqual(body.card.auditEventRefs, [{ auditEventId: 'card-audit-planned', action: 'created' }]);
 
       assert.strictEqual(body.tasks.length, 1);
       assert.strictEqual(body.tasks[0].cardId, body.card.id);

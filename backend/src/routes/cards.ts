@@ -1,13 +1,19 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
 import {
+  CardNotFoundError,
+  CardVersionConflictError,
   createCard,
   getCard,
+  getCardConsistent,
   updateCard,
-  deleteCard,
   listCards,
 } from '../db/cards';
-import { getTemplate, instantiateTemplate } from '../db/templates';
+import {
+  createCardFromTemplate,
+  getTemplate,
+  TemplateVersionConflictError,
+} from '../db/templates';
 import { listTasksByCard } from '../db/tasks';
 import {
   applyCardTemplateUpdate,
@@ -276,13 +282,6 @@ async function handleCardRoutes(
       );
     }
 
-    // Route: /api/cards/:id/archive
-    const archiveMatch = suffix.match(/^\/([^/]+)\/archive\/?$/);
-    if (archiveMatch) {
-      const id = archiveMatch[1];
-      return await handleArchive(method, id, client);
-    }
-
     // Route: /api/cards/:id/tasks
     const tasksMatch = suffix.match(/^\/([^/]+)\/tasks\/?$/);
     if (tasksMatch) {
@@ -304,6 +303,20 @@ async function handleCardRoutes(
       body: JSON.stringify({ error: 'Not found' }),
     };
   } catch (err: unknown) {
+    if (err instanceof CardNotFoundError) {
+      return json(404, { error: 'Card not found', code: 'card_not_found' });
+    }
+    if (err instanceof CardVersionConflictError) {
+      const currentCard = await getCardConsistent(client, err.cardId);
+      if (!currentCard) return json(404, { error: 'Card not found', code: 'card_not_found' });
+      return json(409, {
+        error: 'Card changed; review the current card and retry',
+        code: 'card_version_conflict',
+        expectedVersion: err.expectedVersion,
+        currentVersion: currentCard.version,
+        currentCard,
+      });
+    }
     console.error('Card route error:', err);
     return {
       statusCode: 500,
@@ -365,6 +378,15 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       };
     }
 
+    const systemOwnedFields = [
+      'version', 'expectedVersion', 'status', 'taskCount', 'openTaskCount',
+      'completedAt', 'completedBy', 'activeStageBeforeCompletion', 'auditEventRefs',
+    ];
+    const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
+    if (suppliedSystemField) {
+      return json(400, { error: `${suppliedSystemField} is system-owned and cannot be supplied` });
+    }
+
     // If templateId is provided, verify template exists before creating card
     let template = null;
     if (body.templateId) {
@@ -379,22 +401,12 @@ async function handleCollection(method: string, rawBody: string | null, client: 
     }
 
     // Validate stage if provided
-    const VALID_STAGES = ['preparation', 'announced', 'after-event', 'done'];
+    const VALID_STAGES = ['preparation', 'announced', 'after-event'];
     if (body.stage !== undefined && !VALID_STAGES.includes(body.stage as string)) {
       return {
         statusCode: 400,
         headers: JSON_HEADERS,
         body: JSON.stringify({ error: `Invalid stage value. Must be one of: ${VALID_STAGES.join(', ')}` }),
-      };
-    }
-
-    // Validate status if provided
-    const VALID_STATUSES = ['active', 'archived'];
-    if (body.status !== undefined && !VALID_STATUSES.includes(body.status as string)) {
-      return {
-        statusCode: 400,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ error: `Invalid status value. Must be one of: ${VALID_STATUSES.join(', ')}` }),
       };
     }
     const refsError = validateCardRefs(body);
@@ -411,7 +423,6 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       title: body.title,
       anchorDate: body.anchorDate,
       stage: body.stage || 'preparation',
-      status: body.status || 'active',
     };
     if (body.description !== undefined) {
       cardData.description = body.description;
@@ -476,28 +487,37 @@ async function handleCollection(method: string, rawBody: string | null, client: 
         cardData.sourceDocIds = body.sourceDocIds;
       }
     }
-    for (const field of ['artifactRefs', 'assistantJobRefs', 'auditEventRefs']) {
+    for (const field of ['artifactRefs', 'assistantJobRefs', 'intakeRefs']) {
       if (body[field] !== undefined) {
         cardData[field] = body[field];
       }
     }
 
-    const card = await createCard(client, cardData);
-
-    // If templateId provided, instantiate the template
-    if (body.templateId) {
-      const tasks = await instantiateTemplate(
-        client,
-        body.templateId as string,
-        card.id,
-        body.anchorDate as string
-      );
-      return {
-        statusCode: 201,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ card, tasks }),
-      };
+    if (template) {
+      try {
+        const { card, tasks } = await createCardFromTemplate(
+          client,
+          cardData,
+          template,
+          body.anchorDate as string,
+        );
+        return {
+          statusCode: 201,
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ card, tasks }),
+        };
+      } catch (error) {
+        if (error instanceof TemplateVersionConflictError) {
+          return json(409, {
+            code: 'template_version_conflict',
+            error: 'Template changed while the Card was being created. Review the latest Template and retry.',
+          });
+        }
+        throw error;
+      }
     }
+
+    const card = await createCard(client, cardData);
 
     return {
       statusCode: 201,
@@ -519,7 +539,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
  */
 async function handleSingle(method: string, id: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   if (method === 'GET') {
-    const card = await getCard(client, id);
+    const card = await getCardConsistent(client, id);
     if (!card) {
       return {
         statusCode: 404,
@@ -555,8 +575,23 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
       };
     }
 
-    // Check card exists
-    const existing = await getCard(client, id);
+    if (Object.hasOwn(body, 'version')) {
+      return json(400, { error: 'version is response-only; use expectedVersion' });
+    }
+    if (!Number.isInteger(body.expectedVersion) || Number(body.expectedVersion) < 1) {
+      return json(400, { error: 'expectedVersion must be an integer greater than or equal to 1' });
+    }
+    const systemOwnedFields = [
+      'status', 'taskCount', 'openTaskCount', 'completedAt', 'completedBy',
+      'activeStageBeforeCompletion', 'auditEventRefs',
+    ];
+    const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
+    if (suppliedSystemField) {
+      return json(400, { error: `${suppliedSystemField} is system-owned and cannot be updated directly` });
+    }
+
+    // Check card exists using the same strong snapshot used for its precondition.
+    const existing = await getCardConsistent(client, id);
     if (!existing) {
       return {
         statusCode: 404,
@@ -566,7 +601,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
     }
 
     // Validate stage if provided
-    const VALID_STAGES = ['preparation', 'announced', 'after-event', 'done'];
+    const VALID_STAGES = ['preparation', 'announced', 'after-event'];
     if (body.stage !== undefined && !VALID_STAGES.includes(body.stage as string)) {
       return {
         statusCode: 400,
@@ -574,16 +609,10 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         body: JSON.stringify({ error: `Invalid stage value. Must be one of: ${VALID_STAGES.join(', ')}` }),
       };
     }
-
-    // Validate status if provided
-    const VALID_STATUSES = ['active', 'archived'];
-    if (body.status !== undefined && !VALID_STATUSES.includes(body.status as string)) {
-      return {
-        statusCode: 400,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ error: `Invalid status value. Must be one of: ${VALID_STATUSES.join(', ')}` }),
-      };
+    if (body.stage !== undefined && existing.status !== 'active') {
+      return json(400, { error: 'stage is system-owned while a Card is completed' });
     }
+
     const refsError = validateCardRefs(body);
     if (refsError) {
       return {
@@ -595,8 +624,8 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
 
     // Only allow updating known fields
     const allowedFields = [
-      'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage', 'status',
-      'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'auditEventRefs',
+      'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage',
+      'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'intakeRefs',
     ];
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
@@ -613,38 +642,14 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
       };
     }
 
-    const card = await updateCard(client, id, updates);
+    const card = await updateCard(client, id, {
+      expectedVersion: body.expectedVersion as number,
+      patch: updates,
+    });
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
       body: JSON.stringify({ card }),
-    };
-  }
-
-  if (method === 'DELETE') {
-    const existing = await getCard(client, id);
-    if (!existing) {
-      return {
-        statusCode: 404,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Card not found' }),
-      };
-    }
-
-    // Only archived cards can be permanently deleted
-    if (existing.status !== 'archived') {
-      return {
-        statusCode: 400,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Only archived cards can be deleted' }),
-      };
-    }
-
-    await deleteCard(client, id);
-    return {
-      statusCode: 204,
-      headers: JSON_HEADERS,
-      body: '',
     };
   }
 
@@ -653,35 +658,6 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
     statusCode: 405,
     headers: JSON_HEADERS,
     body: JSON.stringify({ error: 'Method not allowed' }),
-  };
-}
-
-/**
- * Handle /api/cards/:id/archive sub-route (PUT only).
- */
-async function handleArchive(method: string, id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
-  if (method !== 'PUT') {
-    return {
-      statusCode: 405,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
-  }
-
-  const existing = await getCard(client, id);
-  if (!existing) {
-    return {
-      statusCode: 404,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ error: 'Card not found' }),
-    };
-  }
-
-  const card = await updateCard(client, id, { status: 'archived' });
-  return {
-    statusCode: 200,
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ card }),
   };
 }
 

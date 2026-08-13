@@ -1,3 +1,5 @@
+import { isCanonicalWorkTask } from "../../core/workspace.js";
+
 export function createCardPanel(context) {
   const {
     cardAnchorTone,
@@ -19,6 +21,7 @@ export function createCardPanel(context) {
     refreshOperationsWorkSnapshot,
     renderArtifactList,
     renderEntityLoadState,
+    renderTaskPanel,
     reportError,
     request,
     settledPayload,
@@ -139,6 +142,37 @@ export function createCardPanel(context) {
     layout.append(main);
     cardPanelBody.append(layout);
 
+    if (detail.activeCardPanelConflict && detail.activeCardPanelDraft) {
+      const conflict = detail.activeCardPanelConflict;
+      const latest = conflict.currentCard;
+      const recovery = document.createElement("section");
+      recovery.className = "task-version-conflict card-version-conflict";
+      recovery.setAttribute("role", "alert");
+      recovery.setAttribute("aria-live", "assertive");
+      recovery.tabIndex = -1;
+      const heading = document.createElement("strong");
+      heading.textContent =
+        "This Card changed elsewhere. Review the latest Card or retry your change.";
+      const latestState = document.createElement("p");
+      latestState.textContent = `Latest server state: version ${latest.version}, ${labelizeWorkValue(latest.stage)}.`;
+      const retained = document.createElement("p");
+      retained.className = "task-conflict-draft";
+      retained.textContent = `Your retained change: ${detail.activeCardPanelDraft.label}`;
+      const controls = document.createElement("div");
+      controls.className = "task-conflict-controls";
+      const review = createTaskActionButton("Review latest", reviewLatestCard);
+      const retry = createTaskActionButton("Retry my change", retryCardIntent);
+      retry.classList.add("is-primary");
+      const discard = createTaskActionButton("Discard my change", discardCardIntent);
+      for (const button of [review, retry, discard]) {
+        button.disabled = detail.activeCardMutationBusy;
+      }
+      controls.append(review, retry, discard);
+      recovery.append(heading, latestState, retained, controls);
+      main.append(recovery);
+      recovery.focus();
+    }
+
     // Stage + progress summary
     const meta = document.createElement("div");
     meta.className = "task-detail-meta workflow-detail-summary";
@@ -150,6 +184,12 @@ export function createCardPanel(context) {
       completed.className = "card-stage-static";
       completed.textContent = "Completed";
       stageLabel.append(completed);
+      const completion = document.createElement("span");
+      completion.className = "card-completion-meta";
+      const actor = state.workSnapshot.usersById?.get(card.completedBy);
+      const completedBy = actor?.name || card.completedBy;
+      completion.textContent = `${String(card.completedAt).slice(0, 16).replace("T", " ")} · ${completedBy} · from ${labelizeWorkValue(card.activeStageBeforeCompletion)}`;
+      stageLabel.append(completion);
     } else {
       stageLabel.textContent = "Stage ";
       const stageSelect = document.createElement("select");
@@ -158,9 +198,13 @@ export function createCardPanel(context) {
         const opt = document.createElement("option");
         opt.value = stage;
         opt.textContent = labelizeWorkValue(stage);
-        if (card.stage === stage) opt.selected = true;
+        const displayedStage = detail.activeCardPanelDraft?.kind === "stage"
+          ? detail.activeCardPanelDraft.payload.stage
+          : card.stage;
+        if (displayedStage === stage) opt.selected = true;
         stageSelect.append(opt);
       }
+      stageSelect.disabled = detail.activeCardMutationBusy;
       stageSelect.addEventListener("change", () =>
         updateCardStage(card.id, stageSelect.value),
       );
@@ -261,8 +305,14 @@ export function createCardPanel(context) {
         input.type = "url";
         input.className = "card-link-input";
         input.dataset.cardDraftKey = `template-link:${linkName}`;
-        input.value = linkUrl;
+        const draftLinks = detail.activeCardPanelDraft?.kind === "card-link"
+          ? detail.activeCardPanelDraft.payload.cardLinks
+          : null;
+        input.value = draftLinks?.find(
+          (value) => (value.name || value.label) === linkName,
+        )?.url ?? linkUrl;
         input.placeholder = "https://...";
+        input.disabled = detail.activeCardMutationBusy;
         input.addEventListener("change", () =>
           saveCardLink(
             card.id,
@@ -392,15 +442,24 @@ export function createCardPanel(context) {
     nameInput.placeholder = "Label (e.g. Podcast doc)";
     nameInput.className = "card-ref-name";
     nameInput.dataset.cardDraftKey = "new-reference-name";
+    if (detail.activeCardPanelDraft?.kind === "reference") {
+      nameInput.value = detail.activeCardPanelDraft.form?.name || "";
+    }
     const urlInput = document.createElement("input");
     urlInput.type = "url";
     urlInput.placeholder = "https://...";
     urlInput.className = "card-ref-url";
     urlInput.dataset.cardDraftKey = "new-reference-url";
+    if (detail.activeCardPanelDraft?.kind === "reference") {
+      urlInput.value = detail.activeCardPanelDraft.form?.url || "";
+    }
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "task-action-btn";
     addBtn.textContent = "Add";
+    nameInput.disabled = detail.activeCardMutationBusy;
+    urlInput.disabled = detail.activeCardMutationBusy;
+    addBtn.disabled = detail.activeCardMutationBusy;
     addBtn.addEventListener("click", () =>
       addCardReference(
         card.id,
@@ -430,10 +489,14 @@ export function createCardPanel(context) {
   }
 
   function renderCardChecklistItem(task, cardId, today) {
+    if (!isCanonicalWorkTask(task)) {
+      throw new Error("Task payload is not in the canonical versioned shape");
+    }
     const row = document.createElement("div");
     row.className = "card-checklist-item";
-    const status = String(task.status || "todo").toLowerCase();
-    const isDone = status === "done";
+    const status = task.status;
+    const isDone = status === "done" || status === "archived";
+    const isArchived = status === "archived";
     const isWaiting = status === "waiting";
     const cardArtifacts = detail.activeCardPanelData?.artifacts || [];
 
@@ -449,17 +512,18 @@ export function createCardPanel(context) {
     checkbox.type = "checkbox";
     checkbox.setAttribute(
       "aria-label",
-      `${isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
+      `${isArchived ? "Retired" : isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
     );
     checkbox.checked = isDone;
     checkbox.disabled =
-      isWaiting || missingLink || missingFile || missingArtifact;
+      isArchived || isWaiting || missingLink || missingFile || missingArtifact;
     if (checkbox.disabled && !isDone) {
       const reasons = [];
       if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
       if (missingFile) reasons.push("Upload required file");
       if (missingArtifact) reasons.push("Approve an attached artifact");
       if (isWaiting) reasons.push("Waiting task");
+      if (isArchived) reasons.push("Retired task");
       checkbox.title = reasons.join("; ");
     }
     checkbox.addEventListener("change", () => {
@@ -568,9 +632,7 @@ export function createCardPanel(context) {
       section.append(status);
       return section;
     }
-    status.textContent = preview.state === "baseline-required"
-      ? `Review required to establish the Template v${preview.targetTemplateVersion} baseline.`
-      : `Update available: Template v${preview.sourceTemplateVersion || "unversioned"} → v${preview.targetTemplateVersion}.`;
+    status.textContent = `Update available: Template v${preview.sourceTemplateVersion} → v${preview.targetTemplateVersion}.`;
     const summary = document.createElement("p");
     summary.className = "card-template-update-summary";
     summary.textContent = templateUpdateSummary(preview);
@@ -626,7 +688,7 @@ export function createCardPanel(context) {
     }
     if (!list.children.length) {
       const item = document.createElement("li");
-      item.textContent = "Record the current Git definition as this Card baseline.";
+      item.textContent = "Refresh the reviewed Template provenance.";
       list.append(item);
     }
     review.append(list);
@@ -695,13 +757,13 @@ export function createCardPanel(context) {
     detail.activeCardTemplateMessage = "";
     renderCardPanelRetainingDrafts(drafts);
     try {
-      const payload = await request(
+      const response = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
       );
       if (detail.activeCardPanelId !== cardId) return;
       detail.activeCardPanelData = {
         ...detail.activeCardPanelData,
-        templateUpdate: payload?.preview || payload,
+        templateUpdate: response?.preview || response,
         templateUpdateError: "",
       };
       detail.activeCardTemplateReviewOpen = true;
@@ -719,15 +781,15 @@ export function createCardPanel(context) {
     detail.activeCardTemplateMessage = "";
     renderCardPanelRetainingDrafts(drafts);
     try {
-      const payload = await request(
+      const response = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
         { method: "POST", body: JSON.stringify({ previewToken }) },
       );
       if (detail.activeCardPanelId !== cardId) return;
       detail.activeCardPanelData = {
         ...detail.activeCardPanelData,
-        card: payload.card || detail.activeCardPanelData.card,
-        tasks: Array.isArray(payload.tasks) ? payload.tasks : detail.activeCardPanelData.tasks,
+        card: response.card || detail.activeCardPanelData.card,
+        tasks: Array.isArray(response.tasks) ? response.tasks : detail.activeCardPanelData.tasks,
       };
       const latest = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
@@ -756,6 +818,85 @@ export function createCardPanel(context) {
     }).ready;
   }
 
+  async function submitCardIntent(intent, expectedVersion) {
+    if (detail.activeCardMutationBusy) return null;
+    detail.activeCardPanelDraft = intent;
+    detail.activeCardMutationBusy = true;
+    renderCardPanel();
+    try {
+      const currentCard = detail.activeCardPanelConflict?.currentCard
+        || detail.activeCardPanelData?.card;
+      const payload = intent.buildPayload
+        ? intent.buildPayload(currentCard)
+        : intent.payload;
+      intent.payload = payload;
+      const response = await request(
+        workApiUrl(`/api/cards/${encodeURIComponent(intent.cardId)}`),
+        {
+          method: "PUT",
+          body: JSON.stringify({ ...intent.payload, expectedVersion }),
+        },
+      );
+      const updatedCard = response && (response.card || response);
+      if (updatedCard && detail.activeCardPanelId === intent.cardId) {
+        detail.activeCardPanelData = {
+          ...detail.activeCardPanelData,
+          card: updatedCard,
+        };
+        detail.activeCardPanelDraft = null;
+        detail.activeCardPanelConflict = null;
+      }
+      detail.activeCardMutationBusy = false;
+      await refreshOperationsWorkSnapshot({ rerender: true });
+      if (detail.activeCardPanelId === intent.cardId) renderCardPanel();
+      return updatedCard;
+    } catch (error) {
+      detail.activeCardMutationBusy = false;
+      if (
+        error?.status === 409
+        && error?.code === "card_version_conflict"
+        && error?.payload?.currentCard?.id === intent.cardId
+      ) {
+        detail.activeCardPanelConflict = error.payload;
+        renderCardPanel();
+        return null;
+      }
+      renderCardPanel();
+      reportError(`${intent.errorPrefix}: ${error.message || "request failed"}`);
+      return null;
+    }
+  }
+
+  function reviewLatestCard() {
+    const latest = detail.activeCardPanelConflict?.currentCard;
+    if (!latest) return;
+    detail.activeCardPanelData = {
+      ...detail.activeCardPanelData,
+      card: latest,
+    };
+    renderCardPanel();
+  }
+
+  async function retryCardIntent() {
+    const intent = detail.activeCardPanelDraft;
+    const latest = detail.activeCardPanelConflict?.currentCard;
+    if (!intent || !latest) return;
+    await submitCardIntent(intent, latest.version);
+  }
+
+  function discardCardIntent() {
+    const latest = detail.activeCardPanelConflict?.currentCard;
+    if (latest) {
+      detail.activeCardPanelData = {
+        ...detail.activeCardPanelData,
+        card: latest,
+      };
+    }
+    detail.activeCardPanelDraft = null;
+    detail.activeCardPanelConflict = null;
+    renderCardPanel();
+  }
+
   async function addCardReference(cardId, currentRefs, name, url) {
     if (!url) {
       reportError("URL is required.");
@@ -763,48 +904,27 @@ export function createCardPanel(context) {
     }
     const ref = { name: name || url, url };
     const updatedRefs = [...(currentRefs || []), ref];
-    try {
-      const payload = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
-        {
-          method: "PUT",
-          body: JSON.stringify({ references: updatedRefs }),
-        },
-      );
-      const updatedCard = payload && (payload.card || payload);
-      if (updatedCard && detail.activeCardPanelId === cardId) {
-        detail.activeCardPanelData = {
-          ...detail.activeCardPanelData,
-          card: updatedCard,
-        };
-        renderCardPanel();
-      }
-    } catch (err) {
-      reportError(`Could not add link: ${err.message || "request failed"}`);
-    }
+    await submitCardIntent({
+      cardId,
+      kind: "reference",
+      label: `Add reference ${ref.name}`,
+      payload: { references: updatedRefs },
+      buildPayload: (currentCard) => ({
+        references: [...(currentCard?.references || []), ref],
+      }),
+      form: { name, url },
+      errorPrefix: "Could not add link",
+    }, detail.activeCardPanelData?.card?.version);
   }
 
   async function updateCardStage(cardId, stage) {
-    try {
-      const payload = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
-        {
-          method: "PUT",
-          body: JSON.stringify({ stage }),
-        },
-      );
-      const updatedCard = payload && (payload.card || payload);
-      if (updatedCard && detail.activeCardPanelId === cardId) {
-        detail.activeCardPanelData = {
-          ...detail.activeCardPanelData,
-          card: updatedCard,
-        };
-        renderCardPanel();
-      }
-      await refreshOperationsWorkSnapshot({ rerender: true });
-    } catch (err) {
-      reportError(`Could not update stage: ${err.message || "request failed"}`);
-    }
+    await submitCardIntent({
+      cardId,
+      kind: "stage",
+      label: `Set stage to ${labelizeWorkValue(stage)}`,
+      payload: { stage },
+      errorPrefix: "Could not update stage",
+    }, detail.activeCardPanelData?.card?.version);
   }
 
   async function saveCardLink(cardId, currentLinks, linkName, linkValue) {
@@ -813,26 +933,20 @@ export function createCardPanel(context) {
         ? { ...link, url: linkValue }
         : link,
     );
-    try {
-      const payload = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
-        {
-          method: "PUT",
-          body: JSON.stringify({ cardLinks: updatedLinks }),
-        },
-      );
-      const updatedCard = payload && (payload.card || payload);
-      if (updatedCard && detail.activeCardPanelId === cardId) {
-        detail.activeCardPanelData = {
-          ...detail.activeCardPanelData,
-          card: updatedCard,
-        };
-        renderCardPanel();
-      }
-      await refreshOperationsWorkSnapshot({ rerender: true });
-    } catch (err) {
-      reportError(`Could not save link: ${err.message || "request failed"}`);
-    }
+    await submitCardIntent({
+      cardId,
+      kind: "card-link",
+      label: `Save ${linkName}: ${linkValue}`,
+      payload: { cardLinks: updatedLinks },
+      buildPayload: (currentCard) => ({
+        cardLinks: (currentCard?.cardLinks || []).map((link) =>
+          (link.name || link.label) === linkName
+            ? { ...link, url: linkValue }
+            : link,
+        ),
+      }),
+      errorPrefix: "Could not save link",
+    }, detail.activeCardPanelData?.card?.version);
   }
 
   // ---------- Notification bell ----------

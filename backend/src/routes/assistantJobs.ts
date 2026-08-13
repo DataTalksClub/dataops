@@ -10,7 +10,7 @@ import {
   updateAssistantJob,
 } from '../db/assistantJobs';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
-import { getCard, updateCard } from '../db/cards';
+import { getCard, updateCardAdditive } from '../db/cards';
 import { createNotification } from '../db/notifications';
 import { getTask, updateTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tasks';
 import type {
@@ -227,7 +227,9 @@ async function mirrorJobRef(client: DynamoDBDocumentClient, job: AssistantJobRec
   }
   if (job.cardId) {
     const card = await getCard(client, job.cardId);
-    if (card) await updateCard(client, job.cardId, { assistantJobRefs: mergeAssistantJobRef(card.assistantJobRefs, ref) });
+    if (card) await updateCardAdditive(client, card, (currentCard) => ({
+      assistantJobRefs: mergeAssistantJobRef(currentCard.assistantJobRefs, ref),
+    }));
   }
 }
 
@@ -241,7 +243,9 @@ async function mirrorArtifactRef(client: DynamoDBDocumentClient, job: AssistantJ
   }
   if (job.cardId) {
     const card = await getCard(client, job.cardId);
-    if (card) await updateCard(client, job.cardId, { artifactRefs: mergeArtifactRef(card.artifactRefs, ref) });
+    if (card) await updateCardAdditive(client, card, (currentCard) => ({
+      artifactRefs: mergeArtifactRef(currentCard.artifactRefs, ref),
+    }));
   }
 }
 
@@ -268,9 +272,9 @@ async function mirrorApprovedArtifactProof(
   if (!cardId) return;
   const card = await getCard(client, cardId);
   if (!card) return;
-  await updateCard(client, cardId, {
-    cardLinks: mergeCardLink(card.cardLinks, task.requiredLinkName, artifact.storageUri),
-  });
+  await updateCardAdditive(client, card, (currentCard) => ({
+    cardLinks: mergeCardLink(currentCard.cardLinks, task.requiredLinkName!, artifact.storageUri!),
+  }));
 }
 
 async function appendEvent(

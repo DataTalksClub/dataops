@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -14,6 +14,8 @@ import {
   instantiateTemplate,
 } from '../src/db/templates';
 import { getTask } from '../src/db/tasks';
+import { createCard } from '../src/db/cards';
+import { TABLE_TEMPLATES } from '../src/db/tableNames';
 
 describe('Templates data layer', () => {
   let client: DynamoDBDocumentClient;
@@ -61,6 +63,26 @@ describe('Templates data layer', () => {
     assert.strictEqual(result, null);
   });
 
+  it('rejects persisted Templates without an exact positive integer version', async () => {
+    for (const [id, version] of [['versionless-template', undefined], ['string-version-template', '1']] as const) {
+      await client.send(new PutCommand({
+        TableName: TABLE_TEMPLATES,
+        Item: {
+          PK: `TEMPLATE#${id}`,
+          SK: `TEMPLATE#${id}`,
+          id,
+          name: id,
+          type: 'workflow',
+          createdAt: '2026-08-13T00:00:00.000Z',
+          updatedAt: '2026-08-13T00:00:00.000Z',
+          ...(version === undefined ? {} : { version }),
+        },
+      }));
+      await assert.rejects(getTemplate(client, id), /canonical versioned shape/);
+      await deleteTemplate(client, id);
+    }
+  });
+
   it('updateTemplate performs partial update and refreshes updatedAt', async () => {
     const created = await createTemplate(client, {
       name: 'Original',
@@ -76,6 +98,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(updated!.name, 'Updated');
     assert.strictEqual(updated!.type, 'sprint');
     assert.ok(updated!.updatedAt > created.updatedAt);
+    assert.strictEqual(updated!.version, created.version + 1);
   });
 
   it('deleteTemplate removes the template', async () => {
@@ -110,6 +133,7 @@ describe('Templates data layer', () => {
 
     const cardId = 'release-card-1';
     const anchorDate = '2026-03-10';
+    await createCard(client, { id: cardId, title: 'Release', anchorDate });
 
     const tasks = await instantiateTemplate(client, template.id, cardId, anchorDate);
 
@@ -288,7 +312,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(updated.type, 'test');
   });
 
-  it('template without new fields works (backward compatibility)', async () => {
+  it('creates a canonical Template while optional fields remain absent', async () => {
     const template = await createTemplate(client, {
       name: 'Minimal',
       type: 'test',
@@ -329,6 +353,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-inst-1', title: 'Instructions', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-inst-1', '2026-06-15');
     assert.strictEqual(tasks.length, 1);
     assert.strictEqual(tasks[0].instructionsUrl, 'https://docs.google.com/instructions');
@@ -361,6 +386,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-doc-context-1', title: 'Doc context', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-doc-context-1', '2026-06-15');
 
     assert.strictEqual(tasks.length, 1);
@@ -388,6 +414,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-assignee-1', title: 'Assignees', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-assignee-1', '2026-06-15');
     assert.strictEqual(tasks.length, 2);
 
@@ -411,6 +438,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-link-1', title: 'Links', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-link-1', '2026-06-15');
     const withLink = tasks.find(t => t.templateTaskRef === 'with-link');
     const noLink = tasks.find(t => t.templateTaskRef === 'no-link');
@@ -432,6 +460,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-stage-1', title: 'Stages', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-stage-1', '2026-06-15');
     const milestone = tasks.find(t => t.templateTaskRef === 'milestone');
     const regular = tasks.find(t => t.templateTaskRef === 'regular');
@@ -454,6 +483,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-tags-1', title: 'Tags', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-tags-1', '2026-06-15');
     for (const task of tasks) {
       assert.deepStrictEqual(task.tags, ['podcast', 'content']);
@@ -494,12 +524,13 @@ describe('Templates data layer', () => {
           refId: 'publish-summary',
           description: 'Publish summary',
           offsetDays: 0,
-          stageOnComplete: 'done',
+          stageOnComplete: 'after-event',
           proofRequirement: { type: 'comment', label: 'Published note' },
         },
       ],
     });
 
+    await createCard(client, { id: 'card-workflow-model-1', title: 'Workflow model', anchorDate: '2026-07-10' });
     const tasks = await instantiateTemplate(client, template.id, 'card-workflow-model-1', '2026-07-10');
     assert.strictEqual(tasks.length, 2);
 
@@ -531,7 +562,7 @@ describe('Templates data layer', () => {
     assert.ok(publishSummary);
     assert.strictEqual(publishSummary.date, '2026-07-10');
     assert.strictEqual(publishSummary.assigneeId, 'user-ops');
-    assert.strictEqual(publishSummary.stageOnComplete, 'done');
+    assert.strictEqual(publishSummary.stageOnComplete, 'after-event');
     assert.deepStrictEqual(publishSummary.proofRequirement, { type: 'comment', label: 'Published note' });
   });
 
@@ -548,6 +579,7 @@ describe('Templates data layer', () => {
       ],
     });
 
+    await createCard(client, { id: 'card-dates-1', title: 'Dates', anchorDate: '2026-06-15' });
     const tasks = await instantiateTemplate(client, template.id, 'card-dates-1', '2026-06-15');
     tasks.sort((a, b) => a.date.localeCompare(b.date));
 

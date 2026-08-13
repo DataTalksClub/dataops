@@ -14,6 +14,7 @@ import {
   listAllNotifications,
   dismissAllNotifications,
 } from '../src/db/notifications';
+import { createCard } from '../src/db/cards';
 import { createIntakeItem, updateIntakeItem } from '../src/db/intake';
 import { createTask, updateTask } from '../src/db/tasks';
 
@@ -151,6 +152,11 @@ describe('Notifications data layer', () => {
   });
 
   it('createDueFollowUpNotifications creates one reminder for each due waiting task', async () => {
+    await createCard(client, {
+      id: 'card-follow-up-test',
+      title: 'Follow-up test Card',
+      anchorDate: '2098-01-20',
+    });
     const dueTask = await createTask(client, {
       description: 'Confirm speaker bio',
       date: '2098-01-20',

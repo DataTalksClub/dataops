@@ -281,7 +281,9 @@ export type TaskHistoryAction =
   | 'unblocked'
   | 'wait-resolved'
   | 'completed'
-  | 'reopened';
+  | 'reopened'
+  | 'template-retired'
+  | 'template-restored';
 
 export interface TaskHistoryEvent {
   id: string;
@@ -383,7 +385,7 @@ export interface CardLink {
 
 export interface Card {
   id: string;
-  /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
+  /** Monotonic optimistic-concurrency token. */
   version: number;
   title?: string;
   description?: string | null;
@@ -399,8 +401,15 @@ export interface Card {
   cardLinks?: CardLink[];
   emoji?: string;
   tags?: string[];
-  stage?: string;
-  status?: string;
+  /** System-owned Task aggregate. Archived Tasks remain part of taskCount. */
+  taskCount: number;
+  /** Number of attached Tasks in todo or waiting state. */
+  openTaskCount: number;
+  stage: 'preparation' | 'announced' | 'after-event' | 'done';
+  status: 'active' | 'archived';
+  completedAt?: string;
+  completedBy?: string;
+  activeStageBeforeCompletion?: 'preparation' | 'announced' | 'after-event';
   artifactRefs?: ArtifactRef[];
   assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];
@@ -495,7 +504,7 @@ export interface Template {
   /** Private-repository path and Git blob SHA for this runtime projection. */
   sourcePath?: string;
   sourceRevision?: string;
-  /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
+  /** Required monotonic optimistic-concurrency token. */
   version: number;
   createdAt: string;
   updatedAt: string;

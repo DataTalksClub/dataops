@@ -45,7 +45,7 @@ const TASK_FIELDS = [
   'sourceDocIds',
 ] as const;
 
-export type CardTemplateUpdateState = 'current' | 'update-available' | 'baseline-required';
+export type CardTemplateUpdateState = 'current' | 'update-available';
 export type TemplateTaskUpdateAction =
   | 'add'
   | 'update'
@@ -75,7 +75,7 @@ export interface CardTemplateUpdatePreview {
   cardVersion: number;
   templateId: string;
   state: CardTemplateUpdateState;
-  sourceTemplateVersion: number | null;
+  sourceTemplateVersion: number;
   targetTemplateVersion: number;
   sourceRevision: string | null;
   targetRevision: string | null;
@@ -195,7 +195,7 @@ function templateTasksForCard(tasks: Task[], templateId: string): Task[] {
 
 function tokenFor(card: Card, tasks: Task[], template: Template): string {
   return digest({
-    card: { id: card.id, version: card.version || 1 },
+    card: { id: card.id, version: card.version },
     template: {
       id: template.id,
       version: template.version,
@@ -226,6 +226,21 @@ export function buildCardTemplateUpdatePlan(
   }
 
   const relevantTasks = templateTasksForCard(tasks, template.id);
+  if (!card.templateDefinitionSnapshot || !Number.isInteger(card.templateVersion) || Number(card.templateVersion) < 1) {
+    throw new CardTemplateUpdateInvalidStateError(
+      `Card ${card.id} has no canonical Template provenance`,
+    );
+  }
+  const invalidTask = relevantTasks.find((task) => (
+    !task.templateDefinitionSnapshot
+    || !Number.isInteger(task.templateVersion)
+    || Number(task.templateVersion) < 1
+  ));
+  if (invalidTask) {
+    throw new CardTemplateUpdateInvalidStateError(
+      `Task ${invalidTask.id} has no canonical Template provenance`,
+    );
+  }
   const byRef = new Map<string, Task>();
   for (const task of relevantTasks) {
     const ref = task.templateTaskRef as string;
@@ -318,15 +333,10 @@ export function buildCardTemplateUpdatePlan(
     });
   }
 
-  const baselineRequired = sourceCardSnapshot === null
-    || card.templateVersion === undefined
-    || relevantTasks.some((task) => !task.templateDefinitionSnapshot || task.templateVersion === undefined);
   const templateBehind = card.templateVersion !== template.version
     || (card.templateSourceRevision || null) !== (template.sourceRevision || null);
   const hasEffectiveChanges = cardChanges.length > 0 || taskUpdates.length > 0;
-  const state: CardTemplateUpdateState = baselineRequired
-    ? 'baseline-required'
-    : templateBehind || hasEffectiveChanges
+  const state: CardTemplateUpdateState = templateBehind || hasEffectiveChanges
       ? 'update-available'
       : 'current';
   const operatorOverrides = cardChanges.filter(({ operatorOverride }) => operatorOverride).length
@@ -335,10 +345,10 @@ export function buildCardTemplateUpdatePlan(
   return {
     preview: {
       cardId: card.id,
-      cardVersion: card.version || 1,
+      cardVersion: card.version,
       templateId: template.id,
       state,
-      sourceTemplateVersion: card.templateVersion ?? null,
+      sourceTemplateVersion: card.templateVersion!,
       targetTemplateVersion: template.version,
       sourceRevision: card.templateSourceRevision || null,
       targetRevision: template.sourceRevision || null,

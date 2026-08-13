@@ -9,6 +9,7 @@ import {
   groupCardItemsByStage,
   isActiveWorkCard,
   isArchivedWorkCard,
+  isCanonicalWorkTask,
   isFollowUpDueTask,
   isOpenWorkTask,
   isTaskDueToday,
@@ -17,10 +18,12 @@ import {
   partitionCardsByArchive,
   summarizeCardProgress,
   taskProofState,
+  tasksFromWorkPayload,
   workflowTaskGroups,
 } from "../src/core/workspace.js";
 
 const TODAY = "2026-08-12";
+const canonicalTask = (task) => ({ version: 1, taskHistory: [], status: "todo", ...task });
 
 describe("frontend work model", () => {
   test("directly imports the work model from the production workspace module", () => {
@@ -38,10 +41,10 @@ describe("frontend work model", () => {
   });
 
   test("classifies open, done, due, overdue, waiting, and follow-up tasks", () => {
-    const open = { id: "open", status: "todo", date: TODAY };
-    const overdue = { id: "overdue", status: "todo", date: "2026-08-11" };
-    const waiting = { id: "waiting", status: "waiting", followUpAt: "2026-08-12T09:00:00Z" };
-    const done = { id: "done", status: "done", date: TODAY };
+    const open = canonicalTask({ id: "open", status: "todo", date: TODAY });
+    const overdue = canonicalTask({ id: "overdue", status: "todo", date: "2026-08-11" });
+    const waiting = canonicalTask({ id: "waiting", status: "waiting", followUpAt: "2026-08-12T09:00:00Z" });
+    const done = canonicalTask({ id: "done", status: "done", date: TODAY });
     assert.equal(isOpenWorkTask(open), true);
     assert.equal(isTaskDueToday(open, TODAY), true);
     assert.equal(isTaskOverdue(overdue, TODAY), true);
@@ -49,6 +52,19 @@ describe("frontend work model", () => {
     assert.equal(isFollowUpDueTask(waiting, TODAY), true);
     assert.equal(isOpenWorkTask(done), false);
     assert.equal(isTaskDueToday(done, TODAY), false);
+  });
+
+  test("rejects invalid Task response shapes instead of treating them as todo", () => {
+    for (const invalid of [
+      { id: "missing-status", version: 1, taskHistory: [] },
+      { id: "unknown-status", version: 1, taskHistory: [], status: "open" },
+      { id: "missing-version", status: "todo", taskHistory: [] },
+      { id: "missing-history", version: 1, status: "todo" },
+    ]) {
+      assert.equal(isCanonicalWorkTask(invalid), false);
+      assert.equal(isOpenWorkTask(invalid), false);
+      assert.deepEqual(tasksFromWorkPayload([invalid]), []);
+    }
   });
 
   test("orders and deduplicates Home attention by operator priority, date, and title", () => {
@@ -71,13 +87,13 @@ describe("frontend work model", () => {
       loaded: true,
       currentOperatorId: "alexey",
       tasks: [
-        { id: "today-mine", status: "todo", date: TODAY, assigneeId: "alexey" },
-        { id: "today-unassigned", status: "todo", date: TODAY },
-        { id: "today-peer", status: "todo", date: TODAY, assigneeId: "grace" },
-        { id: "overdue", status: "todo", date: "2026-08-11", requiredLinkName: "URL" },
-        { id: "follow-up", status: "waiting", followUpAt: "2026-08-11T09:00:00Z" },
-        { id: "waiting", status: "waiting", followUpAt: "2026-08-14T09:00:00Z" },
-        { id: "done", status: "done", date: TODAY },
+        canonicalTask({ id: "today-mine", date: TODAY, assigneeId: "alexey" }),
+        canonicalTask({ id: "today-unassigned", date: TODAY }),
+        canonicalTask({ id: "today-peer", date: TODAY, assigneeId: "grace" }),
+        canonicalTask({ id: "overdue", date: "2026-08-11", requiredLinkName: "URL" }),
+        canonicalTask({ id: "follow-up", status: "waiting", followUpAt: "2026-08-11T09:00:00Z" }),
+        canonicalTask({ id: "waiting", status: "waiting", followUpAt: "2026-08-14T09:00:00Z" }),
+        canonicalTask({ id: "done", status: "done", date: TODAY }),
       ],
     }, { today: TODAY });
     assert.deepEqual(state.loaded, { today: true, overdue: true, waiting: true, tasks: true });
@@ -95,9 +111,9 @@ describe("frontend work model", () => {
       todayLoaded: true,
       overdueLoaded: false,
       waitingLoaded: false,
-      todayTasks: [{ id: "today", status: "todo", date: TODAY }],
-      overdueTasks: [{ id: "unavailable-overdue", status: "todo", date: "2026-08-11" }],
-      waitingTasks: [{ id: "unavailable-waiting", status: "waiting", followUpAt: TODAY }],
+      todayTasks: [canonicalTask({ id: "today", date: TODAY })],
+      overdueTasks: [canonicalTask({ id: "unavailable-overdue", date: "2026-08-11" })],
+      waitingTasks: [canonicalTask({ id: "unavailable-waiting", status: "waiting", followUpAt: TODAY })],
     }, { today: TODAY });
     assert.deepEqual(state.loaded, { today: true, overdue: false, waiting: false, tasks: true });
     assert.deepEqual(state.tasks.today.map((task) => task.id), ["today"]);
@@ -110,13 +126,13 @@ describe("frontend work model", () => {
     const state = deriveHomeWorkState({
       loaded: true,
       cardTasks: {
-        "card-1": [{
+        "card-1": [canonicalTask({
           id: "card-only-proof",
           status: "todo",
           cardId: "card-1",
           date: TODAY,
           requiredLinkName: "Publication URL",
-        }],
+        })],
       },
     }, { today: TODAY });
     assert.deepEqual(state.tasks.missingProof.map((task) => task.id), ["card-only-proof"]);
@@ -141,11 +157,11 @@ describe("frontend work model", () => {
       loaded: true,
       currentOperatorId: "alexey",
       tasks: [
-        { id: "grace-today", status: "todo", date: TODAY, assigneeId: "grace" },
-        { id: "alexey-today", status: "todo", date: TODAY, assigneeId: "alexey" },
-        { id: "grace-overdue", status: "todo", date: "2026-08-11", assigneeId: "grace" },
-        { id: "grace-follow", status: "waiting", followUpAt: TODAY, assigneeId: "grace" },
-        { id: "unassigned", status: "todo", date: TODAY },
+        canonicalTask({ id: "grace-today", date: TODAY, assigneeId: "grace" }),
+        canonicalTask({ id: "alexey-today", date: TODAY, assigneeId: "alexey" }),
+        canonicalTask({ id: "grace-overdue", date: "2026-08-11", assigneeId: "grace" }),
+        canonicalTask({ id: "grace-follow", status: "waiting", followUpAt: TODAY, assigneeId: "grace" }),
+        canonicalTask({ id: "unassigned", date: TODAY }),
       ],
       todayTaskCount: 99,
       overdueTaskCount: 99,
@@ -159,18 +175,23 @@ describe("frontend work model", () => {
 
   test("classifies Cards into active board and archive without a Done column", () => {
     const cards = [
-      { id: "prep", stage: "preparation", status: "active" },
-      { id: "announced", stage: "announced", status: "active" },
-      { id: "after", stage: "after-event", status: "active" },
-      { id: "done-stage", stage: "done", status: "active" },
-      { id: "done-status", stage: "after-event", status: "done" },
-      { id: "archived", status: "archived" },
+      { id: "prep", version: 1, taskCount: 0, openTaskCount: 0, stage: "preparation", status: "active" },
+      { id: "announced", version: 1, taskCount: 0, openTaskCount: 0, stage: "announced", status: "active" },
+      { id: "after", version: 1, taskCount: 0, openTaskCount: 0, stage: "after-event", status: "active" },
+      { id: "impossible-active", version: 1, taskCount: 1, openTaskCount: 0, stage: "preparation", status: "active" },
+      { id: "invalid-done-stage", stage: "done", status: "active" },
+      { id: "invalid-done-status", stage: "after-event", status: "done" },
+      { id: "impossible-empty-archive", version: 2, stage: "done", status: "archived", taskCount: 0, openTaskCount: 0, completedAt: "2026-08-13T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "after-event" },
+      { id: "archived", version: 2, stage: "done", status: "archived", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-13T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "after-event" },
     ];
     const partition = partitionCardsByArchive(cards);
     assert.deepEqual(partition.active.map((card) => card.id), ["prep", "announced", "after"]);
-    assert.deepEqual(partition.archived.map((card) => card.id), ["done-stage", "done-status", "archived"]);
+    assert.deepEqual(partition.archived.map((card) => card.id), ["archived"]);
     assert.equal(isActiveWorkCard(cards[0]), true);
-    assert.equal(isArchivedWorkCard(cards[3]), true);
+    assert.equal(isActiveWorkCard(cards.find((card) => card.id === "impossible-active")), false);
+    assert.equal(isArchivedWorkCard(cards.find((card) => card.id === "invalid-done-stage")), false);
+    assert.equal(isArchivedWorkCard(cards.find((card) => card.id === "impossible-empty-archive")), false);
+    assert.equal(isArchivedWorkCard(cards.find((card) => card.id === "archived")), true);
     const groups = groupCardItemsByStage(partition.active);
     assert.deepEqual(groups.map((group) => group.label), ["Preparation", "Announced", "After event"]);
     assert.equal(groups.some((group) => group.label === "Done"), false);
@@ -178,13 +199,15 @@ describe("frontend work model", () => {
 
   test("groups Card checklist Tasks into active, waiting, and history", () => {
     const tasks = [
-      { id: "done", description: "Done task", status: "done", date: "2026-08-10" },
-      { id: "waiting", description: "Waiting task", status: "waiting", date: "2026-08-11" },
-      { id: "active", description: "Active task", status: "todo", date: TODAY },
+      canonicalTask({ id: "done", description: "Done task", status: "done", date: "2026-08-10" }),
+      canonicalTask({ id: "retired", description: "Retired task", status: "archived", date: "2026-08-09", artifactRefs: [{ artifactId: "retained-evidence" }] }),
+      canonicalTask({ id: "waiting", description: "Waiting task", status: "waiting", date: "2026-08-11" }),
+      canonicalTask({ id: "active", description: "Active task", date: TODAY }),
     ];
     const groups = workflowTaskGroups(tasks, TODAY);
     assert.deepEqual(groups.map((group) => group.title), ["Active", "Waiting / follow-up", "Done / history"]);
-    assert.deepEqual(groups.map((group) => group.tasks.map((task) => task.id)), [["active"], ["waiting"], ["done"]]);
+    assert.deepEqual(groups.map((group) => group.tasks.map((task) => task.id)), [["active"], ["waiting"], ["retired", "done"]]);
+    assert.deepEqual(groups[2].tasks[0].artifactRefs, [{ artifactId: "retained-evidence" }]);
   });
 
   test("reports missing link, file, and approved-artifact proof", () => {
@@ -212,9 +235,9 @@ describe("frontend work model", () => {
       cardLinks: [{ name: "Public page", url: "" }],
     };
     const tasks = [
-      { id: "done", description: "Completed", status: "done", date: "2026-08-10" },
-      { id: "overdue", description: "Overdue", status: "todo", date: "2026-08-11", requiresFile: true },
-      { id: "next", description: "Next", status: "todo", date: "2026-08-14" },
+      canonicalTask({ id: "done", description: "Completed", status: "done", date: "2026-08-10" }),
+      canonicalTask({ id: "overdue", description: "Overdue", date: "2026-08-11", requiresFile: true }),
+      canonicalTask({ id: "next", description: "Next", date: "2026-08-14" }),
     ];
     const progress = summarizeCardProgress(card, tasks, TODAY);
     assert.deepEqual(

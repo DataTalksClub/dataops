@@ -55,6 +55,12 @@ export function templateTaskDefinitionSnapshot(
   order: number,
   anchorDate: string,
 ): TemplateTaskDefinitionSnapshot {
+  if (
+    definition.stageOnComplete !== undefined
+    && !['preparation', 'announced', 'after-event'].includes(definition.stageOnComplete)
+  ) {
+    throw new Error(`Template Task ${definition.refId} has invalid stageOnComplete`);
+  }
   const offsetDays = definition.offsetDays || 0;
   return withoutUndefined({
     description: definition.description,

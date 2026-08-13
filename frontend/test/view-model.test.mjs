@@ -81,11 +81,11 @@ describe("Cards renderer view models", () => {
 
   test("groups archived cards into newest-first months with undated last", () => {
     const groups = groupCardItemsByMonth([
-      { id: "july-late", title: "Beta", anchorDate: "2026-07-31" },
-      { id: "undated", title: "No date", anchorDate: "" },
-      { id: "august", title: "Gamma", anchorDate: "2026-08-02" },
-      { id: "july-early-b", title: "Bravo", anchorDate: "2026-07-01" },
-      { id: "july-early-a", title: "Alpha", anchorDate: "2026-07-01" },
+      { id: "july-late", title: "Beta", completedAt: "2026-07-31T18:00:00.000Z" },
+      { id: "undated", title: "No date", completedAt: "" },
+      { id: "august", title: "Gamma", completedAt: "2026-08-02T18:00:00.000Z" },
+      { id: "july-early-b", title: "Bravo", completedAt: "2026-07-01T18:00:00.000Z" },
+      { id: "july-early-a", title: "Alpha", completedAt: "2026-07-01T18:00:00.000Z" },
     ]);
     assert.deepEqual(
       groups.map((group) => [group.key, group.label, group.items.map((item) => item.id)]),

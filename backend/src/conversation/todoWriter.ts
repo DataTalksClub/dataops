@@ -77,6 +77,13 @@ function deterministicTodoTaskId(input: Pick<ActorTodoWrite, 'attemptId' | 'prop
 function cleanTask(item: Record<string, unknown> | undefined): Task | null {
   if (!item) return null;
   const { PK: _pk, SK: _sk, ...task } = item;
+  if (
+    !Number.isInteger(task.version)
+    || Number(task.version) < 1
+    || !Array.isArray(task.taskHistory)
+  ) {
+    return null;
+  }
   return task as unknown as Task;
 }
 

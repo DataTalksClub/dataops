@@ -272,7 +272,6 @@ export function createTemplatesSurface(context) {
       + Number(counts.archived || 0)
       + Number(counts.retainedCompleted || 0);
     if (preview?.state === "current") return "Current";
-    if (preview?.state === "baseline-required") return `Baseline review · ${changed} changes`;
     return `${changed} changes · Template v${preview?.targetTemplateVersion || "?"}`;
   }
 

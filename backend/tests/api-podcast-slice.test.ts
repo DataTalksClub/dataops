@@ -140,6 +140,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     });
     assert.strictEqual(savedLink.statusCode, 200, savedLink.body);
     const cardWithLuma = {
+      expectedVersion: card.version,
       cardLinks: card.cardLinks.map((link: any) => (
         link.name === 'Synthetic event' ? { name: link.name, url: lumaUrl } : link
       )),
@@ -262,7 +263,10 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const streamCardLinks = cardBeforeStreamDone.cardLinks.map((link: any) => (
       link.name === 'Synthetic stream' ? { name: link.name, url: streamUrl } : link
     ));
-    const streamCardLinkReady = await invoke('PUT', `/api/cards/${card.id}`, { cardLinks: streamCardLinks });
+    const streamCardLinkReady = await invoke('PUT', `/api/cards/${card.id}`, {
+      expectedVersion: cardBeforeStreamDone.version,
+      cardLinks: streamCardLinks,
+    });
     assert.strictEqual(streamCardLinkReady.statusCode, 200, streamCardLinkReady.body);
     const streamDone = await invoke('PUT', `/api/tasks/${actualStream.id}`, {
       status: 'done', expectedVersion: parse(streamReady).version,

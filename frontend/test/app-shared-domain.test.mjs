@@ -44,6 +44,7 @@ const operationsOverviewSource = readFileSync(
   path.join(repoRoot, "frontend/src/surfaces/operations-overview.js"),
   "utf8",
 );
+const canonicalTask = (task) => ({ version: 1, taskHistory: [], status: "todo", ...task });
 const browserCharacterization = readFileSync(
   path.join(
     repoRoot,
@@ -222,18 +223,18 @@ describe("app shared operations domain characterization", () => {
         usersLoaded: false,
         currentOperatorId: "alexey",
         tasks: [
-          { id: "today", title: "Today", date: "2026-08-13", status: "todo", cardId: "card-1" },
-          { id: "late", title: "Late", date: "2026-08-11", status: "todo", cardId: "card-1" },
-          { id: "wait", title: "Waiting", status: "waiting", followUpAt: "2026-08-13" },
-          { id: "done", title: "Done", date: "2026-08-13", status: "done" },
+          canonicalTask({ id: "today", title: "Today", date: "2026-08-13", cardId: "card-1" }),
+          canonicalTask({ id: "late", title: "Late", date: "2026-08-11", cardId: "card-1" }),
+          canonicalTask({ id: "wait", title: "Waiting", status: "waiting", followUpAt: "2026-08-13" }),
+          canonicalTask({ id: "done", title: "Done", date: "2026-08-13", status: "done" }),
         ],
-        todayTasks: [{ id: "today", title: "Today", date: "2026-08-13" }],
+        todayTasks: [canonicalTask({ id: "today", title: "Today", date: "2026-08-13" })],
         cardTasks: {
-          "card-1": [{ id: "today", title: "Today", date: "2026-08-13" }],
+          "card-1": [canonicalTask({ id: "today", title: "Today", date: "2026-08-13" })],
         },
         cards: [
-          { id: "card-1", title: "Risk card", status: "active", anchorDate: "2026-08-14" },
-          { id: "archived", title: "Old", status: "archived" },
+          { id: "card-1", version: 1, title: "Risk card", status: "active", stage: "preparation", taskCount: 2, openTaskCount: 2, anchorDate: "2026-08-14" },
+          { id: "archived", version: 2, title: "Old", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-01T12:00:00.000Z", completedBy: "alexey", activeStageBeforeCompletion: "preparation" },
         ],
         users: [{ id: "alexey", name: "Alexey" }],
         todayTaskCount: 9,
@@ -261,6 +262,8 @@ describe("app shared operations domain characterization", () => {
   test("maps Tasks and Cards to operator-facing source, proof, risk, and next actions", () => {
     const functions = operationsModel();
     const waiting = {
+      version: 1,
+      taskHistory: [],
       id: "task-1",
       title: "Confirm guest",
       status: "waiting",
@@ -283,7 +286,7 @@ describe("app shared operations domain characterization", () => {
 
     assert.equal(
       functions.taskNextActionLabel(
-        { id: "proof", requiresFile: true },
+        canonicalTask({ id: "proof", requiresFile: true }),
         "2026-08-13",
       ),
       "Attach file",

@@ -108,6 +108,7 @@ const REDACTIONS = [
   'signed_urls',
 ];
 const VALID_TASK_STATUSES = new Set(['todo', 'waiting', 'done', 'archived']);
+const VALID_ACTIVE_CARD_STAGES = new Set(['preparation', 'announced', 'after-event']);
 const VALID_TASK_HISTORY_ACTIONS = new Set([
   'waiting-started',
   'follow-up-sent',
@@ -116,6 +117,8 @@ const VALID_TASK_HISTORY_ACTIONS = new Set([
   'wait-resolved',
   'completed',
   'reopened',
+  'template-retired',
+  'template-restored',
 ]);
 const VALID_NOTIFICATION_TYPES = new Set([
   'task-due',
@@ -275,8 +278,9 @@ function mapUser(item: Record<string, unknown>): JsonRecord {
 }
 
 function mapTask(item: Record<string, unknown>): JsonRecord {
-  return stripEmpty({
+  const mapped = stripEmpty({
     task_id: optionalString(item.id),
+    version: optionalNumber(item.version),
     description: optionalString(item.description),
     date: optionalString(item.date),
     status: optionalString(item.status),
@@ -285,7 +289,6 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     waiting_for: optionalString(item.waitingFor),
     follow_up_at: optionalString(item.followUpAt),
     follow_up_channel: optionalString(item.followUpChannel),
-    task_history: jsonArray(item.taskHistory),
     proof_requirement: optionalJsonStringOrObject(item.proofRequirement),
     external_status: optionalString(item.externalStatus),
     instructions_url: optionalString(item.instructionsUrl),
@@ -318,11 +321,15 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
+  // Canonical Tasks always expose history, including the meaningful empty state.
+  mapped.task_history = jsonArray(item.taskHistory);
+  return mapped;
 }
 
 function mapCard(item: Record<string, unknown>): JsonRecord {
   return stripEmpty({
     card_id: optionalString(item.id),
+    version: optionalNumber(item.version),
     title: optionalString(item.title),
     description: optionalString(item.description),
     anchor_date: optionalString(item.anchorDate),
@@ -330,6 +337,11 @@ function mapCard(item: Record<string, unknown>): JsonRecord {
     source_doc_ids: stringArray(item.sourceDocIds),
     status: optionalString(item.status),
     stage: optionalString(item.stage),
+    task_count: optionalNumber(item.taskCount),
+    open_task_count: optionalNumber(item.openTaskCount),
+    completed_at: optionalString(item.completedAt),
+    completed_by: optionalString(item.completedBy),
+    active_stage_before_completion: optionalString(item.activeStageBeforeCompletion),
     references: jsonArray(item.references),
     card_links: jsonArray(item.cardLinks),
     emoji: optionalString(item.emoji),
@@ -362,7 +374,7 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     trigger_enabled: optionalBoolean(item.triggerEnabled),
     source_path: optionalString(item.sourcePath),
     source_revision: optionalString(item.sourceRevision),
-    version: optionalNumber(item.version) || 1,
+    version: optionalNumber(item.version),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
@@ -736,6 +748,22 @@ function optionalEnum(
   return value;
 }
 
+function requiredEnum(
+  record: JsonRecord,
+  field: string,
+  allowedValues: Set<string>,
+  errors: string[],
+  context: string
+): string | null {
+  const value = requireString(record, field, errors, context);
+  if (value === null) return null;
+  if (!allowedValues.has(value)) {
+    errors.push(`${context} field ${field} has unknown value: ${value}`);
+    return null;
+  }
+  return value;
+}
+
 function optionalStringField(
   record: JsonRecord,
   field: string,
@@ -791,6 +819,21 @@ function optionalIntegerField(
   }
 }
 
+function requiredIntegerField(
+  record: JsonRecord,
+  field: string,
+  errors: string[],
+  context: string,
+  minimum: number,
+): number | null {
+  const value = record[field];
+  if (!Number.isSafeInteger(value) || Number(value) < minimum) {
+    errors.push(`${context} field ${field} must be an integer >= ${minimum}`);
+    return null;
+  }
+  return Number(value);
+}
+
 function optionalBooleanField(
   record: JsonRecord,
   field: string,
@@ -843,16 +886,14 @@ function optionalRefArrayField(
   }
 }
 
-function optionalTaskHistoryField(
+function requiredTaskHistoryField(
   task: JsonRecord,
-  userIds: Set<string>,
   errors: string[],
   context: string
 ): void {
   const value = task.task_history;
-  if (value === undefined || value === null) return;
   if (!Array.isArray(value)) {
-    errors.push(`${context} field task_history must be an array when present`);
+    errors.push(`${context} field task_history must be an array`);
     return;
   }
   const seenIds = new Set<string>();
@@ -879,7 +920,7 @@ function optionalTaskHistoryField(
       errors.push(`${itemContext} cardId must match parent card_id`);
     }
     optionalEnum(event, 'action', VALID_TASK_HISTORY_ACTIONS, errors, itemContext);
-    optionalReference(event, 'actorId', userIds, errors, itemContext);
+    optionalStringField(event, 'actorId', errors, itemContext);
     optionalStringField(event, 'channel', errors, itemContext);
     optionalStringField(event, 'waitingFor', errors, itemContext);
     validateDateOrTimestampField(event, 'followUpAt', errors, itemContext);
@@ -996,8 +1037,9 @@ function validateTaskDefinitionDocContext(
     if (!Number.isSafeInteger(record.offsetDays)) {
       errors.push(`${definitionContext} field offsetDays must be an integer`);
     }
+    optionalEnum(record, 'stageOnComplete', VALID_ACTIVE_CARD_STAGES, errors, definitionContext);
     for (const field of [
-      'stageOnComplete', 'assigneeId', 'instructionsUrl', 'instructionDocId',
+      'assigneeId', 'instructionsUrl', 'instructionDocId',
       'instructionStepId', 'phase', 'requiredLinkName',
     ]) {
       optionalStringField(record, field, errors, definitionContext);
@@ -1265,9 +1307,10 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   for (const [index, task] of (recordsByEntity.tasks || []).entries()) {
     const context = `tasks[${index}]`;
+    requiredIntegerField(task, 'version', errors, context, 1);
     requireString(task, 'description', errors, context);
     validateDateField(task, 'date', errors, context, true);
-    const status = optionalEnum(task, 'status', VALID_TASK_STATUSES, errors, context);
+    const status = requiredEnum(task, 'status', VALID_TASK_STATUSES, errors, context);
     if (status === 'waiting') {
       requireString(task, 'waiting_for', errors, context);
       validateDateOrTimestampField(task, 'follow_up_at', errors, context, true);
@@ -1292,11 +1335,11 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalRefArrayField(task, 'assistant_job_refs', 'assistantJobId', errors, context);
     optionalRefArrayField(task, 'intake_refs', 'intakeItemId', errors, context);
     optionalRefArrayField(task, 'audit_event_refs', 'auditEventId', errors, context);
-    optionalTaskHistoryField(task, userIds, errors, context);
+    requiredTaskHistoryField(task, errors, context);
     optionalReference(task, 'assignee_id', userIds, errors, context);
     optionalReference(task, 'created_by', userIds, errors, context);
     optionalAssistantExecutionRef(task, errors, context);
-    optionalReference(task, 'completed_by', userIds, errors, context);
+    optionalStringField(task, 'completed_by', errors, context);
     optionalReference(task, 'card_id', cardIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);
     optionalReference(task, 'recurring_config_id', recurringConfigIds, errors, context);
@@ -1319,10 +1362,49 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   for (const [index, card] of (recordsByEntity.cards || []).entries()) {
     const context = `cards[${index}]`;
+    requiredIntegerField(card, 'version', errors, context, 1);
+    const taskCount = requiredIntegerField(card, 'task_count', errors, context, 0);
+    const openTaskCount = requiredIntegerField(card, 'open_task_count', errors, context, 0);
+    if (taskCount !== null && openTaskCount !== null && openTaskCount > taskCount) {
+      errors.push(`${context} field open_task_count must not exceed task_count`);
+    }
     validateDateField(card, 'anchor_date', errors, context);
+    validateDateOrTimestampField(card, 'completed_at', errors, context);
     validateDateOrTimestampField(card, 'created_at', errors, context);
     validateDateOrTimestampField(card, 'updated_at', errors, context);
     optionalReference(card, 'template_id', templateIds, errors, context);
+    const completedBy = optionalStringField(card, 'completed_by', errors, context);
+    optionalStringField(card, 'active_stage_before_completion', errors, context);
+    const status = requiredEnum(card, 'status', new Set(['active', 'archived']), errors, context);
+    const stage = requiredEnum(
+      card,
+      'stage',
+      new Set(['preparation', 'announced', 'after-event', 'done']),
+      errors,
+      context,
+    );
+    if (status === 'active' && (
+      !['preparation', 'announced', 'after-event'].includes(stage || '')
+      || taskCount === null
+      || openTaskCount === null
+      || (taskCount > 0 && openTaskCount === 0)
+      || card.completed_at !== undefined
+      || card.completed_by !== undefined
+      || card.active_stage_before_completion !== undefined
+    )) {
+      errors.push(`${context} must use the canonical active Card lifecycle shape`);
+    }
+    if (status === 'archived' && (
+      stage !== 'done'
+      || taskCount === null
+      || taskCount < 1
+      || openTaskCount !== 0
+      || typeof card.completed_at !== 'string'
+      || completedBy === null
+      || !['preparation', 'announced', 'after-event'].includes(String(card.active_stage_before_completion || ''))
+    )) {
+      errors.push(`${context} must use the canonical archived Card lifecycle shape`);
+    }
     optionalStringArrayField(card, 'source_doc_ids', errors, context);
     optionalStringField(card, 'emoji', errors, context);
     optionalRefArrayField(card, 'artifact_refs', 'artifactId', errors, context);
@@ -1356,7 +1438,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalStringField(template, 'emoji', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
     optionalBooleanField(template, 'trigger_enabled', errors, context);
-    optionalIntegerField(template, 'version', errors, context, 1);
+    requiredIntegerField(template, 'version', errors, context, 1);
     validateWorkflowPhases(template, errors, context);
     validateTaskDefinitionDocContext(template, errors, context);
   }
