@@ -16,6 +16,31 @@ on:
       - "samconfig.toml"
       - "scripts/deploy/**"
   workflow_dispatch:
+    inputs:
+      deployment_mode:
+        description: "Normal deploy, or the one-shot issue #166 Phase A cutover preparation."
+        required: true
+        type: choice
+        default: normal
+        options:
+          - normal
+          - issue-166-phase-a
+      issue_166_commit:
+        description: Exact 40-character commit SHA; required only for issue-166-phase-a.
+        required: false
+        type: string
+      issue_166_backup_name:
+        description: Exact AVAILABLE on-demand backup name; required only for issue-166-phase-a.
+        required: false
+        type: string
+      issue_166_expected_ledger:
+        description: Exact reconciled ledger; required only for issue-166-phase-a.
+        required: false
+        type: string
+      issue_166_confirmation:
+        description: Exact Phase A operator confirmation; required only for issue-166-phase-a.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -84,6 +109,11 @@ jobs:
       contents: read
       id-token: write
     env:
+      DEPLOYMENT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.deployment_mode || 'normal' }}
+      ISSUE_166_COMMIT: ${{ inputs.issue_166_commit || '' }}
+      ISSUE_166_BACKUP_NAME: ${{ inputs.issue_166_backup_name || '' }}
+      ISSUE_166_EXPECTED_LEDGER: ${{ inputs.issue_166_expected_ledger || '' }}
+      ISSUE_166_CONFIRMATION: ${{ inputs.issue_166_confirmation || '' }}
       AUTH_BASE_URL: https://auth.dtcdev.click
       AUTH_USER_POOL_ID: us-east-1_H7nJu52Bs
       AUTH_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
@@ -140,6 +170,44 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Validate bounded deployment mode
+        run: |
+          set -euo pipefail
+          case "$DEPLOYMENT_MODE" in
+            normal)
+              if [ -n "$ISSUE_166_COMMIT$ISSUE_166_BACKUP_NAME$ISSUE_166_EXPECTED_LEDGER$ISSUE_166_CONFIRMATION" ]; then
+                echo "Normal deploy refuses issue #166 cutover inputs" >&2
+                exit 1
+              fi
+              ;;
+            issue-166-phase-a)
+              if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ] || [ "$GITHUB_REF" != "refs/heads/main" ]; then
+                echo "Issue #166 Phase A requires an explicit manual dispatch of main" >&2
+                exit 1
+              fi
+              if ! [[ "$ISSUE_166_COMMIT" =~ ^[0-9a-f]{40}$ ]] || [ "$ISSUE_166_COMMIT" != "$GITHUB_SHA" ]; then
+                echo "Issue #166 Phase A commit must exactly match the dispatched commit" >&2
+                exit 1
+              fi
+              if [ "$ISSUE_166_BACKUP_NAME" != "dataops-v1-tasks-pre-card-schema-2026-08-13" ]; then
+                echo "Issue #166 Phase A requires the exact audited on-demand backup" >&2
+                exit 1
+              fi
+              if [ "$ISSUE_166_EXPECTED_LEDGER" != "items=281,cardId=0,bundleId=153" ]; then
+                echo "Issue #166 Phase A requires the exact groomed and reconciled ledger" >&2
+                exit 1
+              fi
+              if [ "$ISSUE_166_CONFIRMATION" != "quiesce-dataops-v1-tasks-and-arm-delete-policy" ]; then
+                echo "Issue #166 Phase A operator confirmation does not match" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unknown deployment mode: $DEPLOYMENT_MODE" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -160,6 +228,136 @@ jobs:
           role-session-name: dataops-v1-deploy
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: "Verify issue #166 Phase A preflight and exact backup"
+        if: env.DEPLOYMENT_MODE == 'issue-166-phase-a'
+        id: issue166_preflight
+        run: |
+          set -euo pipefail
+          stack_status="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query 'Stacks[0].StackStatus' \
+            --output text)"
+          if [ "$stack_status" != "UPDATE_COMPLETE" ]; then
+            echo "Issue #166 Phase A requires dataops-v1 to be UPDATE_COMPLETE" >&2
+            exit 1
+          fi
+
+          table_name="$(aws cloudformation describe-stack-resource \
+            --stack-name dataops-v1 \
+            --logical-resource-id DataOpsTasksTable \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          if [ "$table_name" != "dataops-v1-tasks" ]; then
+            echo "Issue #166 Phase A refuses an unexpected Tasks table identity" >&2
+            exit 1
+          fi
+
+          table_json="$(aws dynamodb describe-table --table-name "$table_name" --output json)"
+          if ! jq -e '
+            .Table.TableStatus == "ACTIVE"
+            and ([.Table.GlobalSecondaryIndexes[].IndexStatus] | all(. == "ACTIVE"))
+            and ([.Table.GlobalSecondaryIndexes[].IndexName] | sort == ["GSI-Bundle", "GSI-Card", "GSI-Date", "GSI-Status"])
+          ' <<<"$table_json" >/dev/null; then
+            echo "Issue #166 Phase A requires the exact active transitional table/index state" >&2
+            exit 1
+          fi
+          table_arn="$(jq -r '.Table.TableArn' <<<"$table_json")"
+          table_id="$(jq -r '.Table.TableId' <<<"$table_json")"
+          if [ "$table_id" != "b4e83537-7cf6-41cb-a281-8a52f678b1a3" ]; then
+            echo "Issue #166 Phase A refuses an unexpected Tasks table ID" >&2
+            exit 1
+          fi
+          if [ "$(aws dynamodb describe-continuous-backups \
+            --table-name "$table_name" \
+            --query 'ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus' \
+            --output text)" != "ENABLED" ]; then
+            echo "Issue #166 Phase A requires PITR to be enabled" >&2
+            exit 1
+          fi
+
+          backups_json="$(aws dynamodb list-backups \
+            --table-name "$table_name" \
+            --backup-type USER \
+            --output json)"
+          backup_matches="$(jq --arg name "$ISSUE_166_BACKUP_NAME" \
+            '[.BackupSummaries[] | select(.BackupName == $name)]' <<<"$backups_json")"
+          if [ "$(jq 'length' <<<"$backup_matches")" -ne 1 ]; then
+            echo "Issue #166 Phase A requires exactly one matching on-demand backup" >&2
+            exit 1
+          fi
+          backup_arn="$(jq -r '.[0].BackupArn' <<<"$backup_matches")"
+          backup_json="$(aws dynamodb describe-backup --backup-arn "$backup_arn" --output json)"
+          if ! jq -e \
+            --arg backup "$ISSUE_166_BACKUP_NAME" \
+            --arg table "$table_name" \
+            --arg tableArn "$table_arn" \
+            --arg tableId "$table_id" '
+            .BackupDescription.BackupDetails.BackupName == $backup
+            and .BackupDescription.BackupDetails.BackupStatus == "AVAILABLE"
+            and .BackupDescription.BackupDetails.BackupType == "USER"
+            and .BackupDescription.BackupDetails.BackupCreationDateTime != null
+            and .BackupDescription.BackupDetails.BackupSizeBytes > 0
+            and .BackupDescription.SourceTableDetails.TableName == $table
+            and .BackupDescription.SourceTableDetails.TableArn == $tableArn
+            and .BackupDescription.SourceTableDetails.TableId == $tableId
+            and .BackupDescription.SourceTableDetails.ItemCount == 281
+            and .BackupDescription.SourceTableFeatureDetails.SSEDescription.Status == "ENABLED"
+          ' <<<"$backup_json" >/dev/null; then
+            echo "Issue #166 Phase A backup is not the exact AVAILABLE encrypted source snapshot" >&2
+            exit 1
+          fi
+
+          item_count=0
+          card_count=0
+          bundle_count=0
+          start_key=""
+          while true; do
+            scan_args=(dynamodb scan --table-name "$table_name" --consistent-read --no-paginate \
+              --projection-expression '#card,#bundle' \
+              --expression-attribute-names '{"#card":"cardId","#bundle":"bundleId"}' \
+              --output json)
+            if [ -n "$start_key" ]; then
+              scan_args+=(--exclusive-start-key "$start_key")
+            fi
+            page="$(aws "${scan_args[@]}")"
+            item_count=$((item_count + $(jq '.ScannedCount' <<<"$page")))
+            card_count=$((card_count + $(jq '[.Items[] | select(has("cardId"))] | length' <<<"$page")))
+            bundle_count=$((bundle_count + $(jq '[.Items[] | select(has("bundleId"))] | length' <<<"$page")))
+            start_key="$(jq -c 'if ((.LastEvaluatedKey // {}) | length) > 0 then .LastEvaluatedKey else empty end' <<<"$page")"
+            [ -n "$start_key" ] || break
+          done
+          if [ "$item_count:$card_count:$bundle_count" != "281:0:153" ]; then
+            echo "Issue #166 Phase A observed ledger differs from the reconciled ledger" >&2
+            exit 1
+          fi
+
+          echo "table_name=$table_name" >> "$GITHUB_OUTPUT"
+          echo "Issue #166 Phase A preflight passed for the exact stack table, ledger, and AVAILABLE backup."
+
+      - name: "Protect bounded issue #166 cutover state"
+        run: |
+          set -euo pipefail
+          deployed_template="$RUNNER_TEMP/dataops-deployed-processed-template.yaml"
+          aws cloudformation get-template \
+            --stack-name dataops-v1 \
+            --template-stage Processed \
+            --query TemplateBody \
+            --output text > "$deployed_template"
+          node --input-type=module - "$DEPLOYMENT_MODE" "$deployed_template" <<'JS'
+          import { readFileSync } from 'node:fs';
+          import yaml from 'js-yaml';
+
+          const mode = process.argv[2];
+          const template = yaml.safeLoad(readFileSync(process.argv[3], 'utf8'));
+          const marker = template?.Metadata?.DataOpsIssue166Cutover;
+          const tasks = template?.Resources?.DataOpsTasksTable;
+          if (marker !== undefined) {
+            throw new Error(`Deployment mode ${mode} refuses active issue #166 cutover state; use the next reviewed phase`);
+          }
+          if (tasks?.DeletionPolicy !== 'Retain' || tasks?.UpdateReplacePolicy !== 'Retain') {
+            throw new Error(`Deployment mode ${mode} refuses Tasks policies other than deployed Retain/Retain`);
+          }
+          JS
 
       - name: Build SAM artifact
         run: make sam-build
@@ -172,6 +370,13 @@ jobs:
 
       - name: Test packaged frontend isolation
         run: make test-sam-frontend-isolation
+
+      - name: "Prepare and validate bounded issue #166 Phase A artifact"
+        if: env.DEPLOYMENT_MODE == 'issue-166-phase-a'
+        run: |
+          set -euo pipefail
+          node scripts/deploy/prepare-issue-166-phase-a.mjs .aws-sam/build/template.yaml
+          sam validate --template-file .aws-sam/build/template.yaml --region "$AWS_REGION"
 
       - name: Deploy DataOps v1 stack
         run: |
@@ -324,7 +529,134 @@ jobs:
               "ParameterKey=SponsorSesFromAddress,ParameterValue=$SPONSOR_SES_FROM_ADDRESS" \
               "ParameterKey=SponsorSesConfigurationSetName,ParameterValue=$SPONSOR_SES_CONFIGURATION_SET_NAME"
 
+      - name: "Assert bounded issue #166 Phase A result"
+        if: env.DEPLOYMENT_MODE == 'issue-166-phase-a'
+        env:
+          PREFLIGHT_TASKS_TABLE: ${{ steps.issue166_preflight.outputs.table_name }}
+        run: |
+          set -euo pipefail
+          if [ "$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query 'Stacks[0].StackStatus' \
+            --output text)" != "UPDATE_COMPLETE" ]; then
+            echo "Issue #166 Phase A stack update did not reach UPDATE_COMPLETE" >&2
+            exit 1
+          fi
+
+          processed_template="$RUNNER_TEMP/dataops-issue-166-processed-template.yaml"
+          aws cloudformation get-template \
+            --stack-name dataops-v1 \
+            --template-stage Processed \
+            --query TemplateBody \
+            --output text > "$processed_template"
+          node --input-type=module - "$processed_template" <<'JS'
+          import { readFileSync } from 'node:fs';
+          import yaml from 'js-yaml';
+
+          const template = yaml.safeLoad(readFileSync(process.argv[2], 'utf8'));
+          const resources = template?.Resources ?? {};
+          const marker = template?.Metadata?.DataOpsIssue166Cutover;
+          const tasks = resources.DataOpsTasksTable;
+          const backend = resources.BackendFunction;
+          const worker = resources.ConversationalExecutionWorkerFunction;
+          const valid = marker?.Issue === 166
+            && marker?.Phase === 'A'
+            && tasks?.Type === 'AWS::DynamoDB::Table'
+            && tasks?.DeletionPolicy === 'Delete'
+            && tasks?.UpdateReplacePolicy === 'Delete'
+            && backend?.Properties?.ReservedConcurrentExecutions === 0
+            && backend?.Properties?.Events === undefined
+            && worker?.Properties?.ReservedConcurrentExecutions === 0
+            && worker?.Properties?.Events === undefined;
+          if (!valid) throw new Error('Issue #166 Phase A processed-template contract was not deployed exactly');
+          JS
+
+          table_name="$(aws cloudformation describe-stack-resource \
+            --stack-name dataops-v1 \
+            --logical-resource-id DataOpsTasksTable \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)"
+          if [ "$table_name" != "$PREFLIGHT_TASKS_TABLE" ] || [ "$table_name" != "dataops-v1-tasks" ]; then
+            echo "Issue #166 Phase A changed or removed the Tasks table identity" >&2
+            exit 1
+          fi
+          table_json="$(aws dynamodb describe-table --table-name "$table_name" --output json)"
+          if ! jq -e '
+            .Table.TableStatus == "ACTIVE"
+            and .Table.TableId == "b4e83537-7cf6-41cb-a281-8a52f678b1a3"
+            and ([.Table.AttributeDefinitions[].AttributeName] | sort == ["PK", "SK", "bundleId", "cardId", "date", "status"])
+            and ([.Table.GlobalSecondaryIndexes[].IndexStatus] | all(. == "ACTIVE"))
+            and ([.Table.GlobalSecondaryIndexes[].IndexName] | sort == ["GSI-Bundle", "GSI-Card", "GSI-Date", "GSI-Status"])
+          ' <<<"$table_json" >/dev/null; then
+            echo "Issue #166 Phase A advanced the table schema or left it unhealthy" >&2
+            exit 1
+          fi
+
+          for logical_id in BackendFunction ConversationalExecutionWorkerFunction; do
+            function_name="$(aws cloudformation describe-stack-resource \
+              --stack-name dataops-v1 \
+              --logical-resource-id "$logical_id" \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text)"
+            if [ "$(aws lambda get-function-concurrency \
+              --function-name "$function_name" \
+              --query 'ReservedConcurrentExecutions' \
+              --output text)" != "0" ]; then
+              echo "Issue #166 Phase A did not reserve zero concurrency for $logical_id" >&2
+              exit 1
+            fi
+            function_arn="$(aws lambda get-function \
+              --function-name "$function_name" \
+              --query 'Configuration.FunctionArn' \
+              --output text)"
+            if [ "$(aws events list-rule-names-by-target \
+              --target-arn "$function_arn" \
+              --query 'RuleNames | length(@)' \
+              --output text)" != "0" ]; then
+              echo "Issue #166 Phase A left an EventBridge writer attached to $logical_id" >&2
+              exit 1
+            fi
+            if [ "$(aws lambda list-event-source-mappings \
+              --function-name "$function_name" \
+              --query 'EventSourceMappings[?State==`Enabled` || State==`Enabling` || State==`Creating`] | length(@)' \
+              --output text)" != "0" ]; then
+              echo "Issue #166 Phase A left an event-source writer active for $logical_id" >&2
+              exit 1
+            fi
+          done
+
+          # Both targeted functions have a maximum configured timeout of 30 seconds.
+          # Waiting beyond that bound proves pre-update executions have drained while
+          # the zero-concurrency reservation prevents replacements from starting.
+          sleep 35
+
+          item_count=0
+          card_count=0
+          bundle_count=0
+          start_key=""
+          while true; do
+            scan_args=(dynamodb scan --table-name "$table_name" --consistent-read --no-paginate \
+              --projection-expression '#card,#bundle' \
+              --expression-attribute-names '{"#card":"cardId","#bundle":"bundleId"}' \
+              --output json)
+            if [ -n "$start_key" ]; then
+              scan_args+=(--exclusive-start-key "$start_key")
+            fi
+            page="$(aws "${scan_args[@]}")"
+            item_count=$((item_count + $(jq '.ScannedCount' <<<"$page")))
+            card_count=$((card_count + $(jq '[.Items[] | select(has("cardId"))] | length' <<<"$page")))
+            bundle_count=$((bundle_count + $(jq '[.Items[] | select(has("bundleId"))] | length' <<<"$page")))
+            start_key="$(jq -c 'if ((.LastEvaluatedKey // {}) | length) > 0 then .LastEvaluatedKey else empty end' <<<"$page")"
+            [ -n "$start_key" ] || break
+          done
+          if [ "$item_count:$card_count:$bundle_count" != "281:0:153" ]; then
+            echo "Issue #166 Phase A changed the audited table ledger" >&2
+            exit 1
+          fi
+          echo "Issue #166 Phase A is bounded at quiescence and Delete-policy arming; the original table remains unchanged."
+
       - name: Seed runtime users and recurring configs
+        if: env.DEPLOYMENT_MODE == 'normal'
         working-directory: ${{ github.workspace }}/backend
         run: |
           set -euo pipefail
@@ -364,6 +696,7 @@ jobs:
           npm exec -- tsx scripts/seed-recurring.ts
 
       - name: Smoke test deployed single-origin backend
+        if: env.DEPLOYMENT_MODE == 'normal'
         run: |
           backend_url="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
