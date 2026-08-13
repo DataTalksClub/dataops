@@ -377,9 +377,10 @@ describe("operations calendar", () => {
   it("ships week/month UI, independent layers, accessible status, and API seam", async () => {
     const frontend = path.resolve(__dirname, "../../frontend"),
       html = await fs.readFile(path.join(frontend, "index.html"), "utf8"),
-      app = await fs.readFile(path.join(frontend, "src/app.js"), "utf8");
+      app = await fs.readFile(path.join(frontend, "src/surfaces/planning.js"), "utf8");
     assert.match(html, /data-workspace-view="calendar"/);
-    assert.match(app, /Europe\/Berlin · Monday–Sunday · ISO weeks/);
+    assert.match(app, /Europe\/Berlin · Monday–Sunday/);
+    assert.match(app, /ISO week/);
     for (const id of ["data-view", "data-type", "data-layer", "data-alerts", "data-calendar"])
       assert.ok(app.includes(id));
     assert.match(app, /\/api\/calendar-items/);
