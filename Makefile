@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -23,6 +23,7 @@ help:
 	@printf '%-28s %s\n' 'make test-assistant' 'Run DataOps podcast assistant pytest.'
 	@printf '%-28s %s\n' 'make sam-validate' 'Validate SAM template locally with empty AWS config; never deploys.'
 	@printf '%-28s %s\n' 'make sam-build' 'Build the full-sandbox SAM artifact locally; never deploys.'
+	@printf '%-28s %s\n' 'make test-sam-workspace-isolation' 'Run one clean SAM build beside fresh root dependency imports.'
 	@printf '%-28s %s\n' 'make verify-sam-frontend' 'Verify canonical frontend bytes in the existing SAM artifact.'
 	@printf '%-28s %s\n' 'make verify-sam-runtime-boundary' 'Verify the existing SAM artifact contains no local infrastructure code.'
 	@printf '%-28s %s\n' 'make test-sam-frontend-isolation' 'Run the existing SAM artifact in frontend isolation; never rebuilds.'
@@ -95,7 +96,10 @@ sam-validate: sam-local-aws-config
 	AWS_CONFIG_FILE=$(SAM_LOCAL_AWS_CONFIG) AWS_SHARED_CREDENTIALS_FILE=$(SAM_LOCAL_AWS_CREDENTIALS) AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION) sam validate --template-file infra/template.full.yaml
 
 sam-build:
-	DATAOPS_REPO_ROOT="$(CURDIR)" sam build --parallel --config-env full-sandbox
+	DATAOPS_REPO_ROOT="$(CURDIR)" sam build --parallel --config-env full-sandbox $(if $(SAM_BUILD_DIR),--build-dir "$(SAM_BUILD_DIR)",)
+
+test-sam-workspace-isolation:
+	node backend/scripts/sam-workspace-isolation.test.mjs
 
 verify-sam-frontend:
 	node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
