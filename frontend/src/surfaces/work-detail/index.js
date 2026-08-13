@@ -18,6 +18,9 @@ export function createWorkDetailSurface(context) {
     activeTaskPanelArtifacts: [],
     activeCardPanelId: null,
     activeCardPanelData: null,
+    activeCardTemplateReviewOpen: false,
+    activeCardTemplateBusy: false,
+    activeCardTemplateMessage: "",
     taskRouteContext: emptyTaskRouteContext(),
   };
   let taskPanelApi;

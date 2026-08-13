@@ -556,6 +556,140 @@ describe("Work Detail surface boundary", () => {
     });
   });
 
+  test("reviews, cancels, and applies a Card Template update without hiding retention rules", async () => {
+    const card = {
+      id: "card-template-update",
+      version: 3,
+      title: "Template-backed Card",
+      stage: "preparation",
+      templateId: "template-1",
+      templateVersion: 1,
+      references: [],
+    };
+    const task = {
+      id: "task-existing",
+      version: 2,
+      cardId: card.id,
+      description: "Existing task",
+      status: "todo",
+    };
+    const preview = {
+      state: "update-available",
+      sourceTemplateVersion: 1,
+      targetTemplateVersion: 2,
+      previewToken: "a".repeat(64),
+      counts: {
+        cardFields: 1,
+        added: 1,
+        updated: 1,
+        archived: 1,
+        retainedCompleted: 1,
+        operatorOverrides: 1,
+      },
+      cardChanges: [{ field: "tags", operatorOverride: false }],
+      taskChanges: [
+        { action: "add", taskRef: "publish", targetLabel: "Publish recording", changes: [], operatorOverrideFields: [] },
+        { action: "retain-completed", taskRef: "host", currentLabel: "Host event", changes: [], operatorOverrideFields: [] },
+      ],
+    };
+    let statusLoads = 0;
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) return { card };
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        if (url === `/api/cards/${card.id}/template-update` && !requestOptions.method) {
+          statusLoads += 1;
+          return statusLoads === 1
+            ? { preview }
+            : { preview: { ...preview, state: "current", sourceTemplateVersion: 2 } };
+        }
+        if (url === `/api/cards/${card.id}/template-update` && requestOptions.method === "POST") {
+          return {
+            applied: true,
+            card: { ...card, version: 4, templateVersion: 2 },
+            tasks: [task],
+          };
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+
+    assert.match(harness.cardPanelBody.textContent, /Update available: Template v1 → v2/);
+    await findByText(harness.cardPanelBody, "Review template update", "button").click();
+    assert.match(harness.cardPanelBody.textContent, /Removed incomplete tasks are archived/);
+    assert.match(harness.cardPanelBody.textContent, /1 operator override field will take/);
+    assert.ok(findByText(harness.cardPanelBody, "Add Publish recording", "li"));
+    assert.ok(findByText(harness.cardPanelBody, "Retain completed task: Host event", "li"));
+
+    await findByText(harness.cardPanelBody, "Cancel", "button").click();
+    assert.equal(findByText(harness.cardPanelBody, "Apply reviewed update", "button"), undefined);
+    await findByText(harness.cardPanelBody, "Review template update", "button").click();
+    await findByText(harness.cardPanelBody, "Apply reviewed update", "button").click();
+    await nextTicks();
+
+    const apply = harness.requests.find((entry) => (
+      entry.url === `/api/cards/${card.id}/template-update`
+      && entry.options.method === "POST"
+    ));
+    assert.deepEqual(jsonBody(apply), { previewToken: "a".repeat(64) });
+    assert.match(harness.cardPanelBody.textContent, /Current at Template v2/);
+  });
+
+  test("retains the open review after a stale preview and reloads only on request", async () => {
+    const card = {
+      id: "card-template-conflict",
+      version: 3,
+      title: "Conflicted Card",
+      templateId: "template-1",
+      templateVersion: 1,
+      references: [],
+    };
+    const preview = {
+      state: "update-available",
+      sourceTemplateVersion: 1,
+      targetTemplateVersion: 2,
+      previewToken: "b".repeat(64),
+      counts: { added: 1, updated: 0, archived: 0, retainedCompleted: 0, cardFields: 0, operatorOverrides: 0 },
+      cardChanges: [],
+      taskChanges: [{ action: "add", taskRef: "new", targetLabel: "New task", changes: [], operatorOverrideFields: [] }],
+    };
+    let previewLoads = 0;
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) return { card };
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        if (url === `/api/cards/${card.id}/template-update` && !requestOptions.method) {
+          previewLoads += 1;
+          return { preview: { ...preview, previewToken: (previewLoads === 1 ? "b" : "c").repeat(64) } };
+        }
+        if (url === `/api/cards/${card.id}/template-update` && requestOptions.method === "POST") {
+          const error = new Error("conflict");
+          error.status = 409;
+          throw error;
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    await findByText(harness.cardPanelBody, "Review template update", "button").click();
+    await findByText(harness.cardPanelBody, "Apply reviewed update", "button").click();
+    await nextTicks();
+
+    assert.match(harness.cardPanelBody.textContent, /Your review is retained/);
+    assert.ok(findByText(harness.cardPanelBody, "Add New task", "li"));
+    assert.equal(previewLoads, 1);
+    await findByText(harness.cardPanelBody, "Reload latest preview", "button").click();
+    await nextTicks();
+    assert.equal(previewLoads, 2);
+  });
+
   test("registers Card references and registers plus approves external artifacts", async () => {
     const card = {
       id: "card-refs",

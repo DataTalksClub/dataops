@@ -148,6 +148,9 @@ export function createRouteState(context) {
   function resetCardPanel() {
     detail.activeCardPanelId = null;
     detail.activeCardPanelData = null;
+    detail.activeCardTemplateReviewOpen = false;
+    detail.activeCardTemplateBusy = false;
+    detail.activeCardTemplateMessage = "";
     cardPanel.hidden = true;
     body.classList.remove("task-panel-open");
     body.classList.remove("task-modal-open");
@@ -174,6 +177,9 @@ export function createRouteState(context) {
     if (!cardId) return;
     detail.activeCardPanelId = cardId;
     detail.activeCardPanelData = null;
+    detail.activeCardTemplateReviewOpen = false;
+    detail.activeCardTemplateBusy = false;
+    detail.activeCardTemplateMessage = "";
     cardPanelTitle.textContent = "Loading card...";
     cardPanelBody.replaceChildren();
     cardPanel.inert = false;

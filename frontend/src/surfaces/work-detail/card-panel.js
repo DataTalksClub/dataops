@@ -62,11 +62,29 @@ export function createCardPanel(context) {
       const artifacts = Array.isArray(settledPayload(artifactsResult))
         ? settledPayload(artifactsResult)
         : [];
+      let templateUpdate = null;
+      let templateUpdateError = "";
+      if (card?.templateId) {
+        try {
+          const updatePayload = await request(
+            workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
+          );
+          templateUpdate = updatePayload?.preview || updatePayload;
+        } catch (error) {
+          templateUpdateError = error.message || "Template update status is unavailable.";
+        }
+      }
       if (
         isWorkspaceRouteFresh(token) &&
         detail.activeCardPanelId === cardId
       ) {
-        detail.activeCardPanelData = { card, tasks, artifacts };
+        detail.activeCardPanelData = {
+          card,
+          tasks,
+          artifacts,
+          templateUpdate,
+          templateUpdateError,
+        };
         renderCardPanel();
         if (detail.activeTaskPanelTask?.cardId === cardId)
           renderTaskPanel();
@@ -217,6 +235,8 @@ export function createCardPanel(context) {
       meta.append(descRow);
     }
     main.append(meta);
+    const templateUpdate = renderCardTemplateUpdate(card, data);
+    if (templateUpdate) main.append(templateUpdate);
 
     // Card links
     if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) {
@@ -488,6 +508,209 @@ export function createCardPanel(context) {
     }
     row.append(checkbox, label, dateMeta);
     return row;
+  }
+
+  function templateUpdateSummary(preview) {
+    const counts = preview?.counts || {};
+    const parts = [
+      [counts.added, "added"],
+      [counts.updated, "updated"],
+      [counts.archived, "archived"],
+      [counts.retainedCompleted, "completed retained"],
+      [counts.cardFields, "Card fields"],
+    ].filter(([count]) => Number(count) > 0)
+      .map(([count, label]) => `${count} ${label}`);
+    return parts.length ? parts.join(" · ") : "Definition provenance only";
+  }
+
+  function taskUpdateLabel(change) {
+    const label = change.targetLabel || change.currentLabel || change.taskRef;
+    if (change.action === "add") return `Add ${label}`;
+    if (change.action === "archive-removed") return `Archive removed task: ${label}`;
+    if (change.action === "retain-completed") return `Retain completed task: ${label}`;
+    if (change.action === "refresh-provenance") return `Refresh provenance: ${label}`;
+    const fields = (change.changes || []).map(({ field }) => field).join(", ");
+    return `Update ${label}${fields ? `: ${fields}` : ""}`;
+  }
+
+  function renderCardTemplateUpdate(card, data) {
+    if (!card.templateId) return null;
+    const preview = data.templateUpdate;
+    const section = document.createElement("section");
+    section.className = "card-template-update workflow-detail-section";
+    const heading = document.createElement("div");
+    heading.className = "card-template-update-heading";
+    const title = document.createElement("strong");
+    title.textContent = "Template definition";
+    heading.append(title);
+    section.append(heading);
+
+    if (!preview) {
+      const unavailable = document.createElement("p");
+      unavailable.className = "card-template-update-message is-error";
+      unavailable.textContent = data.templateUpdateError || "Template update status is unavailable.";
+      const reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = "task-action-btn";
+      reload.textContent = "Reload template status";
+      reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id));
+      section.append(unavailable, reload);
+      return section;
+    }
+
+    const status = document.createElement("p");
+    status.className = `card-template-update-status is-${preview.state}`;
+    if (preview.state === "current") {
+      status.textContent = `Current at Template v${preview.targetTemplateVersion}.`;
+      section.append(status);
+      return section;
+    }
+    status.textContent = preview.state === "baseline-required"
+      ? `Review required to establish the Template v${preview.targetTemplateVersion} baseline.`
+      : `Update available: Template v${preview.sourceTemplateVersion || "unversioned"} → v${preview.targetTemplateVersion}.`;
+    const summary = document.createElement("p");
+    summary.className = "card-template-update-summary";
+    summary.textContent = templateUpdateSummary(preview);
+    section.append(status, summary);
+
+    if (!detail.activeCardTemplateReviewOpen) {
+      const review = document.createElement("button");
+      review.type = "button";
+      review.className = "primary-button card-template-review-button";
+      review.textContent = "Review template update";
+      review.addEventListener("click", () => {
+        detail.activeCardTemplateReviewOpen = true;
+        detail.activeCardTemplateMessage = "";
+        renderCardPanel();
+      });
+      section.append(review);
+      return section;
+    }
+
+    const review = document.createElement("div");
+    review.className = "card-template-review";
+    const guidance = document.createElement("p");
+    guidance.textContent = "Applying this reviewed definition keeps task IDs, live status, notes, waiting state, links, files, artifacts, and history. Removed incomplete tasks are archived; completed tasks are retained.";
+    review.append(guidance);
+    if (Number(preview.counts?.operatorOverrides) > 0) {
+      const warning = document.createElement("p");
+      warning.className = "card-template-update-message is-warning";
+      warning.textContent = `${preview.counts.operatorOverrides} operator override field${preview.counts.operatorOverrides === 1 ? "" : "s"} will take the reviewed Template value.`;
+      review.append(warning);
+    }
+    const list = document.createElement("ul");
+    list.className = "card-template-change-list";
+    for (const change of preview.cardChanges || []) {
+      const item = document.createElement("li");
+      item.textContent = `Update Card field: ${change.field}${change.operatorOverride ? " (operator override)" : ""}`;
+      list.append(item);
+    }
+    for (const change of preview.taskChanges || []) {
+      const item = document.createElement("li");
+      item.textContent = taskUpdateLabel(change);
+      if ((change.operatorOverrideFields || []).length > 0) {
+        item.textContent += ` (operator override: ${change.operatorOverrideFields.join(", ")})`;
+      }
+      list.append(item);
+    }
+    if (!list.children.length) {
+      const item = document.createElement("li");
+      item.textContent = "Record the current Git definition as this Card baseline.";
+      list.append(item);
+    }
+    review.append(list);
+    if (detail.activeCardTemplateMessage) {
+      const message = document.createElement("p");
+      message.className = "card-template-update-message";
+      message.setAttribute("role", "status");
+      message.textContent = detail.activeCardTemplateMessage;
+      review.append(message);
+    }
+    const actions = document.createElement("div");
+    actions.className = "card-template-update-actions";
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "primary-button";
+    apply.textContent = detail.activeCardTemplateBusy ? "Applying…" : "Apply reviewed update";
+    apply.disabled = detail.activeCardTemplateBusy;
+    apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken));
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "task-action-btn";
+    cancel.textContent = "Cancel";
+    cancel.disabled = detail.activeCardTemplateBusy;
+    cancel.addEventListener("click", () => {
+      detail.activeCardTemplateReviewOpen = false;
+      detail.activeCardTemplateMessage = "";
+      renderCardPanel();
+    });
+    actions.append(apply, cancel);
+    if (detail.activeCardTemplateMessage.includes("changed after preview")) {
+      const reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = "task-action-btn";
+      reload.textContent = "Reload latest preview";
+      reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id));
+      actions.append(reload);
+    }
+    review.append(actions);
+    section.append(review);
+    return section;
+  }
+
+  async function reloadCardTemplateUpdate(cardId) {
+    detail.activeCardTemplateBusy = true;
+    detail.activeCardTemplateMessage = "";
+    renderCardPanel();
+    try {
+      const payload = await request(
+        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
+      );
+      if (detail.activeCardPanelId !== cardId) return;
+      detail.activeCardPanelData = {
+        ...detail.activeCardPanelData,
+        templateUpdate: payload?.preview || payload,
+        templateUpdateError: "",
+      };
+      detail.activeCardTemplateReviewOpen = true;
+    } catch (error) {
+      detail.activeCardTemplateMessage = error.message || "Could not reload the latest preview.";
+    } finally {
+      detail.activeCardTemplateBusy = false;
+      if (detail.activeCardPanelId === cardId) renderCardPanel();
+    }
+  }
+
+  async function applyCardTemplateUpdate(cardId, previewToken) {
+    detail.activeCardTemplateBusy = true;
+    detail.activeCardTemplateMessage = "";
+    renderCardPanel();
+    try {
+      const payload = await request(
+        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
+        { method: "POST", body: JSON.stringify({ previewToken }) },
+      );
+      if (detail.activeCardPanelId !== cardId) return;
+      detail.activeCardPanelData = {
+        ...detail.activeCardPanelData,
+        card: payload.card || detail.activeCardPanelData.card,
+        tasks: Array.isArray(payload.tasks) ? payload.tasks : detail.activeCardPanelData.tasks,
+      };
+      const latest = await request(
+        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
+      );
+      detail.activeCardPanelData.templateUpdate = latest?.preview || latest;
+      detail.activeCardTemplateReviewOpen = false;
+      detail.activeCardTemplateMessage = "";
+      await refreshOperationsWorkSnapshot({ rerender: true });
+    } catch (error) {
+      detail.activeCardTemplateMessage = error.status === 409
+        ? "Card, Task, or Template changed after preview. Your review is retained; reload the latest preview when ready."
+        : `Could not apply Template update: ${error.message || "request failed"}`;
+    } finally {
+      detail.activeCardTemplateBusy = false;
+      if (detail.activeCardPanelId === cardId) renderCardPanel();
+    }
   }
 
   async function navigateTaskToWorkflow(task) {
