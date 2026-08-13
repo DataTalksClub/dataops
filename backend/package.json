@@ -14,6 +14,7 @@
     "test:telegram-transaction": "bash scripts/test-telegram-transaction.sh",
     "test:sponsor-finance-transaction": "bash scripts/test-sponsor-finance-transaction.sh",
     "test:sponsor-communications-transaction": "bash scripts/test-sponsor-communications-transaction.sh",
+    "test:task-card-transaction": "bash scripts/test-task-card-transaction.sh",
     "test:todo-transaction": "bash scripts/test-todo-transaction.sh",
     "test:typefully-transaction": "bash scripts/test-typefully-transaction.sh",
     "test:e2e": "npx playwright test",
