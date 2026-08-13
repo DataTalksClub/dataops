@@ -17,15 +17,38 @@
  *   --check  Verify the committed doc is up to date without writing it.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { buildRegistry } from '../src/docs/docRegistry';
 import { DEFAULT_TEMPLATES } from './seed-templates';
 import { GOOGLE_DOC_SOPS, TASK_INSTRUCTION_DOCS } from './google-doc-sop-map';
 
+/**
+ * Locate the process document corpus. It lives in the private knowledge
+ * repository, so DATAOPS_CONTENT_ROOT points at a checkout; a sibling checkout
+ * or a local copy is found automatically.
+ */
+function findContentRoot(repoRoot: string): string {
+  const configured = process.env.DATAOPS_CONTENT_ROOT;
+  const candidates = [
+    ...(configured ? [resolve(configured)] : []),
+    join(repoRoot, 'content'),
+    join(repoRoot, '.knowledge', 'content'),
+    join(repoRoot, '..', 'dataops-knowledge', 'content'),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      'Process document corpus not found. Set DATAOPS_CONTENT_ROOT to a checkout of '
+      + 'DataTalksClub/dataops-knowledge, or check it out beside this repository.',
+    );
+  }
+  return found;
+}
+
 const repoRoot = resolve(__dirname, '..', '..');
-const contentRoot = join(repoRoot, 'content');
+const contentRoot = findContentRoot(repoRoot);
 const outputPath = join(
   contentRoot,
   'internal-admin',

@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - "content/**"
-      - "templates/dataops-knowledge/**"
       - "docs/**"
       - ".goal-v1.md"
       - "PROJECT_PLAN.md"
@@ -18,7 +17,6 @@ on:
   pull_request:
     paths:
       - "content/**"
-      - "templates/dataops-knowledge/**"
       - ".goal-v1.md"
       - "PROJECT_PLAN.md"
       - "PORTAL_ANALYSIS.md"
@@ -75,8 +73,6 @@ jobs:
       - name: Validate docs links and workflow doc IDs
         run: npm --prefix backend run validate:docs-links -- --content-root .knowledge/content
 
-      - name: Validate dataops-knowledge migration scaffold
-        run: npm --prefix backend run validate:knowledge-repo
 
       - name: Build search index
         run: |

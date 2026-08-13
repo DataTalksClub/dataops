@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { join } from 'node:path';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { buildRegistry } from '../src/docs/docRegistry';
+import { findKnownDocIds } from './helpers/content';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
@@ -1186,11 +1186,13 @@ describe('Seed script', () => {
 });
 
 describe('Template instruction links resolve to internal process docs', () => {
-  const registry = buildRegistry(join(__dirname, '..', '..', 'content'), false);
-  const knownDocIds = new Set(registry.documents.map((doc) => doc.id));
+  // The corpus lives in the private knowledge repository. Skip when it is not
+  // checked out, rather than failing a clone of this repo alone.
+  const knownDocIds = findKnownDocIds();
   const externalDocIds = new Set(PODCAST_EXTERNAL_SOURCE_DOC_IDS.map((doc) => doc.id));
 
-  it('gives every task with instructions a resolvable internal doc', () => {
+  it('gives every task with instructions a resolvable internal doc', (t) => {
+    if (!knownDocIds) return t.skip('knowledge repository not checked out');
     const offenders: string[] = [];
     for (const template of DEFAULT_TEMPLATES as any[]) {
       for (const task of template.taskDefinitions || []) {
@@ -1209,7 +1211,8 @@ describe('Template instruction links resolve to internal process docs', () => {
     assert.deepStrictEqual(offenders, []);
   });
 
-  it('keeps Google Docs out of template references and source documents', () => {
+  it('keeps Google Docs out of template references and source documents', (t) => {
+    if (!knownDocIds) return t.skip('knowledge repository not checked out');
     const offenders: string[] = [];
     for (const template of DEFAULT_TEMPLATES as any[]) {
       for (const reference of template.references || []) {

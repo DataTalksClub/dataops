@@ -14,8 +14,9 @@ import {
   type SearchResult,
 } from '../src/docs/searchIndex';
 import { extractDoc, iterContentDocs } from '../src/docs/search/extract';
+import { findContentRoot } from './helpers/content';
 
-const CONTENT_DIR = resolve(__dirname, '..', '..', 'content');
+const CONTENT_DIR = findContentRoot();
 const paths = (results: SearchResult[]): string[] => results.map((r) => String(r.path));
 
 describe('docs search - field config (parity with docs_index.py)', () => {
@@ -171,15 +172,19 @@ const SMOKE: { query: string; top1: string; recall: string }[] = [
   },
 ];
 
-describe('docs search - smoke query relevance over content/ (BM25-lite)', () => {
+describe('docs search - smoke query relevance over the document corpus (BM25-lite)', () => {
+  // The corpus lives in the private knowledge repository, so these rank real
+  // documents only when it is checked out.
   let index: ReturnType<typeof createSearchIndex>;
   before(() => {
+    if (!CONTENT_DIR) return;
     const docs = iterContentDocs(CONTENT_DIR);
     index = createSearchIndex().fit(docs);
   });
 
   for (const { query, top1, recall } of SMOKE) {
-    it(`ranks the expected doc first and keeps recall for "${query}"`, () => {
+    it(`ranks the expected doc first and keeps recall for "${query}"`, (t) => {
+      if (!CONTENT_DIR) return t.skip('knowledge repository not checked out');
       const results = index.search(query, { numResults: 5 });
       assert.ok(results.length > 0, 'expected at least one result');
       assert.strictEqual(results[0].path, top1, `top-1 for "${query}"`);

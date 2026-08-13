@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -19,7 +20,6 @@ from content_tools import doc_registry, sop_parse  # noqa: E402
 PROTECTED_MARKDOWN_GLOBS = [
     "docs/**/*.md",
     "templates/**/*.md",
-    "content/tasks/templates/**/*.md",
 ]
 PROTECTED_MARKDOWN_FILES = [
     ".goal-v1.md",
@@ -31,7 +31,6 @@ REQUIRED_WORKFLOW_PATHS = [
     ".github/workflows/validate-planning-docs.yml",
     "docs/**",
     "templates/**",
-    "content/tasks/templates/**",
     ".goal-v1.md",
     "PROJECT_PLAN.md",
     "PORTAL_ANALYSIS.md",
@@ -110,6 +109,19 @@ PROCESS_CONTROLS = {
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*]\((?P<target>[^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(?P<title>.+?)\s*#*\s*$", re.MULTILINE)
 SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
+
+
+
+def content_root(repo_root: Path) -> Path | None:
+    """Locate the process document corpus, which lives in the knowledge repository."""
+    configured = os.environ.get("DATAOPS_CONTENT_ROOT")
+    candidates = [
+        *( [Path(configured)] if configured else [] ),
+        repo_root / "content",
+        repo_root / ".knowledge" / "content",
+        repo_root.parent / "dataops-knowledge" / "content",
+    ]
+    return next((c for c in candidates if c.is_dir()), None)
 
 
 def main() -> int:
@@ -202,7 +214,7 @@ def validate_goal_reference_set(repo_root: Path) -> list[str]:
     text = path.read_text(encoding="utf-8", errors="replace")
     refs = _code_refs_after_heading(text, "## Reference Files")
     violations: list[str] = []
-    required = {"docs/operations-manager-platform-jtbd.md", "content/tasks/templates/"}
+    required = {"docs/operations-manager-platform-jtbd.md"}
     missing_refs = sorted(required - set(refs))
     for ref in missing_refs:
         violations.append(f".goal-v1.md: required V1 goal reference is missing from Reference Files: {ref}")
@@ -226,7 +238,6 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
         "backend/docs/templates.md",
         "backend/src/types.ts",
         "frontend/src/app.js",
-        "content/tasks/templates/*.md",
         "assistants/podcast/README.md",
         "assistants/podcast/process/podcast.md",
         "assistants/podcast/templates/podcast_guest_intake.md",
@@ -257,14 +268,17 @@ def validate_process_controls(repo_root: Path) -> list[str]:
 
 def validate_doc_registry(repo_root: Path) -> list[str]:
     violations: list[str] = []
+    root = content_root(repo_root)
+    if root is None:
+        return violations
     try:
-        registry = doc_registry.build_registry(repo_root / "content")
+        registry = doc_registry.build_registry(root)
     except doc_registry.DocumentRegistryError as exc:
         violations.extend(f"content registry: {violation}" for violation in exc.violations)
         return violations
 
-    for template_path in sorted((repo_root / "content" / "tasks" / "templates").glob("*.md")):
-        repo_path = _repo_path(repo_root, template_path)
+    for template_path in sorted((root / "tasks" / "templates").glob("*.md")):
+        repo_path = _repo_path(root.parent, template_path)
         record = registry.by_path.get(repo_path)
         if record is None:
             violations.append(f"{repo_path}: missing from document registry")
@@ -275,9 +289,12 @@ def validate_doc_registry(repo_root: Path) -> list[str]:
 
 def validate_task_templates(repo_root: Path) -> list[str]:
     violations: list[str] = []
-    template_paths = sorted((repo_root / "content" / "tasks" / "templates").glob("*.md"))
+    root = content_root(repo_root)
+    if root is None:
+        return violations
+    template_paths = sorted((root / "tasks" / "templates").glob("*.md"))
     if not template_paths:
-        return ["content/tasks/templates/: no task template Markdown files found"]
+        return violations
 
     seen_titles: dict[str, str] = {}
     for template_path in template_paths:

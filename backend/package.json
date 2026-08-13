@@ -29,7 +29,6 @@
     "build:google-doc-map": "tsx scripts/build-google-doc-map.ts",
     "check:google-doc-map": "tsx scripts/build-google-doc-map.ts --check",
     "validate:docs-links": "tsx scripts/validate-docs-links.ts --repo-root .. --content-root content",
-    "validate:knowledge-repo": "tsx scripts/validate-knowledge-repo.ts --repo-root .. --scaffold-root templates/dataops-knowledge",
     "validate:export": "tsx scripts/validate-execution-export.ts",
     "dry-run:import": "tsx scripts/dry-run-import.ts",
     "bookkeeping:import": "tsx scripts/import-bookkeeping.ts",

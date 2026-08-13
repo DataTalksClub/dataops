@@ -29,6 +29,7 @@ import {
   type TrelloChecklist,
 } from '../scripts/migrate-data';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
+import { findContentRoot } from './helpers/content';
 import { createTables } from '../src/db/setup';
 import { listCards } from '../src/db/cards';
 import { listRecurringConfigs } from '../src/db/recurring';
@@ -572,7 +573,11 @@ describe('Trello active-card migration', () => {
     assert.strictEqual(preparationPlan.card.stage, 'preparation');
     assert.ok((preparationPlan.card.cardLinks as { url: string }[]).some((link) => link.url === 'https://lu.ma/prep-event'));
     const docTask = preparationPlan.tasks.find((task) => String(task.description).includes('Create podcast document'));
-    assert.strictEqual(docTask?.instructionDocId, 'sop.media.podcast.create-podcast-document');
+    // Resolving an instruction URL to a document ID needs the corpus, which
+    // lives in the private knowledge repository.
+    if (findContentRoot()) {
+      assert.strictEqual(docTask?.instructionDocId, 'sop.media.podcast.create-podcast-document');
+    }
     const waitingTask = preparationPlan.tasks.find((task) => String(task.description).includes('Follow up with guest'));
     assert.strictEqual(waitingTask?.status, 'waiting');
     assert.strictEqual(waitingTask?.waitingFor, 'Guest');
@@ -618,7 +623,9 @@ describe('Trello active-card migration', () => {
       assert.ok(prepCard.artifactRefs && prepCard.artifactRefs.length > 0);
 
       const prepTasks = await listTasksByCard(client, prepCard.id);
-      assert.ok(prepTasks.some((task) => task.instructionDocId === 'sop.media.podcast.create-podcast-document'));
+      if (findContentRoot()) {
+        assert.ok(prepTasks.some((task) => task.instructionDocId === 'sop.media.podcast.create-podcast-document'));
+      }
       assert.ok(prepTasks.some((task) => task.status === 'waiting' && task.waitingFor === 'Guest' && task.followUpAt === '2026-06-18'));
       assert.ok(prepTasks.some((task) => task.requiredLinkName === 'Luma' && task.proofRequirement?.type === 'url'));
 

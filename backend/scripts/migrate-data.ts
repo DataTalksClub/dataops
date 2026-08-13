@@ -563,12 +563,25 @@ function walkMarkdownFiles(dir: string): string[] {
 
 function getProcessDocIndex(): ProcessDocIndex {
   if (cachedProcessDocIndex) return cachedProcessDocIndex;
-  const contentDir = path.resolve(__dirname, '..', '..', 'content');
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const configured = process.env.DATAOPS_CONTENT_ROOT;
+  const contentDir = [
+    ...(configured ? [path.resolve(configured)] : []),
+    path.join(repoRoot, 'content'),
+    path.join(repoRoot, '.knowledge', 'content'),
+    path.join(repoRoot, '..', 'dataops-knowledge', 'content'),
+  ].find((candidate) => fs.existsSync(candidate)) || '';
   const index: ProcessDocIndex = {
     byId: new Map(),
     byRelativePath: new Map(),
     byBasename: new Map(),
   };
+  // Without the corpus, nothing resolves and every instruction URL is reported
+  // as unresolved, which is the honest outcome rather than a crash.
+  if (!contentDir) {
+    cachedProcessDocIndex = index;
+    return index;
+  }
   for (const file of walkMarkdownFiles(contentDir)) {
     const body = fs.readFileSync(file, 'utf8');
     const id = body.match(/^id:\s*("?)([A-Za-z0-9._-]+)\1\s*$/m)?.[2];

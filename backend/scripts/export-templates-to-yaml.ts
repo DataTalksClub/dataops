@@ -20,6 +20,29 @@ import { buildRegistry } from '../src/docs/docRegistry';
 import { templateFromYaml, templateToYaml, validateAuthoredTemplate } from '../src/templates/yamlTemplates';
 import { DEFAULT_TEMPLATES } from './seed-templates';
 
+/**
+ * Locate the process document corpus. It lives in the private knowledge
+ * repository, so DATAOPS_CONTENT_ROOT points at a checkout; a sibling checkout
+ * or a local copy is found automatically.
+ */
+function findContentRoot(repoRoot: string): string {
+  const configured = process.env.DATAOPS_CONTENT_ROOT;
+  const candidates = [
+    ...(configured ? [resolve(configured)] : []),
+    join(repoRoot, 'content'),
+    join(repoRoot, '.knowledge', 'content'),
+    join(repoRoot, '..', 'dataops-knowledge', 'content'),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      'Process document corpus not found. Set DATAOPS_CONTENT_ROOT to a checkout of '
+      + 'DataTalksClub/dataops-knowledge, or check it out beside this repository.',
+    );
+  }
+  return found;
+}
+
 const HEADER = `# Authored workflow template.
 #
 # This file is the source of truth for the process. Editing it changes the
@@ -38,7 +61,7 @@ function readFlag(name: string, fallback: string): string {
 const outDir = resolve(readFlag('--out', join(__dirname, '..', '..', '.tmp', 'workflow-templates')));
 const checkOnly = process.argv.includes('--check');
 
-const registry = buildRegistry(resolve(join(__dirname, '..', '..', 'content')), false);
+const registry = buildRegistry(findContentRoot(resolve(join(__dirname, '..', '..'))), false);
 const knownDocIds = new Set(registry.documents.map((doc) => doc.id));
 
 if (!checkOnly) mkdirSync(outDir, { recursive: true });

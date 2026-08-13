@@ -31,7 +31,7 @@ The analysis is grounded in:
 - `frontend/src/app.js`: canonical portal behavior for dashboard, tasks,
   cards, templates, recurring configs, notifications, required links, and
   completion checkboxes.
-- `content/tasks/templates/*.md`: transitional imported task templates and
+- workflow-templates/*.yaml in the private DataTalksClub/dataops-knowledge repository: transitional imported task templates and
   due-date offsets; long-term canonical templates belong in the private
   knowledge repo.
 - Private operations-knowledge content, or sanitized fixtures when referenced
