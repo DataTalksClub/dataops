@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import yaml
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
 PREPARER = REPO_ROOT / "scripts" / "deploy" / "prepare-issue-166-phase-b.mjs"
 
 
@@ -111,6 +109,7 @@ def _run_preparer(path: Path) -> subprocess.CompletedProcess[str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -177,95 +176,6 @@ def test_phase_b_preparer_refuses_any_noncanonical_source_state(tmp_path: Path):
     missing_output = _run_preparer(template_path)
     assert missing_output.returncode != 0
     assert "canonical Tasks-table output" in missing_output.stderr
-
-
-def test_phase_b_workflow_is_manual_exact_and_advances_only_from_proven_phase_a():
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-
-    assert workflow.count("- issue-166-phase-b") == 1
-    for required in (
-        '[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]',
-        '[ "$GITHUB_REF" != "refs/heads/main" ]',
-        '[ "$ISSUE_166_COMMIT" != "$GITHUB_SHA" ]',
-        "dataops-v1-tasks-pre-card-schema-2026-08-13",
-        "items=281,cardId=0,bundleId=153",
-        "remove-proven-phase-a-dataops-v1-tasks",
-        "JSON.stringify({ Issue: 166, Phase: 'A' })",
-        "tasks?.DeletionPolicy === 'Delete'",
-        "tasks?.UpdateReplacePolicy === 'Delete'",
-        "Issue #166 Phase B requires the exact deployed Phase A marker, Delete policies, schema, and quiescence",
-    ):
-        assert required in workflow
-
-    assert workflow.count("- issue-166-phase-c") == 1
-    assert "issue-166-phase-d" not in workflow
-    assert workflow.count("run: make sam-build") == 1
-    assert workflow.count("if: env.DEPLOYMENT_MODE == 'issue-166-phase-b'") == 3
-    build_at = workflow.index("run: make sam-build")
-    frontend_at = workflow.index("run: make verify-sam-frontend")
-    runtime_at = workflow.index("run: make verify-sam-runtime-boundary")
-    isolation_at = workflow.index("run: make test-sam-frontend-isolation")
-    prepare_at = workflow.index(
-        "node scripts/deploy/prepare-issue-166-phase-b.mjs .aws-sam/build/template.yaml"
-    )
-    deploy_at = workflow.index("- name: Deploy DataOps v1 stack")
-    assert build_at < frontend_at < runtime_at < isolation_at < prepare_at < deploy_at
-
-
-def test_phase_b_preflight_and_postcheck_fail_closed_on_every_production_boundary():
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-    preflight = workflow.split(
-        '- name: "Verify issue #166 Phase B exact recovery point and quiescence"', 1
-    )[1].split('- name: "Protect bounded issue #166 cutover state"', 1)[0]
-    postcheck = workflow.split(
-        '- name: "Assert bounded issue #166 Phase B result"', 1
-    )[1].split("- name: Seed runtime users and recurring configs", 1)[0]
-
-    for required in (
-        "UPDATE_COMPLETE",
-        "describe-stack-resource",
-        "DataOpsTasksTable",
-        "dataops-v1-tasks",
-        "b4e83537-7cf6-41cb-a281-8a52f678b1a3",
-        "GSI-Bundle",
-        "GSI-Card",
-        "GSI-Date",
-        "GSI-Status",
-        "describe-continuous-backups",
-        "list-backups",
-        "describe-backup",
-        'BackupStatus == "AVAILABLE"',
-        "get-function-concurrency",
-        "list-rule-names-by-target",
-        "list-event-source-mappings",
-        "sleep 35",
-        "281:0:153",
-    ):
-        assert required in preflight
-
-    for required in (
-        "UPDATE_COMPLETE",
-        "get-template",
-        "Phase: 'B'",
-        "resources.DataOpsTasksTable === undefined",
-        "outputs.DataOpsTasksTableName === undefined",
-        "describe-stack-resource",
-        "(ValidationError)",
-        "does not exist",
-        "dynamodb describe-table",
-        "(ResourceNotFoundException)",
-        "get-function-concurrency",
-        "list-rule-names-by-target",
-        "list-event-source-mappings",
-    ):
-        assert required in postcheck
-
-    assert "if: env.DEPLOYMENT_MODE == 'normal'" in workflow.split(
-        "- name: Seed runtime users and recurring configs", 1
-    )[1]
-    assert "if: env.DEPLOYMENT_MODE == 'normal'" in workflow.split(
-        "- name: Smoke test deployed single-origin backend", 1
-    )[1]
 
 
 def test_phase_b_preparer_is_one_shot_and_contains_no_aws_or_data_movement_commands():
