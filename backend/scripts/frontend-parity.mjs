@@ -120,15 +120,24 @@ None.
 }
 
 function createLocalSchema(endpoint) {
-  const setup = spawnSync(process.execPath, ['--import', 'tsx', '--eval', [
-    "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts')])",
-    '.then(async ([local, client]) => local.createTables(await client.getClient()))',
-  ].join('')], {
-    cwd: repoRoot,
-    env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
-    encoding: 'utf8',
+  return new Promise((resolveSetup, rejectSetup) => {
+    const setup = spawn(process.execPath, ['--import', 'tsx', '--eval', [
+      "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts')])",
+      '.then(async ([local, client]) => local.createTables(await client.getClient()))',
+    ].join('')], {
+      cwd: repoRoot,
+      env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    setup.stderr.setEncoding('utf8');
+    setup.stderr.on('data', (chunk) => { stderr += chunk; });
+    setup.once('error', rejectSetup);
+    setup.once('exit', (status) => {
+      if (status === 0) resolveSetup();
+      else rejectSetup(new Error(`Local schema setup failed:\n${stderr}`));
+    });
   });
-  if (setup.status !== 0) throw new Error(`Local schema setup failed:\n${setup.stderr}`);
 }
 
 async function launchTarget(target, port, root) {
@@ -136,7 +145,7 @@ async function launchTarget(target, port, root) {
   const dynalite = require('dynalite')({ createTableMs: 0 });
   await new Promise((resolveListen, rejectListen) => dynalite.listen(0, '127.0.0.1', (error) => error ? rejectListen(error) : resolveListen()));
   const endpoint = `http://127.0.0.1:${dynalite.address().port}`;
-  createLocalSchema(endpoint);
+  await createLocalSchema(endpoint);
   const cache = createDocsCache(target);
   const child = spawn(process.execPath, ['--import', 'tsx', targetServer, '--mode', target, '--root', root, '--port', String(port), '--dynamo', endpoint, '--cache', cache], {
     cwd: repoRoot,
