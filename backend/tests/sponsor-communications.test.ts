@@ -16,7 +16,7 @@ import {
   type HmacKeyring,
 } from '../src/sponsorCommunications/core';
 import { communicationCandidates } from '../src/sponsorCommunications/suggestions';
-import { renderTemplate, validateTemplateBundle } from '../src/sponsorCommunications/secrets';
+import { renderTemplate, validateTemplateSet } from '../src/sponsorCommunications/secrets';
 import { validateSanitizedSesEvent } from '../src/sponsorCommunications/sesEvents';
 import { validateSponsorPrivateArchive, type SponsorPrivateArchive } from '../src/sponsorCommunications/privateArchive';
 
@@ -32,8 +32,8 @@ const keyring: HmacKeyring = {
 const configInput = {
   enabled: false,
   generation: 1,
-  templateBundleGeneration: 'templates-1',
-  templateBundleDigest: 'a'.repeat(64),
+  templateSetGeneration: 'templates-1',
+  templateSetDigest: 'a'.repeat(64),
   hmacSecretVersionId: keyring.secretVersionId,
   hmacActiveVersion: keyring.activeVersion,
   hmacAcceptedVersions: keyring.acceptedVersions,
@@ -99,7 +99,7 @@ describe('sponsor reviewed communication core', () => {
       templateId: 'publication-live' as const,
       templateVersion: '1',
       templateDigest: 'b'.repeat(64),
-      templateBundleGeneration: config.templateBundleGeneration,
+      templateSetGeneration: config.templateSetGeneration,
       bookingId: 'booking-1',
       bookingVersion: 3,
       organizationId: 'organization-1',
@@ -148,7 +148,7 @@ describe('sponsor reviewed communication core', () => {
   });
 
   it('validates exactly four allowlisted templates and only declared placeholders', () => {
-    const card = validateTemplateBundle({
+    const card = validateTemplateSet({
       schemaVersion: '1',
       generation: 'synthetic-1',
       templates: [

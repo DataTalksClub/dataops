@@ -312,7 +312,7 @@ class TypefullyProposalAdapter implements ProposalAdapter {
       && !Array.isArray(existingDraft.data)
       ? existingDraft.data as Record<string, JsonValue>
       : null;
-    const proofBundle = data?.kind === 'typefully_public_source_grants'
+    const proofGrants = data?.kind === 'typefully_public_source_grants'
       ? data
       : data?.kind === 'typefully_public_source_grant'
         ? { kind: 'typefully_public_source_grants', proofs: [data] }
@@ -320,15 +320,15 @@ class TypefullyProposalAdapter implements ProposalAdapter {
         && data.proof && typeof data.proof === 'object' && !Array.isArray(data.proof)
         ? data.proof as Record<string, JsonValue>
         : null;
-    const grants = Array.isArray(proofBundle?.proofs)
-      ? proofBundle.proofs.map((proof) => (
+    const grants = Array.isArray(proofGrants?.proofs)
+      ? proofGrants.proofs.map((proof) => (
         proof && typeof proof === 'object' && !Array.isArray(proof)
           ? proof as Record<string, JsonValue>
           : null
       ))
       : [];
     if (
-      proofBundle?.kind !== 'typefully_public_source_grants'
+      proofGrants?.kind !== 'typefully_public_source_grants'
       || grants.length < 1
       || grants.length > 8
       || grants.some((grant) => (
@@ -347,7 +347,7 @@ class TypefullyProposalAdapter implements ProposalAdapter {
         message: 'Confirm the exact typed public source before I prepare a Typefully draft.',
       };
     }
-    return { kind: 'ready', proof: proofBundle as JsonValue };
+    return { kind: 'ready', proof: proofGrants as JsonValue };
   }
 
   draftData(candidate: JsonValue, proof: JsonValue): JsonValue {

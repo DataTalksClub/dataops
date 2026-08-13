@@ -2067,11 +2067,11 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
       );
       const current = await currentAttemptDraft(driftAttemptId);
       const draftData = structuredClone(current.draft.data) as Record<string, JsonValue>;
-      const proofBundle = structuredClone(draftData.proof) as Record<string, JsonValue>;
-      const proof = (proofBundle.proofs as Array<Record<string, JsonValue>>)[0];
+      const proofGrants = structuredClone(draftData.proof) as Record<string, JsonValue>;
+      const proof = (proofGrants.proofs as Array<Record<string, JsonValue>>)[0];
       if (drift === 'cross_owner') proof.actorId = 'another-actor';
       if (drift === 'policy') proof.policyDigest = `sha256:${'9'.repeat(64)}`;
-      draftData.proof = proofBundle;
+      draftData.proof = proofGrants;
       if (drift === 'expired_payload') {
         await client.send(new UpdateCommand({
           TableName: TABLE_CONVERSATIONAL_STATE,

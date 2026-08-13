@@ -130,7 +130,7 @@ function validateRecordSchema(record: Record<string, unknown>): void {
       break;
     case 'sponsor-send-config':
       requireFields(record, [
-        'digest', 'templateBundleGeneration', 'hmacActiveVersion', 'hmacKeyringDigest',
+        'digest', 'templateSetGeneration', 'hmacActiveVersion', 'hmacKeyringDigest',
         'sesAccount', 'sesRegion', 'sesIdentityArn', 'from', 'configurationSet',
         'configurationSetGeneration', 'approverPolicyVersion',
       ], ['generation']);
@@ -197,7 +197,7 @@ export async function exportSponsorCommunications(
     const result = await client.send(new ScanCommand({
       TableName: TABLE_SPONSOR_CRM,
       ExclusiveStartKey: cursor,
-      ProjectionExpression: '#pk,#sk,recordType,id,communicationId,bookingId,organizationId,contactId,suggestionId,payloadRef,payloadExpired,attemptId,suppressionId,#version,revision,generation,createdAt,updatedAt,#status,#state,eligible,safeReason,safeReasonCode,communicationType,occurrenceKey,bookingVersion,payloadHash,previewHash,configDigest,#digest,configGeneration,templateBundleGeneration,hmacActiveVersion,hmacAcceptedVersions,hmacKeyringDigest,sesAccount,sesRegion,sesIdentityArn,#from,replyTo,configurationSet,configurationSetGeneration,approverPolicyVersion,enabled,payload,retentionAnchoredAt,#ttl,draftVersion,expiresAt,createdBy,approverId,roleSnapshot,derivedStatus,dispatchStartedAt,providerMessageId,providerFacts,recoveryBlocked,payloadDeleteAt,eventType,eventTime,messageId,keyVersion,liveCount,liveVersions,category,facts,candidateMessageId,#action,actorId,#at,correlationHash',
+      ProjectionExpression: '#pk,#sk,recordType,id,communicationId,bookingId,organizationId,contactId,suggestionId,payloadRef,payloadExpired,attemptId,suppressionId,#version,revision,generation,createdAt,updatedAt,#status,#state,eligible,safeReason,safeReasonCode,communicationType,occurrenceKey,bookingVersion,payloadHash,previewHash,configDigest,#digest,configGeneration,templateSetGeneration,hmacActiveVersion,hmacAcceptedVersions,hmacKeyringDigest,sesAccount,sesRegion,sesIdentityArn,#from,replyTo,configurationSet,configurationSetGeneration,approverPolicyVersion,enabled,payload,retentionAnchoredAt,#ttl,draftVersion,expiresAt,createdBy,approverId,roleSnapshot,derivedStatus,dispatchStartedAt,providerMessageId,providerFacts,recoveryBlocked,payloadDeleteAt,eventType,eventTime,messageId,keyVersion,liveCount,liveVersions,category,facts,candidateMessageId,#action,actorId,#at,correlationHash',
       ExpressionAttributeNames: {
         '#pk': 'PK', '#sk': 'SK', '#version': 'version', '#status': 'status', '#state': 'state',
         '#from': 'from', '#ttl': 'ttl', '#action': 'action', '#at': 'at', '#digest': 'digest',
@@ -283,7 +283,7 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
   const configRelationships = new Map<string, Record<string, unknown>>();
   const immutableConfigFields = [
     'sesAccount', 'sesRegion', 'sesIdentityArn', 'from', 'replyTo',
-    'configurationSet', 'configurationSetGeneration', 'templateBundleGeneration',
+    'configurationSet', 'configurationSetGeneration', 'templateSetGeneration',
     'hmacActiveVersion', 'hmacAcceptedVersions', 'hmacKeyringDigest', 'approverPolicyVersion',
   ];
   for (const config of configRecords) {

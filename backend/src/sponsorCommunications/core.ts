@@ -28,8 +28,8 @@ export type HmacKeyring = {
 export type SendConfig = {
   enabled: boolean;
   generation: number;
-  templateBundleGeneration: string;
-  templateBundleDigest: string;
+  templateSetGeneration: string;
+  templateSetDigest: string;
   hmacSecretVersionId: string;
   hmacActiveVersion: string;
   hmacAcceptedVersions: string[];
@@ -60,7 +60,7 @@ export type CanonicalPayload = {
   templateId: CommunicationType;
   templateVersion: string;
   templateDigest: string;
-  templateBundleGeneration: string;
+  templateSetGeneration: string;
   bookingId: string;
   bookingVersion: number;
   organizationId: string;

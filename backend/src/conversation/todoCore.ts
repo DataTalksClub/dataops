@@ -636,7 +636,7 @@ class ConversationalProposalCore implements TelegramCoreRuntime {
       };
       const proofs = [...priorProofs, grant];
       if (proofs.length > 8) return { interaction: this.error() };
-      const proofBundle: JsonValue = {
+      const proofGrants: JsonValue = {
         kind: 'typefully_public_source_grants',
         proofs,
       };
@@ -654,7 +654,7 @@ class ConversationalProposalCore implements TelegramCoreRuntime {
         ...existing,
         updatedAt: nowIso,
         ...expiryFrom(nowIso, 30),
-        data: proofBundle,
+        data: proofGrants,
         revision: existing.revision + 1,
       }, existing.revision);
       const previousCandidate = continuationValidation?.previousCandidate;
@@ -694,7 +694,7 @@ class ConversationalProposalCore implements TelegramCoreRuntime {
       return {
         gate: {
           modelEvents,
-          sourceProof: proofBundle,
+          sourceProof: proofGrants,
           ...(previousCandidate !== undefined ? { previousCandidate } : {}),
           ...(coreChoices ? { coreChoices } : {}),
           ...(continuationValidation ? {

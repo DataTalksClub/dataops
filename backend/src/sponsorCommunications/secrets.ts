@@ -8,7 +8,7 @@ export type SponsorTemplate = {
   body: string;
   placeholders: string[];
 };
-export type SponsorTemplateBundle = {
+export type SponsorTemplateSet = {
   schemaVersion: '1';
   generation: string;
   templates: SponsorTemplate[];
@@ -33,7 +33,7 @@ const parse = (value: string, label: string): Record<string, unknown> => {
   }
 };
 
-export function validateTemplateBundle(value: unknown): { card: SponsorTemplateBundle; digest: string } {
+export function validateTemplateSet(value: unknown): { card: SponsorTemplateSet; digest: string } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid template card');
   const raw = value as Record<string, unknown>;
   if (raw.schemaVersion !== '1' || typeof raw.generation !== 'string' || !raw.generation || !Array.isArray(raw.templates)) {
@@ -67,13 +67,13 @@ export function validateTemplateBundle(value: unknown): { card: SponsorTemplateB
   return { card, digest: sha256(canonicalJson(card)) };
 }
 
-export async function loadTemplateBundle(): Promise<{ card: SponsorTemplateBundle; digest: string; secretVersionId: string }> {
+export async function loadTemplateSet(): Promise<{ card: SponsorTemplateSet; digest: string; secretVersionId: string }> {
   if (process.env.NODE_ENV === 'test' && process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD) {
-    const validated = validateTemplateBundle(parse(process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD, 'Template card'));
+    const validated = validateTemplateSet(parse(process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD, 'Template card'));
     return { ...validated, secretVersionId: 'synthetic-test-version' };
   }
   const result = await exactSecret(process.env.SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN || '');
-  return { ...validateTemplateBundle(parse(result.value, 'Template card')), secretVersionId: result.versionId };
+  return { ...validateTemplateSet(parse(result.value, 'Template card')), secretVersionId: result.versionId };
 }
 
 export async function loadHmacKeyring(): Promise<{ keyring: HmacKeyring; digest: string }> {

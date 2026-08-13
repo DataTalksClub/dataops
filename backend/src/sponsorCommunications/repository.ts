@@ -889,8 +889,8 @@ export async function getCurrentConfig(client: DynamoDBDocumentClient): Promise<
   return {
     enabled: item.enabled === true,
     generation: Number(item.generation),
-    templateBundleGeneration: String(item.templateBundleGeneration),
-    templateBundleDigest: String(item.templateBundleDigest),
+    templateSetGeneration: String(item.templateSetGeneration),
+    templateSetDigest: String(item.templateSetDigest),
     hmacSecretVersionId: String(item.hmacSecretVersionId),
     hmacActiveVersion: String(item.hmacActiveVersion),
     hmacAcceptedVersions: Array.isArray(item.hmacAcceptedVersions) ? item.hmacAcceptedVersions.map(String) : [],

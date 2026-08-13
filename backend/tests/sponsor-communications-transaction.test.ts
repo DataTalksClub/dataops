@@ -40,7 +40,7 @@ import {
   restoreSponsorPrivateArchive,
   validateSponsorPrivateArchive,
 } from '../src/sponsorCommunications/privateArchive';
-import { validateTemplateBundle } from '../src/sponsorCommunications/secrets';
+import { validateTemplateSet } from '../src/sponsorCommunications/secrets';
 import type {
   CommunicationDraftVersion,
   CommunicationPresentation,
@@ -64,7 +64,7 @@ let hmac: HmacKeyring = {
   acceptedVersions: ['v1'],
   keys: { v1: Buffer.alloc(32, 7).toString('base64') },
 };
-const templateBundle = {
+const templateSet = {
   schemaVersion: '1' as const,
   generation: 'templates-1',
   templates: [
@@ -80,12 +80,12 @@ const templateBundle = {
     placeholders: ['organizationName'],
   })),
 };
-const templateBundleDigest = validateTemplateBundle(templateBundle).digest;
+const templateSetDigest = validateTemplateSet(templateSet).digest;
 let config = validateSendConfig({
   enabled: true,
   generation: 1,
-  templateBundleGeneration: 'templates-1',
-  templateBundleDigest,
+  templateSetGeneration: 'templates-1',
+  templateSetDigest,
   hmacSecretVersionId: hmac.secretVersionId,
   hmacActiveVersion: hmac.activeVersion,
   hmacAcceptedVersions: hmac.acceptedVersions,
@@ -152,7 +152,7 @@ async function seedApproval(sequence: number): Promise<ApprovalInput> {
     templateId: 'booking-confirmation',
     templateVersion: '1',
     templateDigest: 'b'.repeat(64),
-    templateBundleGeneration: config.templateBundleGeneration,
+    templateSetGeneration: config.templateSetGeneration,
     bookingId: `booking-${sequence}`,
     bookingVersion: 1,
     organizationId: `organization-${sequence}`,
@@ -287,7 +287,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
   before(async () => {
     process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'true';
     process.env.SPONSOR_COMMUNICATIONS_TEST_HMAC_KEYRING = JSON.stringify(hmac);
-    process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD = JSON.stringify(templateBundle);
+    process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD = JSON.stringify(templateSet);
     await raw.send(new CreateTableCommand({
       TableName: TABLE,
       BillingMode: 'PAY_PER_REQUEST',

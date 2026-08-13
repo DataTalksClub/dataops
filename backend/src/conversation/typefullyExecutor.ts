@@ -420,9 +420,9 @@ class TypefullySavedDraftExecutor implements CapabilityExecutor {
         request.now
       );
       const data = object(draft?.data);
-      const proofBundle = object(data?.proof);
-      const proofs = Array.isArray(proofBundle?.proofs)
-        ? proofBundle.proofs.map((proof) => object(proof))
+      const proofGrants = object(data?.proof);
+      const proofs = Array.isArray(proofGrants?.proofs)
+        ? proofGrants.proofs.map((proof) => object(proof))
         : [];
       if (
         !draft
@@ -431,7 +431,7 @@ class TypefullySavedDraftExecutor implements CapabilityExecutor {
         || data?.kind !== 'typefully_candidate_with_source_grant'
         || canonicalJson(validateTypefullyCandidate(data.candidate))
           !== canonicalJson(candidate)
-        || proofBundle?.kind !== 'typefully_public_source_grants'
+        || proofGrants?.kind !== 'typefully_public_source_grants'
         || proofs.length < 1
         || proofs.length > 8
         || request.spec.sourceRefs.length !== proofs.length

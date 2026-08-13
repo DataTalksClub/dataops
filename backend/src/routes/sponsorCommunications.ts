@@ -37,7 +37,7 @@ import {
   storePresentation,
 } from '../sponsorCommunications/repository';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
-import { loadHmacKeyring, loadTemplateBundle, renderTemplate } from '../sponsorCommunications/secrets';
+import { loadHmacKeyring, loadTemplateSet, renderTemplate } from '../sponsorCommunications/secrets';
 import type {
   CommunicationDraftVersion,
   CommunicationPresentation,
@@ -123,7 +123,7 @@ async function validatePresentationState(
   const [suggestion, key, templates] = await Promise.all([
     getSponsorItem<CommunicationSuggestion>(client, 'COMMUNICATION_SUGGESTION', draft.suggestionId),
     loadHmacKeyring(),
-    loadTemplateBundle(),
+    loadTemplateSet(),
   ]);
   validateSendConfig(config, key.keyring);
   await assertSuppressionCoverage(client, config.hmacAcceptedVersions);
@@ -132,8 +132,8 @@ async function validatePresentationState(
     || suggestion.version !== payload.payload.suggestionVersion
     || suggestion.bookingId !== payload.payload.bookingId
     || suggestion.organizationId !== payload.payload.organizationId
-    || templates.digest !== config.templateBundleDigest
-    || templates.card.generation !== config.templateBundleGeneration
+    || templates.digest !== config.templateSetDigest
+    || templates.card.generation !== config.templateSetGeneration
   ) throw new Error('Source, template, or suppression configuration changed');
   const template = templates.card.templates.find((item) => item.id === payload.payload.templateId);
   if (
@@ -178,7 +178,7 @@ function configResponse(config: SendConfig | null) {
     configured: true,
     enabled: config.enabled,
     generation: config.generation,
-    templateBundleGeneration: config.templateBundleGeneration,
+    templateSetGeneration: config.templateSetGeneration,
     hmacActiveVersion: config.hmacActiveVersion,
     hmacAcceptedVersions: config.hmacAcceptedVersions,
     sesRegion: config.sesRegion,
@@ -208,15 +208,15 @@ export async function handleSponsorCommunicationRoutes(
     if (auth.response) return auth.response;
     try {
       const { keyring, digest: hmacKeyringDigest } = await loadHmacKeyring();
-      const templates = await loadTemplateBundle();
+      const templates = await loadTemplateSet();
       const previous = await getCurrentConfig(client);
       const input = body as unknown as Omit<SendConfig, 'digest'>;
       const config = validateSendConfig({
         ...input,
         enabled: body.enabled === true && process.env.SPONSOR_COMMUNICATION_SEND_ENABLED === 'true',
         generation: (previous?.generation || 0) + 1,
-        templateBundleGeneration: templates.card.generation,
-        templateBundleDigest: templates.digest,
+        templateSetGeneration: templates.card.generation,
+        templateSetDigest: templates.digest,
         hmacSecretVersionId: keyring.secretVersionId,
         hmacActiveVersion: keyring.activeVersion,
         hmacAcceptedVersions: keyring.acceptedVersions,
@@ -332,8 +332,8 @@ export async function handleSponsorCommunicationRoutes(
       if (!config) return json(409, { error: 'Sponsor send configuration is not ready' });
       const key = await loadHmacKeyring();
       validateSendConfig(config, key.keyring);
-      const templates = await loadTemplateBundle();
-      if (templates.digest !== config.templateBundleDigest || templates.card.generation !== config.templateBundleGeneration) {
+      const templates = await loadTemplateSet();
+      if (templates.digest !== config.templateSetDigest || templates.card.generation !== config.templateSetGeneration) {
         return json(409, { error: 'Template configuration changed; reconcile before drafting' });
       }
       const template = templates.card.templates.find((item) => item.id === suggestion.communicationType)!;
@@ -358,7 +358,7 @@ export async function handleSponsorCommunicationRoutes(
         templateId: template.id,
         templateVersion: template.version,
         templateDigest: sha256(JSON.stringify(template)),
-        templateBundleGeneration: templates.card.generation,
+        templateSetGeneration: templates.card.generation,
         bookingId: booking.id,
         bookingVersion: booking.version,
         organizationId: organization.id,
