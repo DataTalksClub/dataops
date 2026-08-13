@@ -1373,16 +1373,6 @@ export function isSponsorCommunicationRoute(pathname: string): boolean {
     && (segments[1] === 'config' || segments[1] === 'evaluate')
   ) return true;
   if (
-    segments[1] === 'suppressions'
-    && (
-      (segments.length === 3
-        && (segments[2] === 'migrate' || segments[2] === 'orphans'))
-      || (segments.length === 5
-        && segments[2] === 'orphans'
-        && segments[4] === 'reconcile')
-    )
-  ) return true;
-  if (
     segments[1] === 'attempts'
     && segments.length === 4
     && (segments[3] === 'cancel' || segments[3] === 'reconcile')

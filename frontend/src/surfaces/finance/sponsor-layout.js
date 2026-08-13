@@ -152,20 +152,6 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
         </footer>
       </form>
     </dialog>
-    <dialog class="surface-dialog" data-suppression-orphan-dialog>
-      <form method="dialog">
-        <header>
-          <p class="surface-eyebrow">Administration</p>
-          <h3>Suppression migration exceptions</h3>
-          <p>
-            These redacted records need an administrator decision before the
-            retired key can be removed.
-          </p>
-        </header>
-        <div class="dialog-fields" data-suppression-orphans></div>
-        <footer><button value="cancel">Close</button></footer>
-      </form>
-    </dialog>
     <dialog class="surface-dialog surface-dialog-wide" data-booking-dialog>
       <form method="dialog">
         <header>

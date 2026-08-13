@@ -25,12 +25,9 @@ import {
   getPrivatePayload,
   getSponsorItem,
   listBookingCommunications,
-  listSuppressionMigrationOrphans,
-  migrateSuppressions,
   nextDraftVersion,
   putConfig,
   reconcileAttempt,
-  reconcileSuppressionMigrationOrphan,
   removeSuppression,
   revokePresentation,
   storeDraft,
@@ -233,58 +230,6 @@ export async function handleSponsorCommunicationRoutes(
     const auth = await currentActor(event, client, ['operator', 'admin']);
     if (auth.response) return auth.response;
     return json(200, await evaluateCommunicationSuggestions(client, typeof body.today === 'string' ? body.today : undefined));
-  }
-
-  if (path === '/api/sponsor-crm/communications/suppressions/migrate' && method === 'POST') {
-    const auth = await currentActor(event, client, ['admin']);
-    if (auth.response) return auth.response;
-    if (process.env.SPONSOR_COMMUNICATION_SEND_ENABLED === 'true') {
-      return json(409, { error: 'Disable the deployment send switch before suppression migration' });
-    }
-    try {
-      const config = await getCurrentConfig(client);
-      if (!config) throw new Error('Suppression configuration is unavailable');
-      const { keyring } = await loadHmacKeyring();
-      validateSendConfig(config, keyring);
-      const result = await migrateSuppressions(client, {
-        actorId: auth.user!.id,
-        fromVersion: String(body.fromVersion || ''),
-        limit: Number(body.limit || 10),
-        cursor: typeof body.cursor === 'string' ? body.cursor : undefined,
-      }, config, keyring);
-      return json(200, result);
-    } catch (error) {
-      return json(409, { error: (error as Error).message });
-    }
-  }
-  if (path === '/api/sponsor-crm/communications/suppressions/orphans' && method === 'GET') {
-    const auth = await currentActor(event, client, ['admin']);
-    if (auth.response) return auth.response;
-    try {
-      return json(200, await listSuppressionMigrationOrphans(client, {
-        limit: Number(event.queryStringParameters?.limit || 20),
-        cursor: event.queryStringParameters?.cursor,
-      }));
-    } catch (error) {
-      return json(400, { error: (error as Error).message });
-    }
-  }
-
-  const orphanReconcile = path.match(/^\/api\/sponsor-crm\/communications\/suppressions\/orphans\/([^/]+)\/reconcile$/);
-  if (orphanReconcile && method === 'POST') {
-    const auth = await currentActor(event, client, ['admin']);
-    if (auth.response) return auth.response;
-    if (typeof body.reason !== 'string' || !body.reason.trim()) return json(400, { error: 'A reconciliation reason is required' });
-    try {
-      await reconcileSuppressionMigrationOrphan(client, {
-        id: orphanReconcile[1],
-        actorId: auth.user!.id,
-        reason: body.reason,
-      });
-      return json(200, { status: 'resolved' });
-    } catch (error) {
-      return json(409, { error: (error as Error).message });
-    }
   }
 
   const bookingList = path.match(/^\/api\/sponsor-crm\/bookings\/([^/]+)\/communications$/);

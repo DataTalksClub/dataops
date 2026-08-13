@@ -14,21 +14,17 @@ import {
   canonicalPayload,
   keyringDigest,
   sha256,
-  suppressionKey,
   validateSendConfig,
   type HmacKeyring,
 } from '../src/sponsorCommunications/core';
 import {
   addSuppression,
   approveDraft,
-  assertSuppressionCoverage,
   cancelQueuedAttempt,
   getDraft,
   getPrivatePayload,
   listBookingCommunications,
-  migrateSuppressions,
   reconcileAbandonedSponsorPayloads,
-  reconcileSuppressionMigrationOrphan,
   storeDraft,
   type ApprovalInput,
 } from '../src/sponsorCommunications/repository';
@@ -682,131 +678,6 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
       client,
     );
     assert.equal(blockedDrift.statusCode, 409, blockedDrift.body);
-  });
-
-  it('migrates suppressions while disabled with exact coverage, idempotency, and orphan reconciliation', async () => {
-    const orphan = await seedRouteSource(26);
-    await addSuppression(client, {
-      canonicalAddress: orphan.recipient,
-      contactId: orphan.contactId,
-      organizationId: orphan.organizationId,
-      category: 'manual',
-      actorId: 'operator-1',
-      safeReason: 'orphan migration test',
-    }, config, hmac);
-    await client.send(new UpdateCommand({
-      TableName: TABLE,
-      Key: keys('CONTACT', orphan.contactId),
-      UpdateExpression: 'SET emails = :emails, #version = :version',
-      ExpressionAttributeNames: { '#version': 'version' },
-      ExpressionAttributeValues: { ':emails': [], ':version': 2 },
-    }));
-    const resolved = await seedRouteSource(27);
-    await addSuppression(client, {
-      canonicalAddress: resolved.recipient,
-      contactId: resolved.contactId,
-      organizationId: resolved.organizationId,
-      category: 'manual',
-      actorId: 'operator-1',
-      safeReason: 'resolved migration test',
-    }, config, hmac);
-    const hmac2: HmacKeyring = {
-      secretVersionId: 'synthetic-secret-version-2',
-      activeVersion: 'v2',
-      acceptedVersions: ['v1', 'v2'],
-      keys: { ...hmac.keys, v2: Buffer.alloc(32, 11).toString('base64') },
-    };
-    const { digest: _previousDigest, ...configWithoutDigest } = config;
-    const disabledConfig = validateSendConfig({
-      ...configWithoutDigest,
-      enabled: false,
-      generation: 2,
-      hmacSecretVersionId: hmac2.secretVersionId,
-      hmacActiveVersion: hmac2.activeVersion,
-      hmacAcceptedVersions: hmac2.acceptedVersions,
-      hmacKeyringDigest: keyringDigest(hmac2),
-    }, hmac2);
-    process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'false';
-    process.env.SPONSOR_COMMUNICATIONS_TEST_HMAC_KEYRING = JSON.stringify(hmac2);
-    await put('SPONSOR_SEND_CONFIG', 'CURRENT', { ...disabledConfig, recordType: 'sponsor-send-config' });
-
-    let cursor: string | undefined;
-    let migrated = 0;
-    let orphaned = 0;
-    do {
-      const page = await migrateSuppressions(client, {
-        actorId: 'admin-1',
-        fromVersion: 'v1',
-        limit: 2,
-        cursor,
-      }, disabledConfig, hmac2);
-      migrated += page.migrated;
-      orphaned += page.orphaned;
-      cursor = page.nextCursor || undefined;
-    } while (cursor);
-    assert.ok(migrated >= 1);
-    assert.ok(orphaned >= 1);
-    assert.ok(await client.send(new GetCommand({
-      TableName: TABLE,
-      Key: keys('EMAIL_SUPPRESSION', suppressionKey('v2', resolved.recipient, hmac2)),
-    })));
-    await assert.rejects(() => assertSuppressionCoverage(client, ['v1', 'v2'], 'v2'));
-    const orphanListResponse = await handleSponsorCommunicationRoutes(
-      '/api/sponsor-crm/communications/suppressions/orphans', 'GET',
-      apiEvent('GET', '', 'admin-1'), client,
-    );
-    assert.equal(orphanListResponse.statusCode, 200, orphanListResponse.body);
-    const orphanReceipt = JSON.parse(orphanListResponse.body).items
-      .find((item: Record<string, unknown>) => item.contactId === orphan.contactId);
-    assert.ok(orphanReceipt?.id);
-    assert.equal(JSON.stringify(orphanReceipt).includes(orphan.recipient), false);
-    const orphanId = String(orphanReceipt.id);
-    const orphanRecord = (await client.send(new GetCommand({
-      TableName: TABLE,
-      Key: keys('SUPPRESSION_MIGRATION_ORPHAN', orphanId),
-    }))).Item;
-    assert.equal(orphanRecord?.status, 'unresolved');
-    await reconcileSuppressionMigrationOrphan(client, {
-      id: orphanId,
-      actorId: 'admin-1',
-      reason: 'Synthetic contact address was retired',
-    });
-    const retirement = await migrateSuppressions(client, {
-      actorId: 'admin-1',
-      fromVersion: 'v1',
-      limit: 10,
-    }, disabledConfig, hmac2);
-    assert.equal(retirement.nextCursor, null);
-    assert.equal(retirement.retired, true);
-    await assertSuppressionCoverage(client, ['v2'], 'v2');
-    const repeat = await migrateSuppressions(client, {
-      actorId: 'admin-1',
-      fromVersion: 'v1',
-      limit: 10,
-    }, disabledConfig, hmac2);
-    assert.deepEqual(
-      { migrated: repeat.migrated, existing: repeat.existing, orphaned: repeat.orphaned },
-      { migrated: 0, existing: 0, orphaned: 0 },
-    );
-
-    const retiredKeyring: HmacKeyring = {
-      secretVersionId: hmac2.secretVersionId,
-      activeVersion: 'v2',
-      acceptedVersions: ['v2'],
-      keys: { v2: hmac2.keys.v2 },
-    };
-    const { digest: _disabledDigest, ...disabledWithoutDigest } = disabledConfig;
-    config = validateSendConfig({
-      ...disabledWithoutDigest,
-      enabled: true,
-      generation: 3,
-      hmacAcceptedVersions: ['v2'],
-      hmacKeyringDigest: keyringDigest(retiredKeyring),
-    }, retiredKeyring);
-    hmac = retiredKeyring;
-    process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'true';
-    process.env.SPONSOR_COMMUNICATIONS_TEST_HMAC_KEYRING = JSON.stringify(hmac);
-    await put('SPONSOR_SEND_CONFIG', 'CURRENT', { ...config, recordType: 'sponsor-send-config' });
   });
 
   it('linearizes queued cancel and makes deployment kill-switch-off fail safe', async () => {

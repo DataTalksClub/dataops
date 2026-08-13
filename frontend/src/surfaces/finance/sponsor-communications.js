@@ -34,8 +34,7 @@ export function createSponsorCommunications(context) {
     const isAdmin = communicationPermissions.role === "admin";
     const controls = hasRecipients
       ? html`<div class="crm-communication-controls">
-          <button data-suppress-address>Suppress sponsor address</button
-          >${isAdmin ? " <button data-list-suppression-orphans>Migration exceptions</button>" : ""}
+          <button data-suppress-address>Suppress sponsor address</button>
         </div>`
       : "";
     const disabledBanner = !communicationConfig?.enabled

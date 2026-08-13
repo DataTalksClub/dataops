@@ -17,7 +17,6 @@ const PRIVATE_TYPES = new Set([
   'sponsor-send-config',
   'sponsor-communication-audit',
   'sponsor-send-correlation',
-  'suppression-migration-orphan',
   'suppression-version-count',
   'suppression-coverage',
 ]);
@@ -149,11 +148,6 @@ function validateRecordSchema(record: Record<string, unknown>): void {
     case 'sponsor-send-correlation':
       requireFields(record, ['id', 'attemptId', 'communicationId', 'correlationHash'], ['configGeneration']);
       requireTimestamps(record, ['createdAt']);
-      break;
-    case 'suppression-migration-orphan':
-      requireFields(record, ['id', 'suppressionId', 'keyVersion', 'contactId', 'organizationId', 'status'], ['revision']);
-      if (!isEnum(record.status, ['unresolved', 'resolved'])) throw new Error('Invalid suppression orphan state');
-      requireTimestamps(record, ['createdAt', 'updatedAt']);
       break;
     case 'suppression-version-count':
       requireFields(record, ['keyVersion'], ['liveCount']);
@@ -418,10 +412,6 @@ export function validateSponsorPrivateArchive(archive: SponsorPrivateArchive): v
       || typeof record.organizationId !== 'string'
       || !authorizedKeyVersions.has(record.keyVersion)
     )) throw new Error('Private sponsor archive has an invalid suppression relationship');
-    if (
-      record.recordType === 'suppression-migration-orphan'
-      && !authorizedKeyVersions.has(String(record.keyVersion))
-    ) throw new Error('Private sponsor archive has an invalid suppression relationship');
     if (record.recordType === 'sponsor-send-config' && (
       record.enabled !== false
       || !Array.isArray(record.hmacAcceptedVersions)

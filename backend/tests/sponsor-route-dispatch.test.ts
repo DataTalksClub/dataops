@@ -7,9 +7,6 @@ import { isSponsorCommunicationRoute, route } from '../src/router';
 const communicationRoutes = [
   '/api/sponsor-crm/communications/config',
   '/api/sponsor-crm/communications/evaluate',
-  '/api/sponsor-crm/communications/suppressions/migrate',
-  '/api/sponsor-crm/communications/suppressions/orphans',
-  '/api/sponsor-crm/communications/suppressions/orphans/orphan-1/reconcile',
   '/api/sponsor-crm/bookings/booking-1/communications',
   '/api/sponsor-crm/bookings/communications/communications',
   '/api/sponsor-crm/bookings/finance/communications',

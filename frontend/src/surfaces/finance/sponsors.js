@@ -522,60 +522,6 @@ export function createSponsorCrmSurface(context) {
       }, "Could not refresh communication suggestions");
     surface.addEventListener("click", (event) => {
       if (!event.target.closest("[data-crm-communications]")) return;
-      if (event.target.closest("[data-list-suppression-orphans]")) {
-        safe(async () => {
-          const result = await api(
-            "/communications/suppressions/orphans?limit=20",
-          );
-          const dialog = surface.querySelector(
-            "[data-suppression-orphan-dialog]",
-          );
-          dialog.querySelector("[data-suppression-orphans]").innerHTML = result
-            .items?.length
-            ? result.items
-                .map(
-                  (item) =>
-                    html`<article class="crm-card">
-                      <strong
-                        >Redacted suppression record ·
-                        ${escapeHtml(humanizeOptionLabel(item.status))}</strong
-                      >
-                      <p>
-                        The retired suppression key needs an administrator
-                        decision.
-                      </p>
-                      ${item.status === "unresolved" ? html`<button data-reconcile-suppression-orphan="${escapeHtml(item.id)}">Resolve exception</button>` : ""}
-                    </article>`,
-                )
-                .join("")
-            : html` <p>No unresolved migration exceptions.</p> `;
-          for (const button of dialog.querySelectorAll(
-            "[data-reconcile-suppression-orphan]",
-          )) {
-            button.onclick = (click) => {
-              click.preventDefault();
-              const reason = window.prompt(
-                "Why is it safe to resolve this redacted suppression exception?",
-              );
-              if (!reason) return;
-              safe(async () => {
-                await api(
-                  `/communications/suppressions/orphans/${button.dataset.reconcileSuppressionOrphan}/reconcile`,
-                  {
-                    method: "POST",
-                    body: JSON.stringify({ reason }),
-                  },
-                );
-                dialog.close();
-                message.textContent =
-                  "Suppression migration exception resolved.";
-              }, "Could not resolve migration exception");
-            };
-          }
-          dialog.showModal();
-        }, "Could not load migration exceptions");
-        return;
-      }
       if (event.target.closest("[data-suppress-address]")) {
         const booking = bookings.find(
           (item) => item.id === sponsorCommunications.selectedBookingId,
