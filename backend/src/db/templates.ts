@@ -10,6 +10,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_TEMPLATES } from './setup';
 import { createTask, listTasksByCard } from './tasks';
 import type { Template, Task } from '../types';
+import { templateTaskProjection } from '../templates/cardTemplateProjection';
 
 export class TemplateVersionConflictError extends Error {
   constructor() {
@@ -186,91 +187,12 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
   );
   const createdTasks: Task[] = [];
 
-  for (const def of taskDefinitions) {
+  for (const [order, def] of taskDefinitions.entries()) {
     if (existingRefs.has(def.refId)) {
       continue;
     }
 
-    const anchor = new Date(anchorDate + 'T00:00:00Z');
-    anchor.setUTCDate(anchor.getUTCDate() + (def.offsetDays || 0));
-    const taskDate = anchor.toISOString().split('T')[0];
-
-    const taskData: Record<string, unknown> = {
-      description: def.description,
-      cardId,
-      templateId,
-      date: taskDate,
-      source: 'template',
-      templateTaskRef: def.refId,
-      templateOffsetDays: def.offsetDays,
-      status: 'todo',
-    };
-    if (template.sourceDocIds && template.sourceDocIds.length > 0) {
-      taskData.sourceDocIds = template.sourceDocIds;
-    }
-
-    // Set instructionsUrl from task definition (not comment)
-    if (def.instructionsUrl) {
-      taskData.instructionsUrl = def.instructionsUrl;
-    }
-    if (def.instructionDocId) {
-      taskData.instructionDocId = def.instructionDocId;
-    }
-    if (def.instructionStepId) {
-      taskData.instructionStepId = def.instructionStepId;
-    }
-    if (def.phase) {
-      taskData.phase = def.phase;
-    }
-    if (def.systems && def.systems.length > 0) {
-      taskData.systems = def.systems;
-    }
-    if (def.validation) {
-      taskData.validation = def.validation;
-    }
-    if (def.proofRequirement) {
-      taskData.proofRequirement = def.proofRequirement;
-    }
-    if (def.artifactRefs && def.artifactRefs.length > 0) {
-      taskData.artifactRefs = def.artifactRefs;
-    }
-    if (def.assistantJobRefs && def.assistantJobRefs.length > 0) {
-      taskData.assistantJobRefs = def.assistantJobRefs;
-    }
-    if (def.auditEventRefs && def.auditEventRefs.length > 0) {
-      taskData.auditEventRefs = def.auditEventRefs;
-    }
-    if (def.intakeRefs && def.intakeRefs.length > 0) {
-      taskData.intakeRefs = def.intakeRefs;
-    }
-
-    // Set assigneeId: task definition overrides, fall back to template default
-    if (def.assigneeId) {
-      taskData.assigneeId = def.assigneeId;
-    } else if (template.defaultAssigneeId) {
-      taskData.assigneeId = template.defaultAssigneeId;
-    }
-
-    // Set requiredLinkName from task definition
-    if (def.requiredLinkName) {
-      taskData.requiredLinkName = def.requiredLinkName;
-    }
-    if (def.requiresFile !== undefined) {
-      taskData.requiresFile = def.requiresFile;
-    }
-
-    // Set stageOnComplete from task definition (internal field for stage transitions)
-    if (def.stageOnComplete) {
-      taskData.stageOnComplete = def.stageOnComplete;
-    }
-    if (def.isMilestone !== undefined) {
-      taskData.isMilestone = def.isMilestone;
-    }
-
-    // Inherit tags from template
-    if (template.tags && template.tags.length > 0) {
-      taskData.tags = template.tags;
-    }
+    const taskData = templateTaskProjection(template, def, order, anchorDate, cardId);
 
     const task = await createTask(client, taskData);
 

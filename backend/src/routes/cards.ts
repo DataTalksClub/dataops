@@ -9,6 +9,7 @@ import {
 } from '../db/cards';
 import { getTemplate, instantiateTemplate } from '../db/templates';
 import { listTasksByCard } from '../db/tasks';
+import { templateCardProjection } from '../templates/cardTemplateProjection';
 import type { LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -208,6 +209,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 
     // When templateId is provided, copy template fields to card (caller values take precedence)
     if (template) {
+      Object.assign(cardData, templateCardProjection(template));
       if (body.sourceDocIds !== undefined) {
         cardData.sourceDocIds = body.sourceDocIds;
       } else if (template.sourceDocIds && template.sourceDocIds.length > 0) {

@@ -16,7 +16,7 @@ import type { Card } from '../types';
 function cleanItem(item: Record<string, unknown> | undefined): Card | null {
   if (!item) return null;
   const { PK, SK, ...rest } = item;
-  return rest as unknown as Card;
+  return { ...rest, version: typeof rest.version === 'number' ? rest.version : 1 } as unknown as Card;
 }
 
 /**
@@ -33,6 +33,7 @@ async function createCard(client: DynamoDBDocumentClient, data: Record<string, u
     createdAt: now,
     updatedAt: now,
     ...data,
+    version: 1,
   };
 
   await client.send(
@@ -64,7 +65,8 @@ async function getCard(client: DynamoDBDocumentClient, id: string): Promise<Card
  */
 async function updateCard(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<Card | null> {
   const now = new Date().toISOString();
-  const fields: Record<string, unknown> = { ...updates, updatedAt: now };
+  const { version: _ignoredVersion, ...safeUpdates } = updates;
+  const fields: Record<string, unknown> = { ...safeUpdates, updatedAt: now };
 
   const expressionParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
@@ -79,6 +81,10 @@ async function updateCard(client: DynamoDBDocumentClient, id: string, updates: R
     expressionAttrValues[valueToken] = value;
     i++;
   }
+  expressionParts.push('#version = if_not_exists(#version, :versionBase) + :versionIncrement');
+  expressionAttrNames['#version'] = 'version';
+  expressionAttrValues[':versionBase'] = 1;
+  expressionAttrValues[':versionIncrement'] = 1;
 
   const result = await client.send(
     new UpdateCommand({

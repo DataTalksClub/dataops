@@ -9,6 +9,7 @@ import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
 import { berlinDate } from '../sponsorFinance/core';
 import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
+import { templateCardProjection } from '../templates/cardTemplateProjection';
 
 export interface CronRunnerResult {
   created: string[];
@@ -170,6 +171,7 @@ async function runCron(
 
       // 6. Create the card
       const cardData: Record<string, unknown> = {
+        ...templateCardProjection(template),
         title: `${template.name} - ${formatAnchorDate(anchorDate)}`,
         anchorDate,
         templateId: template.id,

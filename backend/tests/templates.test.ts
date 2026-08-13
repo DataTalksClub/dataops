@@ -99,6 +99,7 @@ describe('Templates data layer', () => {
   it('instantiateTemplate creates tasks with correct date offsets', async () => {
     const template = await createTemplate(client, {
       name: 'Release template',
+      sourceRevision: 'synthetic-release-revision',
       taskDefinitions: [
         { refId: 'prep', description: 'Prepare release', offsetDays: -2 },
         { refId: 'release', description: 'Release day', offsetDays: 0 },
@@ -123,6 +124,16 @@ describe('Templates data layer', () => {
     assert.strictEqual(tasks[0].source, 'template');
     assert.strictEqual(tasks[0].templateTaskRef, 'prep');
     assert.strictEqual(tasks[0].status, 'todo');
+    assert.strictEqual(tasks[0].version, 1);
+    assert.strictEqual(tasks[0].templateVersion, template.version);
+    assert.strictEqual(tasks[0].templateSourceRevision, 'synthetic-release-revision');
+    assert.strictEqual(tasks[0].templateTaskOrder, 0);
+    assert.deepStrictEqual(tasks[0].templateDefinitionSnapshot, {
+      description: 'Prepare release',
+      date: '2026-03-08',
+      templateOffsetDays: -2,
+      templateTaskOrder: 0,
+    });
 
     // 0 days offset = 2026-03-10
     assert.strictEqual(tasks[1].date, '2026-03-10');

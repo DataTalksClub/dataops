@@ -17,7 +17,7 @@ import type { Task } from '../types';
 function cleanItem(item: Record<string, unknown> | undefined): Task | null {
   if (!item) return null;
   const { PK, SK, ...rest } = item;
-  return rest as unknown as Task;
+  return { ...rest, version: typeof rest.version === 'number' ? rest.version : 1 } as unknown as Task;
 }
 
 /**
@@ -36,6 +36,7 @@ async function createTask(client: DynamoDBDocumentClient, taskData: Record<strin
     updatedAt: now,
     status: 'todo',
     ...taskData,
+    version: 1,
   };
 
   await client.send(
@@ -68,7 +69,8 @@ async function getTask(client: DynamoDBDocumentClient, id: string): Promise<Task
  */
 async function updateTask(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<Task | null> {
   const now = new Date().toISOString();
-  const fields: Record<string, unknown> = { ...updates, updatedAt: now };
+  const { version: _ignoredVersion, ...safeUpdates } = updates;
+  const fields: Record<string, unknown> = { ...safeUpdates, updatedAt: now };
 
   const expressionParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
@@ -83,6 +85,10 @@ async function updateTask(client: DynamoDBDocumentClient, id: string, updates: R
     expressionAttrValues[valueToken] = value;
     i++;
   }
+  expressionParts.push('#version = if_not_exists(#version, :versionBase) + :versionIncrement');
+  expressionAttrNames['#version'] = 'version';
+  expressionAttrValues[':versionBase'] = 1;
+  expressionAttrValues[':versionIncrement'] = 1;
 
   const result = await client.send(
     new UpdateCommand({

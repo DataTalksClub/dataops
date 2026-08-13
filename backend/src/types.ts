@@ -299,6 +299,8 @@ export interface TaskHistoryEvent {
 
 export interface Task {
   id: string;
+  /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
+  version: number;
   description: string;
   date: string;
   status: TaskStatus;
@@ -333,6 +335,13 @@ export interface Task {
   templateId?: string;
   templateTaskRef?: string;
   templateOffsetDays?: number;
+  templateTaskOrder?: number;
+  /** Template projection used for the last reviewed application to this Task. */
+  templateVersion?: number;
+  templateSourceRevision?: string;
+  templateDefinitionSnapshot?: TemplateTaskDefinitionSnapshot;
+  templateRetiredAt?: string;
+  templateRetiredReason?: 'removed' | 'completed-modified';
   isMilestone?: boolean;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
@@ -374,10 +383,16 @@ export interface CardLink {
 
 export interface Card {
   id: string;
+  /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
+  version: number;
   title?: string;
   description?: string | null;
   anchorDate?: string;
   templateId?: string;
+  /** Template projection used for the last reviewed application to this Card. */
+  templateVersion?: number;
+  templateSourceRevision?: string;
+  templateDefinitionSnapshot?: TemplateCardDefinitionSnapshot;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
   references?: CardLink[];
@@ -425,6 +440,40 @@ export interface TaskDefinition {
   assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
+}
+
+/** Definition-owned Card defaults captured when a Template is applied. */
+export interface TemplateCardDefinitionSnapshot {
+  emoji?: string;
+  tags: string[];
+  sourceDocIds: string[];
+  references: Reference[];
+  cardLinkDefinitions: CardLinkDefinition[];
+}
+
+/**
+ * Definition-owned Task values captured when a Template is applied. Runtime
+ * status, evidence, notes, links and history deliberately never live here.
+ */
+export interface TemplateTaskDefinitionSnapshot {
+  description: string;
+  date: string;
+  templateOffsetDays: number;
+  templateTaskOrder: number;
+  isMilestone?: boolean;
+  stageOnComplete?: string;
+  assigneeId?: string;
+  instructionsUrl?: string;
+  instructionDocId?: string;
+  instructionStepId?: string;
+  phase?: string;
+  systems?: string[];
+  validation?: string | Record<string, unknown>;
+  requiredLinkName?: string;
+  requiresFile?: boolean;
+  proofRequirement?: ProofRequirement;
+  tags?: string[];
+  sourceDocIds?: string[];
 }
 
 export interface Template {

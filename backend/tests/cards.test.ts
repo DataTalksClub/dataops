@@ -33,6 +33,7 @@ describe('Cards data layer', () => {
     });
 
     assert.ok(card.id);
+    assert.strictEqual(card.version, 1);
     assert.ok(card.createdAt);
     assert.ok(card.updatedAt);
     assert.strictEqual(card.title, 'DataOps v2');
@@ -69,6 +70,7 @@ describe('Cards data layer', () => {
 
     assert.strictEqual(updated!.title, 'New title');
     assert.strictEqual(updated!.status, 'active');
+    assert.strictEqual(updated!.version, 2);
     assert.ok(updated!.updatedAt > created.updatedAt);
   });
 

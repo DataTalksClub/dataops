@@ -124,6 +124,8 @@ describe('API — Cards', () => {
     it('creates a card with a template and instantiates tasks', async () => {
       const template = await createTemplate(client, {
         name: 'Event Template',
+        sourceRevision: 'synthetic-revision-1',
+        tags: ['event'],
         taskDefinitions: [
           { refId: 'prep', description: 'Prepare materials', offsetDays: -7 },
           { refId: 'event', description: 'Run event', offsetDays: 0 },
@@ -142,6 +144,10 @@ describe('API — Cards', () => {
 
       assert.ok(body.card);
       assert.strictEqual(body.card.templateId, template.id);
+      assert.strictEqual(body.card.version, 1);
+      assert.strictEqual(body.card.templateVersion, template.version);
+      assert.strictEqual(body.card.templateSourceRevision, 'synthetic-revision-1');
+      assert.deepStrictEqual(body.card.templateDefinitionSnapshot.tags, ['event']);
 
       assert.ok(body.tasks);
       assert.strictEqual(body.tasks.length, 3);
@@ -149,9 +155,15 @@ describe('API — Cards', () => {
       const dates = body.tasks.map((t: any) => t.date).sort();
       assert.deepStrictEqual(dates, ['2026-04-08', '2026-04-15', '2026-04-18']);
 
-      for (const task of body.tasks) {
+      for (const [order, task] of body.tasks.entries()) {
         assert.strictEqual(task.cardId, body.card.id);
         assert.strictEqual(task.source, 'template');
+        assert.strictEqual(task.version, 1);
+        assert.strictEqual(task.templateVersion, template.version);
+        assert.strictEqual(task.templateSourceRevision, 'synthetic-revision-1');
+        assert.strictEqual(task.templateTaskOrder, order);
+        assert.strictEqual(task.templateDefinitionSnapshot.description, task.description);
+        assert.strictEqual(task.templateDefinitionSnapshot.date, task.date);
       }
     });
 
