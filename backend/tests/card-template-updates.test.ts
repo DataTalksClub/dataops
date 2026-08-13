@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 
 import type { Card, Task, Template } from '../src/types';
 import {
@@ -11,6 +12,7 @@ import {
   CardTemplateUpdateInvalidStateError,
   projectedCardLinks,
 } from '../src/templates/cardTemplateUpdates';
+import { applyCardTemplateUpdate } from '../src/db/cardTemplateUpdates';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 
@@ -192,5 +194,45 @@ describe('Card Template update planning', () => {
       () => buildCardTemplateUpdatePlan(cardFrom(source), tasks, source),
       CardTemplateUpdateInvalidStateError,
     );
+  });
+
+  it('uses one real DynamoDB transaction outside the test environment', async () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = [
+      ...target.taskDefinitions!,
+      { refId: 'publish', description: 'Publish', offsetDays: 3 },
+    ];
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+    const token = buildCardTemplateUpdatePlan(card, tasks, target).preview.previewToken;
+    const commands: unknown[] = [];
+    const fake = {
+      send: async (command: unknown) => {
+        commands.push(command);
+        if (command instanceof GetCommand) return {};
+        if (command instanceof TransactWriteCommand) return {};
+        throw new Error('Unexpected command');
+      },
+    } as any;
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const result = await applyCardTemplateUpdate(
+        fake, card, tasks, target, token, 'operator-transaction-proof',
+      );
+      assert.equal(result.applied, true);
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+
+    assert.equal(commands.length, 2);
+    assert.ok(commands[0] instanceof GetCommand);
+    assert.ok(commands[1] instanceof TransactWriteCommand);
+    const items = (commands[1] as TransactWriteCommand).input.TransactItems || [];
+    assert.ok(items.some((item) => item.ConditionCheck?.TableName === 'Templates'));
+    assert.ok(items.some((item) => item.Put?.TableName === 'Projects'));
+    assert.ok(items.some((item) => item.Put?.TableName === 'Tasks'));
+    assert.ok(items.some((item) => item.Put?.TableName === 'AuditEvents'));
   });
 });

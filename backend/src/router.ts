@@ -1282,7 +1282,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Card routes ──────────────────────────────────────────────
 
     if (reqPath.startsWith('/api/cards')) {
-      const result = await handleCardRoutes(reqPath, method, event.body || null);
+      const result = await handleCardRoutes(reqPath, method, event.body || null, event);
       if (result) return result;
     }
 
