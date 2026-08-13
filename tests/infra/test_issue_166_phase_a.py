@@ -137,7 +137,7 @@ def test_normal_source_and_push_deploy_cannot_enter_the_destructive_sequence():
     assert protection_at < build_at < deploy_at
     assert workflow.count("- issue-166-phase-a") == 1
     assert workflow.count("- issue-166-phase-b") == 1
-    assert "issue-166-phase-c" not in workflow
+    assert workflow.count("- issue-166-phase-c") == 1
     assert "issue-166-phase-d" not in workflow
 
 
@@ -185,13 +185,13 @@ def test_phase_a_processed_template_guards_have_no_uninstalled_runtime_dependenc
 
     assert "from 'js-yaml'" not in workflow
     assert "safeLoad(" not in workflow
-    assert workflow.count("--output json > \"$deployed_template\"") == 1
-    assert workflow.count("--output json > \"$processed_template\"") == 2
-    assert workflow.count("const encodedTemplate = JSON.parse(readFileSync(") == 3
-    assert workflow.count("? JSON.parse(encodedTemplate)") == 3
+    assert workflow.count("--output json > \"$deployed_template\"") == 2
+    assert workflow.count("--output json > \"$processed_template\"") == 3
+    assert workflow.count("const encodedTemplate = JSON.parse(readFileSync(") == 5
+    assert workflow.count("? JSON.parse(encodedTemplate)") == 5
     assert workflow.count(
         "Processed CloudFormation template must be a JSON object"
-    ) == 3
+    ) == 5
 
 
 def _workflow_node_blocks() -> list[str]:
@@ -208,7 +208,7 @@ def _workflow_node_blocks() -> list[str]:
 
 def test_phase_a_processed_template_guards_accept_only_json_objects(tmp_path: Path):
     blocks = _workflow_node_blocks()
-    assert len(blocks) == 3
+    assert len(blocks) == 5
     steady = _synthetic_built_template()
     phase_a = copy.deepcopy(steady)
     phase_a["Metadata"] = {"DataOpsIssue166Cutover": {"Issue": 166, "Phase": "A"}}
@@ -224,11 +224,16 @@ def test_phase_a_processed_template_guards_accept_only_json_objects(tmp_path: Pa
     phase_b["Resources"].pop("DataOpsTasksTable")
     phase_b["Outputs"].pop("DataOpsTasksTableName")
 
+    selected = (
+        next(block for block in blocks if "Deployment mode ${mode}" in block),
+        next(block for block in blocks if "Phase A processed-template contract" in block),
+        next(block for block in blocks if "Phase B processed template retained" in block),
+    )
     for index, (block, template, arguments) in enumerate(
         (
-            (blocks[0], phase_a, ["issue-166-phase-b"]),
-            (blocks[1], phase_a, []),
-            (blocks[2], phase_b, []),
+            (selected[0], phase_b, ["issue-166-phase-c"]),
+            (selected[1], phase_a, []),
+            (selected[2], phase_b, []),
         )
     ):
         fixture = tmp_path / f"template-{index}.json"

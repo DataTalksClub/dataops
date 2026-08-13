@@ -17,9 +17,32 @@ const modulePath = fileURLToPath(import.meta.url);
 const moduleDir = path.dirname(modulePath);
 const DEFAULT_READINESS_TIMEOUT_MS = 60_000;
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000;
+const CHILD_OUTPUT_TAIL_CHARACTERS = 16_384;
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function stackAddresses(config) {
+  return `frontend=${config.frontendUrl} backend=${config.backendUrl}`;
+}
+
+function appendOutputTail(current, chunk) {
+  const combined = current + chunk.toString();
+  return combined.length > CHILD_OUTPUT_TAIL_CHARACTERS
+    ? combined.slice(-CHILD_OUTPUT_TAIL_CHARACTERS)
+    : combined;
+}
+
+function childDiagnostics(owned) {
+  const status = owned.child.signalCode
+    ? `signal ${owned.child.signalCode}`
+    : owned.child.exitCode === null
+      ? 'still running'
+      : `exit ${owned.child.exitCode}`;
+  return `${owned.name} ${status}`
+    + `\nfinal stdout:\n${owned.stdout || '(empty)'}`
+    + `\nfinal stderr:\n${owned.stderr || '(empty)'}`;
 }
 
 function ensureLocalPaths(config, cwd) {
@@ -71,12 +94,24 @@ function spawnOwnedChild(spec, env, cwd) {
     cwd,
     env,
     detached: process.platform !== 'win32',
-    stdio: 'inherit',
+    stdio: ['inherit', 'pipe', 'pipe'],
+  });
+  const owned = { ...spec, child, stdout: '', stderr: '' };
+  owned.closed = new Promise((resolve) => child.once('close', (code, signal) => {
+    resolve({ code, signal });
+  }));
+  child.stdout.on('data', (chunk) => {
+    owned.stdout = appendOutputTail(owned.stdout, chunk);
+    process.stdout.write(chunk);
+  });
+  child.stderr.on('data', (chunk) => {
+    owned.stderr = appendOutputTail(owned.stderr, chunk);
+    process.stderr.write(chunk);
   });
   child.once('error', (error) => {
     process.stderr.write(`[dataops-dev] ${spec.name} failed to start: ${error.message}\n`);
   });
-  return { ...spec, child };
+  return owned;
 }
 
 function signalOwnedGroup(owned, signal) {
@@ -90,8 +125,7 @@ function signalOwnedGroup(owned, signal) {
 }
 
 function waitForExit(owned) {
-  if (owned.child.exitCode !== null || owned.child.signalCode !== null) return Promise.resolve();
-  return new Promise((resolve) => owned.child.once('exit', resolve));
+  return owned.closed;
 }
 
 async function stopChildren(children, graceMs) {
@@ -135,7 +169,16 @@ async function waitForStack(config, children, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const stopped = children.find(({ child }) => child.exitCode !== null || child.signalCode !== null);
-    if (stopped) throw new Error(`${stopped.name} exited before the development stack became ready`);
+    if (stopped) {
+      await stopped.closed;
+      const detail = stopped.child.signalCode
+        ? `signal ${stopped.child.signalCode}`
+        : `exit ${stopped.child.exitCode ?? 1}`;
+      throw new Error(
+        `${stopped.name} stopped before readiness (${detail}); ${stackAddresses(config)}`
+        + `\n${childDiagnostics(stopped)}`,
+      );
+    }
     const [frontendReady, backendReady] = await Promise.all([
       portAcceptsConnections(config.host, config.frontendPort),
       portAcceptsConnections(config.host, config.backendPort),
@@ -143,7 +186,10 @@ async function waitForStack(config, children, timeoutMs) {
     if (frontendReady && backendReady) return;
     await delay(100);
   }
-  throw new Error('Development stack readiness timed out');
+  throw new Error(
+    `Development stack readiness timed out; ${stackAddresses(config)}`
+    + `\n${children.map(childDiagnostics).join('\n')}`,
+  );
 }
 
 export async function runDevPortal(options = {}) {
@@ -196,10 +242,14 @@ export async function runDevPortal(options = {}) {
     for (const spec of specs) {
       const owned = spawnOwnedChild(spec, childEnv, cwd);
       children.push(owned);
-      owned.child.once('exit', (code, signal) => {
+      owned.child.once('close', (code, signal) => {
         if (shuttingDown || settled) return;
         const detail = signal ? `signal ${signal}` : `exit ${code ?? 1}`;
-        void finish(code && code > 0 ? code : 1, `${owned.name} stopped unexpectedly (${detail})`);
+        void finish(
+          code && code > 0 ? code : 1,
+          `${owned.name} stopped unexpectedly (${detail}); ${stackAddresses(config)}`
+          + `\n${childDiagnostics(owned)}`,
+        );
       });
     }
     await waitForStack(config, children, readinessTimeoutMs);
@@ -236,6 +286,8 @@ if (path.resolve(process.argv[1] || '') === modulePath) {
 }
 
 export const __testing = Object.freeze({
+  appendOutputTail,
+  childDiagnostics,
   ensureLocalPaths,
   portAcceptsConnections,
   stopChildren,
