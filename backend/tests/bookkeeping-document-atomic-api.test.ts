@@ -106,8 +106,8 @@ describe("atomic bookkeeping document API", () => {
     const payloads = responses.map((response) => JSON.parse(response.body));
     assert.deepEqual(payloads.map((item) => item.outcome).sort(), ["created", "existing"]);
     assert.equal(new Set(payloads.map((item) => item.link.id)).size, 1);
-    const lookup = JSON.parse((await invoke("POST", "/api/bookkeeping/links/lookup", { tuples: [body] })).body);
-    assert.deepEqual(lookup.results, [{ state: "active", id: payloads[0].link.id }]);
+    const links = JSON.parse((await invoke("GET", "/api/bookkeeping/links")).body).items;
+    assert.ok(links.some((item: Record<string, unknown>) => item.id === payloads[0].link.id));
   });
 
   it("deletes the exact bad object version and releases a failed claim", async () => {
@@ -169,7 +169,6 @@ describe("atomic bookkeeping document API", () => {
         ["POST", "/api/bookkeeping/documents/prepare", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/complete", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/cancel", {}],
-        ["POST", "/api/bookkeeping/links/lookup", { tuples: [] }],
         ["GET", "/api/bookkeeping/documents"],
       ];
       const credentialHeaders = [

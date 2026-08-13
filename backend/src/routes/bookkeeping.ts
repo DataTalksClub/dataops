@@ -300,34 +300,6 @@ export async function handleBookkeepingRoutes(
       return json(result.duplicate ? 200 : 201, result.item);
     }
   }
-  if (path === "/api/bookkeeping/links/lookup" && method === "POST") {
-    const body = parse(event.body || null);
-    const tuples = body?.tuples;
-    if (
-      !Array.isArray(tuples) ||
-      tuples.length < 1 ||
-      tuples.length > 100 ||
-      tuples.some(
-        (tuple) =>
-          !tuple ||
-          !OPAQUE.test(String(tuple.documentId || "")) ||
-          !OPAQUE.test(String(tuple.transactionId || "")) ||
-          !["evidence", "statement-coverage"].includes(String(tuple.coverageType)),
-      )
-    )
-      return json(400, { error: "Invalid request" });
-    const results = [];
-    for (const tuple of tuples as Record<string, unknown>[]) {
-      const id = createHash("sha256")
-        .update(
-          `link#${tuple.documentId}#${tuple.transactionId}#${tuple.coverageType}`,
-        )
-        .digest("hex");
-      const link = await getBookkeepingItem(client, "link", id);
-      results.push(link ? { state: "active", id: link.id } : { state: "absent" });
-    }
-    return json(200, { results });
-  }
   if (path === "/api/bookkeeping/documents/prepare" && method === "POST") {
     const body = parse(event.body || null);
     const byteSize = Number(body?.byteSize);
