@@ -30,6 +30,16 @@ status: active
 
 Public-safe content used only by the isolated browser journey.
 `;
+const SYNTHETIC_WORKFLOW_TEMPLATE = `type: synthetic-vite-development
+name: Synthetic Vite development workflow
+trigger:
+  mode: manual
+tasks:
+  - id: verify-proxy
+    name: Verify the synthetic Vite proxy
+    schedule:
+      offset_days: 0
+`;
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -93,15 +103,36 @@ function createSyntheticRoots(testInfo) {
   const cacheRoot = path.join(scratch, 'cache');
   const stateRoot = path.join(scratch, 'state');
   const uploadRoot = path.join(scratch, 'uploads');
+  const templatesRoot = path.join(scratch, 'workflow-templates');
   fs.mkdirSync(path.join(cacheRoot, 'content', 'testing'), { recursive: true });
   fs.mkdirSync(stateRoot, { recursive: true });
   fs.mkdirSync(uploadRoot, { recursive: true });
+  fs.mkdirSync(templatesRoot, { recursive: true });
   for (const relative of FRONTEND_ASSETS) {
     fs.mkdirSync(path.dirname(path.join(frontendRoot, relative)), { recursive: true });
     fs.copyFileSync(path.join(ROOT, 'frontend', relative), path.join(frontendRoot, relative));
   }
   fs.writeFileSync(path.join(cacheRoot, 'content', 'testing', 'synthetic-vite-development.md'), SYNTHETIC_DOC);
-  return { scratch, frontendRoot, cacheRoot, stateRoot, uploadRoot };
+  fs.writeFileSync(
+    path.join(templatesRoot, 'synthetic-vite-development.yaml'),
+    SYNTHETIC_WORKFLOW_TEMPLATE,
+  );
+  return { scratch, frontendRoot, cacheRoot, stateRoot, uploadRoot, templatesRoot };
+}
+
+function isolatedStackEnvironment() {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('DATAOPS_') || key.startsWith('DTC_') || key.startsWith('AWS_')) {
+      delete env[key];
+    }
+  }
+  for (const key of [
+    'DYNAMODB_ENDPOINT',
+    'IS_LOCAL',
+    'UPLOAD_DIR',
+  ]) delete env[key];
+  return env;
 }
 
 function startStack(testInfo, overrides = {}) {
@@ -111,7 +142,7 @@ function startStack(testInfo, overrides = {}) {
     cwd: ROOT,
     detached: process.platform !== 'win32',
     env: {
-      ...process.env,
+      ...isolatedStackEnvironment(),
       NODE_ENV: 'test',
       DATAOPS_DEV_FRONTEND_PORT: String(ports.frontendPort),
       DATAOPS_DEV_BACKEND_PORT: String(ports.backendPort),
@@ -120,15 +151,22 @@ function startStack(testInfo, overrides = {}) {
       DTC_CACHE_ROOT: roots.cacheRoot,
       UPLOAD_DIR: roots.uploadRoot,
       DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR: path.join(roots.stateRoot, 'exports'),
+      DATAOPS_WORKFLOW_TEMPLATES_ROOT: roots.templatesRoot,
       ...overrides.env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
+  let exitResult = null;
+  let spawnError = null;
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
+  child.once('error', (error) => { spawnError = error; });
+  const exited = new Promise((resolve) => child.once('close', (code, signal) => {
+    exitResult = { code, signal };
+    resolve(exitResult);
+  }));
   const stack = {
     child,
     exited,
@@ -137,15 +175,30 @@ function startStack(testInfo, overrides = {}) {
     origin: `http://localhost:${ports.frontendPort}`,
     stdout: () => stdout,
     stderr: () => stderr,
+    exitResult: () => exitResult,
+    spawnError: () => spawnError,
   };
   OWNED_STACKS.add(stack);
   return stack;
 }
 
 async function waitForStack(stack) {
-  await waitFor(
-    () => stack.stdout().includes(`[dataops-dev] open ${stack.origin}`),
-    `development stack did not become ready\nstdout:\n${stack.stdout()}\nstderr:\n${stack.stderr()}`,
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (stack.stdout().includes(`[dataops-dev] open ${stack.origin}`)) return;
+    if (stack.exitResult() || stack.spawnError()) break;
+    await delay(75);
+  }
+  const result = stack.exitResult();
+  const status = stack.spawnError()
+    ? `spawn error=${stack.spawnError().message}`
+    : result
+      ? `exit=${result.code ?? 'null'} signal=${result.signal ?? 'none'}`
+      : 'still running at readiness timeout';
+  throw new Error(
+    `development stack did not become ready; frontend=${stack.origin} `
+    + `backend=http://127.0.0.1:${stack.ports.backendPort}; ${status}`
+    + `\nfinal stdout:\n${stack.stdout()}\nfinal stderr:\n${stack.stderr()}`,
   );
 }
 
@@ -432,6 +485,8 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
       status: 'todo',
       cardId: 'synthetic-card',
       source: 'import',
+      version: 1,
+      taskHistory: [],
       createdAt: '2026-08-12T00:00:00.000Z',
       updatedAt: '2026-08-12T00:00:00.000Z',
     },
@@ -475,7 +530,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     const changed = await browserJson(page, `/work/api/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ description: changedDescription }),
+      body: JSON.stringify({ description: changedDescription, expectedVersion: before.body.version }),
     });
     expect(changed.status).toBe(200);
     expect(changed.body.description).toBe(changedDescription);
@@ -494,7 +549,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     const restored = await browserJson(page, `/work/api/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ description: originalDescription }),
+      body: JSON.stringify({ description: originalDescription, expectedVersion: changed.body.version }),
     });
     expect(restored.status).toBe(200);
     const restoredLocalRecord = await client.send(new GetCommand({

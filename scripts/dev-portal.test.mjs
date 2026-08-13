@@ -18,6 +18,7 @@ import {
   rewriteInternalLocation,
   validateDynamoEndpoint,
 } from './dev-portal-lib.mjs';
+import { __testing as supervisorTesting } from './dev-portal.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FRONTEND_ASSETS = JSON.parse(readFileSync(
@@ -39,7 +40,11 @@ const [role, rawPort] = process.argv.slice(2);
 const port = Number(rawPort);
 const mode = process.env.DATAOPS_DEV_TEST_FIXTURE_MODE || 'normal';
 appendFileSync(process.env.DATAOPS_DEV_TEST_MARKER, role + ':' + process.pid + '\\n');
-if (mode === 'backend-exit' && role === 'backend') process.exit(23);
+if (mode === 'backend-exit' && role === 'backend') {
+  process.stdout.write('[fixture] synthetic startup stdout\\n');
+  process.stderr.write('[fixture] synthetic startup stderr\\n');
+  process.exit(23);
+}
 const server = http.createServer((_request, response) => response.end(role));
 server.listen(port, '127.0.0.1', () => {
   process.stdout.write('[fixture] ' + role + ' ready\\n');
@@ -87,13 +92,28 @@ async function freePortPair() {
   return { frontendPort, backendPort };
 }
 
+function isolatedSupervisorEnvironment() {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('DATAOPS_') || key.startsWith('DTC_') || key.startsWith('AWS_')) {
+      delete env[key];
+    }
+  }
+  for (const key of [
+    'DYNAMODB_ENDPOINT',
+    'IS_LOCAL',
+    'UPLOAD_DIR',
+  ]) delete env[key];
+  return env;
+}
+
 function startSupervisor({ frontendPort, backendPort, mode = 'normal', suffix }) {
   const marker = path.join(scratchRoot, `${suffix}.marker`);
   const stateRoot = path.join(scratchRoot, `${suffix}-state`);
   const child = spawn(process.execPath, ['scripts/dev-portal.mjs'], {
     cwd: ROOT,
     env: {
-      ...process.env,
+      ...isolatedSupervisorEnvironment(),
       NODE_ENV: 'test',
       DATAOPS_DEV_FRONTEND_PORT: String(frontendPort),
       DATAOPS_DEV_BACKEND_PORT: String(backendPort),
@@ -337,9 +357,52 @@ test('early child failure stops and reaps the sibling', async () => {
   const pids = fixturePids(run.marker);
   assert.equal(exit.code, 23);
   assert.match(run.stderr(), /backend stopped unexpectedly/);
+  assert.match(run.stderr(), new RegExp(`frontend=http://localhost:${frontendPort}`));
+  assert.match(run.stderr(), new RegExp(`backend=http://127\\.0\\.0\\.1:${backendPort}`));
+  assert.match(run.stderr(), /backend exit 23/);
+  assert.match(run.stderr(), /final stdout:[\s\S]*synthetic startup stdout/);
+  assert.match(run.stderr(), /final stderr:[\s\S]*synthetic startup stderr/);
   assert.ok(pids.length >= 1);
   await assertPortsFree(frontendPort, backendPort);
   await assertPidsGone(pids);
+});
+
+test('readiness timeout reports ports and the final child output', async () => {
+  const { frontendPort, backendPort } = await freePortPair();
+  const config = {
+    host: '127.0.0.1',
+    frontendPort,
+    backendPort,
+    frontendUrl: `http://localhost:${frontendPort}`,
+    backendUrl: `http://127.0.0.1:${backendPort}`,
+  };
+  const children = [
+    {
+      name: 'backend',
+      child: { exitCode: null, signalCode: null },
+      stdout: 'backend still starting',
+      stderr: 'backend diagnostic',
+    },
+    {
+      name: 'vite',
+      child: { exitCode: null, signalCode: null },
+      stdout: 'vite still starting',
+      stderr: '',
+    },
+  ];
+
+  await assert.rejects(
+    () => supervisorTesting.waitForStack(config, children, 0),
+    (error) => {
+      assert.match(error.message, new RegExp(`frontend=http://localhost:${frontendPort}`));
+      assert.match(error.message, new RegExp(`backend=http://127\\.0\\.0\\.1:${backendPort}`));
+      assert.match(error.message, /backend still running/);
+      assert.match(error.message, /final stdout:\nbackend still starting/);
+      assert.match(error.message, /final stderr:\nbackend diagnostic/);
+      assert.match(error.message, /vite still running/);
+      return true;
+    },
+  );
 });
 
 test('SIGTERM cleans up both listeners and all owned child processes', async () => {
