@@ -503,9 +503,6 @@ export async function handleBookkeepingRoutes(
       return json(503, { error: "Cleanup required" });
     }
   }
-  if (path === "/api/bookkeeping/documents/upload" && method === "POST") {
-    return json(410, { error: "Use the atomic document prepare endpoint" });
-  }
   const complete = path.match(
     /^\/api\/bookkeeping\/documents\/([^/]+)\/complete$/,
   );
