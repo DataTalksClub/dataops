@@ -98,9 +98,9 @@ test.describe('Seed templates - all 11 templates (issue #21)', () => {
     expect(newsletter.defaultAssigneeId).toBe(GRACE_ID);
     expect(newsletter.taskDefinitions.length).toBe(15);
 
-    // References
-    expect(newsletter.references.length).toBeGreaterThanOrEqual(2);
-    expect(newsletter.references.some((r) => r.name === 'Process documents')).toBe(true);
+    // Reference documents are internal process docs, not Google Docs links.
+    expect(newsletter.sourceDocIds).toContain('reference.internal-admin.documentation.process-documents-overview');
+    expect(newsletter.references.some((r) => /docs\.google\.com/.test(r.url || ''))).toBe(false);
 
     // Card link definitions
     expect(newsletter.cardLinkDefinitions.length).toBe(4);

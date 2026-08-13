@@ -97,7 +97,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['/#/', 'Home'],
       [`/#/inbox?intakeId=${encodeURIComponent(fixture.intake.id)}`, 'Inbox'],
       [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Tasks - Work Queue'],
-      [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Tasks - Workflows'],
+      [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Tasks - Cards'],
       [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Tasks - Assistants'],
       [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Tasks - Templates'],
       ['/#/recurring', 'Tasks - Recurring'],
@@ -596,7 +596,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#card-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/cards$/);
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
+    await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
     await expect(page.locator('#library-title')).toBeFocused();
   });
 

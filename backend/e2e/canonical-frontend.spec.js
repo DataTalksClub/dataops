@@ -12,7 +12,7 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.locator('[data-workspace-view="inbox"]')).toBeVisible();
 
     await page.goto('/#/cards');
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
+    await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/recurring');

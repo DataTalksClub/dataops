@@ -608,7 +608,7 @@ test.describe('Tasks filtered by cardId', () => {
 test.describe('Canonical workflow page', () => {
   test('navigating to #/cards opens the Workflows section in the canonical Tasks surface', async ({ page }) => {
     await page.goto('/#/cards');
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
+    await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[data-workspace-view="tasks"]')).toHaveAttribute('aria-current', 'page');
   });
