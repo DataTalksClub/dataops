@@ -10,7 +10,7 @@ import {
   listMailingExports,
   putMailingExport,
 } from '../db/mailingExports';
-import { getTask, updateTask } from '../db/tasks';
+import { getTask, updateTaskAdditive } from '../db/tasks';
 import { saveFile } from '../storage';
 import { MailingExportProviderError } from './mailchimp';
 import { readDapierMailchimpCredential, type MailingExportCredentialReader } from './credentials';
@@ -139,12 +139,12 @@ async function attachTask(
   const artifact = job.artifactId ? await getArtifact(client, job.artifactId) : null;
   if (!artifact) throw new Error('Stored artifact metadata is unavailable');
   try {
-    await updateTask(client, config.taskId, {
-      artifactRefs: [...(task.artifactRefs || []).filter(ref => ref.artifactId !== artifact.id), {
+    await updateTaskAdditive(client, task, (currentTask) => ({
+      artifactRefs: [...(currentTask.artifactRefs || []).filter(ref => ref.artifactId !== artifact.id), {
         artifactId: artifact.id, type: artifact.type, title: artifact.title,
         status: artifact.status,
       }],
-    });
+    }));
     job.taskLinkStatus = 'linked';
   } catch {
     Object.assign(job, {

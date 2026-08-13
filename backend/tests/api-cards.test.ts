@@ -893,6 +893,7 @@ describe('API — Cards', () => {
       // Mark milestone task as done
       const updateRes = await invoke('PUT', `/api/tasks/${milestoneTask.id}`, {
         status: 'done',
+        expectedVersion: milestoneTask.version,
       });
       assert.strictEqual(updateRes.statusCode, 200);
 
@@ -930,6 +931,7 @@ describe('API — Cards', () => {
       // Mark regular task as done
       const updateRes = await invoke('PUT', `/api/tasks/${regularTask.id}`, {
         status: 'done',
+        expectedVersion: regularTask.version,
       });
       assert.strictEqual(updateRes.statusCode, 200);
 

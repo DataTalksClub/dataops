@@ -6,7 +6,7 @@ import { getClient } from '../db/client';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
 import { getCard, updateCard } from '../db/cards';
 import { getFile } from '../db/files';
-import { getTask, updateTask } from '../db/tasks';
+import { getTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tasks';
 import { isLocalFilesystemStorageAllowed } from '../storage';
 import type { ArtifactRecord, ArtifactRef, LambdaEvent, LambdaResponse } from '../types';
 
@@ -279,7 +279,9 @@ async function handleAttach(id: string, event: LambdaEvent, client: DynamoDBDocu
     const task = await getTask(client, taskId);
     if (!task) return jsonResponse(404, { error: 'Task not found' });
     updates.taskId = taskId;
-    await updateTask(client, taskId, { artifactRefs: mergeArtifactRef(task.artifactRefs, ref) });
+    await updateTaskAdditive(client, task, (currentTask) => ({
+      artifactRefs: mergeArtifactRef(currentTask.artifactRefs, ref),
+    }));
   }
   if (cardId) {
     const card = await getCard(client, cardId);
@@ -351,6 +353,7 @@ async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse 
 
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof TaskVersionConflictError) throw err;
     console.error('Artifact route error:', err);
     return jsonResponse(500, { error: 'Internal server error' });
   }

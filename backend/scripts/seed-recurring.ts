@@ -174,7 +174,10 @@ async function repairExistingGeneratedTasks(
     }
 
     if (Object.keys(updates).length === 0) continue;
-    await updateTask(client, task.id, updates);
+    await updateTask(client, task.id, {
+      expectedVersion: task.version,
+      patch: updates,
+    });
     repaired++;
     console.log(`Repaired generated recurring task: ${task.description} (${task.id})`);
   }

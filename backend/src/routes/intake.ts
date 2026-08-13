@@ -10,7 +10,13 @@ import {
   updateIntakeItem,
 } from '../db/intake';
 import { dismissIntakeFollowUpNotifications } from '../db/notifications';
-import { createTask, getTask, updateTask } from '../db/tasks';
+import {
+  createTask,
+  getTask,
+  updateTask,
+  updateTaskAdditive,
+  TaskVersionConflictError,
+} from '../db/tasks';
 import type {
   AssistantJobInputRef,
   AssistantJobRef,
@@ -267,10 +273,6 @@ function validateTimestamp(value: unknown, fieldName: string, required = false):
   return value;
 }
 
-function taskHistory(task: Task): TaskHistoryEvent[] {
-  return Array.isArray(task.taskHistory) ? task.taskHistory : [];
-}
-
 function makeTaskHistoryEvent(task: Task, action: TaskHistoryEvent['action'], data: {
   actorId?: string;
   channel?: string;
@@ -361,7 +363,9 @@ async function mirrorIntakeRef(client: DynamoDBDocumentClient, item: IntakeItem)
   const ref = intakeRef(item);
   for (const taskId of item.taskIds || []) {
     const task = await getTask(client, taskId);
-    if (task) await updateTask(client, taskId, { intakeRefs: mergeIntakeRefs(task.intakeRefs, ref) });
+    if (task) await updateTaskAdditive(client, task, (currentTask) => ({
+      intakeRefs: mergeIntakeRefs(currentTask.intakeRefs, ref),
+    }));
   }
   for (const cardId of item.cardIds || []) {
     const card = await getCard(client, cardId);
@@ -429,19 +433,22 @@ async function attachItem(client: DynamoDBDocumentClient, item: IntakeItem, body
       const waitingFor = task.waitingFor || item.waitingFor;
       const followUpAt = task.followUpAt || item.followUpAt;
       await updateTask(client, taskId, {
-        status: 'waiting',
-        waitingFor,
-        followUpAt,
-        followUpChannel: channel,
-        comment: appendTaskNote(task.comment, note),
-        intakeRefs: mergeIntakeRefs(task.intakeRefs, intakeRef(item)),
-        taskHistory: taskHistory(task).concat(makeTaskHistoryEvent(task, 'waiting-started', {
+        expectedVersion: task.version,
+        patch: {
+          status: 'waiting',
+          waitingFor,
+          followUpAt,
+          followUpChannel: channel,
+          comment: appendTaskNote(task.comment, note),
+          intakeRefs: mergeIntakeRefs(task.intakeRefs, intakeRef(item)),
+        },
+        historyEvents: [makeTaskHistoryEvent(task, 'waiting-started', {
           actorId,
           channel,
           waitingFor,
           followUpAt,
           note,
-        })),
+        })],
       });
     }
   }
@@ -505,14 +512,16 @@ async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, b
   let task = await createTask(client, taskData);
   if (task.status === 'waiting') {
     task = await updateTask(client, task.id, {
-      taskHistory: [makeTaskHistoryEvent(task, 'waiting-started', {
+      expectedVersion: task.version,
+      patch: {},
+      historyEvents: [makeTaskHistoryEvent(task, 'waiting-started', {
         actorId,
         channel: task.followUpChannel,
         waitingFor: task.waitingFor,
         followUpAt: task.followUpAt,
         note: task.comment || undefined,
       })],
-    }) as Task;
+    });
   }
   const updated = await updateIntakeItem(client, item.id, {
     taskIds: mergeStrings(item.taskIds, [task.id]),
@@ -574,6 +583,7 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       }
       return jsonResponse(201, { item: attached });
     } catch (err) {
+      if (err instanceof TaskVersionConflictError) throw err;
       return jsonResponse(400, { error: (err as Error).message });
     }
   }
@@ -661,6 +671,7 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       const updated = await writeItem(item, updates);
       return jsonResponse(200, { item: updated });
     } catch (err) {
+      if (err instanceof TaskVersionConflictError) throw err;
       return jsonResponse(400, { error: (err as Error).message });
     }
   }
@@ -815,7 +826,13 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
         });
         if (taskId) {
           const task = await getTask(client, taskId);
-          if (task) await updateTask(client, taskId, { assistantJobRefs: mergeAssistantJobRefs(task.assistantJobRefs, { assistantJobId: job.id, assistantType: job.assistantType, status: job.status }) });
+          if (task) await updateTaskAdditive(client, task, (currentTask) => ({
+            assistantJobRefs: mergeAssistantJobRefs(currentTask.assistantJobRefs, {
+              assistantJobId: job.id,
+              assistantType: job.assistantType,
+              status: job.status,
+            }),
+          }));
         }
         if (cardId) {
           const card = await getCard(client, cardId);
@@ -829,6 +846,7 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       return jsonResponse(200, { item: updated, inputRefs: readiness.inputRefs, assistantJobId });
     }
   } catch (err) {
+    if (err instanceof TaskVersionConflictError) throw err;
     const message = (err as Error).message;
     if (message.includes('not found') || message.includes('Not found')) return jsonResponse(404, { error: message });
     return jsonResponse(400, { error: message });

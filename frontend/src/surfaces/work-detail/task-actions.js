@@ -28,17 +28,84 @@ export function createTaskActions(context) {
     return addDaysIso(todayIsoDate(), 3);
   }
 
-  async function updateTaskStatus(taskId, status) {
+  function displayedVersion(taskId, explicitVersion) {
+    const version =
+      explicitVersion ??
+      (detail.activeTaskPanelTask?.id === taskId
+        ? detail.activeTaskPanelTask.version
+        : undefined);
+    if (!Number.isInteger(version) || version < 1) {
+      throw new Error("Reload this Task before changing it.");
+    }
+    return version;
+  }
+
+  async function submitTaskIntent(intent, expectedVersion) {
+    if (detail.activeTaskMutationBusy) return null;
+    const isActiveTask = detail.activeTaskPanelId === intent.taskId;
+    if (isActiveTask) {
+      detail.activeTaskPanelDraft = intent;
+      detail.activeTaskMutationBusy = true;
+      renderTaskPanel();
+    }
     try {
-      await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
-        method: "PUT",
-        body: JSON.stringify({ status }),
+      const updated = await request(workApiUrl(intent.path), {
+        method: intent.method,
+        body: JSON.stringify({ ...intent.payload, expectedVersion }),
       });
-      showUndoToast(`Task marked ${status}.`, () =>
-        updateTaskStatus(taskId, status === "done" ? "todo" : "done"),
-      );
+      if (isActiveTask && updated?.id === intent.taskId) {
+        detail.activeTaskPanelTask = updated;
+        detail.activeTaskPanelDraft = null;
+        detail.activeTaskPanelConflict = null;
+        detail.activeTaskMutationBusy = false;
+        renderTaskPanel();
+      }
       await refreshOperationsWorkSnapshot({ rerender: true });
-      await refreshTaskPanel(taskId);
+      return updated;
+    } catch (err) {
+      if (
+        isActiveTask &&
+        err?.status === 409 &&
+        err?.code === "task_version_conflict" &&
+        err?.payload?.currentTask?.id === intent.taskId
+      ) {
+        detail.activeTaskPanelConflict = err.payload;
+        detail.activeTaskMutationBusy = false;
+        renderTaskPanel();
+        return null;
+      }
+      if (isActiveTask) {
+        detail.activeTaskMutationBusy = false;
+        renderTaskPanel();
+      }
+      reportError(`${intent.errorPrefix}: ${err.message || "request failed"}`);
+      return null;
+    }
+  }
+
+  async function updateTaskStatus(taskId, status, explicitVersion) {
+    try {
+      const updated = await submitTaskIntent(
+        {
+          taskId,
+          kind: "status",
+          label: `Set status to ${status}`,
+          method: "PUT",
+          path: `/api/tasks/${encodeURIComponent(taskId)}`,
+          payload: { status },
+          errorPrefix: "Could not update task",
+        },
+        displayedVersion(taskId, explicitVersion),
+      );
+      if (updated?.version) {
+        showUndoToast(`Task marked ${status}.`, () =>
+          updateTaskStatus(
+            taskId,
+            status === "done" ? "todo" : "done",
+            updated.version,
+          ),
+        );
+      }
     } catch (err) {
       reportError(`Could not update task: ${err.message || "request failed"}`);
     }
@@ -72,15 +139,20 @@ export function createTaskActions(context) {
     }
   }
 
-  async function saveTaskLink(taskId, linkValue) {
+  async function saveTaskLink(taskId, linkValue, explicitVersion) {
     try {
-      await request(workApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`), {
-        method: "PUT",
-        body: JSON.stringify({ link: linkValue }),
-      });
-      if (detail.activeTaskPanelTask)
-        detail.activeTaskPanelTask.link = linkValue;
-      await refreshOperationsWorkSnapshot({ rerender: true });
+      await submitTaskIntent(
+        {
+          taskId,
+          kind: "link",
+          label: `Save link: ${linkValue}`,
+          method: "PUT",
+          path: `/api/tasks/${encodeURIComponent(taskId)}`,
+          payload: { link: linkValue },
+          errorPrefix: "Could not save link",
+        },
+        displayedVersion(taskId, explicitVersion),
+      );
     } catch (err) {
       reportError(`Could not save link: ${err.message || "request failed"}`);
     }
@@ -97,22 +169,23 @@ export function createTaskActions(context) {
       return;
     }
     try {
-      await request(
-        workApiUrl(
-          `/api/tasks/${encodeURIComponent(taskId)}/actions/mark-waiting`,
-        ),
+      await submitTaskIntent(
         {
+          taskId,
+          kind: "mark-waiting",
+          label: `Mark waiting for ${waitingFor.trim()}; follow up ${followUp}`,
           method: "POST",
-          body: JSON.stringify({
+          path: `/api/tasks/${encodeURIComponent(taskId)}/actions/mark-waiting`,
+          payload: {
             waitingFor: waitingFor.trim(),
             followUpAt: followUp,
             channel: "portal",
             note: "Marked waiting from the Task panel",
-          }),
+          },
+          errorPrefix: "Could not mark task waiting",
         },
+        displayedVersion(taskId),
       );
-      await refreshOperationsWorkSnapshot({ rerender: true });
-      await refreshTaskPanel(taskId);
     } catch (err) {
       reportError(
         `Could not mark task waiting: ${err.message || "request failed"}`,
@@ -122,20 +195,21 @@ export function createTaskActions(context) {
 
   async function recordTaskResponseReceived(taskId) {
     try {
-      await request(
-        workApiUrl(
-          `/api/tasks/${encodeURIComponent(taskId)}/actions/response-received`,
-        ),
+      await submitTaskIntent(
         {
+          taskId,
+          kind: "response-received",
+          label: "Record response received",
           method: "POST",
-          body: JSON.stringify({
+          path: `/api/tasks/${encodeURIComponent(taskId)}/actions/response-received`,
+          payload: {
             channel: "portal",
             note: "Response received in the Task panel",
-          }),
+          },
+          errorPrefix: "Could not record response",
         },
+        displayedVersion(taskId),
       );
-      await refreshOperationsWorkSnapshot({ rerender: true });
-      await refreshTaskPanel(taskId);
     } catch (err) {
       reportError(
         `Could not record response: ${err.message || "request failed"}`,
@@ -149,21 +223,22 @@ export function createTaskActions(context) {
       return;
     }
     try {
-      await request(
-        workApiUrl(
-          `/api/tasks/${encodeURIComponent(taskId)}/actions/follow-up-sent`,
-        ),
+      await submitTaskIntent(
         {
+          taskId,
+          kind: "follow-up-sent",
+          label: `Record follow-up; next date ${nextDate}`,
           method: "POST",
-          body: JSON.stringify({
+          path: `/api/tasks/${encodeURIComponent(taskId)}/actions/follow-up-sent`,
+          payload: {
             nextFollowUpAt: nextDate,
             channel: "portal",
             note: "Follow-up sent from the Task panel",
-          }),
+          },
+          errorPrefix: "Could not record follow-up",
         },
+        displayedVersion(taskId),
       );
-      await refreshOperationsWorkSnapshot({ rerender: true });
-      await refreshTaskPanel(taskId);
     } catch (err) {
       reportError(
         `Could not record follow-up: ${err.message || "request failed"}`,
@@ -171,14 +246,39 @@ export function createTaskActions(context) {
     }
   }
 
+  function reviewLatestTask() {
+    const latest = detail.activeTaskPanelConflict?.currentTask;
+    if (!latest) return;
+    detail.activeTaskPanelTask = latest;
+    renderTaskPanel();
+  }
+
+  async function retryTaskIntent() {
+    const intent = detail.activeTaskPanelDraft;
+    const latest = detail.activeTaskPanelConflict?.currentTask;
+    if (!intent || !latest) return;
+    await submitTaskIntent(intent, latest.version);
+  }
+
+  function discardTaskIntent() {
+    const latest = detail.activeTaskPanelConflict?.currentTask;
+    if (latest) detail.activeTaskPanelTask = latest;
+    detail.activeTaskPanelDraft = null;
+    detail.activeTaskPanelConflict = null;
+    renderTaskPanel();
+  }
+
   // ---------- Card (workflow) detail panel ----------
 
   return {
     createTaskActionButton,
     defaultNextFollowUpDate,
+    discardTaskIntent,
     markTaskWaiting,
     recordTaskFollowUpSent,
     recordTaskResponseReceived,
+    reviewLatestTask,
+    retryTaskIntent,
     refreshTaskPanel,
     saveTaskLink,
     updateTaskStatus,

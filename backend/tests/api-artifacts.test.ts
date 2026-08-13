@@ -133,7 +133,7 @@ describe('API - Artifacts', () => {
     const noArtifactRes = await handler({
       httpMethod: 'PUT',
       path: `/api/tasks/${task.id}`,
-      body: JSON.stringify({ status: 'done' }),
+      body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
     }, {});
     assert.strictEqual(noArtifactRes.statusCode, 400);
     assert.match(JSON.parse(noArtifactRes.body).error, /approved artifact proof 'Reviewed draft' is missing/);
@@ -149,7 +149,7 @@ describe('API - Artifacts', () => {
     const draftRes = await handler({
       httpMethod: 'PUT',
       path: `/api/tasks/${task.id}`,
-      body: JSON.stringify({ status: 'done' }),
+      body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
     }, {});
     assert.strictEqual(draftRes.statusCode, 400);
 
@@ -162,7 +162,7 @@ describe('API - Artifacts', () => {
     const doneRes = await handler({
       httpMethod: 'PUT',
       path: `/api/tasks/${task.id}`,
-      body: JSON.stringify({ status: 'done' }),
+      body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
     }, {});
     assert.strictEqual(doneRes.statusCode, 200, doneRes.body);
     assert.strictEqual(JSON.parse(doneRes.body).status, 'done');
@@ -183,7 +183,7 @@ describe('API - Artifacts', () => {
     const res = await handler({
       httpMethod: 'PUT',
       path: `/api/tasks/${task.id}`,
-      body: JSON.stringify({ status: 'done' }),
+      body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
     }, {});
 
     assert.strictEqual(res.statusCode, 200, res.body);
@@ -200,7 +200,7 @@ describe('API - Artifacts', () => {
     const res = await handler({
       httpMethod: 'PUT',
       path: `/api/tasks/${task.id}`,
-      body: JSON.stringify({ status: 'done' }),
+      body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
     }, {});
 
     assert.strictEqual(res.statusCode, 400);

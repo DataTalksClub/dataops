@@ -96,7 +96,34 @@ describe('portable execution data export', () => {
       assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-card-ref', action: 'created' }],
     });
-    const task = await createTask(client, {
+    const taskHistory = [
+      {
+        id: 'history-waiting-started',
+        taskId: 'task-export-stable',
+        cardId: card.id,
+        action: 'waiting-started' as const,
+        actorId: user.id,
+        channel: 'email',
+        waitingFor: 'Sponsor assets',
+        followUpAt: '2026-06-21',
+        note: 'Asked sponsor for assets',
+        createdAt: '2026-06-20T09:00:00.000Z',
+      },
+      {
+        id: 'history-follow-up-sent',
+        taskId: 'task-export-stable',
+        cardId: card.id,
+        action: 'follow-up-sent' as const,
+        actorId: user.id,
+        channel: 'email',
+        waitingFor: 'Sponsor assets',
+        previousFollowUpAt: '2026-06-21',
+        followUpAt: '2026-06-22',
+        note: 'Sent reminder',
+        createdAt: '2026-06-21T09:00:00.000Z',
+      },
+    ];
+    let task = await createTask(client, {
       description: 'Send external follow-up',
       date: '2026-06-20',
       assigneeId: user.id,
@@ -125,37 +152,15 @@ describe('portable execution data export', () => {
       artifactRefs: [{ artifactId: 'artifact-task-ref', type: 'document' }],
       assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-task-ref', action: 'completed' }],
-      taskHistory: [
-        {
-          id: 'history-waiting-started',
-          taskId: 'task-export-stable',
-          cardId: card.id,
-          action: 'waiting-started',
-          actorId: user.id,
-          channel: 'email',
-          waitingFor: 'Sponsor assets',
-          followUpAt: '2026-06-21',
-          note: 'Asked sponsor for assets',
-          createdAt: '2026-06-20T09:00:00.000Z',
-        },
-        {
-          id: 'history-follow-up-sent',
-          taskId: 'task-export-stable',
-          cardId: card.id,
-          action: 'follow-up-sent',
-          actorId: user.id,
-          channel: 'email',
-          waitingFor: 'Sponsor assets',
-          previousFollowUpAt: '2026-06-21',
-          followUpAt: '2026-06-22',
-          note: 'Sent reminder',
-          createdAt: '2026-06-21T09:00:00.000Z',
-        },
-      ],
       completedBy: user.id,
       completedAt: '2026-06-20T12:00:00.000Z',
       status: 'done',
       id: 'task-export-stable',
+    });
+    task = await updateTask(client, task.id, {
+      expectedVersion: task.version,
+      patch: {},
+      historyEvents: taskHistory,
     });
     const recurringConfig = await createRecurringConfig(client, {
       description: 'Weekly community backup',
@@ -287,7 +292,12 @@ describe('portable execution data export', () => {
         createdAt: '2026-06-20T10:35:00.000Z',
       }],
     });
-    await updateTask(client, task.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
+    await updateTask(client, task.id, {
+      expectedVersion: task.version,
+      patch: {
+        intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }],
+      },
+    });
     await updateCard(client, card.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
     await appendAssistantJobEvent(client, {
       assistantJobId: assistantJob.id,

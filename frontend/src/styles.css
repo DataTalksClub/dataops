@@ -1561,6 +1561,28 @@ body[data-workspace-view="home"] #git-section {
   margin: 2px 0 0;
 }
 
+.task-version-conflict {
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  padding: 12px;
+}
+
+.task-version-conflict p {
+  margin: 0;
+}
+
+.task-conflict-draft {
+  overflow-wrap: anywhere;
+}
+
+.task-conflict-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .task-action-btn {
   min-height: 36px;
   width: fit-content;
