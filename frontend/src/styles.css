@@ -3588,6 +3588,68 @@ body.task-modal-open {
   font-size: 12px;
 }
 
+.runtime-template-card-updates {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 14px;
+}
+
+.runtime-template-card-updates-heading,
+.runtime-template-card-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.runtime-template-card-updates-heading h5,
+.runtime-template-card-updates > p,
+.runtime-template-batch-results {
+  margin: 0;
+}
+
+.runtime-template-card-updates-heading span,
+.runtime-template-card-updates > p,
+.runtime-template-card-update-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.runtime-template-card-update-list {
+  display: grid;
+  gap: 6px;
+}
+
+.runtime-template-card-update-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--surface-bg);
+  padding: 8px;
+}
+
+.runtime-template-card-update-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.runtime-template-batch-results {
+  display: grid;
+  gap: 4px;
+  padding-left: 20px;
+  font-size: 12px;
+}
+
+.runtime-template-batch-results .is-failed,
+.runtime-template-batch-message {
+  color: var(--warning-text);
+}
+
 .card-link-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -12,7 +12,9 @@ export function createTemplatesSurface(context) {
     renderTasksSurface,
     renderWorkflowTemplateCard,
     request,
+    refreshOperationsWorkSnapshot,
     setWorkspaceEntityState,
+    state,
     workApiUrl,
   } = context;
 
@@ -22,6 +24,10 @@ export function createTemplatesSurface(context) {
     selectedId: null,
     search: "",
     error: "",
+    batchReview: null,
+    batchBusy: false,
+    batchMessage: "",
+    batchApplyResults: null,
   };
 
   async function refreshRuntimeTemplates(options = {}) {
@@ -235,6 +241,7 @@ export function createTemplatesSurface(context) {
       "Revision",
       selected.sourceRevision ? String(selected.sourceRevision).slice(0, 12) : "Unavailable",
     );
+    const cardUpdates = renderTemplateCardUpdates(selected);
 
     const tasks = document.createElement("ol");
     tasks.className = "runtime-template-readonly-tasks";
@@ -247,8 +254,211 @@ export function createTemplatesSurface(context) {
       item.append(name, meta);
       tasks.append(item);
     }
-    detail.append(back, header, definition, tasks);
+    detail.append(back, header, definition, cardUpdates, tasks);
     return detail;
+  }
+
+  function cardsForTemplate(templateId) {
+    return (state.workSnapshot?.cards || [])
+      .filter((card) => card.templateId === templateId && card.status !== "archived")
+      .slice(0, 25);
+  }
+
+  function batchPreviewSummary(preview) {
+    const counts = preview?.counts || {};
+    const changed = Number(counts.cardFields || 0)
+      + Number(counts.added || 0)
+      + Number(counts.updated || 0)
+      + Number(counts.archived || 0)
+      + Number(counts.retainedCompleted || 0);
+    if (preview?.state === "current") return "Current";
+    if (preview?.state === "baseline-required") return `Baseline review · ${changed} changes`;
+    return `${changed} changes · Template v${preview?.targetTemplateVersion || "?"}`;
+  }
+
+  function renderTemplateCardUpdates(template) {
+    const section = document.createElement("section");
+    section.className = "runtime-template-card-updates";
+    const heading = document.createElement("div");
+    heading.className = "runtime-template-card-updates-heading";
+    const title = document.createElement("h5");
+    title.textContent = "Existing Cards";
+    const cards = cardsForTemplate(template.id);
+    const count = document.createElement("span");
+    count.textContent = countLabel(cards.length, "active Card");
+    heading.append(title, count);
+    section.append(heading);
+    if (!cards.length) {
+      section.append(renderHonestState(
+        "No active Cards use this Template",
+        "New Cards will start at the current Git-authored revision.",
+      ));
+      return section;
+    }
+
+    const review = runtimeState.batchReview?.templateId === template.id
+      ? runtimeState.batchReview
+      : null;
+    if (runtimeState.batchMessage) {
+      const message = document.createElement("p");
+      message.className = "runtime-template-batch-message";
+      message.setAttribute("role", "status");
+      message.textContent = runtimeState.batchMessage;
+      section.append(message);
+    }
+    if (!review) {
+      const guidance = document.createElement("p");
+      guidance.textContent = "Preview current Template differences, then explicitly select the Cards to update.";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "task-action-btn";
+      button.textContent = `Review ${countLabel(cards.length, "Card")} for updates`;
+      button.disabled = runtimeState.batchBusy;
+      button.addEventListener("click", () => reviewTemplateCards(template, cards));
+      section.append(guidance, button);
+      return section;
+    }
+
+    if (runtimeState.batchApplyResults) {
+      const results = document.createElement("ul");
+      results.className = "runtime-template-batch-results";
+      for (const result of runtimeState.batchApplyResults) {
+        const item = document.createElement("li");
+        const card = cards.find(({ id }) => id === result.cardId);
+        const label = card?.title || result.cardId;
+        item.className = `is-${result.status}`;
+        item.textContent = result.status === "failed"
+          ? `${label}: conflict — reload before retrying`
+          : `${label}: ${result.status}`;
+        results.append(item);
+      }
+      const reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = "task-action-btn";
+      reload.textContent = "Reload batch previews";
+      reload.disabled = runtimeState.batchBusy;
+      reload.addEventListener("click", () => reviewTemplateCards(template, cards));
+      section.append(results, reload);
+      return section;
+    }
+
+    const selectedIds = new Set(review.selectedIds || []);
+    const list = document.createElement("div");
+    list.className = "runtime-template-card-update-list";
+    for (const result of review.results || []) {
+      const row = document.createElement("label");
+      row.className = "runtime-template-card-update-row";
+      const card = cards.find(({ id }) => id === result.cardId);
+      const preview = result.preview;
+      const selectable = result.status === "ready" && preview?.state !== "current";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.disabled = !selectable || runtimeState.batchBusy;
+      checkbox.checked = selectedIds.has(result.cardId);
+      checkbox.setAttribute("aria-label", `Select ${card?.title || result.cardId}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) selectedIds.add(result.cardId);
+        else selectedIds.delete(result.cardId);
+        runtimeState.batchReview.selectedIds = [...selectedIds];
+        renderTasksSurface(getAllDocuments(), "templates");
+      });
+      const text = document.createElement("span");
+      const name = document.createElement("strong");
+      name.textContent = card?.title || result.cardId;
+      const meta = document.createElement("small");
+      meta.textContent = result.status === "ready"
+        ? batchPreviewSummary(preview)
+        : result.error || "Preview failed";
+      text.append(name, meta);
+      row.append(checkbox, text);
+      list.append(row);
+    }
+    section.append(list);
+
+    const actions = document.createElement("div");
+    actions.className = "runtime-template-card-update-actions";
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "primary-button";
+    apply.textContent = runtimeState.batchBusy
+      ? "Applying…"
+      : `Apply ${countLabel(selectedIds.size, "selected Card")}`;
+    apply.disabled = runtimeState.batchBusy || selectedIds.size === 0;
+    apply.addEventListener("click", () => applyTemplateCardBatch(template, review));
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "task-action-btn";
+    cancel.textContent = "Cancel batch review";
+    cancel.disabled = runtimeState.batchBusy;
+    cancel.addEventListener("click", () => {
+      runtimeState.batchReview = null;
+      runtimeState.batchMessage = "";
+      runtimeState.batchApplyResults = null;
+      renderTasksSurface(getAllDocuments(), "templates");
+    });
+    actions.append(apply, cancel);
+    section.append(actions);
+    return section;
+  }
+
+  async function reviewTemplateCards(template, cards) {
+    runtimeState.batchBusy = true;
+    runtimeState.batchMessage = "Loading reviewed differences…";
+    runtimeState.batchApplyResults = null;
+    renderTasksSurface(getAllDocuments(), "templates");
+    try {
+      const payload = await request(workApiUrl("/api/cards/template-updates/preview"), {
+        method: "POST",
+        body: JSON.stringify({ cardIds: cards.map(({ id }) => id) }),
+      });
+      runtimeState.batchReview = {
+        templateId: template.id,
+        results: payload.results || [],
+        selectedIds: [],
+      };
+      const actionable = runtimeState.batchReview.results.filter((result) => (
+        result.status === "ready" && result.preview?.state !== "current"
+      )).length;
+      runtimeState.batchMessage = actionable
+        ? `${countLabel(actionable, "Card")} can be selected. Nothing is selected automatically.`
+        : "Every reviewed Card is current.";
+    } catch (error) {
+      runtimeState.batchReview = null;
+      runtimeState.batchMessage = `Could not preview Card updates: ${error.message || "request failed"}`;
+    } finally {
+      runtimeState.batchBusy = false;
+      renderTasksSurface(getAllDocuments(), "templates");
+    }
+  }
+
+  async function applyTemplateCardBatch(template, review) {
+    const selected = new Set(review.selectedIds || []);
+    const updates = (review.results || [])
+      .filter((result) => selected.has(result.cardId) && result.preview?.previewToken)
+      .map((result) => ({ cardId: result.cardId, previewToken: result.preview.previewToken }));
+    if (!updates.length) return;
+    runtimeState.batchBusy = true;
+    runtimeState.batchMessage = `Applying ${countLabel(updates.length, "reviewed Card")}…`;
+    renderTasksSurface(getAllDocuments(), "templates");
+    try {
+      const payload = await request(workApiUrl("/api/cards/template-updates/apply"), {
+        method: "POST",
+        body: JSON.stringify({ updates }),
+      });
+      runtimeState.batchApplyResults = payload.results || [];
+      const applied = runtimeState.batchApplyResults.filter(({ status }) => status === "applied").length;
+      const conflicts = runtimeState.batchApplyResults.filter(({ status }) => status === "failed").length;
+      runtimeState.batchMessage = [
+        `${countLabel(applied, "Card")} applied`,
+        conflicts ? `${countLabel(conflicts, "conflict")} needs a fresh preview` : "no conflicts",
+      ].join(" · ");
+      await refreshOperationsWorkSnapshot({ rerender: false });
+    } catch (error) {
+      runtimeState.batchMessage = `Could not apply reviewed Cards: ${error.message || "request failed"}`;
+    } finally {
+      runtimeState.batchBusy = false;
+      renderTasksSurface(getAllDocuments(), "templates");
+    }
   }
 
   function appendDefinition(list, label, value) {
@@ -297,6 +507,11 @@ export function createTemplatesSurface(context) {
     runtimeState.selectedId = route?.tasksSection === "templates"
       ? (entity?.templateId ?? route.params.get("templateId"))
       : null;
+    if (runtimeState.batchReview?.templateId !== runtimeState.selectedId) {
+      runtimeState.batchReview = null;
+      runtimeState.batchMessage = "";
+      runtimeState.batchApplyResults = null;
+    }
   }
 
   return {

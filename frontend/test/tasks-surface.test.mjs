@@ -201,7 +201,9 @@ function createHarness(options = {}) {
     referenceCountLabel: (name, count) => `${count} ${name}`,
     refreshDocuments: async () => {},
     refreshOperationsRecurringSnapshot: refreshRecurring,
-    refreshOperationsWorkSnapshot: async () => {},
+    refreshOperationsWorkSnapshot: async (refreshOptions = {}) => {
+      if (options.refreshWork) await options.refreshWork(refreshOptions);
+    },
     renderArtifactsSurface: () => honestState("Artifacts", "Artifacts index"),
     renderAssistantsSurface: () => honestState("Assistants", "Assistant jobs"),
     renderEntityLoadState: (root, entity) => {
@@ -616,6 +618,154 @@ describe("Tasks surface boundary", () => {
     for (const mutation of ["New runtime template", "Save template", "Delete template"]) {
       assert.equal(findByText(harness.documentList, mutation, "button"), undefined);
     }
+  });
+
+  test("reviews explicit Card selections and reports partial batch conflicts without retrying", async () => {
+    const template = {
+      id: "template-1",
+      name: "Newsletter",
+      type: "workflow",
+      version: 3,
+      taskDefinitions: [
+        { refId: "draft", description: "Draft", offsetDays: 0 },
+      ],
+    };
+    const cards = [
+      { id: "card-august", title: "August", templateId: template.id, status: "active" },
+      { id: "card-september", title: "September", templateId: template.id, status: "active" },
+      { id: "card-current", title: "October", templateId: template.id, status: "active" },
+    ];
+    let previewCalls = 0;
+    let workRefreshes = 0;
+    const calls = [];
+    const previews = {
+      results: [
+        {
+          cardId: "card-august",
+          status: "ready",
+          preview: {
+            state: "update-available",
+            targetTemplateVersion: 3,
+            previewToken: "token-august",
+            counts: { updated: 1 },
+          },
+        },
+        {
+          cardId: "card-september",
+          status: "ready",
+          preview: {
+            state: "baseline-required",
+            targetTemplateVersion: 3,
+            previewToken: "token-september",
+            counts: { added: 1, retainedCompleted: 1 },
+          },
+        },
+        {
+          cardId: "card-current",
+          status: "ready",
+          preview: {
+            state: "current",
+            targetTemplateVersion: 3,
+            previewToken: "token-current",
+            counts: {},
+          },
+        },
+      ],
+    };
+    const harness = createHarness({
+      workSnapshot: { cards },
+      refreshWork: async () => {
+        workRefreshes += 1;
+      },
+      request: async (url, options = {}) => {
+        calls.push({ url, options });
+        if (url === "/api/templates") return { templates: [template] };
+        if (url === "/api/cards/template-updates/preview") {
+          previewCalls += 1;
+          return previews;
+        }
+        if (url === "/api/cards/template-updates/apply") {
+          return {
+            results: [
+              { cardId: "card-august", status: "applied" },
+              { cardId: "card-september", status: "failed" },
+            ],
+          };
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: template.id }),
+      },
+      { templateId: template.id },
+    );
+    harness.api.renderTasksSurface([], "templates");
+
+    await findByText(
+      harness.documentList,
+      "Review 3 Cards for updates",
+      "button",
+    ).dispatch("click");
+    assert.equal(previewCalls, 1);
+    assert.deepEqual(
+      JSON.parse(calls.find(({ url }) => url.endsWith("/preview")).options.body),
+      { cardIds: ["card-august", "card-september", "card-current"] },
+    );
+    assert.match(harness.documentList.textContent, /Nothing is selected automatically/);
+    assert.equal(
+      findByText(harness.documentList, "Apply 0 selected Cards", "button").disabled,
+      true,
+    );
+    const cardCheckbox = (label) => harness.documentList
+      .querySelectorAll("input")
+      .find((input) => input.getAttribute("aria-label") === `Select ${label}`);
+    assert.equal(
+      cardCheckbox("October").disabled,
+      true,
+    );
+
+    let checkbox = cardCheckbox("August");
+    checkbox.checked = true;
+    await checkbox.dispatch("change");
+    checkbox = cardCheckbox("September");
+    checkbox.checked = true;
+    await checkbox.dispatch("change");
+    const apply = findByText(
+      harness.documentList,
+      "Apply 2 selected Cards",
+      "button",
+    );
+    assert.equal(apply.disabled, false);
+    await apply.dispatch("click");
+
+    const mutation = calls.find(({ url }) => url.endsWith("/apply"));
+    assert.deepEqual(JSON.parse(mutation.options.body), {
+      updates: [
+        { cardId: "card-august", previewToken: "token-august" },
+        { cardId: "card-september", previewToken: "token-september" },
+      ],
+    });
+    assert.equal(workRefreshes, 1);
+    assert.equal(previewCalls, 1);
+    assert.match(
+      harness.documentList.textContent,
+      /1 Card applied · 1 conflict needs a fresh preview/,
+    );
+    assert.match(
+      harness.documentList.textContent,
+      /September: conflict — reload before retrying/,
+    );
+
+    await findByText(
+      harness.documentList,
+      "Reload batch previews",
+      "button",
+    ).dispatch("click");
+    assert.equal(previewCalls, 2);
   });
 
   test("renders Recurring empty/list states and maps pause plus protected-delete guidance", async () => {
