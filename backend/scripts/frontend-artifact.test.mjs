@@ -13,41 +13,83 @@ const verifier = join(repoRoot, 'backend', 'scripts', 'verify-frontend-artifact.
 const runtimeProbe = join(repoRoot, 'backend', 'scripts', 'packaged-handler-probe.mjs');
 const sourceFrontend = join(repoRoot, 'frontend');
 const generatedRoot = join(repoRoot, '.tmp', 'issue-159', 'frontend-artifact-fixtures');
+const childTimeoutMs = 30_000;
 const allowlist = readFrontendAssetManifest().files.map((sourcePath) => [
   sourcePath,
   `dist/frontend/${sourcePath}`,
 ]);
 
-function createLocalAuthenticatedSession(endpoint) {
-  return new Promise((resolveSetup, rejectSetup) => {
-    const setup = spawn(process.execPath, ['--import', 'tsx', '--eval', [
-      "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts'), import('./backend/src/db/users.ts'), import('./backend/src/db/sessions.ts')])",
-      '.then(async ([local, clientModule, users, sessions]) => {',
-      'const client = await clientModule.getClient();',
-      'await local.createTables(client);',
-      "const userId = '15900000-0000-4000-8000-000000000001';",
-      "await users.createUserWithId(client, userId, { name: 'Synthetic parity admin', email: 'parity-admin@example.test', role: 'admin' });",
-      'const session = await sessions.createBrowserSession(client, userId, { lifetimeSeconds: 3600 });',
-      'process.stdout.write(session.token);',
-      '})',
-    ].join('')], {
-      cwd: repoRoot,
-      env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+function collectChild(child, phase, timeoutMs = childTimeoutMs) {
+  return new Promise((resolveChild, rejectChild) => {
     let stdout = '';
     let stderr = '';
-    setup.stdout.setEncoding('utf8');
-    setup.stderr.setEncoding('utf8');
-    setup.stdout.on('data', (chunk) => { stdout += chunk; });
-    setup.stderr.on('data', (chunk) => { stderr += chunk; });
-    setup.once('error', rejectSetup);
-    setup.once('exit', (status) => {
-      if (status === 0 && stdout) resolveSetup(stdout);
-      else if (status === 0) rejectSetup(new Error('Local authenticated session setup returned no token'));
-      else rejectSetup(new Error(stderr || `Local schema setup exited with status ${status}`));
-    });
+    let settled = false;
+    let timedOut = false;
+    let killTimer;
+    let forceTimer;
+    let timeout;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(killTimer);
+      clearTimeout(forceTimer);
+      callback();
+    };
+    const timeoutError = () => new Error(
+      `${phase} timed out after ${timeoutMs}ms${stderr ? `\nstderr:\n${stderr}` : '\nNo child stderr was produced.'}`,
+    );
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.once('error', (error) => finish(() => rejectChild(timedOut ? timeoutError() : new Error(
+      `${phase} failed to start: ${error.message}${stderr ? `\nstderr:\n${stderr}` : ''}`,
+    ))));
+    child.once('exit', (status, signal) => finish(() => {
+      if (timedOut) rejectChild(timeoutError());
+      else resolveChild({ status, signal, stdout, stderr });
+    }));
+    timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => {
+        child.kill('SIGKILL');
+        forceTimer = setTimeout(() => {
+          child.stdout.destroy();
+          child.stderr.destroy();
+          finish(() => rejectChild(timeoutError()));
+        }, 1_000);
+        forceTimer.unref();
+      }, 1_000);
+      killTimer.unref();
+    }, timeoutMs);
+    timeout.unref();
   });
+}
+
+async function createLocalAuthenticatedSession(endpoint) {
+  const setup = spawn(process.execPath, ['--import', 'tsx', '--eval', [
+    "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts'), import('./backend/src/db/users.ts'), import('./backend/src/db/sessions.ts')])",
+    '.then(async ([local, clientModule, users, sessions]) => {',
+    'local = local.default || local; clientModule = clientModule.default || clientModule; users = users.default || users; sessions = sessions.default || sessions;',
+    'const client = await clientModule.getClient();',
+    'await local.createTables(client);',
+    "const userId = '15900000-0000-4000-8000-000000000001';",
+    "await users.createUserWithId(client, userId, { name: 'Synthetic parity admin', email: 'parity-admin@example.test', role: 'admin' });",
+    'const session = await sessions.createBrowserSession(client, userId, { lifetimeSeconds: 3600 });',
+    'process.stdout.write(session.token, () => process.exit(0));',
+    '})',
+    ".catch((error) => process.stderr.write(error?.stack || String(error), () => process.exit(1)))",
+  ].join('')], {
+    cwd: repoRoot,
+    env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const { status, signal, stdout, stderr } = await collectChild(setup, 'Local authenticated session setup');
+  if (status === 0 && stdout) return stdout;
+  if (status === 0) throw new Error('Local authenticated session setup returned no token');
+  throw new Error(stderr || `Local authenticated session setup exited with status ${status} signal ${signal || 'none'}`);
 }
 
 function fixture(name) {
@@ -106,6 +148,16 @@ function expectFailure(result, pattern) {
 describe('deterministic canonical frontend artifact verifier', () => {
   before(() => mkdirSync(generatedRoot, { recursive: true }));
   after(() => rmSync(generatedRoot, { recursive: true, force: true }));
+
+  test('terminates a timed-out child and reports its phase', async () => {
+    const child = spawn(process.execPath, ['--eval', 'setInterval(() => {}, 1000)'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await assert.rejects(
+      collectChild(child, 'Synthetic lifecycle probe', 50),
+      /Synthetic lifecycle probe timed out after 50ms/,
+    );
+  });
 
   test('accepts exactly the manifest-declared byte-identical deployable files and reports sorted hashes', () => {
     const { source, artifact } = fixture('success');
@@ -290,32 +342,25 @@ describe('isolated SAM handler frontend runtime', () => {
     const dynalite = require('dynalite')({ createTableMs: 0 });
     await new Promise((resolveListen, rejectListen) => dynalite.listen(0, (error) => error ? rejectListen(error) : resolveListen()));
     const endpoint = `http://127.0.0.1:${dynalite.address().port}`;
-    const sessionToken = await createLocalAuthenticatedSession(endpoint);
-    const probe = (artifact, paths) => new Promise((resolveProbe, rejectProbe) => {
-      const child = spawn(process.execPath, [runtimeProbe, '--artifact', artifact], {
-        cwd: artifact,
-        env: {
-          ...process.env,
-          FRONTEND_ROOT: '',
-          NODE_PATH: '',
-          DYNAMODB_ENDPOINT: endpoint,
-          ISSUE_159_SESSION_TOKEN: sessionToken,
-          ISSUE_159_REQUEST_PATHS: JSON.stringify(paths),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (chunk) => { stdout += chunk; });
-      child.stderr.on('data', (chunk) => { stderr += chunk; });
-      child.once('error', rejectProbe);
-      child.once('exit', (status) => resolveProbe({ status, stdout, stderr }));
-    });
     try {
+      const sessionToken = await createLocalAuthenticatedSession(endpoint);
+      const probe = (artifact, paths, phase) => {
+        const child = spawn(process.execPath, [runtimeProbe, '--artifact', artifact], {
+          cwd: artifact,
+          env: {
+            ...process.env,
+            FRONTEND_ROOT: '',
+            NODE_PATH: '',
+            DYNAMODB_ENDPOINT: endpoint,
+            ISSUE_159_SESSION_TOKEN: sessionToken,
+            ISSUE_159_REQUEST_PATHS: JSON.stringify(paths),
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return collectChild(child, phase);
+      };
       const manifestAssets = readFrontendAssetManifest().files.map((asset) => `/${asset}`);
-      const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api']);
+      const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api'], 'Packaged frontend positive-route probe');
       assert.equal(positive.status, 0, positive.stderr);
       const result = JSON.parse(positive.stdout);
       assert.equal(result.outsideModuleResolution, false, JSON.stringify(result.outsideModuleResolutions));
@@ -360,7 +405,7 @@ describe('isolated SAM handler frontend runtime', () => {
       const missing = mkdtempSync(join(generatedRoot, 'missing-runtime-'));
       cpSync(samArtifact, missing, { recursive: true, dereference: false });
       renameSync(join(missing, 'dist/frontend/index.html'), join(missing, 'dist/frontend/index.missing'));
-      const missingResult = await probe(missing, ['/']);
+      const missingResult = await probe(missing, ['/'], 'Packaged frontend missing-index probe');
       assert.equal(missingResult.status, 0, missingResult.stderr);
       const missingResponse = JSON.parse(missingResult.stdout).responses[0];
       assert.ok(missingResponse, '/ (missing index fixture): packaged handler returned no response');
