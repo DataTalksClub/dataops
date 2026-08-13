@@ -663,8 +663,7 @@ export function createCardPanel(context) {
 
   function captureCardPanelDrafts() {
     return new Map(
-      cardPanelBody
-        .querySelectorAll("[data-card-draft-key]")
+      [...cardPanelBody.querySelectorAll("[data-card-draft-key]")]
         .map((input) => [input.dataset.cardDraftKey, input.value]),
     );
   }
