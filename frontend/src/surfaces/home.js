@@ -4,6 +4,7 @@ export function createHomeSurface(context) {
     activeWorkOwnerId,
     addDaysIso,
     allWorkTasks,
+    apiUrl,
     buildHomeAttentionItems,
     buildOperationsFutureSections,
     buildOperationsReferenceLinks,

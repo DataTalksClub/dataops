@@ -330,6 +330,7 @@ const {
   activeWorkOwnerId,
   addDaysIso,
   allWorkTasks,
+  apiUrl,
   buildHomeAttentionItems,
   buildOperationsFutureSections,
   buildOperationsReferenceLinks,
