@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -23,6 +23,9 @@ help:
 	@printf '%-28s %s\n' 'make test-assistant' 'Run DataOps podcast assistant pytest.'
 	@printf '%-28s %s\n' 'make sam-validate' 'Validate SAM template locally with empty AWS config; never deploys.'
 	@printf '%-28s %s\n' 'make sam-build' 'Build the full-sandbox SAM artifact locally; never deploys.'
+	@printf '%-28s %s\n' 'make verify-sam-frontend' 'Verify canonical frontend bytes in the existing SAM artifact.'
+	@printf '%-28s %s\n' 'make verify-sam-runtime-boundary' 'Verify the existing SAM artifact contains no local infrastructure code.'
+	@printf '%-28s %s\n' 'make test-sam-frontend-isolation' 'Run the existing SAM artifact in frontend isolation; never rebuilds.'
 	@printf '%-28s %s\n' 'make ci' 'Run non-interactive deploy-workflow parity checks; no AWS deploy/cache refresh.'
 	@printf '%-28s %s\n' 'make clean' 'Remove root generated search index and work-engine dist.'
 	@printf '%-28s %s\n' 'make clean' 'Remove root generated search index and backend dist.'
@@ -97,6 +100,12 @@ sam-build:
 verify-sam-frontend:
 	node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
 
+verify-sam-runtime-boundary:
+	node backend/scripts/verify-runtime-boundary.mjs .aws-sam/build/BackendFunction
+
+test-sam-frontend-isolation:
+	node --test backend/scripts/frontend-artifact.test.mjs
+
 ci:
 	$(MAKE) test-frontend-coverage
 	$(MAKE) test-backend
@@ -105,6 +114,8 @@ ci:
 	$(MAKE) sam-validate
 	$(MAKE) sam-build
 	$(MAKE) verify-sam-frontend
+	$(MAKE) verify-sam-runtime-boundary
+	$(MAKE) test-sam-frontend-isolation
 
 clean:
 	rm -f .tmp/dataops-content-search.index

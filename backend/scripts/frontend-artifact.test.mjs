@@ -320,32 +320,42 @@ describe('isolated SAM handler frontend runtime', () => {
       const result = JSON.parse(positive.stdout);
       assert.equal(result.outsideModuleResolution, false, JSON.stringify(result.outsideModuleResolutions));
       const responses = new Map(result.responses.map((response) => [response.path, response]));
-      for (const path of ['/', '/workspace/deep-link']) {
+      const responseFor = (path) => {
         const response = responses.get(path);
-        assert.equal(response.statusCode, 200);
-        assert.match(response.contentType, /^text\/html/);
-        assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend/index.html'), 'utf8'));
+        assert.ok(response, `${path}: packaged handler returned no response`);
+        return response;
+      };
+      for (const path of ['/', '/workspace/deep-link']) {
+        const response = responseFor(path);
+        assert.equal(response.statusCode, 200, `${path}: unexpected HTML route status`);
+        assert.match(response.contentType, /^text\/html/, `${path}: unexpected HTML route content type`);
+        assert.equal(response.isBase64Encoded, false, `${path}: HTML route must not be base64 encoded`);
+        assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend/index.html'), 'utf8'), `${path}: packaged HTML differs from index.html`);
       }
       for (const asset of readFrontendAssetManifest().files) {
         const requestPath = `/${asset}`;
-        const response = responses.get(requestPath);
-        assert.equal(response.statusCode, 200);
-        assert.match(response.contentType, asset.endsWith('.css') ? /text\/css/ : asset.endsWith('.html') ? /text\/html/ : /javascript/);
-        assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend', asset), 'utf8'));
+        const response = responseFor(requestPath);
+        assert.equal(response.statusCode, 200, `${requestPath}: unexpected asset status`);
+        assert.match(response.contentType, asset.endsWith('.css') ? /text\/css/ : asset.endsWith('.html') ? /text\/html/ : /javascript/, `${requestPath}: unexpected asset content type`);
+        assert.equal(response.isBase64Encoded, false, `${requestPath}: asset must not be base64 encoded`);
+        assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend', asset), 'utf8'), `${requestPath}: packaged asset bytes differ from source`);
       }
       for (const path of ['/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js']) {
-        const response = responses.get(path);
-        assert.equal(response.statusCode, 404, path);
-        assert.doesNotMatch(response.body, /<html/i);
+        const response = responseFor(path);
+        assert.equal(response.statusCode, 404, `${path}: forbidden or missing asset path must return 404`);
+        assert.equal(response.isBase64Encoded, false, `${path}: error response must not be base64 encoded`);
+        assert.doesNotMatch(response.body, /<html/i, `${path}: forbidden or missing asset path must not fall back to HTML`);
       }
-      const api = responses.get('/api/not-a-route');
-      assert.equal(api.statusCode, 404);
-      assert.match(api.contentType, /application\/json/);
-      assert.doesNotMatch(api.body, /<html/i);
-      const exactWorkApi = responses.get('/work/api');
-      assert.equal(exactWorkApi.statusCode, 404);
-      assert.match(exactWorkApi.contentType, /application\/json/);
-      assert.doesNotMatch(exactWorkApi.body, /<html/i);
+      const api = responseFor('/api/not-a-route');
+      assert.equal(api.statusCode, 404, '/api/not-a-route: unknown API route must return 404');
+      assert.match(api.contentType, /application\/json/, '/api/not-a-route: API error must be JSON');
+      assert.equal(api.isBase64Encoded, false, '/api/not-a-route: API error must not be base64 encoded');
+      assert.doesNotMatch(api.body, /<html/i, '/api/not-a-route: API error must not fall back to HTML');
+      const exactWorkApi = responseFor('/work/api');
+      assert.equal(exactWorkApi.statusCode, 404, '/work/api: exact work API root must return 404');
+      assert.match(exactWorkApi.contentType, /application\/json/, '/work/api: work API error must be JSON');
+      assert.equal(exactWorkApi.isBase64Encoded, false, '/work/api: work API error must not be base64 encoded');
+      assert.doesNotMatch(exactWorkApi.body, /<html/i, '/work/api: work API error must not fall back to HTML');
 
       const missing = mkdtempSync(join(generatedRoot, 'missing-runtime-'));
       cpSync(samArtifact, missing, { recursive: true, dereference: false });
@@ -353,9 +363,11 @@ describe('isolated SAM handler frontend runtime', () => {
       const missingResult = await probe(missing, ['/']);
       assert.equal(missingResult.status, 0, missingResult.stderr);
       const missingResponse = JSON.parse(missingResult.stdout).responses[0];
-      assert.equal(missingResponse.statusCode, 500);
-      assert.match(missingResponse.contentType, /application\/json/);
-      assert.doesNotMatch(missingResponse.body, /<html/i);
+      assert.ok(missingResponse, '/ (missing index fixture): packaged handler returned no response');
+      assert.equal(missingResponse.statusCode, 500, '/ (missing index fixture): missing frontend must return 500');
+      assert.match(missingResponse.contentType, /application\/json/, '/ (missing index fixture): error must be JSON');
+      assert.equal(missingResponse.isBase64Encoded, false, '/ (missing index fixture): error must not be base64 encoded');
+      assert.doesNotMatch(missingResponse.body, /<html/i, '/ (missing index fixture): error must not fall back to HTML');
     } finally {
       await new Promise((resolveClose, rejectClose) => dynalite.close((error) => error ? rejectClose(error) : resolveClose()));
     }

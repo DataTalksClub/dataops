@@ -284,12 +284,23 @@ test("matrix content is public-safe", () => {
   assert.doesNotMatch(matrixText, /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i, "matrix must not contain production-like identifiers");
 });
 
-test("local CI and the deployment workflow verify the SAM frontend immediately after build", () => {
+test("local CI and the deployment workflow gate the exact SAM frontend artifact without rebuilding", () => {
   const verifier = "node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction";
+  const runtimeVerifier = "node backend/scripts/verify-runtime-boundary.mjs .aws-sam/build/BackendFunction";
+  const isolationTest = "node --test backend/scripts/frontend-artifact.test.mjs";
   const makefile = readFileSync(resolve(repoRoot, "Makefile"), "utf8");
   const verifyTarget = makefile.match(/^verify-sam-frontend:\s*\n((?:\t.*\n)+)/m);
   assert.ok(verifyTarget, "Makefile needs verify-sam-frontend target");
   assert.equal(verifyTarget[1].trim(), verifier, "verify-sam-frontend must inspect the actual BackendFunction artifact");
+  const runtimeTarget = makefile.match(/^verify-sam-runtime-boundary:\s*\n((?:\t.*\n)+)/m);
+  assert.ok(runtimeTarget, "Makefile needs verify-sam-runtime-boundary target");
+  assert.equal(runtimeTarget[1].trim(), runtimeVerifier, "runtime boundary must inspect the actual BackendFunction artifact");
+  const isolationTarget = makefile.match(/^test-sam-frontend-isolation:\s*\n((?:\t.*\n)+)/m);
+  assert.ok(isolationTarget, "Makefile needs test-sam-frontend-isolation target");
+  assert.equal(isolationTarget[1].trim(), isolationTest, "frontend isolation must consume the existing artifact without rebuilding");
+  for (const target of [verifyTarget[1], runtimeTarget[1], isolationTarget[1]]) {
+    assert.doesNotMatch(target, /sam build|npm (?:ci|install)|migrat|import|restore|backfill/i, "artifact gates must not rebuild, install, or run data-movement tooling");
+  }
   const ciTarget = makefile.match(/^ci:\s*\n((?:\t.*\n)+)/m);
   assert.ok(ciTarget, "Makefile needs ci target");
   const ciCommands = ciTarget[1].trim().split("\n").map((line) => line.trim());
@@ -298,9 +309,15 @@ test("local CI and the deployment workflow verify the SAM frontend immediately a
   assert.equal(ciCommands.filter((line) => frontendUnitTargets.includes(line)).length, 1, "make ci must run frontend unit tests exactly once");
   assert.equal(ciCommands.filter((line) => line === "$(MAKE) sam-build").length, 1, "make ci must build SAM exactly once");
   assert.equal(ciCommands.filter((line) => line === "$(MAKE) verify-sam-frontend").length, 1, "make ci must verify SAM exactly once");
+  assert.equal(ciCommands.filter((line) => line === "$(MAKE) verify-sam-runtime-boundary").length, 1, "make ci must verify the runtime boundary exactly once");
+  assert.equal(ciCommands.filter((line) => line === "$(MAKE) test-sam-frontend-isolation").length, 1, "make ci must run frontend isolation exactly once");
   const makeBuild = ciCommands.indexOf("$(MAKE) sam-build");
   const makeVerify = ciCommands.indexOf("$(MAKE) verify-sam-frontend");
+  const makeRuntime = ciCommands.indexOf("$(MAKE) verify-sam-runtime-boundary");
+  const makeIsolation = ciCommands.indexOf("$(MAKE) test-sam-frontend-isolation");
   assert.equal(makeVerify, makeBuild + 1, "make ci must verify immediately after sam-build");
+  assert.equal(makeRuntime, makeVerify + 1, "make ci must run the runtime boundary after frontend verification");
+  assert.equal(makeIsolation, makeRuntime + 1, "make ci must run isolation after the static artifact gates");
 
   const workflow = readFileSync(resolve(repoRoot, ".github", "workflows", "deploy-dataops-v1.yml"), "utf8");
   function workflowJob(name, nextName) {
@@ -312,7 +329,9 @@ test("local CI and the deployment workflow verify the SAM frontend immediately a
     return workflow.slice(start, end);
   }
   const buildCommand = "run: make sam-build";
-  const verifyCommand = `run: ${verifier}`;
+  const verifyCommand = "run: make verify-sam-frontend";
+  const runtimeCommand = "run: make verify-sam-runtime-boundary";
+  const isolationCommand = "run: make test-sam-frontend-isolation";
   const checks = workflowJob("checks", "deploy");
   const deploy = workflowJob("deploy");
 
@@ -327,16 +346,23 @@ test("local CI and the deployment workflow verify the SAM frontend immediately a
   assert.match(checks, /run: make sam-validate/, "checks must validate the SAM template");
   assert.equal(checks.split(buildCommand).length - 1, 0, "checks must not duplicate the deploy job's SAM build");
   assert.equal(checks.split(verifyCommand).length - 1, 0, "checks must not verify an artifact it does not build");
+  assert.equal(checks.split(runtimeCommand).length - 1, 0, "checks must not inspect a runtime artifact it does not build");
+  assert.equal(checks.split(isolationCommand).length - 1, 0, "checks must not test an artifact it does not build");
 
   assert.equal(deploy.split(buildCommand).length - 1, 1, "deploy must build SAM exactly once");
   assert.equal(deploy.split(verifyCommand).length - 1, 1, "deploy must verify the actual BackendFunction exactly once");
+  assert.equal(deploy.split(runtimeCommand).length - 1, 1, "deploy must verify the actual BackendFunction runtime boundary exactly once");
+  assert.equal(deploy.split(isolationCommand).length - 1, 1, "deploy must run the actual BackendFunction isolation contract exactly once");
   const buildAt = deploy.indexOf(buildCommand);
   const verifyAt = deploy.indexOf(verifyCommand);
+  const runtimeAt = deploy.indexOf(runtimeCommand);
+  const isolationAt = deploy.indexOf(isolationCommand);
   assert.ok(buildAt < verifyAt, "deploy must verify after SAM build");
   const between = deploy.slice(buildAt + buildCommand.length, verifyAt);
   assert.doesNotMatch(between, /^\s*run:/m, "deploy must verify immediately after SAM build with no intervening command");
+  assert.ok(verifyAt < runtimeAt && runtimeAt < isolationAt, "deploy must run static, runtime, then isolation gates in order");
   const deployAt = deploy.indexOf("sam deploy");
-  assert.ok(deployAt > verifyAt, "deploy job must verify the SAM frontend before sam deploy");
+  assert.ok(deployAt > isolationAt, "deploy job must finish every artifact gate before sam deploy");
 });
 
 test("every required state has accepted behavior evidence", () => {

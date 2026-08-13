@@ -165,7 +165,13 @@ jobs:
         run: make sam-build
 
       - name: Verify packaged canonical frontend
-        run: node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
+        run: make verify-sam-frontend
+
+      - name: Verify packaged runtime infrastructure boundary
+        run: make verify-sam-runtime-boundary
+
+      - name: Test packaged frontend isolation
+        run: make test-sam-frontend-isolation
 
       - name: Deploy DataOps v1 stack
         run: |
