@@ -10,9 +10,6 @@ const repoRoot = path.resolve(
 );
 
 const MAX_MODULE_LINES = 1_000;
-// Remove an entry as soon as that responsibility is split. Values are the
-// measured pre-split ceiling and may never increase.
-const oversizedMigrationBaseline = Object.freeze({});
 
 function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -32,18 +29,7 @@ describe("frontend architecture contract", () => {
       }))
       .filter(({ lines }) => lines > 1_000);
 
-    assert.deepEqual(
-      oversized.map(({ file }) => file).sort(),
-      Object.keys(oversizedMigrationBaseline).sort(),
-      "new oversized modules are forbidden; remove baseline entries after splitting",
-    );
-    for (const { file, lines } of oversized) {
-      assert.ok(
-        lines <= oversizedMigrationBaseline[file],
-        `${file} grew from its ${oversizedMigrationBaseline[file]}-line migration ceiling to ${lines}`,
-      );
-      assert.ok(lines > MAX_MODULE_LINES);
-    }
+    assert.deepEqual(oversized, [], "frontend modules may not exceed 1,000 lines");
   });
 
   test("keeps production source readable", () => {
