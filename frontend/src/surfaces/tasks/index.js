@@ -93,7 +93,6 @@ export function createTasksSurface(context) {
   });
   const { renderWorkQueueSurface } = createTaskQueue(context);
   const {
-    confirmLeaveRuntimeDraft,
     getRuntimeTemplateState,
     refreshRuntimeTemplates,
     renderTemplatesSurface,
@@ -180,7 +179,6 @@ export function createTasksSurface(context) {
   // navigation-only; library, filtering, creation, and editor tools belong here.
 
   return {
-    confirmLeaveRuntimeDraft,
     openQuickTaskForm,
     openQuickWorkflowForm,
     recurringConfigTitle,

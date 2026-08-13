@@ -186,7 +186,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     const errors = observeErrors(page);
     const routes = [
       ["/tasks", "Tasks - Work Queue", ".ops-work-queue"],
-      ["/templates", "Tasks - Templates", ".runtime-template-admin"],
+      ["/templates", "Tasks - Templates", ".runtime-template-inspector"],
       ["/recurring", "Tasks - Templates", ".ops-recurring-section"],
       ["/inbox", "Inbox", ".ops-inbox"],
       ["/assistants", "Tasks - Assistants", ".assistant-workspace"],

@@ -142,7 +142,6 @@ const {
   emptyOperationsRecurringSnapshot,
   getCanLeaveDocumentEditor: () => canLeaveDocumentEditor,
   getCanLeaveFinanceSurface: () => canLeaveFinanceSurface,
-  getConfirmLeaveRuntimeDraft: () => confirmLeaveRuntimeDraft,
   getKnowledgeSelectedFolder: () => knowledgeState.selectedFolder,
   getNormalizeOperationsRecurringSnapshot: () =>
     normalizeOperationsRecurringSnapshot,
@@ -504,7 +503,6 @@ cardPanelClose.addEventListener("click", closeCardPanel);
 cardModalBackdrop?.addEventListener("click", closeCardPanel);
 document.addEventListener("keydown", handleWorkspaceEntityModalKeydown);
 const {
-  confirmLeaveRuntimeDraft,
   openQuickTaskForm,
   openQuickWorkflowForm,
   recurringConfigTitle,
@@ -910,7 +908,6 @@ bindApplicationEvents({
     closeSidebar,
     closeTaskPanel,
     closeWorkBellPanel,
-    confirmLeaveRuntimeDraft,
     createDocument,
     debounce,
     discardAllDrafts,

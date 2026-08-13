@@ -76,13 +76,7 @@ export function bindApplicationEvents(context) {
           tasksNavButton.getAttribute("aria-expanded") === "true";
         callbacks.setTasksNavExpanded(!expanded);
       },
-      openTasksSection: async (section) => {
-        if (
-          section !== workspaceState.activeTasksSection &&
-          !(await callbacks.confirmLeaveRuntimeDraft())
-        ) {
-          return;
-        }
+      openTasksSection: (section) => {
         callbacks.navigateCanonicalWorkspace(
           callbacks.workspaceHashPath("tasks", section),
         );

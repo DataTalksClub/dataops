@@ -901,7 +901,6 @@ describe("runtime and shell production behavior", () => {
     const calls = [];
     const callbacks = new Proxy(
       {
-        confirmLeaveRuntimeDraft: async () => true,
         debounce: (callback) => callback,
         handleWorkspaceEntityModalKeydown: (event) =>
           calls.push(["entity-key", event.key]),

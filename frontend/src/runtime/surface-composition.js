@@ -125,7 +125,6 @@ export function createSurfaceComposition(context) {
     dedupeWorkTasks,
     getCanLeaveDocumentEditor,
     getCanLeaveFinanceSurface,
-    getConfirmLeaveRuntimeDraft,
     getKnowledgeSelectedFolder,
     getRenderAdminSurfaceView,
     getRenderBookkeepingSurface,
@@ -231,7 +230,6 @@ export function createSurfaceComposition(context) {
 
   async function canLeaveCurrentDocument() {
     if (!(await getCanLeaveFinanceSurface()("navigation"))) return false;
-    if (!(await getConfirmLeaveRuntimeDraft()())) return false;
     return getCanLeaveDocumentEditor()();
   }
 

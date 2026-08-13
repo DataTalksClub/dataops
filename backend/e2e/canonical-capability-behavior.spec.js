@@ -1275,7 +1275,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await setFaults(admin.request, [{ method: 'GET', path: '/api/templates', status: 503, remaining: 10 }]);
     await page.goto('/#/templates');
     await expect(page.getByText('Runtime templates unavailable')).toBeVisible();
-    await expect(page.locator('.runtime-template-admin')).toContainText('Synthetic route failure (503)');
+    await expect(page.locator('.runtime-template-inspector')).toContainText('Synthetic route failure (503)');
     await clearFaults(admin.request);
     await page.reload();
     await expect(serverVersionRow).toBeVisible();

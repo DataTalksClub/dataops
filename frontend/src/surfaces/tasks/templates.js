@@ -24,10 +24,6 @@ export function createTemplatesSurface(context) {
     error: "",
   };
 
-  async function confirmLeaveRuntimeDraft() {
-    return true;
-  }
-
   async function refreshRuntimeTemplates(options = {}) {
     const token = options.token;
     try {
@@ -84,7 +80,7 @@ export function createTemplatesSurface(context) {
 
   function renderRuntimeTemplateInspector() {
     const section = document.createElement("section");
-    section.className = "ops-section runtime-template-admin";
+    section.className = "ops-section runtime-template-inspector";
     section.classList.toggle("has-selection", Boolean(runtimeState.selectedId));
     const header = document.createElement("div");
     header.className = "ops-section-header";
@@ -191,7 +187,7 @@ export function createTemplatesSurface(context) {
     const selected = runtimeState.templates.find((template) => template.id === runtimeState.selectedId);
     if (!selected) {
       const empty = document.createElement("div");
-      empty.className = "runtime-template-editor runtime-template-readonly";
+      empty.className = "runtime-template-projection runtime-template-readonly";
       empty.append(renderHonestState(
         "Select a Git-authored template",
         "Inspect its deployed definition or create a Card from it.",
@@ -200,7 +196,7 @@ export function createTemplatesSurface(context) {
     }
 
     const detail = document.createElement("article");
-    detail.className = "runtime-template-editor runtime-template-readonly";
+    detail.className = "runtime-template-projection runtime-template-readonly";
     const back = document.createElement("button");
     back.type = "button";
     back.className = "runtime-mobile-back";
@@ -304,7 +300,6 @@ export function createTemplatesSurface(context) {
   }
 
   return {
-    confirmLeaveRuntimeDraft,
     getRuntimeTemplateState: () => runtimeState,
     refreshRuntimeTemplates,
     renderTemplatesSurface,

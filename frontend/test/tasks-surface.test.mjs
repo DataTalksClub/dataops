@@ -283,7 +283,6 @@ describe("Tasks surface boundary", () => {
   test("directly imports the production factory and exposes the stable Tasks facade", () => {
     const { api } = createHarness();
     assert.deepEqual(Object.keys(api).sort(), [
-      "confirmLeaveRuntimeDraft",
       "openQuickTaskForm",
       "openQuickWorkflowForm",
       "recurringConfigTitle",

@@ -53,7 +53,6 @@ function createSurfaceHarness(options = {}) {
     },
   };
   let financeLeave = options.financeLeave ?? true;
-  let templateLeave = options.templateLeave ?? true;
   let editorLeave = options.editorLeave ?? true;
   const scheduled = [];
   const cleared = [];
@@ -90,10 +89,6 @@ function createSurfaceHarness(options = {}) {
     getCanLeaveFinanceSurface: () => async (reason) => {
       calls.push(["leave:finance", reason]);
       return financeLeave;
-    },
-    getConfirmLeaveRuntimeDraft: () => async () => {
-      calls.push(["leave:template"]);
-      return templateLeave;
     },
     getKnowledgeSelectedFolder: () => options.selectedFolder || "",
     getNormalizeOperationsRecurringSnapshot: () => (snapshot) => ({
@@ -162,9 +157,6 @@ function createSurfaceHarness(options = {}) {
     },
     setFinanceLeave(value) {
       financeLeave = value;
-    },
-    setTemplateLeave(value) {
-      templateLeave = value;
     },
     statusText,
     tasksNavButton,
@@ -297,21 +289,13 @@ describe("runtime surface composition", () => {
     ]);
   });
 
-  test("short-circuits dirty-surface leave guards in stable order", async () => {
+  test("short-circuits retained dirty-surface leave guards in stable order", async () => {
     const harness = createSurfaceHarness({ financeLeave: false });
     assert.equal(await harness.composition.canLeaveCurrentDocument(), false);
     assert.deepEqual(harness.calls, [["leave:finance", "navigation"]]);
 
     harness.calls.length = 0;
     harness.setFinanceLeave(true);
-    harness.setTemplateLeave(false);
-    assert.equal(await harness.composition.canLeaveCurrentDocument(), false);
-    assert.deepEqual(harness.calls, [
-      ["leave:finance", "navigation"],
-      ["leave:template"],
-    ]);
-
-    harness.setTemplateLeave(true);
     harness.setEditorLeave(true);
     assert.equal(await harness.composition.canLeaveCurrentDocument(), true);
   });

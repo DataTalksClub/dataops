@@ -320,7 +320,7 @@ describe('one canonical frontend', () => {
     for (const removed of ['Save template', 'Delete template', 'expectedVersion', 'runtime-template-json']) {
       assert.ok(!tasks.includes(removed), `Runtime template mutation UI still contains ${removed}`);
     }
-    assert.match(tasks, /className = "runtime-template-editor runtime-template-readonly"/);
+    assert.match(tasks, /className = "runtime-template-projection runtime-template-readonly"/);
     assert.match(styles, /\.ops-section,/);
     assert.match(styles, /:focus-visible/);
   });
