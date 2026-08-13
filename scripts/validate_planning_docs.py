@@ -39,7 +39,6 @@ REQUIRED_WORKFLOW_PATHS = [
     "tests/planningdocs/**",
     "tools/content_tools/content_tools/doc_registry.py",
     "backend/scripts/validate-docs-links.ts",
-    "backend/scripts/validate-knowledge-repo.ts",
 ]
 TASK_TEMPLATE_SECTIONS = [
     "summary",

@@ -16,7 +16,6 @@ on:
       - "scripts/validate_planning_docs.py"
       - "tools/content_tools/content_tools/doc_registry.py"
       - "backend/scripts/validate-docs-links.ts"
-      - "backend/scripts/validate-knowledge-repo.ts"
       - "tests/planningdocs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
@@ -36,7 +35,6 @@ on:
       - "scripts/validate_planning_docs.py"
       - "tools/content_tools/content_tools/doc_registry.py"
       - "backend/scripts/validate-docs-links.ts"
-      - "backend/scripts/validate-knowledge-repo.ts"
       - "tests/planningdocs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
@@ -98,8 +96,6 @@ jobs:
       - name: Run infra template validation
         run: uv run --with pytest python -m pytest tests/infra
 
-      - name: Validate dataops-knowledge migration scaffold
-        run: npm --prefix backend run validate:knowledge-repo
 
       - name: Validate docs links and workflow doc IDs
         run: npm --prefix backend run validate:docs-links
