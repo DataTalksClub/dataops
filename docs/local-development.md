@@ -185,11 +185,10 @@ available to dedicated clients and are validated independently.
 | `docs/**`, `docs/**`, `templates/**`, `content/tasks/templates/**`, `.goal-v1.md`, `PROJECT_PLAN.md`, `PORTAL_ANALYSIS.md`, or `README.md` | Docs link validation; planning docs validation; build the search index when task templates or content metadata are touched. | Docs app tests when registry/search behavior or metadata parsing can be affected. Process Curator review for operational usefulness. |
 | `content/**` | Docs link validation; build the search index. | Docs app tests when frontmatter, document IDs, routing, registry behavior, templates, archive rules, or content shape changes. Process Curator review for operational usefulness. |
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
-| `lambda-functions/**` | Docs app tests. | Search-index build for search/content behavior. SAM validation for template, dependency, packaging, or Lambda runtime changes. |
-| `work-engine/**` | Unit tests, typecheck, and build. | E2E for changed operator flows, browser UI, route behavior, or end-to-end task/workflow behavior. |
+| `backend/**` | Backend tests, typecheck, and build. | Search-index build for search/content behavior; SAM validation/build for dependency, packaging, or Lambda runtime changes; E2E for changed operator flows. |
 | `assistants/podcast/**` | DataOps podcast assistant module pytest command. | `[HUMAN]` or opt-in integration checks for Telegram, Groq, live Heru, Codex, or Claude. |
 | `.github/workflows/**` | Inspect changed workflow paths and commands; run the nearest local equivalent. | For deployment workflow changes, SAM validation and a clear On-Call follow-up after push. |
-| `lambda-functions/template*.yaml` or `samconfig.toml` | SAM template validation. | `sam build --config-env full-sandbox` when package/build behavior changes. Production deploy remains CI/OIDC after `main` is pushed. |
+| `infra/template.full.yaml`, `infra/sam-build/**`, or `samconfig.toml` | SAM template validation. | `make sam-build` when package/build behavior changes. Production deploy remains CI/OIDC after `main` is pushed. |
 | root `pyproject.toml` or `uv.lock` | `uv lock --check`; root import smoke check; relevant root pytest command. | Package-local lock checks and canonical Lambda/assistant/work-engine commands when proving boundaries for deployment-relevant metadata changes. |
 | root `package.json` | Affected root wrapper command and underlying package-local command. | Work-engine tests/typecheck/build when wrappers target work-engine. |
 
@@ -377,10 +376,11 @@ the deployment workflow:
 make sam-build
 ```
 
-Underlying command:
+Underlying command (the repository root is passed to the tiny SAM CodeUri so
+all six parallel function builds coordinate on one content-addressed bundle):
 
 ```bash
-cd lambda-functions && sam build --config-env full-sandbox
+DATAOPS_REPO_ROOT="$PWD" sam build --parallel --config-env full-sandbox
 ```
 
 Production deployment is not a normal local developer command. After approved
@@ -445,11 +445,10 @@ work-engine unit/type/build checks, and the relevant work-engine E2E tests.
 For infrastructure or deployment changes:
 
 ```bash
-cd lambda-functions
-sam validate --template-file template.full.yaml
+sam validate --template-file infra/template.full.yaml
 ```
 
-Add `sam build --config-env full-sandbox` when Lambda packaging, build metadata,
+Add `make sam-build` when Lambda packaging, build metadata,
 dependencies, SAM resources, or workflow deploy behavior changes.
 
 ## Before Handoff Or Commit

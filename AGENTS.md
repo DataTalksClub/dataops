@@ -102,8 +102,8 @@ AWS infrastructure source:
   (`template.domain.yaml`), the runtime secrets
   (`template.runtime-secrets.yaml`), and the knowledge backups bucket
   (`template.knowledge-backups.yaml`).
-- The one exception is `infra/template.full.yaml`, the application stack. SAM
-  builds the Lambda code from this repo (`CodeUri: ..` with a makefile build),
+- The one exception is `infra/template.full.yaml`, the application stack. Its
+  tiny `infra/sam-build/` CodeUri delegates to the repository packaging script,
   so the template has to sit next to the code it packages. Moving it requires
   changing how the Lambda artifact is produced, not just moving a file.
 - Keeping a second copy of an aws-infra template here is what caused the two to

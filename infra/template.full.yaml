@@ -1485,7 +1485,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
-      CodeUri: ..
+      CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/execution-worker-handler.handler
       Timeout: 30
@@ -1656,7 +1656,7 @@ Resources:
     Type: AWS::Serverless::Function
     Metadata: { BuildMethod: makefile }
     Properties:
-      CodeUri: ..
+      CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/sponsor-send-worker-handler.handler
       Timeout: 30
@@ -1729,7 +1729,7 @@ Resources:
     Type: AWS::Serverless::Function
     Metadata: { BuildMethod: makefile }
     Properties:
-      CodeUri: ..
+      CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/sponsor-ses-event-handler.handler
       Timeout: 20
@@ -1808,7 +1808,7 @@ Resources:
     Type: AWS::Serverless::Function
     Metadata: { BuildMethod: makefile }
     Properties:
-      CodeUri: ..
+      CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/sponsor-private-archive-handler.handler
       Timeout: 60
@@ -1838,7 +1838,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
-      CodeUri: ..
+      CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/result-notification-handler.handler
       Timeout: 30
@@ -1895,7 +1895,7 @@ Resources:
     Metadata:
       BuildMethod: makefile
     Properties:
-      CodeUri: ..
+      CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/handler.handler
       Timeout: 30

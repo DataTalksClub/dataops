@@ -925,7 +925,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "UpdateReplacePolicy: Retain" in portal_secret
     assert "Type: AWS::Serverless::Function" in backend
     assert "BuildMethod: makefile" in backend
-    assert "CodeUri: .." in backend
+    assert "CodeUri: sam-build" in backend
     assert "Runtime: nodejs24.x" in backend
     assert "Handler: dist/handler.handler" in backend
     assert "FunctionUrlConfig" in backend

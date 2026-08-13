@@ -43,6 +43,7 @@ const inputFiles = [
   'backend/scripts/frontend-assets.mjs',
   'backend/scripts/verify-frontend-artifact.mjs',
   'backend/scripts/verify-runtime-boundary.mjs',
+  'infra/sam-build/Makefile',
 ];
 
 function normalizedPath(path) {

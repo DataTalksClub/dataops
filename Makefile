@@ -3,9 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-SAM_FUNCTION_BUILD_TARGETS := build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
-
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean $(SAM_FUNCTION_BUILD_TARGETS)
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -94,7 +92,7 @@ sam-validate: sam-local-aws-config
 	AWS_CONFIG_FILE=$(SAM_LOCAL_AWS_CONFIG) AWS_SHARED_CREDENTIALS_FILE=$(SAM_LOCAL_AWS_CREDENTIALS) AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION) sam validate --template-file infra/template.full.yaml
 
 sam-build:
-	sam build --parallel --config-env full-sandbox
+	DATAOPS_REPO_ROOT="$(CURDIR)" sam build --parallel --config-env full-sandbox
 
 verify-sam-frontend:
 	node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
@@ -111,6 +109,3 @@ ci:
 clean:
 	rm -f .tmp/dataops-content-search.index
 	npm run clean:backend
-
-$(SAM_FUNCTION_BUILD_TARGETS):
-	node backend/scripts/build-sam-artifact.mjs "$(ARTIFACTS_DIR)"
