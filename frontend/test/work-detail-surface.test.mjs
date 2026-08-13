@@ -646,6 +646,7 @@ describe("Work Detail surface boundary", () => {
       title: "Conflicted Card",
       templateId: "template-1",
       templateVersion: 1,
+      cardLinks: [{ name: "Draft output", url: "" }],
       references: [],
     };
     const preview = {
@@ -679,15 +680,33 @@ describe("Work Detail surface boundary", () => {
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
     await findByText(harness.cardPanelBody, "Review template update", "button").click();
+    harness.cardPanelBody.querySelector(".card-link-input").value = "https://example.test/draft";
+    harness.cardPanelBody.querySelector(".card-ref-name").value = "Typed reference";
     await findByText(harness.cardPanelBody, "Apply reviewed update", "button").click();
     await nextTicks();
 
     assert.match(harness.cardPanelBody.textContent, /Your review is retained/);
     assert.ok(findByText(harness.cardPanelBody, "Add New task", "li"));
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-link-input").value,
+      "https://example.test/draft",
+    );
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-ref-name").value,
+      "Typed reference",
+    );
     assert.equal(previewLoads, 1);
     await findByText(harness.cardPanelBody, "Reload latest preview", "button").click();
     await nextTicks();
     assert.equal(previewLoads, 2);
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-link-input").value,
+      "https://example.test/draft",
+    );
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-ref-name").value,
+      "Typed reference",
+    );
   });
 
   test("registers Card references and registers plus approves external artifacts", async () => {

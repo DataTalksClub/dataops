@@ -260,6 +260,7 @@ export function createCardPanel(context) {
         const input = document.createElement("input");
         input.type = "url";
         input.className = "card-link-input";
+        input.dataset.cardDraftKey = `template-link:${linkName}`;
         input.value = linkUrl;
         input.placeholder = "https://...";
         input.addEventListener("change", () =>
@@ -390,10 +391,12 @@ export function createCardPanel(context) {
     nameInput.type = "text";
     nameInput.placeholder = "Label (e.g. Podcast doc)";
     nameInput.className = "card-ref-name";
+    nameInput.dataset.cardDraftKey = "new-reference-name";
     const urlInput = document.createElement("input");
     urlInput.type = "url";
     urlInput.placeholder = "https://...";
     urlInput.className = "card-ref-url";
+    urlInput.dataset.cardDraftKey = "new-reference-url";
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "task-action-btn";
@@ -658,10 +661,32 @@ export function createCardPanel(context) {
     return section;
   }
 
+  function captureCardPanelDrafts() {
+    return new Map(
+      cardPanelBody
+        .querySelectorAll("[data-card-draft-key]")
+        .map((input) => [input.dataset.cardDraftKey, input.value]),
+    );
+  }
+
+  function restoreCardPanelDrafts(drafts) {
+    for (const input of cardPanelBody.querySelectorAll("[data-card-draft-key]")) {
+      if (drafts.has(input.dataset.cardDraftKey)) {
+        input.value = drafts.get(input.dataset.cardDraftKey);
+      }
+    }
+  }
+
+  function renderCardPanelRetainingDrafts(drafts) {
+    renderCardPanel();
+    restoreCardPanelDrafts(drafts);
+  }
+
   async function reloadCardTemplateUpdate(cardId) {
+    const drafts = captureCardPanelDrafts();
     detail.activeCardTemplateBusy = true;
     detail.activeCardTemplateMessage = "";
-    renderCardPanel();
+    renderCardPanelRetainingDrafts(drafts);
     try {
       const payload = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
@@ -677,14 +702,15 @@ export function createCardPanel(context) {
       detail.activeCardTemplateMessage = error.message || "Could not reload the latest preview.";
     } finally {
       detail.activeCardTemplateBusy = false;
-      if (detail.activeCardPanelId === cardId) renderCardPanel();
+      if (detail.activeCardPanelId === cardId) renderCardPanelRetainingDrafts(drafts);
     }
   }
 
   async function applyCardTemplateUpdate(cardId, previewToken) {
+    const drafts = captureCardPanelDrafts();
     detail.activeCardTemplateBusy = true;
     detail.activeCardTemplateMessage = "";
-    renderCardPanel();
+    renderCardPanelRetainingDrafts(drafts);
     try {
       const payload = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
@@ -709,7 +735,7 @@ export function createCardPanel(context) {
         : `Could not apply Template update: ${error.message || "request failed"}`;
     } finally {
       detail.activeCardTemplateBusy = false;
-      if (detail.activeCardPanelId === cardId) renderCardPanel();
+      if (detail.activeCardPanelId === cardId) renderCardPanelRetainingDrafts(drafts);
     }
   }
 
