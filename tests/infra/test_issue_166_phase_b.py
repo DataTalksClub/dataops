@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import yaml
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
@@ -111,6 +110,7 @@ def _run_preparer(path: Path) -> subprocess.CompletedProcess[str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -193,6 +193,7 @@ def test_phase_b_workflow_is_manual_exact_and_advances_only_from_proven_phase_a(
         "JSON.stringify({ Issue: 166, Phase: 'A' })",
         "tasks?.DeletionPolicy === 'Delete'",
         "tasks?.UpdateReplacePolicy === 'Delete'",
+        "JSON.stringify({ 'Fn::Sub': '${AWS::StackName}-tasks' })",
         "Issue #166 Phase B requires the exact deployed Phase A marker, Delete policies, schema, and quiescence",
     ):
         assert required in workflow
@@ -201,6 +202,8 @@ def test_phase_b_workflow_is_manual_exact_and_advances_only_from_proven_phase_a(
     assert "issue-166-phase-d" not in workflow
     assert workflow.count("run: make sam-build") == 1
     assert workflow.count("if: env.DEPLOYMENT_MODE == 'issue-166-phase-b'") == 3
+    assert "from 'js-yaml'" not in workflow
+    assert "safeLoad(" not in workflow
     build_at = workflow.index("run: make sam-build")
     frontend_at = workflow.index("run: make verify-sam-frontend")
     runtime_at = workflow.index("run: make verify-sam-runtime-boundary")

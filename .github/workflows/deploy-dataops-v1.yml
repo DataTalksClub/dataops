@@ -522,14 +522,18 @@ jobs:
             exit 1
           fi
 
-          deployed_template="$RUNNER_TEMP/dataops-issue-166-phase-c-preflight-template.yaml"
+          deployed_template="$RUNNER_TEMP/dataops-issue-166-phase-c-preflight-template.json"
           aws cloudformation get-template --stack-name dataops-v1 --template-stage Processed \
             --query TemplateBody --output json > "$deployed_template"
           node --input-type=module - "$deployed_template" <<'JS'
           import { readFileSync } from 'node:fs';
-          import yaml from 'js-yaml';
           const encodedTemplate = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const template = typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate;
+          const template = typeof encodedTemplate === 'string'
+            ? JSON.parse(encodedTemplate)
+            : encodedTemplate;
+          if (!template || typeof template !== 'object' || Array.isArray(template)) {
+            throw new Error('Processed CloudFormation template must be a JSON object');
+          }
           const resources = template?.Resources ?? {};
           const outputs = template?.Outputs ?? {};
           const exactPhaseB = JSON.stringify(template?.Metadata?.DataOpsIssue166Cutover)
@@ -610,7 +614,7 @@ jobs:
       - name: "Protect bounded issue #166 cutover state"
         run: |
           set -euo pipefail
-          deployed_template="$RUNNER_TEMP/dataops-deployed-processed-template.yaml"
+          deployed_template="$RUNNER_TEMP/dataops-deployed-processed-template.json"
           aws cloudformation get-template \
             --stack-name dataops-v1 \
             --template-stage Processed \
@@ -618,11 +622,15 @@ jobs:
             --output json > "$deployed_template"
           node --input-type=module - "$DEPLOYMENT_MODE" "$deployed_template" <<'JS'
           import { readFileSync } from 'node:fs';
-          import yaml from 'js-yaml';
 
           const mode = process.argv[2];
           const encodedTemplate = JSON.parse(readFileSync(process.argv[3], 'utf8'));
-          const template = typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate;
+          const template = typeof encodedTemplate === 'string'
+            ? JSON.parse(encodedTemplate)
+            : encodedTemplate;
+          if (!template || typeof template !== 'object' || Array.isArray(template)) {
+            throw new Error('Processed CloudFormation template must be a JSON object');
+          }
           const marker = template?.Metadata?.DataOpsIssue166Cutover;
           const tasks = template?.Resources?.DataOpsTasksTable;
           const backend = template?.Resources?.BackendFunction;
@@ -866,7 +874,7 @@ jobs:
             exit 1
           fi
 
-          processed_template="$RUNNER_TEMP/dataops-issue-166-processed-template.yaml"
+          processed_template="$RUNNER_TEMP/dataops-issue-166-processed-template.json"
           aws cloudformation get-template \
             --stack-name dataops-v1 \
             --template-stage Processed \
@@ -874,10 +882,14 @@ jobs:
             --output json > "$processed_template"
           node --input-type=module - "$processed_template" <<'JS'
           import { readFileSync } from 'node:fs';
-          import yaml from 'js-yaml';
 
           const encodedTemplate = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const template = typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate;
+          const template = typeof encodedTemplate === 'string'
+            ? JSON.parse(encodedTemplate)
+            : encodedTemplate;
+          if (!template || typeof template !== 'object' || Array.isArray(template)) {
+            throw new Error('Processed CloudFormation template must be a JSON object');
+          }
           const resources = template?.Resources ?? {};
           const marker = template?.Metadata?.DataOpsIssue166Cutover;
           const tasks = resources.DataOpsTasksTable;
@@ -991,7 +1003,7 @@ jobs:
             exit 1
           fi
 
-          processed_template="$RUNNER_TEMP/dataops-issue-166-phase-b-processed-template.yaml"
+          processed_template="$RUNNER_TEMP/dataops-issue-166-phase-b-processed-template.json"
           aws cloudformation get-template \
             --stack-name dataops-v1 \
             --template-stage Processed \
@@ -999,10 +1011,14 @@ jobs:
             --output json > "$processed_template"
           node --input-type=module - "$processed_template" <<'JS'
           import { readFileSync } from 'node:fs';
-          import yaml from 'js-yaml';
 
           const encodedTemplate = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const template = typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate;
+          const template = typeof encodedTemplate === 'string'
+            ? JSON.parse(encodedTemplate)
+            : encodedTemplate;
+          if (!template || typeof template !== 'object' || Array.isArray(template)) {
+            throw new Error('Processed CloudFormation template must be a JSON object');
+          }
           const marker = template?.Metadata?.DataOpsIssue166Cutover;
           const resources = template?.Resources ?? {};
           const outputs = template?.Outputs ?? {};
@@ -1094,14 +1110,18 @@ jobs:
             exit 1
           fi
 
-          processed_template="$RUNNER_TEMP/dataops-issue-166-phase-c-processed-template.yaml"
+          processed_template="$RUNNER_TEMP/dataops-issue-166-phase-c-processed-template.json"
           aws cloudformation get-template --stack-name dataops-v1 --template-stage Processed \
             --query TemplateBody --output json > "$processed_template"
           node --input-type=module - "$processed_template" <<'JS'
           import { readFileSync } from 'node:fs';
-          import yaml from 'js-yaml';
           const encodedTemplate = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const template = typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate;
+          const template = typeof encodedTemplate === 'string'
+            ? JSON.parse(encodedTemplate)
+            : encodedTemplate;
+          if (!template || typeof template !== 'object' || Array.isArray(template)) {
+            throw new Error('Processed CloudFormation template must be a JSON object');
+          }
           const resources = template?.Resources ?? {};
           const tasks = resources.DataOpsTasksTable;
           const backend = resources.BackendFunction;

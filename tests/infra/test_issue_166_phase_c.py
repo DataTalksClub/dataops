@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
+import re
 import subprocess
+import textwrap
+from pathlib import Path
 
 import yaml
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
@@ -95,6 +96,7 @@ def _run(path: Path) -> subprocess.CompletedProcess[str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -176,7 +178,10 @@ def test_phase_c_workflow_is_exact_single_build_and_fail_closed():
     assert workflow.count("if: env.DEPLOYMENT_MODE == 'issue-166-phase-c'") == 3
     assert workflow.count("run: make sam-build") == 1
     assert workflow.count("--query TemplateBody --output text") == 0
-    assert workflow.count("typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate") == 5
+    assert "from 'js-yaml'" not in workflow
+    assert "safeLoad(" not in workflow
+    assert workflow.count("? JSON.parse(encodedTemplate)") == 5
+    assert workflow.count("Processed CloudFormation template must be a JSON object") == 5
     assert workflow.count(
         "JSON.stringify(tasks?.Properties?.TableName)"
     ) == 2
@@ -202,29 +207,75 @@ def test_phase_c_workflow_is_exact_single_build_and_fail_closed():
         assert forbidden not in phase_c.lower()
 
 
-def test_cloudformation_template_loader_accepts_object_and_string_forms(tmp_path: Path):
-    loader = """
-      import { readFileSync } from 'node:fs';
-      import yaml from 'js-yaml';
-      const encodedTemplate = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-      const template = typeof encodedTemplate === 'string' ? yaml.safeLoad(encodedTemplate) : encodedTemplate;
-      if (template?.Metadata?.Proof !== 'ok') process.exit(1);
-    """
-    forms = [
-        {"Metadata": {"Proof": "ok"}},
-        "Metadata:\n  Proof: ok\n",
+def _workflow_node_blocks() -> list[str]:
+    return [
+        textwrap.dedent(block)
+        for block in re.findall(
+            r"node --input-type=module[^\n]*<<'JS'\n(.*?)\n          JS",
+            WORKFLOW.read_text(encoding="utf-8"),
+            re.DOTALL,
+        )
     ]
-    for index, form in enumerate(forms):
-        path = tmp_path / f"template-{index}.json"
-        path.write_text(json.dumps(form), encoding="utf-8")
-        completed = subprocess.run(
-            ["node", "--input-type=module", "-", str(path)],
+
+
+def test_phase_c_template_loaders_accept_json_forms_and_reject_yaml(tmp_path: Path):
+    blocks = _workflow_node_blocks()
+    preflight = next(
+        block for block in blocks
+        if "Phase C requires the exact deployed Phase B marker" in block
+    )
+    postcheck = next(
+        block for block in blocks
+        if "Phase C processed template is not the exact final schema" in block
+    )
+    phase_b = {
+        "Metadata": {"DataOpsIssue166Cutover": {"Issue": 166, "Phase": "B"}},
+        "Resources": {
+            "BackendFunction": {"Properties": {"ReservedConcurrentExecutions": 0}},
+            "ConversationalExecutionWorkerFunction": {
+                "Properties": {"ReservedConcurrentExecutions": 0}
+            },
+        },
+        "Outputs": {},
+    }
+    phase_c_path = tmp_path / "phase-c.yaml"
+    phase_c_path.write_text(yaml.safe_dump(_source()), encoding="utf-8")
+    assert _run(phase_c_path).returncode == 0
+    phase_c = yaml.safe_load(phase_c_path.read_text(encoding="utf-8"))
+    phase_c["Resources"]["BackendFunctionRole"] = {
+        "Type": "AWS::IAM::Role",
+        "Properties": {"Policies": ["DataOpsTasksTable"]},
+    }
+    phase_c["Resources"]["ConversationalExecutionWorkerFunctionRole"] = {
+        "Type": "AWS::IAM::Role",
+        "Properties": {"Policies": ["DataOpsTasksTable"]},
+    }
+
+    for index, (block, template) in enumerate(((preflight, phase_b), (postcheck, phase_c))):
+        fixture = tmp_path / f"processed-{index}.json"
+        for encoded in (template, json.dumps(template)):
+            fixture.write_text(json.dumps(encoded), encoding="utf-8")
+            completed = subprocess.run(
+                ["node", "--input-type=module", "-", str(fixture)],
+                cwd=REPO_ROOT,
+                input=block,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert completed.returncode == 0, completed.stderr
+
+        fixture.write_text(json.dumps(yaml.safe_dump(template)), encoding="utf-8")
+        rejected = subprocess.run(
+            ["node", "--input-type=module", "-", str(fixture)],
             cwd=REPO_ROOT,
-            input=loader,
+            input=block,
             capture_output=True,
             text=True,
+            check=False,
         )
-        assert completed.returncode == 0, completed.stderr
+        assert rejected.returncode != 0
+        assert "SyntaxError" in rejected.stderr
 
 
 def test_phase_c_preparer_has_no_aws_data_movement_or_later_phase():
