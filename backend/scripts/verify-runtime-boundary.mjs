@@ -3,7 +3,22 @@ import path from 'node:path';
 
 const artifact = path.resolve(process.argv[2] || 'dist');
 const bundleManifestPath = path.join(artifact, '.dataops-sam-bundle.json');
-const forbiddenFiles = [path.join(artifact, 'db', 'setup.js')];
+const forbiddenPaths = [
+  path.join(artifact, 'db', 'setup.js'),
+  path.join(artifact, 'sponsorCrmMigration'),
+  path.join(artifact, 'bookkeeping-document-import'),
+  path.join(artifact, 'scripts'),
+  path.join(artifact, 'dist', 'sponsorCrmMigration'),
+  path.join(artifact, 'dist', 'bookkeeping-document-import'),
+  path.join(artifact, 'dist', 'scripts'),
+];
+const forbiddenInputPrefixes = [
+  'backend/src/sponsorCrmMigration/',
+  'backend/src/bookkeeping-document-import/',
+  'backend/scripts/import-',
+  'backend/scripts/migrate-',
+  'backend/scripts/bookkeeping-document-import/',
+];
 const forbiddenCode = [
   ['CreateTableCommand', 'DynamoDB table creation'],
   ['DeleteTableCommand', 'DynamoDB table deletion'],
@@ -32,6 +47,9 @@ if (fs.existsSync(bundleManifestPath)) {
         if (inputs.has(forbiddenInput)) failures.push(`removed runtime module is bundled: ${forbiddenInput}`);
       }
       for (const input of inputs) {
+        if (forbiddenInputPrefixes.some((prefix) => input.startsWith(prefix))) {
+          failures.push(`importer or migration framework is bundled: ${input}`);
+        }
         if (input === 'dynalite' || input.includes('/dynalite/')) {
           failures.push(`embedded dynalite runtime is bundled from ${input}`);
         }
@@ -41,8 +59,8 @@ if (fs.existsSync(bundleManifestPath)) {
     failures.push('unreadable SAM esbuild manifest');
   }
 }
-for (const file of forbiddenFiles) {
-  if (fs.existsSync(file)) failures.push(`removed runtime module is present: ${path.relative(artifact, file)}`);
+for (const target of forbiddenPaths) {
+  if (fs.existsSync(target)) failures.push(`removed runtime module is present: ${path.relative(artifact, target)}`);
 }
 for (const file of javascriptFiles(artifact)) {
   if (bundledOutputs.has(path.relative(artifact, file).split(path.sep).join('/'))) continue;
