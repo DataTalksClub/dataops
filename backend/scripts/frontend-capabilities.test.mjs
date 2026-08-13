@@ -30,11 +30,11 @@ const REQUIRED = {
   },
   workflows: {
     route: "/#/cards?cardId=<id>&taskId=<id>",
-    states: ["empty", "active", "staged", "completed", "deep-link-return", "mismatch", "not-found", "failure"],
+    states: ["empty", "active", "staged", "completed", "template-update-review", "template-update-conflict", "deep-link-return", "mismatch", "not-found", "failure"],
   },
   templates: {
     route: "/#/templates?templateId=<id>",
-    states: ["read-only", "source-revision", "create-card", "method-not-allowed", "failure", "stale-not-found"],
+    states: ["read-only", "source-revision", "create-card", "reviewed-card-batch", "method-not-allowed", "failure", "stale-not-found"],
   },
   recurring: {
     route: "/#/recurring",
