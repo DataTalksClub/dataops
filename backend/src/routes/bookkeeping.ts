@@ -1039,7 +1039,7 @@ export async function handleBookkeepingRoutes(
     }
     if (method === "DELETE" && id) {
       if (kind === "document")
-        return json(405, { error: "Use a run-owned cleanup or rollback endpoint" });
+        return json(405, { error: "Bookkeeping documents cannot be deleted through this API" });
       if (kind === "link") {
         const link = await getBookkeepingItem(client, "link", id);
         if (!link) return json(404, { error: "Not found" });
