@@ -716,10 +716,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Auth middleware ───────────────────────────────────────────
     // All /api/* routes (except exempt ones) require a valid session.
     // In test mode (NODE_ENV=test), auth can be bypassed with SKIP_AUTH=true.
-    const bookkeepingIngest = method === 'POST' && reqPath === '/api/bookkeeping/ingest';
     // Portal browser cookies and legacy bearer sessions are independent. The
     // generic bearer middleware below remains available in portal mode.
-    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath) && (!bookkeepingIngest || portalMode)) {
+    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });

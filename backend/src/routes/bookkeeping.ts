@@ -1,8 +1,3 @@
-import { timingSafeEqual } from "crypto";
-import {
-  GetSecretValueCommand,
-  SecretsManagerClient,
-} from "@aws-sdk/client-secrets-manager";
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -84,8 +79,6 @@ const allowed = [
   "sourceType",
   "sourceKey",
 ];
-let secretCache: { value: string; expiresAt: number } | null = null;
-const ingestionWindows = new Map<string, { started: number; count: number }>();
 let s3 = new S3Client({});
 let signUrl = getSignedUrl;
 type ArchiveUploadResult = { VersionId?: string } | void;
@@ -178,45 +171,6 @@ function safeData(input: Record<string, unknown>) {
     allowed.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]),
   );
 }
-async function ingestionSecret() {
-  if (process.env.BOOKKEEPING_INGESTION_SECRET)
-    return process.env.BOOKKEEPING_INGESTION_SECRET;
-  if (secretCache && secretCache.expiresAt > Date.now())
-    return secretCache.value;
-  const id = process.env.BOOKKEEPING_INGESTION_SECRET_NAME;
-  if (!id) return "";
-  const value =
-    (
-      await new SecretsManagerClient({}).send(
-        new GetSecretValueCommand({ SecretId: id }),
-      )
-    ).SecretString || "";
-  secretCache = {
-    value,
-    expiresAt:
-      Date.now() + Number(process.env.BOOKKEEPING_SECRET_CACHE_MS || 60000),
-  };
-  return value;
-}
-async function machineAuthorized(event: LambdaEvent) {
-  const provided =
-    Object.entries(event.headers || {}).find(
-      ([k]) => k.toLowerCase() === "x-bookkeeping-ingestion-key",
-    )?.[1] || "";
-  const stored = await ingestionSecret();
-  let expected = stored,
-    credentialId = "default";
-  try {
-    const parsed = JSON.parse(stored);
-    expected = String(parsed.secret || "");
-    credentialId = String(parsed.credentialId || "default");
-  } catch {}
-  const a = Buffer.from(provided),
-    b = Buffer.from(expected);
-  const authorized =
-    !!expected && a.length === b.length && timingSafeEqual(a, b);
-  return { authorized, credentialId };
-}
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
 function publicDocument(document: Record<string, unknown>) {
@@ -305,31 +259,7 @@ export async function handleBookkeepingRoutes(
   client: DynamoDBDocumentClient,
   sessionAuthorized: boolean,
 ): Promise<LambdaResponse> {
-  const ingest = path === "/api/bookkeeping/ingest";
-  let machine: { authorized: boolean; credentialId: string } | null = null;
-  if (ingest && method === "POST") machine = await machineAuthorized(event);
-  if (ingest && !machine?.authorized)
-    return json(401, { error: "Unauthorized" });
-  if (!ingest && !sessionAuthorized)
-    return json(401, { error: "Unauthorized" });
-  if (machine?.authorized) {
-    const now = Date.now(),
-      limit = Number(process.env.BOOKKEEPING_INGESTION_RATE_LIMIT || 60),
-      window = ingestionWindows.get(machine.credentialId);
-    if (!window || now - window.started >= 60000)
-      ingestionWindows.set(machine.credentialId, { started: now, count: 1 });
-    else if (++window.count > limit) {
-      const limited = json(429, { error: "Rate limit exceeded" });
-      limited.headers = { ...limited.headers, "Retry-After": "60" };
-      return limited;
-    }
-    console.info(
-      JSON.stringify({
-        event: "bookkeeping_ingest",
-        credentialId: machine.credentialId,
-      }),
-    );
-  }
+  if (!sessionAuthorized) return json(401, { error: "Unauthorized" });
   const match = path.match(/^\/api\/bookkeeping\/transactions(?:\/([^/]+))?$/);
   if (match) {
     if (method === "GET" && !match[1])
@@ -376,34 +306,8 @@ export async function handleBookkeepingRoutes(
         client, "bookkeeping", value,
         typeof value.sourceKey === "string" ? `source#${value.sourceKey}` : undefined,
       );
-      return json(201, result.item);
+      return json(result.duplicate ? 200 : 201, result.item);
     }
-  }
-  if (ingest && method === "POST") {
-    const idempotency = Object.entries(event.headers || {}).find(
-      ([k]) => k.toLowerCase() === "idempotency-key",
-    )?.[1];
-    if (!idempotency || idempotency.length > 200)
-      return json(400, { error: "Idempotency-Key required" });
-    const body = parse(event.body || null);
-    if (!body || JSON.stringify(body).length > 16384)
-      return json(400, { error: "Invalid request" });
-    const errors = validateTransaction(body);
-    if (errors.length)
-      return json(400, { error: "Validation failed", fields: errors });
-    const sourceKey = body.sourceKey;
-    if (typeof sourceKey !== "string" || !sourceKey)
-      return json(400, { error: "sourceKey required" });
-    const result = await putBookkeepingItem(
-      client,
-      "bookkeeping",
-      safeData(body),
-      `source#${sourceKey}`,
-    );
-    return json(result.duplicate ? 200 : 201, {
-      item: result.item,
-      duplicate: result.duplicate,
-    });
   }
   if (path === "/api/bookkeeping/transactions/resolve" && method === "POST") {
     const body = parse(event.body || null);

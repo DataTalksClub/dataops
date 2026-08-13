@@ -72,7 +72,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/intake' },
   { method: 'POST', path: '/api/intake', body: {} },
   { method: 'GET', path: '/api/bookkeeping' },
-  { method: 'POST', path: '/api/bookkeeping/ingest', body: {} },
   { method: 'GET', path: '/api/sponsor-crm/sponsors' },
   { method: 'POST', path: '/api/sponsor-crm/sponsors', body: {} },
   { method: 'GET', path: '/api/newsletter-slots' },

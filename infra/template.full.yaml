@@ -972,12 +972,6 @@ Resources:
             Resource: [!GetAtt MailingExportsBucket.Arn, !Sub "${MailingExportsBucket.Arn}/*"]
             Condition: { Bool: { "aws:SecureTransport": false } }
 
-  BookkeepingIngestionSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub ${AWS::StackName}/bookkeeping/ingestion
-      GenerateSecretString: { PasswordLength: 48, ExcludePunctuation: true }
-
   DataOpsTasksTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -1970,7 +1964,6 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
               - !Ref WorkEnginePortalSecret
-              - !Ref BookkeepingIngestionSecret
               - !Ref EmailDocumentIntakeSecretArn
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
               - !If
@@ -2049,7 +2042,6 @@ Resources:
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !Ref BookkeepingDocumentsKey
-          BOOKKEEPING_INGESTION_SECRET_NAME: !Sub ${AWS::StackName}/bookkeeping/ingestion
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
           GITHUB_OWNER: !Ref GitHubOwner

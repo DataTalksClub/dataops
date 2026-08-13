@@ -336,7 +336,6 @@ describe("atomic bookkeeping document API", () => {
   it("rejects all unauthorized probes with the same generic response", async () => {
     process.env.SKIP_AUTH = "false";
     try {
-      process.env.BOOKKEEPING_INGESTION_SECRET = "synthetic-ingestion-only-secret";
       const routes: Array<[string, string, unknown?]> = [
         ["POST", "/api/bookkeeping/transactions/resolve", { sourceKeys: ["absent"] }],
         ["POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }],
@@ -354,14 +353,12 @@ describe("atomic bookkeeping document API", () => {
         { authorization: "Basic c3ludGhldGljOnNlY3JldA==" },
         { authorization: "Bearer eyJheader.payload.signature" },
         { "x-user-id": "fabricated-operator", "x-portal-auth": "true" },
-        { "x-bookkeeping-ingestion-key": "synthetic-ingestion-only-secret" },
       ];
       const probes = await Promise.all(
         credentialHeaders.flatMap((headers) => routes.map(([method, route, body]) => invoke(method, route, body, headers))),
       );
       assert.ok(probes.every((response) => response.statusCode === 401 && response.body === '{"error":"Unauthorized"}'));
     } finally {
-      delete process.env.BOOKKEEPING_INGESTION_SECRET;
       process.env.SKIP_AUTH = "true";
     }
   });
