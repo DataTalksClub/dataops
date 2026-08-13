@@ -12,7 +12,10 @@ import {
   conversationalRolloutSnapshot,
 } from './conversation/rollout';
 import { logConversationalEvent } from './conversation/observability';
-import { loadAuthoredTemplatesFromGithub, reconcileAuthoredTemplates } from './templates/authoredTemplates';
+import {
+  assertCanonicalDeploymentTemplateLoader,
+  seedDeploymentRuntime,
+} from './deploymentSeeds';
 
 let client: DynamoDBDocumentClient | null = null;
 let initialized = false;
@@ -36,11 +39,19 @@ function isScheduledEvent(event: unknown): boolean {
   );
 }
 
-function isTemplateSyncEvent(event: unknown): boolean {
+function isRuntimeSeedEvent(event: unknown): boolean {
   if (typeof event !== 'object' || event === null) return false;
   const raw = event as Record<string, unknown>;
   const detail = raw.detail as Record<string, unknown> | undefined;
-  return raw.source === 'dataops.deploy' && detail?.dataopsAction === 'sync-templates';
+  return raw.source === 'dataops.deploy'
+    && raw['detail-type'] === 'Runtime Seed'
+    && detail?.dataopsAction === 'sync-runtime-seeds';
+}
+
+function isDeploymentControlEvent(event: unknown): boolean {
+  return typeof event === 'object'
+    && event !== null
+    && (event as Record<string, unknown>).source === 'dataops.deploy';
 }
 
 async function handler(event: LambdaEvent | Record<string, unknown>, _context?: unknown): Promise<LambdaResponse | CronRunnerResult> {
@@ -78,15 +89,23 @@ async function handler(event: LambdaEvent | Record<string, unknown>, _context?: 
 
   await ensureInitialized();
 
-  // IAM-only deployment invocation. The Lambda, not GitHub Actions, resolves
-  // the private-repository token through its existing Secrets Manager access.
-  if (isTemplateSyncEvent(event)) {
-    const authored = await loadAuthoredTemplatesFromGithub();
-    const result = await reconcileAuthoredTemplates(client!, authored);
+  // IAM-only deployment invocation. This uses the exact packaged runtime and
+  // never depends on a package install in the GitHub Actions deploy checkout.
+  if (isRuntimeSeedEvent(event)) {
+    if (process.env.NODE_ENV !== 'test') assertCanonicalDeploymentTemplateLoader();
+    const result = await seedDeploymentRuntime(client!);
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(result),
+    };
+  }
+
+  if (isDeploymentControlEvent(event)) {
+    return {
+      statusCode: 400,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Invalid deployment control event' }),
     };
   }
 
