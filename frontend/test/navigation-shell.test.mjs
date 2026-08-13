@@ -27,7 +27,12 @@ function visibleButton(className, dataset) {
 
 function createNavigationHarness(options = {}) {
   const libraryTitle = new FakeElement("h1");
+  libraryTitle.offsetParent = options.libraryTitleVisible === false ? null : {};
   const documentList = new FakeElement("main");
+  const routeHeading = new FakeElement("h2");
+  routeHeading.textContent = "Current route";
+  routeHeading.offsetParent = {};
+  documentList.append(routeHeading);
   const searchInput = new FakeElement("input");
   const runtimeTemplateSearch = visibleButton("runtime-template-search", {});
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
@@ -77,6 +82,18 @@ function createNavigationHarness(options = {}) {
     },
   };
   const intake = { selectedId: null };
+  const intakeSurfaceState = {
+    intake,
+    intakeMutation: options.intakeMutation || {
+      itemId: "",
+      action: "",
+      values: {},
+      focus: null,
+      error: "",
+      busy: false,
+      status: "",
+    },
+  };
   const assistantQueue = { selectedJobId: null };
   const knowledge = {
     allDocuments: options.documents || [],
@@ -98,7 +115,7 @@ function createNavigationHarness(options = {}) {
     folderExists: (path) => path === "known-folder",
     folderPathFromLocation: () => options.folderPath || "",
     getAssistantQueueState: () => assistantQueue,
-    getIntakeState: () => intake,
+    getIntakeSurfaceState: () => intakeSurfaceState,
     getKnowledgeState: () => knowledge,
     getTasksSectionForLegacyView: (view) =>
       ({
@@ -121,7 +138,10 @@ function createNavigationHarness(options = {}) {
     parseWorkspaceHash: (hash) => parseWorkspaceHash(hash, location),
     prepareCardPanel: (id) => calls.push(["prepare-card", id]),
     prepareTaskPanel: (id) => calls.push(["prepare-task", id]),
-    refreshDocuments: () => calls.push(["refresh-docs"]),
+    refreshDocuments: () => {
+      calls.push(["refresh-docs"]);
+      documentList.append(routeHeading);
+    },
     refreshOperationsArtifactSnapshot: async (value) => calls.push(["artifacts", value]),
     refreshOperationsAssistantSnapshot: async (value) => calls.push(["assistants", value]),
     refreshUsersSurface: async (value) => calls.push(["users", value]),
@@ -161,11 +181,13 @@ function createNavigationHarness(options = {}) {
     documentList,
     history,
     intake,
+    intakeSurfaceState,
     knowledge,
     libraryTitle,
     location,
     nestedTask,
     recurring,
+    routeHeading,
     runtimeTemplateSearch,
     searchInput,
     setAllowLeave: (value) => {
@@ -277,6 +299,16 @@ describe("canonical navigation shell behavior", () => {
     }).ready;
     assert.equal(fallback.libraryTitle.focused, true);
     assert.equal(fallback.libraryTitle.tabIndex, -1);
+
+    const headingFallback = createNavigationHarness({
+      libraryTitleVisible: false,
+    });
+    await headingFallback.shell.navigateCanonicalWorkspace("/tasks", {}, {
+      restoreFocus: { id: "missing", kind: "task" },
+    }).ready;
+    assert.equal(headingFallback.libraryTitle.focused, false);
+    assert.equal(headingFallback.routeHeading.focused, true);
+    assert.equal(headingFallback.routeHeading.tabIndex, -1);
   });
 
   test("starts document navigation by invalidating route work and closing overlays", () => {
@@ -288,6 +320,59 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(harness.shell.isWorkspaceRouteFresh(priorToken), false);
     assert.equal(harness.calls.filter(([name]) => name === "reset-task").length, 2);
     assert.equal(harness.calls.filter(([name]) => name === "reset-card").length, 2);
+  });
+
+  test("keeps an Inbox draft on same-item refresh and discards it across navigation", async () => {
+    const harness = createNavigationHarness({
+      intakeMutation: {
+        itemId: "intake-draft",
+        action: "block",
+        values: { reason: "Waiting for review" },
+        focus: { field: "reason" },
+        error: "",
+        busy: false,
+        status: "",
+      },
+    });
+
+    await harness.shell.navigateCanonicalWorkspace(
+      "/inbox",
+      { intakeId: "intake-draft" },
+      { hydrate: false },
+    ).ready;
+    assert.equal(harness.intakeSurfaceState.intakeMutation.action, "block");
+
+    await harness.shell.navigateCanonicalWorkspace("/tasks", {}, {
+      hydrate: false,
+    }).ready;
+    assert.deepEqual(harness.intakeSurfaceState.intakeMutation, {
+      itemId: "",
+      action: "",
+      values: {},
+      focus: null,
+      error: "",
+      busy: false,
+      status: "",
+    });
+
+    await harness.shell.navigateCanonicalWorkspace(
+      "/inbox",
+      { intakeId: "intake-draft" },
+      { hydrate: false },
+    ).ready;
+    assert.equal(harness.intakeSurfaceState.intakeMutation.itemId, "");
+
+    harness.intakeSurfaceState.intakeMutation = {
+      itemId: "intake-draft",
+      action: "block",
+      values: { reason: "Second draft" },
+      focus: null,
+      error: "",
+      busy: false,
+      status: "",
+    };
+    harness.shell.beginDocumentNavigation();
+    assert.equal(harness.intakeSurfaceState.intakeMutation.itemId, "");
   });
 
   test("normalizes malformed Home URLs and opens known document or folder URLs", async () => {

@@ -357,6 +357,8 @@ function createNotificationHarness(options = {}) {
     },
     openTaskPanel: (id) => openedTasks.push(id),
     parseWorkspaceHash: options.parseWorkspaceHash || (() => ({ path: "/" })),
+    requestAnimationFrameImpl:
+      options.requestAnimationFrameImpl || ((callback) => callback()),
     request: async (url, requestOptions = {}) => {
       const entry = { url: String(url), options: requestOptions };
       requests.push(entry);
@@ -869,6 +871,11 @@ describe("runtime and shell production behavior", () => {
     await nextTicks();
     assert.equal(harness.body.textContent.includes("Dismiss unavailable"), true);
     dismiss = harness.body.querySelector("[data-dismiss-notification]");
+    assert.equal(dismiss.focused, true);
+    await harness.shell.refreshWorkBell();
+    dismiss = harness.body.querySelector("[data-dismiss-notification]");
+    assert.equal(dismiss.focused, true);
+    assert.equal(harness.desktopCount.textContent, "1");
     failDismiss = false;
     await dismiss.click();
     await nextTicks();

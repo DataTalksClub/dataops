@@ -10,6 +10,7 @@ export function createNotificationsShell({
   navigateCanonicalWorkspace,
   openTaskPanel,
   parseWorkspaceHash,
+  requestAnimationFrameImpl,
   request,
   todayIsoDate,
   workApiUrl,
@@ -29,6 +30,8 @@ export function createNotificationsShell({
   let notificationError = "";
   const dismissErrors = new Map();
   let opener = null;
+  let pendingDismissFocusId = "";
+  let panelRenderVersion = 0;
 
   function notificationDisplayMessage(notification) {
     const message = String(
@@ -87,6 +90,8 @@ export function createNotificationsShell({
       return;
     }
     workBellPanel.hidden = true;
+    pendingDismissFocusId = "";
+    panelRenderVersion += 1;
     if (options.restoreFocus !== false && opener?.isConnected) opener.focus();
     opener = null;
   }
@@ -115,6 +120,7 @@ export function createNotificationsShell({
         (item) => item.id !== notification.id,
       );
       dismissErrors.delete(notification.id);
+      pendingDismissFocusId = "";
       syncWorkBellIndicators();
       renderWorkBellPanel();
     } catch (error) {
@@ -122,17 +128,35 @@ export function createNotificationsShell({
         notification.id,
         error.message || "Notification could not be dismissed",
       );
+      pendingDismissFocusId = notification.id;
       renderWorkBellPanel();
-      [...workBellBody.querySelectorAll("[data-dismiss-notification]")]
-        .find(
-          (candidate) =>
-            candidate.dataset.dismissNotification === notification.id,
-        )
-        ?.focus();
     }
   }
 
+  function scheduleDismissRecoveryFocus(version) {
+    const notificationId = pendingDismissFocusId;
+    if (!notificationId) return;
+    requestAnimationFrameImpl(() => {
+      if (
+        version !== panelRenderVersion ||
+        workBellPanel.hidden ||
+        pendingDismissFocusId !== notificationId
+      )
+        return;
+      const recovery = [
+        ...workBellBody.querySelectorAll("[data-dismiss-notification]"),
+      ].find(
+        (candidate) =>
+          candidate.dataset.dismissNotification === notificationId &&
+          candidate.isConnected &&
+          candidate.offsetParent !== null,
+      );
+      recovery?.focus();
+    });
+  }
+
   function renderWorkBellPanel() {
+    const version = ++panelRenderVersion;
     workBellBody.replaceChildren();
     if (notificationError) {
       const empty = documentRef.createElement("p");
@@ -221,6 +245,13 @@ export function createNotificationsShell({
       }
       workBellBody.append(item);
     }
+    if (
+      pendingDismissFocusId &&
+      !notifications.some((item) => item.id === pendingDismissFocusId)
+    ) {
+      pendingDismissFocusId = "";
+    }
+    scheduleDismissRecoveryFocus(version);
   }
 
   async function refreshWorkBell(options = {}) {

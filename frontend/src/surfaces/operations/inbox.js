@@ -86,6 +86,129 @@ export function createInboxSurface(context) {
       : String(item?.status || "new").replace(/-/g, " ");
   }
 
+  function intakeDraftValues(details) {
+    return Object.fromEntries(
+      [...details.querySelectorAll("input,select,textarea")].map((field) => [
+        field.name,
+        field.value,
+      ]),
+    );
+  }
+
+  function intakeDraftFocus(field) {
+    const focus = { field: field.name };
+    if (typeof field.selectionStart === "number") {
+      focus.selectionStart = field.selectionStart;
+      focus.selectionEnd = field.selectionEnd;
+    }
+    return focus;
+  }
+
+  function rememberIntakeDraft(item, action, details, field = null) {
+    const previous =
+      state.intakeMutation.itemId === item.id &&
+      state.intakeMutation.action === action
+        ? state.intakeMutation
+        : {};
+    state.intakeMutation = {
+      itemId: item.id,
+      action,
+      values: intakeDraftValues(details),
+      focus: field ? intakeDraftFocus(field) : previous.focus || null,
+      error: previous.error || "",
+      busy: previous.busy || false,
+      status: previous.status || "",
+    };
+  }
+
+  function intakeDisclosureChain(details) {
+    const disclosures = [];
+    for (let node = details; node; node = node.parentElement) {
+      if (node.tagName === "DETAILS") disclosures.push(node);
+    }
+    return disclosures;
+  }
+
+  function clearIntakeDraft(item, action) {
+    if (
+      state.intakeMutation.itemId !== item.id ||
+      state.intakeMutation.action !== action ||
+      state.intakeMutation.busy
+    )
+      return;
+    state.intakeMutation = {
+      itemId: "",
+      action: "",
+      values: {},
+      focus: null,
+      error: "",
+      busy: false,
+      status: "",
+    };
+  }
+
+  function bindIntakeDraft(item, button) {
+    const action = button.dataset.intakeSubmit;
+    const details = button.closest("details");
+    if (!details) return;
+    const disclosureChain = intakeDisclosureChain(details);
+    const mutation =
+      state.intakeMutation.itemId === item.id &&
+      state.intakeMutation.action === action
+        ? state.intakeMutation
+        : null;
+    if (mutation) {
+      for (const disclosure of disclosureChain) disclosure.open = true;
+      for (const field of details.querySelectorAll("input,select,textarea")) {
+        if (Object.hasOwn(mutation.values || {}, field.name)) {
+          field.value = mutation.values[field.name];
+        }
+      }
+    }
+    details.addEventListener("toggle", () => {
+      if (details.open) {
+        rememberIntakeDraft(item, action, details);
+      } else clearIntakeDraft(item, action);
+    });
+    for (const ancestor of disclosureChain.slice(1)) {
+      ancestor.addEventListener("toggle", () => {
+        if (!ancestor.open) clearIntakeDraft(item, action);
+      });
+    }
+    for (const field of details.querySelectorAll("input,select,textarea")) {
+      const capture = () => rememberIntakeDraft(item, action, details, field);
+      field.addEventListener("input", capture);
+      field.addEventListener("change", capture);
+      field.addEventListener("focus", capture);
+    }
+    const focus = mutation?.focus;
+    if (focus?.field) {
+      scheduleAnimationFrame(() => {
+        if (
+          state.intakeMutation.itemId !== item.id ||
+          state.intakeMutation.action !== action
+        )
+          return;
+        const field = [...details.querySelectorAll("input,select,textarea")].find(
+          (candidate) => candidate.name === focus.field,
+        );
+        if (
+          !field?.isConnected ||
+          field.offsetParent === null ||
+          disclosureChain.some((disclosure) => !disclosure.open)
+        )
+          return;
+        field.focus();
+        if (
+          typeof field.setSelectionRange === "function" &&
+          typeof focus.selectionStart === "number"
+        ) {
+          field.setSelectionRange(focus.selectionStart, focus.selectionEnd);
+        }
+      });
+    }
+  }
+
   async function refreshIntakeSnapshot(options = {}) {
     try {
       const [intakePayload, cardPayload] = await Promise.all([
@@ -540,11 +663,12 @@ export function createInboxSurface(context) {
     );
     panel
       .querySelectorAll("[data-intake-submit]")
-      .forEach((button) =>
+      .forEach((button) => {
+        bindIntakeDraft(item, button);
         button.addEventListener("click", () =>
           submitIntakeAction(panel, item, button.dataset.intakeSubmit),
-        ),
-      );
+        );
+      });
     if (state.intakeMutation.itemId === item.id && state.intakeMutation.error) {
       const error = panel.querySelector("[data-intake-inline-error]");
       if (error) scheduleAnimationFrame(() => error.focus());

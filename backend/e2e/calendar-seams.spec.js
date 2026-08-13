@@ -2,6 +2,7 @@ const { test, expect } = require("@playwright/test");
 const http = require("http"),
   fs = require("fs"),
   path = require("path");
+const frontendManifest = require("../src/docs/frontend-assets.json");
 const shots = path.resolve(
   __dirname,
   "..",
@@ -54,15 +55,27 @@ let frontendServer, frontendBase;
 test.beforeAll(async () => {
   fs.mkdirSync(shots, { recursive: true });
   const root = path.resolve(__dirname, "..", "..", "frontend");
+  const allowedAssets = new Set(frontendManifest.files);
   frontendServer = http.createServer((req, res) => {
-    const pathname = new URL(req.url, "http://x").pathname,
-      files = {
-        "/": path.join(root, "index.html"),
-        "/src/app.js": path.join(root, "src/app.js"),
-        "/src/styles.css": path.join(root, "src/styles.css"),
-      },
-      file = files[pathname];
-    if (!file) return res.writeHead(404).end();
+    let pathname;
+    try {
+      pathname = decodeURIComponent(new URL(req.url, "http://fixture.test").pathname);
+    } catch {
+      return res.writeHead(400).end();
+    }
+    const relative = pathname === "/" ? "index.html" : pathname.slice(1);
+    if (
+      pathname.includes("\\") ||
+      relative !== path.posix.normalize(relative) ||
+      relative.split("/").some((part) => !part || part === "." || part === "..") ||
+      !allowedAssets.has(relative)
+    ) {
+      return res.writeHead(404).end();
+    }
+    const file = path.resolve(root, ...relative.split("/"));
+    if (file !== root && !file.startsWith(`${root}${path.sep}`)) {
+      return res.writeHead(404).end();
+    }
     res.setHeader(
       "content-type",
       file.endsWith(".js")
@@ -76,7 +89,11 @@ test.beforeAll(async () => {
   await new Promise((r) => frontendServer.listen(0, "127.0.0.1", r));
   frontendBase = `http://127.0.0.1:${frontendServer.address().port}`;
 });
-test.afterAll(() => frontendServer.close());
+test.afterAll(
+  () => new Promise((resolve, reject) =>
+    frontendServer.close((error) => error ? reject(error) : resolve()),
+  ),
+);
 
 test("production portal calendar covers month/week, layers, overlay, dismiss/reappear, empty/error and mobile", async ({
   page,
@@ -141,6 +158,9 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   });
   await page.goto(frontendBase);
   await page.getByRole("button", { name: "Calendar" }).click();
+  await expect(page.locator(".calendar-surface [role='status']")).toHaveText(
+    "Calendar ready.",
+  );
   await expect(page.getByText("Synthetic Webinar").first()).toBeVisible();
   await expect(page.getByText("Synthetic Newsletter").first()).toBeVisible();
   await expect(page.getByText("Synthetic public holiday").first()).toBeVisible();
@@ -232,6 +252,9 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await page.goto(frontendBase);
   await page.getByRole("button", { name: "Calendar" }).click();
   const surface = page.locator(".calendar-surface");
+  await expect(surface.locator("[role='status']")).toHaveText(
+    "Calendar ready.",
+  );
   await surface.locator("select[data-view]").selectOption("week");
   await expect(surface.getByText("Cross-year activity").first()).toBeVisible();
   await expect(surface.locator('time[datetime="2027-01-01"]')).toBeVisible();

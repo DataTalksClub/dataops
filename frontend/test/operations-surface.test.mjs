@@ -111,6 +111,21 @@ function intakeDetails(action) {
   details.fields = Object.fromEntries(
     fields.map((field) => [field.name, field]),
   );
+  details.append(...fields);
+  if (
+    [
+      "attach",
+      "block",
+      "prepare-assistant",
+      "mark-duplicate",
+      "ignore",
+      "archive",
+    ].includes(action)
+  ) {
+    const outer = decorateLazyQueries(new FakeElement("details"));
+    outer.className = "intake-secondary-actions";
+    outer.append(details);
+  }
   return details;
 }
 
@@ -224,6 +239,7 @@ function operationState(overrides = {}) {
       itemId: "",
       action: "",
       values: {},
+      focus: null,
       error: "",
       busy: false,
       status: "",
@@ -687,6 +703,82 @@ describe("Operations surface boundary", () => {
       "Version conflict; reload the item",
     );
     assert.equal(harness.state.intakeMutation.busy, false);
+  });
+
+  test("rehydrates an open Inbox action draft and focus across a background refresh", async () => {
+    const item = { id: "intake-draft", title: "Draft request", status: "new" };
+    let blockMutations = 0;
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        intake: {
+          ...operationState().intake,
+          items: [item],
+          selectedId: item.id,
+        },
+      },
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/intake") return { items: [item] };
+        if (url === "/api/cards") return { cards: [] };
+        if (url === "/api/intake/intake-draft/block") {
+          blockMutations += 1;
+          return { item: { ...item, status: "blocked" } };
+        }
+        throw new Error(`Unexpected request ${url} ${requestOptions.method || "GET"}`);
+      },
+    });
+    harness.api.renderInboxSurface();
+    const initialDetail = harness.documentList.querySelector(".intake-detail");
+    const initialBlock = initialDetail
+      .querySelectorAll("[data-intake-submit]")
+      .find((button) => button.dataset.intakeSubmit === "block");
+    const initialDisclosure = initialBlock.closest("details");
+    const initialDisclosureGroup = initialDisclosure.parentElement;
+    initialDisclosureGroup.open = true;
+    await initialDisclosureGroup.dispatch("toggle");
+    initialDisclosure.open = true;
+    await initialDisclosure.dispatch("toggle");
+    initialDisclosure.fields.reason.value = "Need exact confirmation";
+    initialDisclosure.fields.waitingFor.value = "Named reviewer";
+    initialDisclosure.fields.followUpAt.value = "2026-08-19";
+    await initialDisclosure.fields.reason.dispatch("input");
+    await initialDisclosure.fields.waitingFor.dispatch("input");
+    await initialDisclosure.fields.followUpAt.dispatch("focus");
+    await initialDisclosure.fields.followUpAt.dispatch("change");
+
+    await harness.api.refreshIntakeSnapshot({ rerender: true });
+
+    const refreshedDetail = harness.documentList.querySelector(".intake-detail");
+    assert.notEqual(refreshedDetail, initialDetail);
+    const refreshedBlock = refreshedDetail
+      .querySelectorAll("[data-intake-submit]")
+      .find((button) => button.dataset.intakeSubmit === "block");
+    const refreshedDisclosure = refreshedBlock.closest("details");
+    const refreshedDisclosureGroup = refreshedDisclosure.parentElement;
+    assert.equal(
+      refreshedDisclosureGroup.classList.contains("intake-secondary-actions"),
+      true,
+    );
+    assert.equal(refreshedDisclosureGroup.open, true);
+    assert.equal(refreshedDisclosure.open, true);
+    assert.equal(
+      refreshedDisclosure.fields.reason.value,
+      "Need exact confirmation",
+    );
+    assert.equal(refreshedDisclosure.fields.waitingFor.value, "Named reviewer");
+    assert.equal(refreshedDisclosure.fields.followUpAt.value, "2026-08-19");
+    assert.equal(refreshedDisclosure.fields.followUpAt.focused, true);
+
+    await refreshedBlock.click();
+    const mutation = harness.requests.find(
+      (entry) => entry.url === "/api/intake/intake-draft/block",
+    );
+    assert.deepEqual(jsonBody(mutation), {
+      reason: "Need exact confirmation",
+      waitingFor: "Named reviewer",
+      followUpAt: "2026-08-19",
+    });
+    assert.equal(blockMutations, 1);
   });
 
   test("maps blocked Inbox response and follow-up actions to atomic request contracts", async () => {

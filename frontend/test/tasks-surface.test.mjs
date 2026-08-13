@@ -818,6 +818,47 @@ describe("Tasks surface boundary", () => {
     assert.match(harness.documentList.textContent, /No recurring configs yet/);
   });
 
+  test("exposes recurring Active and Paused state as text without prohibited ARIA", () => {
+    const harness = createHarness({
+      model: baseModel({
+        recurring: recurringSnapshot([
+          {
+            id: "active-schedule",
+            description: "Active schedule",
+            cronExpression: "0 9 * * 1",
+            enabled: true,
+          },
+          {
+            id: "paused-schedule",
+            description: "Paused schedule",
+            cronExpression: "0 9 * * 2",
+            enabled: false,
+          },
+        ]),
+      }),
+    });
+
+    harness.api.renderTasksSurface([], "recurring");
+    const statuses = findAllByClass(
+      harness.documentList,
+      "recurring-status",
+    );
+    assert.deepEqual(
+      statuses.map((status) => status.textContent),
+      ["Active", "Paused"],
+    );
+    assert.ok(
+      statuses.every((status) => status.getAttribute("aria-label") === null),
+    );
+    assert.deepEqual(
+      statuses.map(
+        (status) =>
+          findAllByClass(status, "visually-hidden")[0]?.textContent,
+      ),
+      ["Active", "Paused"],
+    );
+  });
+
   test("creates and edits recurring schedules from the Recurring tab", async () => {
     const config = {
       id: "recurring-1",

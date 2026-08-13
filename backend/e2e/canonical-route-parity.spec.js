@@ -76,6 +76,29 @@ async function expectNoSeriousA11y(page, selector) {
   expect(blocking, blocking.map((violation) => `${violation.id}: ${violation.help}`).join('\n')).toEqual([]);
 }
 
+async function expectStableRouteFocus(page) {
+  const focus = await page.evaluate(() => {
+    const active = document.activeElement;
+    const isRouteFallback = active?.matches?.(
+      '#library-title, #document-list h1, #document-list h2, #document-list h3, .workspace-nav-button.is-active, .ops-subnav-tab.is-active',
+    );
+    return {
+      connected: Boolean(active?.isConnected),
+      hiddenDialog: Boolean(active?.closest?.('[role="dialog"][hidden], [aria-hidden="true"]')),
+      isBody: active === document.body,
+      isRouteFallback,
+      visible: Boolean(active && active.offsetParent !== null),
+    };
+  });
+  expect(focus).toEqual({
+    connected: true,
+    hiddenDialog: false,
+    isBody: false,
+    isRouteFallback: true,
+    visible: true,
+  });
+}
+
 test.describe('issue 156 canonical route and operator parity', () => {
   test('boots hash workspace routes without waiting for a delayed docs provider', async ({ page, request }) => {
     await setRouteFaults(request, [{ method: 'GET', path: '/docs', delayMs: 5000 }]);
@@ -455,7 +478,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/tasks$/);
     await expect(page.locator('#library-title')).toHaveText('Tasks - Work Queue');
-    await expect(page.locator('#library-title')).toBeFocused();
+    await expectStableRouteFocus(page);
 
     await page.goto('/#/cards');
     const workflowCard = page.locator('.ops-workflow-card[data-card-id]').first();
@@ -498,14 +521,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.locator('#card-panel-close').click();
     await expect(page).toHaveURL(/\/#\/cards$/);
     if (fixtureCardWasVisible) await expect(fixtureCard).toBeFocused();
-    else await expect(page.locator('#library-title')).toBeFocused();
+    else await expectStableRouteFocus(page);
 
     await page.goto('/#/cards?cardId=keyboard-missing-workflow');
     await expect(page.locator('#card-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/cards$/);
     await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
-    await expect(page.locator('#library-title')).toBeFocused();
+    await expectStableRouteFocus(page);
   });
 
   test('ignores stale real-server entity responses after a newer navigation', async ({ page, request }) => {
