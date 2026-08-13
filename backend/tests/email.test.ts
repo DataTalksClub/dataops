@@ -1,7 +1,8 @@
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 
-import { startLocal, stopLocal } from '../src/db/client';
+import { startLocal, stopLocal, getClient } from '../src/db/client';
+import { createTables } from '../src/db/setup';
 import { extractDate } from '../src/routes/email';
 
 // ── Unit tests for extractDate ─────────────────────────────────────
@@ -49,7 +50,8 @@ describe('POST /api/webhook/email', () => {
   let originalSecret: string | undefined;
 
   before(async () => {
-    await startLocal();
+    const localPort = await startLocal();
+    await createTables(await getClient(localPort));
     process.env.IS_LOCAL = 'true';
     process.env.WEBHOOK_EMAIL_SECRET = 'test-secret';
 

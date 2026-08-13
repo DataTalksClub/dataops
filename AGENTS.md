@@ -115,6 +115,23 @@ AWS infrastructure source:
   OIDC after `main` is pushed. Do not replace that with a normal manual app
   deploy.
 
+The application never creates infrastructure:
+
+- Tables, buckets, queues and secrets are declared in infrastructure. Nothing in
+  `backend/src` creates or mutates them, and no environment variable enables it.
+  If a resource is missing the code fails loudly and names it, rather than
+  quietly creating one that nothing manages or backs up.
+- Local development and tests may stand up throwaway local resources, but that
+  belongs in a setup script, not in code that ships to the Lambda.
+- DynamoDB allows only one global secondary index created or deleted per stack
+  update, so an index rename cannot ride a normal deploy. Do index changes as an
+  offline operation and let the template declare the end state; do not build
+  migration machinery into the deploy pipeline, where it outlives the migration
+  and rots. While data is disposable, replace the table instead. See
+  `docs/dynamodb-index-changes.md`.
+- A migration that has run, and a guard for a migration that has finished, are
+  dead code. Delete them.
+
 Initial source systems:
 
 - `../dtc-operations`

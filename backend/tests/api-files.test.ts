@@ -44,7 +44,8 @@ describe('API - File uploads', () => {
 
   before(async () => {
     process.env.UPLOAD_DIR = TEST_UPLOAD_DIR;
-    await startLocal();
+    const localPort = await startLocal();
+    await createTables(await getClient(localPort));
     process.env.IS_LOCAL = 'true';
 
     const mod = await import('../src/handler');

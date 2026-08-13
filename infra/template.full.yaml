@@ -2042,7 +2042,7 @@ Resources:
       Environment:
         Variables:
           DATAOPS_ENV: !Ref DataOpsEnvironment
-          DATAOPS_STACK_NAME: !Ref AWS::StackName
+          DATAOPS_TABLE_PREFIX: !Ref AWS::StackName
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays

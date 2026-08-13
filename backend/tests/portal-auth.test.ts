@@ -3,6 +3,7 @@ import assert from 'node:assert';
 
 import { handler } from '../src/handler';
 import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { createTables } from '../src/db/setup';
 import { createNotification } from '../src/db/notifications';
 import { createSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
@@ -14,7 +15,8 @@ describe('Portal broker authentication', () => {
 
   before(async () => {
     process.env.IS_LOCAL = 'true';
-    await startLocal();
+    const localPort = await startLocal();
+    await createTables(await getClient(localPort));
     const warmUp = await handler({ httpMethod: 'GET', path: '/api/health' }, {});
     assert.strictEqual(warmUp.statusCode, 200);
     const client = await getClient();

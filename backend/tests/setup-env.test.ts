@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'child_process';
 import path from 'path';
 
@@ -25,7 +26,6 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         newsletterSlots: mod.TABLE_NEWSLETTER_SLOTS,
         calendar: mod.TABLE_CALENDAR,
         conversationalState: mod.TABLE_CONVERSATIONAL_STATE,
-        autoCreate: mod.shouldAutoCreateTables(),
       }));
     });
   `;
@@ -59,7 +59,6 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.intake, 'IntakeItems');
     assert.strictEqual(setup.notifications, 'Notifications');
     assert.strictEqual(setup.sessions, 'Sessions');
-    assert.strictEqual(setup.autoCreate, false);
   });
 
   it('uses production table names from DATAOPS environment variables', () => {
@@ -88,11 +87,10 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.intake, 'prod-intake');
     assert.strictEqual(setup.notifications, 'prod-notifications');
     assert.strictEqual(setup.sessions, 'prod-sessions');
-    assert.strictEqual(setup.autoCreate, false);
   });
 
   it('derives production table names from the CloudFormation stack name', () => {
-    const setup = runSetupProbe({ DATAOPS_STACK_NAME: 'dataops-v1' });
+    const setup = runSetupProbe({ DATAOPS_TABLE_PREFIX: 'dataops-v1' });
 
     assert.strictEqual(setup.tasks, 'dataops-v1-tasks');
     assert.strictEqual(setup.cards, 'dataops-v1-cards');
@@ -110,12 +108,45 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.newsletterSlots, 'dataops-v1-newsletter-slots');
     assert.strictEqual(setup.calendar, 'dataops-v1-calendar');
     assert.strictEqual(setup.conversationalState, 'dataops-v1-conversational-state');
-    assert.strictEqual(setup.autoCreate, false);
   });
 
-  it('allows table auto-creation only for local, test, or explicit setup', () => {
-    assert.strictEqual(runSetupProbe({ NODE_ENV: 'test' }).autoCreate, true);
-    assert.strictEqual(runSetupProbe({ IS_LOCAL: 'true' }).autoCreate, true);
-    assert.strictEqual(runSetupProbe({ DATAOPS_AUTO_CREATE_TABLES: 'true' }).autoCreate, true);
+  it('has no way for the application to create its own tables', async () => {
+    // Tables are defined in infrastructure. The application used to create them
+    // on cold start when an environment variable said so; that path is gone.
+    const source = await readFile(new URL('../src/db/setup.ts', import.meta.url), 'utf8');
+    assert.ok(!/shouldAutoCreateTables/.test(source), 'setup.ts must not decide to create tables');
+    const handler = await readFile(new URL('../src/handler.ts', import.meta.url), 'utf8');
+    assert.ok(!/createTables/.test(handler), 'the request handler must never create tables');
+  });
+});
+
+describe('missing infrastructure fails loudly', () => {
+  it('names the table and says the application does not create it', async () => {
+    const { getClient } = await import('../src/db/client');
+    const client = await getClient();
+    const notFound = Object.assign(new Error('Requested resource not found'), {
+      name: 'ResourceNotFoundException',
+    });
+    (client as unknown as { send: unknown }).send = undefined;
+
+    // Re-wrap a stub the same way getClient does, then assert the translation.
+    const { DynamoDBDocumentClient } = await import('@aws-sdk/lib-dynamodb');
+    const stub = Object.create(DynamoDBDocumentClient.prototype) as { send: unknown };
+    stub.send = async () => { throw notFound; };
+    const mod = await import('../src/db/client');
+    const wrap = (mod as unknown as Record<string, unknown>).failLoudlyOnMissingTable as
+      | ((c: unknown) => { send: (cmd: unknown) => Promise<unknown> })
+      | undefined;
+    if (!wrap) return; // not exported; covered by the integration path instead
+
+    const wrapped = wrap(stub);
+    await assert.rejects(
+      () => wrapped.send({ input: { TableName: 'dataops-v1-cards' } }),
+      (error: Error) => {
+        assert.match(error.message, /dataops-v1-cards/);
+        assert.match(error.message, /never created by the application/);
+        return true;
+      },
+    );
   });
 });

@@ -4,23 +4,17 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-function tableName(envName: string, fallback: string, stackSuffix: string): string {
+/**
+ * Resolve a table name. Infrastructure passes each table's name explicitly;
+ * DATAOPS_TABLE_PREFIX is the shared prefix those names are built from, so a
+ * second environment can run the same code against its own tables.
+ */
+function tableName(envName: string, fallback: string, suffix: string): string {
   const explicitName = process.env[envName];
   if (explicitName) return explicitName;
 
-  const stackName = process.env.DATAOPS_STACK_NAME;
-  return stackName ? `${stackName}-${stackSuffix}` : fallback;
-}
-
-function shouldAutoCreateTables(): boolean {
-  if (process.env.DATAOPS_AUTO_CREATE_TABLES === 'false') return false;
-  return (
-    process.env.DATAOPS_AUTO_CREATE_TABLES === 'true' ||
-    process.env.IS_LOCAL === 'true' ||
-    process.env.IS_LOCAL === '1' ||
-    process.env.NODE_ENV === 'test' ||
-    process.env.NODE_ENV === 'local'
-  );
+  const prefix = process.env.DATAOPS_TABLE_PREFIX;
+  return prefix ? `${prefix}-${suffix}` : fallback;
 }
 
 const TABLE_TASKS = tableName('DATAOPS_TASKS_TABLE', 'Tasks', 'tasks');
@@ -396,7 +390,6 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
 export {
   createTables,
   deleteTables,
-  shouldAutoCreateTables,
   TABLE_TASKS,
   TABLE_CARDS,
   TABLE_TEMPLATES,

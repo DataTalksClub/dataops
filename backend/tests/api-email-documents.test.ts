@@ -5,6 +5,7 @@ import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { createTables } from '../src/db/setup';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { listIntakeItems } from '../src/db/intake';
 import { resetEmailDocumentIntakeStateForTests, setEmailDocumentIntakeClientsForTests } from '../src/routes/emailDocuments';
@@ -58,7 +59,8 @@ describe('POST /api/v1/intake/email-documents', () => {
   let s3: FakeS3;
 
   before(async () => {
-    await startLocal();
+    const localPort = await startLocal();
+    await createTables(await getClient(localPort));
     process.env.IS_LOCAL = 'true';
     process.env.EMAIL_DOCUMENT_INTAKE_SECRET = SECRET;
     process.env.EMAIL_DOCUMENTS_BUCKET = 'email-documents-test';

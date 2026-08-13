@@ -254,7 +254,7 @@ def test_conversational_state_table_is_retained_private_stream_ready_state():
     assert "IndexName: GSI1" in table
     assert "IndexName: GSI2" in table
     assert "Value: PrivateExecutionState" in table
-    assert "DATAOPS_STACK_NAME: !Ref AWS::StackName" in backend
+    assert "DATAOPS_TABLE_PREFIX: !Ref AWS::StackName" in backend
     assert "DATAOPS_CONVERSATIONAL_STATE_TABLE:" not in backend
     assert "!GetAtt DataOpsConversationalStateTable.Arn" in backend
     assert "${DataOpsConversationalStateTable.Arn}/index/*" in backend
@@ -955,7 +955,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "AUTH_SESSION_LIFETIME_SECONDS: !Ref AuthSessionLifetimeSeconds" in backend
     assert "BASIC_AUTH_USERNAME" not in backend
     assert "BASIC_AUTH_PASSWORD_SECRET_NAME" not in backend
-    assert "DATAOPS_STACK_NAME: !Ref AWS::StackName" in backend
+    assert "DATAOPS_TABLE_PREFIX: !Ref AWS::StackName" in backend
     assert "DATAOPS_TASKS_TABLE:" not in backend
     assert "DATAOPS_CARDS_TABLE:" not in backend
     assert "DATAOPS_TEMPLATES_TABLE:" not in backend

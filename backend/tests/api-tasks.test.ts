@@ -12,6 +12,7 @@ describe('API — CRUD for tasks', () => {
 
   before(async () => {
     port = await startLocal();
+    await createTables(await getClient(port));
     process.env.IS_LOCAL = 'true';
 
     const mod = await import('../src/handler');

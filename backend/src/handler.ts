@@ -1,7 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from './router';
 import { getClient } from './db/client';
-import { createTables, shouldAutoCreateTables } from './db/setup';
 import { runCron } from './cron/runner';
 import { writePortableExportArchive } from './export/archive';
 import { runConfiguredMailingExports } from './mailingExports/service';
@@ -20,9 +19,6 @@ let initialized = false;
 async function ensureInitialized(): Promise<void> {
   if (!initialized) {
     client = await getClient();
-    if (shouldAutoCreateTables()) {
-      await createTables(client);
-    }
     initialized = true;
   }
 }

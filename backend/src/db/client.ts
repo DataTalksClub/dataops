@@ -86,7 +86,7 @@ async function getClient(localPort?: number): Promise<DynamoDBDocumentClient> {
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
       },
     });
-    return DynamoDBDocumentClient.from(raw);
+    return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
   }
 
   // If IS_LOCAL/NODE_ENV=test, use dynalite (existing behavior)
@@ -97,12 +97,43 @@ async function getClient(localPort?: number): Promise<DynamoDBDocumentClient> {
       endpoint: `http://localhost:${port}`,
       credentials: { accessKeyId: 'fake', secretAccessKey: 'fake' },
     });
-    return DynamoDBDocumentClient.from(raw);
+    return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
   }
 
   // Otherwise, use default AWS SDK config
   const raw = new DynamoDBClient({});
-  return DynamoDBDocumentClient.from(raw);
+  return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
+}
+
+/**
+ * Tables are created by infrastructure, never by this application. If one is
+ * missing the deployment is wrong, so say so plainly instead of surfacing a
+ * bare ResourceNotFoundException from whichever request happened to touch it
+ * first. The function has no dynamodb:DescribeTable permission by design, so
+ * this is detected on use rather than probed at startup.
+ */
+function failLoudlyOnMissingTable(client: DynamoDBDocumentClient): DynamoDBDocumentClient {
+  const send = client.send.bind(client) as (...args: unknown[]) => Promise<unknown>;
+  (client as unknown as { send: unknown }).send = async (...args: unknown[]) => {
+    try {
+      return await send(...args);
+    } catch (error) {
+      const err = error as { name?: string; message?: string };
+      if (err?.name !== 'ResourceNotFoundException') throw error;
+      const command = args[0] as { input?: { TableName?: string } } | undefined;
+      const table = command?.input?.TableName;
+      // Augment in place rather than replacing the error: callers such as
+      // deleteTables and the template admin poll branch on
+      // error.name === 'ResourceNotFoundException', and a new Error would
+      // silently break them.
+      err.message = `DynamoDB table ${table ? `'${table}' ` : ''}does not exist. `
+        + 'Tables are defined in infrastructure and are never created by the application. '
+        + 'Deploy the stack, or for local development run the local setup script. '
+        + `(${err.message})`;
+      throw error;
+    }
+  };
+  return client;
 }
 
 export { getClient, startLocal, stopLocal };

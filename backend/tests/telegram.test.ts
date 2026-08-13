@@ -1,7 +1,8 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 
-import { startLocal, stopLocal } from '../src/db/client';
+import { startLocal, stopLocal, getClient } from '../src/db/client';
+import { createTables } from '../src/db/setup';
 import { MAX_UPDATE_BYTES } from '../src/conversation/telegramAdapter';
 import {
   MAX_MAINTENANCE_REPLY_DEADLINE_MS,
@@ -10,7 +11,8 @@ import {
 
 describe('Telegram rollout cutover', () => {
   before(async () => {
-    await startLocal();
+    const localPort = await startLocal();
+    await createTables(await getClient(localPort));
     process.env.IS_LOCAL = 'true';
     process.env.TELEGRAM_WEBHOOK_SECRET = 'test-secret';
     process.env.TELEGRAM_ALLOWED_CHAT_IDS = '12345,-1001';

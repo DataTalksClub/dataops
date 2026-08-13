@@ -1,7 +1,7 @@
 import path from 'path';
 
 import { getClient, stopLocal } from '../src/db/client';
-import { createTables, shouldAutoCreateTables } from '../src/db/setup';
+import { createTables } from '../src/db/setup';
 import { writePortableExport } from '../src/export/portable';
 import { REPOSITORY_ROOT, resolveProjectPath } from './project-path';
 
@@ -10,7 +10,8 @@ async function main(): Promise<void> {
     ? resolveProjectPath(process.argv[2])
     : path.join(REPOSITORY_ROOT, '.tmp', 'exports', `dataops-${new Date().toISOString().replace(/[:.]/g, '-')}`);
   const client = await getClient();
-  const shouldStopLocal = shouldAutoCreateTables();
+  // Local-only script: npm run export:data sets IS_LOCAL=true.
+  const shouldStopLocal = process.env.IS_LOCAL === 'true' || process.env.IS_LOCAL === '1';
   try {
     if (shouldStopLocal) {
       await createTables(client);
