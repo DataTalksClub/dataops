@@ -8,13 +8,21 @@ Parameters:
     Default: DataTalksClub
   GitHubRepo:
     Type: String
-    Default: dataops
+    Default: dataops-knowledge
+    Description: >-
+      Private repository holding process documents and workflow templates. The
+      portal reads and writes it through the Contents API using the token named
+      by GitHubTokenSecretName.
   GitHubBranch:
     Type: String
     Default: main
   GitHubTokenSecretName:
     Type: String
-    Default: dataops-v1/full-app/github-token
+    Default: dataops-v1/knowledge/github-token
+    Description: >-
+      Secrets Manager secret holding a token with Contents read and write on the
+      knowledge repository. Read and write, because the document editor writes
+      back through the Contents API.
   AuthBaseUrl:
     Type: String
     Default: https://auth.dtcdev.click

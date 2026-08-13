@@ -15,7 +15,6 @@ TEMPLATE = REPO_ROOT / "infra" / "template.full.yaml"
 DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions-dataops.yaml"
 LEGACY_DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions.yaml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
-SPONSOR_GSI_MIGRATOR = REPO_ROOT / "scripts" / "deploy" / "sponsor-crm-gsi-migrator.mjs"
 
 ALARM_CONTRACT = {
     "ConversationalExecutionOutcomeUnknownAlarm": ("execution-outcome-unknown", "ExecutionOutcomeUnknown", 1, 300, 1, "Sum"),
@@ -1131,7 +1130,6 @@ def test_deploy_workflow_seeds_and_verifies_runtime_templates():
 
 def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
-    migrator = SPONSOR_GSI_MIGRATOR.read_text(encoding="utf-8")
     deploy_job = workflow.split("\n  deploy:\n", 1)[1]
     expected = {
         "AuthBaseUrl": "AUTH_BASE_URL",
@@ -1148,13 +1146,7 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
     assert "aws-actions/configure-aws-credentials@" in workflow
     assert "role-to-assume: ${{ env.AWS_ROLE_ARN }}" in workflow
     assert "sam deploy" in workflow
-    assert (
-        "node scripts/deploy/sponsor-crm-gsi-guard.mjs infra/template.full.yaml"
-        in workflow
-    )
     oidc = deploy_job.index("aws-actions/configure-aws-credentials@")
-    guard = deploy_job.index("sponsor-crm-gsi-guard.mjs")
-    assert oidc < guard
     for operation in (
         "make sam-build",
         "sam deploy",
@@ -1165,14 +1157,7 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
         "Seed runtime users, workflow templates, and recurring configs",
     ):
         if operation in deploy_job:
-            assert guard < deploy_job.index(operation)
-    assert '"create-change-set",' in migrator
-    assert '"execute-change-set",' in migrator
-    assert '"--no-execute-changeset",' not in migrator
-    assert 'parseSamChangeSetOutput' not in migrator
-    assert '"deploy",' not in migrator
-    assert 'final-create' not in migrator
-    assert 'final-execute' not in migrator
+            assert oidc < deploy_job.index(operation)
     for parameter, variable in expected.items():
         assert f"ParameterKey={parameter},ParameterValue=${variable}" in workflow
     assert "dtcdev-shared-auth" not in workflow

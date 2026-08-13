@@ -29,7 +29,8 @@ env:
   AWS_DEFAULT_REGION: eu-west-1
   AWS_ROLE_ARN: arn:aws:iam::817685572750:role/dataops-github-actions-deploy
   DOCS_GITHUB_OWNER: DataTalksClub
-  DOCS_GITHUB_REPO: dataops
+  DOCS_GITHUB_REPO: dataops-knowledge
+  DOCS_GITHUB_TOKEN_SECRET: dataops-v1/knowledge/github-token
   DOCS_GITHUB_BRANCH: main
 
 jobs:
@@ -291,6 +292,7 @@ jobs:
             --parameter-overrides \
               "ParameterKey=GitHubOwner,ParameterValue=$DOCS_GITHUB_OWNER" \
               "ParameterKey=GitHubRepo,ParameterValue=$DOCS_GITHUB_REPO" \
+              "ParameterKey=GitHubTokenSecretName,ParameterValue=$DOCS_GITHUB_TOKEN_SECRET" \
               "ParameterKey=GitHubBranch,ParameterValue=$DOCS_GITHUB_BRANCH" \
               "ParameterKey=AuthBaseUrl,ParameterValue=$AUTH_BASE_URL" \
               "ParameterKey=AuthUserPoolId,ParameterValue=$AUTH_USER_POOL_ID" \
