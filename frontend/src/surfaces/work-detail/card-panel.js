@@ -1,17 +1,17 @@
 export function createCardPanel(context) {
   const {
-    closeBundlePanel,
+    cardAnchorTone,
+    closeCardPanel,
     createTaskActionButton,
     detail,
-    formatMetaDate,
-    formatTaskDateMeta,
+    formatCardAnchorLabel,
     getActiveWorkspaceRoute,
     hasApprovedArtifactEvidence,
     hasTaskFileEvidence,
-    isArchivedWorkBundle,
+    isArchivedWorkCard,
     isWorkspaceRouteFresh,
     labelizeWorkValue,
-    loadArtifactsForBundle,
+    loadArtifactsForCard,
     localDocPathFromHref,
     navigateCanonicalWorkspace,
     openDocument,
@@ -23,64 +23,64 @@ export function createCardPanel(context) {
     request,
     settledPayload,
     state,
-    summarizeBundleProgress,
+    summarizeCardProgress,
     taskRequiresApprovedArtifact,
     tasksFromWorkPayload,
     todayIsoDate,
     updateTaskStatus,
     workApiUrl,
-    workBundleTitle,
+    workCardTitle,
     workTaskTitle,
     workflowTaskGroups,
-    bundlePanelBody,
-    bundlePanelTitle,
+    cardPanelBody,
+    cardPanelTitle,
   } = context;
 
-  function openBundlePanel(bundleId) {
-    const bundle = state.workSnapshot.bundlesById?.get(bundleId);
-    const path = isArchivedWorkBundle(bundle) ? "/cards/archive" : "/cards";
-    return navigateCanonicalWorkspace(path, { cardId: bundleId }).ready;
+  function openCardPanel(cardId) {
+    const card = state.workSnapshot.cardsById?.get(cardId);
+    const path = isArchivedWorkCard(card) ? "/cards/archive" : "/cards";
+    return navigateCanonicalWorkspace(path, { cardId: cardId }).ready;
   }
 
-  async function hydrateBundlePanel(bundleId, token) {
+  async function hydrateCardPanel(cardId, token) {
     try {
-      const [bundleResult, tasksResult, artifactsResult] =
+      const [cardResult, tasksResult, artifactsResult] =
         await Promise.allSettled([
-          request(workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`)),
-          request(workApiUrl(`/api/tasks`, { bundleId })),
-          loadArtifactsForBundle(bundleId),
+          request(workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`)),
+          request(workApiUrl(`/api/tasks`, { cardId })),
+          loadArtifactsForCard(cardId),
         ]);
       if (
         !isWorkspaceRouteFresh(token) ||
-        detail.activeBundlePanelId !== bundleId
+        detail.activeCardPanelId !== cardId
       )
         return;
-      if (bundleResult.status === "rejected") throw bundleResult.reason;
-      const bundlePayload = settledPayload(bundleResult);
-      const bundle = bundlePayload && (bundlePayload.bundle || bundlePayload);
+      if (cardResult.status === "rejected") throw cardResult.reason;
+      const cardPayload = settledPayload(cardResult);
+      const card = cardPayload && (cardPayload.card || cardPayload);
       const tasks = tasksFromWorkPayload(settledPayload(tasksResult));
       const artifacts = Array.isArray(settledPayload(artifactsResult))
         ? settledPayload(artifactsResult)
         : [];
       if (
         isWorkspaceRouteFresh(token) &&
-        detail.activeBundlePanelId === bundleId
+        detail.activeCardPanelId === cardId
       ) {
-        detail.activeBundlePanelData = { bundle, tasks, artifacts };
-        renderBundlePanel();
-        if (detail.activeTaskPanelTask?.bundleId === bundleId)
+        detail.activeCardPanelData = { card, tasks, artifacts };
+        renderCardPanel();
+        if (detail.activeTaskPanelTask?.cardId === cardId)
           renderTaskPanel();
       }
     } catch (err) {
       if (
         isWorkspaceRouteFresh(token) &&
-        detail.activeBundlePanelId === bundleId
+        detail.activeCardPanelId === cardId
       ) {
-        bundlePanelTitle.textContent =
+        cardPanelTitle.textContent =
           err.status === 404 ? "Card not found" : "Card unavailable";
-        renderEntityLoadState(bundlePanelBody, {
+        renderEntityLoadState(cardPanelBody, {
           kind: "card",
-          id: bundleId,
+          id: cardId,
           status: err.status === 404 ? "not-found" : "error",
           error: err.message,
           retry: () =>
@@ -89,7 +89,7 @@ export function createCardPanel(context) {
               getActiveWorkspaceRoute().params,
               { history: "none" },
             ),
-          returnToList: () => closeBundlePanel(),
+          returnToList: () => closeCardPanel(),
         });
       }
     }
@@ -103,101 +103,74 @@ export function createCardPanel(context) {
     container.replaceChildren(loadingState);
   }
 
-  function renderBundlePanel() {
-    const data = detail.activeBundlePanelData;
-    const bundle = data?.bundle;
+  function renderCardPanel() {
+    const data = detail.activeCardPanelData;
+    const card = data?.card;
     const tasks = data?.tasks || [];
     const artifacts = data?.artifacts || [];
-    bundlePanelTitle.textContent = bundle ? workBundleTitle(bundle) : "Card";
-    bundlePanelBody.replaceChildren();
-    if (!bundle) return;
+    cardPanelTitle.textContent = card ? workCardTitle(card) : "Card";
+    cardPanelBody.replaceChildren();
+    if (!card) return;
 
     const today = todayIsoDate();
-    const progress = summarizeBundleProgress(bundle, tasks, today);
+    const progress = summarizeCardProgress(card, tasks, today);
     const layout = document.createElement("div");
     layout.className = "workflow-modal-layout";
     const main = document.createElement("div");
     main.className = "workflow-modal-main";
-    const sidebar = document.createElement("aside");
-    sidebar.className = "workflow-modal-sidebar";
-    sidebar.setAttribute("aria-label", "Card controls and status");
-    const sidebarHeading = document.createElement("strong");
-    sidebarHeading.className = "workflow-sidebar-heading";
-    sidebarHeading.textContent = "Card";
-    sidebar.append(sidebarHeading);
-    layout.append(main, sidebar);
-    bundlePanelBody.append(layout);
+    layout.append(main);
+    cardPanelBody.append(layout);
 
     // Stage + progress summary
     const meta = document.createElement("div");
     meta.className = "task-detail-meta workflow-detail-summary";
     const stageLabel = document.createElement("label");
     stageLabel.className = "workflow-stage-field";
-    if (isArchivedWorkBundle(bundle)) {
+    if (isArchivedWorkCard(card)) {
       stageLabel.textContent = "Status";
       const completed = document.createElement("span");
-      completed.className = "bundle-stage-static";
+      completed.className = "card-stage-static";
       completed.textContent = "Completed";
       stageLabel.append(completed);
     } else {
       stageLabel.textContent = "Stage ";
       const stageSelect = document.createElement("select");
-      stageSelect.className = "bundle-stage-select";
+      stageSelect.className = "card-stage-select";
       for (const stage of ["preparation", "announced", "after-event"]) {
         const opt = document.createElement("option");
         opt.value = stage;
         opt.textContent = labelizeWorkValue(stage);
-        if (bundle.stage === stage) opt.selected = true;
+        if (card.stage === stage) opt.selected = true;
         stageSelect.append(opt);
       }
       stageSelect.addEventListener("change", () =>
-        updateBundleStage(bundle.id, stageSelect.value),
+        updateCardStage(card.id, stageSelect.value),
       );
       stageLabel.append(stageSelect);
     }
-    sidebar.append(stageLabel);
-    if (bundle.anchorDate) {
-      const row = document.createElement("div");
-      row.className = "workflow-sidebar-meta";
-      row.append(
-        document.createTextNode("Anchor "),
-        formatMetaDate(bundle.anchorDate, today),
-      );
-      sidebar.append(row);
+    const summaryTop = document.createElement("div");
+    summaryTop.className = "workflow-summary-top";
+    if (card.anchorDate) {
+      const anchor = document.createElement("span");
+      anchor.className = `workflow-card-anchor is-${cardAnchorTone(card.anchorDate, today) || "upcoming"}`;
+      anchor.dataset.anchorDate = String(card.anchorDate).slice(0, 10);
+      anchor.setAttribute("aria-label", `Card date ${card.anchorDate}`);
+      anchor.textContent = formatCardAnchorLabel(card.anchorDate, today);
+      summaryTop.append(anchor);
     }
-    const progressRow = document.createElement("div");
-    progressRow.className = "workflow-progress-copy";
-    progressRow.textContent = progress.label;
-    meta.append(progressRow);
-    const riskRow = document.createElement("div");
-    riskRow.className = "ops-card-chips";
-    for (const chipText of [
-      `Risk ${progress.risk}`,
-      progress.nextDueTask
-        ? `Next: ${workTaskTitle(progress.nextDueTask)}`
-        : "",
-      `${progress.overdue} overdue`,
-      `${progress.waiting} waiting/follow-up`,
-      `${progress.missingProof || 0} missing proof`,
-    ].filter(Boolean)) {
-      const chip = document.createElement("small");
-      chip.className = "ops-card-chip";
-      chip.textContent = chipText;
-      riskRow.append(chip);
-    }
-    meta.append(riskRow);
-    if (bundle.description) {
-      const descRow = document.createElement("div");
-      descRow.className = "workflow-description";
-      descRow.textContent = bundle.description;
-      meta.append(descRow);
-    }
-    main.append(meta);
+    const countRow = document.createElement("span");
+    countRow.className = "workflow-card-count";
+    countRow.textContent =
+      progress.total > 0
+        ? `${progress.done}/${progress.total} tasks`
+        : "No tasks loaded";
+    summaryTop.append(countRow, stageLabel);
+    meta.append(summaryTop);
 
     // Progress bar
     if (progress.total > 0) {
       const bar = document.createElement("div");
-      bar.className = "ops-progress";
+      bar.className = `ops-progress${progress.percent >= 100 ? " is-complete" : ""}`;
       bar.setAttribute("role", "progressbar");
       bar.setAttribute("aria-label", progress.label);
       bar.setAttribute("aria-valuemin", "0");
@@ -206,11 +179,47 @@ export function createCardPanel(context) {
       const fill = document.createElement("i");
       fill.style.width = `${progress.percent}%`;
       bar.append(fill);
-      main.append(bar);
+      meta.append(bar);
     }
 
-    // Bundle links
-    if (Array.isArray(bundle.bundleLinks) && bundle.bundleLinks.length > 0) {
+    const flagRow = document.createElement("div");
+    flagRow.className = "workflow-card-flags";
+    for (const flag of [
+      { count: progress.overdue, label: "overdue", tone: "danger" },
+      { count: progress.waiting, label: "waiting", tone: "info" },
+      { count: progress.missingProof, label: "missing proof", tone: "warning" },
+    ].filter((flag) => Number(flag.count) > 0)) {
+      const chip = document.createElement("small");
+      chip.className = `workflow-card-flag is-${flag.tone}`;
+      chip.textContent = `${flag.count} ${flag.label}`;
+      flagRow.append(chip);
+    }
+    if (flagRow.children.length > 0) meta.append(flagRow);
+
+    if (progress.nextDueTask) {
+      const nextRow = document.createElement("p");
+      nextRow.className = "workflow-next-task";
+      const nextLabel = document.createElement("span");
+      nextLabel.textContent = "Next up";
+      const nextValue = document.createElement("strong");
+      const nextDate = String(progress.nextDueTask.date || "").slice(0, 10);
+      nextValue.textContent = nextDate
+        ? `${workTaskTitle(progress.nextDueTask)} · ${formatCardAnchorLabel(nextDate, today)}`
+        : workTaskTitle(progress.nextDueTask);
+      nextRow.append(nextLabel, nextValue);
+      meta.append(nextRow);
+    }
+
+    if (card.description) {
+      const descRow = document.createElement("div");
+      descRow.className = "workflow-description";
+      descRow.textContent = card.description;
+      meta.append(descRow);
+    }
+    main.append(meta);
+
+    // Card links
+    if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) {
       const linksSection = document.createElement("div");
       linksSection.className =
         "task-history workflow-detail-section workflow-links-section";
@@ -218,27 +227,46 @@ export function createCardPanel(context) {
       linksLabel.className = "task-history-label";
       linksLabel.textContent = "Links";
       linksSection.append(linksLabel);
-      for (const link of bundle.bundleLinks) {
+      for (const link of card.cardLinks) {
         const linkName = link.name || link.label || "Link";
         const linkUrl = link.url || "";
         const wrap = document.createElement("div");
-        wrap.className = "task-required-link";
+        wrap.className = "task-required-link card-link-row";
         const label = document.createElement("label");
-        label.textContent = linkName;
+        label.className = "card-link-label";
+        const name = document.createElement("span");
+        name.className = "card-link-name";
+        name.textContent = linkName;
         const input = document.createElement("input");
         input.type = "url";
+        input.className = "card-link-input";
         input.value = linkUrl;
         input.placeholder = "https://...";
         input.addEventListener("change", () =>
-          saveBundleLink(
-            bundle.id,
-            bundle.bundleLinks,
+          saveCardLink(
+            card.id,
+            card.cardLinks,
             linkName,
             input.value.trim(),
           ),
         );
-        label.append(input);
+        label.append(name, input);
         wrap.append(label);
+        if (/^https?:\/\//i.test(linkUrl)) {
+          const open = document.createElement("a");
+          open.className = "card-link-open";
+          open.href = linkUrl;
+          open.target = "_blank";
+          open.rel = "noopener";
+          open.textContent = "Open";
+          open.setAttribute("aria-label", `Open ${linkName} in a new tab`);
+          wrap.append(open);
+        } else {
+          const missing = document.createElement("span");
+          missing.className = "workflow-card-flag is-warning card-link-state";
+          missing.textContent = "missing";
+          wrap.append(missing);
+        }
         linksSection.append(wrap);
       }
       main.append(linksSection);
@@ -257,7 +285,7 @@ export function createCardPanel(context) {
       list.className = "task-history-list";
       for (const group of workflowTaskGroups(tasks, today)) {
         const groupTitle = document.createElement("div");
-        groupTitle.className = "bundle-task-group-title";
+        groupTitle.className = "card-task-group-title";
         groupTitle.textContent = `${group.title} (${group.tasks.length})`;
         list.append(groupTitle);
         if (group.tasks.length === 0) {
@@ -267,7 +295,7 @@ export function createCardPanel(context) {
           list.append(empty);
         } else {
           for (const task of group.tasks)
-            list.append(renderBundleChecklistItem(task, bundle.id, today));
+            list.append(renderCardChecklistItem(task, card.id, today));
         }
       }
       checklistSection.append(list);
@@ -284,8 +312,8 @@ export function createCardPanel(context) {
     refsSection.append(refsLabel);
     const refsList = document.createElement("div");
     refsList.className = "task-history-list";
-    const existingRefs = Array.isArray(bundle.references)
-      ? bundle.references
+    const existingRefs = Array.isArray(card.references)
+      ? card.references
       : [];
     for (const ref of existingRefs) {
       const refUrl = typeof ref === "string" ? ref : ref.url || ref.link || "";
@@ -304,8 +332,8 @@ export function createCardPanel(context) {
           openDocument(docPath, {
             returnContext: {
               type: "workflow",
-              id: bundle.id,
-              title: workBundleTitle(bundle),
+              id: card.id,
+              title: workCardTitle(card),
             },
           }),
         );
@@ -328,8 +356,8 @@ export function createCardPanel(context) {
       refsList.append(empty);
     }
 
-    const assistantState = document.createElement("div");
-    assistantState.className = "task-history-event";
+    const assistantState = document.createElement("p");
+    assistantState.className = "workflow-assistant-note";
     assistantState.textContent = state.assistantSnapshot.loaded
       ? "Assistant jobs are available from the Assistants surface when linked to this Card."
       : "Assistant jobs are not connected to this Card.";
@@ -341,18 +369,18 @@ export function createCardPanel(context) {
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.placeholder = "Label (e.g. Podcast doc)";
-    nameInput.className = "bundle-ref-name";
+    nameInput.className = "card-ref-name";
     const urlInput = document.createElement("input");
     urlInput.type = "url";
     urlInput.placeholder = "https://...";
-    urlInput.className = "bundle-ref-url";
+    urlInput.className = "card-ref-url";
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "task-action-btn";
     addBtn.textContent = "Add";
     addBtn.addEventListener("click", () =>
-      addBundleReference(
-        bundle.id,
+      addCardReference(
+        card.id,
         existingRefs,
         nameInput.value.trim(),
         urlInput.value.trim(),
@@ -362,29 +390,29 @@ export function createCardPanel(context) {
     refsSection.append(addRow);
     refsSection.append(
       renderArtifactList({
-        ownerType: "bundle",
-        ownerId: bundle.id,
+        ownerType: "card",
+        ownerId: card.id,
         artifacts,
         required: false,
         onRefresh: async () => {
-          detail.activeBundlePanelData = {
-            ...detail.activeBundlePanelData,
-            artifacts: await loadArtifactsForBundle(bundle.id),
+          detail.activeCardPanelData = {
+            ...detail.activeCardPanelData,
+            artifacts: await loadArtifactsForCard(card.id),
           };
-          renderBundlePanel();
+          renderCardPanel();
         },
       }),
     );
     main.append(refsSection);
   }
 
-  function renderBundleChecklistItem(task, bundleId, today) {
+  function renderCardChecklistItem(task, cardId, today) {
     const row = document.createElement("div");
-    row.className = "bundle-checklist-item";
+    row.className = "card-checklist-item";
     const status = String(task.status || "todo").toLowerCase();
     const isDone = status === "done";
     const isWaiting = status === "waiting";
-    const bundleArtifacts = detail.activeBundlePanelData?.artifacts || [];
+    const cardArtifacts = detail.activeCardPanelData?.artifacts || [];
 
     const missingLink = !isDone && task.requiredLinkName && !task.link;
     const missingFile =
@@ -392,7 +420,7 @@ export function createCardPanel(context) {
     const missingArtifact =
       !isDone &&
       taskRequiresApprovedArtifact(task) &&
-      !hasApprovedArtifactEvidence(task, bundleArtifacts);
+      !hasApprovedArtifactEvidence(task, cardArtifacts);
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -417,47 +445,62 @@ export function createCardPanel(context) {
 
     const label = document.createElement("button");
     label.type = "button";
-    label.className = `bundle-checklist-label ${isDone ? "is-done" : ""}`;
+    label.className = `card-checklist-label ${isDone ? "is-done" : ""}`;
     label.dataset.taskId = task.id;
     label.textContent = workTaskTitle(task);
     label.addEventListener("click", () =>
       openTaskPanel(task.id, {
-        preserveBundle: true,
-        expectedBundleId: bundleId,
+        preserveCard: true,
+        expectedCardId: cardId,
       }),
     );
 
     const dateMeta = document.createElement("small");
-    dateMeta.className = "bundle-checklist-date";
-    if (task.date) dateMeta.textContent = formatTaskDateMeta(task.date, today);
-    if (isWaiting) dateMeta.textContent = `waiting: ${task.waitingFor || ""}`;
+    dateMeta.className = "card-checklist-date";
+    const taskDateValue = String(task.date || "").slice(0, 10);
+    const isOverdue = !isDone && !isWaiting && taskDateValue && taskDateValue < today;
+    if (taskDateValue) {
+      const dateChip = document.createElement("span");
+      dateChip.className = `card-checklist-day${isOverdue ? " is-overdue" : ""}`;
+      dateChip.textContent = formatCardAnchorLabel(taskDateValue, today);
+      if (isOverdue) dateChip.title = `Overdue since ${taskDateValue}`;
+      dateMeta.append(dateChip);
+    }
+    if (isWaiting) {
+      const waitingChip = document.createElement("span");
+      waitingChip.className = "workflow-card-flag is-info";
+      waitingChip.textContent = task.waitingFor
+        ? `waiting: ${task.waitingFor}`
+        : "waiting";
+      dateMeta.replaceChildren(waitingChip);
+    }
 
     if (!isDone && (missingLink || missingFile || missingArtifact)) {
       const badge = document.createElement("span");
-      badge.className = "bundle-checklist-evidence";
+      badge.className = "card-checklist-evidence workflow-card-flag is-danger";
       if (missingLink) badge.textContent += `${task.requiredLinkName} missing`;
       if (missingLink && missingFile) badge.textContent += "; ";
       if (missingFile) badge.textContent += "file missing";
       if ((missingLink || missingFile) && missingArtifact)
         badge.textContent += "; ";
       if (missingArtifact) badge.textContent += "artifact review missing";
-      dateMeta.append(document.createTextNode(" "), badge);
+      dateMeta.append(badge);
     }
     row.append(checkbox, label, dateMeta);
     return row;
   }
 
   async function navigateTaskToWorkflow(task) {
-    if (!task?.bundleId) return;
-    const bundle = state.workSnapshot.bundlesById?.get(task.bundleId);
-    const path = isArchivedWorkBundle(bundle) ? "/cards/archive" : "/cards";
+    if (!task?.cardId) return;
+    const card = state.workSnapshot.cardsById?.get(task.cardId);
+    const path = isArchivedWorkCard(card) ? "/cards/archive" : "/cards";
     await navigateCanonicalWorkspace(path, {
-      cardId: task.bundleId,
+      cardId: task.cardId,
       taskId: task.id,
     }).ready;
   }
 
-  async function addBundleReference(bundleId, currentRefs, name, url) {
+  async function addCardReference(cardId, currentRefs, name, url) {
     if (!url) {
       reportError("URL is required.");
       return;
@@ -466,41 +509,41 @@ export function createCardPanel(context) {
     const updatedRefs = [...(currentRefs || []), ref];
     try {
       const payload = await request(
-        workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`),
+        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
         {
           method: "PUT",
           body: JSON.stringify({ references: updatedRefs }),
         },
       );
-      const updatedBundle = payload && (payload.bundle || payload);
-      if (updatedBundle && detail.activeBundlePanelId === bundleId) {
-        detail.activeBundlePanelData = {
-          ...detail.activeBundlePanelData,
-          bundle: updatedBundle,
+      const updatedCard = payload && (payload.card || payload);
+      if (updatedCard && detail.activeCardPanelId === cardId) {
+        detail.activeCardPanelData = {
+          ...detail.activeCardPanelData,
+          card: updatedCard,
         };
-        renderBundlePanel();
+        renderCardPanel();
       }
     } catch (err) {
       reportError(`Could not add link: ${err.message || "request failed"}`);
     }
   }
 
-  async function updateBundleStage(bundleId, stage) {
+  async function updateCardStage(cardId, stage) {
     try {
       const payload = await request(
-        workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`),
+        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
         {
           method: "PUT",
           body: JSON.stringify({ stage }),
         },
       );
-      const updatedBundle = payload && (payload.bundle || payload);
-      if (updatedBundle && detail.activeBundlePanelId === bundleId) {
-        detail.activeBundlePanelData = {
-          ...detail.activeBundlePanelData,
-          bundle: updatedBundle,
+      const updatedCard = payload && (payload.card || payload);
+      if (updatedCard && detail.activeCardPanelId === cardId) {
+        detail.activeCardPanelData = {
+          ...detail.activeCardPanelData,
+          card: updatedCard,
         };
-        renderBundlePanel();
+        renderCardPanel();
       }
       await refreshOperationsWorkSnapshot({ rerender: true });
     } catch (err) {
@@ -508,7 +551,7 @@ export function createCardPanel(context) {
     }
   }
 
-  async function saveBundleLink(bundleId, currentLinks, linkName, linkValue) {
+  async function saveCardLink(cardId, currentLinks, linkName, linkValue) {
     const updatedLinks = (currentLinks || []).map((link) =>
       (link.name || link.label) === linkName
         ? { ...link, url: linkValue }
@@ -516,19 +559,19 @@ export function createCardPanel(context) {
     );
     try {
       const payload = await request(
-        workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`),
+        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
         {
           method: "PUT",
-          body: JSON.stringify({ bundleLinks: updatedLinks }),
+          body: JSON.stringify({ cardLinks: updatedLinks }),
         },
       );
-      const updatedBundle = payload && (payload.bundle || payload);
-      if (updatedBundle && detail.activeBundlePanelId === bundleId) {
-        detail.activeBundlePanelData = {
-          ...detail.activeBundlePanelData,
-          bundle: updatedBundle,
+      const updatedCard = payload && (payload.card || payload);
+      if (updatedCard && detail.activeCardPanelId === cardId) {
+        detail.activeCardPanelData = {
+          ...detail.activeCardPanelData,
+          card: updatedCard,
         };
-        renderBundlePanel();
+        renderCardPanel();
       }
       await refreshOperationsWorkSnapshot({ rerender: true });
     } catch (err) {
@@ -539,10 +582,10 @@ export function createCardPanel(context) {
   // ---------- Notification bell ----------
 
   return {
-    hydrateBundlePanel,
+    hydrateCardPanel,
     navigateTaskToWorkflow,
-    openBundlePanel,
-    renderBundlePanel,
+    openCardPanel,
+    renderCardPanel,
     renderEntityLoadingState,
   };
 }

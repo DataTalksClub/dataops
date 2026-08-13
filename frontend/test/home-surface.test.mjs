@@ -19,10 +19,10 @@ afterEach(() => {
 
 function emptyWorkSnapshot() {
   return {
-    activeBundles: [],
-    bundleTasks: {},
-    bundles: [],
-    bundlesLoaded: false,
+    activeCards: [],
+    cardTasks: {},
+    cards: [],
+    cardsLoaded: false,
     currentOperatorId: "",
     errors: [],
     loaded: false,
@@ -58,11 +58,11 @@ function normalizeWork(input) {
   snapshot.waitingTasks = Array.isArray(snapshot.waitingTasks)
     ? snapshot.waitingTasks
     : [];
-  snapshot.bundles = Array.isArray(snapshot.bundles) ? snapshot.bundles : [];
-  snapshot.bundleTasks = snapshot.bundleTasks || {};
+  snapshot.cards = Array.isArray(snapshot.cards) ? snapshot.cards : [];
+  snapshot.cardTasks = snapshot.cardTasks || {};
   snapshot.errors = Array.isArray(snapshot.errors) ? snapshot.errors : [];
-  snapshot.activeBundles = snapshot.bundles.filter(
-    (bundle) => bundle.status !== "done" && bundle.archived !== true,
+  snapshot.activeCards = snapshot.cards.filter(
+    (card) => card.status !== "done" && card.archived !== true,
   );
   snapshot.tasks = [
     ...snapshot.todayTasks,
@@ -103,7 +103,7 @@ function operationItem(task, options = {}) {
         ? "proof"
         : "today";
   return {
-    bundleId: task.bundleId || "",
+    cardId: task.cardId || "",
     dueDate: task.dueDate || "",
     exception:
       priority === "overdue"
@@ -197,7 +197,7 @@ function createHomeHarness(options = {}) {
       ...work.todayTasks,
       ...work.overdueTasks,
       ...work.waitingTasks,
-      ...Object.values(work.bundleTasks || {}).flat(),
+      ...Object.values(work.cardTasks || {}).flat(),
     ],
     buildHomeAttentionItems: (model) =>
       ["overdue", "followups", "today", "missing-proof"]
@@ -209,7 +209,7 @@ function createHomeHarness(options = {}) {
         ),
     buildOperationsFutureSections: () => [],
     buildOperationsReferenceLinks: () => [],
-    bundlesFromWorkPayload: (payload) => payload?.items || payload?.bundles || [],
+    cardsFromWorkPayload: (payload) => payload?.items || payload?.cards || [],
     clearSelectionButton,
     currentOperatorIdForTodayScope: (id) => id,
     currentOperatorIdFromPayload: (payload) => payload?.user?.id || "",
@@ -230,7 +230,7 @@ function createHomeHarness(options = {}) {
         : item.followUpDate
           ? `Follow up ${item.followUpDate}`
           : `Due ${item.dueDate}`,
-    isActiveWorkBundle: (bundle) => bundle.status !== "done",
+    isActiveWorkCard: (card) => card.status !== "done",
     isOpenWorkTask: (task) => task.status !== "done",
     isOperationsHomeVisible: () => options.homeVisible !== false,
     isWorkflowTemplateDoc: (doc) => doc.type === "workflow-template",
@@ -260,10 +260,10 @@ function createHomeHarness(options = {}) {
       calls.quickCards += 1;
     },
     openTaskPanel: (id) => calls.openedTasks.push(id),
-    operationItemFromBundle: (bundle) => ({
-      bundleId: bundle.id,
-      priority: "bundle",
-      title: bundle.title,
+    operationItemFromCard: (card) => ({
+      cardId: card.id,
+      priority: "card",
+      title: card.title,
     }),
     operationItemFromTask: operationItem,
     operationItemFromTemplate: (template) => ({
@@ -285,7 +285,7 @@ function createHomeHarness(options = {}) {
       return honestState("Some work is unavailable", runtime.errors.join(" "));
     },
     request,
-    resolveBundleLabel: (id) => `Card ${id}`,
+    resolveCardLabel: (id) => `Card ${id}`,
     resolveDocReference: (id) => docRegistry.get(id) || null,
     setPageTitle: (...args) => calls.pageTitles.push(args),
     setStatus: (message) => calls.status.push(message),
@@ -308,7 +308,7 @@ function createHomeHarness(options = {}) {
       }
       return url;
     },
-    workBundleTitle: (bundle) => bundle.title || bundle.id,
+    workCardTitle: (card) => card.title || card.id,
     workTaskTitle: (task) => task.title || task.id,
     workflowPriority: () => 0,
   });
@@ -328,14 +328,14 @@ describe("Home surface production behavior", () => {
   test("renders hydrated daily status, attention actions, and canonical quick actions", async () => {
     const harness = createHomeHarness({
       workSnapshot: {
-        bundles: [{ id: "card-1", status: "preparation", title: "Podcast" }],
-        bundlesLoaded: true,
+        cards: [{ id: "card-1", status: "preparation", title: "Podcast" }],
+        cardsLoaded: true,
         currentOperatorId: "alexey",
         loaded: true,
         overdueLoaded: true,
         overdueTasks: [
           {
-            bundleId: "card-1",
+            cardId: "card-1",
             dueDate: "2026-08-12",
             id: "task-overdue",
             nextAction: "Open",
@@ -471,10 +471,10 @@ describe("Home surface production behavior", () => {
         ok: false,
       },
       normalizeWork({
-        bundleTasks: {
+        cardTasks: {
           "card-1": [
             {
-              bundleId: "card-1",
+              cardId: "card-1",
               id: "task-missing",
               instructionDocId: "missing-doc",
               status: "open",
@@ -541,13 +541,13 @@ describe("Home surface production behavior", () => {
         if (value.pathname === "/api/users") {
           return { items: [{ id: "alexey", name: "Alexey" }] };
         }
-        if (value.pathname === "/api/bundles") {
+        if (value.pathname === "/api/cards") {
           return {
             items: [{ id: "card-1", status: "preparation", title: "Card" }],
           };
         }
-        if (value.pathname === "/api/tasks" && value.searchParams.has("bundleId")) {
-          return { items: [{ bundleId: "card-1", id: "card-task" }] };
+        if (value.pathname === "/api/tasks" && value.searchParams.has("cardId")) {
+          return { items: [{ cardId: "card-1", id: "card-task" }] };
         }
         if (value.pathname === "/api/tasks" && value.searchParams.get("status") === "waiting") {
           throw new Error("Waiting source unavailable");
@@ -565,14 +565,14 @@ describe("Home surface production behavior", () => {
     assert.equal(harness.state.workSnapshot.waitingLoaded, false);
     assert.deepEqual(harness.state.workSnapshot.todayTasks.map((task) => task.id), ["today"]);
     assert.deepEqual(
-      harness.state.workSnapshot.bundleTasks["card-1"].map((task) => task.id),
+      harness.state.workSnapshot.cardTasks["card-1"].map((task) => task.id),
       ["card-task"],
     );
     assert.deepEqual(harness.state.workSnapshot.errors, ["Waiting source unavailable"]);
     assert.equal(harness.calls.accountRefreshes.length, 1);
     assert.equal(harness.calls.refreshDocuments, 1);
     assert.equal(harness.calls.workBell, 1);
-    assert.equal(requests.some((url) => url.includes("bundleId=card-1")), true);
+    assert.equal(requests.some((url) => url.includes("cardId=card-1")), true);
   });
 
   test("refreshes process quality without replacing a healthy Home with invented data", async () => {

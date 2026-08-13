@@ -6,15 +6,15 @@ import {
   formatTaskDateMeta,
   hasApprovedArtifactEvidence,
   hasTaskFileEvidence,
-  isArchivedWorkBundle,
+  isArchivedWorkCard,
   isOpenWorkTask,
-  summarizeBundleProgress,
+  summarizeCardProgress,
   taskDate,
   taskProofState,
   taskRequiresApprovedArtifact,
   tasksFromWorkPayload,
   todayIsoDate,
-  workBundleTitle,
+  workCardTitle,
   workflowTaskGroups,
   workTaskTitle,
 } from "../src/core/workspace.js";
@@ -74,19 +74,19 @@ function createHarness(options = {}) {
   taskModal.append(taskPanelTitle, taskPanelBody, taskPanelClose);
   taskPanel.append(taskModal);
 
-  const bundlePanel = new FakeElement("div");
-  bundlePanel.hidden = true;
-  const bundleModal = new FakeElement("section");
-  bundleModal.className = "workflow-modal-panel";
-  bundleModal.contains = (element) => elementContains(bundleModal, element);
-  const bundlePanelTitle = new FakeElement("h2");
-  const bundlePanelBody = new FakeElement("div");
-  const bundlePanelClose = new FakeElement("button");
-  bundlePanelClose.textContent = "Close";
-  bundleModal.append(bundlePanelTitle, bundlePanelBody, bundlePanelClose);
-  bundlePanel.append(bundleModal);
+  const cardPanel = new FakeElement("div");
+  cardPanel.hidden = true;
+  const cardModal = new FakeElement("section");
+  cardModal.className = "workflow-modal-panel";
+  cardModal.contains = (element) => elementContains(cardModal, element);
+  const cardPanelTitle = new FakeElement("h2");
+  const cardPanelBody = new FakeElement("div");
+  const cardPanelClose = new FakeElement("button");
+  cardPanelClose.textContent = "Close";
+  cardModal.append(cardPanelTitle, cardPanelBody, cardPanelClose);
+  cardPanel.append(cardModal);
 
-  body.append(taskPanel, bundlePanel);
+  body.append(taskPanel, cardPanel);
   const document = new FakeDocument(body);
   globalThis.document = document;
 
@@ -104,15 +104,15 @@ function createHarness(options = {}) {
       invalid: false,
     };
   let fresh = options.fresh ?? true;
-  const bundles = options.bundles || [];
+  const cards = options.cards || [];
   const state = {
     workSnapshot: {
       todayTasks: [],
       overdueTasks: [],
       waitingTasks: [],
-      bundleTasks: {},
-      bundles,
-      bundlesById: new Map(bundles.map((bundle) => [bundle.id, bundle])),
+      cardTasks: {},
+      cards,
+      cardsById: new Map(cards.map((card) => [card.id, card])),
       usersById: new Map(),
       ...(options.workSnapshot || {}),
     },
@@ -137,10 +137,10 @@ function createHarness(options = {}) {
     addDaysIso,
     body,
     buildTaskProcessQualityFindings: () => [],
-    bundlePanel,
-    bundlePanelBody,
-    bundlePanelClose,
-    bundlePanelTitle,
+    cardPanel,
+    cardPanelBody,
+    cardPanelClose,
+    cardPanelTitle,
     escapeHtml,
     fetchResource: async () => ({ ok: true, json: async () => ({}) }),
     FOCUSABLE_SELECTOR:
@@ -153,7 +153,7 @@ function createHarness(options = {}) {
     getCurrentOperator: () => ({ id: "alexey", name: "Alexey" }),
     hasApprovedArtifactEvidence,
     hasTaskFileEvidence,
-    isArchivedWorkBundle,
+    isArchivedWorkCard,
     isOpenWorkTask,
     isWorkspaceRouteFresh: () => fresh,
     labelizeWorkValue: (value) =>
@@ -200,7 +200,7 @@ function createHarness(options = {}) {
       result?.status === "fulfilled" ? result.value : null,
     showUndoToast: (message, action) => undo.push({ message, action }),
     state,
-    summarizeBundleProgress,
+    summarizeCardProgress,
     taskDate,
     taskPanel,
     taskPanelBody,
@@ -211,7 +211,7 @@ function createHarness(options = {}) {
     tasksFromWorkPayload,
     todayIsoDate: () => "2026-08-12",
     workApiUrl: apiUrl,
-    workBundleTitle,
+    workCardTitle,
     workTaskTitle,
     workflowTaskGroups,
   });
@@ -219,10 +219,10 @@ function createHarness(options = {}) {
   return {
     api,
     body,
-    bundlePanel,
-    bundlePanelBody,
-    bundlePanelClose,
-    bundlePanelTitle,
+    cardPanel,
+    cardPanelBody,
+    cardPanelClose,
+    cardPanelTitle,
     document,
     entityStates,
     errors,
@@ -258,23 +258,23 @@ describe("Work Detail surface boundary", () => {
     const { api } = createHarness();
 
     assert.deepEqual(Object.keys(api).sort(), [
-      "closeBundlePanel",
+      "closeCardPanel",
       "closeTaskPanel",
       "dedupeArtifacts",
       "defaultNextFollowUpDate",
       "getTaskRouteContext",
       "handleWorkspaceEntityModalKeydown",
-      "hydrateBundlePanel",
+      "hydrateCardPanel",
       "hydrateTaskPanel",
-      "openBundlePanel",
+      "openCardPanel",
       "openTaskPanel",
-      "prepareBundlePanel",
+      "prepareCardPanel",
       "prepareTaskPanel",
       "renderArtifactList",
-      "resetBundlePanel",
+      "resetCardPanel",
       "resetTaskPanel",
       "resolveAssigneeLabel",
-      "resolveBundleLabel",
+      "resolveCardLabel",
       "resolveTaskQueueRouteContext",
       "setTaskRouteContextFromRoute",
     ]);
@@ -316,7 +316,7 @@ describe("Work Detail surface boundary", () => {
     harness.setRoute({
       path: "/tasks",
       params: new URLSearchParams(
-        "date=2026-08-12&taskId=task-1&contextBundleId=card-2",
+        "date=2026-08-12&taskId=task-1&contextCardId=card-2",
       ),
       invalid: false,
     });
@@ -325,7 +325,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(close.path, "/tasks");
     assert.equal(close.params.has("taskId"), false);
     assert.equal(close.params.get("date"), "2026-08-12");
-    assert.equal(close.params.get("contextBundleId"), "card-2");
+    assert.equal(close.params.get("contextCardId"), "card-2");
     assert.deepEqual(close.options.restoreFocus, {
       kind: "task",
       id: "task-1",
@@ -341,7 +341,7 @@ describe("Work Detail surface boundary", () => {
         invalid: false,
       },
     });
-    harness.api.prepareBundlePanel("card-1");
+    harness.api.prepareCardPanel("card-1");
     harness.api.prepareTaskPanel("task-1");
     const last = new FakeElement("input");
     harness.taskModal.append(last);
@@ -369,7 +369,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(close.path, "/cards");
     assert.equal(close.params.get("cardId"), "card-1");
     assert.equal(close.params.has("taskId"), false);
-    assert.equal(harness.bundlePanel.hidden, false);
+    assert.equal(harness.cardPanel.hidden, false);
   });
 
   test("maps waiting, response-received, and follow-up actions to atomic request contracts", async () => {
@@ -488,7 +488,7 @@ describe("Work Detail surface boundary", () => {
   });
 
   test("hydrates active and archived Cards, updates stages, and opens nested Tasks canonically", async () => {
-    const bundle = {
+    const card = {
       id: "card-1",
       title: "August newsletter",
       stage: "preparation",
@@ -501,49 +501,49 @@ describe("Work Detail surface boundary", () => {
     };
     const task = {
       id: "card-task",
-      bundleId: bundle.id,
+      cardId: card.id,
       description: "Collect links",
       status: "todo",
     };
     const harness = createHarness({
-      bundles: [bundle, archived],
+      cards: [card, archived],
       request: async (url, requestOptions = {}) => {
-        if (url === "/api/bundles/card-1" && !requestOptions.method) {
-          return bundle;
+        if (url === "/api/cards/card-1" && !requestOptions.method) {
+          return card;
         }
-        if (url === "/api/tasks?bundleId=card-1") return { tasks: [task] };
-        if (url === "/api/artifacts?bundleId=card-1") {
+        if (url === "/api/tasks?cardId=card-1") return { tasks: [task] };
+        if (url === "/api/artifacts?cardId=card-1") {
           return { artifacts: [] };
         }
-        if (url === "/api/bundles/card-1" && requestOptions.method === "PUT") {
-          return { ...bundle, ...JSON.parse(requestOptions.body) };
+        if (url === "/api/cards/card-1" && requestOptions.method === "PUT") {
+          return { ...card, ...JSON.parse(requestOptions.body) };
         }
         return {};
       },
     });
 
-    await harness.api.openBundlePanel(archived.id);
+    await harness.api.openCardPanel(archived.id);
     assert.equal(harness.navigations[0].path, "/cards/archive");
     assert.deepEqual(harness.navigations[0].params, { cardId: archived.id });
 
-    harness.api.prepareBundlePanel(bundle.id);
-    await harness.api.hydrateBundlePanel(bundle.id, 1);
-    assert.equal(harness.bundlePanelTitle.textContent, "August newsletter");
-    assert.ok(findByText(harness.bundlePanelBody, "Tasks", "div"));
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    assert.equal(harness.cardPanelTitle.textContent, "August newsletter");
+    assert.ok(findByText(harness.cardPanelBody, "Tasks", "div"));
 
-    const stage = harness.bundlePanelBody.querySelector("select");
+    const stage = harness.cardPanelBody.querySelector("select");
     stage.value = "announced";
     await stage.dispatch("change");
     const stageRequest = harness.requests.find(
       (entry) =>
-        entry.url === "/api/bundles/card-1" &&
+        entry.url === "/api/cards/card-1" &&
         entry.options.method === "PUT" &&
         jsonBody(entry).stage,
     );
     assert.deepEqual(jsonBody(stageRequest), { stage: "announced" });
 
     const nestedTask = findByText(
-      harness.bundlePanelBody,
+      harness.cardPanelBody,
       "Collect links",
       "button",
     );
@@ -557,39 +557,39 @@ describe("Work Detail surface boundary", () => {
   });
 
   test("registers Card references and registers plus approves external artifacts", async () => {
-    const bundle = {
+    const card = {
       id: "card-refs",
       title: "Conference launch",
       stage: "preparation",
       references: [],
     };
     const harness = createHarness({
-      bundles: [bundle],
+      cards: [card],
       request: async (url, requestOptions = {}) => {
-        if (url === "/api/bundles/card-refs" && !requestOptions.method) {
-          return bundle;
+        if (url === "/api/cards/card-refs" && !requestOptions.method) {
+          return card;
         }
-        if (url === "/api/tasks?bundleId=card-refs") return { tasks: [] };
-        if (url === "/api/artifacts?bundleId=card-refs") {
+        if (url === "/api/tasks?cardId=card-refs") return { tasks: [] };
+        if (url === "/api/artifacts?cardId=card-refs") {
           return { artifacts: [] };
         }
-        if (url === "/api/bundles/card-refs" && requestOptions.method === "PUT") {
-          return { ...bundle, ...JSON.parse(requestOptions.body) };
+        if (url === "/api/cards/card-refs" && requestOptions.method === "PUT") {
+          return { ...card, ...JSON.parse(requestOptions.body) };
         }
         return {};
       },
     });
-    harness.api.prepareBundlePanel(bundle.id);
-    await harness.api.hydrateBundlePanel(bundle.id, 1);
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
 
-    const name = harness.bundlePanelBody.querySelector(".bundle-ref-name");
-    const url = harness.bundlePanelBody.querySelector(".bundle-ref-url");
+    const name = harness.cardPanelBody.querySelector(".card-ref-name");
+    const url = harness.cardPanelBody.querySelector(".card-ref-url");
     name.value = "Internal launch process";
     url.value = "/docs/launch";
-    await findByText(harness.bundlePanelBody, "Add", "button").click();
+    await findByText(harness.cardPanelBody, "Add", "button").click();
     const referenceRequest = harness.requests.find(
       (entry) =>
-        entry.url === "/api/bundles/card-refs" &&
+        entry.url === "/api/cards/card-refs" &&
         entry.options.method === "PUT",
     );
     assert.deepEqual(jsonBody(referenceRequest), {

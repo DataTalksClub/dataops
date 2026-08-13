@@ -2,7 +2,7 @@ export function createOperationsOverview(context) {
   const {
     document,
     labelizeWorkValue,
-    openBundlePanel,
+    openCardPanel,
     openDocument,
     openTaskPanel,
     resolveDocReference,
@@ -40,8 +40,9 @@ export function createOperationsOverview(context) {
         "Inspect tasks across cards by overdue, follow-up, waiting, missing proof, owner, source, and next action.",
       workflows:
         "Open active cards by stage, then inspect their tasks, proof, waiting, artifacts, and process context.",
-      templates:
-        "Create cards from reusable Templates and maintain recurring configuration.",
+      templates: "Create cards from reusable Templates.",
+      recurring:
+        "Create, edit, pause, and delete the schedules that generate recurring tasks.",
       assistants:
         "Card support jobs appear here only when the assistant job lifecycle is connected.",
       artifacts:
@@ -63,7 +64,7 @@ export function createOperationsOverview(context) {
   function referenceCountLabel(category, count) {
     const singular =
       {
-        bundles: "bundle",
+        cards: "card",
         tasks: "task",
         recurrences: "recurrence",
         schedules: "schedule",
@@ -151,7 +152,7 @@ export function createOperationsOverview(context) {
       ...tasksFromWorkPayload(work.todayTasks || []),
       ...tasksFromWorkPayload(work.overdueTasks || []),
       ...tasksFromWorkPayload(work.waitingTasks || []),
-      ...Object.values(work.bundleTasks || {}).flatMap((tasks) =>
+      ...Object.values(work.cardTasks || {}).flatMap((tasks) =>
         tasksFromWorkPayload(tasks),
       ),
     ]);
@@ -343,8 +344,8 @@ export function createOperationsOverview(context) {
       openTaskPanel(finding.taskId);
       return;
     }
-    if (finding.bundleId) {
-      openBundlePanel(finding.bundleId);
+    if (finding.cardId) {
+      openCardPanel(finding.cardId);
       return;
     }
     const doc = finding.docPath
@@ -352,10 +353,10 @@ export function createOperationsOverview(context) {
       : resolveDocReference(finding.docId || finding.instructionDocId);
     if (doc?.path) {
       openDocument(doc.path, {
-        returnContext: finding.bundleId
+        returnContext: finding.cardId
           ? {
               type: "workflow",
-              id: finding.bundleId,
+              id: finding.cardId,
               title: finding.workflowSlug || finding.templateId,
             }
           : null,
@@ -464,8 +465,8 @@ export function createOperationsOverview(context) {
       button.addEventListener("click", () => openDocument(item.path));
     } else if (item.taskId) {
       button.addEventListener("click", () => openTaskPanel(item.taskId));
-    } else if (item.bundleId) {
-      button.addEventListener("click", () => openBundlePanel(item.bundleId));
+    } else if (item.cardId) {
+      button.addEventListener("click", () => openCardPanel(item.cardId));
     } else {
       button.disabled = true;
     }

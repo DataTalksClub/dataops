@@ -10,7 +10,7 @@ export function createOperationKernel(context) {
     cleanPath,
     documentRef,
     getRecurringConfigTitle,
-    openBundlePanel,
+    openCardPanel,
     openDocument,
     openTaskPanel,
     resolveAssigneeLabel,
@@ -28,7 +28,7 @@ export function createOperationKernel(context) {
   const overview = createOperationsOverview({
     document: documentRef,
     labelizeWorkValue,
-    openBundlePanel,
+    openCardPanel,
     openDocument,
     openTaskPanel,
     resolveDocReference,

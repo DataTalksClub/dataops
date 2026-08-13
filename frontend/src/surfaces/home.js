@@ -8,7 +8,7 @@ export function createHomeSurface(context) {
     buildHomeAttentionItems,
     buildOperationsFutureSections,
     buildOperationsReferenceLinks,
-    bundlesFromWorkPayload,
+    cardsFromWorkPayload,
     clearSelectionButton,
     currentOperatorIdForTodayScope,
     currentOperatorIdFromPayload,
@@ -19,7 +19,7 @@ export function createHomeSurface(context) {
     emptyOperationsWorkSnapshot,
     formatHomeCalendarDate,
     formatHomeTaskTiming,
-    isActiveWorkBundle,
+    isActiveWorkCard,
     isOpenWorkTask,
     isOperationsHomeVisible,
     isWorkflowTemplateDoc,
@@ -33,7 +33,7 @@ export function createHomeSurface(context) {
     openQuickTaskForm,
     openQuickWorkflowForm,
     openTaskPanel,
-    operationItemFromBundle,
+    operationItemFromCard,
     operationItemFromTask,
     operationItemFromTemplate,
     readLocalPreviewContext,
@@ -43,7 +43,7 @@ export function createHomeSurface(context) {
     renderHonestState,
     renderOperationsRuntimeState,
     request,
-    resolveBundleLabel,
+    resolveCardLabel,
     resolveDocReference,
     setPageTitle,
     setStatus,
@@ -54,7 +54,7 @@ export function createHomeSurface(context) {
     todayIsoDate,
     usersFromWorkPayload,
     workApiUrl,
-    workBundleTitle,
+    workCardTitle,
     workTaskTitle,
     workflowPriority,
   } = context;
@@ -73,7 +73,7 @@ export function createHomeSurface(context) {
     clearSelectionButton.hidden = true;
     if (model.stats.liveLoaded) {
       setStatus(
-        `${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeBundles} active cards.`,
+        `${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeCards} active cards.`,
       );
     } else {
       setStatus(
@@ -85,7 +85,7 @@ export function createHomeSurface(context) {
     wrap.className = "operations-home operations-home-daily";
 
     // Read-only load signal for tests: reflects whether the async work snapshot
-    // (/work/api/tasks, /work/api/bundles) has finished hydrating. The home view
+    // (/work/api/tasks, /work/api/cards) has finished hydrating. The home view
     // renders immediately on first paint with an unloaded snapshot, then re-renders
     // once refreshOperationsWorkSnapshot resolves. This attribute lets waiters
     // distinguish the hydrated render from the skeleton render without polling rows.
@@ -239,8 +239,8 @@ export function createHomeSurface(context) {
     title.textContent = item.title;
     const workflow = document.createElement("span");
     workflow.className = "home-task-workflow";
-    workflow.textContent = item.bundleId
-      ? resolveBundleLabel(item.bundleId)
+    workflow.textContent = item.cardId
+      ? resolveCardLabel(item.cardId)
       : "Independent task";
     content.append(title, workflow);
 
@@ -358,7 +358,7 @@ export function createHomeSurface(context) {
       instructionDocId: String(finding.instructionDocId || ""),
       taskRef: String(finding.taskRef || ""),
       taskId: String(finding.taskId || ""),
-      bundleId: String(finding.bundleId || ""),
+      cardId: String(finding.cardId || ""),
     };
   }
 
@@ -420,7 +420,7 @@ export function createHomeSurface(context) {
           id: `${finding.id}:task:${task.id}`,
           severity: "blocking",
           taskId: String(task.id || ""),
-          bundleId: String(task.bundleId || finding.bundleId || ""),
+          cardId: String(task.cardId || finding.cardId || ""),
           title: `${finding.title}`,
           summary: `${workTaskTitle(task)} uses this process doc. ${finding.summary}`,
           nextAction: "open task",
@@ -431,17 +431,17 @@ export function createHomeSurface(context) {
         }
       }
     }
-    for (const bundle of work.activeBundles || []) {
+    for (const card of work.activeCards || []) {
       const matched = reportFindings.filter((finding) =>
-        findingMatchesBundle(finding, bundle),
+        findingMatchesCard(finding, card),
       );
       for (const finding of matched) {
         findings.push({
           ...finding,
-          id: `${finding.id}:bundle:${bundle.id}`,
+          id: `${finding.id}:card:${card.id}`,
           severity: "blocking",
-          bundleId: String(bundle.id || ""),
-          summary: `${workBundleTitle(bundle)} is active. ${finding.summary}`,
+          cardId: String(card.id || ""),
+          summary: `${workCardTitle(card)} is active. ${finding.summary}`,
           nextAction: "open workflow",
         });
       }
@@ -465,7 +465,7 @@ export function createHomeSurface(context) {
           nextAction: "open task",
           instructionDocId: docId,
           taskId: task.id,
-          bundleId: task.bundleId,
+          cardId: task.cardId,
         }),
       );
     } else if (
@@ -483,7 +483,7 @@ export function createHomeSurface(context) {
           source: "runtime task scan",
           nextAction: "open task",
           taskId: task.id,
-          bundleId: task.bundleId,
+          cardId: task.cardId,
         }),
       );
     } else if (!docId && !task?.instructionsUrl) {
@@ -497,7 +497,7 @@ export function createHomeSurface(context) {
           source: "runtime task scan",
           nextAction: "open task",
           taskId: task.id,
-          bundleId: task.bundleId,
+          cardId: task.cardId,
         }),
       );
     }
@@ -516,7 +516,7 @@ export function createHomeSurface(context) {
           source: "runtime task scan",
           nextAction: "add proof requirement",
           taskId: task.id,
-          bundleId: task.bundleId,
+          cardId: task.cardId,
           instructionDocId: docId,
         }),
       );
@@ -540,7 +540,7 @@ export function createHomeSurface(context) {
               id: `${finding.id}:panel:${task.id}`,
               severity: "blocking",
               taskId: task.id,
-              bundleId: task.bundleId,
+              cardId: task.cardId,
               nextAction: "open doc",
             }),
           )
@@ -560,7 +560,7 @@ export function createHomeSurface(context) {
     return Boolean(
       validation &&
       typeof validation === "object" &&
-      (validation.requiredEvidence || validation.requiredBundleLinks),
+      (validation.requiredEvidence || validation.requiredCardLinks),
     );
   }
 
@@ -592,17 +592,17 @@ export function createHomeSurface(context) {
     );
   }
 
-  function findingMatchesBundle(finding, bundle) {
-    if (!finding || !bundle) return false;
+  function findingMatchesCard(finding, card) {
+    if (!finding || !card) return false;
     const workflowValues = [
-      bundle.templateId,
-      bundle.templateType,
-      bundle.type,
-      bundle.workflowSlug,
-      bundle.workflowType,
-      bundle.slug,
-      bundle.title,
-      bundle.name,
+      card.templateId,
+      card.templateType,
+      card.type,
+      card.workflowSlug,
+      card.workflowType,
+      card.slug,
+      card.title,
+      card.name,
     ]
       .filter(Boolean)
       .map(normalizeTemplateMatchValue);
@@ -644,8 +644,8 @@ export function createHomeSurface(context) {
         overdueTasks: options.overdueTasks,
         waitingTasks: options.waitingTasks,
         tasks: options.tasks,
-        bundles: options.bundles,
-        bundleTasks: options.bundleTasks,
+        cards: options.cards,
+        cardTasks: options.cardTasks,
         errors: options.workErrors,
       },
       { today },
@@ -657,7 +657,7 @@ export function createHomeSurface(context) {
     // Per-lane load state (#97): each lane degrades against its OWN data source
     // rather than the coarse top-level `loaded` (.some()). Missing-proof is a
     // derived view over all task fetches, so it is "loaded" when any task source
-    // resolved; bundles is gated on the bundles fetch alone.
+    // resolved; cards is gated on the cards fetch alone.
     const tasksLoaded =
       work.todayLoaded || work.overdueLoaded || work.waitingLoaded;
     const templates = docs
@@ -701,9 +701,9 @@ export function createHomeSurface(context) {
           operationItemFromTask(task, { today, waiting: true }),
         )
       : [];
-    const bundleItems = work.bundlesLoaded
-      ? work.activeBundles.map((bundle) =>
-          operationItemFromBundle(bundle, work.bundleTasks[bundle.id] || [], {
+    const cardItems = work.cardsLoaded
+      ? work.activeCards.map((card) =>
+          operationItemFromCard(card, work.cardTasks[card.id] || [], {
             today,
           }),
         )
@@ -763,12 +763,12 @@ export function createHomeSurface(context) {
         items: waitingItems,
       },
       {
-        id: "bundles",
+        id: "cards",
         title: "At-risk Cards",
-        empty: work.bundlesLoaded
+        empty: work.cardsLoaded
           ? "No active Cards."
           : "No live Card data loaded.",
-        items: bundleItems,
+        items: cardItems,
       },
     ];
 
@@ -809,7 +809,7 @@ export function createHomeSurface(context) {
         todayLoaded: work.todayLoaded,
         overdueLoaded: work.overdueLoaded,
         waitingLoaded: work.waitingLoaded,
-        bundlesLoaded: work.bundlesLoaded,
+        cardsLoaded: work.cardsLoaded,
         usersLoaded: work.usersLoaded,
         missingProofLoaded: tasksLoaded,
         todayTasks: homeWork.counts.today,
@@ -817,7 +817,7 @@ export function createHomeSurface(context) {
         waitingTasks: homeWork.counts.waiting,
         followUpTasks: homeWork.counts.followUps,
         missingProofTasks: homeWork.counts.missingProof,
-        activeBundles: work.activeBundles.length,
+        activeCards: work.activeCards.length,
         recurringConfigs: recurring.configs.length,
         enabledRecurringConfigs: recurring.enabled.length,
         workErrors: work.errors,
@@ -858,7 +858,7 @@ export function createHomeSurface(context) {
       endDate: yesterday,
     });
     const waitingUrl = workApiUrl("/api/tasks", { status: "waiting" });
-    const bundlesUrl = workApiUrl("/api/bundles");
+    const cardsUrl = workApiUrl("/api/cards");
     const usersUrl = workApiUrl("/api/users");
     const meUrl = workApiUrl("/api/me");
     const localContext = await readLocalPreviewContext();
@@ -869,14 +869,14 @@ export function createHomeSurface(context) {
       todayResult,
       overdueResult,
       waitingResult,
-      bundlesResult,
+      cardsResult,
       usersResult,
       meResult,
     ] = await Promise.allSettled([
       request(todayUrl),
       request(overdueUrl),
       request(waitingUrl),
-      request(bundlesUrl),
+      request(cardsUrl),
       request(usersUrl),
       meRequest,
     ]);
@@ -894,7 +894,7 @@ export function createHomeSurface(context) {
       todayResult,
       overdueResult,
       waitingResult,
-      bundlesResult,
+      cardsResult,
       usersResult,
     ].some((result) => result.status === "fulfilled");
     // Per-lane load state (#97): each fetch tracks whether its OWN data source
@@ -903,12 +903,12 @@ export function createHomeSurface(context) {
     snapshot.todayLoaded = todayResult.status === "fulfilled";
     snapshot.overdueLoaded = overdueResult.status === "fulfilled";
     snapshot.waitingLoaded = waitingResult.status === "fulfilled";
-    snapshot.bundlesLoaded = bundlesResult.status === "fulfilled";
+    snapshot.cardsLoaded = cardsResult.status === "fulfilled";
     snapshot.usersLoaded = usersResult.status === "fulfilled";
     snapshot.todayTasks = tasksFromWorkPayload(settledPayload(todayResult));
     snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
     snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
-    snapshot.bundles = bundlesFromWorkPayload(settledPayload(bundlesResult));
+    snapshot.cards = cardsFromWorkPayload(settledPayload(cardsResult));
     snapshot.users = usersFromWorkPayload(settledPayload(usersResult));
     snapshot.currentOperatorId = currentOperatorIdFromPayload(
       settledPayload(meResult),
@@ -917,26 +917,26 @@ export function createHomeSurface(context) {
       todayResult,
       overdueResult,
       waitingResult,
-      bundlesResult,
+      cardsResult,
       usersResult,
     ]
       .filter((result) => result.status === "rejected")
       .map((result) => result.reason?.message || "Work API request failed");
 
-    const activeBundles = snapshot.bundles.filter(isActiveWorkBundle);
-    const bundleTaskResults = await Promise.allSettled(
-      activeBundles.map((bundle) =>
-        request(workApiUrl("/api/tasks", { bundleId: bundle.id })),
+    const activeCards = snapshot.cards.filter(isActiveWorkCard);
+    const cardTaskResults = await Promise.allSettled(
+      activeCards.map((card) =>
+        request(workApiUrl("/api/tasks", { cardId: card.id })),
       ),
     );
-    activeBundles.forEach((bundle, index) => {
-      const result = bundleTaskResults[index];
+    activeCards.forEach((card, index) => {
+      const result = cardTaskResults[index];
       if (result.status === "fulfilled") {
-        snapshot.bundleTasks[bundle.id] = tasksFromWorkPayload(result.value);
+        snapshot.cardTasks[card.id] = tasksFromWorkPayload(result.value);
       } else {
         snapshot.errors.push(
           result.reason?.message ||
-            `Could not load tasks for ${bundle.title || bundle.id}`,
+            `Could not load tasks for ${card.title || card.id}`,
         );
       }
     });

@@ -221,7 +221,7 @@ function createKnowledgeHarness(options = {}) {
     ],
     buildProcessQualityModel: () => ({ findings: [] }),
     beginDocumentNavigation() {},
-    bundlesFromWorkPayload: (payload) => payload?.bundles || [],
+    cardsFromWorkPayload: (payload) => payload?.cards || [],
     canLeaveCurrentDocument: async () => true,
     cleanPath: (path) => String(path || "").replace(/^\/+|\/+$/g, ""),
     closeSidebar: () => {
@@ -258,7 +258,7 @@ function createKnowledgeHarness(options = {}) {
       navigations.push({ path, params });
       return { ready: Promise.resolve() };
     },
-    openBundlePanel: (id) => openedCards.push(id),
+    openCardPanel: (id) => openedCards.push(id),
     openQuickWorkflowForm() {},
     openTaskPanel: (id) => openedTasks.push(id),
     operationsViewPath: (view) => `/${view}`,
@@ -289,7 +289,7 @@ function createKnowledgeHarness(options = {}) {
     renderSurfaceHeader: surfaceHeader,
     reportError() {},
     request,
-    resetBundlePanel() {},
+    resetCardPanel() {},
     resetTaskPanel() {},
     scheduleAnimationFrame: (callback) => callback(),
     setPageTitle: (...args) => pageTitles.push(args),

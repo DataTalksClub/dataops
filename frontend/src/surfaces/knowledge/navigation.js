@@ -22,7 +22,7 @@ export function createKnowledgeNavigation(context, services) {
     historyAdapter,
     knowledgeState,
     locationAdapter,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
     operationsViewPath,
     operationsViewTitle,
@@ -154,7 +154,7 @@ export function createKnowledgeNavigation(context, services) {
       renderDocReturnContext();
       showOperationsHome().then(() => {
         if (context?.type === "workflow" && context.id)
-          openBundlePanel(context.id);
+          openCardPanel(context.id);
         else if (context?.type === "task" && context.id)
           openTaskPanel(context.id);
       });

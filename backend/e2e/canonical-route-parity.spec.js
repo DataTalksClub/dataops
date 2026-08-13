@@ -17,14 +17,14 @@ function berlinToday() {
 
 async function createFixtures(request) {
   const id = suffix();
-  const bundle = (await (await request.post('/api/bundles', {
+  const card = (await (await request.post('/api/cards', {
     data: { title: `Route workflow ${id}`, anchorDate: '2026-08-11' },
-  })).json()).bundle;
-  const contextBundle = (await (await request.post('/api/bundles', {
+  })).json()).card;
+  const contextCard = (await (await request.post('/api/cards', {
     data: { title: `Return workflow ${id}`, anchorDate: '2026-08-12' },
-  })).json()).bundle;
+  })).json()).card;
   const task = await (await request.post('/api/tasks', {
-    data: { description: `Route task ${id}`, date: '2026-08-11', bundleId: bundle.id },
+    data: { description: `Route task ${id}`, date: '2026-08-11', cardId: card.id },
   })).json();
   const intake = (await (await request.post('/api/intake', {
     data: { source: 'manual', title: `New intake ${id}`, note: 'Synthetic operator context', dataClass: 'internal' },
@@ -43,7 +43,7 @@ async function createFixtures(request) {
   })).json()).item;
   await request.post(`/api/intake/${filteredOut.id}/archive`, { data: { reason: 'Synthetic filtered-out route evidence' } });
   const assistant = (await (await request.post('/api/assistant-jobs', {
-    data: { assistantType: 'podcast', title: `Route assistant ${id}`, bundleId: bundle.id, inputRefs: [{ type: 'bundle', id: bundle.id }], approvalRequired: true, maxAttempts: 2 },
+    data: { assistantType: 'podcast', title: `Route assistant ${id}`, cardId: card.id, inputRefs: [{ type: 'card', id: card.id }], approvalRequired: true, maxAttempts: 2 },
   })).json()).job;
   const templates = (await (await request.get('/api/templates')).json()).templates;
   const organization = await (await request.post('/api/sponsor-crm/organizations', {
@@ -52,7 +52,7 @@ async function createFixtures(request) {
   const booking = await (await request.post('/api/sponsor-crm/bookings', {
     data: { organizationId: organization.id, slotType: 'main', status: 'inquiry', plannedPublicationDate: '2026-09-01' },
   })).json();
-  return { id, bundle, contextBundle, task, intake, blocked, filteredOut, assistant, template: templates[0], booking };
+  return { id, card, contextCard, task, intake, blocked, filteredOut, assistant, template: templates[0], booking };
 }
 
 async function setRouteFaults(request, faults) {
@@ -96,11 +96,11 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const routes = [
       ['/#/', 'Home'],
       [`/#/inbox?intakeId=${encodeURIComponent(fixture.intake.id)}`, 'Inbox'],
-      [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&bundleId=${encodeURIComponent(fixture.bundle.id)}&contextBundleId=${encodeURIComponent(fixture.contextBundle.id)}`, 'Tasks - Work Queue'],
-      [`/#/bundles?bundleId=${encodeURIComponent(fixture.bundle.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Tasks - Workflows'],
+      [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Tasks - Work Queue'],
+      [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Tasks - Workflows'],
       [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Tasks - Assistants'],
       [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Tasks - Templates'],
-      ['/#/recurring', 'Tasks - Templates'],
+      ['/#/recurring', 'Tasks - Recurring'],
       ['/#/artifacts', 'Tasks - Artifacts'],
       ['/#/notifications', 'Home'],
       ['/#/bookkeeping', 'Bookkeeping'],
@@ -124,7 +124,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page).toHaveURL(/\/#\/$/);
     await page.evaluate(() => { window.location.hash = '#/unknown?x=%3Cimg%3E'; });
     await expect(page).toHaveURL(/\/#\/$/);
-    await page.evaluate(() => { window.location.hash = '#/bundles?taskId=orphan'; });
+    await page.evaluate(() => { window.location.hash = '#/cards?taskId=orphan'; });
     await expect(page).toHaveURL(/\/#\/$/);
 
     await page.goto('/#/inbox');
@@ -149,7 +149,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
 
     for (const [route, id] of [
       ['tasks?taskId=stale-task', 'stale-task'],
-      ['bundles?bundleId=stale-workflow', 'stale-workflow'],
+      ['cards?cardId=stale-workflow', 'stale-workflow'],
       ['assistants?assistantJobId=stale-assistant', 'stale-assistant'],
       ['templates?templateId=stale-template', 'stale-template'],
       ['sponsors?bookingId=stale-booking', 'stale-booking'],
@@ -159,57 +159,57 @@ test.describe('issue 156 canonical route and operator parity', () => {
       await expect(page.locator('button:visible', { hasText: 'Retry' }).first()).toBeVisible();
     }
 
-    await page.goto(`/#/bundles?bundleId=${fixture.contextBundle.id}&taskId=${fixture.task.id}`);
+    await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
-    await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextBundle.id);
+    await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
   });
 
   test('resolves each task parameter independently and reports source-specific non-404 failures', async ({ page, request }) => {
     const fixture = await createFixtures(request);
-    const encodedBundle = encodeURIComponent(fixture.bundle.id);
-    const encodedContext = encodeURIComponent(fixture.contextBundle.id);
+    const encodedCard = encodeURIComponent(fixture.card.id);
+    const encodedContext = encodeURIComponent(fixture.contextCard.id);
 
     await page.goto('/#/tasks?date=2026-08-11');
     await expect(page.locator('.task-route-context')).toContainText('Date 2026-08-11');
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
-    await page.goto(`/#/tasks?bundleId=${encodedBundle}`);
-    await expect(page.locator('.task-route-context')).toContainText(fixture.bundle.title);
+    await page.goto(`/#/tasks?cardId=${encodedCard}`);
+    await expect(page.locator('.task-route-context')).toContainText(fixture.card.title);
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
-    await page.goto(`/#/tasks?contextBundleId=${encodedContext}`);
-    await expect(page.locator('.task-route-context')).toContainText(fixture.contextBundle.title);
+    await page.goto(`/#/tasks?contextCardId=${encodedContext}`);
+    await expect(page.locator('.task-route-context')).toContainText(fixture.contextCard.title);
     await expect(page.getByRole('button', { name: 'Open return workflow' })).toBeVisible();
     await page.goto(`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}`);
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
 
-    const route = `/#/tasks?date=2026-08-11&bundleId=${encodedBundle}&contextBundleId=${encodedContext}`;
-    await setRouteFaults(request, [{ method: 'GET', path: `/api/bundles/${fixture.bundle.id}`, status: 503 }]);
+    const route = `/#/tasks?date=2026-08-11&cardId=${encodedCard}&contextCardId=${encodedContext}`;
+    await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, status: 503 }]);
     await page.goto(route);
-    await expect(page.locator('[data-context-source="filter-bundle"]')).toContainText('Filter workflow unavailable');
+    await expect(page.locator('[data-context-source="filter-card"]')).toContainText('Filter workflow unavailable');
     await expect(page.locator('[data-context-source="return-context"]')).toHaveCount(0);
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
-    await expect(page.locator('.task-route-context')).toContainText(fixture.contextBundle.title);
+    await expect(page.locator('.task-route-context')).toContainText(fixture.contextCard.title);
 
     await setRouteFaults(request, [{
-      method: 'GET', path: '/api/tasks', query: { date: '2026-08-11', bundleId: fixture.bundle.id }, status: 503,
+      method: 'GET', path: '/api/tasks', query: { date: '2026-08-11', cardId: fixture.card.id }, status: 503,
     }]);
     await page.goto(route);
     await expect(page.locator('[data-context-source="task-query"]')).toContainText('Filtered task queue unavailable');
-    await expect(page.locator('[data-context-source="filter-bundle"]')).toHaveCount(0);
+    await expect(page.locator('[data-context-source="filter-card"]')).toHaveCount(0);
     await expect(page.locator('[data-context-source="return-context"]')).toHaveCount(0);
-    await expect(page.locator('.task-route-context')).toContainText(fixture.bundle.title);
-    await expect(page.locator('.task-route-context')).toContainText(fixture.contextBundle.title);
+    await expect(page.locator('.task-route-context')).toContainText(fixture.card.title);
+    await expect(page.locator('.task-route-context')).toContainText(fixture.contextCard.title);
 
-    await setRouteFaults(request, [{ method: 'GET', path: `/api/bundles/${fixture.contextBundle.id}`, status: 503 }]);
+    await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.contextCard.id}`, status: 503 }]);
     await page.goto(route);
     await expect(page.locator('[data-context-source="return-context"]')).toContainText('Return workflow unavailable');
-    await expect(page.locator('[data-context-source="filter-bundle"]')).toHaveCount(0);
+    await expect(page.locator('[data-context-source="filter-card"]')).toHaveCount(0);
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
-    await expect(page.locator('.task-route-context')).toContainText(fixture.bundle.title);
+    await expect(page.locator('.task-route-context')).toContainText(fixture.card.title);
 
-    await setRouteFaults(request, [{ method: 'GET', path: `/api/bundles/${fixture.bundle.id}`, status: 503 }]);
-    await page.goto(`/#/bundles?bundleId=${encodedBundle}`);
-    await expect(page.locator('#bundle-panel .entity-route-error')).toContainText('Synthetic route failure (503)');
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${fixture.bundle.id}$`));
+    await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, status: 503 }]);
+    await page.goto(`/#/cards?cardId=${encodedCard}`);
+    await expect(page.locator('#card-panel .entity-route-error')).toContainText('Synthetic route failure (503)');
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
     await clearRouteFaults(request);
   });
 
@@ -218,7 +218,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const linked = (await (await request.post('/api/intake', {
       data: { source: 'manual', title: `Linked intake ${fixture.id}`, note: 'Cross-surface relationship evidence', dataClass: 'internal' },
     })).json()).item;
-    await request.post(`/api/intake/${linked.id}/attach`, { data: { taskIds: [fixture.task.id], bundleIds: [fixture.bundle.id] } });
+    await request.post(`/api/intake/${linked.id}/attach`, { data: { taskIds: [fixture.task.id], cardIds: [fixture.card.id] } });
 
     await page.goto(`/#/inbox?intakeId=${linked.id}`);
     await page.getByRole('button', { name: `Task ${fixture.task.id}` }).click();
@@ -230,20 +230,20 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#task-panel')).toBeHidden();
 
     await page.goto(`/#/inbox?intakeId=${linked.id}`);
-    await page.getByRole('button', { name: fixture.bundle.title }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${fixture.bundle.id}$`));
-    await expect(page.locator('#bundle-panel-title')).toHaveText(fixture.bundle.title);
-    await expectNoSeriousA11y(page, '#bundle-panel');
-    await page.locator('#bundle-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/bundles$/);
-    await expect(page.locator('#bundle-panel')).toBeHidden();
+    await page.getByRole('button', { name: fixture.card.title }).click();
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
+    await expect(page.locator('#card-panel-title')).toHaveText(fixture.card.title);
+    await expectNoSeriousA11y(page, '#card-panel');
+    await page.locator('#card-panel-close').click();
+    await expect(page).toHaveURL(/\/#\/cards$/);
+    await expect(page.locator('#card-panel')).toBeHidden();
 
     await page.goto(`/#/tasks?taskId=${fixture.task.id}`);
-    await page.locator('.task-detail-meta button', { hasText: fixture.bundle.title }).click();
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${fixture.bundle.id}&taskId=${fixture.task.id}$`));
+    await page.locator('.task-detail-meta button', { hasText: fixture.card.title }).click();
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${fixture.bundle.id}$`));
-    await expect(page.locator('#bundle-panel')).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
+    await expect(page.locator('#card-panel')).toBeVisible();
 
     const dueResponse = await request.post('/api/tasks', {
       data: { description: `Route notification ${fixture.id}`, date: '2026-08-11', status: 'waiting', waitingFor: 'Reply', followUpAt: '2026-08-01T09:00:00.000Z', comment: 'Synthetic notification route evidence' },
@@ -398,10 +398,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('labels fresh combined task links from exact route context before a delayed larger snapshot', async ({ page, request }) => {
     test.setTimeout(120000);
     const fixture = await createFixtures(request);
-    await Promise.all(Array.from({ length: 12 }, (_, index) => request.post('/api/bundles', {
+    await Promise.all(Array.from({ length: 12 }, (_, index) => request.post('/api/cards', {
       data: { title: `Larger snapshot workflow ${fixture.id} ${index + 1}`, anchorDate: '2026-08-11' },
     })));
-    const route = `/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&bundleId=${encodeURIComponent(fixture.bundle.id)}&contextBundleId=${encodeURIComponent(fixture.contextBundle.id)}`;
+    const route = `/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`;
 
     for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
@@ -409,39 +409,39 @@ test.describe('issue 156 canonical route and operator parity', () => {
       await setRouteFaults(request, [
         // Keep the broad snapshot decisively behind exact route hydration even
         // when the complete E2E suite is running under a loaded worker.
-        { method: 'GET', path: '/api/bundles', delayMs: 20000 },
+        { method: 'GET', path: '/api/cards', delayMs: 20000 },
         { method: 'GET', path: `/api/tasks/${fixture.task.id}`, delayMs: 250 },
       ]);
       let largerSnapshotResolved = false;
       const largerSnapshot = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === 'GET' && url.pathname === '/work/api/bundles' && !url.search;
+        return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && !url.search;
       }).then(() => { largerSnapshotResolved = true; });
 
       await page.goto(route);
       await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
-      await expect(page.locator('.task-panel-route-context')).toContainText(fixture.bundle.title);
+      await expect(page.locator('.task-panel-route-context')).toContainText(fixture.card.title);
       const workflowLink = page.locator('.task-detail-meta button.task-instruction-doc-link');
-      await expect(workflowLink).toHaveText(fixture.bundle.title);
+      await expect(workflowLink).toHaveText(fixture.card.title);
       await expect(workflowLink).not.toHaveText('—');
       expect(largerSnapshotResolved).toBe(false);
       if (viewport.width < 600) await expectNoHorizontalOverflow(page);
 
       await largerSnapshot;
-      await expect(workflowLink).toHaveText(fixture.bundle.title);
+      await expect(workflowLink).toHaveText(fixture.card.title);
       await clearRouteFaults(request);
     }
 
     await page.goto('about:blank');
-    await setRouteFaults(request, [{ method: 'GET', path: '/api/bundles', delayMs: 900 }]);
+    await setRouteFaults(request, [{ method: 'GET', path: '/api/cards', delayMs: 900 }]);
     const laterSnapshot = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET' && url.pathname === '/work/api/bundles' && !url.search;
+      return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && !url.search;
     });
-    await page.goto(`/#/bundles?bundleId=${fixture.contextBundle.id}&taskId=${fixture.task.id}`);
+    await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await laterSnapshot;
-    await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextBundle.id);
+    await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
     await expect(page.locator('.task-detail-meta button')).toHaveCount(0);
     await clearRouteFaults(request);
   });
@@ -516,21 +516,21 @@ test.describe('issue 156 canonical route and operator parity', () => {
 
   test('contains task and workflow dialog focus and restores recreated route targets', async ({ page, request }) => {
     const id = suffix();
-    const bundle = (await (await request.post('/api/bundles', {
+    const card = (await (await request.post('/api/cards', {
       data: { title: `Focus workflow ${id}`, anchorDate: '1900-01-01' },
-    })).json()).bundle;
+    })).json()).card;
     const task = await (await request.post('/api/tasks', {
-      data: { description: `Focus task ${id}`, date: berlinToday(), bundleId: bundle.id },
+      data: { description: `Focus task ${id}`, date: berlinToday(), cardId: card.id },
     })).json();
-    const fixture = { bundle, task };
+    const fixture = { card, task };
 
-    const filteredTasksRoute = new RegExp(`/#/tasks\\?bundleId=${fixture.bundle.id}$`);
-    await page.goto(`/#/tasks?bundleId=${fixture.bundle.id}`);
+    const filteredTasksRoute = new RegExp(`/#/tasks\\?cardId=${fixture.card.id}$`);
+    await page.goto(`/#/tasks?cardId=${fixture.card.id}`);
     const taskRow = page.locator(`.ops-queue-row[data-task-id="${fixture.task.id}"]`).first();
     await expect(taskRow).toBeVisible();
     await taskRow.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${fixture.task.id}&bundleId=${fixture.bundle.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${fixture.task.id}&cardId=${fixture.card.id}$`));
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
@@ -549,33 +549,33 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#library-title')).toHaveText('Tasks - Work Queue');
     await expect(page.locator('#library-title')).toBeFocused();
 
-    await page.goto('/#/bundles');
-    const workflowCard = page.locator('.ops-workflow-card[data-bundle-id]').first();
+    await page.goto('/#/cards');
+    const workflowCard = page.locator('.ops-workflow-card[data-card-id]').first();
     await expect(workflowCard).toBeVisible();
-    const visibleWorkflowId = await workflowCard.getAttribute('data-bundle-id');
+    const visibleWorkflowId = await workflowCard.getAttribute('data-card-id');
     const visibleWorkflowTitle = await workflowCard.locator('strong').textContent();
     await workflowCard.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${visibleWorkflowId}$`));
-    await expect(page.locator('#bundle-panel-title')).toHaveText(visibleWorkflowTitle);
-    await expect(page.locator('#bundle-panel-close')).toBeFocused();
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${visibleWorkflowId}$`));
+    await expect(page.locator('#card-panel-title')).toHaveText(visibleWorkflowTitle);
+    await expect(page.locator('#card-panel-close')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
-    expect(await page.evaluate(() => document.querySelector('#bundle-panel').contains(document.activeElement))).toBe(true);
+    expect(await page.evaluate(() => document.querySelector('#card-panel').contains(document.activeElement))).toBe(true);
     await page.keyboard.press('Tab');
-    await expect(page.locator('#bundle-panel-close')).toBeFocused();
+    await expect(page.locator('#card-panel-close')).toBeFocused();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#\/bundles$/);
-    await expect(page.locator('#bundle-panel')).toBeHidden();
+    await expect(page).toHaveURL(/\/#\/cards$/);
+    await expect(page.locator('#card-panel')).toBeHidden();
     await expect(workflowCard).toBeFocused();
 
-    await page.goto(`/#/bundles?bundleId=${fixture.bundle.id}`);
-    await expect(page.locator('#bundle-panel-title')).toHaveText(fixture.bundle.title);
-    const fixtureCard = page.locator(`.ops-workflow-card[data-bundle-id="${fixture.bundle.id}"]`);
+    await page.goto(`/#/cards?cardId=${fixture.card.id}`);
+    await expect(page.locator('#card-panel-title')).toHaveText(fixture.card.title);
+    const fixtureCard = page.locator(`.ops-workflow-card[data-card-id="${fixture.card.id}"]`);
     const fixtureCardWasVisible = await fixtureCard.isVisible().catch(() => false);
-    const workflowTaskRow = page.locator(`.bundle-checklist-label[data-task-id="${fixture.task.id}"]`);
+    const workflowTaskRow = page.locator(`.card-checklist-label[data-task-id="${fixture.task.id}"]`);
     await workflowTaskRow.focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${fixture.bundle.id}&taskId=${fixture.task.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}&taskId=${fixture.task.id}$`));
     await expect(page.locator('#task-panel-close')).toBeFocused();
     await expectNoSeriousA11y(page, '#task-panel');
     await page.keyboard.press('Shift+Tab');
@@ -583,19 +583,19 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.keyboard.press('Tab');
     expect(await page.evaluate(() => document.querySelector('#task-panel [role="dialog"]').contains(document.activeElement))).toBe(true);
     await page.locator('#task-panel-close').click();
-    await expect(page).toHaveURL(new RegExp(`/#/bundles\\?bundleId=${fixture.bundle.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
     await expect(page.locator('#task-panel')).toBeHidden();
-    await expect(page.locator('#bundle-panel')).toBeVisible();
+    await expect(page.locator('#card-panel')).toBeVisible();
     await expect(workflowTaskRow).toBeFocused();
-    await page.locator('#bundle-panel-close').click();
-    await expect(page).toHaveURL(/\/#\/bundles$/);
+    await page.locator('#card-panel-close').click();
+    await expect(page).toHaveURL(/\/#\/cards$/);
     if (fixtureCardWasVisible) await expect(fixtureCard).toBeFocused();
     else await expect(page.locator('#library-title')).toBeFocused();
 
-    await page.goto('/#/bundles?bundleId=keyboard-missing-workflow');
-    await expect(page.locator('#bundle-panel .entity-route-not-found')).toBeVisible();
+    await page.goto('/#/cards?cardId=keyboard-missing-workflow');
+    await expect(page.locator('#card-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#\/bundles$/);
+    await expect(page).toHaveURL(/\/#\/cards$/);
     await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
     await expect(page.locator('#library-title')).toBeFocused();
   });
@@ -604,15 +604,15 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const fixture = await createFixtures(request);
     await page.goto('/#/');
     await expect(page.locator('#library-title')).toHaveText('Home');
-    await setRouteFaults(request, [{ method: 'GET', path: `/api/bundles/${fixture.bundle.id}`, delayMs: 900 }]);
-    const started = page.waitForRequest((req) => new URL(req.url()).pathname.endsWith(`/api/bundles/${fixture.bundle.id}`));
-    await page.evaluate((bundleId) => { window.location.hash = `#/bundles?bundleId=${bundleId}`; }, fixture.bundle.id);
+    await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, delayMs: 900 }]);
+    const started = page.waitForRequest((req) => new URL(req.url()).pathname.endsWith(`/api/cards/${fixture.card.id}`));
+    await page.evaluate((cardId) => { window.location.hash = `#/cards?cardId=${cardId}`; }, fixture.card.id);
     await started;
     await page.evaluate((assistantId) => { window.location.hash = `#/assistants?assistantJobId=${assistantId}`; }, fixture.assistant.id);
     await expect(page).toHaveURL(new RegExp(`/#/assistants\\?assistantJobId=${fixture.assistant.id}$`));
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await page.waitForTimeout(1100);
-    await expect(page.locator('#bundle-panel')).toBeHidden();
+    await expect(page.locator('#card-panel')).toBeHidden();
     await expect(page.locator('#library-title')).toHaveText('Tasks - Assistants');
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await clearRouteFaults(request);
@@ -626,10 +626,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const triaged = await createStateIntake('Triaged intake');
     await request.put(`/api/intake/${triaged.id}`, { data: { status: 'triaged' } });
     const attached = await createStateIntake('Attached intake');
-    await request.post(`/api/intake/${attached.id}/attach`, { data: { taskIds: [fixture.task.id], bundleIds: [fixture.bundle.id] } });
+    await request.post(`/api/intake/${attached.id}/attach`, { data: { taskIds: [fixture.task.id], cardIds: [fixture.card.id] } });
     const convertedSource = await createStateIntake('Converted intake');
     const converted = (await (await request.post(`/api/intake/${convertedSource.id}/convert-task`, {
-      data: { date: '2026-08-11', bundleId: fixture.bundle.id },
+      data: { date: '2026-08-11', cardId: fixture.card.id },
     })).json()).item;
     const assistantReadySource = await createStateIntake('Assistant-ready intake');
     const assistantReady = (await (await request.post(`/api/intake/${assistantReadySource.id}/prepare-assistant`, {
@@ -662,7 +662,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     })).json()).recurringConfig;
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/#/tasks?taskId=${fixture.task.id}&date=2026-08-11&bundleId=${fixture.bundle.id}&contextBundleId=${fixture.contextBundle.id}`);
+    await page.goto(`/#/tasks?taskId=${fixture.task.id}&date=2026-08-11&cardId=${fixture.card.id}&contextCardId=${fixture.contextCard.id}`);
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
     await expectNoSeriousA11y(page, '#task-panel');
     await page.screenshot({ path: path.join(SHOTS, 'desktop-task-combined-context-1440x900.png'), fullPage: true });
@@ -704,7 +704,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expectNoSeriousA11y(page, '.ops-recurring-section');
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/#/tasks?taskId=${fixture.task.id}&date=2026-08-11&bundleId=${fixture.bundle.id}&contextBundleId=${fixture.contextBundle.id}`);
+    await page.goto(`/#/tasks?taskId=${fixture.task.id}&date=2026-08-11&cardId=${fixture.card.id}&contextCardId=${fixture.contextCard.id}`);
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '#task-panel');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-task-combined-context-390x844.png') });

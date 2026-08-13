@@ -43,9 +43,9 @@ Primary inputs:
 - `frontend/DESIGN.md` for the Notion-like, one-page-at-a-time workspace model.
 - `docs/local-development.md` for the current portal/work-engine runtime split.
 - `frontend/` for the current DataOps docs portal, Operations Home, task and
-  bundle panels, notifications, document editing, create flow, and dark mode.
+  card panels, notifications, document editing, create flow, and dark mode.
 - `work-engine/src/pages/index.html` and `work-engine/src/public/app.js` for
-  sign-in, dashboard, task tables, bundle cards, filters, recurring work,
+  sign-in, dashboard, task tables, card cards, filters, recurring work,
   notifications, templates, proof links, and follow-up controls.
 - Designer audit for issue #46:
   https://github.com/DataTalksClub/dataops/issues/46#issuecomment-4821732275
@@ -180,6 +180,31 @@ Usage rules:
   card. Long mobile forms should prioritize the primary work list before
   optional creation controls.
 
+### Card Content Alignment
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `--do-card-border-width` | `1px` | Card and list-row border width. |
+| `--do-card-padding-x` | `12px` | Horizontal padding inside every card-like surface. |
+| `--do-card-content-inset` | `border + padding-x` (`13px`) | Inset for labels that head a stack of cards. |
+
+Usage rules:
+
+- Every element inside a card shares one content container: the card's own
+  padding box. No child adds its own horizontal padding, margin, or indent, so
+  the title, metadata row, progress bar, and badges all start and end on the
+  same two vertical lines.
+- A label that heads a stack of cards — a board column header, an archive month
+  header, a list section header — insets its content by
+  `--do-card-content-inset` so it sits on the same vertical line as the card
+  content it labels, not on the card's outer border.
+- Card-like surfaces (workflow card, checklist row, template card) use the same
+  `--do-card-padding-x`, so content lines up when they appear in the same
+  column.
+- Rows with a leading control (checkbox, avatar) keep the control in the first
+  grid column at the shared inset; the control column, not the row edge, is the
+  alignment anchor for the text beside it.
+
 ### Radius, Borders, Shadows, And Focus
 
 | Token | Value | Use |
@@ -245,6 +270,8 @@ Layer rules:
 | `--do-color-danger` | `--danger` | `#e74c3c`, `#b71c1c` | Normalize destructive/error states. |
 | `--do-color-warning` | `#a96400` use in portal waiting states | `#e67e22`, `#fff3cd`, `#7a4f01` | Use waiting/follow-up tokens. |
 | `--do-shadow-panel` | `--shadow` | `box-shadow: 0 1px 3px ...` cards | Reserve strong shadows for overlays. |
+| `--do-card-padding-x` | `--card-padding-x` | per-component paddings | Live in `frontend/src/styles.css`; adopt for every card-like surface. |
+| `--do-card-content-inset` | `--card-content-inset` | none yet | Used by board column and archive month headers to align with card content. |
 
 ## Component Primitives
 
@@ -330,7 +357,7 @@ Usage rules:
 
 - Use search for text narrowing and filters for structured state.
 - Filter labels stay visible. Placeholder-only filters are not enough.
-- Segmented controls are for mutually exclusive view modes such as bundle sort:
+- Segmented controls are for mutually exclusive view modes such as card sort:
   `Date`, `Stage`, `Template`.
 - Tabs are for stable sections within one task or workflow, not global product
   navigation unless the shell is unavailable.
@@ -339,8 +366,8 @@ Current mapping:
 
 - Portal: `#search-form`, `#search-input`, `.filter-row`, custom selects,
   `#view-toggle-button`.
-- Work-engine: `.filter-bar`, `.task-toolbar`, `.bundle-sort-control`,
-  `.bundle-sort-btn`, `.search-input`, dashboard assigned-to-me controls.
+- Work-engine: `.filter-bar`, `.task-toolbar`, `.card-sort-control`,
+  `.card-sort-btn`, `.search-input`, dashboard assigned-to-me controls.
 
 ### Buttons, Icon Buttons, And Links
 
@@ -415,7 +442,7 @@ Current mapping:
 - Portal: `.document-list`, `.document-row`, `.ops-lane`,
   `.ops-template-card`, `.ops-future-card`, `.empty-state`, `.ops-empty`.
 - Work-engine: `table`, `.task-table-compact`, `.responsive-table`,
-  `.dashboard-bundle-card`, `.bundle-card`, `.template-card`,
+  `.dashboard-card-card`, `.card-card`, `.template-card`,
   `.empty-state-rich`.
 
 ### Documents And Process Context
@@ -438,7 +465,7 @@ Current mapping:
 - Portal: `.editor-view`, `.document-title`, `.document-path`,
   `.markdown-editor`, `.rendered-view`, `.block-step`, `.block-todos`,
   `.block-loom`, `.block-warnings`, `.task-file-row`.
-- Work-engine: instructions links, required link rows, bundle reference rows,
+- Work-engine: instructions links, required link rows, card reference rows,
   template reference rows.
 
 ### Task Execution
@@ -464,10 +491,10 @@ Current mapping:
   `.task-action-group`, `.follow-up-next-date`, `.badge-waiting`,
   `.required-link-wrapper`, `.task-checklist-row`.
 
-### Workflow And Bundle Execution
+### Workflow And Card Execution
 
 Canonical primitives: `do-workflow-card`, `do-workflow-detail-panel`,
-`do-progress-bar`, `do-stage-badge`, `do-bundle-link-row`,
+`do-progress-bar`, `do-stage-badge`, `do-card-link-row`,
 `do-template-card`.
 
 Usage rules:
@@ -483,11 +510,11 @@ Usage rules:
 
 Current mapping:
 
-- Portal: `#bundle-panel`, `.bundle-stage-select`,
-  `.bundle-checklist-item`, `.bundle-checklist-evidence`,
+- Portal: `#card-panel`, `.card-stage-select`,
+  `.card-checklist-item`, `.card-checklist-evidence`,
   `.ops-template-card`, `.ops-card-chips`.
-- Work-engine: `.dashboard-bundle-card`, `.bundle-card`,
-  `.bundle-detail-header`, `.bundle-detail-badges`, `.bundle-links-editable`,
+- Work-engine: `.dashboard-card-card`, `.card-card`,
+  `.card-detail-header`, `.card-detail-badges`, `.card-links-editable`,
   `.template-card`, `.template-editor`, `.task-def-item`.
 
 ### Badges, Chips, And Metadata
@@ -513,11 +540,11 @@ Usage rules:
 
 Current mapping:
 
-- Portal: `.task-status-badge`, `.bundle-checklist-evidence`,
+- Portal: `.task-status-badge`, `.card-checklist-evidence`,
   `.ops-card-chips`.
 - Work-engine: `.badge-stage`, `.badge-status`, `.progress-badge`,
   `.badge-assignee`, `.badge-waiting`, `.badge-anchor-date`, `.badge-tag`,
-  `.badge-type`, `.badge-trigger`, `.badge-bundle`, `.badge-adhoc`.
+  `.badge-type`, `.badge-trigger`, `.badge-card`, `.badge-adhoc`.
 
 ### Banners, Toasts, Modals, Drawers, And Panels
 
@@ -582,7 +609,7 @@ Current mapping:
 | Create flow | `#create-view`, `.create-form`, `.scaffold-fieldset` | `do-field-group`, `do-radio-group`, `do-save-bar`. |
 | Operations Home | `renderOperationsHome`, `.operations-home`, `.ops-lane` | `do-ops-dashboard`, `do-task-row`, `do-workflow-card`, `do-reminder-chip`. |
 | Task detail | `#task-panel`, `renderTaskPanel` | `do-side-panel`, `do-task-detail-panel`, `do-proof-control`, `do-follow-up-control`. |
-| Workflow detail | `#bundle-panel`, `renderBundlePanel` | `do-workflow-detail-panel`, `do-progress-bar`, `do-stage-badge`, `do-bundle-link-row`. |
+| Workflow detail | `#card-panel`, `renderCardPanel` | `do-workflow-detail-panel`, `do-progress-bar`, `do-stage-badge`, `do-card-link-row`. |
 | Notifications | `#work-bell-button`, `.work-bell-panel` | `do-popover`, `do-notification-row`, `do-badge`. |
 | Modals and toasts | lint, diff, confirm, git commit, quick nav, undo/error toasts | `do-dialog`, `do-toast`, `do-popover`. |
 | Dark mode | `body.dark` token overrides | Canonical dark `--do-*` aliases. |
@@ -603,9 +630,9 @@ Portal drift to address:
 | --- | --- | --- |
 | Sign-in | `renderSignIn`, `.form-section` | `do-auth-panel`, `do-field-group`, `do-button`. |
 | Top navigation | `work-engine/src/pages/index.html` `nav`, `.brand` | Legacy; map to `do-shell` when migrated. |
-| Dashboard | `renderDashboard`, `.dashboard-layout`, `.dashboard-bundle-card` | `do-ops-dashboard`, `do-workflow-card`, `do-task-row`, `do-segmented-control`. |
+| Dashboard | `renderDashboard`, `.dashboard-layout`, `.dashboard-card-card` | `do-ops-dashboard`, `do-workflow-card`, `do-task-row`, `do-segmented-control`. |
 | Task route | `renderTasks`, `.task-toolbar`, `.filter-bar`, `.form-section`, task table | `do-filter-group`, `do-task-row`, `do-table`, `do-field-group`. |
-| Bundle route | `renderBundles`, `.bundle-card`, `renderBundleDetail` | `do-workflow-card`, `do-workflow-detail-panel`, `do-bundle-link-row`. |
+| Card route | `renderCards`, `.card-card`, `renderCardDetail` | `do-workflow-card`, `do-workflow-detail-panel`, `do-card-link-row`. |
 | Recurring route | `renderRecurring`, generation forms, responsive table | `do-field-group`, `do-table`, `do-reminder-chip`. |
 | Notifications | notification dropdown and `renderNotifications` | `do-popover`, `do-notification-row`, `do-empty-state`. |
 | Templates | `renderTemplates`, `.template-card`, `.template-editor` | `do-template-card`, `do-field-group`, `do-task-definition-row`. |
@@ -736,7 +763,7 @@ Work-engine drift to address:
 - Mobile task route ordering so active tasks are not pushed below long filters
   and create forms.
 - Shared task/workflow card markup across portal Operations Home and
-  work-engine dashboard/bundles.
+  work-engine dashboard/cards.
 - Modal replacement for `confirm()` deletion flows.
 
 ### Should Wait For Future Frontend Framework Decision
@@ -778,13 +805,13 @@ Phase 3: Shared primitives in work-engine generated HTML.
 
 - Replace inline form widths and hard-coded colors with shared classes.
 - Migrate `.btn-primary`, `.btn-danger`, `.form-section`, `.filter-bar`,
-  `.task-table-compact`, `.bundle-card`, `.template-card`, and badge families
+  `.task-table-compact`, `.card-card`, `.template-card`, and badge families
   to shared primitive aliases.
 - Reorder mobile task execution around active work before optional creation.
 
 Phase 4: Unified task and workflow execution.
 
-- Align portal Operations Home cards, work-engine task rows, bundle cards,
+- Align portal Operations Home cards, work-engine task rows, card cards,
   detail panels, proof controls, and follow-up actions.
 - Use the same status/proof/progress language in portal panels and
   work-engine detail pages.

@@ -3,7 +3,7 @@ export function createKnowledgeSearch(context, services) {
     apiUrl,
     assistantJobsFromPayload,
     buildOperationsReferenceLinks,
-    bundlesFromWorkPayload,
+    cardsFromWorkPayload,
     clearSelectionButton,
     cleanPath,
     documentList,
@@ -12,7 +12,7 @@ export function createKnowledgeSearch(context, services) {
     labelizeWorkValue,
     libraryTitle,
     navigateCanonicalWorkspace,
-    openBundlePanel,
+    openCardPanel,
     openQuickWorkflowForm,
     openTaskPanel,
     renderHonestState,
@@ -152,8 +152,8 @@ export function createKnowledgeSearch(context, services) {
       },
       {
         source: "workflows",
-        path: "/api/bundles",
-        items: bundlesFromWorkPayload,
+        path: "/api/cards",
+        items: cardsFromWorkPayload,
         type: "workflow",
       },
       {
@@ -231,7 +231,7 @@ export function createKnowledgeSearch(context, services) {
       type === "task"
         ? { kind: "task", taskId: id }
         : type === "workflow"
-          ? { kind: "workflow", bundleId: id }
+          ? { kind: "workflow", cardId: id }
           : type === "template"
             ? { kind: "template", templateId: id, templateType: item.type }
             : type === "assistant-job"
@@ -239,13 +239,13 @@ export function createKnowledgeSearch(context, services) {
                   kind: "assistant-job",
                   assistantJobId: id,
                   taskId: item.taskId,
-                  bundleId: item.bundleId,
+                  cardId: item.cardId,
                 }
               : {
                   kind: "artifact",
                   artifactId: id,
                   taskId: item.taskId,
-                  bundleId: item.bundleId,
+                  cardId: item.cardId,
                 };
     return {
       type,
@@ -263,7 +263,7 @@ export function createKnowledgeSearch(context, services) {
       fields: {
         status: item.status || "",
         due_date: item.date || "",
-        workflow_title: item.bundleId || "",
+        workflow_title: item.cardId || "",
       },
     };
   }
@@ -453,8 +453,8 @@ export function createKnowledgeSearch(context, services) {
       openTaskPanel(route.taskId);
       return;
     }
-    if ((kind === "workflow" || kind === "bundle") && route.bundleId) {
-      openBundlePanel(route.bundleId);
+    if ((kind === "workflow" || kind === "card") && route.cardId) {
+      openCardPanel(route.cardId);
       return;
     }
     if (kind === "template") {
@@ -477,8 +477,8 @@ export function createKnowledgeSearch(context, services) {
       openTaskPanel(route.taskId);
       return;
     }
-    if ((kind === "artifact" || kind === "file") && route.bundleId) {
-      openBundlePanel(route.bundleId);
+    if ((kind === "artifact" || kind === "file") && route.cardId) {
+      openCardPanel(route.cardId);
       return;
     }
     if (kind === "artifact" || kind === "file") showWorkspaceSurface("artifacts");

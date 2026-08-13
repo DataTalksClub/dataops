@@ -31,10 +31,10 @@ function createNavigationHarness(options = {}) {
   const searchInput = new FakeElement("input");
   const runtimeTemplateSearch = visibleButton("runtime-template-search", {});
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
-  const nestedTask = visibleButton("bundle-checklist-label", {
+  const nestedTask = visibleButton("card-checklist-label", {
     taskId: "task-nested",
   });
-  const cardButton = visibleButton("ops-workflow-card", { bundleId: "card-1" });
+  const cardButton = visibleButton("ops-workflow-card", { cardId: "card-1" });
   const recurring = new FakeElement("section");
   recurring.className = "ops-recurring-section";
   const body = new FakeElement("body");
@@ -110,7 +110,7 @@ function createNavigationHarness(options = {}) {
       })[view],
     historyRef: history,
     HTMLElementClass: FakeElement,
-    hydrateBundlePanel: async (id, token) => calls.push(["hydrate-card", id, token]),
+    hydrateCardPanel: async (id, token) => calls.push(["hydrate-card", id, token]),
     hydrateTaskPanel: async (id, token, value) =>
       calls.push(["hydrate-task", id, token, value]),
     libraryTitle,
@@ -119,7 +119,7 @@ function createNavigationHarness(options = {}) {
     openWorkBellPanel: () => calls.push(["open-bell"]),
     operationsViewTitle: (view, section) => `${view}:${section}`,
     parseWorkspaceHash: (hash) => parseWorkspaceHash(hash, location),
-    prepareBundlePanel: (id) => calls.push(["prepare-card", id]),
+    prepareCardPanel: (id) => calls.push(["prepare-card", id]),
     prepareTaskPanel: (id) => calls.push(["prepare-task", id]),
     refreshDocuments: () => calls.push(["refresh-docs"]),
     refreshOperationsArtifactSnapshot: async (value) => calls.push(["artifacts", value]),
@@ -131,7 +131,7 @@ function createNavigationHarness(options = {}) {
       activeWorkspaceView: active.view,
     }),
     requestAnimationFrameImpl: (callback) => callback(),
-    resetBundlePanel: () => calls.push(["reset-card"]),
+    resetCardPanel: () => calls.push(["reset-card"]),
     resetTaskPanel: () => calls.push(["reset-task"]),
     resolveIntakeRouteEntity: async (...args) => calls.push(["resolve-intake", ...args]),
     resolveTaskQueueRouteContext: async (...args) => calls.push(["resolve-queue", ...args]),
@@ -198,7 +198,7 @@ describe("canonical navigation shell behavior", () => {
     await result.ready;
     assert.deepEqual(
       harness.calls.find(([name]) => name === "hydrate-task"),
-      ["hydrate-task", "task-nested", 1, { expectedBundleId: "card-1" }],
+      ["hydrate-task", "task-nested", 1, { expectedCardId: "card-1" }],
     );
     assert.equal(harness.shell.getPendingLegacyRoute().token, 1);
     assert.equal(harness.shell.isWorkspaceRouteFresh(1), true);

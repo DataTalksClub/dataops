@@ -211,7 +211,7 @@ export function createSponsorCrmSurface(context) {
               <div>
                 <dt>Newsletter</dt>
                 <dd>
-                  ${escapeHtml(booking.bundleId ? "Linked" : "Not linked")}
+                  ${escapeHtml(booking.cardId ? "Linked" : "Not linked")}
                 </dd>
               </div>
               <div>

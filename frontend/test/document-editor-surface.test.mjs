@@ -268,7 +268,7 @@ function createEditorHarness(options = {}) {
     renderWarningsBlock: nullableBlock,
     reportError: (message) => errors.push(message),
     request,
-    resetBundlePanel() {},
+    resetCardPanel() {},
     resetTaskPanel() {},
     resolveDocReference: (ref) =>
       ref === "related-process"

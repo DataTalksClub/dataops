@@ -26,7 +26,7 @@ export function createTasksSurface(context) {
     getTaskRouteContext,
     getWorkspaceEntityState,
     groupCardItemsByStage,
-    isArchivedWorkBundle,
+    isArchivedWorkCard,
     isFollowUpDueTask,
     isOpenWorkTask,
     isOperationsHomeVisible,
@@ -38,9 +38,9 @@ export function createTasksSurface(context) {
     listDraftPaths,
     navigateCanonicalWorkspace,
     openDocument,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
-    operationItemFromBundle,
+    operationItemFromCard,
     referenceCountLabel,
     refreshDocuments,
     refreshOperationsRecurringSnapshot,
@@ -63,7 +63,7 @@ export function createTasksSurface(context) {
     sortWorkTasks,
     state,
     surfaceDescription,
-    summarizeBundleProgress,
+    summarizeCardProgress,
     taskDate,
     taskNextActionLabel,
     taskProofState,
@@ -72,19 +72,20 @@ export function createTasksSurface(context) {
     tasksFromWorkPayload,
     todayIsoDate,
     workApiUrl,
-    workBundleTitle,
+    workCardTitle,
     workTaskTitle,
   } = context;
 
-  const { openQuickTaskForm, openQuickWorkflowForm } =
+  const { openQuickTaskForm, openQuickWorkflowForm, openRecurringForm } =
     createQuickTaskActions(context);
   const {
     recurringConfigTitle,
-    renderRecurringOperationsSection,
+    renderRecurringSurface,
     renderWorkflowTemplateCard,
   } = createRecurringTasks({
     ...context,
     openQuickWorkflowForm,
+    openRecurringForm,
   });
   const { renderWorkflowsSurface } = createCardsSurface({
     ...context,
@@ -95,13 +96,12 @@ export function createTasksSurface(context) {
     confirmLeaveRuntimeDraft,
     getRuntimeTemplateState,
     refreshRuntimeTemplates,
-    renderTemplatesRecurringSurface,
+    renderTemplatesSurface,
     resolveTemplateRouteEntity,
     setRuntimeTemplateRoute,
   } = createTemplatesSurface({
     ...context,
     openQuickWorkflowForm,
-    renderRecurringOperationsSection,
     renderTasksSurface,
     renderWorkflowTemplateCard,
   });
@@ -138,7 +138,9 @@ export function createTasksSurface(context) {
     else if (activeSection === "workflows")
       wrap.append(renderWorkflowsSurface(model));
     else if (activeSection === "templates")
-      wrap.append(renderTemplatesRecurringSurface(model));
+      wrap.append(renderTemplatesSurface(model));
+    else if (activeSection === "recurring")
+      wrap.append(renderRecurringSurface(model));
     else if (activeSection === "assistants")
       wrap.append(renderAssistantsSurface());
     else if (activeSection === "artifacts")
@@ -156,13 +158,22 @@ export function createTasksSurface(context) {
       ].join(" · ");
     }
     if (view === "workflows") {
-      return `${countLabel(model.stats.activeBundles, "active card")} · at-risk first.`;
+      return `${countLabel(model.stats.activeCards, "active card")} · at-risk first.`;
+    }
+    if (view === "recurring") {
+      const recurring = model.recurring;
+      if (!recurring.loaded) return "Recurring schedules not loaded.";
+      return [
+        countLabel(recurring.configs.length, "recurring schedule"),
+        `${recurring.enabled.length} enabled`,
+        `${recurring.disabled.length} paused.`,
+      ].join(" · ");
     }
     const runtimeState = getRuntimeTemplateState();
     const runtimeCount = runtimeState.loaded
       ? runtimeState.templates.length
       : model.templates.length;
-    return `${countLabel(runtimeCount, "runtime template")} · ${countLabel(model.recurring.configs.length, "recurring config")}.`;
+    return `${countLabel(runtimeCount, "runtime template")}.`;
   }
 
   // Process Docs owns a separate main-canvas surface. The global sidebar remains

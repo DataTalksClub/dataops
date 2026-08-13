@@ -95,8 +95,8 @@ export function createTaskEvidence(context) {
   async function loadArtifactsForTask(task) {
     const results = await Promise.allSettled([
       request(workApiUrl("/api/artifacts", { taskId: task.id })),
-      task.bundleId
-        ? request(workApiUrl("/api/artifacts", { bundleId: task.bundleId }))
+      task.cardId
+        ? request(workApiUrl("/api/artifacts", { cardId: task.cardId }))
         : Promise.resolve({ artifacts: [] }),
     ]);
     const artifacts = [];
@@ -108,8 +108,8 @@ export function createTaskEvidence(context) {
     return dedupeArtifacts(artifacts);
   }
 
-  async function loadArtifactsForBundle(bundleId) {
-    const payload = await request(workApiUrl("/api/artifacts", { bundleId }));
+  async function loadArtifactsForCard(cardId) {
+    const payload = await request(workApiUrl("/api/artifacts", { cardId }));
     return dedupeArtifacts(
       Array.isArray(payload?.artifacts) ? payload.artifacts : [],
     );
@@ -264,7 +264,7 @@ export function createTaskEvidence(context) {
       status: "needs-review",
     };
     if (options.ownerType === "task") body.taskId = options.ownerId;
-    if (options.ownerType === "bundle") body.bundleId = options.ownerId;
+    if (options.ownerType === "card") body.cardId = options.ownerId;
     try {
       await request(workApiUrl("/api/artifacts"), {
         method: "POST",
@@ -297,7 +297,7 @@ export function createTaskEvidence(context) {
 
   return {
     dedupeArtifacts,
-    loadArtifactsForBundle,
+    loadArtifactsForCard,
     loadArtifactsForTask,
     renderArtifactList,
     renderTaskArtifactSection,

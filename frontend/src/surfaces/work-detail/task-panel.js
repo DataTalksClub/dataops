@@ -9,7 +9,7 @@ export function createTaskPanel(context) {
     getActiveWorkspaceRoute,
     getCurrentOperator,
     hasApprovedArtifactEvidence,
-    isArchivedWorkBundle,
+    isArchivedWorkCard,
     isWorkspaceRouteFresh,
     labelizeWorkValue,
     loadArtifactsForTask,
@@ -44,24 +44,24 @@ export function createTaskPanel(context) {
       params.set("taskId", taskId);
       return { path: "/tasks", params };
     }
-    if (detail.activeBundlePanelId) {
+    if (detail.activeCardPanelId) {
       const path =
         getActiveWorkspaceRoute()?.path === "/cards/archive"
           ? "/cards/archive"
           : "/cards";
-      return { path, params: { cardId: detail.activeBundlePanelId, taskId } };
+      return { path, params: { cardId: detail.activeCardPanelId, taskId } };
     }
     return { path: "/tasks", params: { taskId } };
   }
 
   function openTaskPanel(taskId, options = {}) {
     let target = taskRouteParams(taskId);
-    if (options.preserveBundle && options.expectedBundleId) {
-      const expected = state.workSnapshot.bundlesById?.get(
-        options.expectedBundleId,
+    if (options.preserveCard && options.expectedCardId) {
+      const expected = state.workSnapshot.cardsById?.get(
+        options.expectedCardId,
       );
-      const path = isArchivedWorkBundle(expected) ? "/cards/archive" : "/cards";
-      target = { path, params: { cardId: options.expectedBundleId, taskId } };
+      const path = isArchivedWorkCard(expected) ? "/cards/archive" : "/cards";
+      target = { path, params: { cardId: options.expectedCardId, taskId } };
     }
     return navigateCanonicalWorkspace(target.path, target.params).ready;
   }
@@ -76,9 +76,9 @@ export function createTaskPanel(context) {
       const fetched =
         payload && typeof payload === "object" && payload.id ? payload : null;
       if (
-        options.expectedBundleId &&
+        options.expectedCardId &&
         fetched &&
-        fetched.bundleId !== options.expectedBundleId
+        fetched.cardId !== options.expectedCardId
       ) {
         detail.activeTaskPanelTask = null;
         detail.activeTaskPanelArtifacts = [];
@@ -86,7 +86,7 @@ export function createTaskPanel(context) {
           kind: "task/card",
           id: taskId,
           status: "mismatch",
-          error: `Task belongs to card ${fetched.bundleId || "none"}, not ${options.expectedBundleId}.`,
+          error: `Task belongs to card ${fetched.cardId || "none"}, not ${options.expectedCardId}.`,
           retry: () =>
             navigateCanonicalWorkspace(
               getActiveWorkspaceRoute().path,
@@ -146,11 +146,11 @@ export function createTaskPanel(context) {
       detail.taskRouteContext.date
         ? `Queue date ${detail.taskRouteContext.date}`
         : "",
-      detail.taskRouteContext.bundleId
-        ? `Filtered to card ${detail.taskRouteContext.filterBundle?.title || detail.taskRouteContext.bundleId}`
+      detail.taskRouteContext.cardId
+        ? `Filtered to card ${detail.taskRouteContext.filterCard?.title || detail.taskRouteContext.cardId}`
         : "",
-      detail.taskRouteContext.contextBundleId
-        ? `Return to ${detail.taskRouteContext.contextBundle?.title || detail.taskRouteContext.contextBundleId}`
+      detail.taskRouteContext.contextCardId
+        ? `Return to ${detail.taskRouteContext.contextCard?.title || detail.taskRouteContext.contextCardId}`
         : "",
     ].filter(Boolean);
     if (routeContextParts.length > 0) {
@@ -194,16 +194,16 @@ export function createTaskPanel(context) {
       );
       meta.append(dateRow);
     }
-    if (task.bundleId) {
-      const bundleRow = document.createElement("div");
-      bundleRow.append(document.createTextNode("Card "));
+    if (task.cardId) {
+      const cardRow = document.createElement("div");
+      cardRow.append(document.createTextNode("Card "));
       const link = document.createElement("button");
       link.type = "button";
       link.className = "task-instruction-doc-link";
-      link.textContent = resolveBundleLabel(task.bundleId);
+      link.textContent = resolveCardLabel(task.cardId);
       link.addEventListener("click", () => navigateTaskToWorkflow(task));
-      bundleRow.append(link);
-      meta.append(bundleRow);
+      cardRow.append(link);
+      meta.append(cardRow);
     }
     if (task.assigneeId) {
       const assigneeRow = document.createElement("div");
@@ -530,22 +530,22 @@ export function createTaskPanel(context) {
     return strong;
   }
 
-  // Resolve bundle/user ids to human-readable labels for the task detail meta
-  // rows. Exact route-owned bundle responses take precedence over the coarse
+  // Resolve card/user ids to human-readable labels for the task detail meta
+  // rows. Exact route-owned card responses take precedence over the coarse
   // work snapshot, which can still be hydrating on a fresh deep link. The route
-  // context and active bundle data are both token-guarded before assignment.
+  // context and active card data are both token-guarded before assignment.
 
-  function resolveBundleLabel(bundleId) {
-    if (!bundleId) return "Open card";
-    const exactBundles = [
-      detail.taskRouteContext.filterBundle,
-      detail.taskRouteContext.contextBundle,
-      detail.activeBundlePanelData?.bundle,
+  function resolveCardLabel(cardId) {
+    if (!cardId) return "Open card";
+    const exactCards = [
+      detail.taskRouteContext.filterCard,
+      detail.taskRouteContext.contextCard,
+      detail.activeCardPanelData?.card,
     ];
-    const exact = exactBundles.find((candidate) => candidate?.id === bundleId);
+    const exact = exactCards.find((candidate) => candidate?.id === cardId);
     if (exact?.title) return exact.title;
-    const bundle = state.workSnapshot.bundlesById?.get(bundleId);
-    if (bundle && bundle.title) return bundle.title;
+    const card = state.workSnapshot.cardsById?.get(cardId);
+    if (card && card.title) return card.title;
     return "Open card";
   }
 
@@ -570,6 +570,6 @@ export function createTaskPanel(context) {
     openTaskPanel,
     renderTaskPanel,
     resolveAssigneeLabel,
-    resolveBundleLabel,
+    resolveCardLabel,
   };
 }

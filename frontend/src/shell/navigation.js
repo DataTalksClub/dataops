@@ -16,7 +16,7 @@ export function createNavigationShell(context) {
     getTasksSectionForLegacyView,
     historyRef,
     HTMLElementClass,
-    hydrateBundlePanel,
+    hydrateCardPanel,
     hydrateTaskPanel,
     libraryTitle,
     locationRef,
@@ -24,7 +24,7 @@ export function createNavigationShell(context) {
     openWorkBellPanel,
     operationsViewTitle,
     parseWorkspaceHash,
-    prepareBundlePanel,
+    prepareCardPanel,
     prepareTaskPanel,
     refreshDocuments,
     refreshOperationsArtifactSnapshot,
@@ -33,7 +33,7 @@ export function createNavigationShell(context) {
     refreshWorkBell,
     renderWorkspaceNav,
     requestAnimationFrameImpl,
-    resetBundlePanel,
+    resetCardPanel,
     resetTaskPanel,
     resolveIntakeRouteEntity,
     resolveTaskQueueRouteContext,
@@ -84,7 +84,7 @@ export function createNavigationShell(context) {
     activeRouteToken += 1;
     activeRoute = null;
     resetTaskPanel();
-    resetBundlePanel();
+    resetCardPanel();
     closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
   }
 
@@ -117,13 +117,13 @@ export function createNavigationShell(context) {
       restoreFocus.kind === "workflow"
         ? [
             ...documentRef.querySelectorAll(
-              ".ops-workflow-card[data-bundle-id]",
+              ".ops-workflow-card[data-card-id]",
             ),
           ]
         : restoreFocus.surface === "workflows"
           ? [
               ...documentRef.querySelectorAll(
-                ".bundle-checklist-label[data-task-id]",
+                ".card-checklist-label[data-task-id]",
               ),
             ]
           : [
@@ -131,7 +131,7 @@ export function createNavigationShell(context) {
                 ".ops-queue-row[data-task-id]",
               ),
             ];
-    const dataKey = restoreFocus.kind === "workflow" ? "bundleId" : "taskId";
+    const dataKey = restoreFocus.kind === "workflow" ? "cardId" : "taskId";
     return (
       candidates.find(
         (candidate) =>
@@ -173,7 +173,7 @@ export function createNavigationShell(context) {
     setRuntimeTemplateRoute(route, options.entity);
     setTaskRouteContextFromRoute(route);
     resetTaskPanel();
-    resetBundlePanel();
+    resetCardPanel();
     closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
     closeSettingsMenu();
 
@@ -206,11 +206,11 @@ export function createNavigationShell(context) {
     refreshDocuments();
     closeSidebar();
 
-    const bundleId = ["/cards", "/cards/archive"].includes(route.path)
+    const cardId = ["/cards", "/cards/archive"].includes(route.path)
       ? route.params.get("cardId")
       : "";
     const taskId = route.params.get("taskId");
-    if (bundleId) prepareBundlePanel(bundleId);
+    if (cardId) prepareCardPanel(cardId);
     if (taskId) prepareTaskPanel(taskId);
     if (route.path === "/notifications") openWorkBellPanel();
   }
@@ -236,15 +236,15 @@ export function createNavigationShell(context) {
     if (route.path === "/users") {
       jobs.push(refreshUsersSurface({ rerender: true }));
     }
-    const bundleId = ["/cards", "/cards/archive"].includes(route.path)
+    const cardId = ["/cards", "/cards/archive"].includes(route.path)
       ? route.params.get("cardId")
       : "";
     const taskId = route.params.get("taskId");
-    if (bundleId) jobs.push(hydrateBundlePanel(bundleId, token));
+    if (cardId) jobs.push(hydrateCardPanel(cardId, token));
     if (taskId) {
       jobs.push(
         hydrateTaskPanel(taskId, token, {
-          expectedBundleId: bundleId || "",
+          expectedCardId: cardId || "",
         }),
       );
     }

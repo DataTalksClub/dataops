@@ -11,13 +11,13 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.locator('[data-workspace-view="home"]')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[data-workspace-view="inbox"]')).toBeVisible();
 
-    await page.goto('/#/bundles');
+    await page.goto('/#/cards');
     await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/recurring');
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Templates');
-    await expect(page.locator('[data-tasks-section="templates"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('#library-title')).toHaveText('Tasks - Recurring');
+    await expect(page.locator('[data-tasks-section="recurring"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/notifications');
     await expect(page.locator('#work-bell-panel')).toBeVisible();
@@ -28,20 +28,20 @@ test.describe('canonical DataOps frontend', () => {
 
   test('opens task and workflow entity deep links in canonical panels', async ({ page, request }) => {
     const id = suffix();
-    const bundleResponse = await request.post('/api/bundles', {
+    const cardResponse = await request.post('/api/cards', {
       data: { title: `Canonical workflow ${id}`, anchorDate: '2026-08-11' },
     });
-    expect(bundleResponse.status()).toBe(201);
-    const bundle = (await bundleResponse.json()).bundle;
+    expect(cardResponse.status()).toBe(201);
+    const card = (await cardResponse.json()).card;
     const taskResponse = await request.post('/api/tasks', {
-      data: { description: `Canonical task ${id}`, date: '2026-08-11', bundleId: bundle.id },
+      data: { description: `Canonical task ${id}`, date: '2026-08-11', cardId: card.id },
     });
     expect(taskResponse.status()).toBe(201);
     const task = await taskResponse.json();
 
-    await page.goto(`/#/bundles?bundleId=${bundle.id}`);
-    await expect(page.locator('#bundle-panel')).toBeVisible();
-    await expect(page.locator('#bundle-panel-title')).toContainText(`Canonical workflow ${id}`);
+    await page.goto(`/#/cards?cardId=${card.id}`);
+    await expect(page.locator('#card-panel')).toBeVisible();
+    await expect(page.locator('#card-panel-title')).toContainText(`Canonical workflow ${id}`);
 
     await page.goto(`/#/tasks?taskId=${task.id}`);
     await expect(page.locator('#task-panel')).toBeVisible();
@@ -73,16 +73,16 @@ test.describe('canonical DataOps frontend', () => {
 
   test('runs and reviews an assistant job from the canonical lifecycle UI', async ({ page, request }) => {
     const id = suffix();
-    const bundleResponse = await request.post('/api/bundles', {
+    const cardResponse = await request.post('/api/cards', {
       data: { title: `Assistant workflow ${id}`, anchorDate: '2026-08-11' },
     });
-    const bundle = (await bundleResponse.json()).bundle;
+    const card = (await cardResponse.json()).card;
     const jobResponse = await request.post('/api/assistant-jobs', {
       data: {
         assistantType: 'podcast',
         title: `Canonical assistant ${id}`,
-        bundleId: bundle.id,
-        inputRefs: [{ type: 'bundle', id: bundle.id }],
+        cardId: card.id,
+        inputRefs: [{ type: 'card', id: card.id }],
         approvalRequired: true,
         maxAttempts: 2,
       },

@@ -171,7 +171,7 @@ export function createTaskActions(context) {
     }
   }
 
-  // ---------- Bundle (workflow) detail panel ----------
+  // ---------- Card (workflow) detail panel ----------
 
   return {
     createTaskActionButton,

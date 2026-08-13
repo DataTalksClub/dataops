@@ -18,7 +18,6 @@ export function createTemplatesSurface(context) {
     referenceCountLabel,
     renderEntityLoadState,
     renderHonestState,
-    renderRecurringOperationsSection,
     renderTasksSurface,
     renderWorkflowTemplateCard,
     request,
@@ -41,7 +40,7 @@ export function createTemplatesSurface(context) {
     conflict: null,
   };
   const {
-    renderRuntimeBundleLink,
+    renderRuntimeCardLink,
     renderRuntimeCollection,
     renderRuntimeLineList,
     renderRuntimeMetadataFields,
@@ -56,7 +55,7 @@ export function createTemplatesSurface(context) {
     runtimeError,
   });
 
-  function renderTemplatesRecurringSurface(model) {
+  function renderTemplatesSurface(model) {
     const section = document.createElement("section");
     section.className = "ops-split-surface";
     section.append(renderRuntimeTemplateAdmin());
@@ -87,10 +86,7 @@ export function createTemplatesSurface(context) {
         ),
       );
     templates.append(grid);
-    support.append(
-      templates,
-      renderRecurringOperationsSection(model.recurring),
-    );
+    support.append(templates);
     section.append(support);
     return section;
   }
@@ -104,7 +100,7 @@ export function createTemplatesSurface(context) {
     "phases",
     "sourceDocIds",
     "references",
-    "bundleLinkDefinitions",
+    "cardLinkDefinitions",
     "triggerType",
     "triggerSchedule",
     "triggerLeadDays",
@@ -123,8 +119,8 @@ export function createTemplatesSurface(context) {
       phases: structuredClone(editable.phases || []),
       sourceDocIds: [...(editable.sourceDocIds || [])],
       references: structuredClone(editable.references || []),
-      bundleLinkDefinitions: structuredClone(
-        editable.bundleLinkDefinitions || [],
+      cardLinkDefinitions: structuredClone(
+        editable.cardLinkDefinitions || [],
       ),
       triggerType: editable.triggerType || "manual",
       triggerSchedule: editable.triggerSchedule || "",
@@ -532,7 +528,7 @@ export function createTemplatesSurface(context) {
         ...(selected.references || []).map(
           (reference) => reference.name || reference.url,
         ),
-        ...(selected.bundleLinkDefinitions || []).map((link) => link.name),
+        ...(selected.cardLinkDefinitions || []).map((link) => link.name),
       ]
         .filter(Boolean)
         .join(" · ") || "None configured";
@@ -642,11 +638,11 @@ export function createTemplatesSurface(context) {
     );
     form.append(
       renderRuntimeCollection(
-        "Bundle links",
-        "bundleLinkDefinitions",
-        value.bundleLinkDefinitions,
+        "Card links",
+        "cardLinkDefinitions",
+        value.cardLinkDefinitions,
         () => ({ name: "New link" }),
-        renderRuntimeBundleLink,
+        renderRuntimeCardLink,
       ),
     );
     form.append(renderRuntimeTasks(value));
@@ -927,7 +923,7 @@ export function createTemplatesSurface(context) {
     confirmLeaveRuntimeDraft,
     getRuntimeTemplateState: () => runtimeState,
     refreshRuntimeTemplates,
-    renderTemplatesRecurringSurface,
+    renderTemplatesSurface,
     resolveTemplateRouteEntity,
     setRuntimeTemplateRoute,
   };

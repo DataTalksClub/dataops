@@ -2,24 +2,29 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import {
+  cardAnchorTone,
   cardsHeaderViewModel,
   compareIsoDate,
+  describeRecurringRun,
+  formatCardAnchorLabel,
   formatTaskDateMeta,
+  groupCardItemsByMonth,
   groupCardItemsByStage,
-  isArchivedWorkBundle,
+  isArchivedWorkCard,
   isFollowUpDueTask,
   isOpenWorkTask,
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
-  summarizeBundleProgress,
+  summarizeCardProgress,
   taskDate,
   taskProofState,
   tasksFromWorkPayload,
   tasksSectionTitle,
-  workBundleTitle,
+  workCardTitle,
   workTaskTitle,
 } from "../src/core/workspace.js";
+import { createOperationsModel } from "../src/core/operations-model.js";
 import { createTasksSurface } from "../src/surfaces/tasks/index.js";
 import {
   FakeDocument,
@@ -59,12 +64,23 @@ function honestState(title, detail) {
   return state;
 }
 
+const { normalizeOperationsRecurringSnapshot } = createOperationsModel({});
+
+// Surfaces read the normalized recurring snapshot, so fixtures build it the
+// same way the runtime does instead of hand-rolling derived fields.
+function recurringSnapshot(configs) {
+  return normalizeOperationsRecurringSnapshot({
+    loaded: true,
+    recurringConfigs: configs,
+  });
+}
+
 function baseModel(overrides = {}) {
   return {
     stats: {
       followUpTasks: 0,
       missingProofTasks: 0,
-      activeBundles: 0,
+      activeCards: 0,
     },
     runtime: null,
     templates: [],
@@ -101,10 +117,10 @@ function createHarness(options = {}) {
   let taskRouteContext = options.taskRouteContext || {
     date: "",
     tasks: null,
-    bundleId: "",
-    filterBundle: null,
-    contextBundleId: "",
-    contextBundle: null,
+    cardId: "",
+    filterCard: null,
+    contextCardId: "",
+    contextCard: null,
     failures: [],
   };
   let model = options.model || baseModel();
@@ -114,10 +130,10 @@ function createHarness(options = {}) {
       todayLoaded: true,
       overdueLoaded: true,
       waitingLoaded: true,
-      bundlesLoaded: true,
-      bundles: [],
-      activeBundles: [],
-      bundleTasks: {},
+      cardsLoaded: true,
+      cards: [],
+      activeCards: [],
+      cardTasks: {},
       ...(options.workSnapshot || {}),
     },
     recurringSnapshot: {},
@@ -126,7 +142,7 @@ function createHarness(options = {}) {
   let api;
   const refreshRecurring = async ({ rerender } = {}) => {
     if (options.refreshRecurring) await options.refreshRecurring();
-    if (rerender && api) api.renderTasksSurface([], "templates");
+    if (rerender && api) api.renderTasksSurface([], "recurring");
   };
   api = createTasksSurface({
     addBeforeUnloadListener() {},
@@ -138,6 +154,7 @@ function createHarness(options = {}) {
     confirmDialog: options.confirmDialog || (async () => true),
     countLabel,
     debounce: (callback) => callback,
+    describeRecurringRun,
     documentList,
     escapeHtml,
     formatTaskDateMeta,
@@ -148,8 +165,9 @@ function createHarness(options = {}) {
     getPendingLegacyRoute: () => null,
     getTaskRouteContext: () => taskRouteContext,
     getWorkspaceEntityState: () => entityStates.at(-1) || null,
+    groupCardItemsByMonth,
     groupCardItemsByStage,
-    isArchivedWorkBundle,
+    isArchivedWorkCard,
     isFollowUpDueTask,
     isOpenWorkTask,
     isOperationsHomeVisible: () => true,
@@ -163,17 +181,23 @@ function createHarness(options = {}) {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
     },
-    openBundlePanel: (id) => openedCards.push(id),
+    openCardPanel: (id) => openedCards.push(id),
     openDocument() {},
     openTaskPanel: (id) => openedTasks.push(id),
-    operationItemFromBundle: (bundle, tasks) => ({
-      bundleId: bundle.id,
-      title: bundle.title,
-      stage: bundle.stage,
-      risk: "low",
-      meta: `${tasks.length} tasks`,
-      progress: { percent: 50 },
-    }),
+    operationItemFromCard: (card, tasks) => {
+      const progress = summarizeCardProgress(card, tasks, "2026-08-12");
+      return {
+        cardId: card.id,
+        title: card.title,
+        stage: card.stage,
+        risk: progress.risk,
+        meta: progress.label,
+        anchorDate: card.anchorDate || "",
+        anchorLabel: formatCardAnchorLabel(card.anchorDate, "2026-08-12"),
+        anchorTone: cardAnchorTone(card.anchorDate, "2026-08-12"),
+        progress,
+      };
+    },
     referenceCountLabel: (name, count) => `${count} ${name}`,
     refreshDocuments: async () => {},
     refreshOperationsRecurringSnapshot: refreshRecurring,
@@ -211,7 +235,7 @@ function createHarness(options = {}) {
     sortWorkTasks: (tasks) => tasks,
     state,
     surfaceDescription: (section) => `${section} surface`,
-    summarizeBundleProgress,
+    summarizeCardProgress,
     taskDate,
     taskNextActionLabel: () => "Continue work",
     taskProofState,
@@ -220,7 +244,7 @@ function createHarness(options = {}) {
     tasksSectionTitle,
     todayIsoDate: () => "2026-08-12",
     workApiUrl: (path) => path,
-    workBundleTitle,
+    workCardTitle,
     workTaskTitle,
   });
 
@@ -295,13 +319,13 @@ describe("Tasks surface boundary", () => {
       taskRouteContext: {
         date: "2026-08-12",
         tasks,
-        bundleId: "missing-card",
-        filterBundle: null,
-        contextBundleId: "",
-        contextBundle: null,
+        cardId: "missing-card",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
         failures: [
           {
-            source: "filter-bundle",
+            source: "filter-card",
             status: "not-found",
             id: "missing-card",
             error: "Not found",
@@ -362,9 +386,9 @@ describe("Tasks surface boundary", () => {
     const { api, documentList, setRoute, state } = createHarness({
       route: { path: "/cards", params: new URLSearchParams() },
       workSnapshot: {
-        activeBundles: active,
-        bundles: [...active, archived],
-        bundleTasks: {
+        activeCards: active,
+        cards: [...active, archived],
+        cardTasks: {
           prep: [],
           announced: [],
           "after-event": [],
@@ -393,7 +417,120 @@ describe("Tasks surface boundary", () => {
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 1);
     assert.match(documentList.textContent, /Completed/);
     assert.match(documentList.textContent, /Back to board/);
-    assert.equal(state.workSnapshot.activeBundles.length, 3);
+    assert.equal(state.workSnapshot.activeCards.length, 3);
+  });
+
+  test("groups the archive into newest-first months", () => {
+    const archived = [
+      { id: "old", title: "July card", status: "done", anchorDate: "2026-07-04" },
+      { id: "recent", title: "August card", status: "done", anchorDate: "2026-08-02" },
+      { id: "undated", title: "Undated card", status: "done" },
+    ];
+    const { api, documentList } = createHarness({
+      route: { path: "/cards/archive", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: [],
+        cards: archived,
+        cardTasks: { old: [], recent: [], undated: [] },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const months = findAllByClass(documentList, "cards-archive-month-title");
+    assert.deepEqual(
+      months.map((month) => month.textContent),
+      ["August 20261 card", "July 20261 card", "No date1 card"],
+    );
+    assert.deepEqual(
+      findAllByClass(documentList, "workflow-board-card").map(
+        (card) => card.dataset.cardId,
+      ),
+      ["recent", "old", "undated"],
+    );
+    assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 3);
+  });
+
+  test("shows the anchor date on each card and orders columns by anchor", () => {
+    const active = [
+      { id: "late", title: "Late", stage: "preparation", anchorDate: "2026-09-01" },
+      { id: "undated", title: "Undated", stage: "preparation" },
+      { id: "soon", title: "Soon", stage: "preparation", anchorDate: "2026-08-13" },
+    ];
+    const { api, documentList } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: { late: [], undated: [], soon: [] },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const cards = findAllByClass(documentList, "workflow-board-card");
+    assert.deepEqual(
+      cards.map((card) => card.dataset.cardId),
+      ["soon", "late", "undated"],
+    );
+    const anchors = findAllByClass(documentList, "workflow-card-anchor");
+    assert.deepEqual(
+      anchors.map((anchor) => anchor.dataset.anchorDate),
+      ["2026-08-13", "2026-09-01"],
+    );
+    assert.deepEqual(
+      anchors.map((anchor) => anchor.textContent),
+      ["Tomorrow", "1 Sept"],
+    );
+    assert.deepEqual(
+      anchors.map((anchor) => anchor.className),
+      ["workflow-card-anchor is-upcoming", "workflow-card-anchor is-upcoming"],
+    );
+  });
+
+  test("summarizes card progress as a count and severity flags instead of one meta line", () => {
+    const active = [
+      { id: "risky", title: "Risky", stage: "preparation", anchorDate: "2026-08-10" },
+    ];
+    const { api, documentList } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: active,
+        cards: active,
+        cardTasks: {
+          risky: [
+            { id: "a", description: "Done", status: "done", date: "2026-08-01" },
+            { id: "b", description: "Late", status: "todo", date: "2026-08-05", requiresFile: true },
+            { id: "c", description: "Waiting", status: "waiting", waitingFor: "reply" },
+          ],
+        },
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    const [card] = findAllByClass(documentList, "workflow-board-card");
+    assert.equal(card.className.includes("ops-risk-high"), true);
+    assert.equal(
+      findAllByClass(card, "workflow-card-anchor")[0].className,
+      "workflow-card-anchor is-past",
+    );
+    assert.equal(
+      findAllByClass(card, "workflow-card-count")[0].textContent,
+      "1/3 tasks",
+    );
+    assert.deepEqual(
+      findAllByClass(card, "workflow-card-flag").map((flag) => [
+        flag.className,
+        flag.textContent,
+      ]),
+      [
+        ["workflow-card-flag is-danger", "1 overdue"],
+        ["workflow-card-flag is-info", "1 waiting"],
+        ["workflow-card-flag is-warning", "1 missing proof"],
+      ],
+    );
+    assert.equal(
+      card.title,
+      "1/3 tasks - 1 overdue - 1 waiting - 1 missing file - 1 missing proof",
+    );
   });
 
   test("restores Template route state for found, list, and not-found entities", async () => {
@@ -454,7 +591,7 @@ describe("Tasks surface boundary", () => {
       phases: [],
       sourceDocIds: [],
       references: [],
-      bundleLinkDefinitions: [],
+      cardLinkDefinitions: [],
       taskDefinitions: [
         { refId: "draft", description: "Draft", offsetDays: 0 },
       ],
@@ -544,20 +681,14 @@ describe("Tasks surface boundary", () => {
   });
 
   test("renders Recurring empty/list states and maps pause plus protected-delete guidance", async () => {
-    const recurring = {
-      loaded: true,
-      configs: [
-        {
-          id: "recurring-1",
-          description: "Weekly newsletter",
-          cronExpression: "0 9 * * 1",
-          enabled: true,
-        },
-      ],
-      enabled: [{ id: "recurring-1" }],
-      disabled: [],
-      errors: [],
-    };
+    const recurring = recurringSnapshot([
+      {
+        id: "recurring-1",
+        description: "Weekly newsletter",
+        cronExpression: "0 9 * * 1",
+        enabled: true,
+      },
+    ]);
     const calls = [];
     const harness = createHarness({
       model: baseModel({ recurring }),
@@ -576,18 +707,16 @@ describe("Tasks surface boundary", () => {
         throw new Error(`Unexpected request ${url}`);
       },
     });
-    harness.api.renderTasksSurface([], "templates");
-    assert.match(harness.documentList.textContent, /1 enabled - 0 paused/);
-    assert.match(harness.documentList.textContent, /Weekly on Monday at 09:00/);
+    harness.api.renderTasksSurface([], "recurring");
+    assert.match(harness.documentList.textContent, /Active1/);
+    assert.match(harness.documentList.textContent, /Paused0/);
+    assert.match(harness.documentList.textContent, /Every Monday at 09:00/);
+    assert.match(harness.documentList.textContent, /Next /);
 
     await findByText(harness.documentList, "Pause", "button").dispatch("click");
     assert.deepEqual(JSON.parse(calls.at(-1).options.body), { enabled: false });
 
-    await findByText(
-      harness.documentList,
-      "Delete schedule",
-      "button",
-    ).dispatch("click");
+    await findByText(harness.documentList, "Delete", "button").dispatch("click");
     await nextTicks();
     assert.equal(calls.at(-1).options.method, "DELETE");
     assert.match(
@@ -596,8 +725,82 @@ describe("Tasks surface boundary", () => {
     );
 
     harness.setModel(baseModel());
-    harness.api.renderTasksSurface([], "templates");
+    harness.api.renderTasksSurface([], "recurring");
     assert.match(harness.documentList.textContent, /No recurring configs yet/);
+  });
+
+  test("creates and edits recurring schedules from the Recurring tab", async () => {
+    const config = {
+      id: "recurring-1",
+      description: "Weekly newsletter",
+      cronExpression: "0 9 * * 1",
+      assigneeId: "user-grace",
+      enabled: true,
+    };
+    const harness = createHarness({
+      model: baseModel({ recurring: recurringSnapshot([config]) }),
+      workSnapshot: {
+        users: [
+          { id: "user-grace", name: "Grace" },
+          { id: "user-sam", name: "Sam" },
+        ],
+      },
+    });
+    harness.api.renderTasksSurface([], "recurring");
+
+    await findByText(harness.documentList, "New schedule", "button").dispatch(
+      "click",
+    );
+    const createOverlay = findAllByClass(
+      harness.shellBody,
+      "quick-form-overlay",
+    )[0];
+    const createInputs = createOverlay.querySelectorAll("input");
+    createInputs[0].value = "Daily standup";
+    const createSelects = createOverlay.querySelectorAll("select");
+    const assigneeSelect = createSelects.at(-1);
+    assert.deepEqual(
+      assigneeSelect.querySelectorAll("option").map((o) => o.textContent),
+      ["Unassigned", "Grace", "Sam"],
+    );
+    assigneeSelect.value = "user-sam";
+    await findByText(createOverlay, "Create schedule", "button").dispatch(
+      "click",
+    );
+    await nextTicks();
+    assert.equal(harness.requests.at(-1).url, "/api/recurring");
+    assert.equal(harness.requests.at(-1).options.method, "POST");
+    assert.deepEqual(JSON.parse(harness.requests.at(-1).options.body), {
+      description: "Daily standup",
+      cronExpression: "0 9 * * *",
+      enabled: true,
+      assigneeId: "user-sam",
+    });
+
+    harness.api.renderTasksSurface([], "recurring");
+    await findByText(harness.documentList, "Edit", "button").dispatch("click");
+    const editOverlay = findAllByClass(
+      harness.shellBody,
+      "quick-form-overlay",
+    ).at(-1);
+    const editInputs = editOverlay.querySelectorAll("input");
+    assert.equal(editInputs[0].value, "Weekly newsletter");
+    const editSelects = editOverlay.querySelectorAll("select");
+    assert.equal(editSelects[0].value, "weekly");
+    assert.equal(editSelects[1].value, "1");
+    assert.equal(editSelects.at(-1).value, "user-grace");
+    assert.match(editOverlay.textContent, /Every Monday at 09:00/);
+    editInputs[0].value = "Weekly newsletter prep";
+    await findByText(editOverlay, "Save schedule", "button").dispatch("click");
+    await nextTicks();
+    assert.equal(harness.requests.at(-1).url, "/api/recurring/recurring-1");
+    assert.equal(harness.requests.at(-1).options.method, "PUT");
+    assert.deepEqual(JSON.parse(harness.requests.at(-1).options.body), {
+      description: "Weekly newsletter prep",
+      cronExpression: "0 9 * * 1",
+      enabled: true,
+      assigneeId: "user-grace",
+    });
   });
 
   test("validates and creates quick Tasks with the canonical mutation shape", async () => {
@@ -634,7 +837,7 @@ describe("Tasks surface boundary", () => {
         calls.push({ url, options });
         if (url === "/api/templates")
           return { templates: [{ id: "template-uuid", name: "Newsletter" }] };
-        if (url === "/api/bundles") return { bundle: { id: "card-created" } };
+        if (url === "/api/cards") return { card: { id: "card-created" } };
         throw new Error(`Unexpected request ${url}`);
       },
     });
@@ -643,7 +846,7 @@ describe("Tasks surface boundary", () => {
     const create = findByText(overlay, "Create card", "button");
     await create.dispatch("click");
     assert.deepEqual(harness.errors, ["Select a template."]);
-    assert.equal(calls.filter(({ url }) => url === "/api/bundles").length, 0);
+    assert.equal(calls.filter(({ url }) => url === "/api/cards").length, 0);
 
     const select = overlay.querySelector("select");
     select.value = "template-uuid";
@@ -652,7 +855,7 @@ describe("Tasks surface boundary", () => {
     inputs.find((input) => input.type === "date").value = "2026-08-20";
     await create.dispatch("click");
     await nextTicks();
-    const mutation = calls.find(({ url }) => url === "/api/bundles");
+    const mutation = calls.find(({ url }) => url === "/api/cards");
     assert.equal(mutation.options.method, "POST");
     assert.deepEqual(JSON.parse(mutation.options.body), {
       templateId: "template-uuid",

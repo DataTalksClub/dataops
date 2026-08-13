@@ -1,10 +1,10 @@
 export function createRouteState(context) {
   const {
     body,
-    bundlePanel,
-    bundlePanelBody,
-    bundlePanelClose,
-    bundlePanelTitle,
+    cardPanel,
+    cardPanelBody,
+    cardPanelClose,
+    cardPanelTitle,
     detail,
     FOCUSABLE_SELECTOR,
     getActiveTasksSection,
@@ -14,7 +14,7 @@ export function createRouteState(context) {
     isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
     parseWorkspaceHash,
-    renderBundlePanel,
+    renderCardPanel,
     renderEntityLoadingState,
     renderTaskPanel,
     renderTasksSurface,
@@ -63,14 +63,14 @@ export function createRouteState(context) {
     if (event.defaultPrevented) return;
     const activePanel = !taskPanel.hidden
       ? taskPanel.querySelector(".task-modal-panel")
-      : !bundlePanel.hidden
-        ? bundlePanel.querySelector(".workflow-modal-panel")
+      : !cardPanel.hidden
+        ? cardPanel.querySelector(".workflow-modal-panel")
         : null;
     if (!activePanel) return;
     if (event.key === "Escape") {
       event.preventDefault();
       if (!taskPanel.hidden) closeTaskPanel();
-      else closeBundlePanel();
+      else closeCardPanel();
       return;
     }
     if (event.key !== "Tab") return;
@@ -93,7 +93,7 @@ export function createRouteState(context) {
     }
   }
 
-  function closeBundlePanel(options = {}) {
+  function closeCardPanel(options = {}) {
     const route = parseWorkspaceHash();
     if (
       options.updateUrl === false ||
@@ -101,7 +101,7 @@ export function createRouteState(context) {
       route.invalid ||
       !["/cards", "/cards/archive"].includes(route.path)
     ) {
-      resetBundlePanel();
+      resetCardPanel();
       return;
     }
     return navigateCanonicalWorkspace(
@@ -119,14 +119,14 @@ export function createRouteState(context) {
 
   function emptyTaskRouteContext(route = null) {
     const date = route?.params.get("date") || "";
-    const bundleId = route?.params.get("bundleId") || "";
+    const cardId = route?.params.get("cardId") || "";
     return {
       date,
-      bundleId,
-      contextBundleId: route?.params.get("contextBundleId") || "",
-      tasks: date || bundleId ? [] : null,
-      filterBundle: null,
-      contextBundle: null,
+      cardId,
+      contextCardId: route?.params.get("contextCardId") || "",
+      tasks: date || cardId ? [] : null,
+      filterCard: null,
+      contextCard: null,
       failures: [],
     };
   }
@@ -136,19 +136,19 @@ export function createRouteState(context) {
     detail.activeTaskPanelTask = null;
     detail.activeTaskPanelArtifacts = [];
     taskPanel.hidden = true;
-    if (!bundlePanel.hidden) {
-      bundlePanel.inert = false;
-      bundlePanel.removeAttribute("aria-hidden");
+    if (!cardPanel.hidden) {
+      cardPanel.inert = false;
+      cardPanel.removeAttribute("aria-hidden");
       body.classList.add("task-panel-open", "task-modal-open");
     } else {
       body.classList.remove("task-panel-open", "task-modal-open");
     }
   }
 
-  function resetBundlePanel() {
-    detail.activeBundlePanelId = null;
-    detail.activeBundlePanelData = null;
-    bundlePanel.hidden = true;
+  function resetCardPanel() {
+    detail.activeCardPanelId = null;
+    detail.activeCardPanelData = null;
+    cardPanel.hidden = true;
     body.classList.remove("task-panel-open");
     body.classList.remove("task-modal-open");
   }
@@ -162,57 +162,57 @@ export function createRouteState(context) {
     taskPanelBody.replaceChildren();
     taskPanel.hidden = false;
     body.classList.add("task-panel-open", "task-modal-open");
-    if (!bundlePanel.hidden) {
-      bundlePanel.inert = true;
-      bundlePanel.setAttribute("aria-hidden", "true");
+    if (!cardPanel.hidden) {
+      cardPanel.inert = true;
+      cardPanel.setAttribute("aria-hidden", "true");
     }
     renderEntityLoadingState(taskPanelBody, "task", taskId);
     taskPanelClose.focus();
   }
 
-  function prepareBundlePanel(bundleId) {
-    if (!bundleId) return;
-    detail.activeBundlePanelId = bundleId;
-    detail.activeBundlePanelData = null;
-    bundlePanelTitle.textContent = "Loading card...";
-    bundlePanelBody.replaceChildren();
-    bundlePanel.inert = false;
-    bundlePanel.removeAttribute("aria-hidden");
-    bundlePanel.hidden = false;
+  function prepareCardPanel(cardId) {
+    if (!cardId) return;
+    detail.activeCardPanelId = cardId;
+    detail.activeCardPanelData = null;
+    cardPanelTitle.textContent = "Loading card...";
+    cardPanelBody.replaceChildren();
+    cardPanel.inert = false;
+    cardPanel.removeAttribute("aria-hidden");
+    cardPanel.hidden = false;
     body.classList.add("task-panel-open", "task-modal-open");
-    renderEntityLoadingState(bundlePanelBody, "card", bundleId);
-    bundlePanelClose.focus();
+    renderEntityLoadingState(cardPanelBody, "card", cardId);
+    cardPanelClose.focus();
   }
 
   async function resolveTaskQueueRouteContext(route, token) {
     const context = detail.taskRouteContext;
-    const { date, bundleId, contextBundleId } = context;
+    const { date, cardId, contextCardId } = context;
     const sources = [
-      bundleId
+      cardId
         ? {
-            source: "filter-bundle",
-            id: bundleId,
+            source: "filter-card",
+            id: cardId,
             load: () =>
               request(
-                workApiUrl(`/api/bundles/${encodeURIComponent(bundleId)}`),
+                workApiUrl(`/api/cards/${encodeURIComponent(cardId)}`),
               ),
           }
         : null,
-      date || bundleId
+      date || cardId
         ? {
             source: "task-query",
-            id: [date, bundleId].filter(Boolean).join(" · "),
-            load: () => request(workApiUrl("/api/tasks", { date, bundleId })),
+            id: [date, cardId].filter(Boolean).join(" · "),
+            load: () => request(workApiUrl("/api/tasks", { date, cardId })),
           }
         : null,
-      contextBundleId
+      contextCardId
         ? {
             source: "return-context",
-            id: contextBundleId,
+            id: contextCardId,
             load: () =>
               request(
                 workApiUrl(
-                  `/api/bundles/${encodeURIComponent(contextBundleId)}`,
+                  `/api/cards/${encodeURIComponent(contextCardId)}`,
                 ),
               ),
           }
@@ -234,11 +234,11 @@ export function createRouteState(context) {
         });
         return;
       }
-      if (entry.source === "filter-bundle")
-        context.filterBundle = result.value.bundle || result.value;
+      if (entry.source === "filter-card")
+        context.filterCard = result.value.card || result.value;
       else if (entry.source === "task-query")
         context.tasks = tasksFromWorkPayload(result.value);
-      else context.contextBundle = result.value.bundle || result.value;
+      else context.contextCard = result.value.card || result.value;
     });
     if (
       getActiveWorkspaceView() === "tasks" &&
@@ -250,12 +250,12 @@ export function createRouteState(context) {
   }
 
   return {
-    closeBundlePanel,
+    closeCardPanel,
     closeTaskPanel,
     handleWorkspaceEntityModalKeydown,
-    prepareBundlePanel,
+    prepareCardPanel,
     prepareTaskPanel,
-    resetBundlePanel,
+    resetCardPanel,
     resetTaskPanel,
     resolveTaskQueueRouteContext,
     setTaskRouteContextFromRoute: (route) => {

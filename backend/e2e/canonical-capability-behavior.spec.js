@@ -289,7 +289,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     const context = await portalContext(browser, servers.admin);
     await setFaults(context.request, [
       { method: 'GET', path: '/api/tasks', delayMs: 800 },
-      { method: 'GET', path: '/api/bundles', delayMs: 800 },
+      { method: 'GET', path: '/api/cards', delayMs: 800 },
     ]);
     const page = await context.newPage();
     await page.goto('/#/');
@@ -324,8 +324,8 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
       instructionDocId: 'sop.synthetic.capability',
     } });
     expect(notificationTask.status()).toBe(201);
-    const bundleTitle = unique('Synthetic home workflow');
-    expect((await context.request.post('/api/bundles', { data: { title: bundleTitle, anchorDate: '2026-08-12' } })).status()).toBe(201);
+    const cardTitle = unique('Synthetic home workflow');
+    expect((await context.request.post('/api/cards', { data: { title: cardTitle, anchorDate: '2026-08-12' } })).status()).toBe(201);
     await page.reload();
     await expect(page.locator('.ops-lane-item', { hasText: title })).toBeVisible();
     await expect(page.locator('#status-text')).toContainText('1 active workflows');
@@ -340,7 +340,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.locator('#task-panel-close').click();
     await page.goto('/#/');
 
-    await setFaults(context.request, [{ method: 'GET', path: '/api/bundles', status: 503, remaining: 10 }]);
+    await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 10 }]);
     await page.reload();
     await expect(page.getByText('Live work data is partially unavailable')).toBeVisible();
     await expect(page.locator('.ops-lane-item', { hasText: title })).toBeVisible();
@@ -380,17 +380,17 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await expect(unavailableArtifact.getByRole('link', { name: 'Open' })).toHaveCount(0);
 
     const id = unique('assistant-baseline');
-    const bundleResponse = await context.request.post('/api/bundles', { data: { title: `Synthetic workflow ${id}`, anchorDate: '2026-08-12' } });
-    const bundle = (await json(bundleResponse)).bundle;
+    const cardResponse = await context.request.post('/api/cards', { data: { title: `Synthetic workflow ${id}`, anchorDate: '2026-08-12' } });
+    const card = (await json(cardResponse)).card;
     const assistantResponse = await context.request.post('/api/assistant-jobs', { data: {
-      assistantType: 'podcast', title: `Synthetic assistant ${id}`, bundleId: bundle.id,
-      inputRefs: [{ type: 'bundle', id: bundle.id }], approvalRequired: true, maxAttempts: 2,
+      assistantType: 'podcast', title: `Synthetic assistant ${id}`, cardId: card.id,
+      inputRefs: [{ type: 'card', id: card.id }], approvalRequired: true, maxAttempts: 2,
     } });
     const assistant = (await json(assistantResponse)).job;
     const artifactResponse = await context.request.post('/api/artifacts', { data: {
       type: 'assistant-output', title: `Synthetic artifact ${id}`, storageUri: 'https://example.invalid/synthetic-output',
       storageProvider: 'external-url', dataClass: 'internal', status: 'draft', sourceType: 'assistant-output',
-      bundleId: bundle.id, assistantJobId: assistant.id,
+      cardId: card.id, assistantJobId: assistant.id,
     } });
     expect(artifactResponse.status()).toBe(201);
     const before = await json(await context.request.get(`/api/assistant-jobs/${assistant.id}`));
@@ -400,7 +400,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await expect(page.getByText('Loading job events and artifacts…')).toBeVisible();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
     await expect(page.locator('.assistant-queue .assistant-job-row', { hasText: `Synthetic assistant ${id}` })).toBeVisible();
-    await expect(page.locator('.assistant-ref-list')).toContainText(bundle.id);
+    await expect(page.locator('.assistant-ref-list')).toContainText(card.id);
     await page.reload();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
     const after = await json(await context.request.get(`/api/assistant-jobs/${assistant.id}`));
@@ -410,7 +410,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.goto('/#/artifacts');
     const artifactRow = page.getByRole('article').filter({ hasText: `Synthetic artifact ${id}` });
     await expect(artifactRow).toBeVisible();
-    await expect(page.getByRole('article').filter({ hasText: bundle.id })).toBeVisible();
+    await expect(page.getByRole('article').filter({ hasText: card.id })).toBeVisible();
     await expect(artifactRow.getByRole('link', { name: 'Open' })).toHaveAttribute('href', 'https://example.invalid/synthetic-output');
     await expect(artifactRow.getByRole('link', { name: 'Open' })).toHaveAttribute('rel', 'noopener');
     await page.goto('/#/assistants?assistantJobId=stale-synthetic-assistant');
@@ -977,7 +977,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
       await expect(group.locator('header span')).toHaveText('0');
       await expect(group.locator('.ops-empty')).toHaveText(empty);
     }
-    await page.goto('/#/bundles');
+    await page.goto('/#/cards');
     await expect(page.getByText('No active workflows')).toBeVisible();
 
     await page.goto('/#/');
@@ -996,15 +996,15 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('#task-panel .task-history-event', { hasText: 'Response received' })).toBeVisible();
     await page.locator('#task-panel-close').click();
 
-    const bundleTitle = unique('Synthetic staged workflow');
-    const bundleResponse = await context.request.post('/api/bundles', { data: {
-      title: bundleTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
+    const cardTitle = unique('Synthetic staged workflow');
+    const cardResponse = await context.request.post('/api/cards', { data: {
+      title: cardTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
     } });
-    expect(bundleResponse.status()).toBe(201);
-    const bundle = (await json(bundleResponse)).bundle;
+    expect(cardResponse.status()).toBe(201);
+    const card = (await json(cardResponse)).card;
     const proofTitle = unique('Synthetic proof task');
     const proofResponse = await context.request.post('/api/tasks', { data: {
-      description: proofTitle, date: '2026-08-12', bundleId: bundle.id,
+      description: proofTitle, date: '2026-08-12', cardId: card.id,
       requiredLinkName: 'Evidence URL', requiresFile: true,
       instructionDocId: 'sop.synthetic.capability', instructionStepId: '1', phase: 'preparation',
       systems: ['dataops'], validation: { requiredEvidence: 'A URL and attached public-safe file' },
@@ -1013,13 +1013,13 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     const proofTask = await json(proofResponse);
     const completedTitle = unique('Synthetic completed task');
     const completedResponse = await context.request.post('/api/tasks', { data: {
-      description: completedTitle, date: '2026-08-12', bundleId: bundle.id, status: 'done',
+      description: completedTitle, date: '2026-08-12', cardId: card.id, status: 'done',
       instructionDocId: 'sop.synthetic.capability', phase: 'preparation',
     } });
     expect(completedResponse.status()).toBe(201);
     const missingArtifactTitle = unique('Synthetic missing artifact relationship');
     const missingArtifactResponse = await context.request.post('/api/tasks', { data: {
-      description: missingArtifactTitle, date: '2026-08-12', bundleId: bundle.id,
+      description: missingArtifactTitle, date: '2026-08-12', cardId: card.id,
       proofRequirement: { type: 'artifact', required: true, label: 'Approved synthetic output' },
       artifactRefs: [{ artifactId: 'stale-synthetic-artifact', status: 'draft' }],
       instructionDocId: 'sop.synthetic.capability',
@@ -1064,28 +1064,28 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     expect(staleArtifact.status()).toBe(404);
     expect(staleArtifact.headers()['content-type']).toContain('application/json');
 
-    await page.goto('/#/bundles');
-    const workflowCard = page.locator(`.ops-workflow-card[data-bundle-id="${bundle.id}"]`);
-    await expect(workflowCard).toContainText(bundleTitle);
+    await page.goto('/#/cards');
+    const workflowCard = page.locator(`.ops-workflow-card[data-card-id="${card.id}"]`);
+    await expect(workflowCard).toContainText(cardTitle);
     await expect(workflowCard).toContainText('2/3 tasks');
     await workflowCard.click();
-    await expect(page.locator('#bundle-panel-title')).toHaveText(bundleTitle);
+    await expect(page.locator('#card-panel-title')).toHaveText(cardTitle);
     for (const taskTitle of [missingArtifactTitle, proofTitle, completedTitle]) {
-      await expect(page.locator('#bundle-panel .bundle-checklist-label', { hasText: taskTitle })).toBeVisible();
+      await expect(page.locator('#card-panel .card-checklist-label', { hasText: taskTitle })).toBeVisible();
     }
-    await expect(page.locator('#bundle-panel')).toContainText('Active (1)');
-    await expect(page.locator('#bundle-panel')).toContainText('Done / history (2)');
-    await expect(page.locator('#bundle-panel .bundle-stage-select')).toHaveValue('preparation');
-    await page.locator('#bundle-panel .bundle-stage-select').selectOption('announced');
-    await expect.poll(async () => (await json(await context.request.get(`/api/bundles/${bundle.id}`))).bundle.stage).toBe('announced');
+    await expect(page.locator('#card-panel')).toContainText('Active (1)');
+    await expect(page.locator('#card-panel')).toContainText('Done / history (2)');
+    await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('preparation');
+    await page.locator('#card-panel .card-stage-select').selectOption('announced');
+    await expect.poll(async () => (await json(await context.request.get(`/api/cards/${card.id}`))).card.stage).toBe('announced');
     await page.reload();
-    await expect(page.locator('#bundle-panel .bundle-stage-select')).toHaveValue('announced');
+    await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('announced');
 
     const approvedArtifactResponse = await context.request.post('/api/artifacts', { data: {
       type: 'other', title: 'Synthetic approved task proof',
       storageUri: 'https://example.invalid/synthetic-approved-proof', storageProvider: 'external-url',
       dataClass: 'internal', status: 'approved', sourceType: 'manual-link',
-      taskId: missingArtifactTask.id, bundleId: bundle.id,
+      taskId: missingArtifactTask.id, cardId: card.id,
     } });
     expect(approvedArtifactResponse.status()).toBe(201);
     const approvedArtifact = (await json(approvedArtifactResponse)).artifact;
@@ -1099,13 +1099,13 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await missingArtifactCheckbox.check();
     await expect.poll(async () => (await json(await context.request.get(`/api/tasks/${missingArtifactTask.id}`))).status).toBe('done');
     await page.reload();
-    await expect(page.locator('#bundle-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
-    await expect(page.locator('#bundle-panel')).toContainText('3/3 tasks');
-    await page.locator('#bundle-panel .bundle-stage-select').selectOption('done');
+    await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('#card-panel')).toContainText('3/3 tasks');
+    await page.locator('#card-panel .card-stage-select').selectOption('done');
     await page.reload();
-    await expect(page.locator('#bundle-panel .bundle-stage-select')).toHaveValue('done');
-    await expect(page.locator('#bundle-panel')).toContainText('Done / history (3)');
-    await expect(page.locator('#bundle-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
+    await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('done');
+    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
+    await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
     await context.close();
   });
 
@@ -1167,8 +1167,9 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     const admin = await portalContext(browser, servers.admin);
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
-    await page.goto('/#/templates');
+    await page.goto('/#/recurring');
     await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring configs yet');
+    await page.goto('/#/templates');
     const id = unique('runtime-template');
     const definition = {
       name: `Synthetic runtime ${id}`, type: 'manual', triggerType: 'manual', sourceDocIds: ['sop.synthetic.capability'],
@@ -1189,8 +1190,8 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     const denied = await operator.request.put(`/api/templates/${created.id}`, { data: { ...definition, expectedVersion: updated.version } });
     expect(denied.status()).toBe(403);
 
-    const bundle = await admin.request.post('/api/bundles', { data: { title: `Referenced ${id}`, anchorDate: '2026-08-12', templateId: created.id } });
-    expect(bundle.status()).toBe(201);
+    const card = await admin.request.post('/api/cards', { data: { title: `Referenced ${id}`, anchorDate: '2026-08-12', templateId: created.id } });
+    expect(card.status()).toBe(201);
     const blockedDelete = await admin.request.delete(`/api/templates/${created.id}`, { data: { expectedVersion: updated.version } });
     expect(blockedDelete.status()).toBe(409);
     expect((await json(blockedDelete)).code).toBe('template_in_use');
@@ -1223,13 +1224,13 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('[data-template-save-state]')).toContainText('Saved');
     await page.reload();
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue(persistedUiName);
-    const browserInstantiation = await admin.request.post('/api/bundles', { data: {
+    const browserInstantiation = await admin.request.post('/api/cards', { data: {
       title: `Browser-saved template instance ${id}`, anchorDate: '2026-08-12', templateId: created.id,
     } });
     expect(browserInstantiation.status()).toBe(201);
-    const browserBundle = (await json(browserInstantiation)).bundle;
-    expect(browserBundle.templateId).toBe(created.id);
-    const instantiatedTasks = await json(await admin.request.get(`/api/tasks?bundleId=${browserBundle.id}`));
+    const browserCard = (await json(browserInstantiation)).card;
+    expect(browserCard.templateId).toBe(created.id);
+    const instantiatedTasks = await json(await admin.request.get(`/api/tasks?cardId=${browserCard.id}`));
     expect(JSON.stringify(instantiatedTasks)).toContain('Verify synthetic runtime behavior');
 
     await editor.getByLabel('Name', { exact: true }).fill('');
@@ -1258,6 +1259,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(page.locator('.runtime-template-feedback')).toContainText('This template is still referenced');
 
+    await page.goto('/#/recurring');
     const recurringSection = page.getByRole('region', { name: 'Recurring operations' });
     const recurringRow = recurringSection.locator('.ops-recurring-item', { hasText: `Synthetic recurring ${id}` });
     await expect(recurringRow).toBeVisible();

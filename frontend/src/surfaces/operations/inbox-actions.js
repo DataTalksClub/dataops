@@ -14,7 +14,7 @@ export function createInboxActions(context) {
     isWorkspaceRouteFresh,
     libraryTitle,
     navigateCanonicalWorkspace,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
     promptUser,
     refreshDocuments,
@@ -34,7 +34,7 @@ export function createInboxActions(context) {
   } = context;
   const { refreshIntakeSnapshot, renderInboxSurface } = context;
 
-  function intakeActionMarkup(item, bundleOptions) {
+  function intakeActionMarkup(item, cardOptions) {
     const status = String(item.status || "new");
     const due =
       status === "blocked" &&
@@ -88,13 +88,13 @@ export function createInboxActions(context) {
     if (related) {
       const assistantJobId = item.assistantJobIds?.[0];
       const taskId = item.taskIds?.[0];
-      const bundleId = item.bundleIds?.[0];
+      const cardId = item.cardIds?.[0];
       const continuation = assistantJobId
         ? `<button type="button" class="primary-button" data-open-intake-assistant="${escapeHtml(assistantJobId)}">Continue assistant job</button>`
         : taskId
           ? `<button type="button" class="primary-button" data-open-intake-task="${escapeHtml(taskId)}">Continue task</button>`
-          : bundleId
-            ? `<button type="button" class="primary-button" data-open-intake-bundle="${escapeHtml(bundleId)}">Open card</button>`
+          : cardId
+            ? `<button type="button" class="primary-button" data-open-intake-card="${escapeHtml(cardId)}">Open card</button>`
             : "";
       const createAssistant =
         item.assistantReadiness?.status === "ready" && !assistantJobId
@@ -142,7 +142,7 @@ export function createInboxActions(context) {
         </label>
         <label>
           Card
-          <select name="bundleId">${bundleOptions}</select>
+          <select name="cardId">${cardOptions}</select>
         </label>
       `,
       true,
@@ -157,7 +157,7 @@ export function createInboxActions(context) {
         </label>
         <label>
           Card
-          <select name="bundleId">${bundleOptions}</select>
+          <select name="cardId">${cardOptions}</select>
         </label>
         <label>
           Note
@@ -381,13 +381,13 @@ export function createInboxActions(context) {
     const payloadByAction = {
       attach: {
         taskIds: values.taskId ? [values.taskId] : [],
-        bundleIds: values.bundleId ? [values.bundleId] : [],
+        cardIds: values.cardId ? [values.cardId] : [],
         note: values.note || undefined,
       },
       "convert-task": {
         date: values.date,
         assigneeId: values.assigneeId || undefined,
-        bundleId: values.bundleId || undefined,
+        cardId: values.cardId || undefined,
       },
       "mark-duplicate": {
         duplicateOfIntakeItemId: values.duplicateOfIntakeItemId,
@@ -429,8 +429,8 @@ export function createInboxActions(context) {
       const createdTaskId =
         result.task?.id || (action === "attach" ? values.taskId : "");
       if (createdTaskId) openTaskPanel(createdTaskId);
-      else if (action === "attach" && values.bundleId)
-        openBundlePanel(values.bundleId);
+      else if (action === "attach" && values.cardId)
+        openCardPanel(values.cardId);
     } catch (error) {
       state.intakeMutation = {
         itemId: item.id,
@@ -502,7 +502,7 @@ export function createInboxActions(context) {
             ? `follow-up ${formatBerlinDateTime(event.metadata.followUpAt).text}`
             : "",
           event.metadata?.taskId ? `task ${event.metadata.taskId}` : "",
-          event.metadata?.bundleId ? `card ${event.metadata.bundleId}` : "",
+          event.metadata?.cardId ? `card ${event.metadata.cardId}` : "",
           event.metadata?.assistantJobId
             ? `assistant ${event.metadata.assistantJobId}`
             : "",

@@ -57,11 +57,11 @@ function intakeDetails(action) {
   const details = decorateLazyQueries(new FakeElement("details"));
   const fieldValues =
     {
-      attach: { taskId: "task-existing", bundleId: "", note: "Attach safely" },
+      attach: { taskId: "task-existing", cardId: "", note: "Attach safely" },
       "convert-task": {
         date: "2026-08-12",
         assigneeId: "grace",
-        bundleId: "card-1",
+        cardId: "card-1",
       },
       block: {
         reason: "",
@@ -216,7 +216,7 @@ function operationState(overrides = {}) {
       filter: "actionable",
       selectedId: null,
       items: [],
-      bundles: [],
+      cards: [],
       loaded: true,
       error: "",
     },
@@ -231,7 +231,7 @@ function operationState(overrides = {}) {
     assistantQueue: { filter: "all", selectedJobId: null },
     assistantSnapshot: { loaded: true, jobs: [], errors: [] },
     artifactSnapshot: { loaded: true, artifacts: [], errors: [] },
-    workSnapshot: { bundles: [] },
+    workSnapshot: { cards: [] },
     workspaceEntity: null,
     ...overrides,
   };
@@ -277,7 +277,7 @@ function createOperationsHarness(options = {}) {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
     },
-    openBundlePanel: (id) => openedCards.push(id),
+    openCardPanel: (id) => openedCards.push(id),
     openTaskPanel: (id) => openedTasks.push(id),
     promptUser: options.promptUser || (() => "Needs revision"),
     refreshDocuments: async () => {},
@@ -390,6 +390,7 @@ describe("Operations surface boundary", () => {
       "refreshOperationsAssistantSnapshot",
       "renderArtifactsSurface",
       "renderAssistantsSurface",
+      "renderDeviceSurfaceView",
       "renderInboxSurface",
       "resolveIntakeRouteEntity",
     ]);
@@ -592,7 +593,7 @@ describe("Operations surface boundary", () => {
         if (url === "/api/intake" && requestOptions.method === "POST")
           return {};
         if (url === "/api/intake") return { items: [] };
-        if (url === "/api/bundles") return { bundles: [] };
+        if (url === "/api/cards") return { cards: [] };
         return {};
       },
     });
@@ -644,7 +645,7 @@ describe("Operations surface boundary", () => {
           return { item: { ...item, status: "blocked" } };
         }
         if (url === "/api/intake") return { items: [item] };
-        if (url === "/api/bundles") return { bundles: [] };
+        if (url === "/api/cards") return { cards: [] };
         return {};
       },
     });
@@ -707,7 +708,7 @@ describe("Operations surface boundary", () => {
       },
       request: async (url) => {
         if (url === "/api/intake") return { items: [item] };
-        if (url === "/api/bundles") return { bundles: [] };
+        if (url === "/api/cards") return { cards: [] };
         return {};
       },
     });
@@ -747,7 +748,7 @@ describe("Operations surface boundary", () => {
     const harness = createOperationsHarness({
       request: async (url) => {
         if (url === "/api/intake") return { items: [] };
-        if (url === "/api/bundles") return { bundles: [] };
+        if (url === "/api/cards") return { cards: [] };
         if (url === "/api/intake/missing") throw notFound;
         return {};
       },

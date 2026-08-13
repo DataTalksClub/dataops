@@ -1,12 +1,14 @@
 export function createQuickTaskActions(context) {
   const {
-    openBundlePanel,
+    describeRecurringRun,
+    openCardPanel,
     openTaskPanel,
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
     reportError,
     request,
     shellBody,
+    state,
     todayIsoDate,
     workApiUrl,
   } = context;
@@ -144,13 +146,13 @@ export function createQuickTaskActions(context) {
         const body = { templateId, anchorDate };
         const title = titleInput.input.value.trim();
         if (title) body.title = title;
-        const result = await request(workApiUrl("/api/bundles"), {
+        const result = await request(workApiUrl("/api/cards"), {
           method: "POST",
           body: JSON.stringify(body),
         });
-        const bundle = result?.bundle || result;
+        const card = result?.card || result;
         overlay.remove();
-        if (bundle?.id) openBundlePanel(bundle.id);
+        if (card?.id) openCardPanel(card.id);
         await refreshOperationsWorkSnapshot({ rerender: true });
       } catch (err) {
         reportError(
@@ -199,30 +201,41 @@ export function createQuickTaskActions(context) {
       .replace(/^-+|-+$/g, "");
   }
 
-  function openQuickRecurringForm() {
-    const overlay = createQuickFormOverlay("New recurring operation");
+  function openRecurringForm(options = {}) {
+    const config = options.config || null;
+    const editing = Boolean(config?.id);
+    const preset = recurringFormPreset(config);
+    const overlay = createQuickFormOverlay(
+      editing ? "Edit recurring schedule" : "New recurring schedule",
+    );
     const form = document.createElement("div");
-    form.className = "quick-form";
+    form.className = "quick-form recurring-form";
 
-    const descriptionInput = createQuickInput("Description", "text", "");
-    const scheduleLabel = document.createElement("label");
-    scheduleLabel.className = "quick-form-label";
-    scheduleLabel.textContent = "Schedule";
-    const scheduleSelect = document.createElement("select");
-    scheduleSelect.className = "quick-form-select";
-    for (const [value, label] of [
-      ["daily", "Daily"],
-      ["weekly", "Weekly"],
-      ["monthly", "Monthly"],
-    ]) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = label;
-      scheduleSelect.append(opt);
-    }
-    scheduleLabel.append(scheduleSelect);
+    const intro = document.createElement("p");
+    intro.className = "recurring-form-intro";
+    intro.textContent =
+      "A schedule creates one task on every day it matches. The time is a label for the team, not the moment it runs.";
 
-    const timeInput = createQuickInput("Time", "time", "09:00");
+    const description = createQuickInput(
+      "Description",
+      "text",
+      preset.description,
+    );
+    description.label.classList.add("recurring-form-wide");
+    description.input.placeholder = "What should be done each time?";
+
+    const repeat = createQuickSelect(
+      "Repeats",
+      [
+        ["daily", "Every day"],
+        ["weekly", "Every week"],
+        ["monthly", "Every month"],
+        ["custom", "Custom cron"],
+      ],
+      preset.schedule,
+    );
+    repeat.input.value = preset.schedule;
+    const timeInput = createQuickInput("Time", "time", preset.time);
     const weekday = createQuickSelect(
       "Weekday",
       [
@@ -234,69 +247,241 @@ export function createQuickTaskActions(context) {
         ["6", "Saturday"],
         ["0", "Sunday"],
       ],
-      "1",
+      preset.weekday,
     );
-    const monthDay = createQuickInput("Day of month", "number", "1");
+    weekday.input.value = preset.weekday;
+    const monthDay = createQuickInput(
+      "Day of month",
+      "number",
+      preset.monthDay,
+    );
     monthDay.input.min = "1";
     monthDay.input.max = "31";
-    const enabled = createQuickCheckbox("Enabled", true);
+    const cronInput = createQuickInput(
+      "Cron expression",
+      "text",
+      preset.cronExpression,
+    );
+    cronInput.label.classList.add("recurring-form-wide");
+    cronInput.input.placeholder = "minute hour day-of-month month day-of-week";
 
-    const syncScheduleFields = () => {
-      weekday.label.hidden = scheduleSelect.value !== "weekly";
-      monthDay.label.hidden = scheduleSelect.value !== "monthly";
+    const assignee = createQuickSelect(
+      "Assignee",
+      recurringAssigneeOptions(preset.assigneeId),
+      preset.assigneeId,
+    );
+    assignee.input.value = preset.assigneeId;
+    const enabled = createQuickCheckbox(
+      editing ? "Active" : "Activate immediately",
+      preset.enabled,
+    );
+    enabled.label.classList.add("recurring-form-wide");
+
+    const cadence = document.createElement("div");
+    cadence.className = "recurring-form-grid";
+    cadence.append(
+      repeat.label,
+      timeInput.label,
+      weekday.label,
+      monthDay.label,
+      cronInput.label,
+    );
+
+    const preview = document.createElement("p");
+    preview.className = "recurring-form-preview";
+    preview.setAttribute("aria-live", "polite");
+
+    const currentCron = () =>
+      repeat.input.value === "custom"
+        ? String(cronInput.input.value || "")
+            .trim()
+            .replace(/\s+/g, " ")
+        : buildRecurringCron(
+            repeat.input.value,
+            timeInput.input.value,
+            weekday.input.value,
+            monthDay.input.value,
+          );
+
+    const syncForm = () => {
+      const mode = repeat.input.value;
+      weekday.label.hidden = mode !== "weekly";
+      monthDay.label.hidden = mode !== "monthly";
+      timeInput.label.hidden = mode === "custom";
+      cronInput.label.hidden = mode !== "custom";
+      const run = describeRecurringRun(currentCron(), todayIsoDate());
+      preview.textContent = run.nextDate
+        ? `${run.summary} - next task ${run.nextLabel}`
+        : run.summary || "Choose a schedule.";
     };
-    scheduleSelect.addEventListener("change", syncScheduleFields);
-    syncScheduleFields();
+    for (const control of [
+      repeat.input,
+      timeInput.input,
+      weekday.input,
+      monthDay.input,
+      cronInput.input,
+    ]) {
+      control.addEventListener("change", syncForm);
+      control.addEventListener("input", syncForm);
+    }
+    syncForm();
 
-    const createBtn = document.createElement("button");
-    createBtn.type = "button";
-    createBtn.className = "task-action-btn is-primary";
-    createBtn.textContent = "Create recurring";
-    createBtn.addEventListener("click", async () => {
-      const description = descriptionInput.input.value.trim();
-      if (!description) {
-        reportError("Recurring description is required.");
+    const errorText = document.createElement("p");
+    errorText.className = "recurring-form-error";
+    errorText.setAttribute("role", "alert");
+    errorText.hidden = true;
+    const failForm = (message) => {
+      errorText.textContent = message;
+      errorText.hidden = false;
+      reportError(message);
+    };
+
+    const submitLabel = editing ? "Save schedule" : "Create schedule";
+    const submitBtn = document.createElement("button");
+    submitBtn.type = "button";
+    submitBtn.className = "primary-button";
+    submitBtn.textContent = submitLabel;
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "quiet-button";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => overlay.remove());
+    const footer = document.createElement("div");
+    footer.className = "recurring-form-footer";
+    footer.append(cancelBtn, submitBtn);
+
+    submitBtn.addEventListener("click", async () => {
+      errorText.hidden = true;
+      const descriptionValue = description.input.value.trim();
+      if (!descriptionValue) {
+        failForm("Recurring description is required.");
+        description.input.focus();
         return;
       }
-      const cronExpression = cronExpressionFromRecurringForm(
-        scheduleSelect.value,
-        timeInput.input.value,
-        weekday.input.value,
-        monthDay.input.value,
-      );
-      if (!cronExpression) return;
-      createBtn.disabled = true;
-      createBtn.textContent = "Creating...";
+      const cronExpression = currentCron();
+      if (!cronExpression || cronExpression.split(" ").length !== 5) {
+        failForm("Cron expression needs five fields.");
+        return;
+      }
+      const body = {
+        description: descriptionValue,
+        cronExpression,
+        enabled: enabled.input.checked,
+      };
+      const assigneeId = assignee.input.value;
+      if (assigneeId || preset.assigneeId) body.assigneeId = assigneeId;
+      submitBtn.disabled = true;
+      submitBtn.textContent = editing ? "Saving..." : "Creating...";
       try {
-        await request(workApiUrl("/api/recurring"), {
-          method: "POST",
-          body: JSON.stringify({
-            description,
-            cronExpression,
-            enabled: enabled.input.checked,
-          }),
-        });
+        await request(
+          workApiUrl(
+            editing
+              ? `/api/recurring/${encodeURIComponent(config.id)}`
+              : "/api/recurring",
+          ),
+          {
+            method: editing ? "PUT" : "POST",
+            body: JSON.stringify(body),
+          },
+        );
         overlay.remove();
         await refreshOperationsRecurringSnapshot({ rerender: true });
       } catch (err) {
-        reportError(
-          `Could not create recurring operation: ${err.message || "request failed"}`,
+        failForm(
+          `Could not ${editing ? "save" : "create"} recurring schedule: ${err.message || "request failed"}`,
         );
-        createBtn.disabled = false;
-        createBtn.textContent = "Create recurring";
+        submitBtn.disabled = false;
+        submitBtn.textContent = submitLabel;
       }
     });
 
     form.append(
-      descriptionInput.label,
-      scheduleLabel,
-      timeInput.label,
-      weekday.label,
-      monthDay.label,
+      intro,
+      description.label,
+      cadence,
+      preview,
+      assignee.label,
       enabled.label,
-      createBtn,
+      errorText,
+      footer,
     );
     overlay.querySelector(".quick-form-body").append(form);
+    description.input.focus();
+    return overlay;
+  }
+
+  // Owners come from the loaded work snapshot so the picker shows names, never
+  // raw ids. An id with no matching user stays selectable so editing a config
+  // never silently reassigns it.
+  function recurringAssigneeOptions(selectedId) {
+    const users = Array.isArray(state?.workSnapshot?.users)
+      ? state.workSnapshot.users
+      : [];
+    const options = [["", "Unassigned"]];
+    for (const user of users) {
+      if (!user?.id) continue;
+      options.push([
+        String(user.id),
+        user.name || user.email || String(user.id),
+      ]);
+    }
+    if (selectedId && !options.some(([value]) => value === selectedId)) {
+      options.push([selectedId, `Unknown user (${selectedId})`]);
+    }
+    return options;
+  }
+
+  function buildRecurringCron(schedule, timeValue, weekday, dayOfMonth) {
+    const time = String(timeValue || "").match(/^(\d{2}):(\d{2})$/);
+    if (!time) return "";
+    const hour = Number(time[1]);
+    const minute = Number(time[2]);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+    if (schedule === "daily") return `${minute} ${hour} * * *`;
+    if (schedule === "weekly") {
+      const day = Number(weekday);
+      if (!Number.isInteger(day) || day < 0 || day > 6) return "";
+      return `${minute} ${hour} * * ${day}`;
+    }
+    if (schedule === "monthly") {
+      const day = Number(dayOfMonth);
+      if (!Number.isInteger(day) || day < 1 || day > 31) return "";
+      return `${minute} ${hour} ${day} * *`;
+    }
+    return "";
+  }
+
+  // Recurring configs are stored as cron. Map the common shapes back onto the
+  // form controls and fall back to the raw expression for anything else.
+  function recurringFormPreset(config) {
+    const preset = {
+      description: String(config?.description || config?.name || ""),
+      assigneeId: String(config?.assigneeId || ""),
+      enabled: config ? config.enabled !== false : true,
+      schedule: "daily",
+      time: "09:00",
+      weekday: "1",
+      monthDay: "1",
+      cronExpression: String(config?.cronExpression || ""),
+    };
+    const parts = preset.cronExpression.trim().split(/\s+/);
+    if (parts.length !== 5) return preset;
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+    const numeric = (value) => /^\d+$/.test(value);
+    if (!numeric(minute) || !numeric(hour) || month !== "*") {
+      preset.schedule = "custom";
+      return preset;
+    }
+    preset.time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    if (dayOfMonth === "*" && dayOfWeek === "*") preset.schedule = "daily";
+    else if (dayOfMonth === "*" && numeric(dayOfWeek)) {
+      preset.schedule = "weekly";
+      preset.weekday = dayOfWeek;
+    } else if (numeric(dayOfMonth) && dayOfWeek === "*") {
+      preset.schedule = "monthly";
+      preset.monthDay = dayOfMonth;
+    } else preset.schedule = "custom";
+    return preset;
   }
 
   function createQuickInput(labelText, type, value) {
@@ -337,44 +522,6 @@ export function createQuickTaskActions(context) {
     return { label, input };
   }
 
-  function cronExpressionFromRecurringForm(
-    schedule,
-    timeValue,
-    weekday,
-    dayOfMonth,
-  ) {
-    const time = String(timeValue || "").match(/^(\d{2}):(\d{2})$/);
-    if (!time) {
-      reportError("Choose a valid time.");
-      return "";
-    }
-    const hour = Number(time[1]);
-    const minute = Number(time[2]);
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      reportError("Choose a valid time.");
-      return "";
-    }
-    if (schedule === "daily") return `${minute} ${hour} * * *`;
-    if (schedule === "weekly") {
-      const day = Number(weekday);
-      if (day < 0 || day > 6) {
-        reportError("Choose a valid weekday.");
-        return "";
-      }
-      return `${minute} ${hour} * * ${day}`;
-    }
-    if (schedule === "monthly") {
-      const day = Number(dayOfMonth);
-      if (day < 1 || day > 31) {
-        reportError("Choose a valid day of month.");
-        return "";
-      }
-      return `${minute} ${hour} ${day} * *`;
-    }
-    reportError("Choose a recurring schedule.");
-    return "";
-  }
-
   function createQuickFormOverlay(titleText) {
     const overlay = document.createElement("div");
     overlay.className = "quick-form-overlay confirm-modal";
@@ -412,5 +559,6 @@ export function createQuickTaskActions(context) {
   return {
     openQuickTaskForm,
     openQuickWorkflowForm,
+    openRecurringForm,
   };
 }

@@ -41,19 +41,20 @@ describe("canonical workspace routing", () => {
       "/processes",
       "/admin",
       "/users",
+      "/device",
     ]);
   });
 
   test("serializes only supported parameters in stable canonical order", () => {
     assert.equal(
       canonicalWorkspaceUrl("/tasks", {
-        contextBundleId: "return card",
+        contextCardId: "return card",
         ignored: "no",
-        bundleId: "filter card",
+        cardId: "filter card",
         date: "2026-08-12",
         taskId: "task/1",
       }),
-      "/#/tasks?taskId=task%2F1&date=2026-08-12&bundleId=filter+card&contextBundleId=return+card",
+      "/#/tasks?taskId=task%2F1&date=2026-08-12&cardId=filter+card&contextCardId=return+card",
     );
     assert.equal(
       canonicalWorkspaceUrl("/cards/archive", { taskId: "task-1", cardId: "card-1" }),
@@ -126,13 +127,16 @@ describe("canonical workspace routing", () => {
       ["queue", "Queue"],
       ["workflows", "Cards"],
       ["templates", "Templates"],
+      ["recurring", "Recurring"],
       ["assistants", "Assistants"],
       ["artifacts", "Artifacts"],
     ]);
     assert.equal(workspaceHashPath("tasks", "workflows"), "/cards");
     assert.equal(workspaceHashPath("tasks", "templates"), "/templates");
+    assert.equal(workspaceHashPath("tasks", "recurring"), "/recurring");
     assert.equal(tasksSectionTitle("workflows"), "Tasks - Cards");
     assert.equal(tasksSectionTitle("templates"), "Tasks - Templates");
+    assert.equal(tasksSectionTitle("recurring"), "Tasks - Recurring");
   });
 
   test("constructs a route object from canonical path and entity parameters", () => {

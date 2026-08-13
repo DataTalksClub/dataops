@@ -208,7 +208,7 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
             <input name="materialDeadline" type="date" /></label
           ><label>Next action <input name="nextActionDate" type="date" /></label
           ><label>Schedule entry <input name="scheduleEntryId" /></label
-          ><label>Newsletter Card <input name="bundleId" /></label
+          ><label>Newsletter Card <input name="cardId" /></label
           ><label class="span-all"
             >Required link <input name="requiredLinkUrl" type="url" /></label
           ><label class="span-all"

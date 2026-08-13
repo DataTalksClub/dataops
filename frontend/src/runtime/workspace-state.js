@@ -37,7 +37,7 @@ export function createWorkspaceState(context) {
     filter: "actionable",
     selectedId: null,
     items: [],
-    bundles: [],
+    cards: [],
     loaded: false,
     error: "",
   };

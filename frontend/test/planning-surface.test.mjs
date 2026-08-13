@@ -510,7 +510,7 @@ describe("Planning surface production behavior", () => {
     const dom = createNewsletterDom();
     const items = [
       {
-        bundleId: "card-1",
+        cardId: "card-1",
         campaignLabel: "Weekly update",
         campaignNumber: 7,
         id: "slot-1",

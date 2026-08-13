@@ -173,6 +173,7 @@ export function createSurfaceComposition(context) {
     if (view === "docs") return getRenderDocsSurface()(documents);
     if (view === "admin") return getRenderAdminSurfaceView()(documents);
     if (view === "users") return context.getRenderUsersSurfaceView()();
+    if (view === "device") return context.getRenderDeviceSurfaceView()();
     if (view === "bookkeeping") return getRenderBookkeepingSurface()();
     if (view === "sponsors") return getRenderSponsorCrmSurface()();
     if (view === "newsletter") return getRenderNewsletterSurface()();
@@ -206,7 +207,7 @@ export function createSurfaceComposition(context) {
       ...tasksFromWorkPayload(work.todayTasks || []),
       ...tasksFromWorkPayload(work.overdueTasks || []),
       ...tasksFromWorkPayload(work.waitingTasks || []),
-      ...Object.values(work.bundleTasks || {}).flatMap((tasks) =>
+      ...Object.values(work.cardTasks || {}).flatMap((tasks) =>
         tasksFromWorkPayload(tasks),
       ),
     ]);
@@ -238,6 +239,7 @@ export function createSurfaceComposition(context) {
     queue: "queue",
     workflows: "workflows",
     templates: "templates",
+    recurring: "recurring",
     assistants: "assistants",
     artifacts: "artifacts",
   };

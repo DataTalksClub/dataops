@@ -14,7 +14,7 @@ export function createAssistantsSurface(context) {
     isWorkspaceRouteFresh,
     libraryTitle,
     navigateCanonicalWorkspace,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
     promptUser,
     refreshDocuments,
@@ -193,11 +193,11 @@ export function createAssistantsSurface(context) {
   }
 
   function assistantContextLabel(job) {
-    const bundle = (state.workSnapshot.bundles || []).find(
-      (candidate) => candidate.id === job.bundleId,
+    const card = (state.workSnapshot.cards || []).find(
+      (candidate) => candidate.id === job.cardId,
     );
-    if (bundle) return `card ${bundle.title || bundle.id}`;
-    if (job.bundleId) return `card ${job.bundleId}`;
+    if (card) return `card ${card.title || card.id}`;
+    if (job.cardId) return `card ${job.cardId}`;
     if (job.taskId) return `task ${job.taskId}`;
     return "";
   }
@@ -205,12 +205,12 @@ export function createAssistantsSurface(context) {
   function renderAssistantCreatePanel() {
     const panel = document.createElement("section");
     panel.className = "assistant-panel";
-    const bundles = state.workSnapshot.bundles || [];
-    const bundleOptions = bundles
+    const cards = state.workSnapshot.cards || [];
+    const cardOptions = cards
       .map(
-        (bundle) => `
-          <option value="${escapeHtml(bundle.id)}">
-            ${escapeHtml(bundle.title || bundle.id)}
+        (card) => `
+          <option value="${escapeHtml(card.id)}">
+            ${escapeHtml(card.title || card.id)}
           </option>
         `,
       )
@@ -220,9 +220,9 @@ export function createAssistantsSurface(context) {
       <div class="assistant-create-grid">
         <label>
           Card
-          <select data-assistant-bundle>
+          <select data-assistant-card>
             <option value="">Select card</option>
-            ${bundleOptions}
+            ${cardOptions}
           </select>
         </label>
         <label>
@@ -244,14 +244,14 @@ export function createAssistantsSurface(context) {
         </button>
       </div>
     `;
-    const bundleSelect = panel.querySelector("[data-assistant-bundle]");
+    const cardSelect = panel.querySelector("[data-assistant-card]");
     const taskSelect = panel.querySelector("[data-assistant-task]");
-    bundleSelect.addEventListener("change", async () => {
+    cardSelect.addEventListener("change", async () => {
       taskSelect.innerHTML = `<option value="">Card-level job</option>`;
-      if (!bundleSelect.value) return;
+      if (!cardSelect.value) return;
       try {
         const payload = await request(
-          workApiUrl("/api/tasks", { bundleId: bundleSelect.value }),
+          workApiUrl("/api/tasks", { cardId: cardSelect.value }),
         );
         for (const task of tasksFromWorkPayload(payload)) {
           const option = document.createElement("option");
@@ -266,9 +266,9 @@ export function createAssistantsSurface(context) {
     panel
       .querySelector("[data-assistant-create]")
       .addEventListener("click", async () => {
-        const bundleId = bundleSelect.value;
+        const cardId = cardSelect.value;
         const taskId = taskSelect.value;
-        if (!bundleId && !taskId)
+        if (!cardId && !taskId)
           return reportError(
             "Select a Card or Task before requesting assistant help.",
           );
@@ -279,7 +279,7 @@ export function createAssistantsSurface(context) {
           panel.querySelector("[data-assistant-title]").value.trim() ||
           `DataOps Assistant: ${assistantType}`;
         const inputRefs = [];
-        if (bundleId) inputRefs.push({ type: "bundle", id: bundleId });
+        if (cardId) inputRefs.push({ type: "card", id: cardId });
         if (taskId) inputRefs.push({ type: "task", id: taskId });
         try {
           const created = await request(workApiUrl("/api/assistant-jobs"), {
@@ -287,7 +287,7 @@ export function createAssistantsSurface(context) {
             body: JSON.stringify({
               assistantType,
               title,
-              bundleId: bundleId || undefined,
+              cardId: cardId || undefined,
               taskId: taskId || undefined,
               inputRefs,
               approvalRequired: true,

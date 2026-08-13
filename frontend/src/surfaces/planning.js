@@ -107,7 +107,7 @@ export function createPlanningSurface(context) {
             </label>
             <label>Start date <input name="startDate" type="date" required></label>
             <label>End date <input name="endDate" type="date" required></label>
-            <label class="planner-field-wide">Card reference <input name="bundleId" autocomplete="off"></label>
+            <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
             <label class="planner-field-wide">Planning notes <textarea name="notes" maxlength="2000" rows="4"></textarea></label>
           </div>
           <p class="planner-form-error" role="alert"></p>
@@ -429,7 +429,7 @@ export function createPlanningSurface(context) {
             </label>
             <label>Booked by <input name="bookedByDisplayName" autocomplete="off"></label>
             <label class="planner-field-wide">Sponsor booking reference <input name="sponsorBookingId" autocomplete="off"></label>
-            <label class="planner-field-wide">Card reference <input name="bundleId" autocomplete="off"></label>
+            <label class="planner-field-wide">Card reference <input name="cardId" autocomplete="off"></label>
             <label class="planner-field-wide">Public campaign URL <input name="publicUrl" type="url"></label>
             <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
           </div>

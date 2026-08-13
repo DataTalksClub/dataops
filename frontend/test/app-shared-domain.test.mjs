@@ -7,7 +7,7 @@ import { describe, test } from "node:test";
 import * as workspace from "../src/core/workspace.js";
 import {
   assistantJobsFromPayload,
-  bundlesFromWorkPayload,
+  cardsFromWorkPayload,
   createOperationsModel,
   currentOperatorIdFromPayload,
   emptyOperationsArtifactSnapshot,
@@ -58,7 +58,7 @@ function plain(value) {
 
 const adapterNames = [
   "settledPayload",
-  "bundlesFromWorkPayload",
+  "cardsFromWorkPayload",
   "usersFromWorkPayload",
   "recurringConfigsFromPayload",
   "assistantJobsFromPayload",
@@ -66,13 +66,13 @@ const adapterNames = [
 ];
 
 const workModelNames = [
-  "bundlesFromWorkPayload",
+  "cardsFromWorkPayload",
   "usersFromWorkPayload",
   "normalizeOperationsWorkSnapshot",
-  "normalizeBundleTaskMap",
+  "normalizeCardTaskMap",
   "sortWorkTasks",
   "taskSortDate",
-  "sortActiveWorkBundles",
+  "sortActiveWorkCards",
 ];
 
 function operationsModel(overrides = {}) {
@@ -93,7 +93,7 @@ describe("app shared operations domain characterization", () => {
     const appOwned = [
       "normalizeOperationsRecurringSnapshot",
       "operationItemFromTask",
-      "operationItemFromBundle",
+      "operationItemFromCard",
       "summarizeWorkflowTemplate",
       "buildOperationsReferenceLinks",
       "renderProcessQualityHomeSection",
@@ -121,7 +121,7 @@ describe("app shared operations domain characterization", () => {
     );
     assert.match(
       applicationSource,
-      /createTasksSurface\([\s\S]*operationItemFromBundle,[\s\S]*sortWorkTasks,/,
+      /createTasksSurface\([\s\S]*operationItemFromCard,[\s\S]*sortWorkTasks,/,
     );
     assert.match(
       applicationSource,
@@ -130,15 +130,15 @@ describe("app shared operations domain characterization", () => {
   });
 
   test("normalizes work API collection envelopes and authenticated operator ids", () => {
-    const bundle = { id: "card-1" };
+    const card = { id: "card-1" };
     const user = { id: "grace" };
     const recurring = { id: "weekly" };
     const job = { id: "job-1" };
 
-    assert.equal(settledPayload({ status: "fulfilled", value: bundle }), bundle);
+    assert.equal(settledPayload({ status: "fulfilled", value: card }), card);
     assert.deepEqual(plain(settledPayload({ status: "rejected" })), {});
-    assert.equal(bundlesFromWorkPayload({ bundles: [bundle] })[0], bundle);
-    assert.equal(bundlesFromWorkPayload({ items: [bundle] })[0], bundle);
+    assert.equal(cardsFromWorkPayload({ cards: [card] })[0], card);
+    assert.equal(cardsFromWorkPayload({ items: [card] })[0], card);
     assert.equal(usersFromWorkPayload({ users: [user] })[0], user);
     assert.equal(
       recurringConfigsFromPayload({ configs: [recurring] })[0],
@@ -159,14 +159,14 @@ describe("app shared operations domain characterization", () => {
       todayTasks: [],
       overdueTasks: [],
       waitingTasks: [],
-      bundles: [],
+      cards: [],
       users: [],
-      bundleTasks: {},
+      cardTasks: {},
       errors: [],
       todayLoaded: false,
       overdueLoaded: false,
       waitingLoaded: false,
-      bundlesLoaded: false,
+      cardsLoaded: false,
       usersLoaded: false,
     });
     assert.deepEqual(emptyOperationsRecurringSnapshot(), {
@@ -218,20 +218,20 @@ describe("app shared operations domain characterization", () => {
         todayLoaded: true,
         overdueLoaded: false,
         waitingLoaded: true,
-        bundlesLoaded: true,
+        cardsLoaded: true,
         usersLoaded: false,
         currentOperatorId: "alexey",
         tasks: [
-          { id: "today", title: "Today", date: "2026-08-13", status: "todo", bundleId: "card-1" },
-          { id: "late", title: "Late", date: "2026-08-11", status: "todo", bundleId: "card-1" },
+          { id: "today", title: "Today", date: "2026-08-13", status: "todo", cardId: "card-1" },
+          { id: "late", title: "Late", date: "2026-08-11", status: "todo", cardId: "card-1" },
           { id: "wait", title: "Waiting", status: "waiting", followUpAt: "2026-08-13" },
           { id: "done", title: "Done", date: "2026-08-13", status: "done" },
         ],
         todayTasks: [{ id: "today", title: "Today", date: "2026-08-13" }],
-        bundleTasks: {
+        cardTasks: {
           "card-1": [{ id: "today", title: "Today", date: "2026-08-13" }],
         },
-        bundles: [
+        cards: [
           { id: "card-1", title: "Risk card", status: "active", anchorDate: "2026-08-14" },
           { id: "archived", title: "Old", status: "archived" },
         ],
@@ -248,10 +248,10 @@ describe("app shared operations domain characterization", () => {
     assert.deepEqual(snapshot.todayTasks.map((task) => task.id), ["today"]);
     assert.deepEqual(snapshot.overdueTasks.map((task) => task.id), ["late"]);
     assert.deepEqual(snapshot.waitingTasks.map((task) => task.id), ["wait"]);
-    assert.deepEqual(snapshot.activeBundles.map((card) => card.id), ["card-1"]);
-    assert.equal(snapshot.bundlesById.get("card-1").title, "Risk card");
+    assert.deepEqual(snapshot.activeCards.map((card) => card.id), ["card-1"]);
+    assert.equal(snapshot.cardsById.get("card-1").title, "Risk card");
     assert.equal(snapshot.usersById.get("alexey").name, "Alexey");
-    assert.deepEqual(snapshot.bundleTasks["card-1"].map((task) => task.id), [
+    assert.deepEqual(snapshot.cardTasks["card-1"].map((task) => task.id), [
       "today",
       "late",
     ]);
@@ -269,7 +269,7 @@ describe("app shared operations domain characterization", () => {
       date: "2026-08-12",
       source: "email_intake",
       assigneeId: "grace",
-      bundleId: "card-1",
+      cardId: "card-1",
     };
     const item = functions.operationItemFromTask(waiting, {
       today: "2026-08-13",
@@ -292,7 +292,7 @@ describe("app shared operations domain characterization", () => {
     assert.equal(functions.taskSourceLabel({ templateId: "podcast" }), "Card");
     assert.equal(functions.taskSourceLabel({}), "Ad hoc");
 
-    const card = functions.operationItemFromBundle(
+    const card = functions.operationItemFromCard(
       { id: "card-1", title: "Podcast", stage: "preparation", anchorDate: "2026-08-14" },
       [waiting],
       { today: "2026-08-13" },
@@ -300,6 +300,16 @@ describe("app shared operations domain characterization", () => {
     assert.equal(card.title, "Podcast");
     assert.equal(card.stage, "preparation");
     assert.match(card.summary, /Preparation - Anchor Tomorrow/);
+    assert.equal(card.anchorDate, "2026-08-14");
+    assert.equal(card.anchorLabel, "Tomorrow");
+
+    const undated = functions.operationItemFromCard(
+      { id: "card-2", title: "Webinar", stage: "preparation" },
+      [],
+      { today: "2026-08-13" },
+    );
+    assert.equal(undated.anchorDate, "");
+    assert.equal(undated.anchorLabel, "");
   });
 
   test("projects Template and Process Doc vocabulary without duplicate operation rows", () => {
@@ -370,7 +380,7 @@ describe("app shared operations domain characterization", () => {
     const functions = createOperationsOverview({
       document: new FakeDocument(),
       labelizeWorkValue,
-      openBundlePanel() {},
+      openCardPanel() {},
       openDocument() {},
       openTaskPanel() {},
       resolveDocReference() {},
@@ -388,7 +398,7 @@ describe("app shared operations domain characterization", () => {
     assert.equal(functions.operationsViewPath("calendar"), "Workspace");
     assert.match(functions.surfaceDescription("queue"), /overdue, follow-up, waiting/);
     assert.equal(functions.referenceCountLabel("calendar", 1), "1 calendar item");
-    assert.equal(functions.referenceCountLabel("bundles", 2), "2 bundles");
+    assert.equal(functions.referenceCountLabel("cards", 2), "2 cards");
     assert.equal(functions.surfaceStatusText("assistants"), "2 assistant jobs.");
     assert.equal(functions.surfaceStatusText("artifacts"), "Artifact index not connected.");
     assert.equal(functions.surfaceStatusText("processes"), "1 process quality finding.");
@@ -401,7 +411,7 @@ describe("app shared operations domain characterization", () => {
     const functions = createOperationsOverview({
       document,
       labelizeWorkValue,
-      openBundlePanel: (id) => opened.push(["card", id]),
+      openCardPanel: (id) => opened.push(["card", id]),
       openDocument: (docPath) => opened.push(["doc", docPath]),
       openTaskPanel: (id) => opened.push(["task", id]),
       resolveDocReference: () => null,

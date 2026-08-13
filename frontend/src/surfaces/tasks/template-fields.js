@@ -229,12 +229,12 @@ export function createTemplateFields(context) {
     return row;
   }
 
-  function renderRuntimeBundleLink(link) {
+  function renderRuntimeCardLink(link) {
     const row = document.createElement("div");
     row.className = "runtime-collection-row runtime-grid";
     row.append(
       runtimeField(
-        "Bundle link name",
+        "Card link name",
         link.name,
         (value) => {
           link.name = value;
@@ -425,7 +425,7 @@ export function createTemplateFields(context) {
         task.systems = csvValues(value);
       }),
       runtimeField(
-        "Required bundle link",
+        "Required card link",
         task.requiredLinkName || "",
         (value) => {
           task.requiredLinkName = value;
@@ -456,12 +456,12 @@ export function createTemplateFields(context) {
         { wide: true },
       ),
       runtimeField(
-        "Required bundle links",
-        (validation.requiredBundleLinks || []).join(", "),
+        "Required card links",
+        (validation.requiredCardLinks || []).join(", "),
         (value) => {
           const links = csvValues(value);
-          task.validation = { ...validation, requiredBundleLinks: links };
-          if (!links.length) delete task.validation.requiredBundleLinks;
+          task.validation = { ...validation, requiredCardLinks: links };
+          if (!links.length) delete task.validation.requiredCardLinks;
           if (!Object.keys(task.validation).length) delete task.validation;
         },
         { wide: true },
@@ -470,7 +470,7 @@ export function createTemplateFields(context) {
     if (
       task.validation &&
       typeof task.validation === "object" &&
-      Object.keys(task.validation).some((key) => key !== "requiredBundleLinks")
+      Object.keys(task.validation).some((key) => key !== "requiredCardLinks")
     ) {
       const preserved = document.createElement("small");
       preserved.className = "runtime-preserved-note";
@@ -543,7 +543,7 @@ export function createTemplateFields(context) {
   }
 
   return {
-    renderRuntimeBundleLink,
+    renderRuntimeCardLink,
     renderRuntimeCollection,
     renderRuntimeLineList,
     renderRuntimeMetadataFields,

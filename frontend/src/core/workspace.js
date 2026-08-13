@@ -5,6 +5,7 @@ export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
   docs: "/processes",
   admin: "/admin",
   users: "/users",
+  device: "/device",
   bookkeeping: "/bookkeeping",
   sponsors: "/sponsors",
   newsletter: "/newsletter",
@@ -18,7 +19,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/tasks": {
     view: "tasks",
     tasksSection: "queue",
-    params: ["taskId", "date", "bundleId", "contextBundleId"],
+    params: ["taskId", "date", "cardId", "contextCardId"],
   },
   "/cards": {
     view: "tasks",
@@ -40,7 +41,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     tasksSection: "templates",
     params: ["templateId"],
   },
-  "/recurring": { view: "tasks", tasksSection: "templates", params: [] },
+  "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
   "/artifacts": { view: "tasks", tasksSection: "artifacts", params: [] },
   "/notifications": { view: "home", tasksSection: "queue", params: [] },
   "/bookkeeping": { view: "bookkeeping", tasksSection: "queue", params: [] },
@@ -59,12 +60,14 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/processes": { view: "docs", tasksSection: "queue", params: [] },
   "/admin": { view: "admin", tasksSection: "queue", params: [] },
   "/users": { view: "users", tasksSection: "queue", params: [] },
+  "/device": { view: "device", tasksSection: "queue", params: ["userCode"] },
 });
 
 export const TASKS_SECTIONS = Object.freeze([
   Object.freeze(["queue", "Queue"]),
   Object.freeze(["workflows", "Cards"]),
   Object.freeze(["templates", "Templates"]),
+  Object.freeze(["recurring", "Recurring"]),
   Object.freeze(["assistants", "Assistants"]),
   Object.freeze(["artifacts", "Artifacts"]),
 ]);
@@ -80,6 +83,7 @@ export function tasksSectionTitle(section) {
     queue: "Tasks - Work Queue",
     workflows: "Tasks - Cards",
     templates: "Tasks - Templates",
+    recurring: "Tasks - Recurring",
     assistants: "Tasks - Assistants",
     artifacts: "Tasks - Artifacts",
   };
@@ -93,6 +97,7 @@ export function workspaceHashPath(view, tasksSection = "queue") {
         queue: "/tasks",
         workflows: "/cards",
         templates: "/templates",
+        recurring: "/recurring",
         assistants: "/assistants",
         artifacts: "/artifacts",
       }[tasksSection] || "/tasks"
@@ -281,6 +286,108 @@ export function formatHomeShortDate(value) {
   }).format(date);
 }
 
+// Recurring schedules are stored as five-field cron. The backend only matches
+// the day fields when it generates tasks, so these helpers describe the same
+// shapes the generator understands and never promise a time of execution.
+const CRON_WEEKDAY_NAMES = Object.freeze([
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+]);
+
+export function parseCronExpression(cronExpression) {
+  const parts = String(cronExpression || "")
+    .trim()
+    .split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  return { minute, hour, dayOfMonth, month, dayOfWeek };
+}
+
+export function cronFieldMatches(field, value) {
+  const raw = String(field || "*").trim();
+  if (raw === "*") return true;
+  return raw.split(",").some((term) => {
+    const [range, stepValue] = term.split("/");
+    const step = stepValue ? Number(stepValue) : 1;
+    if (!Number.isInteger(step) || step < 1) return false;
+    if (range === "*") return value % step === 0;
+    const [startValue, endValue] = range.split("-");
+    const start = Number(startValue);
+    if (!Number.isInteger(start)) return false;
+    const end = endValue === undefined ? start : Number(endValue);
+    if (!Number.isInteger(end)) return false;
+    if (value < start || value > end) return false;
+    return (value - start) % step === 0;
+  });
+}
+
+export function cronMatchesIsoDate(cronExpression, isoDate) {
+  const cron = parseCronExpression(cronExpression);
+  const date = parseIsoDateValue(isoDate);
+  if (!cron || !date) return false;
+  return (
+    cronFieldMatches(cron.dayOfMonth, date.getDate()) &&
+    cronFieldMatches(cron.month, date.getMonth() + 1) &&
+    cronFieldMatches(cron.dayOfWeek, date.getDay())
+  );
+}
+
+export function describeRecurringSchedule(cronExpression) {
+  const cron = parseCronExpression(cronExpression);
+  if (!cron) return String(cronExpression || "No schedule");
+  const { minute, hour, dayOfMonth, month, dayOfWeek } = cron;
+  if (month !== "*" || !/^\d+$/.test(minute) || !/^\d+$/.test(hour)) {
+    return String(cronExpression);
+  }
+  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  if (dayOfMonth === "*" && dayOfWeek === "*") return `Every day at ${time}`;
+  if (dayOfMonth === "*" && /^\d$/.test(dayOfWeek)) {
+    return `Every ${CRON_WEEKDAY_NAMES[Number(dayOfWeek)]} at ${time}`;
+  }
+  if (/^\d+$/.test(dayOfMonth) && dayOfWeek === "*") {
+    return `Monthly on day ${dayOfMonth} at ${time}`;
+  }
+  return String(cronExpression);
+}
+
+export function nextRecurringRunDate(cronExpression, today = todayIsoDate()) {
+  if (!parseCronExpression(cronExpression)) return "";
+  const start = parseIsoDateValue(today);
+  if (!start) return "";
+  for (let offset = 0; offset < 366; offset += 1) {
+    const candidate = new Date(start);
+    candidate.setDate(candidate.getDate() + offset);
+    const isoDate = toIsoDate(candidate);
+    if (cronMatchesIsoDate(cronExpression, isoDate)) return isoDate;
+  }
+  return "";
+}
+
+export function formatRecurringRunLabel(isoDate, today = todayIsoDate()) {
+  if (!isoDate) return "";
+  if (isoDate === today) return "Today";
+  const date = parseIsoDateValue(isoDate);
+  if (!date) return isoDate;
+  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(
+    date,
+  );
+  return `${weekday} ${formatHomeShortDate(isoDate)}`;
+}
+
+export function describeRecurringRun(cronExpression, today = todayIsoDate()) {
+  const nextDate = nextRecurringRunDate(cronExpression, today);
+  return {
+    summary: describeRecurringSchedule(cronExpression),
+    nextDate,
+    nextLabel: formatRecurringRunLabel(nextDate, today),
+  };
+}
+
 export function formatHomeTaskTiming(item, today) {
   const value = String(
     item.priority === "follow-up"
@@ -309,6 +416,24 @@ export function formatTaskDateMeta(value, today) {
   if (date === addDaysIso(today, -1)) return "Yesterday";
   if (date === addDaysIso(today, 1)) return "Tomorrow";
   return date;
+}
+
+export function formatCardAnchorLabel(value, today = todayIsoDate()) {
+  const date = String(value || "").slice(0, 10);
+  if (!date) return "";
+  const relative = formatTaskDateMeta(date, today);
+  if (relative !== date) return relative;
+  const short = formatHomeShortDate(date);
+  return date.slice(0, 4) === String(today || "").slice(0, 4)
+    ? short
+    : `${short} ${date.slice(0, 4)}`;
+}
+
+export function cardAnchorTone(value, today = todayIsoDate()) {
+  const date = String(value || "").slice(0, 10);
+  if (!date) return "";
+  if (date === today) return "today";
+  return isBeforeIsoDate(date, today) ? "past" : "upcoming";
 }
 
 export function buildHomeAttentionItems(model) {
@@ -363,7 +488,7 @@ export function deriveHomeWorkState(snapshot, options = {}) {
   ]);
   const allTasks = dedupeWorkTasks([
     ...laneTasks,
-    ...Object.values(work.bundleTasks || {}).flatMap(tasksFromWorkPayload),
+    ...Object.values(work.cardTasks || {}).flatMap(tasksFromWorkPayload),
   ]);
   const todayTasks = dedupeWorkTasks([
     ...tasksFromWorkPayload(work.todayTasks || []),
@@ -471,7 +596,7 @@ export function dedupeWorkTasks(tasks) {
     if (!task || typeof task !== "object") continue;
     const key =
       task.id ||
-      `${task.description || task.title || ""}:${task.date || ""}:${task.bundleId || ""}`;
+      `${task.description || task.title || ""}:${task.date || ""}:${task.cardId || ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
     output.push(task);
@@ -495,8 +620,8 @@ export function workTaskTitle(task) {
   );
 }
 
-export function workBundleTitle(bundle) {
-  return bundle.title || bundle.name || bundle.id || "Untitled bundle";
+export function workCardTitle(card) {
+  return card.title || card.name || card.id || "Untitled card";
 }
 
 export function taskDate(task) {
@@ -533,17 +658,17 @@ export function isFollowUpDueTask(task, today = todayIsoDate()) {
   return Boolean(followUpAt) && !isBeforeIsoDate(today, followUpAt);
 }
 
-export function isActiveWorkBundle(bundle) {
-  if (!bundle || typeof bundle !== "object") return false;
-  const status = String(bundle.status || "active").toLowerCase();
-  const stage = String(bundle.stage || "preparation").toLowerCase();
+export function isActiveWorkCard(card) {
+  if (!card || typeof card !== "object") return false;
+  const status = String(card.status || "active").toLowerCase();
+  const stage = String(card.stage || "preparation").toLowerCase();
   return status !== "done" && status !== "archived" && stage !== "done";
 }
 
-export function isArchivedWorkBundle(bundle) {
-  if (!bundle || typeof bundle !== "object") return false;
-  const status = String(bundle.status || "active").toLowerCase();
-  const stage = String(bundle.stage || "").toLowerCase();
+export function isArchivedWorkCard(card) {
+  if (!card || typeof card !== "object") return false;
+  const status = String(card.status || "active").toLowerCase();
+  const stage = String(card.stage || "").toLowerCase();
   return status === "done" || status === "archived" || stage === "done";
 }
 
@@ -551,19 +676,64 @@ export function partitionCardsByArchive(cards) {
   const active = [];
   const archived = [];
   for (const card of cards || []) {
-    if (isArchivedWorkBundle(card)) archived.push(card);
-    else if (isActiveWorkBundle(card)) active.push(card);
+    if (isArchivedWorkCard(card)) archived.push(card);
+    else if (isActiveWorkCard(card)) active.push(card);
   }
   return { active, archived };
+}
+
+export function compareCardItemsByAnchor(left, right) {
+  return (
+    compareIsoDate(left?.anchorDate, right?.anchorDate) ||
+    String(left?.title || "").localeCompare(String(right?.title || ""))
+  );
+}
+
+export function formatCardMonthLabel(value) {
+  const date = parseIsoDateValue(value);
+  if (!date) return "No date";
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+export function groupCardItemsByMonth(items) {
+  const ordered = [...(items || [])].sort((left, right) => {
+    const leftDate = String(left?.anchorDate || "");
+    const rightDate = String(right?.anchorDate || "");
+    if (leftDate !== rightDate) {
+      // Newest first, undated last.
+      if (!leftDate) return 1;
+      if (!rightDate) return -1;
+      return rightDate.localeCompare(leftDate);
+    }
+    return String(left?.title || "").localeCompare(String(right?.title || ""));
+  });
+  const groups = [];
+  for (const item of ordered) {
+    const key = String(item?.anchorDate || "").slice(0, 7) || "undated";
+    const last = groups.at(-1);
+    if (last && last.key === key) last.items.push(item);
+    else
+      groups.push({
+        key,
+        label: formatCardMonthLabel(item?.anchorDate),
+        items: [item],
+      });
+  }
+  return groups;
 }
 
 export function groupCardItemsByStage(items) {
   return CARD_BOARD_COLUMNS.map(({ stage, label }) => ({
     stage,
     label,
-    items: (items || []).filter(
-      (item) => String(item.stage || "preparation").toLowerCase() === stage,
-    ),
+    items: (items || [])
+      .filter(
+        (item) => String(item.stage || "preparation").toLowerCase() === stage,
+      )
+      .sort(compareCardItemsByAnchor),
   }));
 }
 
@@ -638,15 +808,15 @@ export function taskProofState(task) {
   return { ok: true, label: "No proof required", missing: [] };
 }
 
-export function missingBundleLinks(bundle) {
-  if (!Array.isArray(bundle?.bundleLinks)) return [];
-  return bundle.bundleLinks.filter(
+export function missingCardLinks(card) {
+  if (!Array.isArray(card?.cardLinks)) return [];
+  return card.cardLinks.filter(
     (link) =>
       link && typeof link === "object" && !String(link.url || "").trim(),
   );
 }
 
-export function summarizeBundleProgress(bundle, tasks, today) {
+export function summarizeCardProgress(card, tasks, today) {
   const taskList = dedupeWorkTasks(tasks);
   const total = taskList.length;
   const done = taskList.filter(
@@ -658,21 +828,21 @@ export function summarizeBundleProgress(bundle, tasks, today) {
   const missingLinks =
     taskList.filter(
       (task) => isOpenWorkTask(task) && task.requiredLinkName && !task.link,
-    ).length + missingBundleLinks(bundle).length;
+    ).length + missingCardLinks(card).length;
   const missingFiles = taskList.filter(
     (task) =>
       isOpenWorkTask(task) && task.requiresFile && !hasTaskFileEvidence(task),
   ).length;
   const missingProof =
     taskList.filter((task) => isOpenWorkTask(task) && !taskProofState(task).ok)
-      .length + missingBundleLinks(bundle).length;
+      .length + missingCardLinks(card).length;
   const nextDueTask = nextDueOpenTask(taskList, today);
   let risk = "low";
   if (overdue > 0) risk = "high";
   else if (
     waiting > 0 ||
     missingProof > 0 ||
-    (open > 0 && bundle.anchorDate && isBeforeIsoDate(bundle.anchorDate, today))
+    (open > 0 && card.anchorDate && isBeforeIsoDate(card.anchorDate, today))
   ) {
     risk = "medium";
   }
@@ -714,7 +884,7 @@ export function nextDueOpenTask(tasks, today) {
   return openTasks[0] || null;
 }
 
-export function sortBundleChecklistTasks(tasks, today) {
+export function sortCardChecklistTasks(tasks, today) {
   const sorted = [...tasks];
   sorted.sort((left, right) => {
     const leftDone = String(left.status || "").toLowerCase() === "done";
@@ -726,7 +896,7 @@ export function sortBundleChecklistTasks(tasks, today) {
 }
 
 export function workflowTaskGroups(tasks, today) {
-  const sorted = sortBundleChecklistTasks(tasks, today);
+  const sorted = sortCardChecklistTasks(tasks, today);
   return [
     {
       title: "Active",

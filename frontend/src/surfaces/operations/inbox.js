@@ -14,7 +14,7 @@ export function createInboxSurface(context) {
     isWorkspaceRouteFresh,
     libraryTitle,
     navigateCanonicalWorkspace,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
     promptUser,
     refreshDocuments,
@@ -88,9 +88,9 @@ export function createInboxSurface(context) {
 
   async function refreshIntakeSnapshot(options = {}) {
     try {
-      const [intakePayload, bundlePayload] = await Promise.all([
+      const [intakePayload, cardPayload] = await Promise.all([
         request(workApiUrl("/api/intake")),
-        request(workApiUrl("/api/bundles")),
+        request(workApiUrl("/api/cards")),
       ]);
       if (options.token && !isWorkspaceRouteFresh(options.token)) return;
       state.intake = {
@@ -98,9 +98,9 @@ export function createInboxSurface(context) {
         items: Array.isArray(intakePayload)
           ? intakePayload
           : intakePayload.items || [],
-        bundles: Array.isArray(bundlePayload)
-          ? bundlePayload
-          : bundlePayload.bundles || [],
+        cards: Array.isArray(cardPayload)
+          ? cardPayload
+          : cardPayload.cards || [],
         loaded: true,
         error: "",
       };
@@ -430,12 +430,12 @@ export function createInboxSurface(context) {
       );
       return panel;
     }
-    const bundleOptions = [
+    const cardOptions = [
       `<option value="">No card</option>`,
-      ...state.intake.bundles.map(
-        (bundle) => `
-          <option value="${escapeHtml(bundle.id)}">
-            ${escapeHtml(bundle.title || bundle.id)}
+      ...state.intake.cards.map(
+        (card) => `
+          <option value="${escapeHtml(card.id)}">
+            ${escapeHtml(card.title || card.id)}
           </option>
         `,
       ),
@@ -450,12 +450,12 @@ export function createInboxSurface(context) {
           `,
         )
         .join(" ") || "None";
-    const bundleRelationships =
-      (item.bundleIds || [])
+    const cardRelationships =
+      (item.cardIds || [])
         .map(
           (id) => `
-            <button type="button" data-open-intake-bundle="${escapeHtml(id)}">
-              ${escapeHtml(state.intake.bundles.find((bundle) => bundle.id === id)?.title || id)}
+            <button type="button" data-open-intake-card="${escapeHtml(id)}">
+              ${escapeHtml(state.intake.cards.find((card) => card.id === id)?.title || id)}
             </button>
           `,
         )
@@ -471,7 +471,7 @@ export function createInboxSurface(context) {
         )
         .join(" ") || "None";
     const history = renderIntakeHistoryMarkup(item.history || []);
-    const actionMarkup = intakeActionMarkup(item, bundleOptions);
+    const actionMarkup = intakeActionMarkup(item, cardOptions);
     panel.innerHTML = `
       <header>
         <div>
@@ -494,7 +494,7 @@ export function createInboxSurface(context) {
       <section>
         <h4>Relationships</h4>
         <div><strong>Tasks:</strong> ${taskRelationships}</div>
-        <div><strong>Cards:</strong> ${bundleRelationships}</div>
+        <div><strong>Cards:</strong> ${cardRelationships}</div>
         <div><strong>Assistants:</strong> ${assistantRelationships}</div>
       </section>
       <section>
@@ -525,10 +525,10 @@ export function createInboxSurface(context) {
         ),
       );
     panel
-      .querySelectorAll("[data-open-intake-bundle]")
+      .querySelectorAll("[data-open-intake-card]")
       .forEach((button) =>
         button.addEventListener("click", () =>
-          openBundlePanel(button.dataset.openIntakeBundle),
+          openCardPanel(button.dataset.openIntakeCard),
         ),
       );
     panel.querySelectorAll("[data-open-intake-assistant]").forEach((button) =>

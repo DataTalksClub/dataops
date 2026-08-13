@@ -16,8 +16,8 @@ export function createWorkDetailSurface(context) {
     activeTaskPanelId: null,
     activeTaskPanelTask: null,
     activeTaskPanelArtifacts: [],
-    activeBundlePanelId: null,
-    activeBundlePanelData: null,
+    activeCardPanelId: null,
+    activeCardPanelData: null,
     taskRouteContext: emptyTaskRouteContext(),
   };
   let taskPanelApi;
@@ -27,13 +27,13 @@ export function createWorkDetailSurface(context) {
   let taskEvidenceApi;
 
   const delegated = {
-    closeBundlePanel: (...args) => routeStateApi.closeBundlePanel(...args),
+    closeCardPanel: (...args) => routeStateApi.closeCardPanel(...args),
     closeTaskPanel: (...args) => routeStateApi.closeTaskPanel(...args),
     createTaskActionButton: (...args) =>
       taskActionsApi.createTaskActionButton(...args),
     formatMetaDate,
-    loadArtifactsForBundle: (...args) =>
-      taskEvidenceApi.loadArtifactsForBundle(...args),
+    loadArtifactsForCard: (...args) =>
+      taskEvidenceApi.loadArtifactsForCard(...args),
     loadArtifactsForTask: (...args) =>
       taskEvidenceApi.loadArtifactsForTask(...args),
     markTaskWaiting: (...args) => taskActionsApi.markTaskWaiting(...args),
@@ -47,7 +47,7 @@ export function createWorkDetailSurface(context) {
     refreshTaskPanel: (...args) => taskActionsApi.refreshTaskPanel(...args),
     renderArtifactList: (...args) =>
       taskEvidenceApi.renderArtifactList(...args),
-    renderBundlePanel: (...args) => cardPanelApi.renderBundlePanel(...args),
+    renderCardPanel: (...args) => cardPanelApi.renderCardPanel(...args),
     renderEntityLoadingState: (...args) =>
       cardPanelApi.renderEntityLoadingState(...args),
     renderTaskArtifactSection: (...args) =>
@@ -94,24 +94,24 @@ export function createWorkDetailSurface(context) {
   });
 
   return {
-    closeBundlePanel: routeStateApi.closeBundlePanel,
+    closeCardPanel: routeStateApi.closeCardPanel,
     closeTaskPanel: routeStateApi.closeTaskPanel,
     dedupeArtifacts: taskEvidenceApi.dedupeArtifacts,
     defaultNextFollowUpDate: taskActionsApi.defaultNextFollowUpDate,
     getTaskRouteContext: () => detail.taskRouteContext,
     handleWorkspaceEntityModalKeydown:
       routeStateApi.handleWorkspaceEntityModalKeydown,
-    hydrateBundlePanel: cardPanelApi.hydrateBundlePanel,
+    hydrateCardPanel: cardPanelApi.hydrateCardPanel,
     hydrateTaskPanel: taskPanelApi.hydrateTaskPanel,
-    openBundlePanel: cardPanelApi.openBundlePanel,
+    openCardPanel: cardPanelApi.openCardPanel,
     openTaskPanel: taskPanelApi.openTaskPanel,
-    prepareBundlePanel: routeStateApi.prepareBundlePanel,
+    prepareCardPanel: routeStateApi.prepareCardPanel,
     prepareTaskPanel: routeStateApi.prepareTaskPanel,
     renderArtifactList: taskEvidenceApi.renderArtifactList,
-    resetBundlePanel: routeStateApi.resetBundlePanel,
+    resetCardPanel: routeStateApi.resetCardPanel,
     resetTaskPanel: routeStateApi.resetTaskPanel,
     resolveAssigneeLabel: taskPanelApi.resolveAssigneeLabel,
-    resolveBundleLabel: taskPanelApi.resolveBundleLabel,
+    resolveCardLabel: taskPanelApi.resolveCardLabel,
     resolveTaskQueueRouteContext: routeStateApi.resolveTaskQueueRouteContext,
     setTaskRouteContextFromRoute: routeStateApi.setTaskRouteContextFromRoute,
   };
@@ -119,14 +119,14 @@ export function createWorkDetailSurface(context) {
 
 function emptyTaskRouteContext(route = null) {
   const date = route?.params.get("date") || "";
-  const bundleId = route?.params.get("bundleId") || "";
+  const cardId = route?.params.get("cardId") || "";
   return {
     date,
-    bundleId,
-    contextBundleId: route?.params.get("contextBundleId") || "",
-    tasks: date || bundleId ? [] : null,
-    filterBundle: null,
-    contextBundle: null,
+    cardId,
+    contextCardId: route?.params.get("contextCardId") || "",
+    tasks: date || cardId ? [] : null,
+    filterCard: null,
+    contextCard: null,
     failures: [],
   };
 }

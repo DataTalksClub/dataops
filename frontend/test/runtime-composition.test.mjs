@@ -41,7 +41,7 @@ function createSurfaceHarness(options = {}) {
     activeWorkspaceView: options.view || "home",
     recurringSnapshot: { loaded: false, recurringConfigs: [], errors: [] },
     workSnapshot: options.workSnapshot || {
-      bundleTasks: {
+      cardTasks: {
         alpha: [{ id: "task-card", status: "open" }],
       },
       overdueTasks: [{ id: "task-overdue", status: "open" }],
@@ -419,7 +419,7 @@ describe("runtime surface composition", () => {
       cleanPath: (path) => path.replace(/^content\//, ""),
       documentRef: document,
       getRecurringConfigTitle: (item) => item.title,
-      openBundlePanel() {},
+      openCardPanel() {},
       openDocument() {},
       openTaskPanel() {},
       resolveAssigneeLabel: (task) => task.assigneeName || "Unassigned",

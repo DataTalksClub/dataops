@@ -1,4 +1,5 @@
 import { createAdminSurface } from "./admin.js";
+import { createDeviceAuthSurface } from "./device.js";
 import { createArtifactsSurface } from "./artifacts.js";
 import { createAssistantsSurface } from "./assistants.js";
 import { createInboxActions } from "./inbox-actions.js";
@@ -26,6 +27,7 @@ export function createOperationsSurface(context) {
   });
   const assistants = createAssistantsSurface(context);
   const artifacts = createArtifactsSurface(context);
+  const device = createDeviceAuthSurface(context);
 
   return {
     refreshIntakeSnapshot: inbox.refreshIntakeSnapshot,
@@ -35,6 +37,7 @@ export function createOperationsSurface(context) {
       assistants.refreshOperationsAssistantSnapshot,
     renderArtifactsSurface: artifacts.renderArtifactsSurface,
     renderAssistantsSurface: assistants.renderAssistantsSurface,
+    renderDeviceSurfaceView: device.renderDeviceSurfaceView,
     renderInboxSurface: inbox.renderInboxSurface,
     resolveIntakeRouteEntity: inbox.resolveIntakeRouteEntity,
   };

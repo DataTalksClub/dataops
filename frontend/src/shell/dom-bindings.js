@@ -90,11 +90,11 @@ const SELECTORS = Object.freeze({
   taskPanelBody: "#task-panel-body",
   taskPanelClose: "#task-panel-close",
   taskModalBackdrop: "#task-modal-backdrop",
-  bundlePanel: "#bundle-panel",
-  bundlePanelTitle: "#bundle-panel-title",
-  bundlePanelBody: "#bundle-panel-body",
-  bundlePanelClose: "#bundle-panel-close",
-  bundleModalBackdrop: "#bundle-modal-backdrop",
+  cardPanel: "#card-panel",
+  cardPanelTitle: "#card-panel-title",
+  cardPanelBody: "#card-panel-body",
+  cardPanelClose: "#card-panel-close",
+  cardModalBackdrop: "#card-modal-backdrop",
   diffModal: "#diff-modal",
   diffTitle: "#diff-title",
   diffBody: "#diff-body",
@@ -138,10 +138,10 @@ export function bindAppDomEvents(context) {
 
   dom.taskPanelClose.addEventListener("click", handlers.closeTaskPanel);
   dom.taskModalBackdrop.addEventListener("click", handlers.closeTaskPanel);
-  dom.bundlePanelClose.addEventListener("click", handlers.closeBundlePanel);
-  dom.bundleModalBackdrop?.addEventListener(
+  dom.cardPanelClose.addEventListener("click", handlers.closeCardPanel);
+  dom.cardModalBackdrop?.addEventListener(
     "click",
-    handlers.closeBundlePanel,
+    handlers.closeCardPanel,
   );
   documentRef.addEventListener(
     "keydown",

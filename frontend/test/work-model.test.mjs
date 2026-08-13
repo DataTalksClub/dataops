@@ -7,15 +7,15 @@ import {
   deriveHomeWorkState,
   formatHomeTaskTiming,
   groupCardItemsByStage,
-  isActiveWorkBundle,
-  isArchivedWorkBundle,
+  isActiveWorkCard,
+  isArchivedWorkCard,
   isFollowUpDueTask,
   isOpenWorkTask,
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
   partitionCardsByArchive,
-  summarizeBundleProgress,
+  summarizeCardProgress,
   taskProofState,
   workflowTaskGroups,
 } from "../src/core/workspace.js";
@@ -25,7 +25,7 @@ const TODAY = "2026-08-12";
 describe("frontend work model", () => {
   test("directly imports the work model from the production workspace module", () => {
     assert.equal(typeof buildHomeAttentionItems, "function");
-    assert.equal(typeof summarizeBundleProgress, "function");
+    assert.equal(typeof summarizeCardProgress, "function");
   });
 
   test("compares dates and formats operator timing deterministically", () => {
@@ -109,11 +109,11 @@ describe("frontend work model", () => {
   test("includes proof-missing Tasks known only through Card task collections", () => {
     const state = deriveHomeWorkState({
       loaded: true,
-      bundleTasks: {
+      cardTasks: {
         "card-1": [{
           id: "card-only-proof",
           status: "todo",
-          bundleId: "card-1",
+          cardId: "card-1",
           date: TODAY,
           requiredLinkName: "Publication URL",
         }],
@@ -169,8 +169,8 @@ describe("frontend work model", () => {
     const partition = partitionCardsByArchive(cards);
     assert.deepEqual(partition.active.map((card) => card.id), ["prep", "announced", "after"]);
     assert.deepEqual(partition.archived.map((card) => card.id), ["done-stage", "done-status", "archived"]);
-    assert.equal(isActiveWorkBundle(cards[0]), true);
-    assert.equal(isArchivedWorkBundle(cards[3]), true);
+    assert.equal(isActiveWorkCard(cards[0]), true);
+    assert.equal(isArchivedWorkCard(cards[3]), true);
     const groups = groupCardItemsByStage(partition.active);
     assert.deepEqual(groups.map((group) => group.label), ["Preparation", "Announced", "After event"]);
     assert.equal(groups.some((group) => group.label === "Done"), false);
@@ -209,14 +209,14 @@ describe("frontend work model", () => {
     const card = {
       id: "card-1",
       anchorDate: "2026-08-15",
-      bundleLinks: [{ name: "Public page", url: "" }],
+      cardLinks: [{ name: "Public page", url: "" }],
     };
     const tasks = [
       { id: "done", description: "Completed", status: "done", date: "2026-08-10" },
       { id: "overdue", description: "Overdue", status: "todo", date: "2026-08-11", requiresFile: true },
       { id: "next", description: "Next", status: "todo", date: "2026-08-14" },
     ];
-    const progress = summarizeBundleProgress(card, tasks, TODAY);
+    const progress = summarizeCardProgress(card, tasks, TODAY);
     assert.deepEqual(
       {
         total: progress.total,

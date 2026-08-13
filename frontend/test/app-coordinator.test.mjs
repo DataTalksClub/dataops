@@ -249,7 +249,7 @@ describe("app shell coordinator characterization", () => {
       "closeSettingsMenu()",
       "documentList.replaceChildren()",
       "refreshDocuments()",
-      "if (bundleId) prepareBundlePanel(bundleId)",
+      "if (cardId) prepareCardPanel(cardId)",
       "if (taskId) prepareTaskPanel(taskId)",
     ]);
     for (const routePath of [

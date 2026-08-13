@@ -43,6 +43,7 @@
               <button class="workspace-subnav-button" type="button" data-tasks-section="queue">Queue</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="workflows">Cards</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="templates">Templates</button>
+              <button class="workspace-subnav-button" type="button" data-tasks-section="recurring">Recurring</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="assistants">Assistants</button>
               <button class="workspace-subnav-button" type="button" data-tasks-section="artifacts">Artifacts</button>
             </div>
@@ -186,14 +187,14 @@
               <div id="task-panel-body" class="task-panel-body"></div>
             </div>
           </section>
-          <section id="bundle-panel" class="task-modal workflow-modal" aria-label="Card details" hidden>
-            <div id="bundle-modal-backdrop" class="task-modal-backdrop"></div>
-            <div class="task-modal-panel workflow-modal-panel" role="dialog" aria-modal="true" aria-labelledby="bundle-panel-title">
+          <section id="card-panel" class="task-modal workflow-modal" aria-label="Card details" hidden>
+            <div id="card-modal-backdrop" class="task-modal-backdrop"></div>
+            <div class="task-modal-panel workflow-modal-panel" role="dialog" aria-modal="true" aria-labelledby="card-panel-title">
               <header class="task-panel-header">
-                <strong id="bundle-panel-title">Workflow</strong>
-                <button id="bundle-panel-close" class="quiet-button workflow-modal-close" type="button" aria-label="Close card">×</button>
+                <strong id="card-panel-title">Workflow</strong>
+                <button id="card-panel-close" class="quiet-button workflow-modal-close" type="button" aria-label="Close card">×</button>
               </header>
-              <div id="bundle-panel-body" class="task-panel-body"></div>
+              <div id="card-panel-body" class="task-panel-body"></div>
             </div>
           </section>
         </section>

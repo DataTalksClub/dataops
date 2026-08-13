@@ -81,6 +81,7 @@ const operationsModules = [
   'admin.js',
   'artifacts.js',
   'assistants.js',
+  'device.js',
   'inbox.js',
   'inbox-actions.js',
 ];
@@ -213,7 +214,7 @@ describe('one canonical frontend', () => {
     for (const route of ['/', '/inbox', '/tasks', '/cards', '/cards/archive', '/assistants', '/templates', '/recurring', '/notifications', '/bookkeeping', '/sponsors', '/newsletter', '/calendar', '/mailing-exports']) {
       assert.ok(workspace.includes(`"${route}"`), `missing canonical route ${route}`);
     }
-    for (const param of ['taskId', 'cardId', 'bundleId', 'intakeId', 'assistantJobId']) {
+    for (const param of ['taskId', 'cardId', 'cardId', 'intakeId', 'assistantJobId']) {
       assert.ok(workspace.includes(`"${param}"`), `missing deep-link parameter ${param}`);
     }
   });
@@ -222,16 +223,17 @@ describe('one canonical frontend', () => {
     for (const marker of [
       'openTaskPanel',
       'requiredLinkName',
-      'openBundlePanel',
-      'updateBundleStage',
+      'openCardPanel',
+      'updateCardStage',
     ]) assert.ok(workDetail.includes(marker), `work detail is missing ${marker}`);
     for (const marker of [
       'renderWorkQueueSurface',
       'renderWorkflowsSurface',
-      'renderTemplatesRecurringSurface',
-      'renderRecurringOperationsSection',
+      'renderTemplatesSurface',
+      'renderRecurringSurface',
       'openQuickTaskForm',
       'openQuickWorkflowForm',
+      'openRecurringForm',
     ]) assert.ok(tasks.includes(marker), `Tasks surface is missing ${marker}`);
     for (const marker of ['renderBookkeepingSurface', 'PDF evidence', 'monthly package']) {
       assert.ok(finance.includes(marker), `finance surface is missing ${marker}`);
@@ -240,7 +242,7 @@ describe('one canonical frontend', () => {
       assert.ok(planning.includes(marker), `planning surface is missing ${marker}`);
     }
     assert.match(workspace, /function taskRequiresApprovedArtifact/);
-    assert.match(styles, /\.bundle-checklist/);
+    assert.match(styles, /\.card-checklist/);
     assert.match(styles, /\.bookkeeping-surface/);
     assert.match(styles, /\.newsletter-surface/);
     assert.match(styles, /\.calendar-surface/);
@@ -339,7 +341,7 @@ describe('one canonical frontend', () => {
       'RUNTIME_TEMPLATE_FIELDS',
       '/api/templates',
       'taskDefinitions',
-      'bundleLinkDefinitions',
+      'cardLinkDefinitions',
       'triggerSchedule',
       'sourceDocIds',
       'Advanced JSON',

@@ -11,7 +11,7 @@ export function createTaskQueue(context) {
     isTaskOverdue,
     isWaitingOrFollowUpTask,
     navigateCanonicalWorkspace,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
     resolveAssigneeLabel,
     sortWorkTasks,
@@ -77,8 +77,8 @@ export function createTaskQueue(context) {
     section.setAttribute("aria-label", "Work queue");
     if (
       taskRouteContext.date ||
-      taskRouteContext.bundleId ||
-      taskRouteContext.contextBundleId ||
+      taskRouteContext.cardId ||
+      taskRouteContext.contextCardId ||
       taskRouteContext.failures.length
     ) {
       const routeContext = document.createElement("aside");
@@ -89,22 +89,22 @@ export function createTaskQueue(context) {
       const summary = document.createElement("p");
       summary.textContent = [
         taskRouteContext.date ? `Date ${taskRouteContext.date}` : "",
-        taskRouteContext.bundleId
-          ? `Filtered to card ${taskRouteContext.filterBundle?.title || taskRouteContext.bundleId}`
+        taskRouteContext.cardId
+          ? `Filtered to card ${taskRouteContext.filterCard?.title || taskRouteContext.cardId}`
           : "",
-        taskRouteContext.contextBundleId
-          ? `Return card ${taskRouteContext.contextBundle?.title || taskRouteContext.contextBundleId}`
+        taskRouteContext.contextCardId
+          ? `Return card ${taskRouteContext.contextCard?.title || taskRouteContext.contextCardId}`
           : "",
       ]
         .filter(Boolean)
         .join(" · ");
       routeContext.append(heading, summary);
-      if (taskRouteContext.contextBundleId && taskRouteContext.contextBundle) {
+      if (taskRouteContext.contextCardId && taskRouteContext.contextCard) {
         const open = document.createElement("button");
         open.type = "button";
         open.textContent = "Open return card";
         open.addEventListener("click", () =>
-          openBundlePanel(taskRouteContext.contextBundleId),
+          openCardPanel(taskRouteContext.contextCardId),
         );
         routeContext.append(open);
       }
@@ -157,7 +157,7 @@ export function createTaskQueue(context) {
 
   function renderTaskRouteContextFailure(failure) {
     const labels = {
-      "filter-bundle": [
+      "filter-card": [
         "Filter card",
         "The card filter could not be verified.",
       ],
@@ -218,7 +218,7 @@ export function createTaskQueue(context) {
       task.assigneeId
         ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
         : "Unassigned",
-      task.bundleId ? "Card task" : "Independent task",
+      task.cardId ? "Card task" : "Independent task",
       taskSourceLabel(task),
       taskProofState(task).label,
     ].filter(Boolean)) {

@@ -48,6 +48,13 @@
   --content-width: 56rem;
   --mobile-header-height: 64px;
 
+  /* Card alignment. Every card pads its content by --card-padding-x, so any
+     label that heads a stack of cards (column header, archive month) insets by
+     --card-content-inset to sit on the same vertical line as the card content. */
+  --card-border-width: 1px;
+  --card-padding-x: 12px;
+  --card-content-inset: calc(var(--card-padding-x) + var(--card-border-width));
+
   /* Compatibility aliases used by application-rendered inline surfaces. */
   --bg: var(--page-bg);
   --surface: var(--surface-bg);
@@ -1589,6 +1596,18 @@ body[data-workspace-view="home"] #git-section {
   font-weight: 400;
 }
 
+/* Checkboxes keep their intrinsic size and sit beside their label text. */
+.quick-form-label.quick-form-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-form-label.quick-form-checkbox input {
+  width: auto;
+  min-height: 0;
+}
+
 .confirm-panel {
   width: min(440px, calc(100vw - 32px));
   margin-top: 18vh;
@@ -2472,6 +2491,457 @@ body.dark .danger-button {
   padding: 5px 10px;
 }
 
+/* Recurring tab: schedules are managed as a full list, not a side panel. */
+/* Device authorization: a single decision, so the page stays narrow and the
+   facts being authorized are the most prominent thing on it. */
+.ops-surface-device > * {
+  width: min(40rem, 100%);
+}
+
+.device-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.device-form {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.device-code-input {
+  width: 100%;
+  min-height: 40px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.device-confirm {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 14px;
+}
+
+.device-confirm h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 16px;
+}
+
+.device-facts {
+  display: grid;
+  gap: 6px 16px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin: 0;
+}
+
+.device-facts dt {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.device-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.device-warning {
+  margin: 0;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  padding: 10px 12px;
+  color: var(--warning-text);
+  font-size: 13px;
+}
+
+.device-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.device-error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+.device-outcome {
+  display: grid;
+  gap: 6px;
+}
+
+.device-outcome h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 16px;
+}
+
+.device-outcome p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 600px) {
+  .device-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Recurring tab: schedule management shares the Home surface vocabulary --
+   a page header, an action bar, a summary strip, and one bordered list panel.
+   The surface owns its own panels, so the generic route box is dropped. */
+.ops-surface-recurring {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  gap: 16px;
+}
+
+.ops-surface-recurring > * {
+  width: min(var(--content-width), 100%);
+}
+
+.ops-surface-recurring .ops-surface-header {
+  display: grid;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.ops-surface-recurring .ops-surface-header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.ops-surface-recurring .ops-surface-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.ops-recurring-surface {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.recurring-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recurring-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.recurring-action:hover {
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
+}
+
+.recurring-action-primary {
+  border-color: var(--primary-bg);
+  background: var(--primary-bg);
+  color: #ffffff;
+}
+
+.recurring-action-primary:hover {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+.recurring-action svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.recurring-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+}
+
+.recurring-summary-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  border-left: 1px solid var(--border-muted);
+  padding: 14px 12px;
+}
+
+.recurring-summary-item:first-child {
+  border-left: 0;
+}
+
+.recurring-summary-label {
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.recurring-summary-item strong {
+  color: var(--text-heading);
+  font-size: 18px;
+}
+
+.recurring-summary-paused[data-state="ready"] strong {
+  color: var(--warning-text);
+}
+
+.recurring-summary-today[data-state="ready"] strong {
+  color: var(--accent);
+}
+
+.ops-recurring-section {
+  overflow: hidden;
+  padding: 0;
+}
+
+.recurring-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 12px 16px;
+}
+
+.recurring-section-header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.recurring-section-header span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ops-recurring-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-recurring-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--border-muted);
+  padding: 12px 16px;
+}
+
+.ops-recurring-item:first-child {
+  border-top: 0;
+}
+
+.ops-recurring-item.is-paused {
+  background: var(--surface-muted);
+}
+
+.recurring-status svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--success-text);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.is-paused .recurring-status svg {
+  stroke: var(--text-faint);
+}
+
+.recurring-item-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.recurring-item-text strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.is-paused .recurring-item-text strong {
+  color: var(--text-muted);
+}
+
+.recurring-item-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.recurring-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.recurring-fact svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.recurring-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.recurring-section-footer {
+  border-top: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 10px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.recurring-delete-guidance,
+.ops-inline-error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 12px;
+}
+
+.recurring-delete-guidance {
+  grid-column: 1 / -1;
+}
+
+.ops-empty {
+  margin: 0;
+  padding: 20px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Recurring create/edit dialog. */
+.recurring-form-intro,
+.recurring-form-preview,
+.recurring-form-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.recurring-form-intro {
+  color: var(--text-muted);
+}
+
+.recurring-form-preview {
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  padding: 8px 12px;
+  color: var(--info-text);
+  font-weight: 600;
+}
+
+.recurring-form-error {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.recurring-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.recurring-form-grid > .recurring-form-wide,
+.recurring-form .recurring-form-wide {
+  grid-column: 1 / -1;
+}
+
+.recurring-form-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .recurring-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .recurring-summary-item {
+    border-left: 0;
+    border-top: 1px solid var(--border-muted);
+    justify-content: space-between;
+  }
+
+  .recurring-summary-item:first-child {
+    border-top: 0;
+  }
+
+  .ops-recurring-item {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .recurring-status {
+    padding-top: 2px;
+  }
+
+  .recurring-row-actions {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+
+  .recurring-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Workflow board: Trello-style lists with DataOps/CMP foundations. */
 .ops-surface-workflows {
   display: grid;
@@ -2487,6 +2957,10 @@ body.dark .danger-button {
 }
 
 .ops-workflows-board {
+  /* Fixed board width: the three columns never grow or shrink with the
+     sidebar, so the header actions stay inside the visible area. */
+  --cards-board-width: 64rem;
+
   display: grid;
   gap: 16px;
   width: 100%;
@@ -2500,8 +2974,7 @@ body.dark .danger-button {
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  width: min(calc(100vw - var(--sidebar-width) - 72px), 1480px);
-  max-width: 100%;
+  width: min(100%, var(--cards-board-width));
   justify-self: center;
   padding: 0 4px;
 }
@@ -2544,19 +3017,57 @@ body.dark .danger-button {
   background: var(--surface-hover);
 }
 
+.cards-archive-month {
+  display: grid;
+  gap: 8px;
+  width: min(100%, var(--cards-board-width));
+  justify-self: center;
+  padding: 0 4px;
+}
+
+.cards-archive-month + .cards-archive-month {
+  margin-top: 12px;
+}
+
+.cards-archive-month:last-child {
+  padding-bottom: 20px;
+}
+
+.cards-archive-month-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text-heading);
+  padding: 0 var(--card-content-inset) 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.cards-archive-month-title span {
+  color: var(--text-faint);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .cards-archive-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 12px;
   width: 100%;
-  padding: 2px 4px 20px;
+  padding: 2px 0 8px;
 }
 
 .ops-workflows-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  width: 100%;
+  width: min(100%, var(--cards-board-width));
+  justify-self: center;
   min-width: 0;
   align-items: flex-start;
   overflow-x: auto;
@@ -2581,14 +3092,39 @@ body.dark .danger-button {
   justify-content: space-between;
   gap: 8px;
   min-height: 32px;
-  padding: 0 2px 4px;
+  padding: 0 var(--card-content-inset) 4px;
 }
 
 .workflow-column-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin: 0;
   color: var(--text-heading);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.workflow-column-header h3::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+
+.workflow-board-column[data-stage="preparation"] .workflow-column-header h3::before {
+  background: var(--accent);
+}
+
+.workflow-board-column[data-stage="announced"] .workflow-column-header h3::before {
+  background: var(--warning-text);
+}
+
+.workflow-board-column[data-stage="after-event"] .workflow-column-header h3::before {
+  background: var(--success-text);
 }
 
 .workflow-column-header span {
@@ -2620,35 +3156,112 @@ body.dark .danger-button {
 
 .ops-workflow-card.workflow-board-card {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 92px;
-  border: 1px solid var(--border-muted);
-  border-radius: 10px;
+  border: var(--card-border-width) solid var(--border-muted);
+  border-radius: 8px;
   background: var(--surface-bg);
   color: var(--text-primary);
-  padding: 11px;
+  padding: 10px var(--card-padding-x) 12px;
   text-align: left;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
 .ops-workflow-card.workflow-board-card:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.12);
-  transform: translateY(-1px);
-}
-
-body.dark .ops-workflow-card.workflow-board-card,
-body.dark .ops-workflow-card.workflow-board-card:hover {
+  background: var(--surface-hover);
   box-shadow: none;
+  transform: none;
 }
 
-.ops-workflow-card.workflow-board-card > strong {
+.workflow-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ops-workflow-card.workflow-board-card > .workflow-card-title {
+  display: -webkit-box;
   overflow: hidden;
   color: var(--text-heading);
-  font-size: 14px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.workflow-card-anchor {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.workflow-card-anchor.is-today {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.workflow-card-anchor.is-upcoming {
+  color: var(--text-heading);
+}
+
+.workflow-card-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.workflow-card-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.workflow-card-flag {
+  border: 1px solid var(--border-muted);
+  border-radius: 5px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.workflow-card-flag.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.workflow-card-flag.is-warning {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.workflow-card-flag.is-info {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
 }
 
 .ops-workflow-card small {
@@ -2657,8 +3270,28 @@ body.dark .ops-workflow-card.workflow-board-card:hover {
   line-height: 1.35;
 }
 
+.workflow-board-card .ops-progress {
+  height: 4px;
+  margin: 3px 0 2px;
+  background: var(--border-muted);
+}
+
+.workflow-board-card .ops-progress i,
+.workflow-board-card.ops-risk-high .ops-progress i,
+.workflow-board-card.ops-risk-medium .ops-progress i {
+  min-width: 0;
+  background: var(--accent);
+}
+
+.workflow-board-card .ops-progress.is-complete i,
+.workflow-board-card.ops-risk-high .ops-progress.is-complete i,
+.workflow-board-card.ops-risk-medium .ops-progress.is-complete i {
+  background: var(--success-text);
+  opacity: 1;
+}
+
 .ops-progress {
-  height: 5px;
+  height: 4px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--border-muted);
@@ -2691,10 +3324,10 @@ body.task-modal-open {
 .workflow-modal-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(900px, calc(100vw - 48px));
+  width: min(680px, calc(100vw - 48px));
   height: min(780px, calc(100vh - 48px));
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--surface-muted);
 }
 
@@ -2741,7 +3374,7 @@ body.task-modal-open {
 
 .workflow-modal-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 24px;
 }
@@ -2783,8 +3416,8 @@ body.task-modal-open {
   font-weight: 600;
 }
 
-.bundle-stage-select,
-.bundle-stage-static {
+.card-stage-select,
+.card-stage-static {
   width: 100%;
   min-height: 34px;
   border-color: transparent;
@@ -2792,7 +3425,7 @@ body.task-modal-open {
   font-weight: 600;
 }
 
-.bundle-stage-static {
+.card-stage-static {
   display: flex;
   align-items: center;
   border-radius: var(--radius);
@@ -2815,9 +3448,58 @@ body.task-modal-open {
   font-weight: 600;
 }
 
-.workflow-progress-copy {
+.workflow-summary-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.workflow-summary-top .workflow-stage-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.workflow-summary-top .card-stage-select,
+.workflow-summary-top .card-stage-static {
+  width: auto;
+  min-width: 150px;
+}
+
+.workflow-detail-summary .ops-progress {
+  height: 4px;
+  margin: 2px 0;
+  background: var(--border-muted);
+}
+
+.workflow-detail-summary .ops-progress i {
+  background: var(--accent);
+}
+
+.workflow-detail-summary .ops-progress.is-complete i {
+  background: var(--success-text);
+}
+
+.workflow-detail-summary .workflow-card-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.workflow-next-task {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.workflow-next-task strong {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .workflow-detail-summary .ops-card-chips {
@@ -2854,21 +3536,69 @@ body.task-modal-open {
   font-weight: 600;
 }
 
-.workflow-links-section .task-required-link label {
+.card-link-row {
   display: grid;
-  grid-template-columns: minmax(160px, 0.55fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  border: var(--card-border-width) solid var(--border-muted);
+  border-radius: 6px;
+  background: var(--surface-bg);
+  padding: 8px var(--card-padding-x);
+}
+
+.card-link-label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
   color: var(--text-primary);
 }
 
-.workflow-links-section .task-required-link input {
-  background: var(--surface-bg);
+.card-link-name {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
-.workflow-links-section .task-required-link input {
+.workflow-links-section .card-link-input {
   width: 100%;
-  min-height: 40px;
+  min-height: 30px;
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+
+.workflow-links-section .card-link-input:hover:not(:focus) {
+  border-color: var(--border-muted);
+  background: var(--surface-muted);
+  padding: 0 6px;
+}
+
+.workflow-links-section .card-link-input:focus {
+  border-color: var(--input-border);
+  background: var(--input-bg);
+  padding: 0 6px;
+}
+
+.card-link-open {
+  border: 1px solid var(--border-muted);
+  border-radius: 5px;
+  color: var(--link-color);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.card-link-open:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.card-link-state {
+  align-self: center;
 }
 
 .workflow-checklist-section .task-history-list {
@@ -2876,7 +3606,7 @@ body.task-modal-open {
   gap: 6px;
 }
 
-.bundle-task-group-title {
+.card-task-group-title {
   margin-top: 8px;
   color: var(--text-muted);
   font-size: 12px;
@@ -2885,36 +3615,35 @@ body.task-modal-open {
   text-transform: uppercase;
 }
 
-.bundle-checklist-item {
+.card-checklist-item {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) minmax(120px, auto);
   align-items: center;
   gap: 10px;
-  min-height: 48px;
-  border: 0;
+  min-height: 44px;
+  border: var(--card-border-width) solid var(--border-muted);
   border-radius: 6px;
   background: var(--surface-bg);
-  padding: 8px 10px;
-  box-shadow: 0 1px 1px rgba(9, 30, 66, 0.16);
+  padding: 8px var(--card-padding-x);
+  box-shadow: none;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
-.bundle-checklist-item:hover {
-  background: var(--surface-bg);
-  box-shadow: 0 2px 5px rgba(9, 30, 66, 0.2);
-}
-
-body.dark .bundle-checklist-item,
-body.dark .bundle-checklist-item:hover {
+.card-checklist-item:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
   box-shadow: none;
 }
 
-.bundle-checklist-item > input[type="checkbox"] {
+.card-checklist-item > input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 0;
 }
 
-.bundle-checklist-label {
+.card-checklist-label {
   min-width: 0;
   border: 0;
   background: transparent;
@@ -2926,26 +3655,40 @@ body.dark .bundle-checklist-item:hover {
   line-height: 1.4;
 }
 
-.bundle-checklist-label:hover {
+.card-checklist-label:hover {
   color: var(--link-hover);
   text-decoration: underline;
 }
 
-.bundle-checklist-label.is-done {
+.card-checklist-label.is-done {
   color: var(--text-muted);
   text-decoration: line-through;
 }
 
-.bundle-checklist-date {
+.card-checklist-date {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
   color: var(--text-muted);
   font-size: 11px;
   text-align: right;
 }
 
-.bundle-checklist-evidence {
-  display: block;
+.card-checklist-day {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.card-checklist-day.is-overdue {
   color: var(--danger-text);
-  line-height: 1.35;
+  font-weight: 600;
+}
+
+.card-checklist-evidence {
+  line-height: 1.6;
 }
 
 .workflow-references-section .task-history-list {
@@ -2954,10 +3697,16 @@ body.dark .bundle-checklist-item:hover {
 }
 
 .workflow-references-section .task-history-event {
-  border: 0;
+  border: 1px solid var(--border-muted);
   border-radius: var(--radius);
   background: var(--surface-bg);
-  padding: 9px 10px;
+  padding: 7px 10px;
+}
+
+.workflow-assistant-note {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .workflow-references-section .task-follow-up-row,
@@ -3529,17 +4278,16 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     grid-template-columns: 1fr;
   }
 
-  .workflow-links-section .task-required-link label,
   .workflow-references-section .task-follow-up-row,
   .workflow-references-section .task-history .task-follow-up-row {
     grid-template-columns: 1fr;
   }
 
-  .bundle-checklist-item {
+  .card-checklist-item {
     grid-template-columns: 20px minmax(0, 1fr);
   }
 
-  .bundle-checklist-date {
+  .card-checklist-date {
     grid-column: 2;
     text-align: left;
   }

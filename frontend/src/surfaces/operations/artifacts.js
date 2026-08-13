@@ -14,7 +14,7 @@ export function createArtifactsSurface(context) {
     isWorkspaceRouteFresh,
     libraryTitle,
     navigateCanonicalWorkspace,
-    openBundlePanel,
+    openCardPanel,
     openTaskPanel,
     promptUser,
     refreshDocuments,
@@ -70,7 +70,7 @@ export function createArtifactsSurface(context) {
     meta.textContent = [
       artifact.status || "draft",
       artifact.type || artifact.sourceType || "",
-      artifact.bundleId ? `card ${artifact.bundleId}` : "",
+      artifact.cardId ? `card ${artifact.cardId}` : "",
       artifact.taskId ? `task ${artifact.taskId}` : "",
       artifact.storageUri ? "storage linked" : "storage missing",
     ]

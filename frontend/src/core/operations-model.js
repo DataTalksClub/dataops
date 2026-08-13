@@ -1,19 +1,22 @@
 import {
+  cardAnchorTone,
   compareIsoDate,
   dedupeWorkTasks,
+  describeRecurringRun,
+  formatCardAnchorLabel,
   formatTaskDateMeta,
-  isActiveWorkBundle,
+  isActiveWorkCard,
   isBeforeIsoDate,
   isOpenWorkTask,
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
-  summarizeBundleProgress,
+  summarizeCardProgress,
   taskDate,
   taskProofState,
   tasksFromWorkPayload,
   todayIsoDate,
-  workBundleTitle,
+  workCardTitle,
   workTaskTitle,
 } from "./workspace.js";
 
@@ -24,14 +27,14 @@ export function emptyOperationsWorkSnapshot() {
     todayTasks: [],
     overdueTasks: [],
     waitingTasks: [],
-    bundles: [],
+    cards: [],
     users: [],
-    bundleTasks: {},
+    cardTasks: {},
     errors: [],
     todayLoaded: false,
     overdueLoaded: false,
     waitingLoaded: false,
-    bundlesLoaded: false,
+    cardsLoaded: false,
     usersLoaded: false,
   };
 }
@@ -69,10 +72,10 @@ export function settledPayload(result) {
   return result && result.status === "fulfilled" ? result.value : {};
 }
 
-export function bundlesFromWorkPayload(payload) {
+export function cardsFromWorkPayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
-  if (Array.isArray(payload.bundles)) return payload.bundles;
+  if (Array.isArray(payload.cards)) return payload.cards;
   if (Array.isArray(payload.items)) return payload.items;
   return [];
 }
@@ -148,9 +151,19 @@ export function createOperationsModel({
     const configs = recurringConfigsFromPayload(
       snapshot.recurringConfigs || snapshot.configs || [],
     );
+    const today = todayIsoDate();
     const normalized = configs
       .filter((config) => config && typeof config === "object")
-      .map((config) => ({ ...config, enabled: config.enabled !== false }))
+      .map((config) => {
+        const run = describeRecurringRun(config.cronExpression || "", today);
+        return {
+          ...config,
+          enabled: config.enabled !== false,
+          scheduleLabel: run.summary,
+          nextRunDate: run.nextDate,
+          nextRunLabel: run.nextLabel,
+        };
+      })
       .sort((left, right) => {
         if (left.enabled !== right.enabled) return left.enabled ? -1 : 1;
         return recurringTitle(left).localeCompare(recurringTitle(right));
@@ -164,24 +177,24 @@ export function createOperationsModel({
     };
   }
 
-  function normalizeBundleTaskMap(bundleTasks, fallbackTasks) {
+  function normalizeCardTaskMap(cardTasks, fallbackTasks) {
     const output = {};
     if (
-      bundleTasks &&
-      typeof bundleTasks === "object" &&
-      !Array.isArray(bundleTasks)
+      cardTasks &&
+      typeof cardTasks === "object" &&
+      !Array.isArray(cardTasks)
     ) {
-      for (const [bundleId, tasks] of Object.entries(bundleTasks)) {
-        output[bundleId] = tasksFromWorkPayload(tasks);
+      for (const [cardId, tasks] of Object.entries(cardTasks)) {
+        output[cardId] = tasksFromWorkPayload(tasks);
       }
     }
     for (const task of tasksFromWorkPayload(fallbackTasks || [])) {
-      if (!task || !task.bundleId) continue;
-      if (!output[task.bundleId]) output[task.bundleId] = [];
-      output[task.bundleId].push(task);
+      if (!task || !task.cardId) continue;
+      if (!output[task.cardId]) output[task.cardId] = [];
+      output[task.cardId].push(task);
     }
-    for (const [bundleId, tasks] of Object.entries(output)) {
-      output[bundleId] = dedupeWorkTasks(tasks);
+    for (const [cardId, tasks] of Object.entries(output)) {
+      output[cardId] = dedupeWorkTasks(tasks);
     }
     return output;
   }
@@ -209,12 +222,12 @@ export function createOperationsModel({
     return sorted.slice(0, 12);
   }
 
-  function sortActiveWorkBundles(bundles, bundleTasks, today) {
-    const scored = bundles.map((bundle) => ({
-      bundle,
-      progress: summarizeBundleProgress(
-        bundle,
-        bundleTasks[bundle.id] || [],
+  function sortActiveWorkCards(cards, cardTasks, today) {
+    const scored = cards.map((card) => ({
+      card,
+      progress: summarizeCardProgress(
+        card,
+        cardTasks[card.id] || [],
         today,
       ),
     }));
@@ -225,15 +238,15 @@ export function createOperationsModel({
         (riskOrder[right.progress.risk] ?? 2);
       if (byRisk !== 0) return byRisk;
       const byDate = compareIsoDate(
-        left.bundle.anchorDate || "",
-        right.bundle.anchorDate || "",
+        left.card.anchorDate || "",
+        right.card.anchorDate || "",
       );
       if (byDate !== 0) return byDate;
-      return workBundleTitle(left.bundle).localeCompare(
-        workBundleTitle(right.bundle),
+      return workCardTitle(left.card).localeCompare(
+        workCardTitle(right.card),
       );
     });
-    return scored.map((entry) => entry.bundle);
+    return scored.map((entry) => entry.card);
   }
 
   function normalizeOperationsWorkSnapshot(input, options = {}) {
@@ -248,10 +261,10 @@ export function createOperationsModel({
     const explicitToday = tasksFromWorkPayload(snapshot.todayTasks || []);
     const explicitOverdue = tasksFromWorkPayload(snapshot.overdueTasks || []);
     const explicitWaiting = tasksFromWorkPayload(snapshot.waitingTasks || []);
-    const bundles = bundlesFromWorkPayload(snapshot.bundles || []);
+    const cards = cardsFromWorkPayload(snapshot.cards || []);
     const users = usersFromWorkPayload(snapshot.users || []);
-    const bundleTasks = normalizeBundleTaskMap(
-      snapshot.bundleTasks || {},
+    const cardTasks = normalizeCardTaskMap(
+      snapshot.cardTasks || {},
       allTasks,
     );
     const laneLoaded = (flag) =>
@@ -278,7 +291,7 @@ export function createOperationsModel({
       todayLoaded: laneLoaded("todayLoaded"),
       overdueLoaded: laneLoaded("overdueLoaded"),
       waitingLoaded: laneLoaded("waitingLoaded"),
-      bundlesLoaded: laneLoaded("bundlesLoaded"),
+      cardsLoaded: laneLoaded("cardsLoaded"),
       usersLoaded: laneLoaded("usersLoaded"),
       currentOperatorId: String(snapshot.currentOperatorId || ""),
       todayTasks: sortWorkTasks(normalizedTodayTasks, "today", today),
@@ -296,16 +309,16 @@ export function createOperationsModel({
         snapshot.waitingTaskCount,
         normalizedWaitingTasks.length,
       ),
-      activeBundles: sortActiveWorkBundles(
-        bundles.filter(isActiveWorkBundle),
-        bundleTasks,
+      activeCards: sortActiveWorkCards(
+        cards.filter(isActiveWorkCard),
+        cardTasks,
         today,
       ),
-      bundles,
-      bundlesById: new Map(
-        bundles
-          .filter((bundle) => bundle && bundle.id)
-          .map((bundle) => [bundle.id, bundle]),
+      cards,
+      cardsById: new Map(
+        cards
+          .filter((card) => card && card.id)
+          .map((card) => [card.id, card]),
       ),
       users,
       usersById: new Map(
@@ -313,7 +326,7 @@ export function createOperationsModel({
           .filter((user) => user && user.id)
           .map((user) => [user.id, user]),
       ),
-      bundleTasks,
+      cardTasks,
       errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
     };
   }
@@ -344,7 +357,7 @@ export function createOperationsModel({
   function taskSourceLabel(task) {
     if (task?.source) return labelizeWorkValue(task.source);
     if (task?.recurringConfigId) return "Recurring";
-    if (task?.templateId || task?.bundleId) return "Card";
+    if (task?.templateId || task?.cardId) return "Card";
     return "Ad hoc";
   }
 
@@ -373,7 +386,7 @@ export function createOperationsModel({
     const meta = [];
     if (task.date) meta.push(`Due ${formatTaskDateMeta(task.date, today)}`);
     if (task.status) meta.push(task.status);
-    meta.push(task.bundleId ? "Card" : "Independent");
+    meta.push(task.cardId ? "Card" : "Independent");
     meta.push(taskSourceLabel(task));
     if (task.assigneeId) {
       meta.push(`Owner ${resolveAssigneeLabel(task.assigneeId)}`);
@@ -397,7 +410,7 @@ export function createOperationsModel({
       summary,
       meta: meta.join(" - "),
       taskId: task.id,
-      bundleId: task.bundleId,
+      cardId: task.cardId,
       dueDate: taskDate(task),
       followUpDate: String(task.followUpAt || "").slice(0, 10),
       nextAction: taskNextActionLabel(task, today),
@@ -410,14 +423,14 @@ export function createOperationsModel({
     };
   }
 
-  function operationItemFromBundle(bundle, tasks, options = {}) {
+  function operationItemFromCard(card, tasks, options = {}) {
     const today = options.today || todayIsoDate();
-    const progress = summarizeBundleProgress(bundle, tasks, today);
+    const progress = summarizeCardProgress(card, tasks, today);
     const summaryParts = [];
-    if (bundle.stage) summaryParts.push(labelizeWorkValue(bundle.stage));
-    if (bundle.anchorDate) {
+    if (card.stage) summaryParts.push(labelizeWorkValue(card.stage));
+    if (card.anchorDate) {
       summaryParts.push(
-        `Anchor ${formatTaskDateMeta(bundle.anchorDate, today)}`,
+        `Anchor ${formatTaskDateMeta(card.anchorDate, today)}`,
       );
     }
     if (progress.nextDueTask) {
@@ -429,13 +442,17 @@ export function createOperationsModel({
         `Next: ${workTaskTitle(progress.nextDueTask)}${timing}`,
       );
     }
-    if (bundle.description) summaryParts.push(bundle.description);
+    if (card.description) summaryParts.push(card.description);
+    const anchorDate = String(card.anchorDate || "").slice(0, 10);
     return {
-      title: workBundleTitle(bundle),
-      stage: bundle.stage || "",
+      title: workCardTitle(card),
+      stage: card.stage || "",
       summary: summaryParts.join(" - "),
       meta: progress.label,
-      bundleId: bundle.id,
+      cardId: card.id,
+      anchorDate,
+      anchorLabel: formatCardAnchorLabel(anchorDate, today),
+      anchorTone: cardAnchorTone(anchorDate, today),
       progress,
       risk: progress.risk,
     };
@@ -638,14 +655,14 @@ export function createOperationsModel({
     isTaskAssignedTo,
     isWorkflowTemplateDoc,
     currentOperatorIdForTodayScope,
-    normalizeBundleTaskMap,
+    normalizeCardTaskMap,
     normalizeOperationsRecurringSnapshot,
     normalizeOperationsWorkSnapshot,
-    operationItemFromBundle,
+    operationItemFromCard,
     operationItemFromDoc,
     operationItemFromTask,
     operationItemFromTemplate,
-    sortActiveWorkBundles,
+    sortActiveWorkCards,
     sortWorkTasks,
     summarizeWorkflowTemplate,
     taskNextActionLabel,
