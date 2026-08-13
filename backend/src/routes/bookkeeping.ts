@@ -22,7 +22,6 @@ import {
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
-  lookupDocumentHash,
   markDocumentCleanupRequired,
   markGenerationCleanupRequired,
   markReportDeleting,
@@ -300,34 +299,6 @@ export async function handleBookkeepingRoutes(
       );
       return json(result.duplicate ? 200 : 201, result.item);
     }
-  }
-  if (path === "/api/bookkeeping/documents/hash-lookup" && method === "POST") {
-    const body = parse(event.body || null);
-    const hashes = body?.hashes;
-    if (
-      !Array.isArray(hashes) ||
-      hashes.length < 1 ||
-      hashes.length > 100 ||
-      hashes.some((value) => typeof value !== "string" || !SHA256.test(value))
-    )
-      return json(400, { error: "Invalid request" });
-    const results = [];
-    for (const sha256 of hashes as string[]) {
-      const lookup = await lookupDocumentHash(client, sha256);
-      results.push(
-        lookup.state === "active"
-          ? {
-              state: "active",
-              documentId: lookup.document?.id,
-              byteSize: lookup.document?.verifiedByteSize || lookup.document?.byteSize,
-              documentType: lookup.document?.documentType,
-              accountId: lookup.document?.accountId,
-              statementMonth: lookup.document?.statementMonth,
-            }
-          : { state: lookup.state },
-      );
-    }
-    return json(200, { results });
   }
   if (path === "/api/bookkeeping/links/lookup" && method === "POST") {
     const body = parse(event.body || null);

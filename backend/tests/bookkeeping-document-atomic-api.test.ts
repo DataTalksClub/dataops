@@ -20,6 +20,7 @@ describe("atomic bookkeeping document API", () => {
   let client: DynamoDBDocumentClient;
   const deletedVersions: string[] = [];
   const signedInputs: Record<string, unknown>[] = [];
+  let verifiedDocumentId = "";
   let objectBytes = pdf;
   before(async () => {
     const port = await startLocal();
@@ -77,14 +78,22 @@ describe("atomic bookkeeping document API", () => {
     ]);
     assert.ok(completed.every((response) => response.statusCode === 200));
     assert.deepEqual(completed.map((response) => JSON.parse(response.body).outcome).sort(), ["created", "existing"]);
-    const lookup = await invoke("POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] });
-    assert.equal(JSON.parse(lookup.body).results[0].state, "active");
+    const duplicate = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+      sha256,
+      byteSize: pdf.length,
+      documentType: "receipt",
+      idempotencyKey: "post-completion-duplicate",
+      sourceRef: "post-completion-duplicate",
+    });
+    const duplicateBody = JSON.parse(duplicate.body);
+    assert.equal(duplicateBody.outcome, "existing");
+    verifiedDocumentId = duplicateBody.document.id;
     assert.equal((await invoke("GET", `/api/bookkeeping/documents/${body.document.id}/download`)).statusCode, 200);
     assert.match(String(signedInputs.at(-1)?.Key), /^documents\//);
   });
 
   it("creates exactly one link under concurrent tuple requests", async () => {
-    const documentId = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] })).body).results[0].documentId;
+    const documentId = verifiedDocumentId;
     const transaction = JSON.parse((await invoke("POST", "/api/bookkeeping/transactions", {
       transactionDate: "2026-07-01", counterparty: "Synthetic", description: "Concurrent link", amount: "1.00", currency: "EUR",
     })).body);
@@ -117,8 +126,16 @@ describe("atomic bookkeeping document API", () => {
     const completed = await invoke("POST", `/api/bookkeeping/documents/${document.id}/complete`, ownership);
     assert.equal(completed.statusCode, 400);
     assert.equal(deletedVersions.at(-1), "version-1");
-    const lookup = await invoke("POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [expectedHash] });
-    assert.equal(JSON.parse(lookup.body).results[0].state, "absent");
+    const retry = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+      sha256: expectedHash,
+      byteSize: objectBytes.length,
+      documentType: "invoice",
+      ...ownership,
+      sourceRef: "invalid-source-retry",
+    });
+    assert.equal(retry.statusCode, 201);
+    const retryDocument = JSON.parse(retry.body).document;
+    assert.equal((await invoke("POST", `/api/bookkeeping/documents/${retryDocument.id}/cancel`, ownership)).statusCode, 200);
     objectBytes = pdf;
   });
 
@@ -131,8 +148,8 @@ describe("atomic bookkeeping document API", () => {
     const request = { sha256: hash, byteSize: expected.length, documentType: "receipt", ...ownership, sourceRef: "deferred-source" };
     const prepared = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/prepare", request)).body);
     assert.equal((await invoke("POST", `/api/bookkeeping/documents/${prepared.document.id}/complete`, ownership)).statusCode, 409);
-    const state = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [hash] })).body);
-    assert.equal(state.results[0].state, "cleanup-required");
+    const documents = JSON.parse((await invoke("GET", "/api/bookkeeping/documents")).body).items;
+    assert.equal(documents.find((item: Record<string, unknown>) => item.id === prepared.document.id).status, "cleanup-required");
     await client.send(new UpdateCommand({
       TableName: TABLE_BOOKKEEPING,
       Key: { PK: `DOCUMENT#${prepared.document.id}`, SK: `DOCUMENT#${prepared.document.id}` },
@@ -149,7 +166,6 @@ describe("atomic bookkeeping document API", () => {
     process.env.SKIP_AUTH = "false";
     try {
       const routes: Array<[string, string, unknown?]> = [
-        ["POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }],
         ["POST", "/api/bookkeeping/documents/prepare", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/complete", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/cancel", {}],
