@@ -16,8 +16,8 @@ on:
       - "README.md"
       - "scripts/validate_planning_docs.py"
       - "tools/content_tools/content_tools/doc_registry.py"
-      - "tools/content_tools/content_tools/validate_docs_links.py"
-      - "tools/content_tools/content_tools/validate_knowledge_repo.py"
+      - "backend/scripts/validate-docs-links.ts"
+      - "backend/scripts/validate-knowledge-repo.ts"
       - "tests/planning_docs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
@@ -40,8 +40,8 @@ on:
       - "README.md"
       - "scripts/validate_planning_docs.py"
       - "tools/content_tools/content_tools/doc_registry.py"
-      - "tools/content_tools/content_tools/validate_docs_links.py"
-      - "tools/content_tools/content_tools/validate_knowledge_repo.py"
+      - "backend/scripts/validate-docs-links.ts"
+      - "backend/scripts/validate-knowledge-repo.ts"
       - "tests/planning_docs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
@@ -99,7 +99,7 @@ jobs:
         run: uv run --with pytest python -m pytest tests/infra
 
       - name: Validate dataops-knowledge migration scaffold
-        run: uv run --project tools/content_tools python -m content_tools.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
+        run: npm --prefix backend run validate:knowledge-repo
 
       - name: Validate docs links and workflow doc IDs
-        run: uv run --project tools/content_tools python -m content_tools.validate_docs_links --repo-root . --content-root content
+        run: npm --prefix backend run validate:docs-links

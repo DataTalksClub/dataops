@@ -65,14 +65,14 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Validate docs links and workflow doc IDs
-        run: uv run --project tools/content_tools python -m content_tools.validate_docs_links --repo-root . --content-root content
-
-      - name: Validate dataops-knowledge migration scaffold
-        run: uv run --project tools/content_tools python -m content_tools.validate_knowledge_repo --repo-root . --scaffold-root templates/dataops-knowledge
-
       - name: Install Node workspace dependencies
         run: npm ci
+
+      - name: Validate docs links and workflow doc IDs
+        run: npm --prefix backend run validate:docs-links
+
+      - name: Validate dataops-knowledge migration scaffold
+        run: npm --prefix backend run validate:knowledge-repo
 
       - name: Build search index
         run: |

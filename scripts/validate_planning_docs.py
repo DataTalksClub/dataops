@@ -41,8 +41,8 @@ REQUIRED_WORKFLOW_PATHS = [
     "scripts/validate_planning_docs.py",
     "tests/planning_docs/**",
     "tools/content_tools/content_tools/doc_registry.py",
-    "tools/content_tools/content_tools/validate_docs_links.py",
-    "tools/content_tools/content_tools/validate_knowledge_repo.py",
+    "backend/scripts/validate-docs-links.ts",
+    "backend/scripts/validate-knowledge-repo.ts",
 ]
 TASK_TEMPLATE_SECTIONS = [
     "summary",
@@ -327,7 +327,7 @@ def validate_workflow(repo_root: Path) -> list[str]:
         "contents: read",
         "uv run --with pytest python -m pytest tests/planning_docs",
         "uv run --with pytest python -m pytest tests/infra",
-        "python -m content_tools.validate_docs_links",
+        "npm --prefix backend run validate:docs-links",
     ]
     for snippet in required_snippets:
         if snippet not in text:
