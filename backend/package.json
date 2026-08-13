@@ -26,8 +26,6 @@
     "seed:users": "tsx scripts/seed-users.ts",
     "seed:recurring": "tsx scripts/seed-recurring.ts",
     "export:data": "tsx scripts/export-execution-data.ts",
-    "build:google-doc-map": "tsx scripts/build-google-doc-map.ts",
-    "check:google-doc-map": "tsx scripts/build-google-doc-map.ts --check",
     "validate:docs-links": "tsx scripts/validate-docs-links.ts --repo-root .. --content-root content",
     "validate:export": "tsx scripts/validate-execution-export.ts",
     "dry-run:import": "tsx scripts/dry-run-import.ts",
