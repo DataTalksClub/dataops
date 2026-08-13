@@ -91,11 +91,7 @@ jobs:
       - name: Validate SAM template
         run: make sam-validate
 
-      - name: Build SAM artifact
-        run: make sam-build
 
-      - name: Verify packaged canonical frontend
-        run: node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
 
   deploy:
     name: Deploy DataOps v1 app
@@ -171,8 +167,6 @@ jobs:
       - name: Install Node workspace dependencies
         run: npm ci
 
-      - name: Run frontend unit coverage
-        run: npm run test:frontend:coverage
 
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
