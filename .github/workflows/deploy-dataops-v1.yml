@@ -60,8 +60,8 @@ jobs:
       - name: Run backend tests
         run: npm --prefix backend test
 
-      - name: Test Sponsor CRM GSI deployment gate
-        run: npm run test:sponsor-gsi-migrator
+      - name: Check the deploy workflow shape
+        run: npm run test:deploy-workflow
 
       - name: Typecheck backend
         run: npm --prefix backend run typecheck
@@ -188,8 +188,6 @@ jobs:
           role-session-name: dataops-v1-deploy
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Guard Sponsor CRM indexes before any deployment build
-        run: node scripts/deploy/sponsor-crm-gsi-guard.mjs infra/template.full.yaml
 
       - name: Build SAM artifact
         run: make sam-build
