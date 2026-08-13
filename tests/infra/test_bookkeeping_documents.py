@@ -1,3 +1,5 @@
+"""Infrastructure contract for the live bookkeeping document product."""
+
 from pathlib import Path
 
 
