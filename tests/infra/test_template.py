@@ -1226,9 +1226,7 @@ def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract
     assert "UpdateReplacePolicy: Retain" in table
     assert "SSESpecification: { SSEEnabled: true }" in table
     assert "PointInTimeRecoveryEnabled: true" in table
-    # TTL is intentionally omitted while DynamoDB's one-hour TTL mutation
-    # cooldown is active; it is safe to enable in a later isolated update.
-    assert "TimeToLiveSpecification:" not in table
+    assert "TimeToLiveSpecification:\n        Enabled: true\n        AttributeName: expiresAt" in table
     assert "StreamViewType: NEW_AND_OLD_IMAGES" in table
     for index in (
         "GSI-Communication",
