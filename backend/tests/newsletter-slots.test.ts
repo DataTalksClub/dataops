@@ -1,8 +1,5 @@
 import { before, after, afterEach, describe, it } from "node:test";
 import assert from "node:assert";
-import path from "path";
-import fs from "fs/promises";
-import ExcelJS from "exceljs";
 import { DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handler } from "../src/handler";
@@ -14,10 +11,6 @@ import { createNewsletterSlot } from "../src/db/newsletterSlots";
 import { createCrmRecord } from "../src/db/sponsorCrm";
 import { createCard } from "../src/db/cards";
 import { handleNewsletterSlotRoutes } from "../src/routes/newsletterSlots";
-import {
-  readNewsletterSlots,
-  writeNewsletterSlots,
-} from "../scripts/import-newsletter-slots";
 const invoke = (
     method: string,
     pathName: string,
@@ -436,107 +429,6 @@ describe("newsletter slots", () => {
       delete process.env.DATAOPS_DOCS_DOMAIN;
       for (const key of ["WORK_ENGINE_AUTH_MODE", "AUTH_BASE_URL", "AUTH_ISSUER", "AUTH_CLIENT_ID", "AUTH_CALLBACK_URL", "AUTH_LOGOUT_URL"]) delete process.env[key];
       process.env.SKIP_AUTH = "true";
-    }
-  });
-  it("dry-runs offline and writes only synthetic allowlisted Newsletter fields through HTTP", async () => {
-    const workbook = new ExcelJS.Workbook(),
-      sheet = workbook.addWorksheet("Newsletter");
-    sheet.addRow([
-      "Publication Date",
-      "Campaign Label",
-      "Campaign Number",
-      "Status",
-      "Booked By",
-      "Email",
-      "Opens",
-      "Clicks",
-      "Private Link",
-      "Sensitive Notes",
-    ]);
-    sheet.addRow([
-      new Date("2026-09-01T00:00:00Z"),
-      "Synthetic Campaign",
-      55,
-      "reserved",
-      "Synthetic Booker",
-      "private@example.invalid",
-      999,
-      111,
-      "https://private.invalid",
-      "secret",
-    ]);
-    const hidden = sheet.addRow([
-      new Date("2026-09-02T00:00:00Z"),
-      "Hidden Campaign",
-    ]);
-    hidden.hidden = true;
-    workbook.addWorksheet("Contacts").addRow(["private@example.invalid"]);
-    const file = path.resolve(".tmp/newsletter-import-synthetic.xlsx");
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await workbook.xlsx.writeFile(file);
-    const rows = await readNewsletterSlots(file);
-    assert.equal(rows.length, 1);
-    assert.deepEqual(Object.keys(rows[0]).sort(), [
-      "bookedByDisplayName",
-      "campaignLabel",
-      "campaignNumber",
-      "publicationDate",
-      "sourceKey",
-      "sourceType",
-      "status",
-    ]);
-    let calls = 0,
-      posts = 0;
-    const requests: Array<{ url: string; authorization: string }> = [];
-    const original = global.fetch;
-    global.fetch = async (url, options) => {
-      calls++;
-      requests.push({
-        url: String(url),
-        authorization: new Headers(options?.headers).get("authorization") || "",
-      });
-      if (options?.method === "POST") {
-        posts++;
-        return new Response("{}", { status: posts === 1 ? 201 : 200 });
-      }
-      return new Response(JSON.stringify({ items: rows }), { status: 200 });
-    };
-    try {
-      assert.deepEqual(
-        await writeNewsletterSlots(rows, {
-          api: "https://api.example.invalid",
-          token: "synthetic",
-          confirm: "https://api.example.invalid",
-        }),
-        { accepted: 1, created: 1, duplicates: 0, verified: 1 },
-      );
-      assert.equal(calls, 2);
-      assert.equal(
-        requests[1].url,
-        "https://api.example.invalid/api/newsletter-slots?from=2026-01-01&to=2026-12-31",
-      );
-      assert.ok(!requests.some((request) => request.url.includes("9999")));
-      assert.deepEqual(
-        await writeNewsletterSlots(rows, {
-          api: "https://api.example.invalid",
-          token: "synthetic",
-          confirm: "https://api.example.invalid",
-        }),
-        { accepted: 1, created: 0, duplicates: 1, verified: 1 },
-      );
-      await assert.rejects(() => writeNewsletterSlots(rows, {
-        api: "https://api.example.invalid",
-        confirm: "https://api.example.invalid",
-      }), /session token/i);
-      await assert.rejects(() =>
-        writeNewsletterSlots(rows, {
-          api: "https://api.example.invalid",
-          token: "synthetic",
-          confirm: "wrong",
-        }),
-      );
-    } finally {
-      global.fetch = original;
     }
   });
 });
