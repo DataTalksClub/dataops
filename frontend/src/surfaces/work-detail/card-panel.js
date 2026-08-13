@@ -463,7 +463,7 @@ export function createCardPanel(context) {
       checkbox.title = reasons.join("; ");
     }
     checkbox.addEventListener("change", () => {
-      updateTaskStatus(task.id, isDone ? "todo" : "done");
+      updateTaskStatus(task.id, isDone ? "todo" : "done", task.version);
     });
 
     const label = document.createElement("button");

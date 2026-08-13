@@ -1,20 +1,25 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import {
   createTask,
   getTask,
+  getTaskConsistent,
   updateTask,
+  updateTaskAdditive,
   deleteTask,
   listTasksByDate,
   listTasksByDateRange,
   listTasksByCard,
   listTasksByStatus,
+  TaskVersionConflictError,
 } from '../src/db/tasks';
+import type { TaskHistoryEvent } from '../src/types';
 
 describe('Tasks data layer', () => {
   let client: DynamoDBDocumentClient;
@@ -44,6 +49,8 @@ describe('Tasks data layer', () => {
     assert.strictEqual(task.date, '2026-02-23');
     assert.strictEqual(task.cardId, 'card-1');
     assert.strictEqual(task.status, 'todo');
+    assert.strictEqual(task.version, 1);
+    assert.deepStrictEqual(task.taskHistory, []);
     // PK/SK should be stripped
     assert.strictEqual((task as Record<string, unknown>).PK, undefined);
     assert.strictEqual((task as Record<string, unknown>).SK, undefined);
@@ -61,9 +68,45 @@ describe('Tasks data layer', () => {
     assert.strictEqual(fetched.description, 'Fetch me');
   });
 
+  it('does not overwrite a caller-supplied duplicate id', async () => {
+    const id = `task-duplicate-${crypto.randomUUID()}`;
+    const first = await createTask(client, {
+      id,
+      description: 'Original duplicate target',
+      date: '2026-02-23',
+    });
+    await assert.rejects(
+      () => createTask(client, {
+        id,
+        description: 'Must not overwrite',
+        date: '2026-02-24',
+      }),
+      (error: unknown) => (error as { name?: string }).name === 'ConditionalCheckFailedException',
+    );
+    assert.deepStrictEqual(await getTask(client, id), first);
+  });
+
   it('getTask returns null for non-existent id', async () => {
     const result = await getTask(client, 'non-existent-id');
     assert.strictEqual(result, null);
+  });
+
+  it('rejects versionless or historyless persisted rows instead of defaulting them', async () => {
+    const id = `noncanonical-${crypto.randomUUID()}`;
+    await client.send(new PutCommand({
+      TableName: TABLE_TASKS,
+      Item: {
+        PK: `TASK#${id}`,
+        SK: `TASK#${id}`,
+        id,
+        description: 'Noncanonical row',
+        date: '2026-02-23',
+        status: 'todo',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+    await assert.rejects(() => getTask(client, id), /not in the canonical versioned shape/);
   });
 
   it('updateTask performs partial update and refreshes updatedAt', async () => {
@@ -77,8 +120,11 @@ describe('Tasks data layer', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     const updated = await updateTask(client, created.id, {
-      status: 'done',
-      description: 'Updated',
+      expectedVersion: created.version,
+      patch: {
+        status: 'done',
+        description: 'Updated',
+      },
     });
 
     assert.strictEqual(updated.status, 'done');
@@ -93,9 +139,130 @@ describe('Tasks data layer', () => {
       date: '2026-02-23',
     });
 
-    await deleteTask(client, created.id);
+    await deleteTask(client, created.id, created.version);
     const result = await getTask(client, created.id);
     assert.strictEqual(result, null);
+  });
+
+  it('allows only one mutation from a version and preserves history on deliberate retry', async () => {
+    const created = await createTask(client, {
+      description: 'Concurrent history',
+      date: '2026-02-23',
+    });
+    const event = (action: TaskHistoryEvent['action']): TaskHistoryEvent => ({
+      id: crypto.randomUUID(),
+      taskId: created.id,
+      action,
+      createdAt: new Date().toISOString(),
+    });
+    const firstEvent = event('waiting-started');
+    const secondEvent = event('completed');
+
+    const results = await Promise.allSettled([
+      updateTask(client, created.id, {
+        expectedVersion: created.version,
+        patch: { status: 'waiting' },
+        historyEvents: [firstEvent],
+      }),
+      updateTask(client, created.id, {
+        expectedVersion: created.version,
+        patch: { status: 'done' },
+        historyEvents: [secondEvent],
+      }),
+    ]);
+
+    assert.strictEqual(results.filter((result) => result.status === 'fulfilled').length, 1);
+    const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+    assert.ok(rejected.reason instanceof TaskVersionConflictError);
+    const afterRace = await getTask(client, created.id);
+    assert.ok(afterRace);
+    assert.strictEqual(afterRace.version, 2);
+    assert.strictEqual(afterRace.taskHistory.length, 1);
+
+    const losingEvent = afterRace.taskHistory[0].id === firstEvent.id ? secondEvent : firstEvent;
+    const retried = await updateTask(client, created.id, {
+      expectedVersion: afterRace.version,
+      patch: { status: losingEvent.action === 'completed' ? 'done' : 'waiting' },
+      historyEvents: [losingEvent],
+    });
+    assert.strictEqual(retried.version, 3);
+    assert.deepStrictEqual(
+      retried.taskHistory.map((historyEvent) => historyEvent.id),
+      [afterRace.taskHistory[0].id, losingEvent.id],
+    );
+  });
+
+  it('uses one conditional expression for fields, version, and history', async () => {
+    let commandInput: Record<string, any> | undefined;
+    const fakeClient = {
+      send: async (command: { input: Record<string, any> }) => {
+        commandInput = command.input;
+        return {
+          Attributes: {
+            id: 'task-expression',
+            version: 5,
+            taskHistory: [],
+            description: 'Expression',
+            date: '2026-02-23',
+            status: 'done',
+            createdAt: '2026-02-23T00:00:00.000Z',
+            updatedAt: '2026-02-23T00:00:01.000Z',
+          },
+        };
+      },
+    } as unknown as DynamoDBDocumentClient;
+
+    await updateTask(fakeClient, 'task-expression', {
+      expectedVersion: 4,
+      patch: { status: 'done' },
+      historyEvents: [{
+        id: 'history-expression',
+        taskId: 'task-expression',
+        action: 'completed',
+        createdAt: '2026-02-23T00:00:01.000Z',
+      }],
+    });
+
+    assert.strictEqual(commandInput?.ConditionExpression, 'attribute_exists(PK) AND #version = :expectedVersion');
+    assert.match(commandInput?.UpdateExpression || '', /#version = :nextVersion/);
+    assert.match(commandInput?.UpdateExpression || '', /list_append\(#taskHistory, :historyEvents\)/);
+    assert.doesNotMatch(commandInput?.UpdateExpression || '', /if_not_exists/);
+    assert.strictEqual(commandInput?.ExpressionAttributeValues[':expectedVersion'], 4);
+    assert.strictEqual(commandInput?.ExpressionAttributeValues[':nextVersion'], 5);
+  });
+
+  it('marks the conflict recovery read strongly consistent', async () => {
+    let commandInput: Record<string, any> | undefined;
+    const fakeClient = {
+      send: async (command: { input: Record<string, any> }) => {
+        commandInput = command.input;
+        return { Item: undefined };
+      },
+    } as unknown as DynamoDBDocumentClient;
+    assert.strictEqual(await getTaskConsistent(fakeClient, 'missing'), null);
+    assert.strictEqual(commandInput?.ConsistentRead, true);
+  });
+
+  it('bounds an additive retry and remerges into the current Task', async () => {
+    const stale = await createTask(client, {
+      description: 'Additive retry',
+      date: '2026-02-23',
+      artifactRefs: [{ artifactId: 'first' }],
+    });
+    await updateTask(client, stale.id, {
+      expectedVersion: stale.version,
+      patch: { comment: 'concurrent operator field' },
+    });
+
+    const merged = await updateTaskAdditive(client, stale, (currentTask) => ({
+      artifactRefs: [
+        ...(currentTask.artifactRefs || []).filter(({ artifactId }) => artifactId !== 'second'),
+        { artifactId: 'second' },
+      ],
+    }));
+    assert.strictEqual(merged.version, 3);
+    assert.strictEqual(merged.comment, 'concurrent operator field');
+    assert.deepStrictEqual(merged.artifactRefs?.map(({ artifactId }) => artifactId), ['first', 'second']);
   });
 
   it('listTasksByDate returns tasks for a specific date', async () => {
@@ -190,15 +357,18 @@ describe('Tasks data layer', () => {
     await new Promise((r) => setTimeout(r, 10));
 
     const updated = await updateTask(client, task.id, {
-      instructionsUrl: 'https://docs.google.com/updated',
-      instructionDocId: 'sop.media.podcast.updated',
-      instructionStepId: '7',
-      phase: 'after-event',
-      systems: ['youtube'],
-      validation: 'Confirm the doc is shared',
-      assigneeId: 'user-valeriia',
-      tags: ['newsletter'],
-      link: 'https://example.com/link',
+      expectedVersion: task.version,
+      patch: {
+        instructionsUrl: 'https://docs.google.com/updated',
+        instructionDocId: 'sop.media.podcast.updated',
+        instructionStepId: '7',
+        phase: 'after-event',
+        systems: ['youtube'],
+        validation: 'Confirm the doc is shared',
+        assigneeId: 'user-valeriia',
+        tags: ['newsletter'],
+        link: 'https://example.com/link',
+      },
     });
 
     assert.ok(updated);

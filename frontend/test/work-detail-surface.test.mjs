@@ -282,7 +282,16 @@ describe("Work Detail surface boundary", () => {
   });
 
   test("opens, hydrates, and closes a Task modal through its canonical route", async () => {
-    const task = { id: "task-1", description: "Confirm the speaker" };
+    const task = {
+      id: "task-1",
+      version: 1,
+      taskHistory: [],
+      description: "Confirm the speaker",
+      date: "2026-08-12",
+      status: "todo",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
     const harness = createHarness({
       route: {
         path: "/tasks",
@@ -372,10 +381,62 @@ describe("Work Detail surface boundary", () => {
     assert.equal(harness.cardPanel.hidden, false);
   });
 
+  test("requires canonical Task history and presents comments separately from transition history", async () => {
+    const canonical = {
+      id: "task-history",
+      version: 2,
+      taskHistory: [{
+        id: "event-1",
+        taskId: "task-history",
+        action: "completed",
+        note: "Published",
+        createdAt: "2026-08-12T10:00:00.000Z",
+      }],
+      description: "Publish the update",
+      date: "2026-08-12",
+      status: "done",
+      comment: "Operator note",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-12T10:00:00.000Z",
+    };
+    const canonicalHarness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${canonical.id}`) return canonical;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+    await hydrateTask(canonicalHarness, canonical);
+    assert.ok(findByText(canonicalHarness.taskPanelBody, "Comment"));
+    assert.ok(findByText(canonicalHarness.taskPanelBody, "Operator note"));
+    assert.ok(findByText(canonicalHarness.taskPanelBody, "History"));
+    assert.match(canonicalHarness.taskPanelBody.textContent, /Task completed — Published/);
+
+    const historyless = { ...canonical, id: "task-historyless" };
+    delete historyless.taskHistory;
+    const historylessHarness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${historyless.id}`) return historyless;
+        return {};
+      },
+    });
+    await hydrateTask(historylessHarness, historyless);
+    assert.equal(historylessHarness.taskPanelTitle.textContent, "Task unavailable");
+    assert.equal(historylessHarness.entityStates.at(-1).status, "error");
+  });
+
   test("maps waiting, response-received, and follow-up actions to atomic request contracts", async () => {
-    const todo = { id: "task-todo", description: "Ask for approval" };
+    const todo = {
+      id: "task-todo",
+      version: 1,
+      taskHistory: [],
+      description: "Ask for approval",
+    };
     const waiting = {
       id: "task-waiting",
+      version: 1,
+      taskHistory: [],
       description: "Wait for approval",
       status: "waiting",
       waitingFor: "Sponsor",
@@ -389,6 +450,9 @@ describe("Work Detail surface boundary", () => {
         }
         if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (requestOptions.method) {
+          return { ...activeTask, version: activeTask.version + 1 };
+        }
         return {};
       },
     });
@@ -399,7 +463,6 @@ describe("Work Detail surface boundary", () => {
       "Mark waiting",
       "button",
     );
-    harness.api.resetTaskPanel();
     await markWaiting.click();
     const waitingRequest = harness.requests.find((entry) =>
       entry.url.endsWith("/actions/mark-waiting"),
@@ -410,6 +473,7 @@ describe("Work Detail surface boundary", () => {
       followUpAt: "2026-08-15",
       channel: "portal",
       note: "Marked waiting from the Task panel",
+      expectedVersion: 1,
     });
 
     activeTask = waiting;
@@ -428,7 +492,6 @@ describe("Work Detail surface boundary", () => {
       .querySelectorAll("input")
       .find((input) => input.type === "date");
     nextDate.value = "2026-08-20";
-    harness.api.resetTaskPanel();
     await response.click();
     await followUp.click();
 
@@ -438,6 +501,7 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(jsonBody(responseRequest), {
       channel: "portal",
       note: "Response received in the Task panel",
+      expectedVersion: 1,
     });
     const followUpRequest = harness.requests.find((entry) =>
       entry.url.endsWith("/actions/follow-up-sent"),
@@ -446,13 +510,239 @@ describe("Work Detail surface boundary", () => {
       nextFollowUpAt: "2026-08-20",
       channel: "portal",
       note: "Follow-up sent from the Task panel",
+      expectedVersion: 2,
     });
+  });
+
+  test("retains an exact Task link draft across review and repeated conflicts", async () => {
+    const task = {
+      id: "task-conflict",
+      version: 1,
+      taskHistory: [],
+      description: "Publish the final link",
+      status: "todo",
+      requiredLinkName: "Published URL",
+    };
+    let writeAttempt = 0;
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          writeAttempt += 1;
+          if (writeAttempt <= 2) {
+            const currentVersion = writeAttempt + 1;
+            const error = new Error("Task changed; review the current task and retry");
+            error.status = 409;
+            error.code = "task_version_conflict";
+            error.payload = {
+              code: "task_version_conflict",
+              expectedVersion: currentVersion - 1,
+              currentVersion,
+              currentTask: {
+                ...task,
+                version: currentVersion,
+                status: writeAttempt === 1 ? "waiting" : "todo",
+              },
+            };
+            throw error;
+          }
+          return {
+            ...task,
+            ...jsonBody({ options: requestOptions }),
+            version: 4,
+          };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const draft = "  https://example.com/final?draft=1  ";
+    const linkInput = harness.taskPanelBody
+      .querySelectorAll("input")
+      .find((input) => input.type === "url");
+    linkInput.value = draft;
+    await linkInput.dispatch("change");
+
+    const alert = harness.taskPanelBody.querySelector('[role="alert"]');
+    assert.ok(alert);
+    assert.equal(alert.focused, true);
+    assert.match(alert.textContent, /Latest server state: version 2, status waiting/);
+    assert.match(alert.textContent, new RegExp(draft.trim().replace(/[?]/g, "\\?")));
+    assert.equal(
+      harness.taskPanelBody.querySelector('input[type="url"]')?.value ||
+        harness.taskPanelBody
+          .querySelectorAll("input")
+          .find((input) => input.type === "url").value,
+      draft,
+    );
+
+    await findByText(alert, "Review latest", "button").click();
+    assert.match(harness.taskPanelBody.textContent, /Version 2/);
+    assert.equal(
+      harness.taskPanelBody
+        .querySelectorAll("input")
+        .find((input) => input.type === "url").value,
+      draft,
+    );
+
+    await findByText(harness.taskPanelBody, "Retry my change", "button").click();
+    assert.match(harness.taskPanelBody.textContent, /Latest server state: version 3/);
+    assert.equal(
+      harness.taskPanelBody
+        .querySelectorAll("input")
+        .find((input) => input.type === "url").value,
+      draft,
+    );
+    await findByText(harness.taskPanelBody, "Discard my change", "button").click();
+    assert.equal(findByText(harness.taskPanelBody, "Retry my change", "button"), undefined);
+    assert.match(harness.taskPanelBody.textContent, /Version 3/);
+    assert.equal(
+      harness.taskPanelBody
+        .querySelectorAll("input")
+        .find((input) => input.type === "url").value,
+      "",
+    );
+
+    const latestLinkInput = harness.taskPanelBody
+      .querySelectorAll("input")
+      .find((input) => input.type === "url");
+    latestLinkInput.value = draft;
+    await latestLinkInput.dispatch("change");
+
+    const writes = harness.requests.filter(
+      (entry) => entry.url === `/api/tasks/${task.id}` && entry.options.method === "PUT",
+    );
+    assert.deepEqual(writes.map(jsonBody), [
+      { link: draft, expectedVersion: 1 },
+      { link: draft, expectedVersion: 2 },
+      { link: draft, expectedVersion: 3 },
+    ]);
+    assert.equal(findByText(harness.taskPanelBody, "Retry my change", "button"), undefined);
+  });
+
+  test("disables duplicate Task submissions only while the write is in flight", async () => {
+    const task = {
+      id: "task-in-flight",
+      version: 1,
+      taskHistory: [],
+      description: "Complete once",
+      status: "todo",
+    };
+    let resolveWrite;
+    const pendingWrite = new Promise((resolve) => {
+      resolveWrite = resolve;
+    });
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          return pendingWrite;
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const firstButton = findByText(harness.taskPanelBody, "Mark done", "button");
+    const firstClick = firstButton.click();
+    await nextTicks();
+    assert.equal(
+      findByText(harness.taskPanelBody, "Mark done", "button").disabled,
+      true,
+    );
+    await firstButton.click();
+    assert.strictEqual(
+      harness.requests.filter((entry) => entry.options.method === "PUT").length,
+      1,
+    );
+
+    resolveWrite({ ...task, status: "done", version: 2 });
+    await firstClick;
+    assert.equal(findByText(harness.taskPanelBody, "Reopen", "button").disabled, false);
+  });
+
+  test("retains waiting action fields and retries only that intent", async () => {
+    const task = {
+      id: "task-wait-conflict",
+      version: 5,
+      taskHistory: [],
+      description: "Wait for assets",
+      status: "todo",
+    };
+    let attempt = 0;
+    const harness = createHarness({
+      promptUser: () => "Vendor contact",
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url.endsWith("/actions/mark-waiting")) {
+          attempt += 1;
+          if (attempt === 1) {
+            const error = new Error("Task changed");
+            error.status = 409;
+            error.code = "task_version_conflict";
+            error.payload = {
+              currentVersion: 6,
+              currentTask: { ...task, version: 6, comment: "Concurrent note" },
+            };
+            throw error;
+          }
+          return {
+            ...task,
+            version: 7,
+            status: "waiting",
+            waitingFor: "Vendor contact",
+            followUpAt: "2026-08-15",
+          };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    await findByText(harness.taskPanelBody, "Mark waiting", "button").click();
+    assert.match(
+      harness.taskPanelBody.textContent,
+      /Your retained change: Mark waiting for Vendor contact; follow up 2026-08-15/,
+    );
+    await findByText(harness.taskPanelBody, "Retry my change", "button").click();
+    const writes = harness.requests.filter((entry) =>
+      entry.url.endsWith("/actions/mark-waiting"),
+    );
+    assert.deepEqual(writes.map(jsonBody), [
+      {
+        waitingFor: "Vendor contact",
+        followUpAt: "2026-08-15",
+        channel: "portal",
+        note: "Marked waiting from the Task panel",
+        expectedVersion: 5,
+      },
+      {
+        waitingFor: "Vendor contact",
+        followUpAt: "2026-08-15",
+        channel: "portal",
+        note: "Marked waiting from the Task panel",
+        expectedVersion: 6,
+      },
+    ]);
   });
 
   test("blocks Task completion until required link, file, and approved artifact proof exist", async () => {
     const task = {
       id: "proof-task",
+      version: 1,
+      taskHistory: [],
       description: "Publish the issue",
+      date: "2026-08-12",
+      status: "todo",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
       requiredLinkName: "Newsletter URL",
       requiresFile: true,
       proofRequirement: { type: "artifact", required: true },

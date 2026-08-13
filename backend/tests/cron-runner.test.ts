@@ -216,7 +216,7 @@ describe('Cron runner', () => {
     assert.ok(card);
     const originalTasks = await listTasksByCard(client, card.id);
     assert.strictEqual(originalTasks.length, 2);
-    await deleteTask(client, originalTasks[0].id);
+    await deleteTask(client, originalTasks[0].id, originalTasks[0].version);
 
     const recovered = await runCron(client, wednesday);
     assert.strictEqual(recovered.templates.created.length, 0);

@@ -376,6 +376,7 @@ describe('Portal broker authentication', () => {
           waitingFor: 'guest bio',
           followUpAt: '2028-10-06',
           comment: '[2028-10-05T10:00:00.000Z] Follow-up sent; next follow-up 2028-10-06',
+          expectedVersion: createdTask.version,
         }),
         headers,
       },

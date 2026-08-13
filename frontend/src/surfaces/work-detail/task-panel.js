@@ -5,6 +5,7 @@ export function createTaskPanel(context) {
     createTaskActionButton,
     defaultNextFollowUpDate,
     detail,
+    discardTaskIntent,
     formatTaskDateMeta,
     getActiveWorkspaceRoute,
     getCurrentOperator,
@@ -21,6 +22,7 @@ export function createTaskPanel(context) {
     parseWorkspaceHash,
     recordTaskFollowUpSent,
     recordTaskResponseReceived,
+    reviewLatestTask,
     renderEntityLoadState,
     renderTaskArtifactSection,
     renderTaskFileSection,
@@ -33,6 +35,7 @@ export function createTaskPanel(context) {
     taskRequiresApprovedArtifact,
     todayIsoDate,
     updateTaskStatus,
+    retryTaskIntent,
     workApiUrl,
     workTaskTitle,
   } = context;
@@ -142,6 +145,39 @@ export function createTaskPanel(context) {
     const status = String(task.status || "todo").toLowerCase();
     const today = todayIsoDate();
 
+    if (detail.activeTaskPanelConflict && detail.activeTaskPanelDraft) {
+      const conflict = detail.activeTaskPanelConflict;
+      const latest = conflict.currentTask;
+      const recovery = document.createElement("section");
+      recovery.className = "task-version-conflict";
+      recovery.setAttribute("role", "alert");
+      recovery.setAttribute("aria-live", "assertive");
+      recovery.tabIndex = -1;
+
+      const heading = document.createElement("strong");
+      heading.textContent =
+        "This Task changed elsewhere. Review the latest Task or retry your change.";
+      const latestState = document.createElement("p");
+      latestState.textContent = `Latest server state: version ${latest.version}, status ${latest.status || "todo"}.`;
+      const retained = document.createElement("p");
+      retained.className = "task-conflict-draft";
+      retained.textContent = `Your retained change: ${detail.activeTaskPanelDraft.label}`;
+
+      const controls = document.createElement("div");
+      controls.className = "task-conflict-controls";
+      const review = createTaskActionButton("Review latest", reviewLatestTask);
+      const retry = createTaskActionButton("Retry my change", retryTaskIntent);
+      retry.classList.add("is-primary");
+      const discard = createTaskActionButton("Discard my change", discardTaskIntent);
+      review.disabled = detail.activeTaskMutationBusy;
+      retry.disabled = detail.activeTaskMutationBusy;
+      discard.disabled = detail.activeTaskMutationBusy;
+      controls.append(review, retry, discard);
+      recovery.append(heading, latestState, retained, controls);
+      taskPanelBody.append(recovery);
+      recovery.focus();
+    }
+
     const routeContextParts = [
       detail.taskRouteContext.date
         ? `Queue date ${detail.taskRouteContext.date}`
@@ -186,6 +222,9 @@ export function createTaskPanel(context) {
     badge.className = `task-status-badge ${status}`;
     badge.textContent = status;
     meta.append(badge);
+    const versionRow = document.createElement("div");
+    versionRow.textContent = `Version ${task.version}`;
+    meta.append(versionRow);
     if (task.date) {
       const dateRow = document.createElement("div");
       dateRow.append(
@@ -226,10 +265,14 @@ export function createTaskPanel(context) {
       label.textContent = `${task.requiredLinkName}`;
       const input = document.createElement("input");
       input.type = "url";
-      input.value = task.link || "";
+      input.value =
+        detail.activeTaskPanelDraft?.kind === "link"
+          ? detail.activeTaskPanelDraft.payload.link
+          : task.link || "";
       input.placeholder = "https://...";
+      input.disabled = detail.activeTaskMutationBusy;
       input.addEventListener("change", () =>
-        saveTaskLink(task.id, input.value.trim()),
+        saveTaskLink(task.id, input.value, task.version),
       );
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
@@ -270,7 +313,7 @@ export function createTaskPanel(context) {
     actions.className = "task-action-group";
     if (status === "done") {
       const reopen = createTaskActionButton("Reopen", () =>
-        updateTaskStatus(task.id, "todo"),
+        updateTaskStatus(task.id, "todo", task.version),
       );
       reopen.classList.add("is-primary");
       actions.append(reopen);
@@ -287,7 +330,11 @@ export function createTaskPanel(context) {
       nextLabel.textContent = "Next";
       const nextInput = document.createElement("input");
       nextInput.type = "date";
-      nextInput.value = defaultNextFollowUpDate();
+      nextInput.value =
+        detail.activeTaskPanelDraft?.kind === "follow-up-sent"
+          ? detail.activeTaskPanelDraft.payload.nextFollowUpAt
+          : defaultNextFollowUpDate();
+      nextInput.disabled = detail.activeTaskMutationBusy;
       nextLabel.append(nextInput);
       followRow.append(nextLabel);
       const followUp = createTaskActionButton("Follow-up sent", () =>
@@ -304,7 +351,7 @@ export function createTaskPanel(context) {
         !hasApprovedArtifactEvidence(task, detail.activeTaskPanelArtifacts);
       const canComplete = !missingLink && !missingFile && !missingArtifact;
       const complete = createTaskActionButton("Mark done", () =>
-        updateTaskStatus(task.id, "done"),
+        updateTaskStatus(task.id, "done", task.version),
       );
       complete.classList.add("is-primary");
       if (!canComplete) {
@@ -322,38 +369,46 @@ export function createTaskPanel(context) {
       );
       actions.append(markWaiting);
     }
+    for (const button of actions.querySelectorAll("button")) {
+      if (detail.activeTaskMutationBusy) button.disabled = true;
+    }
     // File upload for required-file tasks
     renderTaskFileSection(task);
     renderTaskArtifactSection(task);
 
     taskPanelBody.append(actions);
 
-    // History / comment. New transitions use the backend's atomic task-action
-    // contract and return structured history; legacy comment history remains
-    // visible for records created before that contract.
-    const structuredHistory = Array.isArray(task.taskHistory)
-      ? task.taskHistory.map((event) => {
-          const labels = {
-            "waiting-started": `Marked waiting for ${event.waitingFor || "a response"}${event.followUpAt ? `; follow up ${String(event.followUpAt).slice(0, 10)}` : ""}`,
-            "follow-up-sent": `Follow-up sent${event.followUpAt ? `; next follow-up ${String(event.followUpAt).slice(0, 10)}` : ""}`,
-            "response-received": "Response received",
-            unblocked: "Task unblocked",
-            "wait-resolved": "Wait resolved",
-            completed: "Task completed",
-            reopened: "Task reopened",
-          };
-          const label =
-            labels[event.action] ||
-            labelizeWorkValue(event.action || "updated");
-          const detail =
-            event.note && event.note !== label ? ` — ${event.note}` : "";
-          return `[${event.createdAt || task.updatedAt || new Date().toISOString()}] ${label}${detail}`;
-        })
-      : [];
-    const legacyHistory = task.comment
-      ? String(task.comment).split("\n").filter(Boolean)
-      : [];
-    const historyLines = [...legacyHistory, ...structuredHistory];
+    if (task.comment) {
+      const comment = document.createElement("div");
+      comment.className = "task-history";
+      const commentLabel = document.createElement("div");
+      commentLabel.className = "task-history-label";
+      commentLabel.textContent = "Comment";
+      const commentBody = document.createElement("div");
+      commentBody.className = "task-history-event";
+      commentBody.textContent = String(task.comment);
+      comment.append(commentLabel, commentBody);
+      taskPanelBody.append(comment);
+    }
+
+    // Canonical Tasks always return structured transition history.
+    const historyLines = task.taskHistory.map((event) => {
+      const labels = {
+        "waiting-started": `Marked waiting for ${event.waitingFor || "a response"}${event.followUpAt ? `; follow up ${String(event.followUpAt).slice(0, 10)}` : ""}`,
+        "follow-up-sent": `Follow-up sent${event.followUpAt ? `; next follow-up ${String(event.followUpAt).slice(0, 10)}` : ""}`,
+        "response-received": "Response received",
+        unblocked: "Task unblocked",
+        "wait-resolved": "Wait resolved",
+        completed: "Task completed",
+        reopened: "Task reopened",
+      };
+      const label =
+        labels[event.action] ||
+        labelizeWorkValue(event.action || "updated");
+      const detail =
+        event.note && event.note !== label ? ` — ${event.note}` : "";
+      return `[${event.createdAt || task.updatedAt || new Date().toISOString()}] ${label}${detail}`;
+    });
     if (historyLines.length) {
       const history = document.createElement("div");
       history.className = "task-history";

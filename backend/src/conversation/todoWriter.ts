@@ -114,6 +114,7 @@ class ActorTodoWriter {
     const task: Task = {
       id: taskId,
       version: 1,
+      taskHistory: [],
       description: input.description,
       date: input.date,
       status: 'todo',

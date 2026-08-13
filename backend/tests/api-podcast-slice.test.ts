@@ -129,11 +129,15 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.ok(lumaTask.systems?.includes('synthetic-calendar'));
     assert.strictEqual((lumaTask.validation as any).operatorAction, 'Create a synthetic event');
 
-    const blockedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, { status: 'done' });
+    const blockedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, {
+      status: 'done', expectedVersion: lumaTask.version,
+    });
     assert.strictEqual(blockedLink.statusCode, 400);
     assert.match(parse(blockedLink).error, /required link 'Synthetic event'/);
     const lumaUrl = 'https://lu.ma/vector-search';
-    const savedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, { link: lumaUrl });
+    const savedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, {
+      link: lumaUrl, expectedVersion: lumaTask.version,
+    });
     assert.strictEqual(savedLink.statusCode, 200, savedLink.body);
     const cardWithLuma = {
       cardLinks: card.cardLinks.map((link: any) => (
@@ -145,7 +149,9 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
 
     const bannerTask = tasks.find((task) => task.templateTaskRef === 'create-banner') as Task;
     assert.ok(bannerTask);
-    const blockedFile = await invoke('PUT', `/api/tasks/${bannerTask.id}`, { status: 'done' });
+    const blockedFile = await invoke('PUT', `/api/tasks/${bannerTask.id}`, {
+      status: 'done', expectedVersion: bannerTask.version,
+    });
     assert.strictEqual(blockedFile.statusCode, 400);
     assert.match(parse(blockedFile).error, /required file/);
     await createFile(client, {
@@ -160,7 +166,9 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
       contentType: 'image/png',
       sizeBytes: 10,
     });
-    const doneFile = await invoke('PUT', `/api/tasks/${bannerTask.id}`, { status: 'done' });
+    const doneFile = await invoke('PUT', `/api/tasks/${bannerTask.id}`, {
+      status: 'done', expectedVersion: bannerTask.version,
+    });
     assert.strictEqual(doneFile.statusCode, 200, doneFile.body);
     assert.strictEqual(parse(doneFile).status, 'done');
 
@@ -170,6 +178,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
       status: 'waiting',
       waitingFor: 'Jane Guest',
       followUpAt: '2000-01-01',
+      expectedVersion: waitingTask.version,
     });
     assert.strictEqual(missingWaitingNote.statusCode, 400);
     assert.strictEqual(parse(missingWaitingNote).error, 'Waiting tasks require waitingFor, followUpAt, and comment');
@@ -178,6 +187,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
       channel: 'email',
       followUpAt: '2000-01-01',
       note: 'date confirmation',
+      expectedVersion: waitingTask.version,
     });
     assert.strictEqual(waiting.statusCode, 200, waiting.body);
     assert.strictEqual(parse(waiting).status, 'waiting');
@@ -188,6 +198,8 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     )));
     const responseReceived = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/response-received`, {
       note: 'Jane replied with available dates',
+      channel: 'email',
+      expectedVersion: parse(waiting).version,
     });
     assert.strictEqual(responseReceived.statusCode, 200, responseReceived.body);
     assert.strictEqual(parse(responseReceived).status, 'todo');
@@ -196,12 +208,14 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
       channel: 'email',
       followUpAt: '2026-06-29',
       note: 'Need final confirmation',
+      expectedVersion: parse(responseReceived).version,
     });
     assert.strictEqual(waitingAgain.statusCode, 200, waitingAgain.body);
     const followUpSent = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/follow-up-sent`, {
       channel: 'email',
       note: 'Sent final reminder',
       nextFollowUpAt: '2026-06-30',
+      expectedVersion: parse(waitingAgain).version,
     });
     assert.strictEqual(followUpSent.statusCode, 200, followUpSent.body);
     assert.strictEqual(parse(followUpSent).followUpAt, '2026-06-30');
@@ -231,14 +245,18 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.ok(cardAfterApproval.cardLinks.some((link: any) => (
       link.name === 'Synthetic document' && link.url.startsWith('local-dev://assistant-jobs/')
     )));
-    const doneDocTask = await invoke('PUT', `/api/tasks/${docTask.id}`, { status: 'done' });
+    const doneDocTask = await invoke('PUT', `/api/tasks/${docTask.id}`, {
+      status: 'done', expectedVersion: approvedDocTask.version,
+    });
     assert.strictEqual(doneDocTask.statusCode, 200, doneDocTask.body);
 
     const actualStream = tasks.find((task) => task.templateTaskRef === 'actual-event') as Task;
     assert.ok(actualStream);
     assert.strictEqual(actualStream.stageOnComplete, 'after-event');
     const streamUrl = 'https://youtube.com/watch?v=vector';
-    const streamReady = await invoke('PUT', `/api/tasks/${actualStream.id}`, { link: streamUrl });
+    const streamReady = await invoke('PUT', `/api/tasks/${actualStream.id}`, {
+      link: streamUrl, expectedVersion: actualStream.version,
+    });
     assert.strictEqual(streamReady.statusCode, 200, streamReady.body);
     const cardBeforeStreamDone = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
     const streamCardLinks = cardBeforeStreamDone.cardLinks.map((link: any) => (
@@ -246,7 +264,9 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     ));
     const streamCardLinkReady = await invoke('PUT', `/api/cards/${card.id}`, { cardLinks: streamCardLinks });
     assert.strictEqual(streamCardLinkReady.statusCode, 200, streamCardLinkReady.body);
-    const streamDone = await invoke('PUT', `/api/tasks/${actualStream.id}`, { status: 'done' });
+    const streamDone = await invoke('PUT', `/api/tasks/${actualStream.id}`, {
+      status: 'done', expectedVersion: parse(streamReady).version,
+    });
     assert.strictEqual(streamDone.statusCode, 200, streamDone.body);
     const advancedCard = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
     assert.strictEqual(advancedCard.stage, 'after-event');

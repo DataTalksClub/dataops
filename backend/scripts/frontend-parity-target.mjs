@@ -106,6 +106,7 @@ async function resetFixtures() {
   };
   const task = {
     PK: 'TASK#parity-task', SK: 'TASK#parity-task', id: 'parity-task', description: 'Verify synthetic publication proof',
+    version: 1, taskHistory: [],
     date: '2026-08-12', status: 'waiting', waitingFor: 'Synthetic reviewer', followUpAt: '2026-08-13T09:00:00.000Z',
     cardId: card.id, proofRequirement: { required: true, type: 'comment', label: 'Synthetic completion note' },
     instructionDocId: 'sop.synthetic.parity', createdAt: fixedNow, updatedAt: fixedNow,

@@ -212,7 +212,10 @@ describe('Notifications data layer', () => {
     });
     assert.strictEqual(afterDismiss.length, 0);
 
-    await updateTask(client, task.id, { followUpAt: '2098-02-17T09:00:00.000Z' });
+    await updateTask(client, task.id, {
+      expectedVersion: task.version,
+      patch: { followUpAt: '2098-02-17T09:00:00.000Z' },
+    });
     const afterNewFollowUp = await createDueFollowUpNotifications(client, {
       now: '2098-02-17T10:00:00.000Z',
     });
@@ -237,10 +240,13 @@ describe('Notifications data layer', () => {
     assert.strictEqual(first[0].taskId, task.id);
 
     await updateTask(client, task.id, {
-      status: 'todo',
-      waitingFor: null,
-      followUpAt: null,
-      followUpChannel: null,
+      expectedVersion: task.version,
+      patch: {
+        status: 'todo',
+        waitingFor: null,
+        followUpAt: null,
+        followUpChannel: null,
+      },
     });
     const afterResolved = await createDueFollowUpNotifications(client, {
       now: '2098-03-18T10:00:00.000Z',
@@ -248,9 +254,12 @@ describe('Notifications data layer', () => {
     assert.strictEqual(afterResolved.length, 0);
 
     await updateTask(client, task.id, {
-      status: 'waiting',
-      waitingFor: 'Sponsor',
-      followUpAt: '2098-03-19T09:00:00.000Z',
+      expectedVersion: task.version + 1,
+      patch: {
+        status: 'waiting',
+        waitingFor: 'Sponsor',
+        followUpAt: '2098-03-19T09:00:00.000Z',
+      },
     });
     const afterNewCycle = await createDueFollowUpNotifications(client, {
       now: '2098-03-20T10:00:00.000Z',

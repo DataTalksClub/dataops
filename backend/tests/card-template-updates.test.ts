@@ -12,7 +12,10 @@ import {
   CardTemplateUpdateInvalidStateError,
   projectedCardLinks,
 } from '../src/templates/cardTemplateUpdates';
-import { applyCardTemplateUpdate } from '../src/db/cardTemplateUpdates';
+import {
+  applyCardTemplateUpdate,
+  CardTemplateUpdateConflictError,
+} from '../src/db/cardTemplateUpdates';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 
@@ -69,6 +72,7 @@ function tasksFrom(source: Template): Task[] {
     return {
       id: `task-${definition.refId}`,
       version: 2,
+      taskHistory: [],
       ...structuredClone(snapshot),
       status: 'todo',
       source: 'template',
@@ -194,6 +198,62 @@ describe('Card Template update planning', () => {
       () => buildCardTemplateUpdatePlan(cardFrom(source), tasks, source),
       CardTemplateUpdateInvalidStateError,
     );
+  });
+
+  it('rejects a versionless Task instead of producing a fallback preview token', () => {
+    const source = template(1);
+    const tasks = tasksFrom(source);
+    delete (tasks[0] as Partial<Task>).version;
+
+    assert.throws(
+      () => buildCardTemplateUpdatePlan(cardFrom(source), tasks, source),
+      (error: unknown) => (
+        error instanceof CardTemplateUpdateInvalidStateError
+        && error.message === 'Task task-announce has an invalid optimistic-concurrency version'
+      ),
+    );
+  });
+
+  it('makes the test transaction reject a versionless stored Task like DynamoDB does', async () => {
+    const source = template(1);
+    const target = template(2);
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+    const previewToken = buildCardTemplateUpdatePlan(card, tasks, target).preview.previewToken;
+    const fake = {
+      send: async (command: unknown) => {
+        if (!(command instanceof GetCommand)) throw new Error('Unexpected write');
+        const table = command.input.TableName;
+        const key = command.input.Key as Record<string, unknown>;
+        if (table === 'AuditEvents') return {};
+        if (table === 'Projects') return { Item: { ...card, ...key } };
+        if (table === 'Templates') return { Item: { ...target, ...key } };
+        if (table === 'Tasks') {
+          const task = tasks.find(({ id }) => `TASK#${id}` === key.PK)!;
+          const { version: _version, ...versionless } = task;
+          return { Item: { ...versionless, ...key } };
+        }
+        throw new Error(`Unexpected table ${table}`);
+      },
+    } as any;
+
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+    try {
+      await assert.rejects(
+        () => applyCardTemplateUpdate(
+          fake,
+          card,
+          tasks,
+          target,
+          previewToken,
+          'operator-version-check',
+        ),
+        CardTemplateUpdateConflictError,
+      );
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
   });
 
   it('uses one real DynamoDB transaction outside the test environment', async () => {

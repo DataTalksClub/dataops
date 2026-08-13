@@ -34,13 +34,16 @@ import { getUser } from './db/users';
 import {
   createTask,
   getTask,
+  getTaskConsistent,
   updateTask,
   deleteTask,
   listTasksByDate,
   listTasksByDateRange,
   listTasksByCard,
   listTasksByStatus,
+  TaskVersionConflictError,
 } from './db/tasks';
+import type { TaskPatch } from './db/tasks';
 import { getCard, updateCard } from './db/cards';
 import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
@@ -205,6 +208,15 @@ function trimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function expectedVersionError(body: Record<string, unknown>): string | null {
+  if (Object.hasOwn(body, 'version')) return 'version is response-only; use expectedVersion';
+  if (!Object.hasOwn(body, 'expectedVersion')) return 'expectedVersion is required';
+  if (!Number.isInteger(body.expectedVersion) || Number(body.expectedVersion) < 1) {
+    return 'expectedVersion must be an integer greater than or equal to 1';
+  }
+  return null;
+}
+
 function validateDateOrTimestampValue(value: unknown, fieldName: string): string | null {
   if (!isNonEmptyString(value)) return `${fieldName} is required`;
   const text = value.trim();
@@ -241,10 +253,6 @@ function validateActionChannel(value: unknown): string | null {
   return null;
 }
 
-function taskHistory(task: Task): TaskHistoryEvent[] {
-  return Array.isArray(task.taskHistory) ? task.taskHistory : [];
-}
-
 function makeTaskHistoryEvent(
   action: TaskHistoryAction,
   task: Task,
@@ -272,10 +280,6 @@ function makeTaskHistoryEvent(
   if (data.previousFollowUpAt) event.previousFollowUpAt = data.previousFollowUpAt;
   if (data.note) event.note = data.note;
   return event;
-}
-
-function appendHistory(task: Task, event: TaskHistoryEvent): TaskHistoryEvent[] {
-  return [...taskHistory(task), event];
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -910,14 +914,20 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         return jsonResponse(404, { error: 'Not found' });
       }
 
-      const existing = await getTask(client, taskAction.taskId);
-      if (!existing) {
-        return jsonResponse(404, { error: 'Task not found' });
-      }
-
       const body = parseBody(event);
       if (!body) {
         return jsonResponse(400, { error: 'Request body is required' });
+      }
+      const preconditionError = expectedVersionError(body);
+      if (preconditionError) return jsonResponse(400, { error: preconditionError });
+      const expectedVersion = body.expectedVersion as number;
+
+      const existing = await getTaskConsistent(client, taskAction.taskId);
+      if (!existing) {
+        return jsonResponse(404, { error: 'Task not found', code: 'task_not_found' });
+      }
+      if (existing.version !== expectedVersion) {
+        throw new TaskVersionConflictError(existing.id, expectedVersion);
       }
 
       const actorId = headerValue(event.headers, 'x-user-id') || undefined;
@@ -949,11 +959,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
-          status: 'waiting',
-          waitingFor,
-          followUpAt,
-          followUpChannel: channel,
-          taskHistory: appendHistory(existing, historyEvent),
+          expectedVersion,
+          patch: {
+            status: 'waiting',
+            waitingFor,
+            followUpAt,
+            followUpChannel: channel,
+          },
+          historyEvents: [historyEvent],
         });
         return jsonResponse(200, updated);
       }
@@ -982,10 +995,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
-          status: 'waiting',
-          followUpAt: nextFollowUpAt,
-          followUpChannel: channel,
-          taskHistory: appendHistory(existing, historyEvent),
+          expectedVersion,
+          patch: {
+            status: 'waiting',
+            followUpAt: nextFollowUpAt,
+            followUpChannel: channel,
+          },
+          historyEvents: [historyEvent],
         });
         return jsonResponse(200, updated);
       }
@@ -1008,11 +1024,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
-          status: 'todo',
-          waitingFor: null,
-          followUpAt: null,
-          followUpChannel: null,
-          taskHistory: appendHistory(existing, historyEvent),
+          expectedVersion,
+          patch: {
+            status: 'todo',
+            waitingFor: null,
+            followUpAt: null,
+            followUpChannel: null,
+          },
+          historyEvents: [historyEvent],
         });
         return jsonResponse(200, updated);
       }
@@ -1025,7 +1044,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         const noteError = validateActionNote(note);
         if (noteError) return jsonResponse(400, { error: noteError });
 
-        const updates: Record<string, unknown> = {
+        const updates: TaskPatch & Record<string, unknown> = {
           status: 'done',
           waitingFor: null,
           followUpAt: null,
@@ -1075,9 +1094,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           note,
           createdAt: now,
         });
-        updates.taskHistory = [...taskHistory(existing), resolvedEvent, completedEvent];
-
-        const updated = await updateTask(client, existing.id, updates);
+        const updated = await updateTask(client, existing.id, {
+          expectedVersion,
+          patch: updates,
+          historyEvents: [resolvedEvent, completedEvent],
+        });
         if (updated) {
           const task = updated as Task;
           if (task.stageOnComplete && task.cardId && task.source === 'template') {
@@ -1114,9 +1135,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!body) {
         return jsonResponse(400, { error: 'Request body is required' });
       }
+      const preconditionError = expectedVersionError(body);
+      if (preconditionError) return jsonResponse(400, { error: preconditionError });
+      const expectedVersion = body.expectedVersion as number;
 
       // Filter to allowed fields only
-      const updates: Record<string, unknown> = {};
+      const updates: TaskPatch & Record<string, unknown> = {};
       for (const field of ALLOWED_UPDATE_FIELDS) {
         if (body[field] !== undefined) {
           updates[field] = body[field];
@@ -1148,10 +1172,15 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
 
       // Verify task exists
-      const existing = await getTask(client, id);
+      const existing = await getTaskConsistent(client, id);
       if (!existing) {
-        return jsonResponse(404, { error: 'Task not found' });
+        return jsonResponse(404, { error: 'Task not found', code: 'task_not_found' });
       }
+      if (existing.version !== expectedVersion) {
+        throw new TaskVersionConflictError(existing.id, expectedVersion);
+      }
+
+      const historyEvents: TaskHistoryEvent[] = [];
 
       const effectiveStatus = updates.status !== undefined ? updates.status : existing.status;
       if (existing.status === 'waiting' && updates.status === 'done') {
@@ -1210,7 +1239,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         const actorId = headerValue(event.headers, 'x-user-id');
         if (actorId) updates.completedBy = actorId;
         if (existing.status !== 'done') {
-          updates.taskHistory = appendHistory(existing, makeTaskHistoryEvent('completed', existing, {
+          historyEvents.push(makeTaskHistoryEvent('completed', existing, {
             actorId: actorId || undefined,
             note: isNonEmptyString(updates.comment) ? String(updates.comment) : undefined,
             createdAt: completedAt,
@@ -1218,12 +1247,16 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         }
       } else if (existing.status === 'done' && updates.status === 'todo') {
         const actorId = headerValue(event.headers, 'x-user-id');
-        updates.taskHistory = appendHistory(existing, makeTaskHistoryEvent('reopened', existing, {
+        historyEvents.push(makeTaskHistoryEvent('reopened', existing, {
           actorId: actorId || undefined,
         }));
       }
 
-      const updated = await updateTask(client, id, updates);
+      const updated = await updateTask(client, id, {
+        expectedVersion,
+        patch: updates,
+        historyEvents,
+      });
 
       // Stage transition: when a task with stageOnComplete is marked done,
       // automatically update the parent card's stage
@@ -1243,7 +1276,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!id) {
         return jsonResponse(404, { error: 'Not found' });
       }
-      await deleteTask(client, id);
+      const body = parseBody(event);
+      if (!body) return jsonResponse(400, { error: 'Request body is required' });
+      const preconditionError = expectedVersionError(body);
+      if (preconditionError) return jsonResponse(400, { error: preconditionError });
+      await deleteTask(client, id, body.expectedVersion as number);
       return {
         statusCode: 204,
         headers: JSON_HEADERS,
@@ -1345,6 +1382,19 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // Anything else — 404
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof TaskVersionConflictError) {
+      const currentTask = await getTaskConsistent(client, err.taskId);
+      if (!currentTask) {
+        return jsonResponse(404, { error: 'Task not found', code: 'task_not_found' });
+      }
+      return jsonResponse(409, {
+        error: 'Task changed; review the current task and retry',
+        code: 'task_version_conflict',
+        expectedVersion: err.expectedVersion,
+        currentVersion: currentTask.version,
+        currentTask,
+      });
+    }
     console.error('Unexpected error:', err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
