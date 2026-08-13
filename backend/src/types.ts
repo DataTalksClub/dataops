@@ -518,6 +518,43 @@ export interface Session {
   sessionType?: 'browser';
 }
 
+// --- CLI device authorization and API tokens ---
+
+/**
+ * A pending CLI login. The device code is the CLI's secret; the user code is
+ * the short string a human confirms in the portal. Both are stored hashed and
+ * expire quickly.
+ */
+export interface DeviceGrant {
+  id: string;
+  userCodeHash: string;
+  status: 'pending' | 'approved' | 'denied';
+  /** Set once a signed-in operator approves the grant. */
+  userId?: string;
+  /** Human-facing description of the machine that started the login. */
+  label: string;
+  requestIp: string;
+  createdAt: string;
+  expiresAt: string;
+  approvedAt?: string;
+  /** Confirmation attempts against this user code, for throttling. */
+  attempts: number;
+  ttl: number;
+}
+
+/** A long-lived bearer credential for non-browser clients. */
+export interface ApiToken {
+  id: string;
+  userId: string;
+  label: string;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt?: string;
+  /** Set when the token was minted by a device-code login. */
+  source: 'device' | 'manual';
+  ttl: number;
+}
+
 // --- Notification ---
 
 export interface Notification {

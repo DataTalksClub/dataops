@@ -44,6 +44,8 @@ import {
 import { getCard, updateCard } from './db/cards';
 import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
+import { getApiToken, touchApiToken } from './db/cliAuth';
+import { handleCliAuthRoutes } from './routes/cliAuth';
 import { listFilesByTask } from './db/files';
 import type { ArtifactRef, LambdaEvent, LambdaResponse, Task, TaskHistoryAction, TaskHistoryEvent, TaskStatus } from './types';
 
@@ -56,6 +58,10 @@ const AUTH_EXEMPT_PATHS = new Set([
   '/',
   '/api/health',
   '/api/auth/login',
+  // A device login has no credential yet: the CLI starts the grant and polls
+  // for its result. Both are throttled and bounded by a 10 minute expiry.
+  '/api/auth/device',
+  '/api/auth/device/token',
 ]);
 
 function isAuthExempt(method: string, path: string): boolean {
@@ -663,8 +669,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = verifiedInteractiveUserId;
     }
-    if (portalMode && reqPath.startsWith('/api/auth')) {
+    // Portal mode disables password auth, but the device flow is how non-browser
+    // clients obtain a credential from that same portal session.
+    if (portalMode && reqPath.startsWith('/api/auth') && !reqPath.startsWith('/api/auth/device')) {
       return jsonResponse(404, { error: 'Not found' });
+    }
+    if (reqPath.startsWith('/api/auth/device')) {
+      const result = await handleCliAuthRoutes(reqPath, method, event);
+      if (result) return result;
     }
     const testTemplateActorId = skipAuth ? process.env.E2E_TEMPLATE_ACTOR_ID || '' : '';
     if (skipAuth && reqPath === '/api/me' && (headerValue(event.headers, 'x-user-id') || testTemplateActorId)) {
@@ -676,11 +688,15 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         const user = await getUser(client, verifiedInteractiveUserId);
         return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
       }
-      // Preserve the existing non-browser bearer-session contract.
+      // Preserve the existing non-browser bearer-session contract, and accept
+      // the API tokens CLI clients hold: `whoami` runs through this route.
       const bearer = extractToken(event);
       const session = bearer ? await getSession(client, bearer) : null;
-      if (session) {
-        const user = await getUser(client, session.userId);
+      const bearerApiToken = bearer && !session ? await getApiToken(client, bearer) : null;
+      const bearerUserId = session?.userId || bearerApiToken?.userId || '';
+      if (bearerUserId) {
+        if (bearerApiToken) await touchApiToken(client, bearerApiToken);
+        const user = await getUser(client, bearerUserId);
         return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
       }
       return jsonResponse(401, { error: 'Unauthorized' });
@@ -709,12 +725,16 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         return jsonResponse(401, { error: 'Unauthorized' });
       }
       const session = await getSession(client, token);
-      if (!session) {
+      // CLI and script clients present an API token instead of a session. It
+      // resolves to the same user, so every downstream role check is unchanged.
+      const apiToken = session ? null : await getApiToken(client, token);
+      if (!session && !apiToken) {
         return jsonResponse(401, { error: 'Unauthorized' });
       }
+      if (apiToken) await touchApiToken(client, apiToken);
       // Attach userId to event headers for downstream use
       if (!event.headers) event.headers = {};
-      event.headers['x-user-id'] = session.userId;
+      event.headers['x-user-id'] = session ? session.userId : apiToken!.userId;
     }
 
     // GET /api/health — health check
@@ -1288,6 +1308,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
    }
 
     // ── Notification routes ─────────────────────────────────────
+
+    if (reqPath.startsWith('/api/tokens')) {
+      const result = await handleCliAuthRoutes(reqPath, method, event);
+      if (result) return result;
+    }
 
     if (reqPath.startsWith('/api/notifications')) {
       const rawUserId = event.headers?.['x-user-id'] || undefined;

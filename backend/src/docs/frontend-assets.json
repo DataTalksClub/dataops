@@ -53,6 +53,7 @@
     "src/surfaces/operations/admin.js",
     "src/surfaces/operations/artifacts.js",
     "src/surfaces/operations/assistants.js",
+    "src/surfaces/operations/device.js",
     "src/surfaces/operations/inbox.js",
     "src/surfaces/operations/inbox-actions.js",
     "src/surfaces/planning.js",

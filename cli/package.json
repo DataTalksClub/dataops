@@ -1,0 +1,16 @@
+{
+  "name": "dataops-cli",
+  "version": "0.1.0",
+  "description": "DataOps command line client for the same API the portal frontend uses",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "dataops": "./bin/dataops.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
