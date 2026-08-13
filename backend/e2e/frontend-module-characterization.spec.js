@@ -35,9 +35,30 @@ function waitForServer(url) {
 
 function observeErrors(page) {
   const errors = [];
-  page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+  page.on("pageerror", (error) =>
+    errors.push(`pageerror url=${page.url()} message=${error.message}`),
+  );
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+    if (message.type() !== "error") return;
+    const location = message.location();
+    errors.push(
+      `console url=${location.url || page.url()} line=${location.lineNumber ?? "unknown"} `
+      + `column=${location.columnNumber ?? "unknown"} message=${message.text()}`,
+    );
+  });
+  page.on("requestfailed", (request) =>
+    errors.push(
+      `requestfailed method=${request.method()} url=${request.url()} `
+      + `resource=${request.resourceType()} failure=${request.failure()?.errorText || "unknown"}`,
+    ),
+  );
+  page.on("response", (response) => {
+    if (response.status() < 400) return;
+    const request = response.request();
+    errors.push(
+      `response method=${request.method()} url=${response.url()} `
+      + `resource=${request.resourceType()} status=${response.status()}`,
+    );
   });
   return errors;
 }

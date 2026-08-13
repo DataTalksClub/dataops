@@ -194,8 +194,21 @@ function unique(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-test.describe.serial('issue 159 retained canonical capability behavior', () => {
-  test.beforeAll(async () => {
+function freshHomeWork(page) {
+  const exact = (response, predicate) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && predicate(url);
+  };
+  return Promise.all([
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.has('date'))),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.get('status') === 'waiting')),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/cards' && !url.search)),
+  ]);
+}
+
+test.describe('issue 159 retained canonical capability behavior', () => {
+  test.beforeEach(async () => {
+    await Promise.all(Object.values(servers).map(stopServer));
     fs.rmSync(TMP_ROOT, { recursive: true, force: true });
     fs.mkdirSync(TMP_ROOT, { recursive: true });
     await Promise.all(Object.values(servers).map(startServer));
@@ -292,25 +305,33 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
       { method: 'GET', path: '/api/cards', delayMs: 800 },
     ]);
     const page = await context.newPage();
+    const initialToday = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
+    });
+    const initialCards = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/work/api/cards' && !url.search;
+    });
     await page.goto('/#/');
     await expect(page.locator('.operations-home[data-operations-work-loaded="false"]')).toBeVisible();
+    await Promise.all([initialToday, initialCards]);
     await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toBeVisible();
     await clearFaults(context.request);
-    await expect(page.getByText('Nothing overdue, due today, or missing proof.')).toBeVisible();
-    await expect(page.locator('.ops-summary')).toContainText(/0\s*Overdue/);
-    await expect(page.locator('.ops-summary')).toContainText(/0\s*Today/);
-    await expect(page.locator('.ops-summary')).toContainText(/0\s*Waiting/);
-    await expect(page.locator('#status-text')).toContainText('0 active workflows');
-    const quality = page.locator('.ops-process-quality');
-    await expect(quality.locator('.ops-section-header')).toContainText('0 active blockers');
-    await expect(quality.getByText('No active process blockers')).toBeVisible();
+    const today = await page.evaluate(() => new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date()));
+    const attention = page.getByRole('region', { name: 'Needs your attention' });
+    await expect(attention.locator('.home-attention-empty')).toBeVisible();
+    await expect(attention.locator('.home-attention-list')).toHaveCount(0);
+    await expect(attention.getByRole('button')).toBeEnabled();
+    const dailySummary = page.getByRole('region', { name: 'Daily work summary' });
+    await expect(dailySummary.locator('.home-status-item[data-state="ready"]')).toHaveCount(3);
+    await expect(dailySummary.locator('.home-status-item > strong')).toHaveText(['0', '0', '0']);
     await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('0');
-    await quality.getByRole('button', { name: 'Open drill-down' }).click();
-    await expect(page.locator('.ops-quality-drilldown')).toBeVisible();
-    await page.goto('/#/');
     const title = unique('Synthetic home task');
     const created = await context.request.post('/api/tasks', { data: {
-      description: title, date: new Date().toISOString().slice(0, 10), instructionDocId: 'sop.synthetic.missing-home',
+      description: title, date: today, assigneeId: ADMIN_ID, instructionDocId: 'sop.synthetic.missing-home',
     } });
     expect(created.status()).toBe(201);
     const notificationTitle = unique('Synthetic home notification');
@@ -318,6 +339,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
       description: notificationTitle,
       date: '2026-08-11',
       status: 'waiting',
+      assigneeId: ADMIN_ID,
       waitingFor: 'Synthetic reply',
       followUpAt: '2026-08-01T09:00:00.000Z',
       comment: 'Public-safe Home notification',
@@ -326,11 +348,17 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     expect(notificationTask.status()).toBe(201);
     const cardTitle = unique('Synthetic home workflow');
     expect((await context.request.post('/api/cards', { data: { title: cardTitle, anchorDate: '2026-08-12' } })).status()).toBe(201);
-    await page.reload();
-    await expect(page.locator('.ops-lane-item', { hasText: title })).toBeVisible();
-    await expect(page.locator('#status-text')).toContainText('1 active workflows');
-    await expect(page.locator('.ops-process-quality .ops-section-header')).toContainText(/\d+ active blockers/);
-    await expect(page.locator('.ops-process-quality .ops-quality-row', { hasText: title })).toBeVisible();
+    const populatedWork = freshHomeWork(page);
+    const populatedRender = page.evaluate(() => window.__dataopsRefreshWork());
+    const [todayResponse, waitingResponse, cardsResponse] = await populatedWork;
+    expect((await json(todayResponse)).tasks.some((task) => task.description === title)).toBe(true);
+    expect((await json(waitingResponse)).tasks.some((task) => task.description === notificationTitle)).toBe(true);
+    expect((await json(cardsResponse)).cards.some((card) => card.title === cardTitle)).toBe(true);
+    await populatedRender;
+    const populatedAttention = page.getByRole('region', { name: 'Needs your attention' });
+    await expect(populatedAttention.locator('.home-attention-list')).toBeVisible();
+    await expect(populatedAttention.locator('.home-attention-row', { hasText: title })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Daily work summary' }).locator('.home-status-item > strong')).toHaveText(['1', '1', '1']);
     await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('1');
     await page.locator('#work-bell-button').click();
     const bellItem = page.locator('.work-bell-item', { hasText: notificationTitle });
@@ -341,14 +369,28 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.goto('/#/');
 
     await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 10 }]);
-    await page.reload();
-    await expect(page.getByText('Live work data is partially unavailable')).toBeVisible();
-    await expect(page.locator('.ops-lane-item', { hasText: title })).toBeVisible();
-    await expect(page.locator('.ops-runtime-state')).toContainText('Loaded tasks remain visible');
+    const partialWork = Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
+      }),
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === '/work/api/cards' && response.status() === 503;
+      }),
+    ]);
+    const partialRender = page.evaluate(() => window.__dataopsRefreshWork());
+    await partialWork;
+    await partialRender;
+    await expect(page.locator('.ops-runtime-state')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Needs your attention' }).getByText(title)).toBeVisible();
     await clearFaults(context.request);
-    await page.reload();
-    await expect(page.getByText('Live work data is partially unavailable')).toHaveCount(0);
-    await expect(page.locator('.ops-lane-item', { hasText: title })).toBeVisible();
+    const recoveredWork = freshHomeWork(page);
+    const recoveredRender = page.evaluate(() => window.__dataopsRefreshWork());
+    await recoveredWork;
+    await recoveredRender;
+    await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Needs your attention' }).locator('.home-attention-row', { hasText: title })).toBeVisible();
     await context.close();
   });
 
@@ -479,7 +521,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     const retired = await context.request.post('/api/bookkeeping/documents/upload', { data: {
       filename: 'synthetic-evidence.pdf', contentType: 'application/pdf', byteSize: 34, documentType: 'receipt',
     } });
-    expect(retired.status()).toBe(410);
+    expect(retired.status()).toBe(404);
     await page.getByLabel('Report month').fill('2026-08');
     await page.getByRole('button', { name: 'Create monthly package' }).click();
     await expect(page.getByRole('status')).toContainText('Snapshot ready');
@@ -537,7 +579,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
 
     await page.goto(`/#/sponsors?bookingId=${updatedBooking.id}`);
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    await expect(page.locator('[data-crm-detail]')).toContainText('confirmed');
+    await expect(page.locator('[data-crm-detail] .status-label')).toHaveText('Confirmed');
     await expect(page.locator('[data-crm-detail]')).not.toContainText('Synthetic private note');
     await page.reload();
     await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
@@ -611,11 +653,13 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.locator('[data-to]').fill('2026-09-30');
     await page.locator('[data-from]').dispatchEvent('change');
     await expect(page.getByText(`Synthetic newsletter ${id}`)).toBeVisible();
-    await expect(page.locator('[data-slots]')).toContainText('scheduled');
+    const scheduledSlot = page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` });
+    await expect(scheduledSlot.locator('.planner-status.is-info')).toHaveText('Scheduled');
     await page.getByRole('button', { name: 'Add slot' }).click();
     await page.getByRole('button', { name: 'Save slot' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Invalid publicationDate');
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     await page.locator('[data-slots] article', { hasText: `Synthetic newsletter ${id}` }).getByRole('button', { name: 'Edit' }).click();
     const serverSlot = await json(await context.request.get(`/api/newsletter-slots/${slot.id}`));
     const concurrentSlot = await context.request.put(`/api/newsletter-slots/${slot.id}`, { data: {
@@ -624,7 +668,8 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     expect(concurrentSlot.status()).toBe(200);
     await page.getByRole('button', { name: 'Save slot' }).click();
     await expect(page.locator('.newsletter-surface dialog [role="alert"]')).toContainText('Slot changed; reload and retry');
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     await page.reload();
     await expect(page.getByText(`Server newsletter ${id}`)).toBeVisible();
     await setFaults(context.request, [{ method: 'GET', path: '/api/newsletter-slots', status: 503 }]);
@@ -715,11 +760,11 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await setFaults(empty.request, [{ method: 'GET', path: '/docs', delayMs: 1200 }]);
     const emptyPage = await empty.newPage();
     await emptyPage.goto('/#/processes', { waitUntil: 'domcontentloaded' });
-    await expect(emptyPage.locator('#tree-skeleton')).toBeVisible();
     await expect(emptyPage.locator('#tree-skeleton')).toBeHidden();
     expect((await json(await empty.request.get('/docs'))).documents).toEqual([]);
     await emptyPage.locator('#search-input').fill('no synthetic process exists');
-    await expect(emptyPage.getByRole('region', { name: 'Document tree' })).toContainText('No matching pages');
+    await expect(emptyPage.locator('#document-list.is-unified-search')).toBeVisible();
+    await expect(emptyPage.getByText('No work or process context matches this search.')).toBeVisible();
     await setFaults(empty.request, [
       { method: 'GET', path: '/docs/process-quality', delayMs: 1200 },
       { method: 'GET', path: '/git/status', delayMs: 1200 },
@@ -748,20 +793,27 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
 
     await page.goto('/#/processes');
     await expect(page.locator('#library-title')).toHaveText('Docs');
-    await expect(page.getByRole('region', { name: 'Document tree' })).toContainText('synthetic');
+    await expect(page.locator('#tree-skeleton')).toBeHidden();
     await page.locator('#search-input').fill('synthetic capability');
     const docResult = page.locator('.unified-search-row.result-doc', { hasText: 'Synthetic Capability Procedure' });
     await expect(docResult).toBeVisible();
     await docResult.click();
     await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
     await expect(page.locator('#rendered-view')).toContainText('Exercise a public-safe retained portal surface');
-    await page.locator('#search-input').fill('');
+    await page.getByRole('button', { name: 'Process Docs', exact: true }).click();
+    await expect(page).toHaveURL(/\/#\/processes$/);
+    await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
+    await expect(page.locator('#library-title')).toHaveText('Docs');
+    await page.locator('#settings-button').click();
+    await page.locator('#settings-admin-button').click();
+    const createProcess = page.locator('.ops-admin-card', { hasText: 'New process doc' });
+    await expect(createProcess).toBeVisible();
+    await createProcess.click();
 
     const createdSlug = unique('browser-process');
     const createdPath = `content/synthetic/${createdSlug}.md`;
     const createdTitle = `Browser process ${createdSlug}`;
     const updatedTitle = `${createdTitle} updated`;
-    await page.locator('#new-document-button').click();
     const createForm = page.locator('#new-doc-form');
     await createForm.getByLabel('Path').fill('');
     await createForm.getByRole('button', { name: 'Create and edit' }).click();
@@ -777,12 +829,25 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.locator('.block-title-editor').fill(updatedTitle);
     await page.locator('.block-title-editor').press('Enter');
     await setFaults(context.request, [{ method: 'PUT', path: '/docs', status: 503 }]);
-    await page.locator('#save-button').click();
+    const failedSave = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'PUT'
+        && url.pathname === '/docs'
+        && url.searchParams.get('path') === createdPath;
+    });
+    await page.keyboard.press('Control+s');
+    expect((await failedSave).status()).toBe(503);
     await expect(page.locator('#status-text')).toContainText('Synthetic route failure (503)');
     await expect(page.locator('#document-title')).toHaveValue(updatedTitle);
     await clearFaults(context.request);
-    await page.locator('#save-button').click();
-    await expect(page.locator('#save-button')).toBeDisabled();
+    const successfulSave = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'PUT'
+        && url.pathname === '/docs'
+        && url.searchParams.get('path') === createdPath;
+    });
+    await page.keyboard.press('Control+s');
+    expect((await successfulSave).status()).toBe(200);
     await page.reload();
     await expect(page.locator('#document-title')).toHaveValue(updatedTitle);
 
@@ -925,10 +990,10 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await setFaults(context.request, [{ method: 'POST', path: `/api/intake/${duplicateId}/mark-duplicate`, status: 409 }]);
     await duplicateAction.getByRole('button', { name: 'Mark duplicate' }).click();
     await expect(detail.getByRole('alert')).toContainText('Synthetic route failure (409)');
-    await detail.getByText('Resolution actions').click();
     const retryDuplicateAction = detail.locator('[data-intake-submit="mark-duplicate"]').locator('xpath=ancestor::details[1]');
     await expect(retryDuplicateAction.getByLabel('Reason')).toHaveValue('Same synthetic upstream request');
     await clearFaults(context.request);
+    await expect(retryDuplicateAction.getByRole('button', { name: 'Mark duplicate' })).toBeVisible();
     await retryDuplicateAction.getByRole('button', { name: 'Mark duplicate' }).click();
     await expect(detail).toContainText('This item is duplicate and read-only');
     await expect(detail.locator('.intake-history')).toContainText('Marked as duplicate');
@@ -978,7 +1043,8 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
       await expect(group.locator('.ops-empty')).toHaveText(empty);
     }
     await page.goto('/#/cards');
-    await expect(page.getByText('No active workflows')).toBeVisible();
+    await expect(page.locator('.ops-workflows-board')).toBeVisible();
+    await expect(page.locator('.ops-workflow-card')).toHaveCount(0);
 
     await page.goto('/#/');
     const quickTitle = unique('Synthetic quick task');
@@ -1032,13 +1098,30 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     const complete = page.locator('#task-panel').getByRole('button', { name: 'Mark done' });
     await expect(complete).toBeDisabled();
     await expect(complete).toHaveAttribute('title', /Fill in Evidence URL.*Upload required file/);
+    const documentsPayload = await json(await context.request.get('/docs'));
+    expect(documentsPayload.documents.some((document) => document.path === 'content/synthetic/capability.md')).toBe(true);
+    await expect(page.locator('#tree-skeleton')).toBeHidden();
+    const instructionReady = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/docs'
+        && url.searchParams.get('path') === 'content/synthetic/capability.md';
+    });
     await page.locator('#task-panel .task-instruction-doc-link', { hasText: 'Synthetic Capability Procedure' }).click();
+    expect((await instructionReady).status()).toBe(200);
     await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
     await expect(page.locator('#doc-context-return')).toContainText(`Opened from task: ${proofTitle}`);
     await page.getByRole('button', { name: 'Back to task' }).click();
     await expect(page.locator('#task-panel-title')).toHaveText(proofTitle);
-    await page.locator('#task-panel .task-required-link input[type="url"]').fill('https://example.invalid/synthetic-evidence');
-    await page.locator('#task-panel .task-required-link input[type="url"]').blur();
+    const requiredLink = page.locator('#task-panel .task-required-link input[type="url"]');
+    await requiredLink.fill('https://example.invalid/synthetic-evidence');
+    const linkSaved = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'PUT'
+        && url.pathname === `/work/api/tasks/${proofTask.id}`;
+    });
+    await requiredLink.blur();
+    expect((await linkSaved).status()).toBe(200);
     await page.locator('#task-panel input[type="file"]').setInputFiles({
       name: 'synthetic-proof.txt', mimeType: 'text/plain', buffer: Buffer.from('public-safe synthetic proof'),
     });
@@ -1089,10 +1172,15 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     } });
     expect(approvedArtifactResponse.status()).toBe(201);
     const approvedArtifact = (await json(approvedArtifactResponse)).artifact;
-    expect((await context.request.put(`/api/tasks/${missingArtifactTask.id}`, { data: {
+    const currentMissingArtifactTask = await json(await context.request.get(`/api/tasks/${missingArtifactTask.id}`));
+    expect(Number.isInteger(currentMissingArtifactTask.version)).toBe(true);
+    const attachApprovedArtifact = await context.request.put(`/api/tasks/${missingArtifactTask.id}`, { data: {
+      expectedVersion: currentMissingArtifactTask.version,
       proofRequirement: { type: 'artifact', required: true, label: 'Approved synthetic output' },
       artifactRefs: [{ artifactId: approvedArtifact.id, status: 'approved' }],
-    } })).status()).toBe(200);
+    } });
+    expect(attachApprovedArtifact.status()).toBe(200);
+    expect((await json(attachApprovedArtifact)).version).toBeGreaterThan(currentMissingArtifactTask.version);
     await page.reload();
     const missingArtifactCheckbox = page.getByRole('checkbox', { name: `Complete ${missingArtifactTitle}` });
     await expect(missingArtifactCheckbox).toBeEnabled();
@@ -1101,9 +1189,12 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await page.reload();
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
     await expect(page.locator('#card-panel')).toContainText('3/3 tasks');
-    await page.locator('#card-panel .card-stage-select').selectOption('done');
+    await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
+    await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
+    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
     await page.reload();
-    await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('done');
+    await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
+    await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
     await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
     await context.close();

@@ -77,8 +77,16 @@ test.describe('production portal browser-cookie bootstrap', () => {
     expect(requestHeaders.cookie).toContain('dataops_session=');
     await expect(page).toHaveURL(`${BASE_URL}/#/`);
     await expect(page.locator('#library-title')).toHaveText('Home');
-    await expect(page.getByRole('button', { name: 'New task' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start workflow' })).toBeVisible();
+    const quickActions = page.locator('.home-quick-actions[aria-label="Quick actions"]');
+    const creationActions = quickActions.getByRole('button');
+    await expect(creationActions).toHaveCount(2);
+    for (const action of await creationActions.all()) await expect(action).toBeEnabled();
+    await creationActions.first().click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+    await creationActions.last().click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0);
 

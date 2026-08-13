@@ -180,6 +180,7 @@ function createKnowledgeHarness(options = {}) {
   };
   const storageValues = new Map(Object.entries(options.storage || {}));
   const requests = [];
+  const documentNavigationEvents = [];
   const statuses = [];
   const pageTitles = [];
   const views = [];
@@ -195,6 +196,7 @@ function createKnowledgeHarness(options = {}) {
   const request = async (url, requestOptions = {}) => {
     const entry = { url: String(url), options: requestOptions };
     requests.push(entry);
+    documentNavigationEvents.push({ type: "request", url: entry.url });
     if (options.request) return options.request(url, requestOptions, entry);
     return {};
   };
@@ -220,7 +222,9 @@ function createKnowledgeHarness(options = {}) {
       { title: "Process catalog", description: "Internal Process Docs" },
     ],
     buildProcessQualityModel: () => ({ findings: [] }),
-    beginDocumentNavigation() {},
+    beginDocumentNavigation() {
+      documentNavigationEvents.push({ type: "begin" });
+    },
     cardsFromWorkPayload: (payload) => payload?.cards || [],
     canLeaveCurrentDocument: async () => true,
     cleanPath: (path) => String(path || "").replace(/^\/+|\/+$/g, ""),
@@ -325,6 +329,7 @@ function createKnowledgeHarness(options = {}) {
     api,
     body,
     document,
+    documentNavigationEvents,
     documentState,
     elements,
     history,
@@ -688,6 +693,13 @@ describe("Knowledge surface boundary", () => {
     await loaded.api.openDocument("content/runbook.md", {
       returnContext: { type: "task", id: "task-7", title: "Review work" },
     });
+    assert.deepEqual(loaded.documentNavigationEvents.slice(0, 2), [
+      { type: "begin" },
+      {
+        type: "request",
+        url: "http://portal.test/docs?path=content%2Frunbook.md",
+      },
+    ]);
     assert.deepEqual(loaded.history.at(-1), {
       state: { path: "content/runbook.md" },
       url: "/runbook.md",
