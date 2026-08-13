@@ -992,6 +992,8 @@ Resources:
           AttributeType: S
         - AttributeName: cardId
           AttributeType: S
+        - AttributeName: bundleId
+          AttributeType: S
       KeySchema:
         - AttributeName: PK
           KeyType: HASH
@@ -1009,6 +1011,17 @@ Resources:
         - IndexName: GSI-Card
           KeySchema:
             - AttributeName: cardId
+              KeyType: HASH
+            - AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # Transitional. GSI-Bundle is the pre-rename index; DynamoDB allows only
+        # one global secondary index to be created or deleted per stack update,
+        # and this update already creates GSI-Card. Removed in the next deploy.
+        - IndexName: GSI-Bundle
+          KeySchema:
+            - AttributeName: bundleId
               KeyType: HASH
             - AttributeName: date
               KeyType: RANGE
