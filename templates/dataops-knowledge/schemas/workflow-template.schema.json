@@ -10,7 +10,7 @@
     "name",
     "schema_version",
     "trigger",
-    "bundle_links",
+    "card_links",
     "phases",
     "tasks",
     "default_assignee",
@@ -83,10 +83,10 @@
         }
       }
     },
-    "bundle_links": {
+    "card_links": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/bundle_link"
+        "$ref": "#/$defs/card_link"
       },
       "uniqueItems": true
     },
@@ -162,7 +162,7 @@
         }
       }
     },
-    "bundle_link": {
+    "card_link": {
       "type": "object",
       "additionalProperties": false,
       "required": [
