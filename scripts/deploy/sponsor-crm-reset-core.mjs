@@ -64,12 +64,12 @@ export const NO_RECEIPT = "none";
 export const NO_RECEIPT_DIGEST = "sha256:none";
 
 export const PROTECTED_FILES = Object.freeze({
-  "infra/template.full.yaml": "4c7ba50dbbe6b1ae65b0dfcf7c0f439c5b8b688d7e9504d75a336713b4b13550",
-  ".github/workflows/deploy-dataops-v1.yml": "4611d88891fcb3031a94b0140b7238686e6e68feb68824ac7332d1a71180b14c",
+  "infra/template.full.yaml": "7bba525826e05035254f3829b39229531b9da873bb5cb3be2f87c1e6983e5ef7",
+  ".github/workflows/deploy-dataops-v1.yml": "084db60cf18b84a0ddbe4f7da264ca6b542149c8e2d8ffd55bf84e8d12d731e9",
   ".github/workflows/migrate-sponsor-crm-gsis.yml": "e5e64ced853b5ca7a391a9f979c4fd6e50811d5daec5775bd605f8c184384c1f",
-  "scripts/deploy/sponsor-crm-gsi-core.mjs": "fe5a2944b8da2721e8a1df061b1ac283ccea2e6ce35df20920229e5c4fc94b10",
-  "scripts/deploy/sponsor-crm-gsi-migrator.mjs": "e5b076b75ee03fa47aa263bba6cf766b847045805dab35f7a13c36c6a049bd35",
-  "scripts/deploy/sponsor-crm-gsi-guard.mjs": "ca2ccdfec35fdfeb114800b5146d2e9c057b16132ab861cb6ea2ce6195923aaa",
+  "scripts/deploy/sponsor-crm-gsi-core.mjs": "a46bb656a1fc104892276970370fb92937ecd8475a4e03b24143c405b608503d",
+  "scripts/deploy/sponsor-crm-gsi-migrator.mjs": "59cde06e3eab1fcf7434f930c2cb37959d3dffd4bfdbb18e90be327dd20d2d14",
+  "scripts/deploy/sponsor-crm-gsi-guard.mjs": "ec95d6f4d036f8b2844a5f28cd3be2e989def7fd00c32241b2bd3bc01aaea315",
 });
 
 const HEX = /^[0-9a-f]{64}$/;
