@@ -20,6 +20,13 @@ function invoke(method: string, path: string, body?: unknown): Promise<LambdaRes
   return handler(event, {});
 }
 
+function utcDateString(offsetDays = 0): string {
+  const date = new Date();
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+
 describe('API — Cards', () => {
   let client: DynamoDBDocumentClient;
 
@@ -979,6 +986,35 @@ describe('API — Cards', () => {
 
       const dates = body.tasks.map((t: any) => t.date).sort();
       assert.deepStrictEqual(dates, ['2026-06-01', '2026-06-08', '2026-06-15', '2026-06-18', '2026-06-22']);
+    });
+
+    it('preserves pre-creation task dates when a Card is anchored today', async () => {
+      const today = utcDateString();
+      const template = await createTemplate(client, {
+        name: 'Current Anchor Date Template',
+        type: 'test',
+        taskDefinitions: [
+          { refId: 'before', description: 'Before workflow creation', offsetDays: -2 },
+          { refId: 'anchor', description: 'Anchor day', offsetDays: 0 },
+          { refId: 'after', description: 'After anchor', offsetDays: 2 },
+        ],
+      });
+
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Current Anchor Date Card',
+        anchorDate: today,
+        templateId: template.id,
+      });
+
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      const tasksByRef = new Map(body.tasks.map((task: any) => [task.templateTaskRef, task]));
+
+      assert.strictEqual(body.card.createdAt.slice(0, 10), today);
+      assert.strictEqual((tasksByRef.get('before') as any).date, utcDateString(-2));
+      assert.ok((tasksByRef.get('before') as any).date < body.card.createdAt.slice(0, 10));
+      assert.strictEqual((tasksByRef.get('anchor') as any).date, today);
+      assert.strictEqual((tasksByRef.get('after') as any).date, utcDateString(2));
     });
   });
 });

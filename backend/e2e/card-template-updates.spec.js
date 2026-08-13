@@ -1,7 +1,5 @@
 const { test, expect } = require('@playwright/test');
 
-test.describe.configure({ mode: 'serial' });
-
 async function json(response) {
   expect(response.ok()).toBeTruthy();
   return response.json();
@@ -56,7 +54,9 @@ test.describe('reviewed Card Template updates', () => {
     const { card, tasks } = await createCard(request, template.id, 'Synthetic reviewed single Card');
     const completed = tasks.find(({ templateTaskRef }) => templateTaskRef === 'completed');
     const removed = tasks.find(({ templateTaskRef }) => templateTaskRef === 'removed');
-    expect((await request.put(`/api/tasks/${completed.id}`, { data: { status: 'done' } })).status()).toBe(200);
+    expect((await request.put(`/api/tasks/${completed.id}`, {
+      data: { status: 'done', expectedVersion: completed.version },
+    })).status()).toBe(200);
     await updateTemplate(request, template, [
       { refId: 'completed', description: 'Changed completed step', offsetDays: -2 },
       { refId: 'added', description: 'New reviewed step', offsetDays: 1 },
@@ -79,7 +79,10 @@ test.describe('reviewed Card Template updates', () => {
     await draftReference.fill('Public-safe typed reference');
     await draftReferenceUrl.fill('https://example.test/public-safe-draft');
     expect((await request.put(`/api/tasks/${removed.id}`, {
-      data: { comment: 'Public-safe concurrent operator note' },
+      data: {
+        comment: 'Public-safe concurrent operator note',
+        expectedVersion: removed.version,
+      },
     })).status()).toBe(200);
     const staleApply = page.waitForResponse((response) => (
       response.request().method() === 'POST'
@@ -103,10 +106,16 @@ test.describe('reviewed Card Template updates', () => {
       status: 'done',
       templateRetiredReason: 'completed-modified',
     });
-    expect(appliedTasks.find(({ id }) => id === removed.id)).toMatchObject({
+    const retiredTask = appliedTasks.find(({ id }) => id === removed.id);
+    expect(retiredTask).toMatchObject({
       status: 'archived',
       templateRetiredReason: 'removed',
     });
+    expect(retiredTask.taskHistory).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'template-retired',
+      }),
+    ]));
     expect(appliedTasks.find(({ templateTaskRef }) => templateTaskRef === 'added')).toMatchObject({
       description: 'New reviewed step',
       status: 'todo',
@@ -138,7 +147,10 @@ test.describe('reviewed Card Template updates', () => {
 
     const staleTask = second.tasks.find(({ templateTaskRef }) => templateTaskRef === 'prepare');
     expect((await request.put(`/api/tasks/${staleTask.id}`, {
-      data: { comment: 'Public-safe concurrent operator note' },
+      data: {
+        comment: 'Public-safe concurrent operator note',
+        expectedVersion: staleTask.version,
+      },
     })).status()).toBe(200);
     await inspector.getByRole('button', { name: 'Apply 2 selected Cards' }).click();
     await expect(inspector).toContainText('1 Card applied · 1 conflict needs a fresh preview');

@@ -234,7 +234,7 @@ The dev server starts automatically — no manual setup needed. Playwright is co
 
 ```bash
 # Run a specific test file
-npx playwright test e2e/api-tasks.spec.js
+npx playwright test e2e/canonical-route-parity.spec.js
 
 # Run tests matching a name
 npx playwright test -g "creates a task"
