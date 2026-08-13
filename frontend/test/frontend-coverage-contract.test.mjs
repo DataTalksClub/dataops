@@ -23,8 +23,8 @@ describe("frontend coverage development contract", () => {
     assert.ok(config.reporter.includes("text"));
     assert.ok(config.reporter.includes("json-summary"));
     assert.equal(config.checkCoverage, true);
-    assert.equal(config.lines, 62.5);
-    assert.equal(config.statements, 62.5);
+    assert.equal(config.lines, 65.25);
+    assert.equal(config.statements, 65.25);
     assert.equal(config.functions, undefined);
     assert.equal(config.branches, undefined);
   });
