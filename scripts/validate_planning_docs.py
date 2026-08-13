@@ -18,6 +18,7 @@ from content_tools import doc_registry, sop_parse  # noqa: E402
 
 
 PROTECTED_MARKDOWN_GLOBS = [
+    "_docs/**/*.md",
     "docs/**/*.md",
     "templates/**/*.md",
 ]

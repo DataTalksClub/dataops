@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/validate-planning-docs.yml"
+      - "_docs/**"
       - "docs/**"
       - "templates/**"
       - "content/tasks/templates/**"
@@ -98,4 +99,4 @@ jobs:
 
 
       - name: Validate docs links and workflow doc IDs
-        run: npm --prefix backend run validate:docs-links
+        run: npm --prefix backend run validate:docs-links -- --content-root .knowledge/content
