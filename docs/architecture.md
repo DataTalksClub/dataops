@@ -171,7 +171,7 @@ long-lived AWS keys in GitHub.
 
 ```mermaid
 flowchart TB
-  CFN[template.github-actions-dataops.yaml] --> OIDCProvider[GitHub OIDC provider]
+  CFN[aws-infra template.github-actions.yaml] --> OIDCProvider[GitHub OIDC provider]
   CFN --> Role[dataops-v1 GitHub Actions deploy role]
   GitHubActions[GitHub Actions] -->|OIDC token| Role
   Role -->|limited deploy permissions| SAM[SAM deploy]
@@ -179,7 +179,7 @@ flowchart TB
 
 Runtime secrets are also managed through CloudFormation:
 
-- `template.runtime-secrets.yaml` creates or updates the AWS Secrets Manager
+- `aws-infra` `sandbox/dataops/template.runtime-secrets.yaml` creates or updates the AWS Secrets Manager
   secrets.
 - `template.full.yaml` gives the backend Lambda permission to read only those
   secrets.

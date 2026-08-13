@@ -1113,50 +1113,6 @@ def test_dataops_export_archive_bucket_is_private_retained_and_versioned():
     assert "Value: DataOpsV1ExecutionExports" in bucket
 
 
-def test_github_deploy_role_can_manage_dataops_execution_tables():
-    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-
-    assert "Sid: DynamoDbDataOpsExecutionTables" in template
-    assert "dynamodb:CreateTable" in template
-    assert "dynamodb:DescribeTable" in template
-    assert "dynamodb:UpdateContinuousBackups" in template
-    assert "dynamodb:UpdateTable" in template
-    assert "table/${FullDocsStackName}-*" in template
-
-
-def test_github_deploy_role_can_seed_runtime_users_and_templates():
-    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-    runtime_seed = template[
-        template.index("Sid: DynamoDbDataOpsRuntimeSeed") : template.index("Sid: DynamoDbDataOpsRecurringSeed")
-    ]
-
-    assert "Sid: DynamoDbDataOpsRuntimeSeed" in runtime_seed
-    assert "dynamodb:GetItem" in runtime_seed
-    assert "dynamodb:PutItem" in runtime_seed
-    assert "dynamodb:Scan" in runtime_seed
-    assert "dynamodb:UpdateItem" not in runtime_seed
-    assert "dynamodb:BatchWriteItem" not in runtime_seed
-    assert "table/${FullDocsStackName}-users" in runtime_seed
-    assert "table/${FullDocsStackName}-templates" in runtime_seed
-
-
-def test_github_deploy_role_can_seed_recurring_configs_in_tasks_table():
-    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-    recurring_seed = template[
-        template.index("Sid: DynamoDbDataOpsRecurringSeed") : template.index("Sid: IamDataOpsFunctionRole")
-    ]
-
-    assert "Sid: DynamoDbDataOpsRecurringSeed" in recurring_seed
-    assert "dynamodb:PutItem" in recurring_seed
-    assert "dynamodb:Scan" in recurring_seed
-    assert "dynamodb:UpdateItem" in recurring_seed
-    assert "dynamodb:BatchWriteItem" not in recurring_seed
-    assert "dynamodb:DeleteItem" not in recurring_seed
-    assert "table/${FullDocsStackName}-tasks" in recurring_seed
-    assert "table/${FullDocsStackName}-users" not in recurring_seed
-    assert "table/${FullDocsStackName}-templates" not in recurring_seed
-
-
 def test_deploy_workflow_seeds_and_verifies_runtime_templates():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
@@ -1246,59 +1202,6 @@ def test_deploy_workflow_keeps_production_auth_out_of_checks_and_scoped_to_deplo
         assert f"{variable}:" not in checks
         assert f"      {variable}: {value}" in deploy
         assert f"ParameterValue=${variable}" in deploy
-
-
-def test_github_deploy_role_can_manage_backend_lambda():
-    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-
-    assert "lambda:ListTags" in template
-    assert "iam:ListRoleTags" in template
-    assert "function:${FullDocsStackName}-BackendFunction-*" in template
-    assert "role/${FullDocsStackName}-BackendFunctionRole-*" in template
-    assert "/aws/lambda/${FullDocsStackName}-BackendFunction-*" in template
-    assert "Sid: SecretsManagerDataOpsPortalSecret" in template
-    assert "secretsmanager:CreateSecret" in template
-    assert "secretsmanager:GetRandomPassword" in template
-
-
-def test_github_deploy_role_can_manage_dataops_eventbridge_rules():
-    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-
-    assert "Sid: EventBridgeDataOpsRules" in template
-    assert "events:DescribeRule" in template
-    assert "events:PutRule" in template
-    assert "events:PutTargets" in template
-    assert "events:RemoveTargets" in template
-    assert "events:DeleteRule" in template
-    assert "events:ListTargetsByRule" in template
-    assert "events:TagResource" in template
-    assert "events:UntagResource" in template
-    assert "events:${FullDocsRegion}:${AWS::AccountId}:rule/${FullDocsStackName}-*" in template
-
-
-def test_github_deploy_role_can_manage_dataops_export_archive_bucket():
-    template = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-
-    assert "Sid: DataOpsExportArchiveBucket" in template
-    assert "s3:CreateBucket" in template
-    assert "s3:PutEncryptionConfiguration" in template
-    assert "s3:PutBucketPublicAccessBlock" in template
-    assert "s3:PutBucketVersioning" in template
-    assert "s3:PutLifecycleConfiguration" in template
-    assert "s3:PutBucketTagging" in template
-    assert "arn:${AWS::Partition}:s3:::${FullDocsStackName}-*" in template
-
-
-def test_active_and_legacy_oidc_templates_default_to_dataops_repo_and_stack():
-    active = DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-    legacy = LEGACY_DEPLOY_ROLE_TEMPLATE.read_text(encoding="utf-8")
-
-    for template in (active, legacy):
-        assert "Default: DataTalksClub" in template
-        assert "Default: dataops" in template
-        assert "Default: dataops-v1" in template
-        assert "Default: dtc-operations" not in template
-        assert "Default: dtc-operations-full-sandbox" not in template
 
 
 def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract():

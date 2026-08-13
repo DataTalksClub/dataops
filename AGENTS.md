@@ -1,6 +1,41 @@
 # Agent Notes
 
+## Project Context
+
+DataOps is the combined DataTalks.Club operations portal, merging DTC Operations
+process docs and docs app, DataTasks task execution, and Podcast Assistant
+intake and drafting.
+
+The project is in the consolidation stage. Source systems have been merged into
+a single TypeScript backend; see `_docs/TARGET_ARCHITECTURE.md`. The single
+`backend/` package serves the frontend, docs content API, search, and work APIs
+from one TypeScript Lambda. The Python docs/SOP backend has been retired; the
+remaining content-validation tooling lives in `tools/content_tools/`.
+
+Domain vocabulary: a **Template** is a reusable definition, a **Card** is one
+instantiated unit of work created from a template, and a **Task** is a checklist
+item contained by a card.
+
+Technology direction:
+
+- Backend: TypeScript, single `backend/` package (supersedes the earlier
+  "long-term backend: Python" direction; see `_docs/MERGE_PLAN.md`)
+- Search: `zerosearch-node` (BM25-lite, zero-dependency; supersedes `minsearch`)
+- Frontend shell: the existing `dtc-operations` vanilla JavaScript frontend
+- Execution state: DynamoDB
+- Process docs: GitHub markdown
+- Package management: `npm` for TypeScript, `uv` for Python tooling
+  (content validation, podcast assistant)
+
+## Working Process
+
 Read `_docs/PROCESS.md` before working on issues.
+
+Follow the lifecycle:
+
+```text
+PM groom -> implement -> tester verify -> PM accept -> commit -> merge -> push -> on-call check
+```
 
 When launching subagents for this workflow, use high-capability/high-reasoning
 settings by default unless the user explicitly asks for a cheaper or lower
@@ -59,10 +94,20 @@ Current planning docs:
 
 AWS infrastructure source:
 
-- Shared sandbox AWS infrastructure lives one level up in `../aws-infra/`.
-- DataOps-specific sandbox infra is in `../aws-infra/sandbox/dataops/`.
-- The GitHub Actions OIDC deploy role template is
-  `../aws-infra/sandbox/dataops/template.github-actions.yaml`.
+- **Infrastructure lives in `../aws-infra/`, not in this repo.** DataOps-specific
+  infrastructure is in `../aws-infra/sandbox/dataops/`. Edit it there and commit
+  it there; do not add or copy infrastructure templates into this repo.
+- That directory owns the GitHub Actions OIDC deploy role
+  (`template.github-actions.yaml`), the CloudFront domain
+  (`template.domain.yaml`), the runtime secrets
+  (`template.runtime-secrets.yaml`), and the knowledge backups bucket
+  (`template.knowledge-backups.yaml`).
+- The one exception is `infra/template.full.yaml`, the application stack. SAM
+  builds the Lambda code from this repo (`CodeUri: ..` with a makefile build),
+  so the template has to sit next to the code it packages. Moving it requires
+  changing how the Lambda artifact is produced, not just moving a file.
+- Keeping a second copy of an aws-infra template here is what caused the two to
+  drift apart. If a template needs changing, change it in `aws-infra`.
 - `aws-infra` does not currently deploy itself through CI/CD. If that template
   changes, committing/pushing it is not enough; a credentialed AWS operator must
   apply the `dataops-github-actions` CloudFormation stack.
