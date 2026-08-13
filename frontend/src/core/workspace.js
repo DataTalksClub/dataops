@@ -604,20 +604,10 @@ export function dedupeWorkTasks(tasks) {
   return output;
 }
 
-export function stripTitleSuffix(value) {
-  if (value == null) return "";
-  const title = typeof value === "string" ? value : String(value);
-  const match = title.match(/^(.+[ ].+)[ \t]+([a-zA-Z0-9]{4,8})$/);
-  if (!match) return title;
-  const [, head, token] = match;
-  if (/[a-zA-Z]/.test(token) && /[0-9]/.test(token)) return head.trimEnd();
-  return title;
-}
-
 export function workTaskTitle(task) {
-  return stripTitleSuffix(
-    task.description || task.title || task.name || task.id || "Untitled task",
-  );
+  const title =
+    task.description || task.title || task.name || task.id || "Untitled task";
+  return typeof title === "string" ? title : String(title);
 }
 
 export function workCardTitle(card) {
