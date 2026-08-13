@@ -1,6 +1,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import path from 'path';
+import { readFileSync } from 'node:fs';
 import { handler } from '../src/handler';
 import { getClient, startLocal, stopLocal } from '../src/db/client';
 import { createTables } from '../src/db/setup';
@@ -39,11 +40,33 @@ describe('production portal bookkeeping frontend', () => {
   it('serves the complete bookkeeping operator surface and responsive styles', async () => {
     const finance = await invoke('/src/surfaces/finance/bookkeeping.js');
     const css = await invoke('/src/styles.css');
+
+    // This suite exists to prove that the authenticated portal serves the real
+    // `frontend/` artifact rather than a stub or a stale copy. Asserting the
+    // served bytes equal the module on disk is that contract exactly, and it
+    // cannot drift: both sides move together. The list of identifier and URL
+    // fragments that used to stand here asserted the surface's *source text*,
+    // so it broke on every rename while a broken surface still passed. The
+    // surface's behaviour is covered by `frontend/test/finance-surface.test.mjs`
+    // and the bookkeeping e2e specs.
     assert.equal(finance.statusCode, 200);
-    for (const marker of ['renderBookkeepingSurface', '/transactions', '/documents/prepare', '/complete', 'idempotencyKey', 'runId', 'crypto.subtle.digest', '/accounts/setup', '/reports/snapshot', 'data-unlink', 'missingEvidence']) assert.ok(finance.body.includes(marker), marker);
+    assert.match(finance.headers?.['Content-Type'] || '', /javascript/);
+    assert.equal(
+      finance.body,
+      readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance', 'bookkeeping.js'), 'utf8'),
+      'the portal must serve the real frontend module, byte for byte',
+    );
+
+    // Negative assertion worth keeping on its own: the non-atomic upload route
+    // was retired in favour of prepare/complete, and a reintroduction would be
+    // a data-integrity regression rather than a rename.
     assert.ok(!finance.body.includes('/documents/upload'), 'retired non-atomic upload route must stay absent');
+
     assert.equal(css.statusCode, 200);
-    assert.match(css.body, /\.bookkeeping-surface/);
-    assert.match(css.body, /@media \(max-width: 820px\)/);
+    assert.equal(
+      css.body,
+      readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8'),
+      'the portal must serve the real stylesheet, byte for byte',
+    );
   });
 });

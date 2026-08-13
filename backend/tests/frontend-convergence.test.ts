@@ -10,10 +10,8 @@ import { serveCanonicalFrontend } from '../src/docs/portal';
 const repoRoot = path.resolve(__dirname, '..', '..');
 const frontendRoot = path.join(repoRoot, 'frontend');
 const html = readFileSync(path.join(frontendRoot, 'index.html'), 'utf8');
-const app = readFileSync(path.join(frontendRoot, 'src', 'app.js'), 'utf8');
 const application = readFileSync(path.join(frontendRoot, 'src', 'runtime', 'application.js'), 'utf8');
 const styles = readFileSync(path.join(frontendRoot, 'src', 'styles.css'), 'utf8');
-const workspace = readFileSync(path.join(frontendRoot, 'src', 'core', 'workspace.js'), 'utf8');
 const shellModules = [
   'api.js',
   'feedback.js',
@@ -43,9 +41,6 @@ const financeModules = [
   'sponsor-layout.js',
   'sponsors.js',
 ];
-const finance = financeModules
-  .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'finance', file), 'utf8'))
-  .join('\n');
 const home = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'home.js'), 'utf8');
 const knowledgeModules = [
   'index.js',
@@ -88,7 +83,6 @@ const operationsModules = [
 const operations = operationsModules
   .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'operations', file), 'utf8'))
   .join('\n');
-const planning = readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'planning.js'), 'utf8');
 const taskModules = [
   'index.js',
   'cards.js',
@@ -109,9 +103,6 @@ const workDetailModules = [
   'task-evidence.js',
   'card-panel.js',
 ];
-const workDetail = workDetailModules
-  .map((file) => readFileSync(path.join(frontendRoot, 'src', 'surfaces', 'work-detail', file), 'utf8'))
-  .join('\n');
 const backendPackage = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'package.json'), 'utf8'));
 const frontendManifest = JSON.parse(readFileSync(path.join(repoRoot, 'backend', 'src', 'docs', 'frontend-assets.json'), 'utf8'));
 
@@ -208,45 +199,27 @@ describe('one canonical frontend', () => {
     assert.doesNotMatch(backendPackage.scripts.build, /cp\s+-[Rr]|frontend\/DESIGN\.md|frontend\/Dockerfile|src\/public|src\/pages/);
   });
 
-  it('maps established hash routes and entity deep links into the canonical shell', () => {
-    assert.match(app, /import "\.\/runtime\/application\.js"/);
-    assert.match(application, /from "\.\.\/core\/workspace\.js"/);
-    for (const route of ['/', '/inbox', '/tasks', '/cards', '/cards/archive', '/assistants', '/templates', '/recurring', '/notifications', '/bookkeeping', '/sponsors', '/newsletter', '/calendar', '/mailing-exports']) {
-      assert.ok(workspace.includes(`"${route}"`), `missing canonical route ${route}`);
-    }
-    for (const param of ['taskId', 'cardId', 'cardId', 'intakeId', 'assistantJobId']) {
-      assert.ok(workspace.includes(`"${param}"`), `missing deep-link parameter ${param}`);
-    }
-  });
-
-  it('retains task, workflow, proof, bookkeeping, newsletter, and calendar behavior', () => {
-    for (const marker of [
-      'openTaskPanel',
-      'requiredLinkName',
-      'openCardPanel',
-      'updateCardStage',
-    ]) assert.ok(workDetail.includes(marker), `work detail is missing ${marker}`);
-    for (const marker of [
-      'renderWorkQueueSurface',
-      'renderWorkflowsSurface',
-      'renderTemplatesSurface',
-      'renderRecurringSurface',
-      'openQuickTaskForm',
-      'openQuickWorkflowForm',
-      'openRecurringForm',
-    ]) assert.ok(tasks.includes(marker), `Tasks surface is missing ${marker}`);
-    for (const marker of ['renderBookkeepingSurface', 'PDF evidence', 'monthly package']) {
-      assert.ok(finance.includes(marker), `finance surface is missing ${marker}`);
-    }
-    for (const marker of ['renderNewsletterSurface', 'renderCalendarSurface']) {
-      assert.ok(planning.includes(marker), `planning surface is missing ${marker}`);
-    }
-    assert.match(workspace, /function taskRequiresApprovedArtifact/);
-    assert.match(styles, /\.card-checklist/);
-    assert.match(styles, /\.bookkeeping-surface/);
-    assert.match(styles, /\.newsletter-surface/);
-    assert.match(styles, /\.calendar-surface/);
-  });
+  // Two suites used to live here that read `workspace.js`, the surface modules
+  // and `styles.css` as text and asserted that route literals, a private
+  // function name (`taskRequiresApprovedArtifact`) and CSS class names appeared
+  // somewhere in them. They broke on renames while a broken implementation
+  // still passed, and the same ground is already covered behaviourally, by
+  // running the production modules, in the `frontend/test/` suite that CI gates
+  // through `npm run test:frontend:coverage`:
+  //
+  //   - routes and deep-link parameters: `frontend/test/routing.test.mjs`
+  //     imports `WORKSPACE_ROUTE_DEFINITIONS`, `parseWorkspaceHash` and
+  //     `canonicalWorkspaceUrl` and asserts the full route list, parameter
+  //     serialisation order and rejection of malformed deep links.
+  //   - proof/artifact gating: `frontend/test/work-detail-surface.test.mjs`
+  //     drives the real task panel through `taskRequiresApprovedArtifact`.
+  //   - surface rendering: `frontend/test/tasks-surface.test.mjs`,
+  //     `finance-surface.test.mjs`, `planning-surface.test.mjs` and
+  //     `work-detail-surface.test.mjs` render those surfaces and assert the
+  //     resulting DOM.
+  //
+  // What stays in this file is the part `frontend/test/` cannot see: that the
+  // backend actually serves the canonical artifact, and only it.
 
   it('keeps Today attention, status, and process-quality modeling in the canonical Home module', () => {
     assert.match(application, /createHomeSurface/);
