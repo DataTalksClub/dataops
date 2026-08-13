@@ -12,6 +12,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createBrowserSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
+import { createTemplate } from '../src/db/templates';
 import { backfillDocumentHashClaims } from '../src/db/bookkeeping';
 import {
   setBookkeepingArchiveUploaderForTests,
@@ -23,7 +24,6 @@ import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../src/docs/gi
 import { configureDocsRuntime } from '../src/docs/contentApi';
 import { configurePortalStore } from '../src/docs/portal';
 import { seed as seedUsers } from './seed-users';
-import { seed as seedTemplates } from './seed-templates';
 import type { LambdaEvent } from '../src/types';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -292,7 +292,22 @@ const server = http.createServer(async (req, res) => {
 async function runSeeds() {
   try {
     await seedUsers();
-    await seedTemplates();
+    await createTemplate(await getClient(), {
+      name: 'Synthetic Git-authored workflow',
+      type: 'synthetic-git-workflow',
+      tags: ['synthetic'],
+      sourcePath: 'workflow-templates/synthetic-git-workflow.yaml',
+      sourceRevision: '0123456789abcdef0123456789abcdef01234567',
+      triggerType: 'manual',
+      references: [],
+      cardLinkDefinitions: [{ name: 'Synthetic output' }],
+      taskDefinitions: [{
+        refId: 'prepare-output',
+        description: 'Prepare a synthetic output',
+        offsetDays: 0,
+        requiredLinkName: 'Synthetic output',
+      }],
+    });
     await backfillDocumentHashClaims(await getClient(), true);
     const browserUserId = process.env.E2E_BROWSER_SESSION_USER_ID;
     if (browserUserId) {

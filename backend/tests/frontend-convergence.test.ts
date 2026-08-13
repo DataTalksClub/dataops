@@ -89,7 +89,6 @@ const taskModules = [
   'queue.js',
   'quick-create.js',
   'recurring.js',
-  'template-fields.js',
   'templates.js',
 ];
 const tasks = taskModules
@@ -308,23 +307,20 @@ describe('one canonical frontend', () => {
     ]) assert.ok(operations.includes(marker), `Artifacts UI is missing ${marker}`);
   });
 
-  it('provides schema-complete runtime-template administration', () => {
+  it('provides a read-only Git-authored runtime-template inspector', () => {
     for (const marker of [
-      'renderRuntimeTemplateAdmin',
-      'RUNTIME_TEMPLATE_FIELDS',
+      'renderRuntimeTemplateInspector',
       '/api/templates',
       'taskDefinitions',
-      'cardLinkDefinitions',
-      'triggerSchedule',
-      'sourceDocIds',
-      'Advanced JSON',
-      'validateRuntimeTemplateDraft',
-      'Move up',
-      'expectedVersion',
-      'template_in_use',
-    ]) assert.ok(tasks.includes(marker), `Runtime template UI is missing ${marker}`);
-    assert.match(tasks, /className = "runtime-template-json"/);
-    assert.match(tasks, /className = "runtime-task-card"/);
+      'sourcePath',
+      'sourceRevision',
+      'private knowledge repository',
+      'Create card',
+    ]) assert.ok(tasks.includes(marker), `Runtime template inspector is missing ${marker}`);
+    for (const removed of ['Save template', 'Delete template', 'expectedVersion', 'runtime-template-json']) {
+      assert.ok(!tasks.includes(removed), `Runtime template mutation UI still contains ${removed}`);
+    }
+    assert.match(tasks, /className = "runtime-template-editor runtime-template-readonly"/);
     assert.match(styles, /\.ops-section,/);
     assert.match(styles, /:focus-visible/);
   });

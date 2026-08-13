@@ -448,28 +448,11 @@ export interface Template {
   sourceRevision?: string;
   /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
   version: number;
-  /** Retained tombstone fields. Archived templates are not available for new use. */
+  /** Historical rows may still carry retired runtime-editor tombstones. */
   archivedAt?: string;
   archivedBy?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export type TemplateAuditAction = 'create' | 'update' | 'delete';
-export type TemplateAuditOutcome = 'success' | 'rejected';
-
-export interface TemplateAuditEvent {
-  id: string;
-  recordType: 'runtime_template_audit_event';
-  actorId: string;
-  templateId: string;
-  action: TemplateAuditAction;
-  outcome: TemplateAuditOutcome;
-  reason?: 'template_in_use' | 'version_conflict';
-  priorVersion?: number;
-  resultVersion?: number;
-  changedFields: string[];
-  createdAt: string;
 }
 
 // --- Recurring ---

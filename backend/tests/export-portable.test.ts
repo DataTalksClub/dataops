@@ -16,7 +16,7 @@ import { createIntakeItem } from '../src/db/intake';
 import { createNotification } from '../src/db/notifications';
 import { createRecurringConfig } from '../src/db/recurring';
 import { createTask, updateTask } from '../src/db/tasks';
-import { createTemplateWithAudit, deleteTemplateWithAudit, updateTemplateWithAudit } from '../src/db/templates';
+import { createTemplate, updateTemplate } from '../src/db/templates';
 import { createUser } from '../src/db/users';
 import { validatePortableExport, writePortableExport } from '../src/export/portable';
 
@@ -42,7 +42,7 @@ describe('portable execution data export', () => {
       email: 'ops@example.com',
       passwordHash: 'must-not-export',
     });
-    let template = await createTemplateWithAudit(client, {
+    let template = await createTemplate(client, {
       name: 'Representative workflow',
       type: 'workflow',
       emoji: '🧭',
@@ -71,12 +71,8 @@ describe('portable execution data export', () => {
           auditEventRefs: [{ auditEventId: 'audit-template-ref', action: 'defined' }],
         },
       ],
-    }, user.id);
-    template = (await updateTemplateWithAudit(client, template.id, { triggerEnabled: true }, 1, user.id))!;
-    const archivedTemplate = await createTemplateWithAudit(client, {
-      name: 'Archived workflow', type: 'workflow', emoji: '📦', taskDefinitions: [],
-    }, user.id);
-    await deleteTemplateWithAudit(client, archivedTemplate.id, 1, user.id);
+    });
+    template = (await updateTemplate(client, template.id, { triggerEnabled: true }))!;
     const legacyTemplateId = 'legacy-versionless-export';
     await client.send(new PutCommand({
       TableName: TABLE_TEMPLATES,
@@ -337,12 +333,12 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.users, 1);
     assert.strictEqual(result.manifest.entity_counts.tasks, 2);
     assert.strictEqual(result.manifest.entity_counts.cards, 1);
-    assert.strictEqual(result.manifest.entity_counts.templates, 3);
+    assert.strictEqual(result.manifest.entity_counts.templates, 2);
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
-    assert.strictEqual(result.manifest.entity_counts.audit_events, 5);
+    assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
     assert.strictEqual(result.manifest.entity_counts.intake_items, 2);
     assert.strictEqual(result.manifest.entity_counts.notifications, 3);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
@@ -404,8 +400,6 @@ describe('portable execution data export', () => {
     assert.match(templatesJsonl, /"version":2/);
     assert.match(templatesJsonl, /"template_id":"legacy-versionless-export"/);
     assert.match(templatesJsonl, /"version":1/);
-    assert.match(templatesJsonl, /"archived_at":"/);
-    assert.match(templatesJsonl, /"archived_by":"/);
 
     const recurringConfigsJsonl = await fs.readFile(path.join(exportDir, 'recurring_configs.jsonl'), 'utf8');
     assert.match(recurringConfigsJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
@@ -446,13 +440,6 @@ describe('portable execution data export', () => {
     const auditEventsJsonl = await fs.readFile(path.join(exportDir, 'audit_events.jsonl'), 'utf8');
     assert.match(auditEventsJsonl, /"assistant_job_id":"assistant-job-export"/);
     assert.match(auditEventsJsonl, /"action":"approval-requested"/);
-    assert.match(auditEventsJsonl, /"record_type":"runtime_template_audit_event"/);
-    for (const action of ['create', 'update', 'delete']) {
-      assert.match(auditEventsJsonl, new RegExp(`"action":"${action}"`));
-    }
-    assert.match(auditEventsJsonl, /"prior_version":1/);
-    assert.match(auditEventsJsonl, /"result_version":2/);
-    assert.match(auditEventsJsonl, /"changed_fields":\["archivedAt","archivedBy"\]/);
     assert.doesNotMatch(auditEventsJsonl, /password|token|secret/i);
 
     const intakeJsonl = await fs.readFile(path.join(exportDir, 'intake_items.jsonl'), 'utf8');

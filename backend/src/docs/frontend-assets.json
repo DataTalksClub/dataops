@@ -62,7 +62,6 @@
     "src/surfaces/tasks/queue.js",
     "src/surfaces/tasks/quick-create.js",
     "src/surfaces/tasks/recurring.js",
-    "src/surfaces/tasks/template-fields.js",
     "src/surfaces/tasks/templates.js",
     "src/surfaces/work-detail/index.js",
     "src/surfaces/work-detail/route-state.js",

@@ -13,8 +13,7 @@
  * middleware, both of which are invisible to a per-feature test. Adding a
  * route to either table is a one-line, reviewable act.
  *
- * House style follows `tests/runtime-template-admin.test.ts`: real users, real
- * sessions, assertions on response codes.
+ * It uses real users and sessions with assertions on response codes.
  */
 
 import { after, before, describe, it } from 'node:test';
@@ -114,13 +113,6 @@ const ADMIN_ONLY_MUTATIONS: RouteCase[] = [
   { method: 'POST', path: '/api/users', body: { name: 'New', email: 'new@example.test' } },
   { method: 'PATCH', path: `/api/users/${OPERATOR_ID}`, body: { role: 'admin' } },
   { method: 'PUT', path: `/api/users/${OPERATOR_ID}`, body: { role: 'admin' } },
-  {
-    method: 'POST',
-    path: '/api/templates',
-    body: { name: 'Operator template', type: 'workflow', taskDefinitions: [{ refId: 'a', description: 'a', offsetDays: 0 }] },
-  },
-  { method: 'PUT', path: '/api/templates/some-template', body: { expectedVersion: 1, name: 'x' } },
-  { method: 'DELETE', path: '/api/templates/some-template', body: { expectedVersion: 1 } },
   { method: 'POST', path: '/api/recurring', body: { description: 'x', cronExpression: '0 9 * * 1' } },
   { method: 'PUT', path: '/api/recurring/some-config', body: { description: 'x' } },
   { method: 'DELETE', path: '/api/recurring/some-config' },
@@ -227,6 +219,18 @@ describe('/api/* authorization with authentication enabled', () => {
       const response = await invoke(route, { Authorization: `Bearer ${operatorToken}` });
       assert.strictEqual(response.statusCode, 403, `${route.method} ${route.path} -> ${response.statusCode} ${response.body}`);
       assert.deepStrictEqual(Object.keys(JSON.parse(response.body)), ['error']);
+    });
+  }
+
+  for (const route of [
+    { method: 'POST', path: '/api/templates', body: { name: 'Must not persist' } },
+    { method: 'PUT', path: '/api/templates/some-template', body: { name: 'Must not persist' } },
+    { method: 'DELETE', path: '/api/templates/some-template' },
+  ]) {
+    it(`keeps retired ${route.method} ${route.path} unavailable to an authenticated operator`, async () => {
+      const response = await invoke(route, { Authorization: `Bearer ${operatorToken}` });
+      assert.strictEqual(response.statusCode, 405);
+      assert.strictEqual(JSON.parse(response.body).authority, 'git-authored-workflow-templates');
     });
   }
 

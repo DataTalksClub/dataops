@@ -6,8 +6,7 @@ import { handler } from '../src/handler';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createFile } from '../src/db/files';
-import { listTemplates } from '../src/db/templates';
-import { seed } from '../scripts/seed-templates';
+import { createTemplate } from '../src/db/templates';
 import type { LambdaResponse, Task } from '../src/types';
 
 function invoke(method: string, path: string, body?: unknown): Promise<LambdaResponse> {
@@ -30,7 +29,65 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
-    await seed(true);
+    await createTemplate(client, {
+      name: 'Synthetic operator workflow',
+      type: 'synthetic-operator-workflow',
+      emoji: '🧪',
+      tags: ['Synthetic'],
+      defaultAssigneeId: '00000000-0000-0000-0000-000000000001',
+      phases: [
+        { id: 'preparation', name: 'Preparation', stage: 'preparation' },
+        { id: 'event', name: 'Synthetic event', stage: 'announced' },
+      ],
+      references: [],
+      cardLinkDefinitions: [
+        { name: 'Synthetic event' },
+        { name: 'Synthetic document' },
+        { name: 'Synthetic stream' },
+      ],
+      triggerType: 'manual',
+      taskDefinitions: [
+        {
+          refId: 'create-event',
+          description: 'Create the synthetic event',
+          offsetDays: -2,
+          requiredLinkName: 'Synthetic event',
+          instructionDocId: 'sop.synthetic.create-event',
+          phase: 'preparation',
+          systems: ['synthetic-calendar'],
+          validation: { operatorAction: 'Create a synthetic event' },
+        },
+        {
+          refId: 'create-banner',
+          description: 'Create the synthetic banner',
+          offsetDays: -1,
+          requiresFile: true,
+          phase: 'preparation',
+        },
+        {
+          refId: 'agree-on-date',
+          description: 'Agree on the synthetic date',
+          offsetDays: -3,
+          phase: 'preparation',
+        },
+        {
+          refId: 'create-document',
+          description: 'Create the synthetic document',
+          offsetDays: -2,
+          requiredLinkName: 'Synthetic document',
+          phase: 'preparation',
+        },
+        {
+          refId: 'actual-event',
+          description: 'Run the synthetic event',
+          offsetDays: 0,
+          isMilestone: true,
+          stageOnComplete: 'after-event',
+          requiredLinkName: 'Synthetic stream',
+          phase: 'event',
+        },
+      ],
+    });
   });
 
   after(async () => {
@@ -38,16 +95,18 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     delete process.env.IS_LOCAL;
   });
 
-  it('starts and operates a Podcast workflow with proof, waiting, stage, and assistant output', async () => {
-    const templates = await listTemplates(client);
-    const podcastTemplate = templates.find((template) => template.type === 'podcast');
-    assert.ok(podcastTemplate, 'seeded Podcast template should exist');
+  it('starts and operates a workflow with proof, waiting, stage, and assistant output', async () => {
+    const templatesResponse = await invoke('GET', '/api/templates');
+    const workflowTemplate = parse(templatesResponse).templates.find(
+      (template: { type?: string }) => template.type === 'synthetic-operator-workflow',
+    );
+    assert.ok(workflowTemplate, 'synthetic workflow template should exist');
 
     const start = await invoke('POST', '/api/cards', {
       title: 'Podcast: 2026-08-17 - Vector Search - Jane Guest',
       anchorDate: '2026-08-17',
       description: 'Guest: Jane Guest\nTopic: Vector Search\nSource note: referred by community',
-      templateId: podcastTemplate.id,
+      templateId: workflowTemplate.id,
     });
     assert.strictEqual(start.statusCode, 201, start.body);
     const started = parse(start);
@@ -55,35 +114,35 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const tasks = started.tasks as Task[];
     assert.strictEqual(card.stage, 'preparation');
     assert.strictEqual(card.status, 'active');
-    assert.strictEqual(card.templateId, podcastTemplate.id);
-    assert.ok(card.tags.includes('Podcast'));
-    assert.strictEqual(tasks.length, 42);
-    assert.strictEqual(card.cardLinks.length, 12);
-    assert.ok(card.cardLinks.some((link: any) => link.name === 'Podcast document' && link.url === ''));
+    assert.strictEqual(card.templateId, workflowTemplate.id);
+    assert.ok(card.tags.includes('Synthetic'));
+    assert.strictEqual(tasks.length, 5);
+    assert.strictEqual(card.cardLinks.length, 3);
+    assert.ok(card.cardLinks.some((link: any) => link.name === 'Synthetic document' && link.url === ''));
 
-    const lumaTask = tasks.find((task) => task.templateTaskRef === 'create-event-luma') as Task;
+    const lumaTask = tasks.find((task) => task.templateTaskRef === 'create-event') as Task;
     assert.ok(lumaTask);
-    assert.strictEqual(lumaTask.requiredLinkName, 'Luma');
-    assert.strictEqual(lumaTask.instructionDocId, 'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma');
-    assert.strictEqual(lumaTask.phase, 'event-setup');
-    assert.ok(lumaTask.systems?.includes('luma'));
-    assert.strictEqual((lumaTask.validation as any).operatorAction, 'Create an event in Luma');
+    assert.strictEqual(lumaTask.requiredLinkName, 'Synthetic event');
+    assert.strictEqual(lumaTask.instructionDocId, 'sop.synthetic.create-event');
+    assert.strictEqual(lumaTask.phase, 'preparation');
+    assert.ok(lumaTask.systems?.includes('synthetic-calendar'));
+    assert.strictEqual((lumaTask.validation as any).operatorAction, 'Create a synthetic event');
 
     const blockedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, { status: 'done' });
     assert.strictEqual(blockedLink.statusCode, 400);
-    assert.match(parse(blockedLink).error, /required link 'Luma'/);
+    assert.match(parse(blockedLink).error, /required link 'Synthetic event'/);
     const lumaUrl = 'https://lu.ma/vector-search';
     const savedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, { link: lumaUrl });
     assert.strictEqual(savedLink.statusCode, 200, savedLink.body);
     const cardWithLuma = {
       cardLinks: card.cardLinks.map((link: any) => (
-        link.name === 'Luma' ? { name: link.name, url: lumaUrl } : link
+        link.name === 'Synthetic event' ? { name: link.name, url: lumaUrl } : link
       )),
     };
     const savedCardLink = await invoke('PUT', `/api/cards/${card.id}`, cardWithLuma);
     assert.strictEqual(savedCardLink.statusCode, 200, savedCardLink.body);
 
-    const bannerTask = tasks.find((task) => task.templateTaskRef === 'create-banner-figma') as Task;
+    const bannerTask = tasks.find((task) => task.templateTaskRef === 'create-banner') as Task;
     assert.ok(bannerTask);
     const blockedFile = await invoke('PUT', `/api/tasks/${bannerTask.id}`, { status: 'done' });
     assert.strictEqual(blockedFile.statusCode, 400);
@@ -104,7 +163,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.strictEqual(doneFile.statusCode, 200, doneFile.body);
     assert.strictEqual(parse(doneFile).status, 'done');
 
-    const waitingTask = tasks.find((task) => task.templateTaskRef === 'agree-on-a-date') as Task;
+    const waitingTask = tasks.find((task) => task.templateTaskRef === 'agree-on-date') as Task;
     assert.ok(waitingTask);
     const missingWaitingNote = await invoke('PUT', `/api/tasks/${waitingTask.id}`, {
       status: 'waiting',
@@ -146,7 +205,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.strictEqual(followUpSent.statusCode, 200, followUpSent.body);
     assert.strictEqual(parse(followUpSent).followUpAt, '2026-06-30');
 
-    const docTask = tasks.find((task) => task.templateTaskRef === 'create-podcast-document') as Task;
+    const docTask = tasks.find((task) => task.templateTaskRef === 'create-document') as Task;
     assert.ok(docTask);
     const jobCreate = await invoke('POST', '/api/assistant-jobs', {
       assistantType: 'podcast',
@@ -169,12 +228,12 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.ok(approvedDocTask.artifactRefs.some((ref: any) => ref.status === 'approved'));
     const cardAfterApproval = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
     assert.ok(cardAfterApproval.cardLinks.some((link: any) => (
-      link.name === 'Podcast document' && link.url.startsWith('local-dev://assistant-jobs/')
+      link.name === 'Synthetic document' && link.url.startsWith('local-dev://assistant-jobs/')
     )));
     const doneDocTask = await invoke('PUT', `/api/tasks/${docTask.id}`, { status: 'done' });
     assert.strictEqual(doneDocTask.statusCode, 200, doneDocTask.body);
 
-    const actualStream = tasks.find((task) => task.templateTaskRef === 'actual-stream') as Task;
+    const actualStream = tasks.find((task) => task.templateTaskRef === 'actual-event') as Task;
     assert.ok(actualStream);
     assert.strictEqual(actualStream.stageOnComplete, 'after-event');
     const streamUrl = 'https://youtube.com/watch?v=vector';
@@ -182,7 +241,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.strictEqual(streamReady.statusCode, 200, streamReady.body);
     const cardBeforeStreamDone = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
     const streamCardLinks = cardBeforeStreamDone.cardLinks.map((link: any) => (
-      link.name === 'YouTube stream/video' ? { name: link.name, url: streamUrl } : link
+      link.name === 'Synthetic stream' ? { name: link.name, url: streamUrl } : link
     ));
     const streamCardLinkReady = await invoke('PUT', `/api/cards/${card.id}`, { cardLinks: streamCardLinks });
     assert.strictEqual(streamCardLinkReady.statusCode, 200, streamCardLinkReady.body);

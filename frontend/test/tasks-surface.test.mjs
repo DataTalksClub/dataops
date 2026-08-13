@@ -581,33 +581,21 @@ describe("Tasks surface boundary", () => {
     });
   });
 
-  test("tracks Template clean, dirty, validation, and conflict states without losing the draft", async () => {
+  test("renders Git-authored Template projections read-only for every role", async () => {
     const template = {
       id: "template-1",
       name: "Newsletter",
       type: "workflow",
       version: 2,
-      tags: [],
-      phases: [],
-      sourceDocIds: [],
-      references: [],
-      cardLinkDefinitions: [],
+      sourcePath: "workflow-templates/newsletter.yaml",
+      sourceRevision: "1234567890abcdef",
       taskDefinitions: [
         { refId: "draft", description: "Draft", offsetDays: 0 },
       ],
     };
-    let conflict = false;
     const harness = createHarness({
-      request: async (url, options) => {
+      request: async (url) => {
         if (url === "/api/templates") return { templates: [template] };
-        if (url === "/api/me") return { user: { role: "admin" } };
-        if (url === "/api/templates/template-1" && options.method === "PUT") {
-          const error = new Error("Version conflict");
-          error.status = 409;
-          error.payload = { currentVersion: 3 };
-          conflict = true;
-          throw error;
-        }
         throw new Error(`Unexpected request ${url}`);
       },
     });
@@ -621,63 +609,14 @@ describe("Tasks surface boundary", () => {
     );
     harness.api.renderTasksSurface([], "templates");
 
-    let saveState = harness.document.querySelector(
-      "[data-template-save-state]",
-    );
-    assert.equal(saveState.dataset.state, "clean");
-    assert.equal(saveState.textContent, "No unsaved changes");
-    const nameLabel = findByText(
-      harness.documentList,
-      "Name",
-      "span",
-    ).parentElement;
-    const nameInput = nameLabel.querySelector("input");
-    nameInput.value = "";
-    await nameInput.dispatch("input");
-    saveState = harness.document.querySelector("[data-template-save-state]");
-    assert.equal(saveState.dataset.state, "dirty");
-    assert.equal(saveState.textContent, "Unsaved changes");
-
-    await findByText(harness.documentList, "Save template", "button").dispatch(
-      "click",
-    );
-    await nextTicks();
-    saveState = harness.document.querySelector("[data-template-save-state]");
-    assert.equal(saveState.dataset.state, "validation");
-    assert.match(
-      harness.documentList.textContent,
-      /Review the highlighted fields/,
-    );
-    assert.equal(conflict, false);
-
-    const rerenderedName = findByText(
-      harness.documentList,
-      "Name",
-      "span",
-    ).parentElement.querySelector("input");
-    rerenderedName.value = "Newsletter revised";
-    await rerenderedName.dispatch("input");
-    await findByText(harness.documentList, "Save template", "button").dispatch(
-      "click",
-    );
-    await nextTicks();
-    assert.equal(conflict, true);
-    saveState = harness.document.querySelector("[data-template-save-state]");
-    assert.equal(saveState.dataset.state, "conflict");
-    assert.match(saveState.textContent, /Conflict/);
-    assert.match(
-      harness.documentList.textContent,
-      /newer server version \(3\)/,
-    );
-    assert.ok(
-      findByText(harness.documentList, "Reload server version", "button"),
-    );
-    assert.equal(
-      harness.document
-        .querySelector(".runtime-template-json")
-        .value.includes("Newsletter revised"),
-      true,
-    );
+    assert.match(harness.documentList.textContent, /Git-authored templates/);
+    assert.match(harness.documentList.textContent, /private knowledge repository/);
+    assert.match(harness.documentList.textContent, /workflow-templates\/newsletter.yaml/);
+    assert.match(harness.documentList.textContent, /1234567890ab/);
+    assert.ok(findByText(harness.documentList, "Create card", "button"));
+    for (const mutation of ["New runtime template", "Save template", "Delete template"]) {
+      assert.equal(findByText(harness.documentList, mutation, "button"), undefined);
+    }
   });
 
   test("renders Recurring empty/list states and maps pause plus protected-delete guidance", async () => {

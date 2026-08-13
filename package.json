@@ -13,7 +13,6 @@
     "dev:backend": "npm run dev --workspace dataops-backend",
     "dry-run:import:backend": "npm run dry-run:import --workspace dataops-backend --",
     "export:data:backend": "npm run export:data --workspace dataops-backend --",
-    "export:templates:backend": "npm run export:templates --workspace dataops-backend",
     "seed:backend": "npm run seed:users --workspace dataops-backend && npm run seed --workspace dataops-backend",
     "test:frontend:coverage": "c8 node --test frontend/test/*.test.mjs",
     "test:frontend:unit": "node --test frontend/test/*.test.mjs",

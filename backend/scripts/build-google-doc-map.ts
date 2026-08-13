@@ -4,7 +4,7 @@
  * Renders the committed Google Doc -> internal SOP mapping process doc.
  *
  * Sources, merged in this order:
- *   1. Task definitions in `seed-templates.ts` that already carry both an
+ *   1. Git-authored task definitions that already carry both an
  *      `instructionsUrl` (Google Doc) and an `instructionDocId`.
  *   2. Curated entries in `google-doc-sop-map.ts`.
  *
@@ -21,7 +21,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { buildRegistry } from '../src/docs/docRegistry';
-import { DEFAULT_TEMPLATES } from './seed-templates';
+import {
+  findAuthoredTemplatesRoot,
+  loadAuthoredTemplatesFromDirectory,
+} from '../src/templates/authoredTemplates';
 import { GOOGLE_DOC_SOPS, TASK_INSTRUCTION_DOCS } from './google-doc-sop-map';
 
 /**
@@ -49,6 +52,7 @@ function findContentRoot(repoRoot: string): string {
 
 const repoRoot = resolve(__dirname, '..', '..');
 const contentRoot = findContentRoot(repoRoot);
+const authoredTemplates = loadAuthoredTemplatesFromDirectory(findAuthoredTemplatesRoot(repoRoot));
 const outputPath = join(
   contentRoot,
   'internal-admin',
@@ -84,7 +88,7 @@ function collect(): Entry[] {
     return entry;
   };
 
-  for (const template of DEFAULT_TEMPLATES as any[]) {
+  for (const template of authoredTemplates as any[]) {
     for (const reference of template.references || []) {
       if (!isGoogleDoc(reference.url)) continue;
       const entry = upsert(reference.url, reference.name);

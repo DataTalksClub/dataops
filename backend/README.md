@@ -182,7 +182,6 @@ Use these from the DataOps repo root after `npm ci`:
 | `npm run typecheck:backend` | Type-check source, tests, and scripts |
 | `npm run build:backend` | Compile TypeScript and copy static assets |
 | `npm run seed:backend` | Seed default local users and templates |
-| `npm run export:templates:backend` | Export seed templates to content files |
 | `npm run validate:export:backend -- <export-dir>` | Validate a portable execution export |
 | `npm run dry-run:import:backend -- <export-dir>` | Validate an import without writing data |
 | `npm run restore:drill:backend -- --archive <file-or-s3-uri> --archive-checksum sha256:<hex>` | Verify an archive and generate restore evidence without writing production data |
@@ -204,7 +203,6 @@ root workspace install:
 | `npm run typecheck` | Type-check source, tests, and scripts |
 | `npm run seed` | Seed default templates |
 | `npm run seed:users` | Seed default local users |
-| `npm run export:templates` | Export seed templates to content files |
 | `npm run validate:export -- <export-dir>` | Validate a portable execution export |
 | `npm run dry-run:import -- <export-dir>` | Validate an import without writing data |
 | `npm run restore:drill -- --archive <file-or-s3-uri> --archive-checksum sha256:<hex>` | Verify and extract an archive, validate it, dry-run import it, and write restore evidence |
