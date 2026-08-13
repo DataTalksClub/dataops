@@ -568,10 +568,9 @@ export function createBookkeepingSurface(context) {
           ]
             .map((value) => value.toString(16).padStart(2, "0"))
             .join(""),
-          runId = crypto.randomUUID(),
           idempotencyKey = crypto.randomUUID(),
           documentType = surface.querySelector("[data-document-type]").value;
-        const ownership = { idempotencyKey, runId };
+        const ownership = { idempotencyKey };
         const prepared = await api("/documents/prepare", {
           method: "POST",
           body: JSON.stringify({
