@@ -593,12 +593,20 @@ export function createCardPanel(context) {
     const review = document.createElement("div");
     review.className = "card-template-review";
     const guidance = document.createElement("p");
-    guidance.textContent = "Applying this reviewed definition keeps task IDs, live status, notes, waiting state, links, files, artifacts, and history. Removed incomplete tasks are archived; completed tasks are retained.";
+    guidance.textContent = [
+      "Applying this reviewed definition keeps task IDs, live status, notes,",
+      "waiting state, links, files, artifacts, and history.",
+      "Removed incomplete tasks are archived; completed tasks are retained.",
+    ].join(" ");
     review.append(guidance);
     if (Number(preview.counts?.operatorOverrides) > 0) {
       const warning = document.createElement("p");
       warning.className = "card-template-update-message is-warning";
-      warning.textContent = `${preview.counts.operatorOverrides} operator override field${preview.counts.operatorOverrides === 1 ? "" : "s"} will take the reviewed Template value.`;
+      const plural = preview.counts.operatorOverrides === 1 ? "" : "s";
+      warning.textContent = [
+        `${preview.counts.operatorOverrides} operator override field${plural}`,
+        "will take the reviewed Template value.",
+      ].join(" ");
       review.append(warning);
     }
     const list = document.createElement("ul");
