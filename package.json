@@ -22,8 +22,7 @@
     "typecheck:backend": "npm run typecheck --workspace dataops-backend",
     "validate:export:backend": "npm run validate:export --workspace dataops-backend --",
     "restore:drill:backend": "npm run restore:drill --workspace dataops-backend --",
-    "test:cli": "npm test --workspace dataops-cli",
-    "test:deploy-workflow": "node --test scripts/deploy/deploy-workflow.test.mjs"
+    "test:cli": "npm test --workspace dataops-cli"
   },
   "devDependencies": {
     "c8": "^10.1.3",

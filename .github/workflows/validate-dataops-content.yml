@@ -49,6 +49,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check out the knowledge repository
+        uses: actions/checkout@v6
+        with:
+          repository: DataTalksClub/dataops-knowledge
+          ssh-key: ${{ secrets.DATAOPS_KNOWLEDGE_DEPLOY_KEY }}
+          path: .knowledge
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
 
@@ -66,7 +73,7 @@ jobs:
         run: npm ci
 
       - name: Validate docs links and workflow doc IDs
-        run: npm --prefix backend run validate:docs-links
+        run: npm --prefix backend run validate:docs-links -- --content-root .knowledge/content
 
       - name: Validate dataops-knowledge migration scaffold
         run: npm --prefix backend run validate:knowledge-repo
@@ -74,7 +81,7 @@ jobs:
       - name: Build search index
         run: |
           mkdir -p .tmp
-          npm --prefix backend run build:search-index -- --content-dir ../content --output ../.tmp/dataops-content-search.index
+          npm --prefix backend run build:search-index -- --content-dir ../.knowledge/content --output ../.tmp/dataops-content-search.index
 
       - name: Smoke test built index
         working-directory: backend

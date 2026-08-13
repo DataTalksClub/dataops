@@ -301,7 +301,9 @@ function repoPath(repoRoot: string, path: string): string {
 }
 
 function readFlag(name: string, fallback: string): string {
-  const index = process.argv.indexOf(name);
+  // Last occurrence wins, so `npm run <script> -- --flag value` overrides the
+  // value baked into the npm script rather than being silently ignored.
+  const index = process.argv.lastIndexOf(name);
   if (index === -1) return fallback;
   const value = process.argv[index + 1];
   if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);

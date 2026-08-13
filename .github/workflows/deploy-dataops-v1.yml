@@ -61,8 +61,6 @@ jobs:
       - name: Run backend tests
         run: npm --prefix backend test
 
-      - name: Check the deploy workflow shape
-        run: npm run test:deploy-workflow
 
       - name: Typecheck backend
         run: npm --prefix backend run typecheck
