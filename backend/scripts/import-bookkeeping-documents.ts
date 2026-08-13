@@ -25,7 +25,6 @@ type Arguments = {
   approval?: string;
   runId?: string;
   rollback: boolean;
-  backfillHashClaims?: boolean;
   apiBaseUrl?: string;
   limits: InventoryLimits;
 };
@@ -86,7 +85,7 @@ type Checkpoint = {
 };
 
 function parseArguments(argv: string[]): Arguments {
-  const result: Arguments = { archives: [], write: false, rollback: false, backfillHashClaims: false, limits: { ...DEFAULT_LIMITS } };
+  const result: Arguments = { archives: [], write: false, rollback: false, limits: { ...DEFAULT_LIMITS } };
   const limitFlags: Record<string, keyof InventoryLimits> = {
     "--max-archive-bytes": "maxArchiveBytes",
     "--max-members": "maxMembers",
@@ -116,7 +115,6 @@ function parseArguments(argv: string[]): Arguments {
     else if (flag === "--api-base-url" && value) (result.apiBaseUrl = value.replace(/\/$/, "")), (index += 1);
     else if (flag === "--write") result.write = true;
     else if (flag === "--rollback") result.rollback = true;
-    else if (flag === "--backfill-hash-claims") result.backfillHashClaims = true;
     else throw new ImportFailure("invalid-arguments");
   }
   if (result.cookieFile && process.env.DATAOPS_OPERATOR_SESSION_TOKEN)
@@ -423,20 +421,6 @@ async function runOwnedPages(
 export async function runImport(args: Arguments, api: BookkeepingApi) {
   await api.preflight(); // Authentication must succeed before any archive byte is read.
   if (args.runId && !RUN_ID.test(args.runId)) throw new ImportFailure("invalid-run-id");
-  if (args.backfillHashClaims) {
-    if (args.write && args.confirmOrigin !== api.origin)
-      throw new ImportFailure("environment-confirmation-required");
-    const result = await api.request<{
-      conflicts: number;
-      unclaimable: number;
-      ready: boolean;
-    }>("POST", "/api/bookkeeping/documents/hash-claims/backfill", {
-      write: args.write,
-    });
-    if (result.conflicts || result.unclaimable)
-      throw new ImportFailure("hash-claim-conflict");
-    return { mode: "hash-claim-backfill", write: args.write, ...result };
-  }
   if (args.rollback) {
     if (!args.runId) throw new ImportFailure("invalid-arguments");
     if (args.write && args.confirmOrigin !== api.origin) throw new ImportFailure("environment-confirmation-required");
@@ -498,10 +482,6 @@ export async function runImport(args: Arguments, api: BookkeepingApi) {
   }
   const inventory = await inspectArchives(args.archives, manifest, limits);
   const hashes = manifest.documents.map((document) => document.sha256.replace(/^sha256:/, ""));
-  const dryRunClaims = await api.request<{ conflicts: number; unclaimable: number; created: number; ready: boolean }>("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: false });
-  if (dryRunClaims.conflicts || dryRunClaims.unclaimable) throw new ImportFailure("hash-claim-conflict");
-  if (dryRunClaims.created || !dryRunClaims.ready)
-    throw new ImportFailure("hash-claims-not-ready");
   const existing = await hashLookups(api, hashes);
   if (
     existing.some((item) =>
@@ -676,7 +656,6 @@ export async function runImport(args: Arguments, api: BookkeepingApi) {
       throw new ImportFailure("stale-dry-run-approval");
   }
   await privateWrite(path.join(directory, "checkpoint.json"), checkpoint);
-  await api.request("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: true });
   for (const [hash, saved] of Object.entries(checkpoint.documents)) {
     const index = hashes.indexOf(hash);
     if (

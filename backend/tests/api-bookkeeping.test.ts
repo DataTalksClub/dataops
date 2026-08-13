@@ -37,7 +37,6 @@ describe('bookkeeping API',()=>{
     setBookkeepingStorageForTests(fake,async()=> 'https://synthetic.invalid/short-lived');
     const successfulUploader=async(params:any)=>{const chunks:Buffer[]=[];for await(const chunk of params.Body)chunks.push(Buffer.from(chunk));archiveBytes=Buffer.concat(chunks);};setBookkeepingArchiveUploaderForTests(successfulUploader);
     assert.equal((await invoke('POST','/api/bookkeeping/documents/upload',{filename:'bad.txt',contentType:'text/plain',byteSize:10})).statusCode,410);
-    assert.equal((await invoke('POST','/api/bookkeeping/documents/hash-claims/backfill',{write:true})).statusCode,200);
     assert.equal((await invoke('POST','/api/bookkeeping/documents',{status:'active',s3Key:'documents/other-record',sha256:'forged'})).statusCode,405);
     const hash=createHash('sha256').update(pdf).digest('hex'),ownership={idempotencyKey:'synthetic-idempotency',runId:'synthetic-run'};
     const prepared=await invoke('POST','/api/bookkeeping/documents/prepare',{sha256:hash,byteSize:pdf.length,documentType:'receipt',...ownership,sourceRef:'synthetic-source'});assert.equal(prepared.statusCode,201);const pending=JSON.parse(prepared.body);assert.equal(pending.document.s3Key,undefined);assert.equal(pending.expiresIn,-1);

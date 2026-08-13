@@ -19,7 +19,6 @@ export type BookkeepingItem = Record<string, unknown> & {
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
 const documentKey = (id: string) => key("document", id);
 const hashKey = (sha256: string) => `DOCUMENT_HASH#${sha256}`;
-const HASH_CLAIMS_READY = "DOCUMENT_HASH_MIGRATION#READY";
 const clean = (item?: Record<string, unknown>): BookkeepingItem | null => {
   if (!item) return null;
   const { PK: _pk, SK: _sk, ...value } = item;
@@ -616,70 +615,6 @@ export async function listRunOwnedPage(
       ? Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString("base64url")
       : undefined,
   };
-}
-
-export async function documentHashClaimsReady(client: DynamoDBDocumentClient) {
-  const result = await client.send(
-    new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: HASH_CLAIMS_READY, SK: HASH_CLAIMS_READY }, ConsistentRead: true }),
-  );
-  return result.Item?.state === "ready";
-}
-
-export async function backfillDocumentHashClaims(
-  client: DynamoDBDocumentClient,
-  write: boolean,
-) {
-  const activePdfDocs = (await listBookkeepingItems(client, "document")).filter(
-    (doc) =>
-      doc.status === "active" &&
-      doc.contentType === "application/pdf" &&
-      doc.documentType !== "monthly-report",
-  );
-  const unclaimable = activePdfDocs.filter(
-    (doc) => typeof doc.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(doc.sha256),
-  );
-  const docs = activePdfDocs.filter(
-    (doc) => typeof doc.sha256 === "string" && /^[a-f0-9]{64}$/.test(doc.sha256),
-  );
-  let existing = 0;
-  let created = 0;
-  const conflicts: string[] = [];
-  const seen = new Map<string, string>();
-  for (const doc of docs) {
-    const prior = seen.get(String(doc.sha256));
-    if (prior && prior !== doc.id) {
-      conflicts.push("hash-claim-conflict");
-      continue;
-    }
-    seen.set(String(doc.sha256), doc.id);
-    const lookup = await lookupDocumentHash(client, String(doc.sha256));
-    if (lookup.state !== "absent") {
-      if (lookup.document?.id === doc.id) existing += 1;
-      else conflicts.push("hash-claim-conflict");
-      continue;
-    }
-    if (!write) {
-      created += 1;
-      continue;
-    }
-    try {
-      await client.send(new PutCommand({ TableName: TABLE_BOOKKEEPING, Item: { PK: hashKey(String(doc.sha256)), SK: hashKey(String(doc.sha256)), documentId: doc.id, state: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, ConditionExpression: "attribute_not_exists(PK)" }));
-      created += 1;
-    } catch (error) {
-      if ((error as Error).name !== "ConditionalCheckFailedException") throw error;
-      const winner = await lookupDocumentHash(client, String(doc.sha256));
-      if (winner.document?.id === doc.id) existing += 1;
-      else conflicts.push("hash-claim-conflict");
-    }
-  }
-  if (write && conflicts.length === 0 && unclaimable.length === 0)
-    await client.send(
-      new PutCommand({
-        TableName: TABLE_BOOKKEEPING,
-        Item: { PK: HASH_CLAIMS_READY, SK: HASH_CLAIMS_READY, state: "ready", verifiedAt: new Date().toISOString(), documentCount: docs.length },
-      }),
-    );
-  return { scanned: activePdfDocs.length, existing, created, conflicts: conflicts.length, unclaimable: unclaimable.length };
 }
 
 export async function addDocumentReportReference(

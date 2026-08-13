@@ -15,13 +15,11 @@ import type { LambdaEvent, LambdaResponse } from "../types";
 import {
   addDocumentReportReference,
   activateDocument,
-  backfillDocumentHashClaims,
   createDocumentLink,
   deleteBookkeepingItem,
   deleteDocumentLink,
   deleteDeletingReport,
   deleteRunOwnedLink,
-  documentHashClaimsReady,
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
@@ -385,19 +383,6 @@ export async function handleBookkeepingRoutes(
     }
     return json(200, { results });
   }
-  if (
-    path === "/api/bookkeeping/documents/hash-claims/backfill" &&
-    method === "POST"
-  ) {
-    const body = parse(event.body || null);
-    const result = await backfillDocumentHashClaims(client, body?.write === true);
-    if (result.conflicts || result.unclaimable)
-      return json(409, { error: "Hash claim conflict", ...result });
-    return json(200, {
-      ...result,
-      ready: await documentHashClaimsReady(client),
-    });
-  }
   if (path === "/api/bookkeeping/documents/prepare" && method === "POST") {
     const body = parse(event.body || null);
     const byteSize = Number(body?.byteSize);
@@ -424,8 +409,6 @@ export async function handleBookkeepingRoutes(
     const kmsKey = process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY;
     if (!bucket || !kmsKey)
       return json(503, { error: "Document storage unavailable" });
-    if (!(await documentHashClaimsReady(client)))
-      return json(503, { error: "Document hash claims not ready" });
     const sha256 = String(body.sha256);
     const uploadSeconds =
       process.env.NODE_ENV === "test"

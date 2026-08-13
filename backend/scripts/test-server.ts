@@ -13,7 +13,6 @@ import { getClient } from '../src/db/client';
 import { createBrowserSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
 import { createTemplate, deleteTemplate, updateTemplate } from '../src/db/templates';
-import { backfillDocumentHashClaims } from '../src/db/bookkeeping';
 import {
   setBookkeepingArchiveUploaderForTests,
   setBookkeepingStorageForTests,
@@ -351,7 +350,6 @@ async function runSeeds() {
         requiredLinkName: 'Synthetic output',
       }],
     });
-    await backfillDocumentHashClaims(await getClient(), true);
     const browserUserId = process.env.E2E_BROWSER_SESSION_USER_ID;
     if (browserUserId) {
       if (process.env.E2E_BROWSER_SESSION_USER_ROLE) {

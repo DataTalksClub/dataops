@@ -58,8 +58,6 @@ describe("atomic bookkeeping document API", () => {
         return "https://upload.invalid/signed";
       },
     );
-    const ready = await invoke("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: true });
-    assert.equal(ready.statusCode, 200);
   });
   after(async () => {
     await stopLocal();
@@ -220,36 +218,6 @@ describe("atomic bookkeeping document API", () => {
     }
   });
 
-  it("previews hash-claim readiness, writes claims, and fails closed on conflicts", async () => {
-    const claimHash = createHash("sha256").update("synthetic-backfill").digest("hex");
-    const first = (await putBookkeepingItem(client, "document", {
-      status: "active", contentType: "application/pdf", documentType: "receipt", sha256: claimHash, byteSize: 20,
-    }, "synthetic-backfill-first")).item;
-    const second = (await putBookkeepingItem(client, "document", {
-      status: "active", contentType: "application/pdf", documentType: "receipt", sha256: claimHash, byteSize: 20,
-    }, "synthetic-backfill-second")).item;
-    try {
-      const conflict = await invoke("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: false });
-      assert.equal(conflict.statusCode, 409);
-      assert.ok(JSON.parse(conflict.body).conflicts > 0);
-      await client.send(new DeleteCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: `DOCUMENT#${second.id}`, SK: `DOCUMENT#${second.id}` } }));
-      const preview = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: false })).body);
-      assert.equal(preview.created, 1);
-      const written = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: true })).body);
-      assert.equal(written.created, 1);
-      assert.equal(written.ready, true);
-      const repeat = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: false })).body);
-      assert.equal(repeat.created, 0);
-      assert.equal(repeat.existing >= 1, true);
-    } finally {
-      await Promise.all([
-        client.send(new DeleteCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: `DOCUMENT#${first.id}`, SK: `DOCUMENT#${first.id}` } })),
-        client.send(new DeleteCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: `DOCUMENT#${second.id}`, SK: `DOCUMENT#${second.id}` } })),
-        client.send(new DeleteCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: `DOCUMENT_HASH#${claimHash}`, SK: `DOCUMENT_HASH#${claimHash}` } })),
-      ]);
-    }
-  });
-
   it("serializes link/report reference races against rollback deletion", async () => {
     const activate = async (runId: string, value: Buffer) => {
       objectBytes = value;
@@ -339,7 +307,6 @@ describe("atomic bookkeeping document API", () => {
       const routes: Array<[string, string, unknown?]> = [
         ["POST", "/api/bookkeeping/transactions/resolve", { sourceKeys: ["absent"] }],
         ["POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }],
-        ["POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: false }],
         ["POST", "/api/bookkeeping/documents/prepare", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/complete", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/cancel", {}],
@@ -386,7 +353,6 @@ describe("atomic bookkeeping document API", () => {
       const routes: Array<[string, string, unknown?]> = [
         ["POST", "/api/bookkeeping/transactions/resolve", { sourceKeys: ["absent"] }],
         ["POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }],
-        ["POST", "/api/bookkeeping/documents/hash-claims/backfill", { write: false }],
         ["POST", "/api/bookkeeping/documents/prepare", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/complete", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/cancel", { idempotencyKey: "synthetic-owner", runId: "synthetic-run" }],
