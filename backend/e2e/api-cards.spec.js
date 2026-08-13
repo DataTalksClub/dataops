@@ -609,13 +609,18 @@ test.describe('Canonical workflow page', () => {
   test('navigating to #/cards opens the Workflows section in the canonical Tasks surface', async ({ page }) => {
     await page.goto('/#/cards');
     await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
+    await expect(page).toHaveURL(/\/#\/cards$/);
+    await expect(page.locator('.ops-workflows-board')).toBeVisible();
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('[data-workspace-view="tasks"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('nav a[href="#/cards"]')).toHaveCount(0);
   });
 
   test('primary navigation exposes one Tasks entry instead of a second Cards shell', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('[data-workspace-view="tasks"]')).toBeVisible();
+    await page.goto('/#/cards');
+    const tasksNavigation = page.getByRole('button', { name: 'Tasks', exact: true });
+    await expect(tasksNavigation).toHaveCount(1);
+    await expect(tasksNavigation).toBeVisible();
+    await expect(tasksNavigation).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('nav a[href="#/cards"]')).toHaveCount(0);
     await expect(page.locator('nav a[href="#/projects"]')).toHaveCount(0);
   });

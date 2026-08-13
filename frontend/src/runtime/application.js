@@ -633,6 +633,7 @@ knowledgeSurface = createKnowledgeSurface({
   apiUrl,
   assistantJobsFromPayload,
   basename,
+  beginDocumentNavigation,
   buildOperationsHomeModel,
   buildOperationsReferenceLinks,
   buildProcessQualityModel,
