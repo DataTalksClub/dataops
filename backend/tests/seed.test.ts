@@ -1,6 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { join } from 'node:path';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+
+import { buildRegistry } from '../src/docs/docRegistry';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
@@ -108,9 +111,15 @@ describe('Seed script', () => {
       assert.ok(newsletter.sourceDocIds!.includes(docId), `Newsletter sourceDocIds should include ${docId}`);
     }
 
-    // Check references
-    assert.ok(newsletter.references!.length >= 2, 'Should have at least 2 references');
-    assert.ok(newsletter.references!.some((r) => r.name === 'Process documents'));
+    // Reference documents are internal process docs, not Google Docs links.
+    assert.ok(
+      newsletter.sourceDocIds!.includes('reference.internal-admin.documentation.process-documents-overview'),
+      'Newsletter should reference the internal process documents overview',
+    );
+    assert.ok(
+      !newsletter.references!.some((r) => /docs\.google\.com/.test(r.url)),
+      'Newsletter references should not point at Google Docs',
+    );
 
     // Check bundleLinkDefinitions
     assert.strictEqual(newsletter.bundleLinkDefinitions!.length, 4);
@@ -1173,5 +1182,47 @@ describe('Seed script', () => {
     assert.strictEqual(oh.taskDefinitions!.length, 5);
     assert.strictEqual(oh.emoji, '\u{1F4FA}');
     assert.deepStrictEqual(oh.tags, ['Office Hours']);
+  });
+});
+
+describe('Template instruction links resolve to internal process docs', () => {
+  const registry = buildRegistry(join(__dirname, '..', '..', 'content'), false);
+  const knownDocIds = new Set(registry.documents.map((doc) => doc.id));
+  const externalDocIds = new Set(PODCAST_EXTERNAL_SOURCE_DOC_IDS.map((doc) => doc.id));
+
+  it('gives every task with instructions a resolvable internal doc', () => {
+    const offenders: string[] = [];
+    for (const template of DEFAULT_TEMPLATES as any[]) {
+      for (const task of template.taskDefinitions || []) {
+        const key = `${template.type}/${task.refId}`;
+        if (!task.instructionDocId) {
+          // A task may carry no instructions at all, but it must never fall back
+          // to a Google Doc as its operative instruction link.
+          if (task.instructionsUrl) offenders.push(`${key} has instructionsUrl but no instructionDocId`);
+          continue;
+        }
+        if (!knownDocIds.has(task.instructionDocId)) {
+          offenders.push(`${key} points at unknown doc ${task.instructionDocId}`);
+        }
+      }
+    }
+    assert.deepStrictEqual(offenders, []);
+  });
+
+  it('keeps Google Docs out of template references and source documents', () => {
+    const offenders: string[] = [];
+    for (const template of DEFAULT_TEMPLATES as any[]) {
+      for (const reference of template.references || []) {
+        if (/docs\.google\.com/.test(reference.url || '')) {
+          offenders.push(`${template.type} reference "${reference.name}"`);
+        }
+      }
+      for (const docId of template.sourceDocIds || []) {
+        // Assistant-owned docs live outside content/ and are not registry entries.
+        if (externalDocIds.has(docId)) continue;
+        if (!knownDocIds.has(docId)) offenders.push(`${template.type} sourceDocId ${docId}`);
+      }
+    }
+    assert.deepStrictEqual(offenders, []);
   });
 });

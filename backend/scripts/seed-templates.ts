@@ -1582,15 +1582,15 @@ const DEFAULT_TEMPLATES = [
     emoji: '\u{1F4F0}',
     tags: ['Newsletter'],
     phases: NEWSLETTER_PHASES,
-    sourceDocIds: NEWSLETTER_SOURCE_DOC_IDS,
+    sourceDocIds: [
+      ...NEWSLETTER_SOURCE_DOC_IDS,
+      'reference.internal-admin.documentation.process-documents-overview',
+    ],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'automatic',
     triggerSchedule: '0 9 * * 1',
     triggerLeadDays: 14,
-    references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Newsletter', url: 'https://docs.google.com/document/d/10sqvW0RqHJ2xQaoJQB0Ce0E21QPPAef5UwWrx0aT2XA/edit' },
-    ],
+    references: [],
     bundleLinkDefinitions: NEWSLETTER_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
     taskDefinitions: withNewsletterTaskSemantics([
       {
@@ -1707,14 +1707,14 @@ const DEFAULT_TEMPLATES = [
     emoji: '\u{1F4DA}',
     tags: ['Book of the Week'],
     phases: BOOK_OF_THE_WEEK_PHASES,
-    sourceDocIds: BOOK_OF_THE_WEEK_SOURCE_DOC_IDS,
+    sourceDocIds: [
+      ...BOOK_OF_THE_WEEK_SOURCE_DOC_IDS,
+      'reference.internal-admin.documentation.process-documents-overview',
+      'reference.overview.events',
+    ],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
-    references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
-      { name: 'Events (slack) - book of the week', url: 'https://docs.google.com/document/d/1RdxwuKVGRI69phmPbmJbgoO3o8il52LFZhiUu3qaDME/edit' },
-    ],
+    references: [],
     bundleLinkDefinitions: BOOK_OF_THE_WEEK_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
     taskDefinitions: withBookOfTheWeekTaskSemantics([
       {
@@ -1867,13 +1867,13 @@ const DEFAULT_TEMPLATES = [
     sourceDocIds: [
       ...PODCAST_SOURCE_DOC_IDS,
       ...PODCAST_EXTERNAL_SOURCE_DOC_IDS.map((doc) => doc.id),
+      'reference.internal-admin.documentation.process-documents-overview',
+      'reference.overview.events',
+      'reference.overview.events-live-podcast',
     ],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
-      { name: 'Events (live) - podcast', url: 'https://docs.google.com/document/d/19d_kBOVQJ2p5qZCtGywzWzYeyCv5FWeHApZnEUZIYRg/edit' },
       { name: 'DataOps podcast assistant README', url: 'assistants/podcast/README.md' },
       { name: 'DataOps podcast assistant process', url: 'assistants/podcast/process/podcast.md' },
     ],
@@ -2165,11 +2165,12 @@ const DEFAULT_TEMPLATES = [
     tags: ['Webinar'],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
-    references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
-      { name: 'Events (live) - webinar', url: 'https://docs.google.com/document/d/1x7MJa_K0ZmuWw5NkTbmUFM9welTD8j86evcRl1c7VtY/edit' },
+    sourceDocIds: [
+      'reference.internal-admin.documentation.process-documents-overview',
+      'reference.overview.events',
+      'reference.overview.events-live-webinar',
     ],
+    references: [],
     bundleLinkDefinitions: [
       { name: 'Guest email' },
       { name: 'Luma' },
@@ -2182,6 +2183,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Initial contact with the speaker asking for details',
         offsetDays: -28,
         instructionsUrl: 'https://docs.google.com/document/d/1Hfz6KIIVKDL98t1j0_erGs0RAYCBnJdRjuuFfAxYxHg/edit',
+        instructionDocId: 'sop.media.webinar.initial-contact-with-the-speaker',
         requiredLinkName: 'Guest email',
       },
       {
@@ -2189,30 +2191,35 @@ const DEFAULT_TEMPLATES = [
         description: 'Agree on a date',
         offsetDays: -27,
         instructionsUrl: 'https://docs.google.com/document/d/1USXNWAriIlK_AmbHSIR0qt3e0RC0aJh8GCSUJbq7-5k/edit',
+        instructionDocId: 'sop.media.podcast.select-and-propose-a-date-for-events',
       },
       {
         refId: 'create-calendar-invite',
         description: 'Create a calendar invite for the guests',
         offsetDays: -26,
         instructionsUrl: 'https://docs.google.com/document/d/1K-1a2EWm6TwyogSiQ4MxuDB_1nqMBwOiRmJ97dlkMjs/edit',
+        instructionDocId: 'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event',
       },
       {
         refId: 'get-event-info',
         description: 'Get information about the event: title, subtitle, outline',
         offsetDays: -25,
         instructionsUrl: 'https://docs.google.com/document/d/1mTTgEphnqkUNd9Ilf6lIGgT9q61Sbt4BCJOEWVSio9Q/edit',
+        instructionDocId: 'template.media.webinar.webinar-process-email-template',
       },
       {
         refId: 'fill-people-form-airtable',
         description: 'Fill in the "people" form in Airtable',
         offsetDays: -24,
         instructionsUrl: 'https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit',
+        instructionDocId: 'sop.events.planning.create-speaker-profiles-via-airtable-form',
       },
       {
         refId: 'create-banner-figma',
         description: 'Create a banner for a webinar event in Figma',
         offsetDays: -23,
         instructionsUrl: 'https://docs.google.com/document/d/1z4Uj2GTF9Aq4Dp_Qz_F0UoCFAIYaiFo0h8JEvboz2PI/edit',
+        instructionDocId: 'sop.sales.sponsorship.how-to-use-figma-for-creating-event-banners',
         requiresFile: true,
       },
       {
@@ -2220,6 +2227,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create events on Luma',
         offsetDays: -22,
         instructionsUrl: 'https://docs.google.com/document/d/1GbDNYXnA5m-ZQkaRkvQw_NwqDg7m7sSad_vCFUM0Ln8/edit',
+        instructionDocId: 'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma',
         requiredLinkName: 'Luma',
       },
       {
@@ -2227,6 +2235,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create events on Meetup',
         offsetDays: -21,
         instructionsUrl: 'https://docs.google.com/document/d/1PsxqVk2bm7uhQiD-KbFOiUiiLQmstjT3G97ldnKRlrs/edit',
+        instructionDocId: 'sop.events.meetup.create-events-in-meetup-com',
         requiredLinkName: 'Meetup',
       },
       {
@@ -2239,24 +2248,28 @@ const DEFAULT_TEMPLATES = [
         description: 'Create events on LinkedIn',
         offsetDays: -20,
         instructionsUrl: 'https://docs.google.com/document/d/1ZwnCpleU0xQqZV02KVNSO24gu8HIHIrZdbHLGnZx52k/edit',
+        instructionDocId: 'sop.events.linkedin.create-events-on-linkedin',
       },
       {
         refId: 'create-event-calendar',
         description: 'Create event in Calendar',
         offsetDays: -19,
         instructionsUrl: 'https://docs.google.com/document/d/1HwptQpp9w_TihEf7szGL130eSorzY_e_K4jSzAG-rAE/edit',
+        instructionDocId: 'sop.events.luma.creating-events-on-google-calendar',
       },
       {
         refId: 'fill-event-form-airtable',
         description: 'Fill in the "event" form in Airtable',
         offsetDays: -18,
         instructionsUrl: 'https://docs.google.com/document/d/1DEpKCmIGwoOE-erFoUrH6hSO2TB9wcDgZF_S1I395Q8/edit',
+        instructionDocId: 'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website',
       },
       {
         refId: 'add-event-to-webpage',
         description: 'Add the event to the DataTalks.Club webpage',
         offsetDays: -17,
         instructionsUrl: 'https://docs.google.com/document/d/16hYJcuuEiG4nKS123_w95eaX3tcBqn6HgneXl0G9szY/edit',
+        instructionDocId: 'sop.media.podcast.update-the-website-with-the-information-from-forms',
       },
       {
         refId: 'send-luma-link-valeriia',
@@ -2268,6 +2281,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Announce event in Slack',
         offsetDays: -15,
         instructionsUrl: 'https://docs.google.com/document/d/1rDHHbtDlkWdzIuD7Nig1ZmNRl6x7RGY7nV4U0YKCbLQ/edit',
+        instructionDocId: 'sop.events.announce-event-in-slack-in-announcements',
         stageOnComplete: 'announced',
       },
       {
@@ -2275,6 +2289,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Schedule posts on LinkedIn and Twitter',
         offsetDays: -14,
         instructionsUrl: 'https://docs.google.com/document/d/12Af_uNfrZ4VhjGLRAGm-NzvzCc5dfAG1j9GAaHpZtD0/edit',
+        instructionDocId: 'template.social-media.template-new-event-announcements-podcasts-webinars-workshops',
       },
       {
         refId: 'remind-guest-7d',
@@ -2282,6 +2297,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: -7,
         isMilestone: true,
         instructionsUrl: 'https://docs.google.com/document/d/1dYqSx7766nWPyj7ROI_NsMsJiXsUT1Q9dhUmNFXCRFA/edit',
+        instructionDocId: 'template.media.webinar.webinar-remind-the-guest-about-the-event-a-week-before-template',
       },
       {
         refId: 'remind-guest-1d',
@@ -2289,6 +2305,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: -1,
         isMilestone: true,
         instructionsUrl: 'https://docs.google.com/document/d/1rMvF296VSzgMvw5Pmy0azE374ZaRHSak2yXVxJGyyTU/edit',
+        instructionDocId: 'template.media.webinar.webinar-remind-the-guest-about-the-event-a-day-before-template',
       },
       {
         refId: 'actual-stream',
@@ -2303,12 +2320,14 @@ const DEFAULT_TEMPLATES = [
         description: 'Update the cover of the YouTube video',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1pRxR7z_XUey3LVcbjmD4_vCEuH4XxdfhAUAZFoJSlgw/edit',
+        instructionDocId: 'sop.media.podcast.updating-the-cover-of-the-youtube-video',
       },
       {
         refId: 'remove-beginning-recording',
         description: 'Remove the beginning of the recording',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1lk98y-hzTq8tczukByjA_yllfaggO_6a9hw38x20LJ8/edit',
+        instructionDocId: 'sop.media.podcast.removing-the-beginning-from-the-youtube-stream',
       },
       {
         refId: 'recheck-video-edit',
@@ -2320,48 +2339,56 @@ const DEFAULT_TEMPLATES = [
         description: 'Generate Timecodes Using Youtube Video Transcripts',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1nQQ0wXRuqqVJ5L4CL9xvkHnoAFDxBDld86sj3_LvZ5A/edit',
+        instructionDocId: 'sop.media.video-youtube.generate-timecodes-using-youtube-video-transcripts',
       },
       {
         refId: 'adding-timecodes-youtube',
         description: 'Adding timecodes to YouTube videos',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1csT9bIvr8WNz3anuS-fO_WrIHvln2P3Hcsh7P0t-lOc/edit',
+        instructionDocId: 'sop.media.video-youtube.add-timecodes-to-youtube-videos',
       },
       {
         refId: 'add-to-playlists',
         description: 'Add the video to "livestream" and "webinar" playlists on YouTube',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/1wj9PWXhYqWopZMzZX4POucoMECoBDCu4I8irbR88qk8/edit',
+        instructionDocId: 'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist',
       },
       {
         refId: 'add-youtube-link-to-website',
         description: 'Add the YouTube link of the stream to the website',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/1JFtFaNqYVEZ0aP4AsIeUDSriN9WzBdg09D53mDPWqUw/edit',
+        instructionDocId: 'sop.website.add-the-link-of-the-stream-to-the-website',
       },
       {
         refId: 'upload-luma-emails-mailchimp',
         description: 'Upload the emails from Luma to Mailchimp',
         offsetDays: 4,
         instructionsUrl: 'https://docs.google.com/document/d/1xyan3b3IdWdOnUZ93qbxpLY6lI9GjiUqzBRUJ1TmzeQ/edit',
+        instructionDocId: 'sop.newsletter.mailchimp.import-emails-from-luma-to-mailchimp',
       },
       {
         refId: 'share-emails-with-sponsor',
         description: 'For sponsored events - share the list with emails with the sponsor',
         offsetDays: 4,
         instructionsUrl: 'https://docs.google.com/document/d/1qf38niJVSAFYz0hkTXVma_bvM9EpArQLUD4wF4YB_Ok/edit',
+        instructionDocId: 'sop.media.workshops.email-filtering-for-sponsored-workshops',
       },
       {
         refId: 'ask-speaker-recommendations',
         description: 'Ask for speaker recommendations and ask the guest to share the video',
         offsetDays: 5,
         instructionsUrl: 'https://docs.google.com/document/d/1KuKKupkYHs6V5rdEhbpblIJ2zQcHPJrdauFANX_kA0o/edit',
+        instructionDocId: 'template.media.webinar.webinar-ask-the-guests-to-share-the-videos-with-their-networks',
       },
       {
         refId: 'add-links-from-speaker-youtube',
         description: 'Add links from the speaker to the YouTube video',
         offsetDays: 5,
         instructionsUrl: 'https://docs.google.com/document/d/1wj9PWXhYqWopZMzZX4POucoMECoBDCu4I8irbR88qk8/edit',
+        instructionDocId: 'sop.media.video-youtube.add-links-to-the-youtube-video',
       },
       {
         refId: 'fill-newsletter-announcement',
@@ -2386,11 +2413,12 @@ const DEFAULT_TEMPLATES = [
     tags: ['Workshop'],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
-    references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
-      { name: 'Events (live) - workshop', url: 'https://docs.google.com/document/d/1tbOClURp1j3MolPY5cI9HzA0QUi8rkXWU_M69RP5BcY/edit' },
+    sourceDocIds: [
+      'reference.internal-admin.documentation.process-documents-overview',
+      'reference.overview.events',
+      'reference.overview.events-live-workshop',
     ],
+    references: [],
     bundleLinkDefinitions: [
       { name: 'Workshop document' },
       { name: 'Guest email' },
@@ -2405,6 +2433,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Initial contact with the speaker asking for details',
         offsetDays: -30,
         instructionsUrl: 'https://docs.google.com/document/d/1mTTgEphnqkUNd9Ilf6lIGgT9q61Sbt4BCJOEWVSio9Q/edit',
+        instructionDocId: 'sop.media.webinar.initial-contact-with-the-speaker',
         requiredLinkName: 'Guest email',
       },
       {
@@ -2423,24 +2452,28 @@ const DEFAULT_TEMPLATES = [
         description: 'Create calendar invites for workshops',
         offsetDays: -27,
         instructionsUrl: 'https://docs.google.com/document/d/1K-1a2EWm6TwyogSiQ4MxuDB_1nqMBwOiRmJ97dlkMjs/edit',
+        instructionDocId: 'sop.events.calendar.create-a-calender-invite-for-the-guests-speaker-for-an-event',
       },
       {
         refId: 'get-event-info',
         description: 'Get information about the event: title, subtitle, outline',
         offsetDays: -26,
         instructionsUrl: 'https://docs.google.com/document/d/1mTTgEphnqkUNd9Ilf6lIGgT9q61Sbt4BCJOEWVSio9Q/edit',
+        instructionDocId: 'template.media.webinar.webinar-process-email-template',
       },
       {
         refId: 'fill-people-form-airtable',
         description: 'Fill in the "people" form in Airtable',
         offsetDays: -25,
         instructionsUrl: 'https://docs.google.com/document/d/1PaX3fYo7grHvQ2d7Mw1LBXZidJmFXqJ6ttk-DUeLNXM/edit',
+        instructionDocId: 'sop.events.planning.create-speaker-profiles-via-airtable-form',
       },
       {
         refId: 'create-banner-figma',
         description: 'Create a banner for a workshop event in Figma',
         offsetDays: -24,
         instructionsUrl: 'https://docs.google.com/document/d/1z4Uj2GTF9Aq4Dp_Qz_F0UoCFAIYaiFo0h8JEvboz2PI/edit',
+        instructionDocId: 'sop.sales.sponsorship.how-to-use-figma-for-creating-event-banners',
         requiresFile: true,
       },
       {
@@ -2448,6 +2481,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create events on Luma',
         offsetDays: -23,
         instructionsUrl: 'https://docs.google.com/document/d/1GbDNYXnA5m-ZQkaRkvQw_NwqDg7m7sSad_vCFUM0Ln8/edit',
+        instructionDocId: 'sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma',
         requiredLinkName: 'Luma',
       },
       {
@@ -2455,6 +2489,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create events on Meetup',
         offsetDays: -22,
         instructionsUrl: 'https://docs.google.com/document/d/1PsxqVk2bm7uhQiD-KbFOiUiiLQmstjT3G97ldnKRlrs/edit',
+        instructionDocId: 'sop.events.meetup.create-events-in-meetup-com',
         requiredLinkName: 'Meetup',
       },
       {
@@ -2467,6 +2502,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create events on LinkedIn',
         offsetDays: -21,
         instructionsUrl: 'https://docs.google.com/document/d/1ZwnCpleU0xQqZV02KVNSO24gu8HIHIrZdbHLGnZx52k/edit',
+        instructionDocId: 'sop.events.linkedin.create-events-on-linkedin',
         requiredLinkName: 'LinkedIn',
       },
       {
@@ -2474,18 +2510,21 @@ const DEFAULT_TEMPLATES = [
         description: 'Create event in Calendar',
         offsetDays: -20,
         instructionsUrl: 'https://docs.google.com/document/d/1HwptQpp9w_TihEf7szGL130eSorzY_e_K4jSzAG-rAE/edit',
+        instructionDocId: 'sop.events.luma.creating-events-on-google-calendar',
       },
       {
         refId: 'fill-event-form-airtable',
         description: 'Fill in the "event" form in Airtable',
         offsetDays: -19,
         instructionsUrl: 'https://docs.google.com/document/d/1DEpKCmIGwoOE-erFoUrH6hSO2TB9wcDgZF_S1I395Q8/edit',
+        instructionDocId: 'sop.events.planning.fill-in-the-event-form-in-airtable-for-adding-events-to-our-website',
       },
       {
         refId: 'add-event-to-webpage',
         description: 'Add the event to the DataTalks.Club webpage',
         offsetDays: -18,
         instructionsUrl: 'https://docs.google.com/document/d/16hYJcuuEiG4nKS123_w95eaX3tcBqn6HgneXl0G9szY/edit',
+        instructionDocId: 'sop.media.podcast.update-the-website-with-the-information-from-forms',
       },
       {
         refId: 'send-luma-link-valeriia',
@@ -2497,6 +2536,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Announce event in Slack in #announcements',
         offsetDays: -16,
         instructionsUrl: 'https://docs.google.com/document/d/1rDHHbtDlkWdzIuD7Nig1ZmNRl6x7RGY7nV4U0YKCbLQ/edit',
+        instructionDocId: 'sop.events.announce-event-in-slack-in-announcements',
         stageOnComplete: 'announced',
       },
       {
@@ -2505,18 +2545,21 @@ const DEFAULT_TEMPLATES = [
         offsetDays: -1,
         isMilestone: true,
         instructionsUrl: 'https://docs.google.com/document/d/1VWitGUErmKn8JfzBEYx3BVa-lSl-tLPB2bLDtPFWi9Q/edit',
+        instructionDocId: 'template.social-media.announcing-events-to-different-communities',
       },
       {
         refId: 'schedule-posts-linkedin-twitter',
         description: 'Schedule posts on LinkedIn and Twitter',
         offsetDays: -15,
         instructionsUrl: 'https://docs.google.com/document/d/12Af_uNfrZ4VhjGLRAGm-NzvzCc5dfAG1j9GAaHpZtD0/edit',
+        instructionDocId: 'template.social-media.template-new-event-announcements-podcasts-webinars-workshops',
       },
       {
         refId: 'prepare-send-invoice',
         description: 'Prepare and send an Invoice for Sponsored Workshop',
         offsetDays: -14,
         instructionsUrl: 'https://docs.google.com/document/d/1PeLSKvs76XiP-bG4WviQur4pQS0Ie25w9I50CZkJYZs/edit',
+        instructionDocId: 'sop.finance.bookkeeping.creating-invoices-in-finom',
         requiresFile: true,
       },
       {
@@ -2525,6 +2568,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: -7,
         isMilestone: true,
         instructionsUrl: 'https://docs.google.com/document/d/1dYqSx7766nWPyj7ROI_NsMsJiXsUT1Q9dhUmNFXCRFA/edit',
+        instructionDocId: 'template.media.webinar.webinar-remind-the-guest-about-the-event-a-week-before-template',
       },
       {
         refId: 'remind-guest-1d',
@@ -2532,6 +2576,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: -1,
         isMilestone: true,
         instructionsUrl: 'https://docs.google.com/document/d/1rMvF296VSzgMvw5Pmy0azE374ZaRHSak2yXVxJGyyTU/edit',
+        instructionDocId: 'template.media.webinar.webinar-remind-the-guest-about-the-event-a-day-before-template',
       },
       {
         refId: 'actual-stream',
@@ -2546,12 +2591,14 @@ const DEFAULT_TEMPLATES = [
         description: 'Update the cover of the YouTube video',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1pRxR7z_XUey3LVcbjmD4_vCEuH4XxdfhAUAZFoJSlgw/edit',
+        instructionDocId: 'sop.media.podcast.updating-the-cover-of-the-youtube-video',
       },
       {
         refId: 'remove-beginning-recording',
         description: 'Remove the beginning of the recording',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1lk98y-hzTq8tczukByjA_yllfaggO_6a9hw38x20LJ8/edit',
+        instructionDocId: 'sop.media.podcast.removing-the-beginning-from-the-youtube-stream',
       },
       {
         refId: 'recheck-video-edit',
@@ -2563,24 +2610,28 @@ const DEFAULT_TEMPLATES = [
         description: 'Generate Timecodes Using Youtube Video Transcripts',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1nQQ0wXRuqqVJ5L4CL9xvkHnoAFDxBDld86sj3_LvZ5A/edit',
+        instructionDocId: 'sop.media.video-youtube.generate-timecodes-using-youtube-video-transcripts',
       },
       {
         refId: 'adding-timecodes-youtube',
         description: 'Adding timecodes to YouTube videos',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1csT9bIvr8WNz3anuS-fO_WrIHvln2P3Hcsh7P0t-lOc/edit',
+        instructionDocId: 'sop.media.video-youtube.add-timecodes-to-youtube-videos',
       },
       {
         refId: 'add-to-playlists',
         description: 'Add the video to "livestream" and "workshop" playlists on YouTube',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/1wj9PWXhYqWopZMzZX4POucoMECoBDCu4I8irbR88qk8/edit',
+        instructionDocId: 'sop.media.video-youtube.adding-videos-from-other-channels-to-our-playlist',
       },
       {
         refId: 'add-youtube-link-to-website',
         description: 'Add the YouTube link of the stream to the website',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/1JFtFaNqYVEZ0aP4AsIeUDSriN9WzBdg09D53mDPWqUw/edit',
+        instructionDocId: 'sop.website.add-the-link-of-the-stream-to-the-website',
       },
       {
         refId: 'publish-social-media-announcement',
@@ -2592,30 +2643,35 @@ const DEFAULT_TEMPLATES = [
         description: 'Ask guests to share the videos with their networks',
         offsetDays: 4,
         instructionsUrl: 'https://docs.google.com/document/d/1TYQGVzdcoTH9-ULzFWK-2nGt8X-50ju5kYcnJV4F83M/edit',
+        instructionDocId: 'template.media.webinar.webinar-ask-the-guests-to-share-the-videos-with-their-networks',
       },
       {
         refId: 'ask-sponsor-feedback',
         description: 'For sponsored workshop, ask the sponsor about how did it go',
         offsetDays: 5,
         instructionsUrl: 'https://docs.google.com/document/d/1kdrmpwrvDjYf_cNVJaLo6qhVJ2B7a5As-DrAx_mYWb8/edit',
+        instructionDocId: 'template.newsletter.workshop-sponsored-stats-of-an-event',
       },
       {
         refId: 'upload-luma-emails-mailchimp',
         description: 'Upload the emails from Luma to Mailchimp',
         offsetDays: 5,
         instructionsUrl: 'https://docs.google.com/document/d/1xyan3b3IdWdOnUZ93qbxpLY6lI9GjiUqzBRUJ1TmzeQ/edit',
+        instructionDocId: 'sop.newsletter.mailchimp.import-emails-from-luma-to-mailchimp',
       },
       {
         refId: 'share-emails-with-sponsor',
         description: 'For sponsored events - share the list with emails with the sponsor',
         offsetDays: 5,
         instructionsUrl: 'https://docs.google.com/document/d/1qf38niJVSAFYz0hkTXVma_bvM9EpArQLUD4wF4YB_Ok/edit',
+        instructionDocId: 'sop.media.workshops.email-filtering-for-sponsored-workshops',
       },
       {
         refId: 'add-links-from-speaker-youtube',
         description: 'Add links from the speaker to the YouTube video',
         offsetDays: 6,
         instructionsUrl: 'https://docs.google.com/document/d/1wj9PWXhYqWopZMzZX4POucoMECoBDCu4I8irbR88qk8/edit',
+        instructionDocId: 'sop.media.video-youtube.add-links-to-the-youtube-video',
       },
       {
         refId: 'check-invoice-paid',
@@ -2633,14 +2689,13 @@ const DEFAULT_TEMPLATES = [
     emoji: '\u{2699}\u{FE0F}',
     tags: ['Open-Source Spotlight'],
     phases: OSS_PHASES,
-    sourceDocIds: OSS_SOURCE_DOC_IDS,
+    sourceDocIds: [
+      ...OSS_SOURCE_DOC_IDS,
+      'reference.internal-admin.documentation.process-documents-overview',
+    ],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
-    references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Events', url: 'https://docs.google.com/document/d/1SVWxBsBzvG5URX2tWD9M9HRfI11c2eq3Z7TMt0-JHqQ/edit' },
-      { name: 'Events (pre-recorded) - Open-Source Spotlight', url: 'https://docs.google.com/document/d/1foX7pya-Ywi153LkZWFWBw2nI6HYvcQKS-QQBEUmGZc/edit' },
-    ],
+    references: [],
     bundleLinkDefinitions: OSS_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
     taskDefinitions: withOssTaskSemantics([
       {
@@ -2741,9 +2796,11 @@ const DEFAULT_TEMPLATES = [
     tags: ['Course'],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
+    sourceDocIds: [
+      'playbook.courses.playbook-for-promoting-courses-at-dtc',
+    ],
     references: [
       { name: 'Free courses page', url: 'https://datatalks.club/blog/guide-to-free-online-courses-at-datatalks-club.html' },
-      { name: 'Playbook to promote courses', url: 'https://docs.google.com/document/d/1ENqjMNPzG4gVTdQzFeDfwyReRbrw2fe2f6AFHrirVBM/edit' },
     ],
     bundleLinkDefinitions: [],
     taskDefinitions: [
@@ -2753,6 +2810,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: -14,
         isMilestone: true,
         instructionsUrl: 'https://docs.google.com/document/d/1ENqjMNPzG4gVTdQzFeDfwyReRbrw2fe2f6AFHrirVBM/edit',
+        instructionDocId: 'playbook.courses.playbook-for-promoting-courses-at-dtc',
       },
       {
         refId: 'prepare-description-event',
@@ -2808,14 +2866,15 @@ const DEFAULT_TEMPLATES = [
     triggerType: 'automatic',
     triggerSchedule: '0 9 * * 5',
     triggerLeadDays: 0,
-    references: [
-      { name: 'New event announcement', url: 'https://docs.google.com/document/d/12Af_uNfrZ4VhjGLRAGm-NzvzCc5dfAG1j9GAaHpZtD0/edit' },
-      { name: 'Overview after the podcast', url: 'https://docs.google.com/document/d/1156ty59e3ZlUW3nPpMTd_2smzW40v0ANt9nojUxZ2Gc/edit' },
-      { name: 'Guest recommendations from the podcast', url: 'https://docs.google.com/document/d/1XDOfmUHMjKdtlImd5C5LGalCWD8tChefCbB_dtskfWs/edit' },
-      { name: 'Post about all upcoming events', url: 'https://docs.google.com/document/d/1NkXUsmaL1JmfX1aO7UbMp349sRGNF6Mu5nd9Dk7Oz2Y/edit' },
-      { name: 'Post about OSS', url: 'https://docs.google.com/document/d/1BleKsd44Uhhj24D-D5qup0Gf3GcM6cwdAjbZD2jGGuA/edit' },
-      { name: 'Post about article', url: 'https://docs.google.com/document/d/1bj4WnhnRQ_C1L1KJPzUv2REQZOzma9PU8Cz6ZfcV8Fs/edit' },
+    sourceDocIds: [
+      'template.social-media.template-new-event-announcements-podcasts-webinars-workshops',
+      'reference.social-media.post-podcast-overview-after-the-event',
+      'sop.social-media.post-podcast-guest-recommendations',
+      'reference.social-media.post-new-event-announcements-podcasts-webinars-workshops',
+      'reference.social-media.post-oss',
+      'template.social-media.template-linkedin-and-x-announcement-article',
     ],
+    references: [],
     bundleLinkDefinitions: [
       { name: 'Mailchimp Newsletter link' },
       { name: 'Sponsorship document' },
@@ -2862,15 +2921,15 @@ const DEFAULT_TEMPLATES = [
     emoji: '',
     tags: ['Tax', 'Finance'],
     phases: TAX_REPORT_PHASES,
-    sourceDocIds: TAX_REPORT_SOURCE_DOC_IDS,
+    sourceDocIds: [
+      ...TAX_REPORT_SOURCE_DOC_IDS,
+      'reference.internal-admin.documentation.process-documents-overview',
+    ],
     defaultAssigneeId: GRACE_ID,
     triggerType: 'automatic',
     triggerSchedule: '0 9 1 * *',
     triggerLeadDays: 0,
-    references: [
-      { name: 'Process documents', url: 'https://docs.google.com/document/d/1FEmQV8myR3jN-8_kCG_tQh4jrrxFZJPpRag9iPf_RII/edit' },
-      { name: 'Tax reports', url: 'https://docs.google.com/document/d/1fuWlBKFxWfupmRz9442En78xAwyXjYw_9Aspf81lhv8/edit' },
-    ],
+    references: [],
     bundleLinkDefinitions: TAX_REPORT_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
     taskDefinitions: withTaxReportTaskSemantics([
       {
@@ -2968,6 +3027,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create Lightning Lessons on Maven',
         offsetDays: -5,
         instructionsUrl: 'https://docs.google.com/document/d/1vINJ7_hVlhvRLzo9aWoIVEk6UXxpvI0IoNTzm5V4O8k/edit',
+        instructionDocId: 'sop.maven.lightning-lessons.creating-lightning-lessons-on-maven',
         requiredLinkName: 'Maven',
       },
       {
@@ -2975,6 +3035,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Create a banner for the event on Canva',
         offsetDays: -4,
         instructionsUrl: 'https://docs.google.com/document/d/12QPknzYsV2TCRAte5_CCPu3T3rfL7i2EnF018Sv46sw/edit',
+        instructionDocId: 'sop.maven.lightning-lessons.creating-pictures-for-maven-lightning-lessons-in-canva',
         requiresFile: true,
       },
       {
@@ -2982,6 +3043,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Downloading, Uploading and Editing Maven Videos for YouTube',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/13-HQdWdx76Zb1cNFZkXIutzenpwGab2-LRjaiSbc8rw/edit',
+        instructionDocId: 'sop.maven.lightning-lessons.downloading-uploading-and-editing-maven-videos-for-youtube',
         requiredLinkName: 'Youtube',
       },
       {
@@ -2989,6 +3051,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Cut the videos using ffmpeg',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1VW_M7LXOPZ09IZQ70qALfHNxIJYpI3oalNMDygj37NI/edit',
+        instructionDocId: 'sop.media.video.cutting-videos-with-ffmpeg',
       },
       {
         refId: 'send-youtube-link-telegram',
@@ -3024,6 +3087,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Downloading and Uploading Office Hours Videos for YouTube',
         offsetDays: 1,
         instructionsUrl: 'https://docs.google.com/document/d/1pWWERBr2fQDtU7APUpq78qd_cM4gqIuHarEBVkttF70/edit',
+        instructionDocId: 'sop.maven.office-hours.downloading-and-uploading-office-hours-videos-for-youtube',
         requiredLinkName: 'Youtube',
       },
       {
@@ -3031,6 +3095,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Summarizing Video Transcripts For Office Hours',
         offsetDays: 2,
         instructionsUrl: 'https://docs.google.com/document/d/1QaWt5ePTu9yifyt84-fgGVYProNT28RTVb-PG3a-y1o/edit',
+        instructionDocId: 'sop.maven.office-hours.summarizing-video-transcripts-for-office-hours',
         requiredLinkName: 'Summary Document',
       },
       {
@@ -3038,6 +3103,7 @@ const DEFAULT_TEMPLATES = [
         description: 'Generating Office Hours Video Description and Timecodes for YouTube',
         offsetDays: 3,
         instructionsUrl: 'https://docs.google.com/document/d/13-HQdWdx76Zb1cNFZkXIutzenpwGab2-LRjaiSbc8rw/edit',
+        instructionDocId: 'reference.maven.prompts.office-hours-prompt',
       },
       {
         refId: 'make-announcements-maven',
@@ -3045,6 +3111,7 @@ const DEFAULT_TEMPLATES = [
         offsetDays: 4,
         stageOnComplete: 'done',
         instructionsUrl: 'https://docs.google.com/document/d/1Se-vZc4iwfLrIskR6L4xaY2fxKE8l_FJ6TFpyDVOVTo/edit',
+        instructionDocId: 'sop.maven.office-hours.making-announcements-in-maven',
       },
     ],
   },
