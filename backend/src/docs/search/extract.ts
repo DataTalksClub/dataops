@@ -11,7 +11,7 @@
  *   keyword: path, id, domain, doc_type
  *
  * Frontmatter is parsed with `gray-matter` (the Node equivalent of
- * `python-frontmatter`, per `_docs/TARGET_ARCHITECTURE.md`).
+ * `python-frontmatter`, per `docs/TARGET_ARCHITECTURE.md`).
  */
 
 import { readdirSync, readFileSync } from 'node:fs';

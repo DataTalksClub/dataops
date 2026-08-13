@@ -7,7 +7,7 @@ process docs and docs app, DataTasks task execution, and Podcast Assistant
 intake and drafting.
 
 The project is in the consolidation stage. Source systems have been merged into
-a single TypeScript backend; see `_docs/TARGET_ARCHITECTURE.md`. The single
+a single TypeScript backend; see `docs/TARGET_ARCHITECTURE.md`. The single
 `backend/` package serves the frontend, docs content API, search, and work APIs
 from one TypeScript Lambda. The Python docs/SOP backend has been retired; the
 remaining content-validation tooling lives in `tools/content_tools/`.
@@ -19,7 +19,7 @@ item contained by a card.
 Technology direction:
 
 - Backend: TypeScript, single `backend/` package (supersedes the earlier
-  "long-term backend: Python" direction; see `_docs/MERGE_PLAN.md`)
+  "long-term backend: Python" direction; see `docs/MERGE_PLAN.md`)
 - Search: `zerosearch-node` (BM25-lite, zero-dependency; supersedes `minsearch`)
 - Frontend shell: the existing `dtc-operations` vanilla JavaScript frontend
 - Execution state: DynamoDB
@@ -29,7 +29,7 @@ Technology direction:
 
 ## Working Process
 
-Read `_docs/PROCESS.md` before working on issues.
+Read `docs/PROCESS.md` before working on issues.
 
 Follow the lifecycle:
 
@@ -41,7 +41,7 @@ When launching subagents for this workflow, use high-capability/high-reasoning
 settings by default unless the user explicitly asks for a cheaper or lower
 reasoning run.
 
-Treat "continue where we stopped" as a prompt to check `_docs/PROCESS.md`,
+Treat "continue where we stopped" as a prompt to check `docs/PROCESS.md`,
 inspect the current issue/worktree/process state, and resume the next pipeline
 step.
 
@@ -87,8 +87,8 @@ Operational knowledge boundary:
 
 Current planning docs:
 
-- `_docs/MERGE_PLAN.md`
-- `_docs/PROCESS.md`
+- `docs/MERGE_PLAN.md`
+- `docs/PROCESS.md`
 - `PORTAL_ANALYSIS.md`
 - `PROJECT_PLAN.md`
 

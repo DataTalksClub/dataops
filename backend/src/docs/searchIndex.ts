@@ -7,7 +7,7 @@
  *
  * Implemented (issue #85) on top of `zerosearch-node` (BM25-lite, portable
  * `json-1` index format compatible with the Python `zerosearch`). Per
- * `_docs/TARGET_ARCHITECTURE.md` the field config below carries over unchanged
+ * `docs/TARGET_ARCHITECTURE.md` the field config below carries over unchanged
  * from `minsearch`; ranking shifts from TF-IDF (minsearch) to BM25-lite, with
  * recall on par and ordering allowed to differ.
  */

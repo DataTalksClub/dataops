@@ -1,7 +1,7 @@
 # Target Architecture
 
 Status: proposed (supersedes the "Long-term backend: Python" direction in
-`CLAUDE.md` and `_docs/MERGE_PLAN.md` Phase 5).
+`CLAUDE.md` and `docs/MERGE_PLAN.md` Phase 5).
 
 This document defines the **end state** DataOps is converging toward: one
 backend, one deployable runtime, and a clear language boundary only where a
@@ -104,7 +104,7 @@ frontend/                # static vanilla-JS shell                  (unchanged)
 assistants/podcast/      # Python assistant worker                  (unchanged)
 content/                 # SOPs & markdown — GitHub source of truth  (unchanged)
 infra/                   # SAM/CloudFormation, OIDC, secrets         ←  moved from lambda-functions/
-docs/  _docs/            # repo-meta + planning/process docs
+docs/  docs/            # repo-meta + planning/process docs
 ```
 
 Removed at the end of consolidation: `lambda-functions/` (ported into

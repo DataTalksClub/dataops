@@ -34,7 +34,7 @@ def test_internal_markdown_links_fail_when_target_is_missing(tmp_path):
 
 
 def test_process_controls_fail_when_required_gate_is_missing(tmp_path):
-    process_dir = tmp_path / "_docs"
+    process_dir = tmp_path / "docs"
     process_dir.mkdir()
     (process_dir / "PROCESS.md").write_text("# Process\nNo lifecycle here.\n", encoding="utf-8")
 

@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - ".github/workflows/validate-planning-docs.yml"
-      - "_docs/**"
       - "docs/**"
       - "templates/**"
       - "content/tasks/templates/**"
@@ -18,7 +17,7 @@ on:
       - "tools/content_tools/content_tools/doc_registry.py"
       - "backend/scripts/validate-docs-links.ts"
       - "backend/scripts/validate-knowledge-repo.ts"
-      - "tests/planning_docs/**"
+      - "tests/planningdocs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
       - ".github/workflows/deploy-dataops-v1.yml"
@@ -28,8 +27,6 @@ on:
   pull_request:
     paths:
       - ".github/workflows/validate-planning-docs.yml"
-      - "_docs/**"
-      - "docs/**"
       - "templates/**"
       - "content/tasks/templates/**"
       - ".goal-v1.md"
@@ -40,7 +37,7 @@ on:
       - "tools/content_tools/content_tools/doc_registry.py"
       - "backend/scripts/validate-docs-links.ts"
       - "backend/scripts/validate-knowledge-repo.ts"
-      - "tests/planning_docs/**"
+      - "tests/planningdocs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
       - ".github/workflows/deploy-dataops-v1.yml"

@@ -25,7 +25,7 @@ workflow.
   guest-intake template, knowledge-base builder, and tests.
 - `docs/` — repo-meta docs (this README, `STRUCTURE.md`, `sop-format*.md`,
   archived materials).
-- `_docs/` — DataOps merge plan, development process, and planning notes.
+- `docs/` — DataOps merge plan, development process, and planning notes.
 - `frontend/` — static vanilla-JS app and its Dockerfile.
 - `infra/` — SAM/CloudFormation templates, OIDC deploy roles, runtime secrets.
 - `tools/content_tools/` — pure-Python content validation CLIs (docs link
@@ -82,14 +82,14 @@ How the pieces fit:
   deployed by GitHub Actions through an AWS OIDC role; runtime secrets live in
   AWS Secrets Manager rather than GitHub Actions secrets.
 
-See `_docs/TARGET_ARCHITECTURE.md` for the target layout and design rationale.
+See `docs/TARGET_ARCHITECTURE.md` for the target layout and design rationale.
 
 ## Planning
 
 - [Portal Analysis](PORTAL_ANALYSIS.md)
 - [Shared Project Plan](PROJECT_PLAN.md)
-- [Merge Plan](_docs/MERGE_PLAN.md)
-- [Development Process](_docs/PROCESS.md)
+- [Merge Plan](docs/MERGE_PLAN.md)
+- [Development Process](docs/PROCESS.md)
 
 ## Running locally
 

@@ -26,7 +26,7 @@ implementation, testing, acceptance, and CI/CD monitoring.
 
 ## AI Shipping Labs Parity Contract
 
-This document is an adaptation of `../ai-shipping-labs/_docs/PROCESS.md`, not a
+This document is an adaptation of `../ai-shipping-labs/docs/PROCESS.md`, not a
 new or weaker process. Preserve AI Shipping Labs controls at equal strength.
 Adapt only repo names, labels, DataOps technologies, test commands, deployment
 details, source boundaries, and DataOps specialist agent references. If this
@@ -49,7 +49,7 @@ explicitly documented here.
 | Keep the pipeline full and pick two independent issues when possible | Same; keep one implementation/review track plus one grooming or next-issue track when backlog and capacity allow |
 | Human checks do not block shipping completed agent-verifiable work | Same; use `Refs #N`, add `human`, leave the issue open, and continue |
 | Project-local `.tmp/` for temporary files | Same; include screenshots, logs, scratch exports, and restore-drill outputs |
-| Short-lived audits/plans do not live forever at docs root | Same; use `_docs/audits/` or delete/promote handoff notes |
+| Short-lived audits/plans do not live forever at docs root | Same; use `docs/audits/` or delete/promote handoff notes |
 
 If the original AI Shipping Labs rule says "all tests", DataOps must define the
 equivalent full workflow for the touched surface. A groomed issue may narrow the
@@ -60,7 +60,7 @@ proves the acceptance criteria.
 
 - Repo: https://github.com/DataTalksClub/dataops
 - Issues: https://github.com/DataTalksClub/dataops/issues
-- Merge plan: `_docs/MERGE_PLAN.md`
+- Merge plan: `docs/MERGE_PLAN.md`
 - Portal analysis: `PORTAL_ANALYSIS.md`
 - Shared project plan: `PROJECT_PLAN.md`
 - V1 goal: `.goal-v1.md`
@@ -462,7 +462,7 @@ For process-doc and content changes:
   process-doc references, and maintainer remediation steps rather than vanity
   documentation analytics.
 - Inspect process-doc changes against the source process when an issue names a
-  source process, such as `../ai-shipping-labs/_docs/PROCESS.md`, and confirm
+  source process, such as `../ai-shipping-labs/docs/PROCESS.md`, and confirm
   lifecycle controls are preserved at equal strength.
 - Build the search index.
 - Run docs metadata tests when frontmatter, document IDs, archive rules,
@@ -494,7 +494,7 @@ For infrastructure and deployment changes:
 ## Source Boundaries
 
 DataOps agents may read and compare source systems when an issue requires it,
-including `../ai-shipping-labs/_docs/PROCESS.md`, `../dtc-operations`,
+including `../ai-shipping-labs/docs/PROCESS.md`, `../dtc-operations`,
 `../datatasks`, and `../podcast-assistant`. Do not modify source repositories
 outside `dataops` unless the issue explicitly says that source repo is in scope
 for edits. Keep generated comparison notes, patches, logs, and scratch exports
@@ -659,12 +659,12 @@ one-off exports. This directory is gitignored.
 
 Point-in-time documents, such as audits, remediation plans, one-off analyses,
 dated status reports, and handoff notes, should not live at the `docs/` or
-`_docs/` root forever.
+`docs/` root forever.
 
-Use `_docs/audits/` for short-lived internal analysis when we need to keep it.
+Use `docs/audits/` for short-lived internal analysis when we need to keep it.
 Use a `YYYY-MM-DD-<topic>.md` filename. Delete temporary handoff files when the
 handoff is no longer needed, or promote durable decisions into an evergreen doc
-such as `_docs/PROCESS.md`, `docs/architecture.md`, or `docs/STRUCTURE.md`.
+such as `docs/PROCESS.md`, `docs/architecture.md`, or `docs/STRUCTURE.md`.
 
 ## Technology Stack
 

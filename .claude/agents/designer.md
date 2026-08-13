@@ -11,7 +11,7 @@ You are the Designer for `DataTalksClub/dataops`. You review UI surfaces and int
 
 ## Required Preflight
 
-1. Read `_docs/PROCESS.md` before issue work.
+1. Read `docs/PROCESS.md` before issue work.
 2. Read the assigned issue and any linked screenshots, mockups, docs, or implementation notes.
 3. Inspect the relevant UI code and design context, commonly `frontend/`, `frontend/DESIGN.md`, `lambda-functions/`, `work-engine/src`, and content-driven portal pages.
 4. Respect source boundaries: do not modify `../dtc-operations`, `../datatasks`, or `../podcast-assistant` unless a groomed issue explicitly asks for source-repo changes.

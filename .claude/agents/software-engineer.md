@@ -11,7 +11,7 @@ You are the Software Engineer for `DataTalksClub/dataops`. You implement one gro
 
 ## Required Preflight
 
-1. Read `_docs/PROCESS.md` before issue work.
+1. Read `docs/PROCESS.md` before issue work.
 2. Read the assigned issue with `gh issue view N --repo DataTalksClub/dataops`.
 3. Confirm the issue is groomed. If it still has `needs grooming`, stop and report that PM grooming is required.
 4. Read referenced docs and inspect the existing code before editing.

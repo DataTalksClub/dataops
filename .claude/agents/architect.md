@@ -11,8 +11,8 @@ You are the Architect for `DataTalksClub/dataops`. You review technical shape, o
 
 ## Required Preflight
 
-1. Read `_docs/PROCESS.md` before issue work.
-2. Read the assigned issue and relevant architecture docs, usually `_docs/MERGE_PLAN.md`, `PORTAL_ANALYSIS.md`, `PROJECT_PLAN.md`, `docs/architecture.md`, `docs/v1-runtime-architecture.md`, `docs/v1-execution-state-schema.md`, and `docs/v1-execution-data-safety.md`.
+1. Read `docs/PROCESS.md` before issue work.
+2. Read the assigned issue and relevant architecture docs, usually `docs/MERGE_PLAN.md`, `PORTAL_ANALYSIS.md`, `PROJECT_PLAN.md`, `docs/architecture.md`, `docs/v1-runtime-architecture.md`, `docs/v1-execution-state-schema.md`, and `docs/v1-execution-data-safety.md`.
 3. Inspect relevant code and templates before giving architecture advice.
 4. Respect source boundaries: do not modify `../dtc-operations`, `../datatasks`, or `../podcast-assistant` unless a groomed issue explicitly asks for source-repo changes.
 

@@ -33,7 +33,7 @@ Use this target structure after the merge:
 
 ```text
 dataops/
-  _docs/                  repo process, architecture, merge notes
+  docs/                  repo process, architecture, merge notes
   .claude/agents/         role-agent instructions for the issue pipeline
   content/                DataTalks.Club process docs from dtc-operations
   frontend/               shared portal frontend
@@ -58,7 +58,7 @@ Transition rule:
 
 **Superseded** -- TypeScript is the consolidated backend. The analysis below
 was the original merge-period direction; it was reversed in favor of one
-TypeScript backend (see `_docs/TARGET_ARCHITECTURE.md` for the decision and
+TypeScript backend (see `docs/TARGET_ARCHITECTURE.md` for the decision and
 rationale). The Python docs/SOP/search backend has been retired; its
 content-validation tooling lives in `tools/content_tools/`.
 
@@ -110,7 +110,7 @@ Use separate stores for separate truth:
 
 **Superseded** -- search now uses `zerosearch-node` (zero-dependency
 BM25-lite). The original `minsearch` (TF-IDF via scikit-learn) has been
-retired; see `_docs/TARGET_ARCHITECTURE.md`.
+retired; see `docs/TARGET_ARCHITECTURE.md`.
 
 Original direction (historical context):
 
@@ -153,7 +153,7 @@ Tasks:
 
 - Create public GitHub repo.
 - Add planning docs.
-- Add `_docs/PROCESS.md`.
+- Add `docs/PROCESS.md`.
 - Add role-agent instructions.
 - Add labels for the GitHub issue pipeline.
 - File initial merge issues.
@@ -167,7 +167,7 @@ Tasks:
 - Copy `content/`, `frontend/`, `lambda-functions/`, `scripts/`, `templates/`,
   and docs-app tests from `../dtc-operations`.
 - Preserve commit history only if we decide it is worth the added merge
-  complexity. Otherwise record the source commit in `_docs/import-log.md`.
+  complexity. Otherwise record the source commit in `docs/import-log.md`.
 - Rename `lambda-functions/` to `backend/` after import, or leave it in place
   until tests pass.
 - Keep docs search, editor, lint, image handling, and GitHub-backed save working.

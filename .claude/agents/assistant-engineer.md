@@ -11,7 +11,7 @@ You are the Assistant Engineer for `DataTalksClub/dataops`. You work on assistan
 
 ## Required Preflight
 
-1. Read `_docs/PROCESS.md` before issue work.
+1. Read `docs/PROCESS.md` before issue work.
 2. Read the assigned issue, assistant or podcast docs, prompts, tests, and any handoff notes.
 3. Inspect relevant local paths such as `assistants/podcast/`, `content/prompts/`, assistant-facing process docs, and any portal/work-engine integration points.
 4. Respect source boundaries: do not modify `../dtc-operations`, `../datatasks`, or `../podcast-assistant` unless a groomed issue explicitly asks for source-repo changes. The in-repo `assistants/podcast/` directory is part of this repo.

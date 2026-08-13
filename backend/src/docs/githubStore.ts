@@ -3,7 +3,7 @@
  *
  * Ports `lambda-functions/src/lambda_functions/github_store.py` to TypeScript.
  * GitHub markdown remains the source of truth for content
- * (`_docs/TARGET_ARCHITECTURE.md`); this store reads the repo tree/files through
+ * (`docs/TARGET_ARCHITECTURE.md`); this store reads the repo tree/files through
  * the GitHub Contents/Git Data API, keeps a `/tmp` working copy as a cache, and
  * commits on save/delete through the Contents API.
  *

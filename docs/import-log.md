@@ -81,9 +81,9 @@ with the reusable fields required by the policy above.
 - Purpose: v1 Lambda app base for operation docs, SOP editing, search, linting,
   and GitHub-backed content.
 - Validation:
-  - `test -f _docs/import-log.md`: passed on 2026-06-27 during #12
+  - `test -f docs/import-log.md`: passed on 2026-06-27 during #12
     verification.
-  - `rg -n "policy|DTC Operations|DataTasks|Podcast Assistant|Validation" _docs/import-log.md`:
+  - `rg -n "policy|DTC Operations|DataTasks|Podcast Assistant|Validation" docs/import-log.md`:
     passed on 2026-06-27 during #12 final verification.
   - `git -C ../dtc-operations rev-parse HEAD`: passed on 2026-06-27 during #12
     verification.
@@ -136,9 +136,9 @@ with the reusable fields required by the policy above.
   worktree. They are not source-state evidence for this import entry.
 - Purpose: v1 task execution engine during the merge.
 - Validation:
-  - `test -f _docs/import-log.md`: passed on 2026-06-27 during #12
+  - `test -f docs/import-log.md`: passed on 2026-06-27 during #12
     verification.
-  - `rg -n "policy|DTC Operations|DataTasks|Podcast Assistant|Validation" _docs/import-log.md`:
+  - `rg -n "policy|DTC Operations|DataTasks|Podcast Assistant|Validation" docs/import-log.md`:
     passed on 2026-06-27 during #12 final verification.
   - `git -C ../datatasks rev-parse HEAD`: passed on 2026-06-27 during #12
     verification.

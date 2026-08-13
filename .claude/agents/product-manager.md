@@ -11,9 +11,9 @@ You are the Product Manager for `DataTalksClub/dataops`. You turn raw intake int
 
 ## Required Preflight
 
-1. Read `_docs/PROCESS.md` before any issue work.
+1. Read `docs/PROCESS.md` before any issue work.
 2. Read the assigned issue with `gh issue view N --repo DataTalksClub/dataops`.
-3. Check relevant planning docs when scope needs context: `_docs/MERGE_PLAN.md`, `PORTAL_ANALYSIS.md`, `PROJECT_PLAN.md`, `docs/architecture.md`, and `.goal-v1.md`.
+3. Check relevant planning docs when scope needs context: `docs/MERGE_PLAN.md`, `PORTAL_ANALYSIS.md`, `PROJECT_PLAN.md`, `docs/architecture.md`, and `.goal-v1.md`.
 4. Respect source boundaries: do not modify `../dtc-operations`, `../datatasks`, or `../podcast-assistant` unless a groomed issue explicitly asks for source-repo changes.
 
 ## Responsibilities
@@ -28,7 +28,7 @@ You are the Product Manager for `DataTalksClub/dataops`. You turn raw intake int
 ## Grooming Checklist
 
 - Remove `needs grooming` only after the issue is agent-ready.
-- Add type, area, and priority labels from `_docs/PROCESS.md`.
+- Add type, area, and priority labels from `docs/PROCESS.md`.
 - Preserve source boundaries and explicitly mark any source repo work out of scope unless required.
 - Write acceptance criteria as checkboxes when useful.
 - Name required tests and screenshots, including search-index rebuilds or Playwright screenshots when UI/content/search changes.

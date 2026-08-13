@@ -17,7 +17,6 @@ from content_tools import doc_registry, sop_parse  # noqa: E402
 
 
 PROTECTED_MARKDOWN_GLOBS = [
-    "_docs/**/*.md",
     "docs/**/*.md",
     "templates/**/*.md",
     "content/tasks/templates/**/*.md",
@@ -30,7 +29,6 @@ PROTECTED_MARKDOWN_FILES = [
 ]
 REQUIRED_WORKFLOW_PATHS = [
     ".github/workflows/validate-planning-docs.yml",
-    "_docs/**",
     "docs/**",
     "templates/**",
     "content/tasks/templates/**",
@@ -39,7 +37,7 @@ REQUIRED_WORKFLOW_PATHS = [
     "PORTAL_ANALYSIS.md",
     "README.md",
     "scripts/validate_planning_docs.py",
-    "tests/planning_docs/**",
+    "tests/planningdocs/**",
     "tools/content_tools/content_tools/doc_registry.py",
     "backend/scripts/validate-docs-links.ts",
     "backend/scripts/validate-knowledge-repo.ts",
@@ -247,13 +245,13 @@ def validate_jtbd_reference_set(repo_root: Path) -> list[str]:
 
 
 def validate_process_controls(repo_root: Path) -> list[str]:
-    text = (repo_root / "_docs" / "PROCESS.md").read_text(encoding="utf-8", errors="replace")
+    text = (repo_root / "docs" / "PROCESS.md").read_text(encoding="utf-8", errors="replace")
     normalized = _normalize_text(text)
     violations: list[str] = []
     for control, phrases in PROCESS_CONTROLS.items():
         missing = [phrase for phrase in phrases if phrase not in normalized]
         if missing:
-            violations.append(f"_docs/PROCESS.md: missing lifecycle control '{control}' ({', '.join(missing)})")
+            violations.append(f"docs/PROCESS.md: missing lifecycle control '{control}' ({', '.join(missing)})")
     return violations
 
 

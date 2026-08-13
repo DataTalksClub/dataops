@@ -23,7 +23,7 @@ work.
 The commands here are source-of-truth wrappers or package-local commands from:
 
 - root `Makefile`
-- `_docs/PROCESS.md`
+- `docs/PROCESS.md`
 - root `package.json`
 - `work-engine/package.json`
 - `assistants/podcast/pyproject.toml`
@@ -171,7 +171,7 @@ available to dedicated clients and are validated independently.
 
 | Changed area | Required local checks | Add when relevant |
 | --- | --- | --- |
-| `_docs/**`, `docs/**`, `templates/**`, `content/tasks/templates/**`, `.goal-v1.md`, `PROJECT_PLAN.md`, `PORTAL_ANALYSIS.md`, or `README.md` | Docs link validation; planning docs validation; build the search index when task templates or content metadata are touched. | Docs app tests when registry/search behavior or metadata parsing can be affected. Process Curator review for operational usefulness. |
+| `docs/**`, `docs/**`, `templates/**`, `content/tasks/templates/**`, `.goal-v1.md`, `PROJECT_PLAN.md`, `PORTAL_ANALYSIS.md`, or `README.md` | Docs link validation; planning docs validation; build the search index when task templates or content metadata are touched. | Docs app tests when registry/search behavior or metadata parsing can be affected. Process Curator review for operational usefulness. |
 | `content/**` | Docs link validation; build the search index. | Docs app tests when frontmatter, document IDs, routing, registry behavior, templates, archive rules, or content shape changes. Process Curator review for operational usefulness. |
 | `frontend/**` | Docs app tests for served portal behavior; focused browser/manual check of changed pages. | Screenshots for changed UI flows. Work-engine E2E if the UI crosses `/work/*` operator flows. |
 | `lambda-functions/**` | Docs app tests. | Search-index build for search/content behavior. SAM validation for template, dependency, packaging, or Lambda runtime changes. |

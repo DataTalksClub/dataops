@@ -7,7 +7,6 @@ on:
     paths:
       - "content/**"
       - "templates/dataops-knowledge/**"
-      - "_docs/**"
       - "docs/**"
       - ".goal-v1.md"
       - "PROJECT_PLAN.md"
@@ -20,8 +19,6 @@ on:
     paths:
       - "content/**"
       - "templates/dataops-knowledge/**"
-      - "_docs/**"
-      - "docs/**"
       - ".goal-v1.md"
       - "PROJECT_PLAN.md"
       - "PORTAL_ANALYSIS.md"

@@ -632,7 +632,7 @@ export function createOperationsModel({
       ],
       [
         "Merge Plan",
-        "https://github.com/DataTalksClub/dataops/blob/main/_docs/MERGE_PLAN.md",
+        "https://github.com/DataTalksClub/dataops/blob/main/docs/MERGE_PLAN.md",
       ],
     ].map(([title, href]) => ({
       title,

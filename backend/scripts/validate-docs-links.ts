@@ -25,7 +25,7 @@ import {
 } from '../src/docs/docRegistry';
 import { parseFrontmatter, splitFrontmatter } from '../src/docs/sop';
 
-const PROCESS_MARKDOWN_DIRS = ['_docs', 'docs', 'templates'];
+const PROCESS_MARKDOWN_DIRS = ['docs', 'templates'];
 const PROCESS_MARKDOWN_FILES = ['.goal-v1.md', 'PROJECT_PLAN.md', 'PORTAL_ANALYSIS.md', 'README.md'];
 
 const MARKDOWN_LINK_RE = /(!)?\[[^\]]*\]\(([^)]+)\)/g;
