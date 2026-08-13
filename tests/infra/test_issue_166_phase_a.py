@@ -134,7 +134,7 @@ def test_normal_source_and_push_deploy_cannot_enter_the_destructive_sequence():
     assert protection_at < build_at < deploy_at
     assert workflow.count("- issue-166-phase-a") == 1
     assert workflow.count("- issue-166-phase-b") == 1
-    assert "issue-166-phase-c" not in workflow
+    assert workflow.count("- issue-166-phase-c") == 1
     assert "issue-166-phase-d" not in workflow
 
 
