@@ -151,6 +151,9 @@ export function createRouteState(context) {
   function resetCardPanel() {
     detail.activeCardPanelId = null;
     detail.activeCardPanelData = null;
+    detail.activeCardPanelDraft = null;
+    detail.activeCardPanelConflict = null;
+    detail.activeCardMutationBusy = false;
     detail.activeCardTemplateReviewOpen = false;
     detail.activeCardTemplateBusy = false;
     detail.activeCardTemplateMessage = "";
@@ -183,6 +186,9 @@ export function createRouteState(context) {
     if (!cardId) return;
     detail.activeCardPanelId = cardId;
     detail.activeCardPanelData = null;
+    detail.activeCardPanelDraft = null;
+    detail.activeCardPanelConflict = null;
+    detail.activeCardMutationBusy = false;
     detail.activeCardTemplateReviewOpen = false;
     detail.activeCardTemplateBusy = false;
     detail.activeCardTemplateMessage = "";

@@ -468,6 +468,39 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
     }));
     assert.equal(existing.Item?.description, 'Different task');
 
+    const noncanonical = write({
+      attemptId: 'attempt-noncanonical-collision',
+      proposalId: 'proposal-noncanonical-collision',
+    });
+    await putAttempt(noncanonical);
+    const noncanonicalTaskId = deterministicTodoTaskId(noncanonical);
+    await client.send(new PutCommand({
+      TableName: TABLE_TASKS,
+      Item: {
+        PK: `TASK#${noncanonicalTaskId}`,
+        SK: `TASK#${noncanonicalTaskId}`,
+        id: noncanonicalTaskId,
+        description: noncanonical.description,
+        date: noncanonical.date,
+        status: 'todo',
+        source: 'conversational-agent',
+        assigneeId: noncanonical.actorId,
+        createdBy: noncanonical.actorId,
+        assistantExecutionRef: {
+          executionAttemptId: noncanonical.attemptId,
+          proposalId: noncanonical.proposalId,
+          proposalVersion: noncanonical.proposalVersion,
+          canonicalPayloadHash: noncanonical.canonicalPayloadHash,
+        },
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+      },
+    }));
+    assert.deepEqual(await new ActorTodoWriter(client, () => NOW).write(noncanonical), {
+      outcome: 'failed_safe',
+      reasonCode: 'todo_write_condition_failed',
+    });
+
     const revoked = write({
       attemptId: 'attempt-revoked-race',
       proposalId: 'proposal-revoked-race',

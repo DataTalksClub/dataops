@@ -136,9 +136,13 @@ describe('API — reviewed Card Template updates', () => {
     });
     await updateTask(client, followUp.id, {
       expectedVersion: followUp.version,
-      patch: { waitingFor: 'Synthetic follow-up response' },
+      patch: {
+        waitingFor: 'Synthetic follow-up response',
+        artifactRefs: [{ artifactId: 'artifact-retained-follow-up' }],
+      },
     });
     const linked = await invoke('PUT', `/api/cards/${cardId}`, {
+      expectedVersion: created.card.version + 1,
       cardLinks: [
         { name: 'Registration', url: 'https://example.invalid/private-registration' },
         { name: 'Recording', url: '' },
@@ -201,7 +205,16 @@ describe('API — reviewed Card Template updates', () => {
     assert.equal(archivedFollowUp.id, followUp.id);
     assert.equal(archivedFollowUp.status, 'archived');
     assert.equal(archivedFollowUp.waitingFor, 'Synthetic follow-up response');
+    assert.deepEqual(archivedFollowUp.artifactRefs, [{ artifactId: 'artifact-retained-follow-up' }]);
     assert.equal(archivedFollowUp.templateRetiredReason, 'removed');
+    assert.deepEqual(archivedFollowUp.taskHistory.at(-1), {
+      id: archivedFollowUp.taskHistory.at(-1).id,
+      taskId: followUp.id,
+      cardId,
+      action: 'template-retired',
+      actorId: 'operator-template-review',
+      createdAt: archivedFollowUp.updatedAt,
+    });
     assert.equal(storedByRef.get('publish')?.status, 'todo');
 
     const eventId = applied.auditEvent.id as string;
@@ -227,6 +240,29 @@ describe('API — reviewed Card Template updates', () => {
     assert.equal(retry.statusCode, 200, retry.body);
     assert.equal(parsed(retry).idempotent, true);
     assert.equal((await getCard(client, cardId))?.version, applied.card.version);
+
+    const restoredTemplate = (await updateTemplate(client, target.id, {
+      sourceRevision: 'source-revision-3',
+      taskDefinitions: [
+        ...(target.taskDefinitions || []),
+        { refId: 'follow-up', description: 'Follow up restored event', offsetDays: 2 },
+      ],
+    }))!;
+    const restorePreview = parsed(await invoke('GET', `/api/cards/${cardId}/template-update`)).preview;
+    assert.equal(restorePreview.targetTemplateVersion, restoredTemplate.version);
+    const restoreResponse = await invoke('POST', `/api/cards/${cardId}/template-update`, {
+      previewToken: restorePreview.previewToken,
+    });
+    assert.equal(restoreResponse.statusCode, 200, restoreResponse.body);
+    const restoredFollowUp = (await getTask(client, followUp.id))!;
+    assert.equal(restoredFollowUp.status, 'todo');
+    assert.equal(restoredFollowUp.templateRetiredReason, undefined);
+    assert.equal(restoredFollowUp.waitingFor, undefined);
+    assert.equal(restoredFollowUp.followUpAt, undefined);
+    assert.equal(restoredFollowUp.followUpChannel, undefined);
+    assert.equal(restoredFollowUp.taskHistory.at(-1)?.action, 'template-restored');
+    assert.equal(restoredFollowUp.taskHistory.at(-1)?.actorId, 'operator-template-review');
+    assert.deepEqual(restoredFollowUp.artifactRefs, [{ artifactId: 'artifact-retained-follow-up' }]);
   });
 
   it('returns a no-write conflict for stale previews and succeeds after reload', async () => {
@@ -328,35 +364,30 @@ describe('API — reviewed Card Template updates', () => {
     assert.equal(parsed(retried).applied, true);
   });
 
-  it('uses the reviewed flow to establish provenance for legacy Card/Task rows', async () => {
+  it('rejects Template rows without canonical provenance instead of baselining them', async () => {
     const source = await createSourceTemplate(client);
     const card = await createCard(client, {
-      title: 'Legacy synthetic Card',
+      title: 'Invalid synthetic Card',
       anchorDate: '2026-04-15',
       templateId: source.id,
       status: 'active',
     });
     const task = await createTask(client, {
-      description: 'Legacy operator wording',
+      description: 'Invalid operator wording',
       date: '2026-04-08',
       status: 'todo',
       source: 'template',
       cardId: card.id,
       templateId: source.id,
       templateTaskRef: 'announce',
-      comment: 'Legacy note survives',
+      comment: 'No baseline machinery',
     });
 
-    const preview = parsed(await invoke('GET', `/api/cards/${card.id}/template-update`)).preview;
-    assert.equal(preview.state, 'baseline-required');
-    const response = await invoke('POST', `/api/cards/${card.id}/template-update`, {
-      previewToken: preview.previewToken,
-    });
-    assert.equal(response.statusCode, 200, response.body);
-    assert.equal(parsed(response).card.templateVersion, source.version);
-    const stored = await getTask(client, task.id);
-    assert.equal(stored?.templateVersion, source.version);
-    assert.equal(stored?.comment, 'Legacy note survives');
+    const response = await invoke('GET', `/api/cards/${card.id}/template-update`);
+    assert.equal(response.statusCode, 422, response.body);
+    assert.equal(parsed(response).code, 'invalid-template-state');
+    assert.match(parsed(response).error, /no canonical Template provenance/);
+    assert.equal((await getTask(client, task.id))?.comment, 'No baseline machinery');
   });
 
   it('rejects invalid selections and Cards without a Template', async () => {

@@ -1,7 +1,7 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { createAssistantJob, appendAssistantJobEvent } from '../db/assistantJobs';
-import { getCard, updateCard } from '../db/cards';
+import { getCard, updateCardAdditive } from '../db/cards';
 import {
   createIntakeItem,
   findIntakeBySourceMessage,
@@ -369,7 +369,9 @@ async function mirrorIntakeRef(client: DynamoDBDocumentClient, item: IntakeItem)
   }
   for (const cardId of item.cardIds || []) {
     const card = await getCard(client, cardId);
-    if (card) await updateCard(client, cardId, { intakeRefs: mergeIntakeRefs(card.intakeRefs, ref) });
+    if (card) await updateCardAdditive(client, card, (currentCard) => ({
+      intakeRefs: mergeIntakeRefs(currentCard.intakeRefs, ref),
+    }));
   }
 }
 
@@ -509,20 +511,26 @@ async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, b
   if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
   if (body.link !== undefined) taskData.link = sanitizeUrl(body.link, 'link');
   if (item.artifactRefs.length > 0) taskData.artifactRefs = item.artifactRefs;
-  let task = await createTask(client, taskData);
-  if (task.status === 'waiting') {
-    task = await updateTask(client, task.id, {
-      expectedVersion: task.version,
-      patch: {},
-      historyEvents: [makeTaskHistoryEvent(task, 'waiting-started', {
+  const taskId = crypto.randomUUID();
+  taskData.id = taskId;
+  const initialTask = {
+    id: taskId,
+    ...taskData,
+  } as unknown as Task;
+  const initialHistory = taskData.status === 'waiting'
+    ? [makeTaskHistoryEvent(initialTask, 'waiting-started', {
         actorId,
-        channel: task.followUpChannel,
-        waitingFor: task.waitingFor,
-        followUpAt: task.followUpAt,
-        note: task.comment || undefined,
-      })],
-    });
-  }
+        channel: initialTask.followUpChannel,
+        waitingFor: initialTask.waitingFor,
+        followUpAt: initialTask.followUpAt,
+        note: initialTask.comment || undefined,
+      })]
+    : [];
+  const task = await createTask(client, taskData, {
+    historyEvents: initialHistory,
+    actorId,
+    triggerKind: taskData.status === 'waiting' ? 'intake-waiting-task-created' : 'intake-task-created',
+  });
   const updated = await updateIntakeItem(client, item.id, {
     taskIds: mergeStrings(item.taskIds, [task.id]),
     cardIds: task.cardId ? mergeStrings(item.cardIds, [task.cardId]) : item.cardIds,
@@ -836,7 +844,13 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
         }
         if (cardId) {
           const card = await getCard(client, cardId);
-          if (card) await updateCard(client, cardId, { assistantJobRefs: mergeAssistantJobRefs(card.assistantJobRefs, { assistantJobId: job.id, assistantType: job.assistantType, status: job.status }) });
+          if (card) await updateCardAdditive(client, card, (currentCard) => ({
+            assistantJobRefs: mergeAssistantJobRefs(currentCard.assistantJobRefs, {
+              assistantJobId: job.id,
+              assistantType: job.assistantType,
+              status: job.status,
+            }),
+          }));
         }
         updates.assistantJobIds = mergeStrings(item.assistantJobIds, [job.id]);
         updates.assistantReadiness = { ...readiness, status: body.submit === true ? 'submitted' : readiness.status };

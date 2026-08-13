@@ -16,6 +16,10 @@ import {
   applyCardTemplateUpdate,
   CardTemplateUpdateConflictError,
 } from '../src/db/cardTemplateUpdates';
+import {
+  disableLocalTransactionEmulation,
+  enableLocalTransactionEmulation,
+} from '../src/db/client';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 
@@ -60,7 +64,10 @@ function cardFrom(source: Template): Card {
       { name: 'Recording', url: '' },
       { name: 'Operator notes', url: 'https://example.invalid/notes' },
     ],
+    stage: 'preparation',
     status: 'active',
+    taskCount: 3,
+    openTaskCount: 3,
     createdAt: CREATED,
     updatedAt: CREATED,
   };
@@ -154,7 +161,7 @@ describe('Card Template update planning', () => {
     assert.equal(preview.taskChanges.length, 0);
   });
 
-  it('treats missing provenance as a reviewed baseline instead of current', () => {
+  it('rejects missing provenance instead of offering a baseline compatibility state', () => {
     const source = template(1);
     const card = cardFrom(source);
     delete card.templateVersion;
@@ -167,10 +174,10 @@ describe('Card Template update planning', () => {
       delete task.templateDefinitionSnapshot;
     }
 
-    const preview = buildCardTemplateUpdatePlan(card, tasks, source).preview;
-    assert.equal(preview.state, 'baseline-required');
-    assert.equal(preview.sourceTemplateVersion, null);
-    assert.ok(preview.previewToken.match(/^[a-f0-9]{64}$/));
+    assert.throws(
+      () => buildCardTemplateUpdatePlan(card, tasks, source),
+      /Card .* has no canonical Template provenance/,
+    );
   });
 
   it('preserves populated and operator-added Card links while applying link definitions', () => {
@@ -237,8 +244,7 @@ describe('Card Template update planning', () => {
       },
     } as any;
 
-    const previous = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'test';
+    enableLocalTransactionEmulation();
     try {
       await assert.rejects(
         () => applyCardTemplateUpdate(
@@ -252,7 +258,7 @@ describe('Card Template update planning', () => {
         CardTemplateUpdateConflictError,
       );
     } finally {
-      process.env.NODE_ENV = previous;
+      disableLocalTransactionEmulation();
     }
   });
 
@@ -275,15 +281,14 @@ describe('Card Template update planning', () => {
         throw new Error('Unexpected command');
       },
     } as any;
-    const previous = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
+    disableLocalTransactionEmulation();
     try {
       const result = await applyCardTemplateUpdate(
         fake, card, tasks, target, token, 'operator-transaction-proof',
       );
       assert.equal(result.applied, true);
     } finally {
-      process.env.NODE_ENV = previous;
+      disableLocalTransactionEmulation();
     }
 
     assert.equal(commands.length, 2);

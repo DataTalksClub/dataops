@@ -6,7 +6,7 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
 import { getIntakeItem } from '../src/db/intake';
-import { getTask, createTask } from '../src/db/tasks';
+import { getTask, createTask, listTasksByCard } from '../src/db/tasks';
 import { createUser } from '../src/db/users';
 
 describe('intake API', () => {
@@ -284,6 +284,43 @@ describe('intake API', () => {
     const attachedTask = await getTask(client, task.id);
     assert.ok(attachedTask?.intakeRefs?.some((ref) => ref.intakeItemId === attachSource.id));
     assert.ok(attachedTask?.comment?.includes('Attach source context'));
+  });
+
+  it('rolls back the waiting Task, Card aggregate, and initial history together on failure', async () => {
+    const client = await getClient();
+    const card = await createCard(client, {
+      title: 'Atomic intake conversion',
+      anchorDate: '2026-07-12',
+    });
+    const created = JSON.parse((await request('POST', '/api/intake', {
+      title: 'Waiting source that must stay atomic',
+      note: 'The source remains blocked if Task creation fails',
+      cardIds: [card.id],
+    })).body).item;
+    await request('POST', `/api/intake/${created.id}/block`, {
+      reason: 'Waiting for a reply',
+      waitingFor: 'Requester',
+      followUpAt: '2026-07-14',
+    });
+    const cardBefore = await getCard(client, card.id);
+
+    process.env.TASK_CARD_LIFECYCLE_TEST_FAIL_AFTER = '2';
+    try {
+      const failed = await request('POST', `/api/intake/${created.id}/convert-task`, {
+        date: '2026-07-12',
+        cardId: card.id,
+      });
+      assert.strictEqual(failed.statusCode, 400, failed.body);
+      assert.match(JSON.parse(failed.body).error, /Injected Task\/Card lifecycle transaction failure/);
+    } finally {
+      delete process.env.TASK_CARD_LIFECYCLE_TEST_FAIL_AFTER;
+    }
+
+    assert.deepStrictEqual(await getCard(client, card.id), cardBefore);
+    assert.deepStrictEqual(await listTasksByCard(client, card.id), []);
+    const intakeAfter = await getIntakeItem(client, created.id);
+    assert.strictEqual(intakeAfter?.status, 'blocked');
+    assert.deepStrictEqual(intakeAfter?.taskIds, []);
   });
 
   it('records standalone blocked intake follow-up outcomes', async () => {

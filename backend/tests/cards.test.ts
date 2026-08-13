@@ -1,209 +1,213 @@
-import { describe, it, before, after } from 'node:test';
-import assert from 'node:assert';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { after, before, describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createTables, deleteTables } from '../scripts/local-dynamodb';
+import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import {
+  CardVersionConflictError,
   createCard,
   getCard,
-  updateCard,
-  deleteCard,
   listCards,
+  updateCard,
+  updateCardAdditive,
 } from '../src/db/cards';
+import { TABLE_CARDS } from '../src/db/tableNames';
 
 describe('Cards data layer', () => {
   let client: DynamoDBDocumentClient;
-  let port: number;
 
   before(async () => {
-    port = await startLocal();
+    const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
   });
 
-  after(async () => {
-    await stopLocal();
-  });
+  after(stopLocal);
 
-  it('createCard returns a card with id, createdAt, updatedAt', async () => {
+  it('creates the strict canonical empty Card shape', async () => {
     const card = await createCard(client, {
-      title: 'DataOps v2',
-      description: 'Next version of the app',
+      title: 'DataOps',
+      anchorDate: '2026-09-01',
+      description: 'Operations work',
+      references: [{ name: 'Guide', url: 'https://example.com/guide' }],
+      cardLinks: [{ name: 'Event', url: '' }],
+      emoji: '📋',
+      tags: ['operations'],
     });
-
     assert.ok(card.id);
-    assert.strictEqual(card.version, 1);
-    assert.ok(card.createdAt);
-    assert.ok(card.updatedAt);
-    assert.strictEqual(card.title, 'DataOps v2');
-    assert.strictEqual(card.description, 'Next version of the app');
-    assert.strictEqual((card as Record<string, unknown>).PK, undefined);
-    assert.strictEqual((card as Record<string, unknown>).SK, undefined);
+    assert.deepEqual(
+      {
+        version: card.version,
+        taskCount: card.taskCount,
+        openTaskCount: card.openTaskCount,
+        stage: card.stage,
+        status: card.status,
+      },
+      { version: 1, taskCount: 0, openTaskCount: 0, stage: 'preparation', status: 'active' },
+    );
+    assert.equal(card.completedAt, undefined);
+    assert.deepEqual(card.references, [{ name: 'Guide', url: 'https://example.com/guide' }]);
+    assert.deepEqual(card.cardLinks, [{ name: 'Event', url: '' }]);
+    assert.equal((card as unknown as Record<string, unknown>).PK, undefined);
   });
 
-  it('getCard returns the card by id', async () => {
-    const created = await createCard(client, { title: 'Fetch card' });
-    const fetched = await getCard(client, created.id);
-
-    assert.ok(fetched);
-    assert.strictEqual(fetched.id, created.id);
-    assert.strictEqual(fetched.title, 'Fetch card');
+  it('reads, lists, and returns null for missing Cards', async () => {
+    const created = await createCard(client, { title: 'Fetch', anchorDate: '2026-09-02' });
+    assert.equal((await getCard(client, created.id))?.title, 'Fetch');
+    assert.equal(await getCard(client, 'missing'), null);
+    assert.ok((await listCards(client)).some(({ id }) => id === created.id));
   });
 
-  it('getCard returns null for non-existent id', async () => {
-    const result = await getCard(client, 'does-not-exist');
-    assert.strictEqual(result, null);
-  });
-
-  it('updateCard performs partial update and refreshes updatedAt', async () => {
-    const created = await createCard(client, {
-      title: 'Original title',
-      status: 'active',
-    });
-
-    await new Promise((r) => setTimeout(r, 10));
-
+  it('updates caller-owned fields with an exact version condition', async () => {
+    const created = await createCard(client, { title: 'Original', anchorDate: '2026-09-03' });
     const updated = await updateCard(client, created.id, {
-      title: 'New title',
+      expectedVersion: created.version,
+      patch: {
+        title: 'Updated',
+        stage: 'announced',
+        references: [{ name: 'Runbook', url: 'https://example.com/runbook' }],
+        cardLinks: [{ name: 'Event', url: 'https://example.com/event' }],
+        emoji: '🎙️',
+        tags: ['podcast'],
+      },
     });
-
-    assert.strictEqual(updated!.title, 'New title');
-    assert.strictEqual(updated!.status, 'active');
-    assert.strictEqual(updated!.version, 2);
-    assert.ok(updated!.updatedAt > created.updatedAt);
+    assert.equal(updated.version, 2);
+    assert.equal(updated.title, 'Updated');
+    assert.equal(updated.stage, 'announced');
+    assert.deepEqual(updated.tags, ['podcast']);
   });
 
-  it('deleteCard removes the card', async () => {
-    const created = await createCard(client, { title: 'Delete me' });
-    await deleteCard(client, created.id);
-    const result = await getCard(client, created.id);
-    assert.strictEqual(result, null);
+  it('returns one winner and rejects a stale direct Card mutation', async () => {
+    const created = await createCard(client, { title: 'Race', anchorDate: '2026-09-04' });
+    const results = await Promise.allSettled([
+      updateCard(client, created.id, { expectedVersion: 1, patch: { title: 'First' } }),
+      updateCard(client, created.id, { expectedVersion: 1, patch: { title: 'Second' } }),
+    ]);
+    assert.equal(results.filter(({ status }) => status === 'fulfilled').length, 1);
+    const rejected = results.find(({ status }) => status === 'rejected') as PromiseRejectedResult;
+    assert.ok(rejected.reason instanceof CardVersionConflictError);
   });
 
-  it('listCards returns all cards', async () => {
-    const b1 = await createCard(client, { title: 'List test 1' });
-    const b2 = await createCard(client, { title: 'List test 2' });
-
-    const cards = await listCards(client);
-    const ids = cards.map((b) => b.id);
-
-    assert.ok(ids.includes(b1.id), 'should contain first card');
-    assert.ok(ids.includes(b2.id), 'should contain second card');
-    assert.ok(cards.length >= 2, 'should have at least 2 cards');
-  });
-
-  // ---- New field tests ----
-
-  it('createCard stores references and cardLinks', async () => {
-    const card = await createCard(client, {
-      title: 'Links test',
-      anchorDate: '2026-05-01',
-      references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-      cardLinks: [{ name: 'Luma', url: '' }],
-    });
-
-    assert.ok(card.id);
-    const fetched = await getCard(client, card.id);
-    assert.ok(fetched);
-    assert.deepStrictEqual(fetched.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-    assert.deepStrictEqual(fetched.cardLinks, [{ name: 'Luma', url: '' }]);
-  });
-
-  it('createCard stores emoji, tags, stage, status', async () => {
-    const card = await createCard(client, {
-      title: 'Full fields test',
-      anchorDate: '2026-06-01',
-      emoji: '📰',
-      tags: ['newsletter', 'weekly'],
-      stage: 'preparation',
-      status: 'active',
-    });
-
-    const fetched = await getCard(client, card.id);
-    assert.ok(fetched);
-    assert.strictEqual(fetched.emoji, '📰');
-    assert.deepStrictEqual(fetched.tags, ['newsletter', 'weekly']);
-    assert.strictEqual(fetched.stage, 'preparation');
-    assert.strictEqual(fetched.status, 'active');
-  });
-
-  it('updateCard updates stage', async () => {
+  it('bounds additive remerge to one strongly-consistent retry', async () => {
     const created = await createCard(client, {
-      title: 'Stage test',
-      anchorDate: '2026-06-01',
-      stage: 'preparation',
+      title: 'Additive',
+      anchorDate: '2026-09-05',
+      references: [],
     });
-
-    const updated = await updateCard(client, created.id, {
-      stage: 'announced',
-    });
-
-    assert.strictEqual(updated!.stage, 'announced');
-    assert.strictEqual(updated!.title, 'Stage test');
+    await updateCard(client, created.id, { expectedVersion: 1, patch: { tags: ['current'] } });
+    const updated = await updateCardAdditive(client, created, (current) => ({
+      references: [...(current.references || []), { name: `v${current.version}`, url: 'https://example.com' }],
+    }));
+    assert.equal(updated.version, 3);
+    assert.deepEqual(updated.tags, ['current']);
+    assert.deepEqual(updated.references, [{ name: 'v2', url: 'https://example.com' }]);
   });
 
-  it('updateCard updates status to archived', async () => {
-    const created = await createCard(client, {
-      title: 'Archive test',
-      anchorDate: '2026-06-01',
-      status: 'active',
-    });
+  it('rejects lifecycle fields and completed stages from direct updates', async () => {
+    const created = await createCard(client, { title: 'System fields', anchorDate: '2026-09-06' });
+    await assert.rejects(
+      updateCard(client, created.id, {
+        expectedVersion: 1,
+        patch: { status: 'archived' } as never,
+      }),
+      /status is not an allowed Card patch field/,
+    );
+    await assert.rejects(
+      updateCard(client, created.id, { expectedVersion: 1, patch: { stage: 'done' } }),
+      /stage must be preparation, announced, or after-event/,
+    );
 
-    const updated = await updateCard(client, created.id, {
-      status: 'archived',
-    });
-
-    assert.strictEqual(updated!.status, 'archived');
+    const archivedId = crypto.randomUUID();
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: {
+        PK: `CARD#${archivedId}`,
+        SK: `CARD#${archivedId}`,
+        id: archivedId,
+        version: 2,
+        title: 'Completed Card',
+        status: 'archived',
+        stage: 'done',
+        taskCount: 1,
+        openTaskCount: 0,
+        completedAt: '2026-09-06T12:00:00.000Z',
+        completedBy: 'system:task-lifecycle',
+        activeStageBeforeCompletion: 'announced',
+      },
+    }));
+    await assert.rejects(
+      updateCard(client, archivedId, { expectedVersion: 2, patch: { stage: 'preparation' } }),
+      CardVersionConflictError,
+    );
+    assert.strictEqual((await getCard(client, archivedId))?.stage, 'done');
   });
 
-  it('updateCard updates references and cardLinks', async () => {
-    const created = await createCard(client, {
-      title: 'Update links test',
-      anchorDate: '2026-06-01',
-    });
+  it('fails loudly on non-canonical persisted Card rows', async () => {
+    const id = crypto.randomUUID();
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: {
+        PK: `CARD#${id}`,
+        SK: `CARD#${id}`,
+        id,
+        title: 'Versionless',
+        status: 'active',
+        stage: 'preparation',
+        taskCount: 0,
+        openTaskCount: 0,
+      },
+    }));
+    await assert.rejects(getCard(client, id), /not in the canonical lifecycle shape/);
 
-    const updated = await updateCard(client, created.id, {
-      references: [{ name: 'Proc doc', url: 'https://docs.google.com/proc' }],
-      cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }],
-    });
+    const stringId = crypto.randomUUID();
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: {
+        PK: `CARD#${stringId}`,
+        SK: `CARD#${stringId}`,
+        id: stringId,
+        version: '1',
+        title: 'Numeric strings',
+        status: 'active',
+        stage: 'preparation',
+        taskCount: '0',
+        openTaskCount: '0',
+      },
+    }));
+    await assert.rejects(getCard(client, stringId), /not in the canonical lifecycle shape/);
 
-    assert.deepStrictEqual(updated!.references, [{ name: 'Proc doc', url: 'https://docs.google.com/proc' }]);
-    assert.deepStrictEqual(updated!.cardLinks, [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }]);
-  });
-
-  it('updateCard updates emoji and tags', async () => {
-    const created = await createCard(client, {
-      title: 'Emoji tags test',
-      anchorDate: '2026-06-01',
-    });
-
-    const updated = await updateCard(client, created.id, {
-      emoji: '🎙️',
-      tags: ['podcast'],
-    });
-
-    assert.strictEqual(updated!.emoji, '🎙️');
-    assert.deepStrictEqual(updated!.tags, ['podcast']);
-  });
-
-  it('existing cards without new fields still work', async () => {
-    // Create a card with only basic fields (simulating old data)
-    const card = await createCard(client, {
-      title: 'Old card',
-      anchorDate: '2026-01-01',
-    });
-
-    const fetched = await getCard(client, card.id);
-    assert.ok(fetched);
-    assert.strictEqual(fetched.title, 'Old card');
-    // New fields are simply absent
-    assert.strictEqual(fetched.emoji, undefined);
-    assert.strictEqual(fetched.tags, undefined);
-    assert.strictEqual(fetched.stage, undefined);
-    assert.strictEqual(fetched.status, undefined);
-    assert.strictEqual(fetched.references, undefined);
-    assert.strictEqual(fetched.cardLinks, undefined);
+    const impossibleAggregates = [
+      {
+        title: 'Active with no open Tasks',
+        status: 'active', stage: 'preparation', taskCount: 1, openTaskCount: 0,
+      },
+      {
+        title: 'Archived without Tasks',
+        status: 'archived', stage: 'done', taskCount: 0, openTaskCount: 0,
+        completedAt: '2026-09-06T12:00:00.000Z', completedBy: 'system:task-lifecycle',
+        activeStageBeforeCompletion: 'preparation',
+      },
+      {
+        title: 'Archived with open Tasks',
+        status: 'archived', stage: 'done', taskCount: 2, openTaskCount: 1,
+        completedAt: '2026-09-06T12:00:00.000Z', completedBy: 'system:task-lifecycle',
+        activeStageBeforeCompletion: 'preparation',
+      },
+    ];
+    for (const malformed of impossibleAggregates) {
+      const malformedId = crypto.randomUUID();
+      await client.send(new PutCommand({
+        TableName: TABLE_CARDS,
+        Item: {
+          PK: `CARD#${malformedId}`,
+          SK: `CARD#${malformedId}`,
+          id: malformedId,
+          version: 1,
+          ...malformed,
+        },
+      }));
+      await assert.rejects(getCard(client, malformedId), /not in the canonical lifecycle shape/);
+    }
   });
 });

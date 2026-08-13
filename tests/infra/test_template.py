@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import shutil
@@ -153,6 +152,17 @@ def _template_with_defaults(template: str, values: dict[str, str]) -> str:
         replacement = "\n".join(lines)
         updated = updated.replace(parameter, replacement, 1)
     return updated
+
+
+def _assert_only_phase_d_task_smoke_reads_portal_secret(workflow: str) -> None:
+    command = "aws secretsmanager get-secret-value"
+    smoke = "- name: Authenticated read-only Task smoke after canonical seeds"
+    runtime_seed = "- name: Seed runtime users, workflow templates, and recurring configs"
+    assert workflow.count(command) == 1
+    assert workflow.index(smoke) < workflow.index(command)
+    assert workflow.index("- name: Deploy DataOps v1 stack") < workflow.index(command)
+    assert workflow.index(runtime_seed) < workflow.index(command)
+    assert "unset portal_secret" in workflow[workflow.index(smoke) :]
 
 
 def test_dataops_execution_tables_have_retention_pitr_and_tags():
@@ -667,7 +677,7 @@ def test_rollout_exposes_only_six_behavior_controls_with_all_off_defaults():
     ]:
         assert workflow.count(f"ParameterValue=${environment_name}") == 1
     assert "aws lambda update-function-configuration" not in workflow
-    assert "aws secretsmanager get-secret-value" not in workflow
+    _assert_only_phase_d_task_smoke_reads_portal_secret(workflow)
 
 
 def test_fresh_sam_transforms_cover_every_alarm_controlling_switch_state():
@@ -822,7 +832,7 @@ def test_conversational_telegram_media_is_disabled_and_uses_exact_optional_secre
     assert "ParameterKey=ZaiVisionApiKeySecretArn" in workflow
     assert "ParameterKey=ZaiVisionModel,ParameterValue=$ZAI_VISION_MODEL" in workflow
     assert "ParameterKey=ZaiVisionBaseUrl,ParameterValue=$ZAI_VISION_BASE_URL" in workflow
-    assert "aws secretsmanager get-secret-value" not in workflow
+    _assert_only_phase_d_task_smoke_reads_portal_secret(workflow)
 
 
 def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
@@ -858,7 +868,7 @@ def test_conversational_zai_secret_is_optional_disabled_and_exactly_scoped():
     assert "ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN: ${{ vars.ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN }}" in workflow
     assert "Telegram ingress cannot be enabled without its z.ai secret ARN" in workflow
     assert "ParameterKey=ZaiConversationalApiKeySecretArn,ParameterValue=$ZAI_CONVERSATIONAL_API_KEY_SECRET_ARN" in workflow
-    assert "aws secretsmanager get-secret-value" not in workflow
+    _assert_only_phase_d_task_smoke_reads_portal_secret(workflow)
 
 
 def test_dataops_table_outputs_are_available_for_backend_env_wiring():
@@ -1102,19 +1112,37 @@ def test_dataops_export_archive_bucket_is_private_retained_and_versioned():
 
 def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    deploy = workflow.split("\n  deploy:\n", 1)[1]
 
-    assert "Seed runtime users and recurring configs" in workflow
+    seed = "Seed runtime users, workflow templates, and recurring configs"
+    assert seed in workflow
     assert "DataOpsTasksTableName" in workflow
-    assert "DataOpsUsersTableName" in workflow
-    assert "scripts/seed-users.ts" in workflow
-    assert "scripts/seed-recurring.ts" in workflow
-    assert "aws lambda invoke" in workflow
-    assert '"dataopsAction":"sync-templates"' in workflow
-    assert ".total == 11" in workflow
-    assert workflow.index("scripts/seed-users.ts") < workflow.index("aws lambda invoke")
-    assert workflow.index("aws lambda invoke") < workflow.index("scripts/seed-recurring.ts")
+    assert deploy.count("aws lambda invoke") == 1
+    assert '"source":"dataops.deploy","detail-type":"Runtime Seed"' in deploy
+    assert '"dataopsAction":"sync-runtime-seeds"' in deploy
+    assert '"dataopsAction":"sync-templates"' not in deploy
+    assert "scripts/seed-users.ts" not in deploy
+    assert "scripts/seed-recurring.ts" not in deploy
     assert "scripts/seed-templates.ts" not in workflow
-    assert "secretsmanager get-secret-value" not in workflow
+    assert 'seed_response="$RUNNER_TEMP/issue-166-phase-d-runtime-seeds.json"' in deploy
+    assert "FunctionError" in deploy
+    assert 'if [ "$seed_error" != "None" ]' in deploy
+    for exact_total in (
+        "$body.users.processed == 3",
+        "$body.users.created + $body.users.updated + $body.users.unchanged == 3",
+        "$body.templates.total == 11",
+        "$body.templates.created + $body.templates.updated + $body.templates.unchanged == 11",
+        "$body.recurring.total == 7",
+        "$body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 7",
+        "$body.recurring.repairedTasks",
+    ):
+        assert exact_total in deploy
+    assert workflow.index("Prove final steady state before seeds and read-only smoke") < workflow.index(seed)
+    assert workflow.index(seed) < workflow.index("Authenticated read-only Task smoke after canonical seeds")
+    assert "npm exec" not in deploy
+    assert "npx" not in deploy
+    assert "npm ci" not in deploy
+    _assert_only_phase_d_task_smoke_reads_portal_secret(workflow)
     assert "actions/checkout" in workflow
     assert "repository: DataTalksClub/dataops-knowledge" not in workflow
     assert "Smoke test deployed single-origin backend" in workflow

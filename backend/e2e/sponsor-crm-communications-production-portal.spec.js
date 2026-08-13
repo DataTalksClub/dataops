@@ -438,10 +438,28 @@ test.describe('production sponsor CRM communications portal', () => {
     await adminPage.locator('[data-communication-review-dialog]').screenshot({
       path: '.tmp/sponsor-communications-admin-exact-preview-mobile.png',
     });
+    const queuedCards = adminPage.locator('[data-crm-communications] [data-communication-state="queued"]');
+    const queuedBeforeApproval = await queuedCards.count();
+    const mutationPaths = [];
+    const recordMutation = (request) => {
+      if (request.method() !== 'GET') mutationPaths.push(new URL(request.url()).pathname);
+    };
+    adminPage.on('request', recordMutation);
+    const approvalResponse = adminPage.waitForResponse((response) =>
+      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/approve'),
+    );
     await adminPage.getByRole('button', { name: 'Approve and queue' }).click();
-    await expect(adminPage.locator('[data-crm-message]')).toContainText('Approved immutable message queued as attempt-new');
-    await expect(adminPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
-    expect(attempts.filter((item) => item.id === 'attempt-new')).toHaveLength(1);
+    expect((await approvalResponse).status()).toBe(202);
+    adminPage.off('request', recordMutation);
+    expect(mutationPaths).toHaveLength(1);
+    expect(mutationPaths[0]).toMatch(/\/approve$/);
+    await expect(queuedCards).toHaveCount(queuedBeforeApproval + 1);
+    const claimedDraft = adminPage.locator('[data-crm-communications] [data-communication-state="claimed"]');
+    await expect(claimedDraft).toContainText('Draft version 1');
+    const queuedAttempts = attempts.filter((item) => item.status === 'queued');
+    expect(queuedAttempts).toHaveLength(2);
+    expect(queuedAttempts.filter((item) => item.id !== 'attempt-queued-control')).toHaveLength(1);
+    expect(drafts.find((item) => item.version === 1).claimed).toBe(true);
     expect(presentationCalls.admin).toBeGreaterThanOrEqual(5);
 
     await operatorContext.close();

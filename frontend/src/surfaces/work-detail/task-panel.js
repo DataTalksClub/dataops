@@ -1,3 +1,5 @@
+import { isCanonicalWorkTask } from "../../core/workspace.js";
+
 export function createTaskPanel(context) {
   const {
     buildTaskProcessQualityFindings,
@@ -78,6 +80,9 @@ export function createTaskPanel(context) {
         return;
       const fetched =
         payload && typeof payload === "object" && payload.id ? payload : null;
+      if (fetched && !isCanonicalWorkTask(fetched)) {
+        throw new Error("Task payload is not in the canonical versioned shape");
+      }
       if (
         options.expectedCardId &&
         fetched &&
@@ -142,7 +147,10 @@ export function createTaskPanel(context) {
     taskPanelBody.replaceChildren();
     if (!task) return;
 
-    const status = String(task.status || "todo").toLowerCase();
+    if (!isCanonicalWorkTask(task)) {
+      throw new Error("Task payload is not in the canonical versioned shape");
+    }
+    const status = task.status;
     const today = todayIsoDate();
 
     if (detail.activeTaskPanelConflict && detail.activeTaskPanelDraft) {
@@ -155,10 +163,15 @@ export function createTaskPanel(context) {
       recovery.tabIndex = -1;
 
       const heading = document.createElement("strong");
-      heading.textContent =
-        "This Task changed elsewhere. Review the latest Task or retry your change.";
+      heading.textContent = conflict.code === "card_lifecycle_conflict"
+        ? "This Card or its Tasks changed elsewhere. Review the latest work or retry your change."
+        : "This Task changed elsewhere. Review the latest Task or retry your change.";
       const latestState = document.createElement("p");
-      latestState.textContent = `Latest server state: version ${latest.version}, status ${latest.status || "todo"}.`;
+      latestState.textContent = `Latest server state: version ${latest.version}, status ${latest.status}.`;
+      const currentCard = conflict.currentCard || conflict.currentCards?.[0];
+      if (currentCard) {
+        latestState.textContent += ` Card version ${currentCard.version}, ${labelizeWorkValue(currentCard.stage)}.`;
+      }
       const retained = document.createElement("p");
       retained.className = "task-conflict-draft";
       retained.textContent = `Your retained change: ${detail.activeTaskPanelDraft.label}`;
@@ -317,6 +330,10 @@ export function createTaskPanel(context) {
       );
       reopen.classList.add("is-primary");
       actions.append(reopen);
+    } else if (status === "archived") {
+      const retired = document.createElement("p");
+      retired.textContent = "Retired Tasks can only be restored by a reviewed Template update.";
+      actions.append(retired);
     } else if (status === "waiting") {
       const response = createTaskActionButton("Response received", () =>
         recordTaskResponseReceived(task.id),
@@ -401,6 +418,8 @@ export function createTaskPanel(context) {
         "wait-resolved": "Wait resolved",
         completed: "Task completed",
         reopened: "Task reopened",
+        "template-retired": "Task retired by Template update",
+        "template-restored": "Task restored by Template update",
       };
       const label =
         labels[event.action] ||

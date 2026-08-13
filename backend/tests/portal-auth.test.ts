@@ -405,6 +405,7 @@ describe('Portal broker authentication', () => {
         httpMethod: 'PUT',
         path: `/api/cards/${createdCard.id}`,
         body: JSON.stringify({
+          expectedVersion: createdCard.version,
           stage: 'announced',
           cardLinks: [{ name: 'Podcast doc', url: 'https://example.com/doc' }],
           references: [{ name: 'Guest notes', url: 'https://example.com/notes' }],

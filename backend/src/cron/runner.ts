@@ -1,7 +1,7 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { listTemplates, instantiateTemplate } from '../db/templates';
-import { createCard, listCards } from '../db/cards';
+import { createCardFromTemplate, listTemplates, instantiateTemplate } from '../db/templates';
+import { listCards } from '../db/cards';
 import { createNotification } from '../db/notifications';
 import { generateRecurringTasks, cronMatchesDate } from '../db/recurring';
 import type { Template, Card } from '../types';
@@ -196,10 +196,7 @@ async function runCron(
         }));
       }
 
-      const card = await createCard(client, cardData);
-
-      // 7. Instantiate template tasks
-      await instantiateTemplate(client, template.id, card.id, anchorDate);
+      const { card } = await createCardFromTemplate(client, cardData, template, anchorDate);
 
       // 8. Create notification (targeted to template's defaultAssigneeId if set)
       const notificationData: Record<string, unknown> = {

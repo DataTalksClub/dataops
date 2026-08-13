@@ -9,7 +9,13 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_TASKS } from './tableNames';
-import type { Task } from '../types';
+import type { Task, TaskHistoryEvent } from '../types';
+import {
+  CardLifecycleConflictError,
+  TaskCardTransactionConflictError,
+  executeTaskCardTransaction,
+  isOpenStatus,
+} from './taskCardLifecycle';
 
 type TaskMutableField = Exclude<
   keyof Task,
@@ -24,6 +30,10 @@ interface TaskMutation {
   expectedVersion: number;
   patch: TaskPatch;
   historyEvents?: Task['taskHistory'];
+  actorId?: string;
+  triggerKind?: string;
+  /** Strong snapshot already validated by the direct API caller. */
+  currentTask?: Task;
 }
 
 type AdditiveTaskPatch = (currentTask: Task) => TaskPatch;
@@ -56,11 +66,21 @@ function cleanItem(item: Record<string, unknown> | undefined): Task | null {
  * Create a new task. Generates a UUID, sets createdAt/updatedAt, and writes to DynamoDB.
  * Returns the clean task object (without PK/SK).
  */
-async function createTask(client: DynamoDBDocumentClient, taskData: Record<string, unknown>): Promise<Task> {
+interface TaskCreationOptions {
+  historyEvents?: TaskHistoryEvent[];
+  actorId?: string;
+  triggerKind?: string;
+}
+
+async function createTask(
+  client: DynamoDBDocumentClient,
+  taskData: Record<string, unknown>,
+  options: TaskCreationOptions = {},
+): Promise<Task> {
   const id = typeof taskData.id === 'string' && taskData.id.trim().length > 0 ? taskData.id : crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const item = {
+  const item: Record<string, unknown> = {
     PK: `TASK#${id}`,
     SK: `TASK#${id}`,
     id,
@@ -69,18 +89,63 @@ async function createTask(client: DynamoDBDocumentClient, taskData: Record<strin
     status: 'todo',
     ...taskData,
     version: 1,
-    taskHistory: [],
+    taskHistory: options.historyEvents || [],
   };
 
-  await client.send(
-    new PutCommand({
-      TableName: TABLE_TASKS,
-      Item: item,
-      ConditionExpression: 'attribute_not_exists(PK)',
-    })
-  );
+  if (options.historyEvents === undefined && taskData.status === 'waiting') {
+    item.taskHistory = [{
+      id: crypto.randomUUID(),
+      taskId: id,
+      ...(typeof taskData.cardId === 'string' ? { cardId: taskData.cardId } : {}),
+      action: 'waiting-started',
+      ...(options.actorId || taskData.createdBy ? { actorId: options.actorId || taskData.createdBy } : {}),
+      ...(typeof taskData.followUpChannel === 'string' ? { channel: taskData.followUpChannel } : {}),
+      ...(typeof taskData.waitingFor === 'string' ? { waitingFor: taskData.waitingFor } : {}),
+      ...(typeof taskData.followUpAt === 'string' ? { followUpAt: taskData.followUpAt } : {}),
+      ...(typeof taskData.comment === 'string' ? { note: taskData.comment } : {}),
+      createdAt: now,
+    }];
+  } else if (options.historyEvents === undefined && taskData.status === 'done') {
+    item.completedAt = typeof taskData.completedAt === 'string' ? taskData.completedAt : now;
+    const completedBy = options.actorId || taskData.completedBy || taskData.createdBy || 'system:task-lifecycle';
+    item.completedBy = completedBy;
+    item.taskHistory = [{
+      id: crypto.randomUUID(),
+      taskId: id,
+      ...(typeof taskData.cardId === 'string' ? { cardId: taskData.cardId } : {}),
+      action: 'completed',
+      ...(completedBy ? { actorId: completedBy } : {}),
+      ...(typeof taskData.comment === 'string' ? { note: taskData.comment } : {}),
+      createdAt: String(item.completedAt),
+    }];
+  }
 
-  return cleanItem(item) as Task;
+  const task = cleanItem(item) as Task;
+  if (typeof task.cardId === 'string' && task.cardId.length > 0) {
+    try {
+      await executeTaskCardTransaction(client, {
+        kind: 'create',
+        afterTask: task,
+        actorId: options.actorId || (typeof task.createdBy === 'string' ? task.createdBy : undefined),
+        triggerKind: options.triggerKind || 'task-created',
+      });
+      return task;
+    } catch (error) {
+      if (error instanceof TaskCardTransactionConflictError) {
+        if (error.reason === 'task') throw new Error(`Task ${id} already exists`);
+        throw new CardLifecycleConflictError(id, error.cardIds, true);
+      }
+      throw error;
+    }
+  }
+
+  await client.send(new PutCommand({
+    TableName: TABLE_TASKS,
+    Item: item,
+    ConditionExpression: 'attribute_not_exists(PK)',
+  }));
+
+  return task;
 }
 
 /**
@@ -131,6 +196,53 @@ async function updateTask(
   const forbiddenFields = ['PK', 'SK', 'id', 'version', 'taskHistory', 'createdAt', 'updatedAt', 'expectedVersion'];
   const suppliedForbiddenField = forbiddenFields.find((field) => Object.hasOwn(mutation.patch, field));
   if (suppliedForbiddenField) throw new TypeError(`${suppliedForbiddenField} is not an allowed Task patch field`);
+
+  if (mutation.patch.status !== undefined || Object.hasOwn(mutation.patch, 'cardId')) {
+    const beforeTask = mutation.currentTask || await getTaskConsistent(client, id);
+    if (!beforeTask || beforeTask.version !== mutation.expectedVersion) {
+      throw new TaskVersionConflictError(id, mutation.expectedVersion);
+    }
+    const historyEvents = mutation.historyEvents || [];
+    const afterTask = {
+      ...beforeTask,
+      ...mutation.patch,
+      version: mutation.expectedVersion + 1,
+      updatedAt: now,
+      taskHistory: [...beforeTask.taskHistory, ...historyEvents],
+    } as Task;
+    if (mutation.patch.cardId === null) delete afterTask.cardId;
+    if (mutation.patch.completedAt === null) delete afterTask.completedAt;
+    if (mutation.patch.completedBy === null) delete afterTask.completedBy;
+    const beforeCardId = typeof beforeTask.cardId === 'string' && beforeTask.cardId.length > 0
+      ? beforeTask.cardId
+      : null;
+    const afterCardId = typeof afterTask.cardId === 'string' && afterTask.cardId.length > 0
+      ? afterTask.cardId
+      : null;
+    const aggregateChanged = beforeCardId !== afterCardId
+      || (beforeCardId !== null && isOpenStatus(beforeTask.status) !== isOpenStatus(afterTask.status));
+    if (aggregateChanged) {
+      try {
+        const result = await executeTaskCardTransaction(client, {
+          kind: 'update',
+          beforeTask,
+          afterTask,
+          expectedVersion: mutation.expectedVersion,
+          patch: mutation.patch as Record<string, unknown>,
+          historyEvents,
+          actorId: mutation.actorId,
+          triggerKind: mutation.triggerKind || 'task-updated',
+        });
+        return result.task as Task;
+      } catch (error) {
+        if (error instanceof TaskCardTransactionConflictError) {
+          if (error.reason === 'task') throw new TaskVersionConflictError(id, mutation.expectedVersion);
+          throw new CardLifecycleConflictError(id, error.cardIds);
+        }
+        throw error;
+      }
+    }
+  }
 
   const expressionParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
@@ -210,9 +322,32 @@ async function deleteTask(
   client: DynamoDBDocumentClient,
   id: string,
   expectedVersion: number,
+  actorId?: string,
 ): Promise<void> {
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
     throw new TypeError('expectedVersion must be an integer greater than or equal to 1');
+  }
+  const beforeTask = await getTaskConsistent(client, id);
+  if (!beforeTask || beforeTask.version !== expectedVersion) {
+    throw new TaskVersionConflictError(id, expectedVersion);
+  }
+  if (typeof beforeTask.cardId === 'string' && beforeTask.cardId.length > 0) {
+    try {
+      await executeTaskCardTransaction(client, {
+        kind: 'delete',
+        beforeTask,
+        expectedVersion,
+        actorId,
+        triggerKind: 'task-deleted',
+      });
+      return;
+    } catch (error) {
+      if (error instanceof TaskCardTransactionConflictError) {
+        if (error.reason === 'task') throw new TaskVersionConflictError(id, expectedVersion);
+        throw new CardLifecycleConflictError(id, error.cardIds);
+      }
+      throw error;
+    }
   }
   try {
     await client.send(new DeleteCommand({
@@ -314,5 +449,6 @@ export {
   listTasksByCard,
   listTasksByStatus,
   TaskVersionConflictError,
+  CardLifecycleConflictError,
 };
-export type { AdditiveTaskPatch, TaskMutation, TaskPatch };
+export type { AdditiveTaskPatch, TaskCreationOptions, TaskMutation, TaskPatch };

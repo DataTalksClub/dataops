@@ -58,7 +58,7 @@ export function createInboxActions(context) {
     ) => `
       <details
         class="intake-action-disclosure ${primary ? "is-primary" : ""} ${destructive ? "is-destructive" : ""}"
-        ${mutation.action === action && mutation.error ? "open" : ""}
+        ${mutation.action === action ? "open" : ""}
       >
         <summary>${escapeHtml(label)}</summary>
         <div class="intake-action-fields">
@@ -354,6 +354,7 @@ export function createInboxActions(context) {
         itemId: item.id,
         action,
         values,
+        focus: { field: missing.name },
         error: `${labels[missing.name] || "This field"} is required.`,
         busy: false,
         status: "",
@@ -373,6 +374,7 @@ export function createInboxActions(context) {
       itemId: item.id,
       action,
       values,
+      focus: state.intakeMutation.focus || null,
       error: "",
       busy: true,
       status: "Saving…",
@@ -420,6 +422,7 @@ export function createInboxActions(context) {
         itemId: item.id,
         action: "",
         values: {},
+        focus: null,
         error: "",
         busy: false,
         status: `${humanizeIntakeAction(action)} recorded.`,
@@ -436,6 +439,7 @@ export function createInboxActions(context) {
         itemId: item.id,
         action,
         values,
+        focus: state.intakeMutation.focus || null,
         error: error.message || "Intake action failed",
         busy: false,
         status: "",

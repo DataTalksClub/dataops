@@ -45,6 +45,7 @@ export function createWorkspaceState(context) {
     itemId: "",
     action: "",
     values: {},
+    focus: null,
     error: "",
     busy: false,
     status: "",

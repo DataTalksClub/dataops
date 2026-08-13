@@ -35,6 +35,7 @@ import {
 } from "./support/fake-dom.mjs";
 
 const originalDocument = globalThis.document;
+const canonicalTask = (task) => ({ version: 1, taskHistory: [], status: "todo", ...task });
 
 afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
@@ -193,6 +194,7 @@ function createHarness(options = {}) {
         risk: progress.risk,
         meta: progress.label,
         anchorDate: card.anchorDate || "",
+        completedAt: card.completedAt || "",
         anchorLabel: formatCardAnchorLabel(card.anchorDate, "2026-08-12"),
         anchorTone: cardAnchorTone(card.anchorDate, "2026-08-12"),
         progress,
@@ -297,23 +299,23 @@ describe("Tasks surface boundary", () => {
 
   test("renders Queue lanes honestly and keeps route-context recovery actions canonical", async () => {
     const tasks = [
-      { id: "overdue", description: "Overdue", date: "2026-08-11" },
-      {
+      canonicalTask({ id: "overdue", description: "Overdue", date: "2026-08-11" }),
+      canonicalTask({
         id: "follow-up",
         description: "Follow up",
         status: "waiting",
         waitingFor: "reply",
         followUpAt: "2026-08-12",
-      },
-      {
+      }),
+      canonicalTask({
         id: "waiting",
         description: "Waiting",
         status: "waiting",
         waitingFor: "review",
         followUpAt: "2026-08-14",
-      },
-      { id: "today", description: "Today", date: "2026-08-12" },
-      { id: "done", description: "Done", status: "done", date: "2026-08-12" },
+      }),
+      canonicalTask({ id: "today", description: "Today", date: "2026-08-12" }),
+      canonicalTask({ id: "done", description: "Done", status: "done", date: "2026-08-12" }),
     ];
     const { api, documentList, navigations } = createHarness({
       workSnapshot: { tasks },
@@ -379,11 +381,11 @@ describe("Tasks surface boundary", () => {
 
   test("renders the active Cards board as exactly three columns and keeps Done in Archive", () => {
     const active = [
-      { id: "prep", title: "Prepare", stage: "preparation" },
-      { id: "announced", title: "Announce", stage: "announced" },
-      { id: "after-event", title: "Follow up", stage: "after-event" },
+      { id: "prep", version: 1, title: "Prepare", stage: "preparation", status: "active", taskCount: 0, openTaskCount: 0 },
+      { id: "announced", version: 1, title: "Announce", stage: "announced", status: "active", taskCount: 0, openTaskCount: 0 },
+      { id: "after-event", version: 1, title: "Follow up", stage: "after-event", status: "active", taskCount: 0, openTaskCount: 0 },
     ];
-    const archived = { id: "done", title: "Completed", stage: "done" };
+    const archived = { id: "done", version: 2, title: "Completed", stage: "done", status: "archived", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-05T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "after-event" };
     const { api, documentList, setRoute, state } = createHarness({
       route: { path: "/cards", params: new URLSearchParams() },
       workSnapshot: {
@@ -423,16 +425,15 @@ describe("Tasks surface boundary", () => {
 
   test("groups the archive into newest-first months", () => {
     const archived = [
-      { id: "old", title: "July card", status: "done", anchorDate: "2026-07-04" },
-      { id: "recent", title: "August card", status: "done", anchorDate: "2026-08-02" },
-      { id: "undated", title: "Undated card", status: "done" },
+      { id: "old", version: 2, title: "July card", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-07-04T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "preparation" },
+      { id: "recent", version: 2, title: "August card", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-02T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "announced" },
     ];
     const { api, documentList } = createHarness({
       route: { path: "/cards/archive", params: new URLSearchParams() },
       workSnapshot: {
         activeCards: [],
         cards: archived,
-        cardTasks: { old: [], recent: [], undated: [] },
+        cardTasks: { old: [], recent: [] },
       },
     });
 
@@ -440,15 +441,15 @@ describe("Tasks surface boundary", () => {
     const months = findAllByClass(documentList, "cards-archive-month-title");
     assert.deepEqual(
       months.map((month) => month.textContent),
-      ["August 20261 card", "July 20261 card", "No date1 card"],
+      ["August 20261 card", "July 20261 card"],
     );
     assert.deepEqual(
       findAllByClass(documentList, "workflow-board-card").map(
         (card) => card.dataset.cardId,
       ),
-      ["recent", "old", "undated"],
+      ["recent", "old"],
     );
-    assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 3);
+    assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
   });
 
   test("shows the anchor date on each card and orders columns by anchor", () => {
@@ -498,9 +499,9 @@ describe("Tasks surface boundary", () => {
         cards: active,
         cardTasks: {
           risky: [
-            { id: "a", description: "Done", status: "done", date: "2026-08-01" },
-            { id: "b", description: "Late", status: "todo", date: "2026-08-05", requiresFile: true },
-            { id: "c", description: "Waiting", status: "waiting", waitingFor: "reply" },
+            canonicalTask({ id: "a", description: "Done", status: "done", date: "2026-08-01" }),
+            canonicalTask({ id: "b", description: "Late", date: "2026-08-05", requiresFile: true }),
+            canonicalTask({ id: "c", description: "Waiting", status: "waiting", waitingFor: "reply" }),
           ],
         },
       },
@@ -654,7 +655,7 @@ describe("Tasks surface boundary", () => {
           cardId: "card-september",
           status: "ready",
           preview: {
-            state: "baseline-required",
+            state: "update-available",
             targetTemplateVersion: 3,
             previewToken: "token-september",
             counts: { added: 1, retainedCompleted: 1 },
@@ -815,6 +816,47 @@ describe("Tasks surface boundary", () => {
     harness.setModel(baseModel());
     harness.api.renderTasksSurface([], "recurring");
     assert.match(harness.documentList.textContent, /No recurring configs yet/);
+  });
+
+  test("exposes recurring Active and Paused state as text without prohibited ARIA", () => {
+    const harness = createHarness({
+      model: baseModel({
+        recurring: recurringSnapshot([
+          {
+            id: "active-schedule",
+            description: "Active schedule",
+            cronExpression: "0 9 * * 1",
+            enabled: true,
+          },
+          {
+            id: "paused-schedule",
+            description: "Paused schedule",
+            cronExpression: "0 9 * * 2",
+            enabled: false,
+          },
+        ]),
+      }),
+    });
+
+    harness.api.renderTasksSurface([], "recurring");
+    const statuses = findAllByClass(
+      harness.documentList,
+      "recurring-status",
+    );
+    assert.deepEqual(
+      statuses.map((status) => status.textContent),
+      ["Active", "Paused"],
+    );
+    assert.ok(
+      statuses.every((status) => status.getAttribute("aria-label") === null),
+    );
+    assert.deepEqual(
+      statuses.map(
+        (status) =>
+          findAllByClass(status, "visually-hidden")[0]?.textContent,
+      ),
+      ["Active", "Paused"],
+    );
   });
 
   test("creates and edits recurring schedules from the Recurring tab", async () => {

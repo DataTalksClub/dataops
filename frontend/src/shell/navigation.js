@@ -11,7 +11,7 @@ export function createNavigationShell(context) {
     folderExists,
     folderPathFromLocation,
     getAssistantQueueState,
-    getIntakeState,
+    getIntakeSurfaceState,
     getKnowledgeState,
     getTasksSectionForLegacyView,
     historyRef,
@@ -83,6 +83,7 @@ export function createNavigationShell(context) {
   function beginDocumentNavigation() {
     activeRouteToken += 1;
     activeRoute = null;
+    clearIntakeDraftForRoute(null);
     resetTaskPanel();
     resetCardPanel();
     closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
@@ -149,8 +150,23 @@ export function createNavigationShell(context) {
           resolve();
           return;
         }
-        const target = visibleEntityFocusTarget(restoreFocus) || libraryTitle;
-        if (target === libraryTitle) target.tabIndex = -1;
+        const routeHeading = documentList.querySelector("h1,h2,h3");
+        const activeRouteControl = documentRef.querySelector(
+          ".workspace-nav-button.is-active, .ops-subnav-tab.is-active",
+        );
+        const visibleFallbacks = [
+          libraryTitle,
+          routeHeading,
+          activeRouteControl,
+        ].filter(
+          (candidate) =>
+            candidate instanceof HTMLElementClass &&
+            candidate.isConnected &&
+            candidate.offsetParent !== null,
+        );
+        const target =
+          visibleEntityFocusTarget(restoreFocus) || visibleFallbacks[0] || null;
+        if (visibleFallbacks.includes(target)) target.tabIndex = -1;
         if (target instanceof HTMLElementClass && target.isConnected) {
           target.focus();
         }
@@ -164,8 +180,9 @@ export function createNavigationShell(context) {
     pendingLegacyRoute = { ...route, token };
     workspaceEntityState = null;
     if (route.view === "tasks") setActiveTasksSection(route.tasksSection);
-    getIntakeState().selectedId =
-      route.view === "inbox" ? route.params.get("intakeId") : null;
+    clearIntakeDraftForRoute(route);
+    getIntakeSurfaceState().intake.selectedId =
+      route.path === "/inbox" ? route.params.get("intakeId") : null;
     getAssistantQueueState().selectedJobId =
       route.tasksSection === "assistants"
         ? route.params.get("assistantJobId")
@@ -213,6 +230,24 @@ export function createNavigationShell(context) {
     if (cardId) prepareCardPanel(cardId);
     if (taskId) prepareTaskPanel(taskId);
     if (route.path === "/notifications") openWorkBellPanel();
+  }
+
+  function clearIntakeDraftForRoute(route) {
+    const intakeState = getIntakeSurfaceState();
+    const mutation = intakeState.intakeMutation;
+    if (!mutation.itemId) return;
+    const nextItemId =
+      route?.path === "/inbox" ? route.params.get("intakeId") : null;
+    if (nextItemId === mutation.itemId) return;
+    intakeState.intakeMutation = {
+      itemId: "",
+      action: "",
+      values: {},
+      focus: null,
+      error: "",
+      busy: false,
+      status: "",
+    };
   }
 
   function hydrateWorkspaceRoute(route, token) {

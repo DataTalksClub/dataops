@@ -4,11 +4,11 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createTables, TABLE_TEMPLATES } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
 import { createCard, updateCard } from '../src/db/cards';
 import { createArtifact } from '../src/db/artifacts';
@@ -76,15 +76,6 @@ describe('portable execution data export', () => {
       ],
     });
     template = (await updateTemplate(client, template.id, { triggerEnabled: true }))!;
-    const legacyTemplateId = 'legacy-versionless-export';
-    await client.send(new PutCommand({
-      TableName: TABLE_TEMPLATES,
-      Item: {
-        PK: `TEMPLATE#${legacyTemplateId}`, SK: `TEMPLATE#${legacyTemplateId}`,
-        id: legacyTemplateId, name: 'Legacy versionless workflow', type: 'workflow', emoji: '🕰️',
-        taskDefinitions: [], createdAt: '2026-06-20T00:00:00.000Z', updatedAt: '2026-06-20T00:00:00.000Z',
-      },
-    }));
     const card = await createCard(client, {
       title: 'Representative workflow run',
       anchorDate: '2026-06-27',
@@ -102,7 +93,7 @@ describe('portable execution data export', () => {
         taskId: 'task-export-stable',
         cardId: card.id,
         action: 'waiting-started' as const,
-        actorId: user.id,
+        actorId: 'system:task-lifecycle',
         channel: 'email',
         waitingFor: 'Sponsor assets',
         followUpAt: '2026-06-21',
@@ -152,7 +143,7 @@ describe('portable execution data export', () => {
       artifactRefs: [{ artifactId: 'artifact-task-ref', type: 'document' }],
       assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
       auditEventRefs: [{ auditEventId: 'audit-task-ref', action: 'completed' }],
-      completedBy: user.id,
+      completedBy: 'system:task-lifecycle',
       completedAt: '2026-06-20T12:00:00.000Z',
       status: 'done',
       id: 'task-export-stable',
@@ -346,7 +337,7 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.users, 1);
     assert.strictEqual(result.manifest.entity_counts.tasks, 2);
     assert.strictEqual(result.manifest.entity_counts.cards, 1);
-    assert.strictEqual(result.manifest.entity_counts.templates, 2);
+    assert.strictEqual(result.manifest.entity_counts.templates, 1);
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
@@ -366,6 +357,10 @@ describe('portable execution data export', () => {
     assert.doesNotMatch(usersJsonl, /passwordHash|password_hash|must-not-export/);
 
     const tasksJsonl = await fs.readFile(path.join(exportDir, 'tasks.jsonl'), 'utf8');
+    const taskRecords = tasksJsonl.trimEnd().split('\n').map((line) => JSON.parse(line));
+    assert.ok(taskRecords.every((record) => Number.isSafeInteger(record.version) && record.version >= 1));
+    assert.ok(taskRecords.every((record) => ['todo', 'waiting', 'done', 'archived'].includes(record.status)));
+    assert.ok(taskRecords.every((record) => Array.isArray(record.task_history)));
     assert.match(tasksJsonl, /"task_id"/);
     assert.match(tasksJsonl, /"assignee_id"/);
     assert.match(tasksJsonl, /"created_by"/);
@@ -397,6 +392,9 @@ describe('portable execution data export', () => {
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
 
     const cardsJsonl = await fs.readFile(path.join(exportDir, 'cards.jsonl'), 'utf8');
+    assert.match(cardsJsonl, /"version":\d+/);
+    assert.match(cardsJsonl, /"task_count":\d+/);
+    assert.match(cardsJsonl, /"open_task_count":\d+/);
     assert.match(cardsJsonl, /"artifact_refs":\[\{"artifactId":"artifact-card-ref","type":"document"\}\]/);
     assert.match(cardsJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(cardsJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
@@ -413,8 +411,6 @@ describe('portable execution data export', () => {
     assert.match(templatesJsonl, /"version":2/);
     assert.match(templatesJsonl, /"source_path":"workflow-templates\/representative-workflow.yaml"/);
     assert.match(templatesJsonl, /"source_revision":"synthetic-source-revision"/);
-    assert.match(templatesJsonl, /"template_id":"legacy-versionless-export"/);
-    assert.match(templatesJsonl, /"version":1/);
 
     const recurringConfigsJsonl = await fs.readFile(path.join(exportDir, 'recurring_configs.jsonl'), 'utf8');
     assert.match(recurringConfigsJsonl, /"instruction_doc_id":"sop.workflow.collect-inputs"/);
@@ -475,6 +471,66 @@ describe('portable execution data export', () => {
     assert.strictEqual(validation.entityCounts.tasks, 2);
   });
 
+  it('rejects noncanonical portable Task fields and Template completion stages', async () => {
+    const brokenDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-export-canonical-task-'));
+    try {
+      await fs.cp(exportDir, brokenDir, { recursive: true });
+
+      const tasksPath = path.join(brokenDir, 'tasks.jsonl');
+      const tasks = (await fs.readFile(tasksPath, 'utf8'))
+        .trimEnd()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      assert.ok(tasks.length >= 2);
+      delete tasks[0].version;
+      delete tasks[0].status;
+      delete tasks[0].task_history;
+      tasks[1].version = 0;
+      tasks[1].status = 'complete';
+      tasks[1].task_history = {};
+      const tasksContent = `${tasks.map((record) => JSON.stringify(record)).join('\n')}\n`;
+      await fs.writeFile(tasksPath, tasksContent, 'utf8');
+
+      const templatesPath = path.join(brokenDir, 'templates.jsonl');
+      const templates = (await fs.readFile(templatesPath, 'utf8'))
+        .trimEnd()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const templateWithTasks = templates.find((record) => record.task_definitions?.length > 0);
+      assert.ok(templateWithTasks);
+      const baseDefinition = templateWithTasks.task_definitions[0];
+      templateWithTasks.task_definitions = [
+        { ...baseDefinition, refId: 'active-preparation', stageOnComplete: 'preparation' },
+        { ...baseDefinition, refId: 'active-announced', stageOnComplete: 'announced' },
+        { ...baseDefinition, refId: 'active-after-event', stageOnComplete: 'after-event' },
+        { ...baseDefinition, refId: 'invalid-done', stageOnComplete: 'done' },
+      ];
+      const templatesContent = `${templates.map((record) => JSON.stringify(record)).join('\n')}\n`;
+      await fs.writeFile(templatesPath, templatesContent, 'utf8');
+
+      const manifestPath = path.join(brokenDir, 'manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      manifest.checksums['tasks.jsonl'] = `sha256:${crypto.createHash('sha256').update(tasksContent).digest('hex')}`;
+      manifest.checksums['templates.jsonl'] = `sha256:${crypto.createHash('sha256').update(templatesContent).digest('hex')}`;
+      await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+      const validation = await validatePortableExport(brokenDir);
+      assert.strictEqual(validation.valid, false);
+      assert.ok(validation.errors.some((error) => error.includes('tasks[0] field version must be an integer >= 1')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[0] missing required string field status')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[0] field task_history must be an array')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field version must be an integer >= 1')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field status has unknown value: complete')));
+      assert.ok(validation.errors.some((error) => error.includes('tasks[1] field task_history must be an array')));
+      assert.ok(validation.errors.some((error) => error.includes('task_definitions[3] field stageOnComplete has unknown value: done')));
+      assert.ok(validation.errors.every((error) => !error.includes('stageOnComplete has unknown value: preparation')));
+      assert.ok(validation.errors.every((error) => !error.includes('stageOnComplete has unknown value: announced')));
+      assert.ok(validation.errors.every((error) => !error.includes('stageOnComplete has unknown value: after-event')));
+    } finally {
+      await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
+
   it('reports validation errors for broken references', async () => {
     const brokenDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-export-broken-'));
     try {
@@ -520,12 +576,50 @@ describe('portable execution data export', () => {
         }) + '\n',
         'utf8'
       );
+      await fs.writeFile(
+        path.join(brokenDir, 'cards.jsonl'),
+        [
+          {
+            card_id: 'card-missing-status', version: 1, stage: 'preparation',
+            task_count: 0, open_task_count: 0,
+          },
+          {
+            card_id: 'card-missing-stage', version: 1, status: 'active',
+            task_count: 0, open_task_count: 0,
+          },
+          {
+            card_id: 'card-mixed-active', version: 1, status: 'active', stage: 'preparation',
+            task_count: 0, open_task_count: 0,
+            completed_at: '2026-06-27T00:00:00.000Z',
+            completed_by: 'system:task-lifecycle',
+            active_stage_before_completion: 'preparation',
+          },
+          {
+            card_id: 'card-active-zero-open', version: 1, status: 'active', stage: 'preparation',
+            task_count: 1, open_task_count: 0,
+          },
+          {
+            card_id: 'card-empty-archive', version: 1, status: 'archived', stage: 'done',
+            task_count: 0, open_task_count: 0,
+            completed_at: '2026-06-27T00:00:00.000Z',
+            completed_by: 'system:task-lifecycle',
+            active_stage_before_completion: 'preparation',
+          },
+        ].map((record) => JSON.stringify(record)).join('\n') + '\n',
+        'utf8'
+      );
 
       const validation = await validatePortableExport(brokenDir);
       assert.strictEqual(validation.valid, false);
       assert.ok(validation.errors.some((error) => error.includes('checksum mismatch')));
       assert.ok(validation.errors.some((error) => error.includes('missing task_id: missing-task')));
       assert.ok(validation.errors.some((error) => error.includes('missing recurring_config_id: missing-recurring-config')));
+      assert.ok(validation.errors.some((error) => error.includes('cards[0] missing required string field status')));
+      assert.ok(validation.errors.some((error) => error.includes('cards[1] missing required string field stage')));
+      assert.ok(validation.errors.some((error) => error.includes('cards[2] must use the canonical active Card lifecycle shape')));
+      assert.ok(validation.errors.some((error) => error.includes('cards[3] must use the canonical active Card lifecycle shape')));
+      assert.ok(validation.errors.some((error) => error.includes('cards[4] must use the canonical archived Card lifecycle shape')));
+      assert.ok(validation.errors.every((error) => !error.includes('references missing completed_by')));
     } finally {
       await fs.rm(brokenDir, { recursive: true, force: true });
     }
@@ -694,7 +788,7 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] field source_doc_ids must be an array of strings')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] taskId must match parent task_id')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field action has unknown value: unknown-action')));
-      assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] references missing actorId: missing-user')));
+      assert.ok(validation.errors.every((error) => !error.includes('references missing actorId')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field followUpAt must be a parseable date or timestamp')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1].task_history[0] field createdAt must be a parseable date or timestamp')));
       assert.ok(validation.errors.some((error) => error.includes('tasks[1] cannot be done without required url proof')));
@@ -733,16 +827,14 @@ describe('portable execution data export', () => {
     }
   });
 
-  it('validates a mixed portable set of versionless and versioned templates', async () => {
+  it('rejects a portable Template without the required version', async () => {
     const mixedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-export-mixed-template-versions-'));
     try {
       await fs.cp(exportDir, mixedDir, { recursive: true });
       const templatesPath = path.join(mixedDir, 'templates.jsonl');
       const records = (await fs.readFile(templatesPath, 'utf8')).trimEnd().split('\n').map((line) => JSON.parse(line));
-      const legacy = records.find((record) => record.template_id === 'legacy-versionless-export');
-      assert.ok(legacy);
-      delete legacy.version;
-      assert.ok(records.some((record) => record.version === 2));
+      assert.ok(records[0]);
+      delete records[0].version;
       const content = `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
       await fs.writeFile(templatesPath, content, 'utf8');
       const manifestPath = path.join(mixedDir, 'manifest.json');
@@ -751,8 +843,8 @@ describe('portable execution data export', () => {
       await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
       const validation = await validatePortableExport(mixedDir);
-      assert.deepStrictEqual(validation.errors, []);
-      assert.strictEqual(validation.valid, true);
+      assert.ok(validation.errors.some((error) => error.includes('templates[0] field version must be an integer >= 1')));
+      assert.strictEqual(validation.valid, false);
     } finally {
       await fs.rm(mixedDir, { recursive: true, force: true });
     }

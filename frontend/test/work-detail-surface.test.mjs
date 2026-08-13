@@ -177,7 +177,8 @@ function createHarness(options = {}) {
     parseWorkspaceHash: () => route,
     promptUser: options.promptUser || (() => "Vendor contact"),
     refreshDocuments: async () => {},
-    refreshOperationsWorkSnapshot: async () => {},
+    refreshOperationsWorkSnapshot:
+      options.refreshOperationsWorkSnapshot || (async () => {}),
     refreshWorkBell: async () => {},
     renderEntityLoadState: (container, entity) => {
       entityStates.push(entity);
@@ -385,13 +386,22 @@ describe("Work Detail surface boundary", () => {
     const canonical = {
       id: "task-history",
       version: 2,
-      taskHistory: [{
-        id: "event-1",
-        taskId: "task-history",
-        action: "completed",
-        note: "Published",
-        createdAt: "2026-08-12T10:00:00.000Z",
-      }],
+      taskHistory: [
+        {
+          id: "event-1",
+          taskId: "task-history",
+          action: "completed",
+          note: "Published",
+          createdAt: "2026-08-12T10:00:00.000Z",
+        },
+        {
+          id: "history-template-retired",
+          taskId: "task-history",
+          action: "template-retired",
+          actorId: "system:task-lifecycle",
+          createdAt: "2026-08-12T11:00:00.000Z",
+        },
+      ],
       description: "Publish the update",
       date: "2026-08-12",
       status: "done",
@@ -412,6 +422,7 @@ describe("Work Detail surface boundary", () => {
     assert.ok(findByText(canonicalHarness.taskPanelBody, "Operator note"));
     assert.ok(findByText(canonicalHarness.taskPanelBody, "History"));
     assert.match(canonicalHarness.taskPanelBody.textContent, /Task completed — Published/);
+    assert.match(canonicalHarness.taskPanelBody.textContent, /Task retired by Template update/);
 
     const historyless = { ...canonical, id: "task-historyless" };
     delete historyless.taskHistory;
@@ -431,6 +442,7 @@ describe("Work Detail surface boundary", () => {
       id: "task-todo",
       version: 1,
       taskHistory: [],
+      status: "todo",
       description: "Ask for approval",
     };
     const waiting = {
@@ -512,6 +524,41 @@ describe("Work Detail surface boundary", () => {
       note: "Follow-up sent from the Task panel",
       expectedVersion: 2,
     });
+  });
+
+  test("renders Template-retired archived Tasks as non-actionable history", async () => {
+    const archived = {
+      id: "task-template-retired",
+      version: 4,
+      taskHistory: [{
+        id: "retired-event",
+        taskId: "task-template-retired",
+        action: "template-retired",
+        actorId: "operator",
+        createdAt: "2026-08-12T10:00:00.000Z",
+      }],
+      description: "Retired Task",
+      status: "archived",
+      date: "2026-08-12",
+      templateRetiredAt: "2026-08-12T10:00:00.000Z",
+      templateRetiredReason: "removed",
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${archived.id}`) return archived;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+    await hydrateTask(harness, archived);
+    assert.equal(findByText(harness.taskPanelBody, "Reopen", "button"), undefined);
+    assert.ok(findByText(
+      harness.taskPanelBody,
+      "Retired Tasks can only be restored by a reviewed Template update.",
+      "p",
+    ));
+    assert.match(harness.taskPanelBody.textContent, /Task retired by Template update/);
   });
 
   test("retains an exact Task link draft across review and repeated conflicts", async () => {
@@ -621,6 +668,81 @@ describe("Work Detail surface boundary", () => {
       { link: draft, expectedVersion: 3 },
     ]);
     assert.equal(findByText(harness.taskPanelBody, "Retry my change", "button"), undefined);
+  });
+
+  test("navigates a retried final-Task conflict to the completed Card in Archive", async () => {
+    const card = {
+      id: "card-final-conflict",
+      version: 2,
+      title: "Final conflict Card",
+      status: "active",
+      stage: "after-event",
+      taskCount: 1,
+      openTaskCount: 1,
+    };
+    const task = {
+      id: "task-final-conflict",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Complete after review",
+      status: "todo",
+    };
+    const archived = {
+      ...card,
+      version: 3,
+      status: "archived",
+      stage: "done",
+      openTaskCount: 0,
+      completedAt: "2026-08-12T12:00:00.000Z",
+      completedBy: "alexey",
+      activeStageBeforeCompletion: "after-event",
+    };
+    let attempt = 0;
+    let harness;
+    harness = createHarness({
+      cards: [card],
+      refreshOperationsWorkSnapshot: async () => {
+        // Deliberately stale list/Scan result after the transaction.
+        harness.state.workSnapshot.cards = [card];
+        harness.state.workSnapshot.cardsById.set(card.id, card);
+      },
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) {
+          return { card: archived };
+        }
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          attempt += 1;
+          if (attempt === 1) {
+            const error = new Error("Card changed");
+            error.status = 409;
+            error.code = "card_lifecycle_conflict";
+            error.payload = {
+              code: "card_lifecycle_conflict",
+              currentTask: task,
+              currentCard: card,
+            };
+            throw error;
+          }
+          return { ...task, status: "done", version: 2 };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    await findByText(harness.taskPanelBody, "Mark done", "button").click();
+    await findByText(harness.taskPanelBody, "Review latest", "button").click();
+    await findByText(harness.taskPanelBody, "Retry my change", "button").click();
+    assert.deepEqual(harness.navigations.at(-1), {
+      path: "/cards/archive",
+      params: { cardId: card.id, taskId: task.id },
+      options: {},
+    });
+    assert.equal(harness.undo.at(-1).message, "Task marked done.");
   });
 
   test("disables duplicate Task submissions only while the write is in flight", async () => {
@@ -780,17 +902,30 @@ describe("Work Detail surface boundary", () => {
   test("hydrates active and archived Cards, updates stages, and opens nested Tasks canonically", async () => {
     const card = {
       id: "card-1",
+      version: 1,
       title: "August newsletter",
       stage: "preparation",
+      status: "active",
+      taskCount: 1,
+      openTaskCount: 1,
       references: [],
     };
     const archived = {
       id: "card-done",
+      version: 2,
       title: "July newsletter",
-      status: "done",
+      status: "archived",
+      stage: "done",
+      taskCount: 1,
+      openTaskCount: 0,
+      completedAt: "2026-07-31T12:00:00.000Z",
+      completedBy: "operator",
+      activeStageBeforeCompletion: "after-event",
     };
     const task = {
       id: "card-task",
+      version: 1,
+      taskHistory: [],
       cardId: card.id,
       description: "Collect links",
       status: "todo",
@@ -830,7 +965,7 @@ describe("Work Detail surface boundary", () => {
         entry.options.method === "PUT" &&
         jsonBody(entry).stage,
     );
-    assert.deepEqual(jsonBody(stageRequest), { stage: "announced" });
+    assert.deepEqual(jsonBody(stageRequest), { stage: "announced", expectedVersion: 1 });
 
     const nestedTask = findByText(
       harness.cardPanelBody,
@@ -843,6 +978,84 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(nested.params, {
       cardId: "card-1",
       taskId: "card-task",
+    });
+  });
+
+  test("retains Card drafts through review, repeated conflict, retry, and discard", async () => {
+    const card = {
+      id: "card-conflict",
+      version: 1,
+      title: "Conflict Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 0,
+      openTaskCount: 0,
+      references: [],
+    };
+    let putAttempt = 0;
+    const conflictError = (currentCard) => {
+      const error = new Error("Card changed");
+      error.status = 409;
+      error.code = "card_version_conflict";
+      error.payload = { code: error.code, currentCard };
+      return error;
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/cards/card-conflict" && !requestOptions.method) return card;
+        if (url === "/api/tasks?cardId=card-conflict") return { tasks: [] };
+        if (url === "/api/artifacts?cardId=card-conflict") return { artifacts: [] };
+        if (url === "/api/cards/card-conflict" && requestOptions.method === "PUT") {
+          putAttempt += 1;
+          if (putAttempt === 1) {
+            throw conflictError({ ...card, version: 2, stage: "announced" });
+          }
+          if (putAttempt === 2) {
+            throw conflictError({ ...card, version: 3, stage: "after-event" });
+          }
+          return { ...card, ...jsonBody({ options: requestOptions }), version: 4 };
+        }
+        return {};
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+
+    const firstSelect = harness.cardPanelBody.querySelector("select");
+    firstSelect.value = "announced";
+    await firstSelect.dispatch("change");
+    let alert = harness.cardPanelBody.querySelector('[role="alert"]');
+    assert.ok(alert);
+    assert.match(alert.textContent, /version 2/);
+    assert.match(alert.textContent, /Set stage to Announced/);
+    assert.deepEqual(jsonBody(harness.requests.at(-1)), {
+      stage: "announced",
+      expectedVersion: 1,
+    });
+
+    await findByText(alert, "Review latest", "button").click();
+    assert.match(harness.cardPanelBody.textContent, /version 2/);
+    await findByText(harness.cardPanelBody, "Retry my change", "button").click();
+    alert = harness.cardPanelBody.querySelector('[role="alert"]');
+    assert.match(alert.textContent, /version 3/);
+    assert.deepEqual(jsonBody(harness.requests.at(-1)), {
+      stage: "announced",
+      expectedVersion: 2,
+    });
+
+    await findByText(alert, "Discard my change", "button").click();
+    assert.equal(harness.cardPanelBody.querySelector('[role="alert"]'), null);
+    const latestSelect = harness.cardPanelBody.querySelector("select");
+    assert.equal(
+      latestSelect.querySelectorAll("option").find((option) => option.selected)?.value,
+      "after-event",
+    );
+    latestSelect.value = "preparation";
+    await latestSelect.dispatch("change");
+    assert.deepEqual(jsonBody(harness.requests.at(-1)), {
+      stage: "preparation",
+      expectedVersion: 3,
     });
   });
 

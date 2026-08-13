@@ -42,9 +42,10 @@ import {
   listTasksByCard,
   listTasksByStatus,
   TaskVersionConflictError,
+  CardLifecycleConflictError,
 } from './db/tasks';
 import type { TaskPatch } from './db/tasks';
-import { getCard, updateCard } from './db/cards';
+import { CardNotFoundError, getCard, getCardConsistent } from './db/cards';
 import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
 import { getApiToken, touchApiToken } from './db/cliAuth';
@@ -819,9 +820,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.assistantJobRefs !== undefined) taskData.assistantJobRefs = body.assistantJobRefs;
       if (body.auditEventRefs !== undefined) taskData.auditEventRefs = body.auditEventRefs;
       taskData.source = (body.source as string) || 'manual';
+      const createActorId = headerValue(event.headers, 'x-user-id');
+      if (createActorId) taskData.createdBy = createActorId;
       if (body.status !== undefined) {
         if (!isTaskStatus(body.status)) {
           return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
+        }
+        if (body.status === 'archived') {
+          return jsonResponse(400, { error: 'archived is system-owned and cannot be set directly' });
         }
         taskData.status = body.status;
       }
@@ -831,6 +837,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         || !isNonEmptyString(taskData.comment)
       )) {
         return jsonResponse(400, { error: WAITING_FIELDS_ERROR });
+      }
+      if (taskData.cardId !== undefined && !isNonEmptyString(taskData.cardId)) {
+        return jsonResponse(400, { error: 'cardId must be a non-empty string' });
       }
       const docContextError = validateTaskDocContext(taskData);
       if (docContextError) {
@@ -929,6 +938,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (existing.version !== expectedVersion) {
         throw new TaskVersionConflictError(existing.id, expectedVersion);
       }
+      if (existing.status === 'archived') {
+        return jsonResponse(400, {
+          error: 'archived Tasks are system-owned and cannot be changed through manual actions',
+        });
+      }
 
       const actorId = headerValue(event.headers, 'x-user-id') || undefined;
       const now = new Date().toISOString();
@@ -959,6 +973,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
+          currentTask: existing,
           expectedVersion,
           patch: {
             status: 'waiting',
@@ -967,6 +982,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             followUpChannel: channel,
           },
           historyEvents: [historyEvent],
+          actorId,
+          triggerKind: 'task-marked-waiting',
         });
         return jsonResponse(200, updated);
       }
@@ -995,6 +1012,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
+          currentTask: existing,
           expectedVersion,
           patch: {
             status: 'waiting',
@@ -1002,6 +1020,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             followUpChannel: channel,
           },
           historyEvents: [historyEvent],
+          actorId,
+          triggerKind: 'task-follow-up-sent',
         });
         return jsonResponse(200, updated);
       }
@@ -1024,6 +1044,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
+          currentTask: existing,
           expectedVersion,
           patch: {
             status: 'todo',
@@ -1032,6 +1053,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             followUpChannel: null,
           },
           historyEvents: [historyEvent],
+          actorId,
+          triggerKind: `task-${action}`,
         });
         return jsonResponse(200, updated);
       }
@@ -1095,16 +1118,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           createdAt: now,
         });
         const updated = await updateTask(client, existing.id, {
+          currentTask: existing,
           expectedVersion,
           patch: updates,
           historyEvents: [resolvedEvent, completedEvent],
+          actorId,
+          triggerKind: 'task-wait-resolved-done',
         });
-        if (updated) {
-          const task = updated as Task;
-          if (task.stageOnComplete && task.cardId && task.source === 'template') {
-            await updateCard(client, task.cardId, { stage: task.stageOnComplete });
-          }
-        }
         return jsonResponse(200, updated);
       }
 
@@ -1153,6 +1173,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (updates.status !== undefined && !isTaskStatus(updates.status)) {
         return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
       }
+      if (updates.status === 'archived') {
+        return jsonResponse(400, { error: 'archived is system-owned and cannot be set directly' });
+      }
+      if (updates.cardId !== undefined && updates.cardId !== null && !isNonEmptyString(updates.cardId)) {
+        return jsonResponse(400, { error: 'cardId must be a non-empty string or null' });
+      }
       const docContextError = validateTaskDocContext(updates);
       if (docContextError) {
         return jsonResponse(400, { error: docContextError });
@@ -1178,6 +1204,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
       if (existing.version !== expectedVersion) {
         throw new TaskVersionConflictError(existing.id, expectedVersion);
+      }
+      if (existing.status === 'archived') {
+        return jsonResponse(400, {
+          error: 'archived Tasks are system-owned and cannot be changed through manual updates',
+        });
       }
 
       const historyEvents: TaskHistoryEvent[] = [];
@@ -1245,27 +1276,30 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             createdAt: completedAt,
           }));
         }
-      } else if (existing.status === 'done' && updates.status === 'todo') {
+      } else if (
+        existing.status === 'done'
+        && (updates.status === 'todo' || updates.status === 'waiting')
+      ) {
         const actorId = headerValue(event.headers, 'x-user-id');
         historyEvents.push(makeTaskHistoryEvent('reopened', existing, {
           actorId: actorId || undefined,
         }));
+        updates.completedAt = null;
+        updates.completedBy = null;
       }
 
       const updated = await updateTask(client, id, {
+        currentTask: existing,
         expectedVersion,
         patch: updates,
         historyEvents,
+        actorId: headerValue(event.headers, 'x-user-id') || undefined,
+        triggerKind: updates.status === 'done'
+          ? 'task-completed'
+          : updates.status === 'todo' || updates.status === 'waiting'
+            ? 'task-reopened'
+            : 'task-updated',
       });
-
-      // Stage transition: when a task with stageOnComplete is marked done,
-      // automatically update the parent card's stage
-      if (updated && updates.status === 'done' && existing.status !== 'done') {
-        const task = updated as Task;
-        if (task.stageOnComplete && task.cardId && task.source === 'template') {
-          await updateCard(client, task.cardId, { stage: task.stageOnComplete });
-        }
-      }
 
       return jsonResponse(200, updated);
     }
@@ -1280,7 +1314,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!body) return jsonResponse(400, { error: 'Request body is required' });
       const preconditionError = expectedVersionError(body);
       if (preconditionError) return jsonResponse(400, { error: preconditionError });
-      await deleteTask(client, id, body.expectedVersion as number);
+      await deleteTask(
+        client,
+        id,
+        body.expectedVersion as number,
+        headerValue(event.headers, 'x-user-id') || undefined,
+      );
       return {
         statusCode: 204,
         headers: JSON_HEADERS,
@@ -1393,6 +1432,29 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         expectedVersion: err.expectedVersion,
         currentVersion: currentTask.version,
         currentTask,
+      });
+    }
+    if (err instanceof CardNotFoundError) {
+      return jsonResponse(404, { error: 'Card not found', code: 'card_not_found' });
+    }
+    if (err instanceof CardLifecycleConflictError) {
+      const [currentTask, ...currentCards] = await Promise.all([
+        getTaskConsistent(client, err.taskId),
+        ...err.cardIds.map((cardId) => getCardConsistent(client, cardId)),
+      ]);
+      if (!currentTask && !err.taskMayBeMissing) {
+        return jsonResponse(404, { error: 'Task not found', code: 'task_not_found' });
+      }
+      const cards = currentCards.filter((card): card is NonNullable<typeof card> => card !== null);
+      if (cards.length !== err.cardIds.length) {
+        return jsonResponse(404, { error: 'Card not found', code: 'card_not_found' });
+      }
+      return jsonResponse(409, {
+        error: 'Card or its Tasks changed; review current work and retry',
+        code: 'card_lifecycle_conflict',
+        currentTask: currentTask || undefined,
+        currentCard: cards.length === 1 ? cards[0] : undefined,
+        currentCards: cards.length > 1 ? cards : undefined,
       });
     }
     console.error('Unexpected error:', err);

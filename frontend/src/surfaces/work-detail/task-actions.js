@@ -1,16 +1,21 @@
+import { isCanonicalWorkTask } from "../../core/workspace.js";
+
 export function createTaskActions(context) {
   const {
     addDaysIso,
     detail,
     getActiveWorkspaceRouteToken = () => 0,
+    isArchivedWorkCard,
     isWorkspaceRouteFresh,
     loadArtifactsForTask,
+    navigateCanonicalWorkspace,
     promptUser,
     refreshOperationsWorkSnapshot,
     renderTaskPanel,
     reportError,
     request,
     showUndoToast,
+    state,
     todayIsoDate,
     workApiUrl,
   } = context;
@@ -53,6 +58,9 @@ export function createTaskActions(context) {
         method: intent.method,
         body: JSON.stringify({ ...intent.payload, expectedVersion }),
       });
+      if (!isCanonicalWorkTask(updated)) {
+        throw new Error("Task response is not in the canonical versioned shape");
+      }
       if (isActiveTask && updated?.id === intent.taskId) {
         detail.activeTaskPanelTask = updated;
         detail.activeTaskPanelDraft = null;
@@ -66,9 +74,14 @@ export function createTaskActions(context) {
       if (
         isActiveTask &&
         err?.status === 409 &&
-        err?.code === "task_version_conflict" &&
+        ["task_version_conflict", "card_lifecycle_conflict"].includes(err?.code) &&
         err?.payload?.currentTask?.id === intent.taskId
       ) {
+        if (!isCanonicalWorkTask(err.payload.currentTask)) {
+          detail.activeTaskMutationBusy = false;
+          renderTaskPanel();
+          throw new Error("Conflict response is missing the canonical current Task");
+        }
         detail.activeTaskPanelConflict = err.payload;
         detail.activeTaskMutationBusy = false;
         renderTaskPanel();
@@ -81,6 +94,45 @@ export function createTaskActions(context) {
       reportError(`${intent.errorPrefix}: ${err.message || "request failed"}`);
       return null;
     }
+  }
+
+  async function handleTaskStatusSuccess(taskId, status, updated) {
+    if (!updated?.version) return;
+    let card = null;
+    if (updated.cardId) {
+      const payload = await request(
+        workApiUrl(`/api/cards/${encodeURIComponent(updated.cardId)}`),
+      );
+      card = payload?.card || payload;
+    }
+    if (
+      card
+      && (
+        detail.activeTaskPanelId === taskId
+        || detail.activeCardPanelId === card.id
+      )
+    ) {
+      const archived = isArchivedWorkCard(card);
+      const route = archived ? "/cards/archive" : "/cards";
+      await navigateCanonicalWorkspace(route, {
+        cardId: card.id,
+        taskId,
+      }).ready;
+      if (!archived && status !== "done") {
+        showUndoToast(
+          `Task reopened. Card restored to ${String(card.stage).replace("-", " ")}.`,
+          () => updateTaskStatus(taskId, "done", updated.version),
+        );
+        return;
+      }
+    }
+    showUndoToast(`Task marked ${status}.`, () =>
+      updateTaskStatus(
+        taskId,
+        status === "done" ? "todo" : "done",
+        updated.version,
+      ),
+    );
   }
 
   async function updateTaskStatus(taskId, status, explicitVersion) {
@@ -97,15 +149,7 @@ export function createTaskActions(context) {
         },
         displayedVersion(taskId, explicitVersion),
       );
-      if (updated?.version) {
-        showUndoToast(`Task marked ${status}.`, () =>
-          updateTaskStatus(
-            taskId,
-            status === "done" ? "todo" : "done",
-            updated.version,
-          ),
-        );
-      }
+      await handleTaskStatusSuccess(taskId, status, updated);
     } catch (err) {
       reportError(`Could not update task: ${err.message || "request failed"}`);
     }
@@ -246,10 +290,31 @@ export function createTaskActions(context) {
     }
   }
 
+  function adoptConflictCards(conflict) {
+    const cards = conflict?.currentCard
+      ? [conflict.currentCard]
+      : Array.isArray(conflict?.currentCards)
+        ? conflict.currentCards
+        : [];
+    for (const card of cards) {
+      if (!card?.id) continue;
+      state.workSnapshot.cardsById?.set(card.id, card);
+      if (Array.isArray(state.workSnapshot.cards)) {
+        const index = state.workSnapshot.cards.findIndex(({ id }) => id === card.id);
+        if (index >= 0) state.workSnapshot.cards[index] = card;
+      }
+      if (detail.activeCardPanelId === card.id && detail.activeCardPanelData) {
+        detail.activeCardPanelData = { ...detail.activeCardPanelData, card };
+      }
+    }
+  }
+
   function reviewLatestTask() {
-    const latest = detail.activeTaskPanelConflict?.currentTask;
+    const conflict = detail.activeTaskPanelConflict;
+    const latest = conflict?.currentTask;
     if (!latest) return;
     detail.activeTaskPanelTask = latest;
+    adoptConflictCards(conflict);
     renderTaskPanel();
   }
 
@@ -257,12 +322,17 @@ export function createTaskActions(context) {
     const intent = detail.activeTaskPanelDraft;
     const latest = detail.activeTaskPanelConflict?.currentTask;
     if (!intent || !latest) return;
-    await submitTaskIntent(intent, latest.version);
+    const updated = await submitTaskIntent(intent, latest.version);
+    if (intent.kind === "status") {
+      await handleTaskStatusSuccess(intent.taskId, intent.payload.status, updated);
+    }
   }
 
   function discardTaskIntent() {
-    const latest = detail.activeTaskPanelConflict?.currentTask;
+    const conflict = detail.activeTaskPanelConflict;
+    const latest = conflict?.currentTask;
     if (latest) detail.activeTaskPanelTask = latest;
+    adoptConflictCards(conflict);
     detail.activeTaskPanelDraft = null;
     detail.activeTaskPanelConflict = null;
     renderTaskPanel();

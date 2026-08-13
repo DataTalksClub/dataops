@@ -3587,7 +3587,6 @@ body.task-modal-open {
 }
 
 .card-template-update-status.is-update-available,
-.card-template-update-status.is-baseline-required,
 .card-template-update-message.is-warning {
   color: var(--warning-text);
 }

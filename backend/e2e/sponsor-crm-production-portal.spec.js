@@ -576,9 +576,11 @@ test.describe("production sponsor CRM portal", () => {
         .locator("[data-finance-candidate-dialog]")
         .getByRole("radio", { name: /60\.0001 EUR/ }),
     ).toBeVisible();
-    await expect(page.locator("[data-finance-panel]")).toContainText(
-      "Outstanding60 EUR",
-    );
+    const outstanding = page.locator("[data-finance-panel] dl > div", {
+      has: page.locator("dt", { hasText: /^Outstanding$/ }),
+    });
+    await expect(outstanding.locator("dt")).toHaveText("Outstanding");
+    await expect(outstanding.locator("dd")).toHaveText("60 EUR");
     await page
       .locator("[data-finance-candidate-dialog]")
       .getByRole("button", { name: "Link selected evidence" })
@@ -599,7 +601,6 @@ test.describe("production sponsor CRM portal", () => {
       .getByRole("button", { name: "Link selected evidence" })
       .click();
     await expect(page.locator("[data-finance-panel]")).toContainText("paid");
-    await page.waitForTimeout(250);
     await expect(page.locator("[data-finance-panel]")).toHaveCount(1);
     await page
       .locator("[data-finance-panel]")
@@ -613,54 +614,45 @@ test.describe("production sponsor CRM portal", () => {
       .getByRole("button", { name: "Reconcile current evidence" })
       .click();
     await expect.poll(() => reconcileRequests).toBe(1);
-    page.once("dialog", async (dialog) => {
-      expect(dialog.message()).toContain("Unlink this payment");
-      await dialog.dismiss();
-    });
+    const confirmDialog = page.locator("[data-sponsor-confirm-dialog]");
     await page.locator("[data-finance-unlink-payment]").first().click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole("button", { name: "Keep current record" }).click();
     await expect(page.locator("[data-finance-panel]")).toContainText("paid");
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-unlink-cancelled.png" });
-    page.once("dialog", async (dialog) => {
-      expect(dialog.message()).toContain("Unlink this payment");
-      await dialog.accept();
-    });
     await page.locator("[data-finance-unlink-payment]").first().click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.locator("[data-confirm-accept]").click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "partially-paid",
     );
-    page.once("dialog", async (dialog) => {
-      await dialog.accept();
-    });
     await page.locator("[data-finance-unlink-payment]").first().click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.locator("[data-confirm-accept]").click();
     await expect(page.locator("[data-finance-panel]")).toContainText("unpaid");
-    page.once("dialog", async (dialog) => {
-      expect(dialog.message()).toContain("Unlink this invoice");
-      await dialog.accept();
-    });
     await page.locator("[data-finance-unlink-invoice]").click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.locator("[data-confirm-accept]").click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "requested",
     );
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-unlinked-recovery.png" });
-    page.once("dialog", async (dialog) => {
-      expect(dialog.message()).toContain("Void finance follow-through");
-      await dialog.dismiss();
-    });
     await page.getByRole("button", { name: "Void follow-through" }).click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole("button", { name: "Keep current record" }).click();
     await expect(page.locator("[data-finance-panel]")).toContainText(
       "requested",
     );
     await page
       .locator("[data-finance-panel]")
       .screenshot({ path: ".tmp/sponsor-finance-void-cancelled.png" });
-    page.once("dialog", async (dialog) => {
-      await dialog.accept();
-    });
     await page.getByRole("button", { name: "Void follow-through" }).click();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.locator("[data-confirm-accept]").click();
     await expect(page.locator("[data-finance-panel]")).toContainText("voided");
     await page
       .locator("[data-finance-panel]")

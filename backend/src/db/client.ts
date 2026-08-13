@@ -1,6 +1,25 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+let localTransactionEmulationEnabled = false;
+
+/**
+ * Dynalite does not implement TransactWriteItems. Explicit local/test tooling
+ * may enable the faithful transaction emulator used by repository tests.
+ * Shipped runtime code never calls this and no environment variable selects it.
+ */
+function enableLocalTransactionEmulation(): void {
+  localTransactionEmulationEnabled = true;
+}
+
+function disableLocalTransactionEmulation(): void {
+  localTransactionEmulationEnabled = false;
+}
+
+function usesLocalTransactionEmulation(): boolean {
+  return localTransactionEmulationEnabled;
+}
+
 /**
  * Get a DynamoDB Document Client.
  *
@@ -62,4 +81,10 @@ function failLoudlyOnMissingTable(client: DynamoDBDocumentClient): DynamoDBDocum
   return client;
 }
 
-export { getClient, failLoudlyOnMissingTable };
+export {
+  getClient,
+  failLoudlyOnMissingTable,
+  enableLocalTransactionEmulation,
+  disableLocalTransactionEmulation,
+  usesLocalTransactionEmulation,
+};

@@ -1,11 +1,13 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';
+import { createCard, getCard } from '../src/db/cards';
+import { createTask, getTask } from '../src/db/tasks';
 import type { LambdaResponse } from '../src/types';
 
 describe('API — CRUD for tasks', () => {
@@ -53,6 +55,10 @@ describe('API — CRUD for tasks', () => {
     });
 
     it('creates a task with optional fields', async () => {
+      const card = await createCard(await getClient(port), {
+        title: 'Optional Task Card',
+        anchorDate: '2026-03-10',
+      });
       const event = {
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -60,7 +66,7 @@ describe('API — CRUD for tasks', () => {
           description: 'Review draft',
           date: '2026-03-10',
           comment: 'Important',
-          cardId: 'card-1',
+          cardId: card.id,
           source: 'telegram',
         }),
       };
@@ -69,17 +75,23 @@ describe('API — CRUD for tasks', () => {
 
       const body = JSON.parse(res.body);
       assert.strictEqual(body.comment, 'Important');
-      assert.strictEqual(body.cardId, 'card-1');
+      assert.strictEqual(body.cardId, card.id);
       assert.strictEqual(body.source, 'telegram');
     });
 
     it('creates a waiting task with follow-up metadata', async () => {
+      const card = await createCard(await getClient(port), {
+        title: 'Initially waiting Task Card',
+        anchorDate: '2026-03-10',
+      });
       const event = {
         httpMethod: 'POST',
         path: '/api/tasks',
+        headers: { 'x-user-id': 'waiting-operator' },
         body: JSON.stringify({
           description: 'Wait for speaker confirmation',
           date: '2026-03-10',
+          cardId: card.id,
           status: 'waiting',
           waitingFor: 'Speaker reply',
           followUpAt: '2026-03-12T09:00:00.000Z',
@@ -94,6 +106,18 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.waitingFor, 'Speaker reply');
       assert.strictEqual(body.followUpAt, '2026-03-12T09:00:00.000Z');
       assert.strictEqual(body.comment, 'Waiting for speaker confirmation');
+      assert.strictEqual(body.version, 1);
+      assert.strictEqual(body.taskHistory.length, 1);
+      assert.strictEqual(body.taskHistory[0].action, 'waiting-started');
+      assert.strictEqual(body.taskHistory[0].actorId, 'waiting-operator');
+      assert.strictEqual(body.taskHistory[0].taskId, body.id);
+      assert.strictEqual(body.taskHistory[0].cardId, card.id);
+
+      const currentCard = await getCard(await getClient(port), card.id);
+      assert.deepStrictEqual(
+        { taskCount: currentCard?.taskCount, openTaskCount: currentCard?.openTaskCount, status: currentCard?.status },
+        { taskCount: 1, openTaskCount: 1, status: 'active' },
+      );
 
       const getRes = await handler({ httpMethod: 'GET', path: `/api/tasks/${body.id}` }, {});
       assert.strictEqual(getRes.statusCode, 200);
@@ -101,6 +125,112 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(fetched.waitingFor, 'Speaker reply');
       assert.strictEqual(fetched.followUpAt, '2026-03-12T09:00:00.000Z');
       assert.strictEqual(fetched.comment, 'Waiting for speaker confirmation');
+    });
+
+    it('creates an attached done Task with completion history and archives the Card atomically', async () => {
+      const card = await createCard(await getClient(port), {
+        title: 'Initially completed Task Card',
+        anchorDate: '2026-03-10',
+        stage: 'announced',
+      });
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        headers: { 'x-user-id': 'completion-operator' },
+        body: JSON.stringify({
+          description: 'Already completed work',
+          date: '2026-03-10',
+          cardId: card.id,
+          status: 'done',
+        }),
+      }, {});
+      assert.strictEqual(res.statusCode, 201, res.body);
+      const task = JSON.parse(res.body);
+      assert.strictEqual(task.version, 1);
+      assert.strictEqual(task.completedBy, 'completion-operator');
+      assert.ok(task.completedAt);
+      assert.strictEqual(task.taskHistory.length, 1);
+      assert.strictEqual(task.taskHistory[0].action, 'completed');
+      assert.strictEqual(task.taskHistory[0].actorId, 'completion-operator');
+      assert.strictEqual(task.taskHistory[0].createdAt, task.completedAt);
+
+      const currentCard = await getCard(await getClient(port), card.id);
+      assert.deepStrictEqual(
+        {
+          taskCount: currentCard?.taskCount,
+          openTaskCount: currentCard?.openTaskCount,
+          status: currentCard?.status,
+          stage: currentCard?.stage,
+          completedBy: currentCard?.completedBy,
+          activeStageBeforeCompletion: currentCard?.activeStageBeforeCompletion,
+        },
+        {
+          taskCount: 1,
+          openTaskCount: 0,
+          status: 'archived',
+          stage: 'done',
+          completedBy: 'completion-operator',
+          activeStageBeforeCompletion: 'announced',
+        },
+      );
+      assert.strictEqual(currentCard?.completedAt, task.completedAt);
+    });
+
+    it('rejects manual creation in the system-owned archived state', async () => {
+      const res = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Cannot start retired',
+          date: '2026-03-10',
+          status: 'archived',
+        }),
+      }, {});
+      assert.strictEqual(res.statusCode, 400, res.body);
+      assert.strictEqual(JSON.parse(res.body).error, 'archived is system-owned and cannot be set directly');
+    });
+
+    it('returns the strongly current Card when attached Task creation loses the Card condition', async () => {
+      const { route } = await import('../src/router');
+      const initialCard = {
+        id: 'create-conflict-card', version: 4, title: 'Initial Card',
+        status: 'active', stage: 'preparation', taskCount: 1, openTaskCount: 1,
+        createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z',
+      };
+      const currentCard = {
+        ...initialCard, version: 5, title: 'Current Card', updatedAt: '2026-03-02T00:00:00.000Z',
+      };
+      let cardReads = 0;
+      const fake = {
+        send: async (command: unknown) => {
+          if (command instanceof TransactWriteCommand) {
+            throw Object.assign(new Error('Card raced'), { name: 'TransactionCanceledException' });
+          }
+          if (!(command instanceof GetCommand)) throw new Error('Unexpected command');
+          if (command.input.TableName === 'Tasks') return {};
+          if (command.input.TableName === 'Projects') {
+            cardReads += 1;
+            return { Item: { PK: 'CARD#create-conflict-card', SK: 'CARD#create-conflict-card', ...(cardReads === 1 ? initialCard : currentCard) } };
+          }
+          return {};
+        },
+      } as any;
+      const response = await route({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Losing attached creation',
+          date: '2026-03-10',
+          cardId: initialCard.id,
+        }),
+      }, fake);
+      assert.strictEqual(response.statusCode, 409, response.body);
+      assert.deepStrictEqual(JSON.parse(response.body), {
+        error: 'Card or its Tasks changed; review current work and retry',
+        code: 'card_lifecycle_conflict',
+        currentCard,
+      });
+      assert.ok(cardReads >= 3);
     });
 
     it('returns 400 when creating a waiting task without follow-up metadata', async () => {
@@ -256,7 +386,12 @@ describe('API — CRUD for tasks', () => {
     });
 
     it('returns tasks filtered by cardId', async () => {
-      const bid = 'card-filter-' + crypto.randomUUID();
+      const bid = (await createCard(await getClient(port), {
+        title: 'Filter Card', anchorDate: '2092-01-01',
+      })).id;
+      const other = (await createCard(await getClient(port), {
+        title: 'Other Filter Card', anchorDate: '2092-01-01',
+      })).id;
       await handler({
         httpMethod: 'POST', path: '/api/tasks',
         body: JSON.stringify({ description: 'P1', date: '2092-01-01', cardId: bid }),
@@ -267,7 +402,7 @@ describe('API — CRUD for tasks', () => {
       }, {});
       await handler({
         httpMethod: 'POST', path: '/api/tasks',
-        body: JSON.stringify({ description: 'P3', date: '2092-01-01', cardId: 'other-card' }),
+        body: JSON.stringify({ description: 'P3', date: '2092-01-01', cardId: other }),
       }, {});
 
       const res = await handler({
@@ -535,6 +670,55 @@ describe('API — CRUD for tasks', () => {
       assert.ok(['left', 'right'].includes(winnerTask.comment));
     });
 
+    it('returns canonical Task and Card snapshots for an aggregate conflict and succeeds on retry', async () => {
+      const card = await createCard(await getClient(port), {
+        title: 'Aggregate API conflict',
+        anchorDate: '2026-03-10',
+      });
+      const tasks = [];
+      for (const description of ['First final task', 'Second final task']) {
+        const response = await handler({
+          httpMethod: 'POST',
+          path: '/api/tasks',
+          body: JSON.stringify({ description, date: '2026-03-10', cardId: card.id }),
+        }, {});
+        assert.strictEqual(response.statusCode, 201, response.body);
+        tasks.push(JSON.parse(response.body));
+      }
+
+      const results = await Promise.all(tasks.map((task) => handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${task.id}`,
+        body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
+      }, {})));
+      const winner = results.find(({ statusCode }) => statusCode === 200);
+      const loser = results.find(({ statusCode }) => statusCode === 409);
+      assert.ok(winner);
+      assert.ok(loser);
+      const conflict = JSON.parse(loser.body);
+      assert.strictEqual(conflict.code, 'card_lifecycle_conflict');
+      assert.strictEqual(conflict.currentTask.version, 1);
+      assert.strictEqual(conflict.currentTask.status, 'todo');
+      assert.strictEqual(conflict.currentCard.taskCount, 2);
+      assert.strictEqual(conflict.currentCard.openTaskCount, 1);
+      assert.strictEqual(conflict.currentCard.status, 'active');
+
+      const retried = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${conflict.currentTask.id}`,
+        body: JSON.stringify({ status: 'done', expectedVersion: conflict.currentTask.version }),
+      }, {});
+      assert.strictEqual(retried.statusCode, 200, retried.body);
+      const currentCard = JSON.parse((await handler({
+        httpMethod: 'GET',
+        path: `/api/cards/${card.id}`,
+      }, {})).body).card;
+      assert.deepStrictEqual(
+        { taskCount: currentCard.taskCount, openTaskCount: currentCard.openTaskCount, stage: currentCard.stage, status: currentCard.status },
+        { taskCount: 2, openTaskCount: 0, stage: 'done', status: 'archived' },
+      );
+    });
+
     it('strongly reads Task validation state before PUT and action conditions', async () => {
       const { route } = await import('../src/router');
       const current = {
@@ -680,6 +864,47 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.completedBy, 'ops-manager');
       assert.ok(body.completedAt);
       assert.ok(Date.parse(body.completedAt));
+    });
+
+    it('rejects every generic update of a Template-retired archived Task without writing', async () => {
+      const client = await getClient(port);
+      const archived = await createTask(client, {
+        description: 'Retired Template Task',
+        date: '2026-03-10',
+        status: 'archived',
+        source: 'template',
+        templateRetiredAt: '2026-03-09T12:00:00.000Z',
+        templateRetiredReason: 'removed',
+      });
+      const mutations = [
+        { status: 'todo' },
+        {
+          status: 'waiting',
+          waitingFor: 'must not apply',
+          followUpAt: '2026-03-12',
+          comment: 'must not apply',
+        },
+        { status: 'done' },
+        { comment: 'must not change retirement evidence' },
+        { description: 'must not rename retired work' },
+        { date: '2026-03-20' },
+      ];
+      for (const mutation of mutations) {
+        const response = await handler({
+          httpMethod: 'PUT',
+          path: `/api/tasks/${archived.id}`,
+          body: JSON.stringify({
+            expectedVersion: archived.version,
+            ...mutation,
+          }),
+        }, {});
+        assert.strictEqual(response.statusCode, 400);
+        assert.strictEqual(
+          JSON.parse(response.body).error,
+          'archived Tasks are system-owned and cannot be changed through manual updates',
+        );
+        assert.deepStrictEqual(await getTask(client, archived.id), archived);
+      }
     });
 
     it('returns 404 for a nonexistent task', async () => {
@@ -1350,7 +1575,7 @@ describe('API — CRUD for tasks', () => {
       assert.deepStrictEqual(body.tags, ['webinar', 'community']);
     });
 
-    it('creates a task with only required fields (backward compatibility)', async () => {
+    it('creates a canonical Task from only required input fields', async () => {
       const event = {
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -1773,7 +1998,6 @@ describe('API — CRUD for tasks', () => {
           anchorDate: '2026-07-20',
           templateId: template.id,
           stage: 'preparation',
-          status: 'active',
           cardLinks: [{ name: 'Mailchimp newsletter', url: '' }],
         }),
       }, {});
@@ -1798,6 +2022,7 @@ describe('API — CRUD for tasks', () => {
         httpMethod: 'PUT',
         path: `/api/cards/${card.id}`,
         body: JSON.stringify({
+          expectedVersion: card.version,
           cardLinks: [{ name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' }],
         }),
       }, {});
@@ -1812,7 +2037,8 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(JSON.parse(doneRes.body).status, 'done');
 
       const announcedCardRes = await handler({ httpMethod: 'GET', path: `/api/cards/${card.id}` }, {});
-      assert.strictEqual(JSON.parse(announcedCardRes.body).card.stage, 'announced');
+      assert.strictEqual(JSON.parse(announcedCardRes.body).card.stage, 'done');
+      assert.strictEqual(JSON.parse(announcedCardRes.body).card.status, 'archived');
     });
 
     it('allows non-done tasks with required shared links without a card but blocks done', async () => {
@@ -1862,7 +2088,6 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           title: 'Newsletter sponsor-only shared links',
           anchorDate: '2026-07-20',
-          status: 'active',
           cardLinks: [
             { name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' },
             { name: 'LinkedIn', url: '' },
@@ -1931,7 +2156,6 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           title: 'Newsletter social-only skip still needs Mailchimp',
           anchorDate: '2026-07-20',
-          status: 'active',
           cardLinks: [
             { name: 'Mailchimp newsletter', url: '' },
             { name: 'LinkedIn', url: '' },
@@ -1996,8 +2220,8 @@ describe('API — CRUD for tasks', () => {
     });
   });
 
-  describe('Archived status filter', () => {
-    it('returns tasks filtered by archived status', async () => {
+  describe('System-owned archived status', () => {
+    it('rejects a manual transition to archived without mutating the Task', async () => {
       const createRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -2005,24 +2229,19 @@ describe('API — CRUD for tasks', () => {
       }, {});
       const created = JSON.parse(createRes.body);
 
-      await handler({
+      const archived = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
         body: JSON.stringify({ status: 'archived', expectedVersion: created.version }),
       }, {});
-
-      const res = await handler({
+      assert.strictEqual(archived.statusCode, 400, archived.body);
+      assert.strictEqual(JSON.parse(archived.body).error, 'archived is system-owned and cannot be set directly');
+      const current = JSON.parse((await handler({
         httpMethod: 'GET',
-        path: '/api/tasks',
-        queryStringParameters: { status: 'archived' },
-      }, {});
-
-      assert.strictEqual(res.statusCode, 200);
-      const body = JSON.parse(res.body);
-      assert.ok(body.tasks.length >= 1);
-      const found = body.tasks.find((t: any) => t.id === created.id);
-      assert.ok(found, 'Archived task should appear in results');
-      assert.strictEqual(found.status, 'archived');
+        path: `/api/tasks/${created.id}`,
+      }, {})).body);
+      assert.strictEqual(current.status, 'todo');
+      assert.strictEqual(current.version, created.version);
     });
   });
 

@@ -7,7 +7,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import dynalite from 'dynalite';
 import type { DynaliteServer } from 'dynalite';
-import { getClient } from '../src/db/client';
+import {
+  disableLocalTransactionEmulation,
+  enableLocalTransactionEmulation,
+  getClient,
+} from '../src/db/client';
 import {
   TABLE_TASKS,
   TABLE_CARDS,
@@ -39,6 +43,8 @@ type LocalDynamoOptions = {
 /** Start explicit loopback-only dynalite owned by local/test tooling. */
 async function startLocal(options: LocalDynamoOptions = {}): Promise<number> {
   if (dynaliteServer) return dynaliteServer.address().port;
+
+  enableLocalTransactionEmulation();
 
   const dynaliteOptions: { createTableMs: number; path?: string } = { createTableMs: 0 };
   if (options.persistent) {
@@ -73,6 +79,7 @@ async function stopLocal(): Promise<void> {
   if (previousEndpoint === undefined) delete process.env.DYNAMODB_ENDPOINT;
   else process.env.DYNAMODB_ENDPOINT = previousEndpoint;
   previousEndpoint = undefined;
+  disableLocalTransactionEmulation();
 }
 
 /**

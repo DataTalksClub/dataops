@@ -6,6 +6,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { TABLE_TASKS } from '../src/db/tableNames';
+import { createCard } from '../src/db/cards';
 import {
   createTask,
   getTask,
@@ -36,10 +37,11 @@ describe('Tasks data layer', () => {
   });
 
   it('createTask returns a task with id, createdAt, updatedAt', async () => {
+    const card = await createCard(client, { title: 'Task owner', anchorDate: '2026-02-23' });
     const task = await createTask(client, {
       description: 'Write unit tests',
       date: '2026-02-23',
-      cardId: 'card-1',
+      cardId: card.id,
     });
 
     assert.ok(task.id, 'task should have an id');
@@ -47,7 +49,7 @@ describe('Tasks data layer', () => {
     assert.ok(task.updatedAt, 'task should have updatedAt');
     assert.strictEqual(task.description, 'Write unit tests');
     assert.strictEqual(task.date, '2026-02-23');
-    assert.strictEqual(task.cardId, 'card-1');
+    assert.strictEqual(task.cardId, card.id);
     assert.strictEqual(task.status, 'todo');
     assert.strictEqual(task.version, 1);
     assert.deepStrictEqual(task.taskHistory, []);
@@ -214,7 +216,7 @@ describe('Tasks data layer', () => {
 
     await updateTask(fakeClient, 'task-expression', {
       expectedVersion: 4,
-      patch: { status: 'done' },
+      patch: { description: 'Expression updated' },
       historyEvents: [{
         id: 'history-expression',
         taskId: 'task-expression',
@@ -294,10 +296,11 @@ describe('Tasks data layer', () => {
   });
 
   it('listTasksByCard returns tasks for a given card', async () => {
-    const bid = 'card-unique-' + crypto.randomUUID();
+    const bid = (await createCard(client, { title: 'Owned tasks', anchorDate: '2026-03-01' })).id;
+    const other = (await createCard(client, { title: 'Other tasks', anchorDate: '2026-03-01' })).id;
     await createTask(client, { description: 'P1', date: '2026-03-01', cardId: bid, status: 'todo' });
     await createTask(client, { description: 'P2', date: '2026-03-02', cardId: bid, status: 'todo' });
-    await createTask(client, { description: 'P3', date: '2026-03-01', cardId: 'other', status: 'todo' });
+    await createTask(client, { description: 'P3', date: '2026-03-01', cardId: other, status: 'todo' });
 
     const tasks = await listTasksByCard(client, bid);
     assert.strictEqual(tasks.length, 2);

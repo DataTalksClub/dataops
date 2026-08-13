@@ -7,6 +7,7 @@ import {
   formatTaskDateMeta,
   isActiveWorkCard,
   isBeforeIsoDate,
+  isCanonicalWorkTask,
   isOpenWorkTask,
   isTaskDueToday,
   isTaskOverdue,
@@ -362,7 +363,8 @@ export function createOperationsModel({
   }
 
   function taskNextActionLabel(task, today) {
-    const status = String(task?.status || "todo").toLowerCase();
+    if (!isCanonicalWorkTask(task)) return "Task unavailable";
+    const status = task.status;
     if (status === "waiting") {
       if (
         task?.followUpAt &&
@@ -451,6 +453,7 @@ export function createOperationsModel({
       meta: progress.label,
       cardId: card.id,
       anchorDate,
+      completedAt: card.completedAt || "",
       anchorLabel: formatCardAnchorLabel(anchorDate, today),
       anchorTone: cardAnchorTone(anchorDate, today),
       progress,

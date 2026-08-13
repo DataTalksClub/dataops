@@ -582,11 +582,24 @@ export function deriveHomeWorkState(snapshot, options = {}) {
 }
 
 export function tasksFromWorkPayload(payload) {
-  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload)) return payload.filter(isCanonicalWorkTask);
   if (!payload || typeof payload !== "object") return [];
-  if (Array.isArray(payload.tasks)) return payload.tasks;
-  if (Array.isArray(payload.items)) return payload.items;
+  if (Array.isArray(payload.tasks)) return payload.tasks.filter(isCanonicalWorkTask);
+  if (Array.isArray(payload.items)) return payload.items.filter(isCanonicalWorkTask);
   return [];
+}
+
+const CANONICAL_TASK_STATUSES = new Set(["todo", "waiting", "done", "archived"]);
+
+export function isCanonicalWorkTask(task) {
+  return Boolean(
+    task &&
+      typeof task === "object" &&
+      Number.isInteger(task.version) &&
+      task.version >= 1 &&
+      Array.isArray(task.taskHistory) &&
+      CANONICAL_TASK_STATUSES.has(task.status),
+  );
 }
 
 export function dedupeWorkTasks(tasks) {
@@ -620,9 +633,7 @@ export function taskDate(task) {
 }
 
 export function isOpenWorkTask(task) {
-  if (!task || typeof task !== "object") return false;
-  const status = String(task.status || "todo").toLowerCase();
-  return status !== "done" && status !== "archived";
+  return isCanonicalWorkTask(task) && (task.status === "todo" || task.status === "waiting");
 }
 
 export function isTaskDueToday(task, today) {
@@ -636,9 +647,8 @@ export function isTaskOverdue(task, today) {
 
 export function isWaitingOrFollowUpTask(task) {
   if (!isOpenWorkTask(task)) return false;
-  const status = String(task.status || "").toLowerCase();
   return (
-    status === "waiting" || Boolean(task.waitingFor) || Boolean(task.followUpAt)
+    task.status === "waiting" || Boolean(task.waitingFor) || Boolean(task.followUpAt)
   );
 }
 
@@ -650,16 +660,32 @@ export function isFollowUpDueTask(task, today = todayIsoDate()) {
 
 export function isActiveWorkCard(card) {
   if (!card || typeof card !== "object") return false;
-  const status = String(card.status || "active").toLowerCase();
-  const stage = String(card.stage || "preparation").toLowerCase();
-  return status !== "done" && status !== "archived" && stage !== "done";
+  return (
+    Number.isInteger(card.version) && card.version >= 1 &&
+    Number.isInteger(card.taskCount) && card.taskCount >= 0 &&
+    Number.isInteger(card.openTaskCount) && card.openTaskCount >= 0 &&
+    card.openTaskCount <= card.taskCount &&
+    (card.taskCount === 0 || card.openTaskCount > 0) &&
+    card.status === "active" &&
+    ["preparation", "announced", "after-event"].includes(card.stage) &&
+    card.completedAt === undefined &&
+    card.completedBy === undefined &&
+    card.activeStageBeforeCompletion === undefined
+  );
 }
 
 export function isArchivedWorkCard(card) {
   if (!card || typeof card !== "object") return false;
-  const status = String(card.status || "active").toLowerCase();
-  const stage = String(card.stage || "").toLowerCase();
-  return status === "done" || status === "archived" || stage === "done";
+  return (
+    Number.isInteger(card.version) && card.version >= 1 &&
+    Number.isInteger(card.taskCount) && card.taskCount > 0 &&
+    card.openTaskCount === 0 &&
+    card.status === "archived" &&
+    card.stage === "done" &&
+    typeof card.completedAt === "string" && card.completedAt.length > 0 &&
+    typeof card.completedBy === "string" && card.completedBy.length > 0 &&
+    ["preparation", "announced", "after-event"].includes(card.activeStageBeforeCompletion)
+  );
 }
 
 export function partitionCardsByArchive(cards) {
@@ -690,8 +716,8 @@ export function formatCardMonthLabel(value) {
 
 export function groupCardItemsByMonth(items) {
   const ordered = [...(items || [])].sort((left, right) => {
-    const leftDate = String(left?.anchorDate || "");
-    const rightDate = String(right?.anchorDate || "");
+    const leftDate = String(left?.completedAt || "");
+    const rightDate = String(right?.completedAt || "");
     if (leftDate !== rightDate) {
       // Newest first, undated last.
       if (!leftDate) return 1;
@@ -702,13 +728,13 @@ export function groupCardItemsByMonth(items) {
   });
   const groups = [];
   for (const item of ordered) {
-    const key = String(item?.anchorDate || "").slice(0, 7) || "undated";
+    const key = String(item?.completedAt || "").slice(0, 7) || "undated";
     const last = groups.at(-1);
     if (last && last.key === key) last.items.push(item);
     else
       groups.push({
         key,
-        label: formatCardMonthLabel(item?.anchorDate),
+        label: formatCardMonthLabel(item?.completedAt),
         items: [item],
       });
   }
@@ -809,9 +835,9 @@ export function missingCardLinks(card) {
 export function summarizeCardProgress(card, tasks, today) {
   const taskList = dedupeWorkTasks(tasks);
   const total = taskList.length;
-  const done = taskList.filter(
-    (task) => String(task.status || "").toLowerCase() === "done",
-  ).length;
+  const done = taskList.filter((task) => {
+    return task.status === "done" || task.status === "archived";
+  }).length;
   const open = taskList.filter(isOpenWorkTask).length;
   const overdue = taskList.filter((task) => isTaskOverdue(task, today)).length;
   const waiting = taskList.filter(isWaitingOrFollowUpTask).length;
@@ -875,10 +901,10 @@ export function nextDueOpenTask(tasks, today) {
 }
 
 export function sortCardChecklistTasks(tasks, today) {
-  const sorted = [...tasks];
+  const sorted = tasksFromWorkPayload(tasks);
   sorted.sort((left, right) => {
-    const leftDone = String(left.status || "").toLowerCase() === "done";
-    const rightDone = String(right.status || "").toLowerCase() === "done";
+    const leftDone = left.status === "done" || left.status === "archived";
+    const rightDone = right.status === "done" || right.status === "archived";
     if (leftDone !== rightDone) return leftDone ? 1 : -1;
     return compareIsoDate(taskDate(left) || today, taskDate(right) || today);
   });
@@ -904,7 +930,7 @@ export function workflowTaskGroups(tasks, today) {
       title: "Done / history",
       empty: "No completed tasks yet.",
       tasks: sorted.filter(
-        (task) => String(task.status || "").toLowerCase() === "done",
+        (task) => task.status === "done" || task.status === "archived",
       ),
     },
   ];

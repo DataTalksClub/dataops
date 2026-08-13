@@ -162,7 +162,12 @@ function startStack(testInfo, overrides = {}) {
   let spawnError = null;
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
-  child.once('error', (error) => { spawnError = error; });
+  let resolveSpawnFailure;
+  const spawnFailed = new Promise((resolve) => { resolveSpawnFailure = resolve; });
+  child.once('error', (error) => {
+    spawnError = error;
+    resolveSpawnFailure(error);
+  });
   const exited = new Promise((resolve) => child.once('close', (code, signal) => {
     exitResult = { code, signal };
     resolve(exitResult);
@@ -170,6 +175,7 @@ function startStack(testInfo, overrides = {}) {
   const stack = {
     child,
     exited,
+    spawnFailed,
     ports,
     roots,
     origin: `http://localhost:${ports.frontendPort}`,
@@ -183,23 +189,40 @@ function startStack(testInfo, overrides = {}) {
 }
 
 async function waitForStack(stack) {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    if (stack.stdout().includes(`[dataops-dev] open ${stack.origin}`)) return;
-    if (stack.exitResult() || stack.spawnError()) break;
-    await delay(75);
+  const frontendHealth = `${stack.origin}/api/health`;
+  const backendHealth = `http://127.0.0.1:${stack.ports.backendPort}/api/health`;
+  const readiness = waitFor(async () => {
+    const results = await Promise.allSettled([
+      fetch(frontendHealth, { signal: AbortSignal.timeout(1_000) }),
+      fetch(backendHealth, { signal: AbortSignal.timeout(1_000) }),
+    ]);
+    return results.every(
+      (result) => result.status === 'fulfilled' && result.value.ok,
+    ) && stack.stdout().includes(`[dataops-dev] open ${stack.origin}`);
+  }, 'development stack health endpoints did not become ready', 60_000);
+  try {
+    await Promise.race([
+      readiness,
+      stack.exited.then(({ code, signal }) => {
+        throw new Error(`child exited code=${code ?? 'null'} signal=${signal ?? 'none'}`);
+      }),
+      stack.spawnFailed.then((error) => {
+        throw new Error(`spawn error=${error.message}`);
+      }),
+    ]);
+  } catch (error) {
+    const result = stack.exitResult();
+    const status = stack.spawnError()
+      ? `spawn error=${stack.spawnError().message}`
+      : result
+        ? `exit=${result.code ?? 'null'} signal=${result.signal ?? 'none'}`
+        : 'still running at readiness timeout';
+    throw new Error(
+      `development stack did not become ready; frontend=${stack.origin} `
+      + `backend=http://127.0.0.1:${stack.ports.backendPort}; ${status}; ${error.message}`
+      + `\nfinal stdout:\n${stack.stdout()}\nfinal stderr:\n${stack.stderr()}`,
+    );
   }
-  const result = stack.exitResult();
-  const status = stack.spawnError()
-    ? `spawn error=${stack.spawnError().message}`
-    : result
-      ? `exit=${result.code ?? 'null'} signal=${result.signal ?? 'none'}`
-      : 'still running at readiness timeout';
-  throw new Error(
-    `development stack did not become ready; frontend=${stack.origin} `
-    + `backend=http://127.0.0.1:${stack.ports.backendPort}; ${status}`
-    + `\nfinal stdout:\n${stack.stdout()}\nfinal stderr:\n${stack.stderr()}`,
-  );
 }
 
 async function stopStack(stack) {

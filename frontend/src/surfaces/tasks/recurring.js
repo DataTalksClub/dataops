@@ -165,8 +165,10 @@ export function createRecurringTasks(context) {
     const status = document.createElement("span");
     status.className = "recurring-status";
     status.append(iconElement(paused ? "paused" : "active"));
-    status.setAttribute("aria-label", paused ? "Paused" : "Active");
-    status.title = paused ? "Paused" : "Active";
+    const statusText = textSpan(paused ? "Paused" : "Active");
+    statusText.className = "visually-hidden";
+    status.append(statusText);
+    status.title = statusText.textContent;
 
     const text = document.createElement("div");
     text.className = "recurring-item-text";

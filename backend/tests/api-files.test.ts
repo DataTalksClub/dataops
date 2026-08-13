@@ -443,6 +443,57 @@ describe('API - File uploads', () => {
       assert.strictEqual(parsed.status, 'done');
     });
 
+    it('prevents completion again after the only required file is deleted', async () => {
+      const taskRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({
+          description: 'Required file removed task',
+          date: '2026-06-01',
+          requiresFile: true,
+        }),
+      }, {});
+      const task = JSON.parse(taskRes.body);
+
+      const { body, contentType } = buildMultipart(
+        { taskId: task.id },
+        {
+          fieldName: 'file',
+          filename: 'temporary-proof.txt',
+          content: Buffer.from('temporary proof'),
+          contentType: 'text/plain',
+        }
+      );
+      const uploadRes = await handler({
+        httpMethod: 'POST',
+        path: '/api/files',
+        headers: { 'content-type': contentType },
+        body,
+      }, {});
+      assert.strictEqual(uploadRes.statusCode, 201);
+      const uploaded = JSON.parse(uploadRes.body);
+
+      const deleteRes = await handler({
+        httpMethod: 'DELETE',
+        path: `/api/files/${uploaded.file.id}`,
+      }, {});
+      assert.strictEqual(deleteRes.statusCode, 204);
+
+      const completionRes = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${task.id}`,
+        body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
+      }, {});
+      assert.strictEqual(completionRes.statusCode, 400);
+
+      const persistedTaskRes = await handler({
+        httpMethod: 'GET',
+        path: `/api/tasks/${task.id}`,
+      }, {});
+      assert.strictEqual(persistedTaskRes.statusCode, 200);
+      assert.strictEqual(JSON.parse(persistedTaskRes.body).status, 'todo');
+    });
+
     it('allows marking done when requiresFile is not set', async () => {
       const taskRes = await handler({
         httpMethod: 'POST',

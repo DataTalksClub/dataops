@@ -5,16 +5,16 @@ import os from 'os';
 import path from 'path';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createTables } from '../scripts/local-dynamodb';
-import { createCard } from '../src/db/cards';
-import { createIntakeItem } from '../src/db/intake';
-import { createNotification } from '../src/db/notifications';
-import { createTask } from '../src/db/tasks';
-import { createTemplate } from '../src/db/templates';
-import { createUser } from '../src/db/users';
-import { dryRunImport, writePortableExport } from '../src/export/portable';
+import { getClient } from '../../src/db/client';
+import { startLocal, stopLocal } from '../../scripts/local-dynamodb';
+import { createTables } from '../../scripts/local-dynamodb';
+import { createCard } from '../../src/db/cards';
+import { createIntakeItem } from '../../src/db/intake';
+import { createNotification } from '../../src/db/notifications';
+import { createTask } from '../../src/db/tasks';
+import { createTemplate } from '../../src/db/templates';
+import { createUser } from '../../src/db/users';
+import { dryRunImport, writePortableExport } from '../../src/export/portable';
 
 describe('dry-run import', () => {
   let client: DynamoDBDocumentClient;
