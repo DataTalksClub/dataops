@@ -10,7 +10,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
-import { createCard, updateCard } from '../src/db/cards';
+import { createCard, getCard, updateCard } from '../src/db/cards';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
 import { createIntakeItem } from '../src/db/intake';
@@ -289,7 +289,12 @@ describe('portable execution data export', () => {
         intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }],
       },
     });
-    await updateCard(client, card.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
+    const currentCard = await getCard(client, card.id);
+    assert.ok(currentCard);
+    await updateCard(client, card.id, {
+      expectedVersion: currentCard.version,
+      patch: { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] },
+    });
     await appendAssistantJobEvent(client, {
       assistantJobId: assistantJob.id,
       actorId: user.id,
@@ -342,7 +347,7 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.entity_counts.files, 1);
     assert.strictEqual(result.manifest.entity_counts.artifacts, 1);
     assert.strictEqual(result.manifest.entity_counts.assistant_jobs, 1);
-    assert.strictEqual(result.manifest.entity_counts.audit_events, 1);
+    assert.strictEqual(result.manifest.entity_counts.audit_events, 2);
     assert.strictEqual(result.manifest.entity_counts.intake_items, 2);
     assert.strictEqual(result.manifest.entity_counts.notifications, 3);
     assert.ok(result.manifest.redactions.includes('users.password_hash'));
@@ -384,7 +389,8 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(tasksJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
     assert.match(tasksJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-task-ref","action":"completed"\}\]/);
-    assert.match(tasksJsonl, /"task_history":\[\{"id":"history-waiting-started"/);
+    assert.match(tasksJsonl, /"task_history":\[/);
+    assert.match(tasksJsonl, /"id":"history-waiting-started"/);
     assert.match(tasksJsonl, /"action":"follow-up-sent"/);
     assert.match(tasksJsonl, /"previousFollowUpAt":"2026-06-21"/);
     assert.match(tasksJsonl, /"completed_by"/);
@@ -398,7 +404,9 @@ describe('portable execution data export', () => {
     assert.match(cardsJsonl, /"artifact_refs":\[\{"artifactId":"artifact-card-ref","type":"document"\}\]/);
     assert.match(cardsJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
     assert.match(cardsJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
-    assert.match(cardsJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-card-ref","action":"created"\}\]/);
+    assert.match(cardsJsonl, /"audit_event_refs":\[/);
+    assert.match(cardsJsonl, /"auditEventId":"audit-card-ref","action":"created"/);
+    assert.match(cardsJsonl, /"action":"card-completed"/);
     assert.match(cardsJsonl, /"emoji":"🧭"/);
     assert.match(cardsJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
 

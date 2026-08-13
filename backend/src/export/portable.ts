@@ -137,6 +137,7 @@ const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 's
 const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
 const VALID_ASSISTANT_JOB_STATUSES = new Set(['draft', 'queued', 'running', 'waiting_approval', 'approved', 'rejected', 'retrying', 'succeeded', 'failed', 'canceled']);
 const VALID_ASSISTANT_EVENT_ACTIONS = new Set(['created', 'queued', 'started', 'log-appended', 'artifact-attached', 'approval-requested', 'approved', 'rejected', 'retry-requested', 'failed', 'canceled', 'succeeded']);
+const VALID_CARD_LIFECYCLE_AUDIT_ACTIONS = new Set(['card-completed', 'card-reactivated']);
 const VALID_INTAKE_SOURCES = new Set(['telegram', 'email', 'manual', 'file', 'link', 'import', 'assistant', 'unknown']);
 const VALID_INTAKE_STATUSES = new Set(['new', 'triaged', 'attached', 'converted', 'ignored', 'duplicate', 'blocked', 'archived']);
 const VALID_INTAKE_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
@@ -481,6 +482,11 @@ function mapAuditEvent(item: Record<string, unknown>): JsonRecord {
     actor_id: optionalString(item.actorId),
     action: optionalString(item.action),
     summary: optionalString(item.summary),
+    card_id: optionalString(item.cardId),
+    trigger_task_id: optionalString(item.triggerTaskId),
+    trigger_kind: optionalString(item.triggerKind),
+    before: optionalJsonStringOrObject(item.before),
+    after: optionalJsonStringOrObject(item.after),
     metadata: optionalJsonStringOrObject(item.metadata),
     created_at: optionalString(item.createdAt),
   });
@@ -1557,11 +1563,34 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   for (const [index, event] of (recordsByEntity.audit_events || []).entries()) {
     const context = `audit_events[${index}]`;
-    requireString(event, 'summary', errors, context);
-    requireString(event, 'action', errors, context);
-    optionalEnum(event, 'action', VALID_ASSISTANT_EVENT_ACTIONS, errors, context);
-    optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
-    optionalReference(event, 'actor_id', userIds, errors, context);
+    const action = requireString(event, 'action', errors, context);
+    if (action && VALID_CARD_LIFECYCLE_AUDIT_ACTIONS.has(action)) {
+      requireString(event, 'actor_id', errors, context);
+      requireString(event, 'card_id', errors, context);
+      requireString(event, 'trigger_task_id', errors, context);
+      requireString(event, 'trigger_kind', errors, context);
+      optionalReference(event, 'card_id', cardIds, errors, context);
+      for (const field of ['before', 'after']) {
+        const snapshot = event[field];
+        const snapshotContext = `${context}.${field}`;
+        if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+          errors.push(`${snapshotContext} must be an object`);
+          continue;
+        }
+        const value = snapshot as JsonRecord;
+        requiredEnum(value, 'stage', new Set(['preparation', 'announced', 'after-event', 'done']), errors, snapshotContext);
+        requiredEnum(value, 'status', new Set(['active', 'archived']), errors, snapshotContext);
+        requiredIntegerField(value, 'taskCount', errors, snapshotContext, 0);
+        requiredIntegerField(value, 'openTaskCount', errors, snapshotContext, 0);
+      }
+    } else {
+      requireString(event, 'summary', errors, context);
+      if (action && !VALID_ASSISTANT_EVENT_ACTIONS.has(action)) {
+        errors.push(`${context} field action has unknown value: ${action}`);
+      }
+      optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
+      optionalReference(event, 'actor_id', userIds, errors, context);
+    }
     validateDateOrTimestampField(event, 'created_at', errors, context, true);
     validateNoSecretPayload(event, errors, context);
   }

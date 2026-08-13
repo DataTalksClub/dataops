@@ -5,7 +5,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createTask, getTask, updateTask } from '../src/db/tasks';
-import { createCard, updateCard } from '../src/db/cards';
+import { createCard, getCard, updateCard } from '../src/db/cards';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { MailchimpProvider, MailingExportProviderError } from '../src/mailingExports/mailchimp';
 import { readDapierMailchimpCredential } from '../src/mailingExports/credentials';
@@ -220,7 +220,12 @@ describe('mailing-list export service', () => {
       expectedVersion: task.version + 1,
       patch: { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] },
     });
-    await updateCard(client, card.id, { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] });
+    const attachedCard = await getCard(client, card.id);
+    assert.ok(attachedCard);
+    await updateCard(client, card.id, {
+      expectedVersion: attachedCard.version,
+      patch: { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] },
+    });
     const { handler } = await import('../src/handler');
     const taskRead = await handler({ httpMethod: 'GET', path: `/api/tasks/${task.id}` }, {});
     const cardRead = await handler({ httpMethod: 'GET', path: `/api/cards/${card.id}` }, {});
