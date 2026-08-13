@@ -58,6 +58,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Check out the knowledge repository
+        uses: actions/checkout@v6
+        with:
+          repository: DataTalksClub/dataops-knowledge
+          ssh-key: ${{ secrets.DATAOPS_KNOWLEDGE_DEPLOY_KEY }}
+          path: .knowledge
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
 
@@ -75,7 +82,7 @@ jobs:
 
       - name: Lint marked SOPs via Node CLI
         run: |
-          files=$(grep -rl "schema_version: 1" content --include='*.md' | xargs grep -l "^doc_type: sop$" | tr '\n' ' ')
+          files=$(grep -rl "schema_version: 1" .knowledge/content --include='*.md' | xargs grep -l "^doc_type: sop$" | tr '\n' ' ')
           if [ -z "$(echo "$files" | tr -d '[:space:]')" ]; then echo 'No marked SOP files found' >&2; exit 1; fi
           make sop-lint FILES="$files"
 
