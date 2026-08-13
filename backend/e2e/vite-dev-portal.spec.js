@@ -238,11 +238,11 @@ async function createRepresentativeTaskTable(client) {
       { AttributeName: 'SK', AttributeType: 'S' },
       { AttributeName: 'date', AttributeType: 'S' },
       { AttributeName: 'status', AttributeType: 'S' },
-      { AttributeName: 'bundleId', AttributeType: 'S' },
+      { AttributeName: 'cardId', AttributeType: 'S' },
     ],
     GlobalSecondaryIndexes: [
       { IndexName: 'GSI-Date', KeySchema: [{ AttributeName: 'date', KeyType: 'HASH' }, { AttributeName: 'status', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
-      { IndexName: 'GSI-Bundle', KeySchema: [{ AttributeName: 'bundleId', KeyType: 'HASH' }, { AttributeName: 'date', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
+      { IndexName: 'GSI-Card', KeySchema: [{ AttributeName: 'cardId', KeyType: 'HASH' }, { AttributeName: 'date', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
       { IndexName: 'GSI-Status', KeySchema: [{ AttributeName: 'status', KeyType: 'HASH' }, { AttributeName: 'date', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
     ],
     BillingMode: 'PAY_PER_REQUEST',
@@ -319,9 +319,9 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     const tasks = await browserJson(page, '/work/api/tasks?date=2026-08-12', { headers: authorization });
     expect(tasks.status).toBe(200);
     expect(tasks.body.tasks.some((task) => task.id === created.body.id)).toBe(true);
-    const workflows = await browserJson(page, '/work/api/bundles', { headers: authorization });
+    const workflows = await browserJson(page, '/work/api/cards', { headers: authorization });
     expect(workflows.status).toBe(200);
-    expect(Array.isArray(workflows.body.bundles)).toBe(true);
+    expect(Array.isArray(workflows.body.cards)).toBe(true);
 
     const docs = await browserJson(page, '/docs');
     expect(docs.status).toBe(200);
@@ -430,7 +430,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
       description: originalDescription,
       date: '2026-08-12',
       status: 'todo',
-      bundleId: 'synthetic-bundle',
+      cardId: 'synthetic-card',
       source: 'import',
       createdAt: '2026-08-12T00:00:00.000Z',
       updatedAt: '2026-08-12T00:00:00.000Z',

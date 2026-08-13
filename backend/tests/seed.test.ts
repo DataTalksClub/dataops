@@ -121,9 +121,9 @@ describe('Seed script', () => {
       'Newsletter references should not point at Google Docs',
     );
 
-    // Check bundleLinkDefinitions
-    assert.strictEqual(newsletter.bundleLinkDefinitions!.length, 4);
-    const linkNames = newsletter.bundleLinkDefinitions!.map((l) => l.name);
+    // Check cardLinkDefinitions
+    assert.strictEqual(newsletter.cardLinkDefinitions!.length, 4);
+    const linkNames = newsletter.cardLinkDefinitions!.map((l) => l.name);
     assert.ok(linkNames.includes('Sponsorship document'));
     assert.ok(linkNames.includes('Mailchimp newsletter'));
     assert.ok(linkNames.includes('LinkedIn'));
@@ -168,7 +168,7 @@ describe('Seed script', () => {
     assert.strictEqual((sponsorEmail.validation as any).waitingSemantics.waitingFor, 'sponsor content, graphics, or Valeriia review');
     assert.deepStrictEqual((sponsorEmail.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
     assert.deepStrictEqual((sponsorEmail.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
-    assert.deepStrictEqual((sponsorEmail.validation as any).requiredBundleLinks, ['Sponsorship document']);
+    assert.deepStrictEqual((sponsorEmail.validation as any).requiredCardLinks, ['Sponsorship document']);
 
     const sponsoredBlock = newsletter.taskDefinitions!.find((td) => td.refId === 'fill-sponsored-block');
     assert.ok(sponsoredBlock);
@@ -180,7 +180,7 @@ describe('Seed script', () => {
     });
     assert.strictEqual((sponsoredBlock.validation as any).waitingSemantics.waitingFor, 'approved sponsor copy, visual, and CTA');
     assert.deepStrictEqual((sponsoredBlock.validation as any).skipClosure.allowedStatuses, ['not sponsored this week']);
-    assert.deepStrictEqual((sponsoredBlock.validation as any).requiredBundleLinks, ['Sponsorship document']);
+    assert.deepStrictEqual((sponsoredBlock.validation as any).requiredCardLinks, ['Sponsorship document']);
 
     const bookBlock = newsletter.taskDefinitions!.find((td) => td.refId === 'fill-book-of-the-week-block');
     assert.ok(bookBlock);
@@ -206,7 +206,7 @@ describe('Seed script', () => {
       label: 'Mailchimp campaign scheduled',
       required: true,
     });
-    assert.deepStrictEqual((scheduleNewsletter.validation as any).requiredBundleLinks, ['Mailchimp newsletter']);
+    assert.deepStrictEqual((scheduleNewsletter.validation as any).requiredCardLinks, ['Mailchimp newsletter']);
     assert.strictEqual((scheduleNewsletter.validation as any).skipClosure, undefined);
 
     const invoice = newsletter.taskDefinitions!.find((td) => td.refId === 'create-invoice');
@@ -238,8 +238,8 @@ describe('Seed script', () => {
       label: 'Newsletter, LinkedIn, and X performance stats recorded',
       required: true,
     });
-    assert.deepStrictEqual((performance.validation as any).requiredBundleLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
-    assert.deepStrictEqual((performance.validation as any).skipClosure.suppresses['no social stats available'].bundleLinks, ['LinkedIn', 'X']);
+    assert.deepStrictEqual((performance.validation as any).requiredCardLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
+    assert.deepStrictEqual((performance.validation as any).skipClosure.suppresses['no social stats available'].cardLinks, ['LinkedIn', 'X']);
     assert.strictEqual((performance.validation as any).skipClosure.suppresses['no social stats available'].proof, true);
 
     const done = newsletter.taskDefinitions!.find((td) => td.refId === 'send-performance-to-sponsor');
@@ -251,8 +251,8 @@ describe('Seed script', () => {
       label: 'Send the performance of the newsletter to the sponsor confirmed',
       required: true,
     });
-    assert.deepStrictEqual((done.validation as any).requiredBundleLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
-    assert.deepStrictEqual((done.validation as any).skipClosure.suppresses['not sponsored this week'].bundleLinks, ['*']);
+    assert.deepStrictEqual((done.validation as any).requiredCardLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
+    assert.deepStrictEqual((done.validation as any).skipClosure.suppresses['not sponsored this week'].cardLinks, ['*']);
 
     for (const td of newsletter.taskDefinitions!) {
       assert.ok(td.phase, `${td.refId} should declare a phase`);
@@ -271,7 +271,7 @@ describe('Seed script', () => {
     const newsletter = templates.find((t) => t.type === 'newsletter');
     assert.ok(newsletter, 'Newsletter template should exist');
 
-    const tasks = await instantiateTemplate(client, newsletter.id, 'bundle-newsletter-sample', '2026-07-20');
+    const tasks = await instantiateTemplate(client, newsletter.id, 'card-newsletter-sample', '2026-07-20');
     assert.strictEqual(tasks.length, 15);
 
     const createSponsorship = tasks.find((task) => task.templateTaskRef === 'create-sponsorship-document');
@@ -320,7 +320,7 @@ describe('Seed script', () => {
     const sponsorLiveEmail = tasks.find((task) => task.templateTaskRef === 'send-email-sponsor-publication-live');
     assert.ok(sponsorLiveEmail);
     assert.strictEqual(sponsorLiveEmail.date, '2026-07-21');
-    assert.deepStrictEqual((sponsorLiveEmail.validation as any).requiredBundleLinks, ['Mailchimp newsletter']);
+    assert.deepStrictEqual((sponsorLiveEmail.validation as any).requiredCardLinks, ['Mailchimp newsletter']);
 
     const linkedin = tasks.find((task) => task.templateTaskRef === 'schedule-sponsorship-linkedin');
     assert.ok(linkedin);
@@ -335,7 +335,7 @@ describe('Seed script', () => {
     const performance = tasks.find((task) => task.templateTaskRef === 'add-newsletter-performance');
     assert.ok(performance);
     assert.strictEqual(performance.date, '2026-07-27');
-    assert.deepStrictEqual((performance.validation as any).requiredBundleLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
+    assert.deepStrictEqual((performance.validation as any).requiredCardLinks, ['Mailchimp newsletter', 'LinkedIn', 'X']);
 
     const done = tasks.find((task) => task.templateTaskRef === 'send-performance-to-sponsor');
     assert.ok(done);
@@ -374,7 +374,7 @@ describe('Seed script', () => {
       'follow-up-archive',
     ]);
 
-    const linkNames = podcast.bundleLinkDefinitions!.map((link) => link.name);
+    const linkNames = podcast.cardLinkDefinitions!.map((link) => link.name);
     for (const requiredLink of [
       'Guest email',
       'Podcast document',
@@ -389,7 +389,7 @@ describe('Seed script', () => {
       'Dropbox recording folder',
       'Podcast banner or cover',
     ]) {
-      assert.ok(linkNames.includes(requiredLink), `Podcast bundle should require ${requiredLink}`);
+      assert.ok(linkNames.includes(requiredLink), `Podcast card should require ${requiredLink}`);
     }
 
     const createPodcastDocument = podcast.taskDefinitions!.find((td) => td.refId === 'create-podcast-document');
@@ -480,7 +480,7 @@ describe('Seed script', () => {
     const podcast = templates.find((t) => t.type === 'podcast');
     assert.ok(podcast, 'Podcast template should exist');
 
-    const tasks = await instantiateTemplate(client, podcast.id, 'bundle-podcast-sample', '2026-08-17');
+    const tasks = await instantiateTemplate(client, podcast.id, 'card-podcast-sample', '2026-08-17');
     assert.strictEqual(tasks.length, 42);
 
     const createPodcastDocument = tasks.find((task) => task.templateTaskRef === 'create-podcast-document');
@@ -529,7 +529,7 @@ describe('Seed script', () => {
     const publish = tasks.find((task) => task.templateTaskRef === 'schedule-podcast-spotify');
     assert.ok(publish);
     assert.strictEqual(publish.date, '2026-08-21');
-    assert.deepStrictEqual((publish.validation as any).requiredBundleLinks, [
+    assert.deepStrictEqual((publish.validation as any).requiredCardLinks, [
       'Spotify for Podcasters',
       'Public Spotify episode',
       'Apple Podcasts episode',
@@ -579,7 +579,7 @@ describe('Seed script', () => {
       assert.ok(taxReport.sourceDocIds!.includes(docId), `Tax Report sourceDocIds should include ${docId}`);
     }
 
-    const linkNames = taxReport.bundleLinkDefinitions!.map((link) => link.name);
+    const linkNames = taxReport.cardLinkDefinitions!.map((link) => link.name);
     assert.deepStrictEqual(linkNames, [
       'Monthly report/spreadsheet',
       'Accountant upload/share link',
@@ -652,7 +652,7 @@ describe('Seed script', () => {
       label: 'Accountant upload/share link',
       required: true,
     });
-    assert.deepStrictEqual((zip.validation as any).requiredBundleLinks, ['Accountant upload/share link']);
+    assert.deepStrictEqual((zip.validation as any).requiredCardLinks, ['Accountant upload/share link']);
 
     const notify = taxReport.taskDefinitions!.find((td) => td.refId === 'notify-accountants');
     assert.ok(notify);
@@ -669,7 +669,7 @@ describe('Seed script', () => {
     assert.ok(done);
     assert.strictEqual(done.stageOnComplete, 'done');
     assert.strictEqual(done.instructionDocId, 'sop.finance.bookkeeping.preparing-a-zip-archive-with-invoices-and-send-reports-to-the-accountant');
-    assert.deepStrictEqual((done.validation as any).requiredBundleLinks, [
+    assert.deepStrictEqual((done.validation as any).requiredCardLinks, [
       'Monthly report/spreadsheet',
       'Accountant upload/share link',
       'Accountant email thread',
@@ -693,7 +693,7 @@ describe('Seed script', () => {
     const taxReport = templates.find((t) => t.type === 'tax-report');
     assert.ok(taxReport, 'Tax Report template should exist');
 
-    const tasks = await instantiateTemplate(client, taxReport.id, 'bundle-tax-report-sample', '2026-09-01');
+    const tasks = await instantiateTemplate(client, taxReport.id, 'card-tax-report-sample', '2026-09-01');
     assert.strictEqual(tasks.length, 9);
 
     const expectedDates: Record<string, string> = {
@@ -737,7 +737,7 @@ describe('Seed script', () => {
     const done = tasks.find((task) => task.templateTaskRef === 'organize-invoices-folders');
     assert.ok(done);
     assert.strictEqual(done.stageOnComplete, 'done');
-    assert.deepStrictEqual((done.validation as any).requiredBundleLinks, [
+    assert.deepStrictEqual((done.validation as any).requiredCardLinks, [
       'Monthly report/spreadsheet',
       'Accountant upload/share link',
       'Accountant email thread',
@@ -888,7 +888,7 @@ describe('Seed script', () => {
       assert.ok(botw.sourceDocIds!.includes(docId), `Book of the Week sourceDocIds should include ${docId}`);
     }
 
-    const linkNames = botw.bundleLinkDefinitions!.map((link) => link.name);
+    const linkNames = botw.cardLinkDefinitions!.map((link) => link.name);
     for (const requiredLink of [
       'Author email',
       'Publisher or sponsor contact',
@@ -901,7 +901,7 @@ describe('Seed script', () => {
       'Winner announcement',
       'Winner email handoff',
     ]) {
-      assert.ok(linkNames.includes(requiredLink), `Book of the Week bundle should include ${requiredLink}`);
+      assert.ok(linkNames.includes(requiredLink), `Book of the Week card should include ${requiredLink}`);
     }
 
     const newsletter = botw.taskDefinitions!.find((td) => td.refId === 'fill-newsletter-announcement');
@@ -957,7 +957,7 @@ describe('Seed script', () => {
         label: requiredLinkName,
         required: true,
       });
-      assert.deepStrictEqual((task.validation as any).requiredBundleLinks, [requiredLinkName]);
+      assert.deepStrictEqual((task.validation as any).requiredCardLinks, [requiredLinkName]);
     }
 
     const humanAcceptanceExpectations: Record<string, string> = {
@@ -1007,7 +1007,7 @@ describe('Seed script', () => {
     const botw = templates.find((t) => t.type === 'book-of-the-week');
     assert.ok(botw);
 
-    const tasks = await instantiateTemplate(client, botw.id, 'bundle-book-of-the-week-sample', '2026-07-06');
+    const tasks = await instantiateTemplate(client, botw.id, 'card-book-of-the-week-sample', '2026-07-06');
     assert.strictEqual(tasks.length, 21);
 
     const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));
@@ -1062,7 +1062,7 @@ describe('Seed script', () => {
       assert.ok(oss.sourceDocIds!.includes(docId), `OSS sourceDocIds should include ${docId}`);
     }
 
-    const linkNames = oss.bundleLinkDefinitions!.map((link) => link.name);
+    const linkNames = oss.cardLinkDefinitions!.map((link) => link.name);
     assert.deepStrictEqual(linkNames, [
       'Guest email',
       'Tool GitHub',
@@ -1089,7 +1089,7 @@ describe('Seed script', () => {
       label: 'Identify likely maintainers/contributors and start outreach from GitHub or community context confirmed',
       required: true,
     });
-    assert.deepStrictEqual((outreach.validation as any).requiredBundleLinks, ['Tool GitHub']);
+    assert.deepStrictEqual((outreach.validation as any).requiredCardLinks, ['Tool GitHub']);
     assert.strictEqual((outreach.validation as any).waitingSemantics.waitingFor, 'author, maintainer, or project community reply');
     assert.deepStrictEqual((outreach.validation as any).waitingSemantics.requires, ['waitingFor', 'followUpAt', 'comment']);
 
@@ -1106,7 +1106,7 @@ describe('Seed script', () => {
       youtubeDraft.instructionDocId,
       'reference.media.open-source-spotlight.download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube'
     );
-    assert.deepStrictEqual((youtubeDraft.validation as any).requiredBundleLinks, ['Recording source', 'YouTube']);
+    assert.deepStrictEqual((youtubeDraft.validation as any).requiredCardLinks, ['Recording source', 'YouTube']);
 
     const review = oss.taskDefinitions!.find((td) => td.refId === 'ask-authors-review-codes');
     assert.ok(review);
@@ -1139,7 +1139,7 @@ describe('Seed script', () => {
     const oss = templates.find((t) => t.type === 'oss');
     assert.ok(oss);
 
-    const tasks = await instantiateTemplate(client, oss.id, 'bundle-oss-operator-ready-1', '2026-07-22');
+    const tasks = await instantiateTemplate(client, oss.id, 'card-oss-operator-ready-1', '2026-07-22');
     assert.strictEqual(tasks.length, 14);
 
     const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));

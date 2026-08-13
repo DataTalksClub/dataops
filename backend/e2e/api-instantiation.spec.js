@@ -20,10 +20,10 @@ async function createTemplate(request, data) {
 }
 
 /**
- * Helper: create a bundle from a template via API and return { bundle, tasks }.
+ * Helper: create a card from a template via API and return { card, tasks }.
  */
-async function createBundleFromTemplate(request, data) {
-  const res = await request.post('/api/bundles', { data });
+async function createCardFromTemplate(request, data) {
+  const res = await request.post('/api/cards', { data });
   expect(res.status()).toBe(201);
   return await res.json();
 }
@@ -32,37 +32,37 @@ async function createBundleFromTemplate(request, data) {
 // Template instantiation with new fields (issue #20)
 // ──────────────────────────────────────────────────────────────────
 
-test.describe('Template instantiation - bundle inherits template metadata', () => {
+test.describe('Template instantiation - card inherits template metadata', () => {
 
-  test('bundle inherits emoji, tags, references, and bundleLinks from template when not provided by caller', async ({ request }) => {
-    // Given: A template exists with emoji, tags, references, and bundleLinkDefinitions
+  test('card inherits emoji, tags, references, and cardLinks from template when not provided by caller', async ({ request }) => {
+    // Given: A template exists with emoji, tags, references, and cardLinkDefinitions
     const template = await createTemplate(request, {
       name: 'E2E Full Template',
       type: 'event',
       emoji: '📰',
       tags: ['newsletter', 'weekly'],
       references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-      bundleLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
+      cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
       taskDefinitions: [
         { refId: 'prep', description: 'Prepare', offsetDays: -7 },
         { refId: 'event', description: 'Run event', offsetDays: 0 },
       ],
     });
 
-    // When: A user creates a bundle without specifying emoji/tags/references/bundleLinks
-    const { bundle, tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Inherited Bundle',
+    // When: A user creates a card without specifying emoji/tags/references/cardLinks
+    const { card, tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Inherited Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
 
-    // Then: The bundle has the template's emoji, tags, and references
-    expect(bundle.emoji).toBe('📰');
-    expect(bundle.tags).toEqual(['newsletter', 'weekly']);
-    expect(bundle.references).toEqual([{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
+    // Then: The card has the template's emoji, tags, and references
+    expect(card.emoji).toBe('📰');
+    expect(card.tags).toEqual(['newsletter', 'weekly']);
+    expect(card.references).toEqual([{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
 
-    // And: bundleLinks are created from bundleLinkDefinitions with empty URL strings
-    expect(bundle.bundleLinks).toEqual([
+    // And: cardLinks are created from cardLinkDefinitions with empty URL strings
+    expect(card.cardLinks).toEqual([
       { name: 'Luma', url: '' },
       { name: 'YouTube', url: '' },
     ]);
@@ -71,34 +71,34 @@ test.describe('Template instantiation - bundle inherits template metadata', () =
     expect(tasks).toHaveLength(2);
   });
 
-  test('bundle inherits fields and they persist via GET', async ({ request }) => {
+  test('card inherits fields and they persist via GET', async ({ request }) => {
     const template = await createTemplate(request, {
       name: 'E2E Persist Template',
       type: 'event',
       emoji: '🎙️',
       tags: ['podcast'],
       references: [{ name: 'Docs', url: 'https://example.com/docs' }],
-      bundleLinkDefinitions: [{ name: 'Luma' }],
+      cardLinkDefinitions: [{ name: 'Luma' }],
       taskDefinitions: [
         { refId: 'a', description: 'Task A', offsetDays: 0 },
       ],
     });
 
-    const { bundle } = await createBundleFromTemplate(request, {
-      title: 'E2E Persist Bundle',
+    const { card } = await createCardFromTemplate(request, {
+      title: 'E2E Persist Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
 
     // Verify via GET
-    const res = await request.get(`/api/bundles/${bundle.id}`);
+    const res = await request.get(`/api/cards/${card.id}`);
     expect(res.status()).toBe(200);
     const body = await res.json();
 
-    expect(body.bundle.emoji).toBe('🎙️');
-    expect(body.bundle.tags).toEqual(['podcast']);
-    expect(body.bundle.references).toEqual([{ name: 'Docs', url: 'https://example.com/docs' }]);
-    expect(body.bundle.bundleLinks).toEqual([{ name: 'Luma', url: '' }]);
+    expect(body.card.emoji).toBe('🎙️');
+    expect(body.card.tags).toEqual(['podcast']);
+    expect(body.card.references).toEqual([{ name: 'Docs', url: 'https://example.com/docs' }]);
+    expect(body.card.cardLinks).toEqual([{ name: 'Luma', url: '' }]);
   });
 });
 
@@ -116,41 +116,41 @@ test.describe('Template instantiation - caller overrides template metadata', () 
       ],
     });
 
-    // When: A user creates a bundle with their own emoji and tags
-    const { bundle } = await createBundleFromTemplate(request, {
-      title: 'E2E Override Bundle',
+    // When: A user creates a card with their own emoji and tags
+    const { card } = await createCardFromTemplate(request, {
+      title: 'E2E Override Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
       emoji: '🎉',
       tags: ['custom'],
     });
 
-    // Then: The bundle uses the caller's values
-    expect(bundle.emoji).toBe('🎉');
-    expect(bundle.tags).toEqual(['custom']);
+    // Then: The card uses the caller's values
+    expect(card.emoji).toBe('🎉');
+    expect(card.tags).toEqual(['custom']);
   });
 
-  test('caller-provided references and bundleLinks override template values', async ({ request }) => {
+  test('caller-provided references and cardLinks override template values', async ({ request }) => {
     const template = await createTemplate(request, {
       name: 'E2E Override Links Template',
       type: 'event',
       references: [{ name: 'Template ref', url: 'https://template.com' }],
-      bundleLinkDefinitions: [{ name: 'Luma' }],
+      cardLinkDefinitions: [{ name: 'Luma' }],
       taskDefinitions: [
         { refId: 'a', description: 'Task A', offsetDays: 0 },
       ],
     });
 
-    const { bundle } = await createBundleFromTemplate(request, {
-      title: 'E2E Override Links Bundle',
+    const { card } = await createCardFromTemplate(request, {
+      title: 'E2E Override Links Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
       references: [{ name: 'Custom ref', url: 'https://custom.com' }],
-      bundleLinks: [{ name: 'Custom link', url: 'https://custom-link.com' }],
+      cardLinks: [{ name: 'Custom link', url: 'https://custom-link.com' }],
     });
 
-    expect(bundle.references).toEqual([{ name: 'Custom ref', url: 'https://custom.com' }]);
-    expect(bundle.bundleLinks).toEqual([{ name: 'Custom link', url: 'https://custom-link.com' }]);
+    expect(card.references).toEqual([{ name: 'Custom ref', url: 'https://custom.com' }]);
+    expect(card.cardLinks).toEqual([{ name: 'Custom link', url: 'https://custom-link.com' }]);
   });
 });
 
@@ -171,9 +171,9 @@ test.describe('Template instantiation - task instructionsUrl', () => {
       ],
     });
 
-    // When: A bundle is created from that template
-    const { tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Instructions Bundle',
+    // When: A card is created from that template
+    const { tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Instructions Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
@@ -205,9 +205,9 @@ test.describe('Template instantiation - assigneeId with fallback', () => {
       ],
     });
 
-    // When: A bundle is created from that template
-    const { tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Assignee Bundle',
+    // When: A card is created from that template
+    const { tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Assignee Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
@@ -234,9 +234,9 @@ test.describe('Template instantiation - requiredLinkName', () => {
       ],
     });
 
-    // When: A bundle is created from that template
-    const { tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E RequiredLink Bundle',
+    // When: A card is created from that template
+    const { tasks } = await createCardFromTemplate(request, {
+      title: 'E2E RequiredLink Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
@@ -276,9 +276,9 @@ test.describe('Template instantiation - tags inheritance', () => {
       ],
     });
 
-    // When: A bundle is created from that template
-    const { tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Tags Bundle',
+    // When: A card is created from that template
+    const { tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Tags Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
@@ -292,7 +292,7 @@ test.describe('Template instantiation - tags inheritance', () => {
 
 test.describe('Template instantiation - milestone stage transition', () => {
 
-  test('milestone task completion triggers stage transition on the bundle', async ({ request }) => {
+  test('milestone task completion triggers stage transition on the card', async ({ request }) => {
     // Given: A template has a milestone task with stageOnComplete
     const template = await createTemplate(request, {
       name: 'E2E Stage Template',
@@ -310,15 +310,15 @@ test.describe('Template instantiation - milestone stage transition', () => {
       ],
     });
 
-    // And: A bundle has been created from that template
-    const { bundle, tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Stage Bundle',
+    // And: A card has been created from that template
+    const { card, tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Stage Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
 
-    // Verify bundle starts at "preparation"
-    expect(bundle.stage).toBe('preparation');
+    // Verify card starts at "preparation"
+    expect(card.stage).toBe('preparation');
 
     // When: The milestone task is marked as done
     const milestoneTask = tasks.find(t => t.templateTaskRef === 'stream');
@@ -329,15 +329,15 @@ test.describe('Template instantiation - milestone stage transition', () => {
     });
     expect(updateRes.status()).toBe(200);
 
-    // Then: The bundle's stage is automatically updated to "after-event"
-    const bundleRes = await request.get(`/api/bundles/${bundle.id}`);
-    expect(bundleRes.status()).toBe(200);
-    const bundleBody = await bundleRes.json();
-    expect(bundleBody.bundle.stage).toBe('after-event');
+    // Then: The card's stage is automatically updated to "after-event"
+    const cardRes = await request.get(`/api/cards/${card.id}`);
+    expect(cardRes.status()).toBe(200);
+    const cardBody = await cardRes.json();
+    expect(cardBody.card.stage).toBe('after-event');
   });
 
   test('non-milestone task completion does not trigger stage transition', async ({ request }) => {
-    // Given: A bundle created from a template with milestone and regular tasks
+    // Given: A card created from a template with milestone and regular tasks
     const template = await createTemplate(request, {
       name: 'E2E No Stage Change Template',
       type: 'test',
@@ -353,13 +353,13 @@ test.describe('Template instantiation - milestone stage transition', () => {
       ],
     });
 
-    const { bundle, tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E No Stage Change Bundle',
+    const { card, tasks } = await createCardFromTemplate(request, {
+      title: 'E2E No Stage Change Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
 
-    expect(bundle.stage).toBe('preparation');
+    expect(card.stage).toBe('preparation');
 
     // When: A regular task is marked as done
     const regularTask = tasks.find(t => t.templateTaskRef === 'regular');
@@ -370,11 +370,11 @@ test.describe('Template instantiation - milestone stage transition', () => {
     });
     expect(updateRes.status()).toBe(200);
 
-    // Then: The bundle's stage remains unchanged
-    const bundleRes = await request.get(`/api/bundles/${bundle.id}`);
-    expect(bundleRes.status()).toBe(200);
-    const bundleBody = await bundleRes.json();
-    expect(bundleBody.bundle.stage).toBe('preparation');
+    // Then: The card's stage remains unchanged
+    const cardRes = await request.get(`/api/cards/${card.id}`);
+    expect(cardRes.status()).toBe(200);
+    const cardBody = await cardRes.json();
+    expect(cardBody.card.stage).toBe('preparation');
   });
 
   test('stage transition does not occur when task is not being marked as done', async ({ request }) => {
@@ -392,13 +392,13 @@ test.describe('Template instantiation - milestone stage transition', () => {
       ],
     });
 
-    const { bundle, tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E No Done Bundle',
+    const { card, tasks } = await createCardFromTemplate(request, {
+      title: 'E2E No Done Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
 
-    expect(bundle.stage).toBe('preparation');
+    expect(card.stage).toBe('preparation');
 
     // When: The milestone task's description is updated (not status)
     const milestoneTask = tasks.find(t => t.templateTaskRef === 'milestone');
@@ -407,11 +407,11 @@ test.describe('Template instantiation - milestone stage transition', () => {
     });
     expect(updateRes.status()).toBe(200);
 
-    // Then: The bundle's stage remains unchanged
-    const bundleRes = await request.get(`/api/bundles/${bundle.id}`);
-    expect(bundleRes.status()).toBe(200);
-    const bundleBody = await bundleRes.json();
-    expect(bundleBody.bundle.stage).toBe('preparation');
+    // Then: The card's stage remains unchanged
+    const cardRes = await request.get(`/api/cards/${card.id}`);
+    expect(cardRes.status()).toBe(200);
+    const cardBody = await cardRes.json();
+    expect(cardBody.card.stage).toBe('preparation');
   });
 });
 
@@ -420,7 +420,7 @@ test.describe('Template instantiation - date calculation', () => {
   test('a today anchor preserves pre-creation offsets for derived scheduled classification (#106)', async ({ request }) => {
     const today = utcDateString();
     let template;
-    let bundle;
+    let card;
     let tasks = [];
 
     try {
@@ -434,16 +434,16 @@ test.describe('Template instantiation - date calculation', () => {
         ],
       });
 
-      ({ bundle, tasks } = await createBundleFromTemplate(request, {
-        title: 'E2E Scheduled Date Bundle ' + Date.now(),
+      ({ card, tasks } = await createCardFromTemplate(request, {
+        title: 'E2E Scheduled Date Card ' + Date.now(),
         anchorDate: today,
         templateId: template.id,
       }));
 
       const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));
-      expect(bundle.createdAt.slice(0, 10)).toBe(today);
+      expect(card.createdAt.slice(0, 10)).toBe(today);
       expect(byRef.get('before').date).toBe(utcDateString(-2));
-      expect(byRef.get('before').date < bundle.createdAt.slice(0, 10)).toBe(true);
+      expect(byRef.get('before').date < card.createdAt.slice(0, 10)).toBe(true);
       expect(byRef.get('anchor').date).toBe(today);
       expect(byRef.get('after').date).toBe(utcDateString(2));
       for (const task of tasks) {
@@ -453,9 +453,9 @@ test.describe('Template instantiation - date calculation', () => {
       }
     } finally {
       for (const task of tasks) await request.delete('/api/tasks/' + task.id);
-      if (bundle) {
-        await request.put('/api/bundles/' + bundle.id + '/archive');
-        await request.delete('/api/bundles/' + bundle.id);
+      if (card) {
+        await request.put('/api/cards/' + card.id + '/archive');
+        await request.delete('/api/cards/' + card.id);
       }
       if (template) await request.delete('/api/templates/' + template.id);
     }
@@ -475,9 +475,9 @@ test.describe('Template instantiation - date calculation', () => {
       ],
     });
 
-    // When: A bundle is created with anchorDate "2026-06-15"
-    const { tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Date Calc Bundle',
+    // When: A card is created with anchorDate "2026-06-15"
+    const { tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Date Calc Card',
       anchorDate: '2026-06-15',
       templateId: template.id,
     });
@@ -502,8 +502,8 @@ test.describe('Template instantiation - date calculation', () => {
       ],
     });
 
-    const { tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Milestone Date Bundle',
+    const { tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Milestone Date Card',
       anchorDate: '2026-07-20',
       templateId: template.id,
     });
@@ -512,22 +512,22 @@ test.describe('Template instantiation - date calculation', () => {
   });
 });
 
-test.describe('Existing bundle and template tests still pass', () => {
+test.describe('Existing card and template tests still pass', () => {
 
-  test('creating a bundle without a template still works normally', async ({ request }) => {
-    const res = await request.post('/api/bundles', {
-      data: { title: 'No template bundle', anchorDate: '2026-08-01' },
+  test('creating a card without a template still works normally', async ({ request }) => {
+    const res = await request.post('/api/cards', {
+      data: { title: 'No template card', anchorDate: '2026-08-01' },
     });
     expect(res.status()).toBe(201);
 
     const body = await res.json();
-    expect(body.bundle.title).toBe('No template bundle');
-    expect(body.bundle.stage).toBe('preparation');
-    expect(body.bundle.status).toBe('active');
+    expect(body.card.title).toBe('No template card');
+    expect(body.card.stage).toBe('preparation');
+    expect(body.card.status).toBe('active');
     expect(body.tasks).toBeUndefined();
   });
 
-  test('creating a bundle with a basic template still generates tasks', async ({ request }) => {
+  test('creating a card with a basic template still generates tasks', async ({ request }) => {
     const template = await createTemplate(request, {
       name: 'E2E Basic Template',
       type: 'test',
@@ -537,8 +537,8 @@ test.describe('Existing bundle and template tests still pass', () => {
       ],
     });
 
-    const { bundle, tasks } = await createBundleFromTemplate(request, {
-      title: 'E2E Basic Bundle',
+    const { card, tasks } = await createCardFromTemplate(request, {
+      title: 'E2E Basic Card',
       anchorDate: '2026-05-01',
       templateId: template.id,
     });
@@ -546,7 +546,7 @@ test.describe('Existing bundle and template tests still pass', () => {
     expect(tasks).toHaveLength(2);
     for (const task of tasks) {
       expect(task.source).toBe('template');
-      expect(task.bundleId).toBe(bundle.id);
+      expect(task.cardId).toBe(card.id);
     }
   });
 });

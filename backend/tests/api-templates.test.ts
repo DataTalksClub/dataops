@@ -57,8 +57,8 @@ describe('API — Templates', () => {
       assert.deepStrictEqual(body, { status: 'ok' });
     });
 
-    it('GET /api/bundles returns 200', async () => {
-      const res = await invoke('GET', '/api/bundles');
+    it('GET /api/cards returns 200', async () => {
+      const res = await invoke('GET', '/api/cards');
       assert.strictEqual(res.statusCode, 200);
     });
 
@@ -533,7 +533,7 @@ describe('API — Templates', () => {
         tags: ['newsletter'],
         defaultAssigneeId: 'user-grace',
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-        bundleLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
+        cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
         triggerType: 'automatic',
         triggerSchedule: '0 9 * * 1',
         triggerLeadDays: 14,
@@ -549,7 +549,7 @@ describe('API — Templates', () => {
       assert.deepStrictEqual(t.tags, ['newsletter']);
       assert.strictEqual(t.defaultAssigneeId, 'user-grace');
       assert.deepStrictEqual(t.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-      assert.deepStrictEqual(t.bundleLinkDefinitions, [{ name: 'Luma' }, { name: 'YouTube' }]);
+      assert.deepStrictEqual(t.cardLinkDefinitions, [{ name: 'Luma' }, { name: 'YouTube' }]);
       assert.strictEqual(t.triggerType, 'automatic');
       assert.strictEqual(t.triggerSchedule, '0 9 * * 1');
       assert.strictEqual(t.triggerLeadDays, 14);
@@ -575,7 +575,7 @@ describe('API — Templates', () => {
       assert.strictEqual(t.defaultAssigneeId, undefined);
       assert.strictEqual(t.sourceDocIds, undefined);
       assert.strictEqual(t.references, undefined);
-      assert.strictEqual(t.bundleLinkDefinitions, undefined);
+      assert.strictEqual(t.cardLinkDefinitions, undefined);
       assert.strictEqual(t.triggerType, undefined);
       assert.strictEqual(t.triggerSchedule, undefined);
       assert.strictEqual(t.triggerLeadDays, undefined);
@@ -844,7 +844,7 @@ describe('API — Templates', () => {
         tags: ['weekly'],
         defaultAssigneeId: 'user-grace',
         references: [{ name: 'Guide', url: 'https://example.com' }],
-        bundleLinkDefinitions: [{ name: 'Luma' }],
+        cardLinkDefinitions: [{ name: 'Luma' }],
         triggerType: 'automatic',
         triggerSchedule: '0 9 * * 1',
         triggerLeadDays: 7,
@@ -871,7 +871,7 @@ describe('API — Templates', () => {
       assert.deepStrictEqual(t.tags, ['weekly']);
       assert.strictEqual(t.defaultAssigneeId, 'user-grace');
       assert.deepStrictEqual(t.references, [{ name: 'Guide', url: 'https://example.com' }]);
-      assert.deepStrictEqual(t.bundleLinkDefinitions, [{ name: 'Luma' }]);
+      assert.deepStrictEqual(t.cardLinkDefinitions, [{ name: 'Luma' }]);
       assert.strictEqual(t.triggerType, 'automatic');
       assert.strictEqual(t.triggerSchedule, '0 9 * * 1');
       assert.strictEqual(t.triggerLeadDays, 7);

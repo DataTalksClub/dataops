@@ -178,9 +178,9 @@ test.describe('runtime-template structured administration', () => {
     await expect(page.locator('[data-template-save-state]')).toHaveText('Saved');
 
     const current = await (await request.get(`/api/templates/${created.id}`)).json();
-    const bundle = await request.post('/api/bundles', { data: { title: 'Synthetic template reference', anchorDate: '2026-10-01', templateId: created.id } });
-    expect(bundle.status()).toBe(201);
-    const instantiated = await bundle.json();
+    const card = await request.post('/api/cards', { data: { title: 'Synthetic template reference', anchorDate: '2026-10-01', templateId: created.id } });
+    expect(card.status()).toBe(201);
+    const instantiated = await card.json();
     expect(instantiated.tasks.map((task) => task.templateTaskRef)).toEqual(['reordered-task', 'first-task']);
     expect(instantiated.tasks.map((task) => task.templateOffsetDays)).toEqual([3, 0]);
     expect(instantiated.tasks.map((task) => task.description)).toEqual(['Persisted reordered task', 'Persisted first task']);

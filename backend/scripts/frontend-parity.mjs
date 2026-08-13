@@ -176,13 +176,13 @@ async function navigateState(page, baseURL, state) {
     await settle(page);
     await page.locator('.intake-detail h3').filter({ hasText: 'Synthetic blocked intake' }).waitFor();
   } else if (state === 'task-proof-waiting-return') {
-    await page.goto(`${baseURL}/#/tasks?taskId=parity-task&date=2026-08-12&bundleId=parity-workflow&contextBundleId=parity-return`);
+    await page.goto(`${baseURL}/#/tasks?taskId=parity-task&date=2026-08-12&cardId=parity-workflow&contextCardId=parity-return`);
     await settle(page);
     await page.locator('#task-panel-title').filter({ hasText: 'Verify synthetic publication proof' }).waitFor();
   } else if (state === 'workflow-detail') {
-    await page.goto(`${baseURL}/#/bundles?bundleId=parity-workflow&taskId=parity-task`);
+    await page.goto(`${baseURL}/#/cards?cardId=parity-workflow&taskId=parity-task`);
     await settle(page);
-    await page.locator('#bundle-panel-title').filter({ hasText: 'Synthetic publication workflow' }).waitFor();
+    await page.locator('#card-panel-title').filter({ hasText: 'Synthetic publication workflow' }).waitFor();
   } else if (state === 'assistant-detail-baseline') {
     await page.goto(`${baseURL}/#/assistants?assistantJobId=parity-assistant`);
     await settle(page);

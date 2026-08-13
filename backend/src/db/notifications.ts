@@ -105,7 +105,7 @@ async function createDueFollowUpNotifications(
       type: 'follow-up-due',
       message: followUpMessage(task),
       taskId: task.id,
-      bundleId: task.bundleId,
+      cardId: task.cardId,
       dueAt: task.followUpAt,
     });
     existingKeys.add(key);

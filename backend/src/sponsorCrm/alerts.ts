@@ -12,7 +12,7 @@ function rulesFor(booking: Record<string, unknown>, today: string): Rule[] {
     const days = dayDiff(today, publication); if ([14,10,3].includes(days)) rules.push({ code: `materials-missing-${days}d`, dueDate: publication, message: `Sponsor booking materials are missing ${days} days before publication` });
   }
   if (deadline && deadline < today && !hasMaterials) rules.push({ code: 'materials-deadline-overdue', dueDate: deadline, message: 'Sponsor booking material deadline is overdue' });
-  if (['scheduled','published'].includes(String(booking.status)) && (!booking.bundleId || !booking.requiredLinkUrl)) rules.push({ code: 'newsletter-workflow-incomplete', dueDate: publication || today, message: 'Sponsor booking is missing its newsletter workflow or required link' });
+  if (['scheduled','published'].includes(String(booking.status)) && (!booking.cardId || !booking.requiredLinkUrl)) rules.push({ code: 'newsletter-workflow-incomplete', dueDate: publication || today, message: 'Sponsor booking is missing its newsletter workflow or required link' });
   if (booking.status === 'published' && publication && dayDiff(publication, today) >= 7) rules.push({ code: 'performance-follow-up-due', dueDate: publication, message: 'Sponsor booking performance follow-up is due' });
   return rules;
 }

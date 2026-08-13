@@ -33,11 +33,11 @@ const parse = (value: string, label: string): Record<string, unknown> => {
   }
 };
 
-export function validateTemplateBundle(value: unknown): { bundle: SponsorTemplateBundle; digest: string } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid template bundle');
+export function validateTemplateBundle(value: unknown): { card: SponsorTemplateBundle; digest: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid template card');
   const raw = value as Record<string, unknown>;
   if (raw.schemaVersion !== '1' || typeof raw.generation !== 'string' || !raw.generation || !Array.isArray(raw.templates)) {
-    throw new Error('Invalid template bundle schema');
+    throw new Error('Invalid template card schema');
   }
   const templates = raw.templates.map((entry) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('Invalid template');
@@ -61,19 +61,19 @@ export function validateTemplateBundle(value: unknown): { bundle: SponsorTemplat
     };
   });
   if (templates.length !== COMMUNICATION_TYPES.length || new Set(templates.map((item) => item.id)).size !== COMMUNICATION_TYPES.length) {
-    throw new Error('Template bundle must contain exactly the four allowlisted templates');
+    throw new Error('Template card must contain exactly the four allowlisted templates');
   }
-  const bundle = { schemaVersion: '1' as const, generation: raw.generation, templates };
-  return { bundle, digest: sha256(canonicalJson(bundle)) };
+  const card = { schemaVersion: '1' as const, generation: raw.generation, templates };
+  return { card, digest: sha256(canonicalJson(card)) };
 }
 
-export async function loadTemplateBundle(): Promise<{ bundle: SponsorTemplateBundle; digest: string; secretVersionId: string }> {
-  if (process.env.NODE_ENV === 'test' && process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_BUNDLE) {
-    const validated = validateTemplateBundle(parse(process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_BUNDLE, 'Template bundle'));
+export async function loadTemplateBundle(): Promise<{ card: SponsorTemplateBundle; digest: string; secretVersionId: string }> {
+  if (process.env.NODE_ENV === 'test' && process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD) {
+    const validated = validateTemplateBundle(parse(process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD, 'Template card'));
     return { ...validated, secretVersionId: 'synthetic-test-version' };
   }
   const result = await exactSecret(process.env.SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN || '');
-  return { ...validateTemplateBundle(parse(result.value, 'Template bundle')), secretVersionId: result.versionId };
+  return { ...validateTemplateBundle(parse(result.value, 'Template card')), secretVersionId: result.versionId };
 }
 
 export async function loadHmacKeyring(): Promise<{ keyring: HmacKeyring; digest: string }> {

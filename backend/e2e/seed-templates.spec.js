@@ -85,7 +85,7 @@ test.describe('Seed templates - all 11 templates (issue #21)', () => {
   });
 
   // Scenario: Newsletter template has correct structure
-  test('Newsletter template has correct type, emoji, tags, trigger, task definitions, references, and bundleLinkDefinitions', async ({ request }) => {
+  test('Newsletter template has correct type, emoji, tags, trigger, task definitions, references, and cardLinkDefinitions', async ({ request }) => {
     const templates = await getSeededTemplates(request);
     const newsletter = templates.find((t) => t.type === 'newsletter' && t.name === 'Newsletter');
     expect(newsletter).toBeTruthy();
@@ -102,9 +102,9 @@ test.describe('Seed templates - all 11 templates (issue #21)', () => {
     expect(newsletter.references.length).toBeGreaterThanOrEqual(2);
     expect(newsletter.references.some((r) => r.name === 'Process documents')).toBe(true);
 
-    // Bundle link definitions
-    expect(newsletter.bundleLinkDefinitions.length).toBe(4);
-    const linkNames = newsletter.bundleLinkDefinitions.map((l) => l.name);
+    // Card link definitions
+    expect(newsletter.cardLinkDefinitions.length).toBe(4);
+    const linkNames = newsletter.cardLinkDefinitions.map((l) => l.name);
     expect(linkNames).toContain('Sponsorship document');
     expect(linkNames).toContain('Mailchimp newsletter');
     expect(linkNames).toContain('LinkedIn');

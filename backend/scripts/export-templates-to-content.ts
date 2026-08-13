@@ -47,7 +47,7 @@ type TaskTemplate = {
   phases?: WorkflowPhase[];
   sourceDocIds?: string[];
   references?: Link[];
-  bundleLinkDefinitions?: Link[];
+  cardLinkDefinitions?: Link[];
   taskDefinitions: TaskDefinition[];
 };
 
@@ -113,7 +113,7 @@ function renderTemplate(template: TaskTemplate): string {
     '<!-- sop-section-end -->',
     '',
     renderLinks('References', contentSafeLinks(template.references || [])),
-    renderLinks('Required Bundle Links', template.bundleLinkDefinitions || []),
+    renderLinks('Required Card Links', template.cardLinkDefinitions || []),
     renderWorkflowDefinition(template),
     renderTasks(template.taskDefinitions),
   ].filter((line) => line !== null);

@@ -43,7 +43,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const podcastTemplate = templates.find((template) => template.type === 'podcast');
     assert.ok(podcastTemplate, 'seeded Podcast template should exist');
 
-    const start = await invoke('POST', '/api/bundles', {
+    const start = await invoke('POST', '/api/cards', {
       title: 'Podcast: 2026-08-17 - Vector Search - Jane Guest',
       anchorDate: '2026-08-17',
       description: 'Guest: Jane Guest\nTopic: Vector Search\nSource note: referred by community',
@@ -51,15 +51,15 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     });
     assert.strictEqual(start.statusCode, 201, start.body);
     const started = parse(start);
-    const bundle = started.bundle;
+    const card = started.card;
     const tasks = started.tasks as Task[];
-    assert.strictEqual(bundle.stage, 'preparation');
-    assert.strictEqual(bundle.status, 'active');
-    assert.strictEqual(bundle.templateId, podcastTemplate.id);
-    assert.ok(bundle.tags.includes('Podcast'));
+    assert.strictEqual(card.stage, 'preparation');
+    assert.strictEqual(card.status, 'active');
+    assert.strictEqual(card.templateId, podcastTemplate.id);
+    assert.ok(card.tags.includes('Podcast'));
     assert.strictEqual(tasks.length, 42);
-    assert.strictEqual(bundle.bundleLinks.length, 12);
-    assert.ok(bundle.bundleLinks.some((link: any) => link.name === 'Podcast document' && link.url === ''));
+    assert.strictEqual(card.cardLinks.length, 12);
+    assert.ok(card.cardLinks.some((link: any) => link.name === 'Podcast document' && link.url === ''));
 
     const lumaTask = tasks.find((task) => task.templateTaskRef === 'create-event-luma') as Task;
     assert.ok(lumaTask);
@@ -75,13 +75,13 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const lumaUrl = 'https://lu.ma/vector-search';
     const savedLink = await invoke('PUT', `/api/tasks/${lumaTask.id}`, { link: lumaUrl });
     assert.strictEqual(savedLink.statusCode, 200, savedLink.body);
-    const bundleWithLuma = {
-      bundleLinks: bundle.bundleLinks.map((link: any) => (
+    const cardWithLuma = {
+      cardLinks: card.cardLinks.map((link: any) => (
         link.name === 'Luma' ? { name: link.name, url: lumaUrl } : link
       )),
     };
-    const savedBundleLink = await invoke('PUT', `/api/bundles/${bundle.id}`, bundleWithLuma);
-    assert.strictEqual(savedBundleLink.statusCode, 200, savedBundleLink.body);
+    const savedCardLink = await invoke('PUT', `/api/cards/${card.id}`, cardWithLuma);
+    assert.strictEqual(savedCardLink.statusCode, 200, savedCardLink.body);
 
     const bannerTask = tasks.find((task) => task.templateTaskRef === 'create-banner-figma') as Task;
     assert.ok(bannerTask);
@@ -90,7 +90,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.match(parse(blockedFile).error, /required file/);
     await createFile(client, {
       taskId: bannerTask.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       filename: 'podcast-banner.png',
       category: 'image',
       storagePath: '.tmp/podcast-banner.png',
@@ -124,7 +124,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const notifications = await invoke('GET', '/api/notifications');
     assert.strictEqual(notifications.statusCode, 200, notifications.body);
     assert.ok(parse(notifications).notifications.some((notification: any) => (
-      notification.type === 'follow-up-due' && notification.taskId === waitingTask.id && notification.bundleId === bundle.id
+      notification.type === 'follow-up-due' && notification.taskId === waitingTask.id && notification.cardId === card.id
     )));
     const responseReceived = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/response-received`, {
       note: 'Jane replied with available dates',
@@ -152,7 +152,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
       assistantType: 'podcast',
       title: 'Podcast assistant: Jane Guest prep',
       taskId: docTask.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       inputRefs: [{ type: 'url', uri: 'https://example.com/jane' }],
       approvalRequired: true,
     });
@@ -167,8 +167,8 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const approvedDocTask = parse(docAfterApproval);
     assert.ok(approvedDocTask.link.startsWith('local-dev://assistant-jobs/'));
     assert.ok(approvedDocTask.artifactRefs.some((ref: any) => ref.status === 'approved'));
-    const bundleAfterApproval = parse(await invoke('GET', `/api/bundles/${bundle.id}`)).bundle;
-    assert.ok(bundleAfterApproval.bundleLinks.some((link: any) => (
+    const cardAfterApproval = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
+    assert.ok(cardAfterApproval.cardLinks.some((link: any) => (
       link.name === 'Podcast document' && link.url.startsWith('local-dev://assistant-jobs/')
     )));
     const doneDocTask = await invoke('PUT', `/api/tasks/${docTask.id}`, { status: 'done' });
@@ -180,15 +180,15 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     const streamUrl = 'https://youtube.com/watch?v=vector';
     const streamReady = await invoke('PUT', `/api/tasks/${actualStream.id}`, { link: streamUrl });
     assert.strictEqual(streamReady.statusCode, 200, streamReady.body);
-    const bundleBeforeStreamDone = parse(await invoke('GET', `/api/bundles/${bundle.id}`)).bundle;
-    const streamBundleLinks = bundleBeforeStreamDone.bundleLinks.map((link: any) => (
+    const cardBeforeStreamDone = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
+    const streamCardLinks = cardBeforeStreamDone.cardLinks.map((link: any) => (
       link.name === 'YouTube stream/video' ? { name: link.name, url: streamUrl } : link
     ));
-    const streamBundleLinkReady = await invoke('PUT', `/api/bundles/${bundle.id}`, { bundleLinks: streamBundleLinks });
-    assert.strictEqual(streamBundleLinkReady.statusCode, 200, streamBundleLinkReady.body);
+    const streamCardLinkReady = await invoke('PUT', `/api/cards/${card.id}`, { cardLinks: streamCardLinks });
+    assert.strictEqual(streamCardLinkReady.statusCode, 200, streamCardLinkReady.body);
     const streamDone = await invoke('PUT', `/api/tasks/${actualStream.id}`, { status: 'done' });
     assert.strictEqual(streamDone.statusCode, 200, streamDone.body);
-    const advancedBundle = parse(await invoke('GET', `/api/bundles/${bundle.id}`)).bundle;
-    assert.strictEqual(advancedBundle.stage, 'after-event');
+    const advancedCard = parse(await invoke('GET', `/api/cards/${card.id}`)).card;
+    assert.strictEqual(advancedCard.stage, 'after-event');
   });
 });

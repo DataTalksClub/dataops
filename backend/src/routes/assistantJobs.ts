@@ -10,7 +10,7 @@ import {
   updateAssistantJob,
 } from '../db/assistantJobs';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
-import { getBundle, updateBundle } from '../db/bundles';
+import { getCard, updateCard } from '../db/cards';
 import { createNotification } from '../db/notifications';
 import { getTask, updateTask } from '../db/tasks';
 import type {
@@ -199,7 +199,7 @@ function mergeArtifactRef(refs: ArtifactRef[] | undefined, ref: ArtifactRef): Ar
   return existing.filter((item) => item.artifactId !== ref.artifactId).concat(ref);
 }
 
-function mergeBundleLink(
+function mergeCardLink(
   links: Array<{ name: string; url: string }> | undefined,
   name: string,
   url: string
@@ -223,9 +223,9 @@ async function mirrorJobRef(client: DynamoDBDocumentClient, job: AssistantJobRec
     const task = await getTask(client, job.taskId);
     if (task) await updateTask(client, job.taskId, { assistantJobRefs: mergeAssistantJobRef(task.assistantJobRefs, ref) });
   }
-  if (job.bundleId) {
-    const bundle = await getBundle(client, job.bundleId);
-    if (bundle) await updateBundle(client, job.bundleId, { assistantJobRefs: mergeAssistantJobRef(bundle.assistantJobRefs, ref) });
+  if (job.cardId) {
+    const card = await getCard(client, job.cardId);
+    if (card) await updateCard(client, job.cardId, { assistantJobRefs: mergeAssistantJobRef(card.assistantJobRefs, ref) });
   }
 }
 
@@ -235,9 +235,9 @@ async function mirrorArtifactRef(client: DynamoDBDocumentClient, job: AssistantJ
     const task = await getTask(client, job.taskId);
     if (task) await updateTask(client, job.taskId, { artifactRefs: mergeArtifactRef(task.artifactRefs, ref) });
   }
-  if (job.bundleId) {
-    const bundle = await getBundle(client, job.bundleId);
-    if (bundle) await updateBundle(client, job.bundleId, { artifactRefs: mergeArtifactRef(bundle.artifactRefs, ref) });
+  if (job.cardId) {
+    const card = await getCard(client, job.cardId);
+    if (card) await updateCard(client, job.cardId, { artifactRefs: mergeArtifactRef(card.artifactRefs, ref) });
   }
 }
 
@@ -257,12 +257,12 @@ async function mirrorApprovedArtifactProof(
     artifactRefs: mergeArtifactRef(task.artifactRefs, artifactRef(artifact)),
   });
 
-  const bundleId = job.bundleId || task.bundleId;
-  if (!bundleId) return;
-  const bundle = await getBundle(client, bundleId);
-  if (!bundle) return;
-  await updateBundle(client, bundleId, {
-    bundleLinks: mergeBundleLink(bundle.bundleLinks, task.requiredLinkName, artifact.storageUri),
+  const cardId = job.cardId || task.cardId;
+  if (!cardId) return;
+  const card = await getCard(client, cardId);
+  if (!card) return;
+  await updateCard(client, cardId, {
+    cardLinks: mergeCardLink(card.cardLinks, task.requiredLinkName, artifact.storageUri),
   });
 }
 
@@ -283,10 +283,10 @@ async function appendEvent(
   });
 }
 
-async function validateRelationships(client: DynamoDBDocumentClient, taskId?: string, bundleId?: string): Promise<string | null> {
-  if (!taskId && !bundleId) return 'taskId or bundleId is required';
+async function validateRelationships(client: DynamoDBDocumentClient, taskId?: string, cardId?: string): Promise<string | null> {
+  if (!taskId && !cardId) return 'taskId or cardId is required';
   if (taskId && !(await getTask(client, taskId))) return 'Task not found';
-  if (bundleId && !(await getBundle(client, bundleId))) return 'Bundle not found';
+  if (cardId && !(await getCard(client, cardId))) return 'Card not found';
   return null;
 }
 
@@ -336,7 +336,7 @@ async function createFailureNotification(client: DynamoDBDocumentClient, job: As
     type: 'automation-failure',
     message: `Assistant job failed: ${job.title}`,
     taskId: job.taskId,
-    bundleId: job.bundleId,
+    cardId: job.cardId,
     userId: job.requestedBy,
   });
 }
@@ -347,8 +347,8 @@ async function handleCreate(event: LambdaEvent, client: DynamoDBDocumentClient):
 
   if (!isNonEmptyString(body.assistantType)) return jsonResponse(400, { error: 'assistantType is required' });
   const taskId = isNonEmptyString(body.taskId) ? body.taskId : undefined;
-  const bundleId = isNonEmptyString(body.bundleId) ? body.bundleId : undefined;
-  const relationshipError = await validateRelationships(client, taskId, bundleId);
+  const cardId = isNonEmptyString(body.cardId) ? body.cardId : undefined;
+  const relationshipError = await validateRelationships(client, taskId, cardId);
   if (relationshipError) return jsonResponse(relationshipError.endsWith('not found') ? 404 : 400, { error: relationshipError });
 
   const inputRefsError = validateInputRefs(body.inputRefs);
@@ -362,7 +362,7 @@ async function handleCreate(event: LambdaEvent, client: DynamoDBDocumentClient):
     assistantType: body.assistantType,
     title: isNonEmptyString(body.title) ? body.title : `${body.assistantType} assistant job`,
     taskId,
-    bundleId,
+    cardId,
     requestedBy: actorId,
     inputRefs: body.inputRefs || [],
     approvalRequired: body.approvalRequired !== undefined ? body.approvalRequired === true : true,
@@ -384,7 +384,7 @@ async function handleUpdateDraft(id: string, event: LambdaEvent, client: DynamoD
   if (!body) return jsonResponse(400, { error: 'Request body is required' });
 
   const updates: Record<string, unknown> = {};
-  for (const field of ['assistantType', 'title', 'taskId', 'bundleId', 'inputRefs', 'approvalRequired', 'maxAttempts']) {
+  for (const field of ['assistantType', 'title', 'taskId', 'cardId', 'inputRefs', 'approvalRequired', 'maxAttempts']) {
     if (body[field] !== undefined) updates[field] = body[field];
   }
   if (updates.inputRefs !== undefined) {
@@ -392,8 +392,8 @@ async function handleUpdateDraft(id: string, event: LambdaEvent, client: DynamoD
     if (inputRefsError) return jsonResponse(400, { error: inputRefsError });
   }
   const taskId = updates.taskId !== undefined ? (isNonEmptyString(updates.taskId) ? updates.taskId : undefined) : job.taskId;
-  const bundleId = updates.bundleId !== undefined ? (isNonEmptyString(updates.bundleId) ? updates.bundleId : undefined) : job.bundleId;
-  const relationshipError = await validateRelationships(client, taskId, bundleId);
+  const cardId = updates.cardId !== undefined ? (isNonEmptyString(updates.cardId) ? updates.cardId : undefined) : job.cardId;
+  const relationshipError = await validateRelationships(client, taskId, cardId);
   if (relationshipError) return jsonResponse(relationshipError.endsWith('not found') ? 404 : 400, { error: relationshipError });
   if (updates.maxAttempts !== undefined && (!Number.isInteger(updates.maxAttempts) || Number(updates.maxAttempts) < 1 || Number(updates.maxAttempts) > 10)) {
     return jsonResponse(400, { error: 'maxAttempts must be an integer from 1 to 10' });
@@ -572,7 +572,7 @@ async function handleAttachArtifact(id: string, event: LambdaEvent, client: Dyna
 
   const artifactUpdates: Record<string, unknown> = { assistantJobId: job.id };
   if (job.taskId && !artifact.taskId) artifactUpdates.taskId = job.taskId;
-  if (job.bundleId && !artifact.bundleId) artifactUpdates.bundleId = job.bundleId;
+  if (job.cardId && !artifact.cardId) artifactUpdates.cardId = job.cardId;
   const updatedArtifact = await updateArtifact(client, artifact.id, artifactUpdates);
   const outputArtifactIds = Array.from(new Set(job.outputArtifactIds.concat(artifact.id)));
   const updated = await updateAssistantJob(client, id, { outputArtifactIds });
@@ -632,7 +632,7 @@ async function handlePodcastDryRun(id: string, event: LambdaEvent, client: Dynam
     dataClass: 'internal',
     visibility: 'internal',
     taskId: job.taskId,
-    bundleId: job.bundleId,
+    cardId: job.cardId,
     assistantJobId: job.id,
     sourceType: 'assistant-output',
     createdBy: actorId,
@@ -693,7 +693,7 @@ async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): P
     status: params.status,
     assistantType: params.assistantType,
     taskId: params.taskId,
-    bundleId: params.bundleId,
+    cardId: params.cardId,
     needsApproval: params.needsApproval === 'true',
   });
   return jsonResponse(200, { jobs });

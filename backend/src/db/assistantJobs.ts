@@ -13,7 +13,7 @@ export interface AssistantJobFilters {
   status?: string;
   assistantType?: string;
   taskId?: string;
-  bundleId?: string;
+  cardId?: string;
   needsApproval?: boolean;
 }
 

@@ -1,7 +1,7 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { createAssistantJob, appendAssistantJobEvent } from '../db/assistantJobs';
-import { getBundle, updateBundle } from '../db/bundles';
+import { getCard, updateCard } from '../db/cards';
 import {
   createIntakeItem,
   findIntakeBySourceMessage,
@@ -14,7 +14,7 @@ import { createTask, getTask, updateTask } from '../db/tasks';
 import type {
   AssistantJobInputRef,
   AssistantJobRef,
-  Bundle,
+  Card,
   IntakeAssistantReadiness,
   IntakeDataClass,
   IntakeFileRef,
@@ -285,7 +285,7 @@ function makeTaskHistoryEvent(task: Task, action: TaskHistoryEvent['action'], da
     action,
     createdAt: new Date().toISOString(),
   };
-  if (task.bundleId) event.bundleId = task.bundleId;
+  if (task.cardId) event.cardId = task.cardId;
   if (data.actorId) event.actorId = data.actorId;
   if (data.channel) event.channel = data.channel;
   if (data.waitingFor) event.waitingFor = data.waitingFor;
@@ -346,7 +346,7 @@ function sanitizeBasePayload(body: Record<string, unknown>, actorId?: string): R
     fileRefs,
     artifactRefs: Array.isArray(body.artifactRefs) ? body.artifactRefs : [],
     taskIds: stringArray(body.taskIds, 'taskIds', 120),
-    bundleIds: stringArray(body.bundleIds, 'bundleIds', 120),
+    cardIds: stringArray(body.cardIds, 'cardIds', 120),
     assistantJobIds: stringArray(body.assistantJobIds, 'assistantJobIds', 120),
     relatedIntakeItemIds: stringArray(body.relatedIntakeItemIds, 'relatedIntakeItemIds', 120),
     tags: stringArray(body.tags, 'tags'),
@@ -363,9 +363,9 @@ async function mirrorIntakeRef(client: DynamoDBDocumentClient, item: IntakeItem)
     const task = await getTask(client, taskId);
     if (task) await updateTask(client, taskId, { intakeRefs: mergeIntakeRefs(task.intakeRefs, ref) });
   }
-  for (const bundleId of item.bundleIds || []) {
-    const bundle = await getBundle(client, bundleId);
-    if (bundle) await updateBundle(client, bundleId, { intakeRefs: mergeIntakeRefs(bundle.intakeRefs, ref) });
+  for (const cardId of item.cardIds || []) {
+    const card = await getCard(client, cardId);
+    if (card) await updateCard(client, cardId, { intakeRefs: mergeIntakeRefs(card.intakeRefs, ref) });
   }
 }
 
@@ -385,7 +385,7 @@ function buildAssistantInputRefs(item: IntakeItem): AssistantJobInputRef[] {
   for (const file of item.fileRefs || []) refs.push({ type: 'file', id: file.fileId, uri: file.storageUri, title: file.title || file.filename });
   for (const artifact of item.artifactRefs || []) refs.push({ type: 'artifact', id: artifact.artifactId, uri: artifact.storageUri, title: artifact.title });
   for (const taskId of item.taskIds || []) refs.push({ type: 'task', id: taskId });
-  for (const bundleId of item.bundleIds || []) refs.push({ type: 'bundle', id: bundleId });
+  for (const cardId of item.cardIds || []) refs.push({ type: 'card', id: cardId });
   return refs
     .filter((ref) => ref.id || ref.uri || ref.type === 'source-message')
     .map((ref) => {
@@ -418,8 +418,8 @@ function readinessFromBody(item: IntakeItem, body: Record<string, unknown>): Int
 
 async function attachItem(client: DynamoDBDocumentClient, item: IntakeItem, body: Record<string, unknown>, actorId?: string): Promise<IntakeItem> {
   const taskIds = mergeStrings(item.taskIds, stringArray(body.taskIds || (body.taskId ? [body.taskId] : []), 'taskIds', 120));
-  const bundleIds = mergeStrings(item.bundleIds, stringArray(body.bundleIds || (body.bundleId ? [body.bundleId] : []), 'bundleIds', 120));
-  if (taskIds.length === item.taskIds.length && bundleIds.length === item.bundleIds.length) throw new Error('taskIds or bundleIds are required');
+  const cardIds = mergeStrings(item.cardIds, stringArray(body.cardIds || (body.cardId ? [body.cardId] : []), 'cardIds', 120));
+  if (taskIds.length === item.taskIds.length && cardIds.length === item.cardIds.length) throw new Error('taskIds or cardIds are required');
   for (const taskId of taskIds) {
     const task = await getTask(client, taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
@@ -445,16 +445,16 @@ async function attachItem(client: DynamoDBDocumentClient, item: IntakeItem, body
       });
     }
   }
-  for (const bundleId of bundleIds) {
-    if (!await getBundle(client, bundleId)) throw new Error(`Bundle not found: ${bundleId}`);
+  for (const cardId of cardIds) {
+    if (!await getCard(client, cardId)) throw new Error(`Card not found: ${cardId}`);
   }
   const updated = await updateIntakeItem(client, item.id, {
     taskIds,
-    bundleIds,
+    cardIds,
     status: 'attached',
     triagedAt: item.triagedAt || new Date().toISOString(),
     triagedBy: actorId || item.triagedBy,
-    history: appendHistory(item, 'attached', { actorId, metadata: { taskIds, bundleIds } }),
+    history: appendHistory(item, 'attached', { actorId, metadata: { taskIds, cardIds } }),
   }) as IntakeItem;
   await dismissIntakeFollowUpNotifications(client, item.id);
   await mirrorIntakeRef(client, updated);
@@ -463,14 +463,14 @@ async function attachItem(client: DynamoDBDocumentClient, item: IntakeItem, body
 
 async function detachItem(client: DynamoDBDocumentClient, item: IntakeItem, body: Record<string, unknown>, actorId?: string): Promise<IntakeItem> {
   const removeTaskIds = stringArray(body.taskIds || (body.taskId ? [body.taskId] : []), 'taskIds', 120);
-  const removeBundleIds = stringArray(body.bundleIds || (body.bundleId ? [body.bundleId] : []), 'bundleIds', 120);
+  const removeCardIds = stringArray(body.cardIds || (body.cardId ? [body.cardId] : []), 'cardIds', 120);
   const taskIds = (item.taskIds || []).filter((id) => !removeTaskIds.includes(id));
-  const bundleIds = (item.bundleIds || []).filter((id) => !removeBundleIds.includes(id));
+  const cardIds = (item.cardIds || []).filter((id) => !removeCardIds.includes(id));
   return await updateIntakeItem(client, item.id, {
     taskIds,
-    bundleIds,
-    status: taskIds.length || bundleIds.length ? item.status : 'triaged',
-    history: appendHistory(item, 'detached', { actorId, metadata: { taskIds: removeTaskIds, bundleIds: removeBundleIds } }),
+    cardIds,
+    status: taskIds.length || cardIds.length ? item.status : 'triaged',
+    history: appendHistory(item, 'detached', { actorId, metadata: { taskIds: removeTaskIds, cardIds: removeCardIds } }),
   }) as IntakeItem;
 }
 
@@ -486,7 +486,7 @@ async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, b
     source: 'intake',
     tags: mergeStrings(item.tags, stringArray(body.tags, 'tags')),
     assigneeId: isNonEmptyString(body.assigneeId) ? body.assigneeId : item.assigneeId,
-    bundleId: isNonEmptyString(body.bundleId) ? body.bundleId : item.bundleIds[0],
+    cardId: isNonEmptyString(body.cardId) ? body.cardId : item.cardIds[0],
     intakeRefs: [intakeRef(item)],
   };
   if (waitingFor || followUpAt) {
@@ -516,11 +516,11 @@ async function convertToTask(client: DynamoDBDocumentClient, item: IntakeItem, b
   }
   const updated = await updateIntakeItem(client, item.id, {
     taskIds: mergeStrings(item.taskIds, [task.id]),
-    bundleIds: task.bundleId ? mergeStrings(item.bundleIds, [task.bundleId]) : item.bundleIds,
+    cardIds: task.cardId ? mergeStrings(item.cardIds, [task.cardId]) : item.cardIds,
     status: 'converted',
     triagedAt: item.triagedAt || new Date().toISOString(),
     triagedBy: actorId || item.triagedBy,
-    history: appendHistory(item, 'converted-to-task', { actorId, metadata: { taskId: task.id, bundleId: task.bundleId } }),
+    history: appendHistory(item, 'converted-to-task', { actorId, metadata: { taskId: task.id, cardId: task.cardId } }),
   }) as IntakeItem;
   await dismissIntakeFollowUpNotifications(client, item.id);
   await mirrorIntakeRef(client, updated);
@@ -563,12 +563,12 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       const history = appendHistory(null, data.source === 'manual' ? 'manual-created' : 'created', { actorId });
       const item = await createIntakeItem(client, { ...data, history });
       let attached = item;
-      if (item.taskIds.length || item.bundleIds.length) {
+      if (item.taskIds.length || item.cardIds.length) {
         attached = await updateIntakeItem(client, item.id, {
           status: 'attached',
           triagedAt: item.triagedAt || new Date().toISOString(),
           triagedBy: actorId || item.triagedBy,
-          history: appendHistory(item, 'attached', { actorId, metadata: { taskIds: item.taskIds, bundleIds: item.bundleIds } }),
+          history: appendHistory(item, 'attached', { actorId, metadata: { taskIds: item.taskIds, cardIds: item.cardIds } }),
         }) as IntakeItem;
         await mirrorIntakeRef(client, attached);
       }
@@ -588,7 +588,7 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       priority: params.priority,
       tag: params.tag,
       taskId: params.taskId,
-      bundleId: params.bundleId,
+      cardId: params.cardId,
       assistantReadinessStatus: params.assistantReadinessStatus || params.assistantStatus,
       duplicateState: params.duplicateState,
       dueFollowUpAt: params.dueFollowUpAt,
@@ -792,14 +792,14 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
       if (body.createJob === true) {
         if (!readiness.assistantType || readiness.missingFields.length) return jsonResponse(400, { error: 'Assistant input is not ready' });
         const taskId = isNonEmptyString(body.taskId) ? body.taskId : item.taskIds[0];
-        const bundleId = isNonEmptyString(body.bundleId) ? body.bundleId : item.bundleIds[0];
-        if (!taskId && !bundleId) return jsonResponse(400, { error: 'taskId or bundleId is required to create an assistant job' });
+        const cardId = isNonEmptyString(body.cardId) ? body.cardId : item.cardIds[0];
+        if (!taskId && !cardId) return jsonResponse(400, { error: 'taskId or cardId is required to create an assistant job' });
         const job = await createAssistantJob(client, {
           assistantType: readiness.assistantType,
           title: redactText(body.title || `Assistant input: ${item.title}`, 180),
           status: body.submit === true ? 'queued' : 'draft',
           taskId,
-          bundleId,
+          cardId,
           requestedBy: actorId,
           inputRefs: readiness.inputRefs,
           approvalRequired: body.approvalRequired !== false,
@@ -817,9 +817,9 @@ async function handleIntakeRoutes(event: LambdaEvent, client: DynamoDBDocumentCl
           const task = await getTask(client, taskId);
           if (task) await updateTask(client, taskId, { assistantJobRefs: mergeAssistantJobRefs(task.assistantJobRefs, { assistantJobId: job.id, assistantType: job.assistantType, status: job.status }) });
         }
-        if (bundleId) {
-          const bundle = await getBundle(client, bundleId);
-          if (bundle) await updateBundle(client, bundleId, { assistantJobRefs: mergeAssistantJobRefs(bundle.assistantJobRefs, { assistantJobId: job.id, assistantType: job.assistantType, status: job.status }) });
+        if (cardId) {
+          const card = await getCard(client, cardId);
+          if (card) await updateCard(client, cardId, { assistantJobRefs: mergeAssistantJobRefs(card.assistantJobRefs, { assistantJobId: job.id, assistantType: job.assistantType, status: job.status }) });
         }
         updates.assistantJobIds = mergeStrings(item.assistantJobIds, [job.id]);
         updates.assistantReadiness = { ...readiness, status: body.submit === true ? 'submitted' : readiness.status };

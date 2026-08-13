@@ -12,7 +12,7 @@ import type { ArtifactRecord } from '../types';
 
 export interface ArtifactFilters {
   taskId?: string;
-  bundleId?: string;
+  cardId?: string;
   assistantJobId?: string;
   fileId?: string;
   status?: string;

@@ -55,7 +55,7 @@ describe('API — CRUD for tasks', () => {
           description: 'Review draft',
           date: '2026-03-10',
           comment: 'Important',
-          bundleId: 'bundle-1',
+          cardId: 'card-1',
           source: 'telegram',
         }),
       };
@@ -64,7 +64,7 @@ describe('API — CRUD for tasks', () => {
 
       const body = JSON.parse(res.body);
       assert.strictEqual(body.comment, 'Important');
-      assert.strictEqual(body.bundleId, 'bundle-1');
+      assert.strictEqual(body.cardId, 'card-1');
       assert.strictEqual(body.source, 'telegram');
     });
 
@@ -250,32 +250,32 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.tasks[0].description, 'R2');
     });
 
-    it('returns tasks filtered by bundleId', async () => {
-      const bid = 'bundle-filter-' + crypto.randomUUID();
+    it('returns tasks filtered by cardId', async () => {
+      const bid = 'card-filter-' + crypto.randomUUID();
       await handler({
         httpMethod: 'POST', path: '/api/tasks',
-        body: JSON.stringify({ description: 'P1', date: '2092-01-01', bundleId: bid }),
+        body: JSON.stringify({ description: 'P1', date: '2092-01-01', cardId: bid }),
       }, {});
       await handler({
         httpMethod: 'POST', path: '/api/tasks',
-        body: JSON.stringify({ description: 'P2', date: '2092-01-02', bundleId: bid }),
+        body: JSON.stringify({ description: 'P2', date: '2092-01-02', cardId: bid }),
       }, {});
       await handler({
         httpMethod: 'POST', path: '/api/tasks',
-        body: JSON.stringify({ description: 'P3', date: '2092-01-01', bundleId: 'other-bundle' }),
+        body: JSON.stringify({ description: 'P3', date: '2092-01-01', cardId: 'other-card' }),
       }, {});
 
       const res = await handler({
         httpMethod: 'GET',
         path: '/api/tasks',
-        queryStringParameters: { bundleId: bid },
+        queryStringParameters: { cardId: bid },
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.tasks.length, 2);
       for (const task of body.tasks) {
-        assert.strictEqual(task.bundleId, bid);
+        assert.strictEqual(task.cardId, bid);
       }
     });
 
@@ -1457,37 +1457,37 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(JSON.parse(normalFileDone.body).error, 'Cannot mark task as done: required file has not been uploaded');
     });
 
-    it('blocks schedule-email-newsletter from announcing until the Mailchimp shared bundle link is filled', async () => {
+    it('blocks schedule-email-newsletter from announcing until the Mailchimp shared card link is filled', async () => {
       const template = await createTemplate(await getClient(port), {
           name: 'Newsletter shared-link gate',
           type: 'newsletter',
-          bundleLinkDefinitions: [{ name: 'Mailchimp newsletter' }],
+          cardLinkDefinitions: [{ name: 'Mailchimp newsletter' }],
           taskDefinitions: [{
             refId: 'schedule-email-newsletter',
             description: 'Schedule Email Newsletter',
             offsetDays: 0,
             stageOnComplete: 'announced',
             proofRequirement: { type: 'external-status', label: 'Mailchimp campaign scheduled', required: true },
-            validation: { requiredBundleLinks: ['Mailchimp newsletter'] },
+            validation: { requiredCardLinks: ['Mailchimp newsletter'] },
           }],
       });
 
-      const bundleRes = await handler({
+      const cardRes = await handler({
         httpMethod: 'POST',
-        path: '/api/bundles',
+        path: '/api/cards',
         body: JSON.stringify({
-          title: 'Newsletter required bundle links',
+          title: 'Newsletter required card links',
           anchorDate: '2026-07-20',
           templateId: template.id,
           stage: 'preparation',
           status: 'active',
-          bundleLinks: [{ name: 'Mailchimp newsletter', url: '' }],
+          cardLinks: [{ name: 'Mailchimp newsletter', url: '' }],
         }),
       }, {});
-      assert.strictEqual(bundleRes.statusCode, 201, bundleRes.body);
-      const bundleBody = JSON.parse(bundleRes.body);
-      const bundle = bundleBody.bundle;
-      const task = bundleBody.tasks[0];
+      assert.strictEqual(cardRes.statusCode, 201, cardRes.body);
+      const cardBody = JSON.parse(cardRes.body);
+      const card = cardBody.card;
+      const task = cardBody.tasks[0];
       assert.strictEqual(task.stageOnComplete, 'announced');
 
       const blockedDone = await handler({
@@ -1496,19 +1496,19 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
       }, {});
       assert.strictEqual(blockedDone.statusCode, 400);
-      assert.strictEqual(JSON.parse(blockedDone.body).error, "Cannot mark task as done: required bundle link 'Mailchimp newsletter' is not filled");
+      assert.strictEqual(JSON.parse(blockedDone.body).error, "Cannot mark task as done: required card link 'Mailchimp newsletter' is not filled");
 
-      const blockedBundleRes = await handler({ httpMethod: 'GET', path: `/api/bundles/${bundle.id}` }, {});
-      assert.strictEqual(JSON.parse(blockedBundleRes.body).bundle.stage, 'preparation');
+      const blockedCardRes = await handler({ httpMethod: 'GET', path: `/api/cards/${card.id}` }, {});
+      assert.strictEqual(JSON.parse(blockedCardRes.body).card.stage, 'preparation');
 
-      const bundleUpdateRes = await handler({
+      const cardUpdateRes = await handler({
         httpMethod: 'PUT',
-        path: `/api/bundles/${bundle.id}`,
+        path: `/api/cards/${card.id}`,
         body: JSON.stringify({
-          bundleLinks: [{ name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' }],
+          cardLinks: [{ name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' }],
         }),
       }, {});
-      assert.strictEqual(bundleUpdateRes.statusCode, 200);
+      assert.strictEqual(cardUpdateRes.statusCode, 200);
 
       const doneRes = await handler({
         httpMethod: 'PUT',
@@ -1518,12 +1518,12 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(doneRes.statusCode, 200);
       assert.strictEqual(JSON.parse(doneRes.body).status, 'done');
 
-      const announcedBundleRes = await handler({ httpMethod: 'GET', path: `/api/bundles/${bundle.id}` }, {});
-      assert.strictEqual(JSON.parse(announcedBundleRes.body).bundle.stage, 'announced');
+      const announcedCardRes = await handler({ httpMethod: 'GET', path: `/api/cards/${card.id}` }, {});
+      assert.strictEqual(JSON.parse(announcedCardRes.body).card.stage, 'announced');
     });
 
-    it('allows non-done tasks with required shared links without a bundle but blocks done', async () => {
-      const validation = { requiredBundleLinks: ['Mailchimp newsletter'] };
+    it('allows non-done tasks with required shared links without a card but blocks done', async () => {
+      const validation = { requiredCardLinks: ['Mailchimp newsletter'] };
       const todoRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
@@ -1544,7 +1544,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
       }, {});
       assert.strictEqual(updateDone.statusCode, 400);
-      assert.strictEqual(JSON.parse(updateDone.body).error, "Cannot mark task as done: required shared bundle link 'Mailchimp newsletter' needs a workflow bundle");
+      assert.strictEqual(JSON.parse(updateDone.body).error, "Cannot mark task as done: required shared card link 'Mailchimp newsletter' needs a workflow card");
 
       const createDone = await handler({
         httpMethod: 'POST',
@@ -1559,35 +1559,35 @@ describe('API — CRUD for tasks', () => {
         }),
       }, {});
       assert.strictEqual(createDone.statusCode, 400);
-      assert.strictEqual(JSON.parse(createDone.body).error, "Cannot mark task as done: required shared bundle link 'Mailchimp newsletter' needs a workflow bundle");
+      assert.strictEqual(JSON.parse(createDone.body).error, "Cannot mark task as done: required shared card link 'Mailchimp newsletter' needs a workflow card");
     });
 
     it('blocks missing performance shared links unless an audited sponsor-only skip closure is present', async () => {
-      const bundleRes = await handler({
+      const cardRes = await handler({
         httpMethod: 'POST',
-        path: '/api/bundles',
+        path: '/api/cards',
         body: JSON.stringify({
           title: 'Newsletter sponsor-only shared links',
           anchorDate: '2026-07-20',
           status: 'active',
-          bundleLinks: [
+          cardLinks: [
             { name: 'Mailchimp newsletter', url: 'https://mailchimp.example/newsletter' },
             { name: 'LinkedIn', url: '' },
             { name: 'X', url: '' },
           ],
         }),
       }, {});
-      assert.strictEqual(bundleRes.statusCode, 201);
-      const bundle = JSON.parse(bundleRes.body).bundle;
+      assert.strictEqual(cardRes.statusCode, 201);
+      const card = JSON.parse(cardRes.body).card;
 
       const validation = {
-        requiredBundleLinks: ['Mailchimp newsletter', 'LinkedIn', 'X'],
+        requiredCardLinks: ['Mailchimp newsletter', 'LinkedIn', 'X'],
         skipClosure: {
           allowedStatuses: ['not sponsored this week', 'no social stats available'],
           requires: ['comment'],
           suppresses: {
-            'not sponsored this week': { bundleLinks: ['LinkedIn', 'X'], proof: true },
-            'no social stats available': { bundleLinks: ['LinkedIn', 'X'], proof: true },
+            'not sponsored this week': { cardLinks: ['LinkedIn', 'X'], proof: true },
+            'no social stats available': { cardLinks: ['LinkedIn', 'X'], proof: true },
           },
         },
       };
@@ -1598,7 +1598,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           description: 'Add newsletter performance',
           date: '2026-07-27',
-          bundleId: bundle.id,
+          cardId: card.id,
           source: 'template',
           proofRequirement: { type: 'external-status', label: 'Newsletter, LinkedIn, and X performance stats recorded', required: true },
           validation,
@@ -1616,7 +1616,7 @@ describe('API — CRUD for tasks', () => {
         }),
       }, {});
       assert.strictEqual(blockedStats.statusCode, 400);
-      assert.strictEqual(JSON.parse(blockedStats.body).error, "Cannot mark task as done: required bundle link 'LinkedIn' is not filled");
+      assert.strictEqual(JSON.parse(blockedStats.body).error, "Cannot mark task as done: required card link 'LinkedIn' is not filled");
 
       const skippedStats = await handler({
         httpMethod: 'PUT',
@@ -1630,29 +1630,29 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(JSON.parse(skippedStats.body).status, 'done');
       assert.strictEqual(JSON.parse(skippedStats.body).comment, 'not sponsored this week');
 
-      const missingMailchimpBundleRes = await handler({
+      const missingMailchimpCardRes = await handler({
         httpMethod: 'POST',
-        path: '/api/bundles',
+        path: '/api/cards',
         body: JSON.stringify({
           title: 'Newsletter social-only skip still needs Mailchimp',
           anchorDate: '2026-07-20',
           status: 'active',
-          bundleLinks: [
+          cardLinks: [
             { name: 'Mailchimp newsletter', url: '' },
             { name: 'LinkedIn', url: '' },
             { name: 'X', url: '' },
           ],
         }),
       }, {});
-      assert.strictEqual(missingMailchimpBundleRes.statusCode, 201);
-      const missingMailchimpBundle = JSON.parse(missingMailchimpBundleRes.body).bundle;
+      assert.strictEqual(missingMailchimpCardRes.statusCode, 201);
+      const missingMailchimpCard = JSON.parse(missingMailchimpCardRes.body).card;
       const missingMailchimpTaskRes = await handler({
         httpMethod: 'POST',
         path: '/api/tasks',
         body: JSON.stringify({
           description: 'Add newsletter performance missing Mailchimp',
           date: '2026-07-27',
-          bundleId: missingMailchimpBundle.id,
+          cardId: missingMailchimpCard.id,
           source: 'template',
           proofRequirement: { type: 'external-status', label: 'Newsletter, LinkedIn, and X performance stats recorded', required: true },
           validation,
@@ -1670,7 +1670,7 @@ describe('API — CRUD for tasks', () => {
         }),
       }, {});
       assert.strictEqual(socialOnlySkip.statusCode, 400);
-      assert.strictEqual(JSON.parse(socialOnlySkip.body).error, "Cannot mark task as done: required bundle link 'Mailchimp newsletter' is not filled");
+      assert.strictEqual(JSON.parse(socialOnlySkip.body).error, "Cannot mark task as done: required card link 'Mailchimp newsletter' is not filled");
     });
 
     it('rejects malformed proof requirements and metadata refs', async () => {
@@ -1779,7 +1779,7 @@ describe('API — CRUD for tasks', () => {
       const created = JSON.parse(createRes.body);
       assert.ok(created.id);
       assert.strictEqual(created.source, 'manual');
-      assert.strictEqual(created.bundleId, undefined);
+      assert.strictEqual(created.cardId, undefined);
       assert.strictEqual(created.status, 'todo');
       assert.strictEqual(created.comment, 'Initial comment');
 

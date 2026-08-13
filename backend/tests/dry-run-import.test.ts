@@ -7,7 +7,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
-import { createBundle } from '../src/db/bundles';
+import { createCard } from '../src/db/cards';
 import { createIntakeItem } from '../src/db/intake';
 import { createNotification } from '../src/db/notifications';
 import { createTask } from '../src/db/tasks';
@@ -34,12 +34,12 @@ describe('dry-run import', () => {
   it('reports would-write counts for a valid export without writing', async () => {
     const user = await createUser(client, { name: 'Ops', email: 'ops@test', passwordHash: 'x' });
     const template = await createTemplate(client, { name: 'Podcast', type: 'podcast' });
-    const bundle = await createBundle(client, { title: 'Episode 1', anchorDate: '2026-06-27', templateId: template.id, status: 'active' });
+    const card = await createCard(client, { title: 'Episode 1', anchorDate: '2026-06-27', templateId: template.id, status: 'active' });
     const task = await createTask(client, {
       description: 'Send follow-up',
       date: '2026-06-20',
       assigneeId: user.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       status: 'waiting',
       waitingFor: 'Guest reply',
       followUpAt: '2026-06-27',
@@ -55,7 +55,7 @@ describe('dry-run import', () => {
       summary: 'Safe intake context',
       receivedChannels: ['manual'],
       taskIds: [task.id],
-      bundleIds: [bundle.id],
+      cardIds: [card.id],
       tags: ['restore'],
       priority: 'normal',
       dataClass: 'internal',
@@ -99,7 +99,7 @@ describe('dry-run import', () => {
     assert.strictEqual(result.wouldWrite.tasks, 1);
     assert.strictEqual(result.wouldWrite.intake_items, 2);
     assert.strictEqual(result.wouldWrite.notifications, 1);
-    assert.strictEqual(result.wouldWrite.bundles, 1);
+    assert.strictEqual(result.wouldWrite.cards, 1);
     assert.strictEqual(result.wouldWrite.templates, 1);
     assert.strictEqual(result.followUpSummary.blockedIntakeItems, 1);
     assert.strictEqual(result.followUpSummary.standaloneBlockedIntakeItems, 1);

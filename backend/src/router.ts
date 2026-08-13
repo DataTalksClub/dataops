@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'crypto';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { handleBundleRoutes } from './routes/bundles';
+import { handleCardRoutes } from './routes/cards';
 import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
 import { handleUserRoutes } from './routes/users';
@@ -38,10 +38,10 @@ import {
   deleteTask,
   listTasksByDate,
   listTasksByDateRange,
-  listTasksByBundle,
+  listTasksByCard,
   listTasksByStatus,
 } from './db/tasks';
-import { getBundle, updateBundle } from './db/bundles';
+import { getCard, updateCard } from './db/cards';
 import { getTemplate } from './db/templates';
 import { getArtifact, listArtifacts } from './db/artifacts';
 import { listFilesByTask } from './db/files';
@@ -155,7 +155,7 @@ const ALLOWED_UPDATE_FIELDS = [
   'date',
   'comment',
   'status',
-  'bundleId',
+  'cardId',
   'source',
   'waitingFor',
   'followUpAt',
@@ -258,7 +258,7 @@ function makeTaskHistoryEvent(
     action,
     createdAt: data.createdAt || new Date().toISOString(),
   };
-  if (task.bundleId) event.bundleId = task.bundleId;
+  if (task.cardId) event.cardId = task.cardId;
   if (data.actorId) event.actorId = data.actorId;
   if (data.channel) event.channel = data.channel;
   if (data.waitingFor) event.waitingFor = data.waitingFor;
@@ -431,17 +431,17 @@ function hasScopedSkipClosure(validation: unknown): boolean {
   return Boolean(config.suppresses && typeof config.suppresses === 'object' && !Array.isArray(config.suppresses));
 }
 
-function skipClosureSuppresses(taskData: Record<string, unknown>, gate: 'bundleLink' | 'requiredLink' | 'file' | 'proof', name?: string): boolean {
+function skipClosureSuppresses(taskData: Record<string, unknown>, gate: 'cardLink' | 'requiredLink' | 'file' | 'proof', name?: string): boolean {
   const status = allowedSkipClosureStatus(taskData);
   if (!status) return false;
   if (!hasScopedSkipClosure(taskData.validation)) return true;
 
   const scope = skipClosureScope(taskData.validation, status);
   if (!scope) return false;
-  if (gate === 'bundleLink') {
-    const bundleLinks = scope.bundleLinks;
-    if (!Array.isArray(bundleLinks)) return false;
-    return bundleLinks.some((linkName) => linkName === '*' || (isNonEmptyString(linkName) && linkName === name));
+  if (gate === 'cardLink') {
+    const cardLinks = scope.cardLinks;
+    if (!Array.isArray(cardLinks)) return false;
+    return cardLinks.some((linkName) => linkName === '*' || (isNonEmptyString(linkName) && linkName === name));
   }
   if (gate === 'requiredLink') return scope.requiredLink === true;
   if (gate === 'file') return scope.file === true;
@@ -449,16 +449,16 @@ function skipClosureSuppresses(taskData: Record<string, unknown>, gate: 'bundleL
   return false;
 }
 
-function requiredBundleLinkNames(validation: unknown): string[] {
+function requiredCardLinkNames(validation: unknown): string[] {
   if (!validation || typeof validation !== 'object' || Array.isArray(validation)) return [];
-  const requiredBundleLinks = (validation as Record<string, unknown>).requiredBundleLinks;
-  if (!Array.isArray(requiredBundleLinks)) return [];
-  return requiredBundleLinks.filter((name): name is string => isNonEmptyString(name));
+  const requiredCardLinks = (validation as Record<string, unknown>).requiredCardLinks;
+  if (!Array.isArray(requiredCardLinks)) return [];
+  return requiredCardLinks.filter((name): name is string => isNonEmptyString(name));
 }
 
-function bundleHasLink(bundleLinks: unknown, name: string): boolean {
-  if (!Array.isArray(bundleLinks)) return false;
-  return bundleLinks.some((link) => (
+function cardHasLink(cardLinks: unknown, name: string): boolean {
+  if (!Array.isArray(cardLinks)) return false;
+  return cardLinks.some((link) => (
     link
     && typeof link === 'object'
     && (link as Record<string, unknown>).name === name
@@ -483,15 +483,15 @@ async function hasApprovedArtifactProof(
     if (taskArtifacts.length > 0) return true;
   }
 
-  const bundleId = isNonEmptyString(taskData.bundleId) ? taskData.bundleId : null;
+  const cardId = isNonEmptyString(taskData.cardId) ? taskData.cardId : null;
   const refIds = new Set(artifactRefIds(taskData.artifactRefs));
 
-  if (bundleId) {
-    const bundleArtifacts = await listArtifacts(client, { bundleId, status: 'approved' });
-    if (bundleArtifacts.length > 0) return true;
+  if (cardId) {
+    const cardArtifacts = await listArtifacts(client, { cardId, status: 'approved' });
+    if (cardArtifacts.length > 0) return true;
 
-    const bundle = await getBundle(client, bundleId);
-    for (const id of artifactRefIds(bundle?.artifactRefs)) refIds.add(id);
+    const card = await getCard(client, cardId);
+    for (const id of artifactRefIds(card?.artifactRefs)) refIds.add(id);
   }
 
   for (const artifactId of refIds) {
@@ -502,23 +502,23 @@ async function hasApprovedArtifactProof(
   return false;
 }
 
-async function validateRequiredBundleLinks(
+async function validateRequiredCardLinks(
   client: DynamoDBDocumentClient,
   taskData: Record<string, unknown>
 ): Promise<string | null> {
-  const requiredNames = requiredBundleLinkNames(taskData.validation);
+  const requiredNames = requiredCardLinkNames(taskData.validation);
   if (requiredNames.length === 0) return null;
 
-  const bundleId = isNonEmptyString(taskData.bundleId) ? taskData.bundleId : null;
-  if (!bundleId) {
-    return `Cannot mark task as done: required shared bundle link '${requiredNames[0]}' needs a workflow bundle`;
+  const cardId = isNonEmptyString(taskData.cardId) ? taskData.cardId : null;
+  if (!cardId) {
+    return `Cannot mark task as done: required shared card link '${requiredNames[0]}' needs a workflow card`;
   }
 
-  const bundle = await getBundle(client, bundleId);
+  const card = await getCard(client, cardId);
   for (const name of requiredNames) {
-    if (skipClosureSuppresses(taskData, 'bundleLink', name)) continue;
-    if (!bundleHasLink(bundle?.bundleLinks, name)) {
-      return `Cannot mark task as done: required bundle link '${name}' is not filled`;
+    if (skipClosureSuppresses(taskData, 'cardLink', name)) continue;
+    if (!cardHasLink(card?.cardLinks, name)) {
+      return `Cannot mark task as done: required card link '${name}' is not filled`;
     }
   }
 
@@ -773,7 +773,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.description) taskData.description = body.description;
       if (body.date) taskData.date = body.date;
       if (body.comment !== undefined) taskData.comment = body.comment;
-      if (body.bundleId !== undefined) taskData.bundleId = body.bundleId;
+      if (body.cardId !== undefined) taskData.cardId = body.cardId;
       if (body.waitingFor !== undefined) taskData.waitingFor = body.waitingFor;
       if (body.followUpAt !== undefined) taskData.followUpAt = body.followUpAt;
       if (body.followUpChannel !== undefined) taskData.followUpChannel = body.followUpChannel;
@@ -827,9 +827,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         }
       }
       if (taskData.status === 'done') {
-        const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
-        if (bundleLinkError) {
-          return jsonResponse(400, { error: bundleLinkError });
+        const cardLinkError = await validateRequiredCardLinks(client, taskData);
+        if (cardLinkError) {
+          return jsonResponse(400, { error: cardLinkError });
         }
         const proofError = await validateDoneProofOnCreate(client, taskData);
         if (proofError) {
@@ -844,15 +844,15 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // GET /api/tasks — List tasks with filters
     if (method === 'GET' && reqPath === '/api/tasks') {
       const params = event.queryStringParameters || {};
-      const { date, startDate, endDate, bundleId, status } = params;
+      const { date, startDate, endDate, cardId, status } = params;
 
-      if (!date && !startDate && !endDate && !bundleId && !status) {
+      if (!date && !startDate && !endDate && !cardId && !status) {
         return jsonResponse(400, {
-          error: 'At least one filter is required: date, startDate+endDate, bundleId, or status',
+          error: 'At least one filter is required: date, startDate+endDate, cardId, or status',
         });
       }
 
-      // Priority: date > startDate+endDate > bundleId > status
+      // Priority: date > startDate+endDate > cardId > status
       if (date) {
         const tasks = await listTasksByDate(client, date);
         return jsonResponse(200, { tasks });
@@ -868,8 +868,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         return jsonResponse(200, { tasks });
       }
 
-      if (bundleId) {
-        const tasks = await listTasksByBundle(client, bundleId);
+      if (cardId) {
+        const tasks = await listTasksByCard(client, cardId);
         return jsonResponse(200, { tasks });
       }
 
@@ -1035,8 +1035,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           }
         }
 
-        const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
-        if (bundleLinkError) return jsonResponse(400, { error: bundleLinkError });
+        const cardLinkError = await validateRequiredCardLinks(client, taskData);
+        if (cardLinkError) return jsonResponse(400, { error: cardLinkError });
 
         const proofError = await validateDoneProof(client, existing.id, existing, updates);
         if (proofError) return jsonResponse(400, { error: proofError });
@@ -1061,8 +1061,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         const updated = await updateTask(client, existing.id, updates);
         if (updated) {
           const task = updated as Task;
-          if (task.stageOnComplete && task.bundleId && task.source === 'template') {
-            await updateBundle(client, task.bundleId, { stage: task.stageOnComplete });
+          if (task.stageOnComplete && task.cardId && task.source === 'template') {
+            await updateCard(client, task.cardId, { stage: task.stageOnComplete });
           }
         }
         return jsonResponse(200, updated);
@@ -1177,9 +1177,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           }
         }
 
-        const bundleLinkError = await validateRequiredBundleLinks(client, taskData);
-        if (bundleLinkError) {
-          return jsonResponse(400, { error: bundleLinkError });
+        const cardLinkError = await validateRequiredCardLinks(client, taskData);
+        if (cardLinkError) {
+          return jsonResponse(400, { error: cardLinkError });
         }
 
         const proofError = await validateDoneProof(client, id, existing, updates);
@@ -1207,11 +1207,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const updated = await updateTask(client, id, updates);
 
       // Stage transition: when a task with stageOnComplete is marked done,
-      // automatically update the parent bundle's stage
+      // automatically update the parent card's stage
       if (updated && updates.status === 'done' && existing.status !== 'done') {
         const task = updated as Task;
-        if (task.stageOnComplete && task.bundleId && task.source === 'template') {
-          await updateBundle(client, task.bundleId, { stage: task.stageOnComplete });
+        if (task.stageOnComplete && task.cardId && task.source === 'template') {
+          await updateCard(client, task.cardId, { stage: task.stageOnComplete });
         }
       }
 
@@ -1259,10 +1259,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (result) return result;
     }
 
-    // ── Bundle routes ──────────────────────────────────────────────
+    // ── Card routes ──────────────────────────────────────────────
 
-    if (reqPath.startsWith('/api/bundles')) {
-      const result = await handleBundleRoutes(reqPath, method, event.body || null);
+    if (reqPath.startsWith('/api/cards')) {
+      const result = await handleCardRoutes(reqPath, method, event.body || null);
       if (result) return result;
     }
 

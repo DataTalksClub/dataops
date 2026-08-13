@@ -148,7 +148,7 @@ describe('sponsor reviewed communication core', () => {
   });
 
   it('validates exactly four allowlisted templates and only declared placeholders', () => {
-    const bundle = validateTemplateBundle({
+    const card = validateTemplateBundle({
       schemaVersion: '1',
       generation: 'synthetic-1',
       templates: [
@@ -158,8 +158,8 @@ describe('sponsor reviewed communication core', () => {
         ['performance-follow-up', 'Results for {{organizationName}}'],
       ].map(([id, body]) => ({ id, version: '1', subject: `Synthetic ${id}`, body, placeholders: body.includes('publicLink') ? ['publicLink'] : ['organizationName'] })),
     });
-    assert.equal(bundle.bundle.templates.length, 4);
-    assert.deepEqual(renderTemplate(bundle.bundle.templates[2], {
+    assert.equal(card.card.templates.length, 4);
+    assert.deepEqual(renderTemplate(card.card.templates[2], {
       organizationName: 'Synthetic Sponsor',
       publicLink: 'https://example.invalid/live',
     }), { subject: 'Synthetic publication-live', body: 'Live: https://example.invalid/live' });

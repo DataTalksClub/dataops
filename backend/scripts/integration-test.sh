@@ -68,15 +68,15 @@ test_endpoint "List tasks by date" \
   '{"httpMethod":"GET","path":"/api/tasks","queryStringParameters":{"date":"2026-03-01"}}' \
   '"tasks"'
 
-# Create a bundle
-test_endpoint "Create bundle" \
-  '{"httpMethod":"POST","path":"/api/bundles","body":"{\"title\":\"Test Bundle\",\"anchorDate\":\"2026-04-01\"}"}' \
-  '"title":"Test Bundle"'
+# Create a card
+test_endpoint "Create card" \
+  '{"httpMethod":"POST","path":"/api/cards","body":"{\"title\":\"Test Card\",\"anchorDate\":\"2026-04-01\"}"}' \
+  '"title":"Test Card"'
 
-# List bundles
-test_endpoint "List bundles" \
-  '{"httpMethod":"GET","path":"/api/bundles"}' \
-  '"bundles"'
+# List cards
+test_endpoint "List cards" \
+  '{"httpMethod":"GET","path":"/api/cards"}' \
+  '"cards"'
 
 # Create a template
 test_endpoint "Create template" \

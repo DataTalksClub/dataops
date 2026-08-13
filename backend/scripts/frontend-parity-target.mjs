@@ -84,7 +84,7 @@ const operatorSession = await sessions.createBrowserSession(client, operatorId, 
 
 const tables = {
   tasks: setup.TABLE_TASKS,
-  bundles: setup.TABLE_BUNDLES,
+  cards: setup.TABLE_CARDS,
   templates: setup.TABLE_TEMPLATES,
   artifacts: setup.TABLE_ARTIFACTS,
   assistants: setup.TABLE_ASSISTANT_JOBS,
@@ -98,35 +98,35 @@ async function put(tableName, item) {
 }
 
 async function resetFixtures() {
-  const bundle = {
-    PK: 'BUNDLE#parity-workflow', SK: 'BUNDLE#parity-workflow', id: 'parity-workflow', title: 'Synthetic publication workflow',
+  const card = {
+    PK: 'CARD#parity-workflow', SK: 'CARD#parity-workflow', id: 'parity-workflow', title: 'Synthetic publication workflow',
     description: 'Public-safe parity workflow', anchorDate: '2026-08-12', stage: 'preparation', createdAt: fixedNow, updatedAt: fixedNow,
   };
-  const returnBundle = {
-    PK: 'BUNDLE#parity-return', SK: 'BUNDLE#parity-return', id: 'parity-return', title: 'Synthetic return workflow',
+  const returnCard = {
+    PK: 'CARD#parity-return', SK: 'CARD#parity-return', id: 'parity-return', title: 'Synthetic return workflow',
     anchorDate: '2026-08-13', stage: 'preparation', createdAt: fixedNow, updatedAt: fixedNow,
   };
   const task = {
     PK: 'TASK#parity-task', SK: 'TASK#parity-task', id: 'parity-task', description: 'Verify synthetic publication proof',
     date: '2026-08-12', status: 'waiting', waitingFor: 'Synthetic reviewer', followUpAt: '2026-08-13T09:00:00.000Z',
-    bundleId: bundle.id, proofRequirement: { required: true, type: 'comment', label: 'Synthetic completion note' },
+    cardId: card.id, proofRequirement: { required: true, type: 'comment', label: 'Synthetic completion note' },
     instructionDocId: 'sop.synthetic.parity', createdAt: fixedNow, updatedAt: fixedNow,
   };
   const intake = {
     PK: 'INTAKE#parity-intake', SK: 'INTAKE#parity-intake', id: 'parity-intake', source: 'manual', status: 'blocked',
     title: 'Synthetic blocked intake', summary: 'Waiting for a public-safe synthetic response.', waitingFor: 'Synthetic partner',
-    followUpAt: '2026-08-13T09:00:00.000Z', taskIds: [], bundleIds: [], assistantJobIds: [], linkRefs: [], fileRefs: [], artifactRefs: [],
+    followUpAt: '2026-08-13T09:00:00.000Z', taskIds: [], cardIds: [], assistantJobIds: [], linkRefs: [], fileRefs: [], artifactRefs: [],
     tags: ['synthetic'], priority: 'normal', dataClass: 'internal', createdAt: fixedNow, updatedAt: fixedNow,
     history: [{ id: 'parity-history', action: 'blocked', actorId: adminId, reason: 'Awaiting synthetic response', createdAt: fixedNow }],
   };
   const assistant = {
     PK: 'ASSISTANT_JOB#parity-assistant', SK: 'ASSISTANT_JOB#parity-assistant', id: 'parity-assistant', assistantType: 'podcast',
-    title: 'Synthetic assistant baseline', status: 'draft', bundleId: bundle.id, inputRefs: [{ type: 'bundle', id: bundle.id }],
+    title: 'Synthetic assistant baseline', status: 'draft', cardId: card.id, inputRefs: [{ type: 'card', id: card.id }],
     outputArtifactIds: [], approvalRequired: true, attempt: 0, maxAttempts: 2, createdAt: fixedNow, updatedAt: fixedNow,
   };
   const artifact = {
     PK: 'ARTIFACT#parity-artifact', SK: 'ARTIFACT#parity-artifact', id: 'parity-artifact', title: 'Synthetic proof artifact',
-    type: 'evidence', status: 'approved', taskId: task.id, bundleId: bundle.id, storageProvider: 'local-test',
+    type: 'evidence', status: 'approved', taskId: task.id, cardId: card.id, storageProvider: 'local-test',
     storageUri: 'https://example.test/synthetic-proof', createdAt: fixedNow, updatedAt: fixedNow,
   };
   const template = {
@@ -137,7 +137,7 @@ async function resetFixtures() {
   };
   const notification = {
     PK: 'NOTIFICATION#parity-notification', SK: 'NOTIFICATION#parity-notification', id: 'parity-notification', type: 'follow-up-due',
-    message: 'Synthetic task follow-up is due', taskId: task.id, bundleId: bundle.id, dueAt: fixedNow, dismissed: false, createdAt: fixedNow,
+    message: 'Synthetic task follow-up is due', taskId: task.id, cardId: card.id, dueAt: fixedNow, dismissed: false, createdAt: fixedNow,
   };
   const organization = {
     PK: 'ORGANIZATION#parity-organization', SK: 'ORGANIZATION#parity-organization', id: 'parity-organization', displayName: 'Synthetic Learning Co',
@@ -149,7 +149,7 @@ async function resetFixtures() {
     notes: 'Synthetic role-safe booking', version: 1, createdAt: fixedNow, updatedAt: fixedNow,
   };
   await Promise.all([
-    put(tables.bundles, bundle), put(tables.bundles, returnBundle), put(tables.tasks, task), put(tables.intake, intake),
+    put(tables.cards, card), put(tables.cards, returnCard), put(tables.tasks, task), put(tables.intake, intake),
     put(tables.assistants, assistant), put(tables.artifacts, artifact), put(tables.templates, template),
     put(tables.notifications, notification), put(tables.sponsor, organization), put(tables.sponsor, booking),
   ]);

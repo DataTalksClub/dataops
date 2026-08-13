@@ -75,7 +75,7 @@ const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 const RESTORE_SMOKE_CHECKS = [
   'List today tasks',
-  'Open workflow bundle',
+  'Open workflow card',
   'Instantiate workflow template',
   'Generate recurring tasks',
   'List due notifications',

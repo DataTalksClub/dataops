@@ -25,11 +25,11 @@ const REQUIRED = {
     states: ["empty", "filtered-exact", "new", "triaged", "blocked-due", "blocked-future", "attached", "converted", "assistant-ready", "duplicate", "ignored", "archived", "validation", "conflict", "server-failure", "stale-not-found"],
   },
   tasks: {
-    route: "/#/tasks?taskId=<id>&date=<date>&bundleId=<id>&contextBundleId=<id>",
+    route: "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
     states: ["empty", "waiting", "blocked", "done", "create-select-update", "file-proof", "combined-context", "sop-link", "stale-not-found", "conflict", "failure"],
   },
   workflows: {
-    route: "/#/bundles?bundleId=<id>&taskId=<id>",
+    route: "/#/cards?cardId=<id>&taskId=<id>",
     states: ["empty", "active", "staged", "completed", "deep-link-return", "mismatch", "not-found", "failure"],
   },
   templates: {
@@ -87,11 +87,11 @@ const REQUIRED_ROLES = ["signed-out", "expired-session", "disabled-user", "opera
 const REQUIRED_APIS = {
   session: ["/api/me", "/api/*", "/work/api/*"],
   settings: ["/api/me", "/logout"],
-  home: ["/api/tasks", "/api/bundles", "/api/notifications", "/docs/process-quality"],
+  home: ["/api/tasks", "/api/cards", "/api/notifications", "/docs/process-quality"],
   inbox: ["/api/intake"],
   tasks: ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
-  workflows: ["/api/bundles", "/api/tasks", "/api/artifacts"],
-  templates: ["/api/templates", "/api/bundles"],
+  workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
+  templates: ["/api/templates", "/api/cards"],
   recurring: ["/api/recurring"],
   assistants: ["/api/assistant-jobs", "/api/artifacts"],
   artifacts: ["/api/artifacts", "/api/files"],
@@ -147,8 +147,8 @@ const REQUIRED_STATE_ROLE_OVERRIDES = {
 const REQUIRED_ROUTE_SET = [
   "/#/",
   "/#/inbox?intakeId=<id>",
-  "/#/tasks?taskId=<id>&date=<date>&bundleId=<id>&contextBundleId=<id>",
-  "/#/bundles?bundleId=<id>&taskId=<id>",
+  "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
+  "/#/cards?cardId=<id>&taskId=<id>",
   "/#/assistants?assistantJobId=<id>",
   "/#/templates?templateId=<id>",
   "/#/recurring",

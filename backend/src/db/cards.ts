@@ -7,28 +7,28 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_BUNDLES } from './setup';
-import type { Bundle } from '../types';
+import { TABLE_CARDS } from './setup';
+import type { Card } from '../types';
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
  */
-function cleanItem(item: Record<string, unknown> | undefined): Bundle | null {
+function cleanItem(item: Record<string, unknown> | undefined): Card | null {
   if (!item) return null;
   const { PK, SK, ...rest } = item;
-  return rest as unknown as Bundle;
+  return rest as unknown as Card;
 }
 
 /**
- * Create a new bundle. Generates a UUID, sets createdAt/updatedAt.
+ * Create a new card. Generates a UUID, sets createdAt/updatedAt.
  */
-async function createBundle(client: DynamoDBDocumentClient, data: Record<string, unknown>): Promise<Bundle> {
+async function createCard(client: DynamoDBDocumentClient, data: Record<string, unknown>): Promise<Card> {
   const id = typeof data.id === 'string' && data.id.trim().length > 0 ? data.id : crypto.randomUUID();
   const now = new Date().toISOString();
 
   const item = {
-    PK: `BUNDLE#${id}`,
-    SK: `BUNDLE#${id}`,
+    PK: `CARD#${id}`,
+    SK: `CARD#${id}`,
     id,
     createdAt: now,
     updatedAt: now,
@@ -37,22 +37,22 @@ async function createBundle(client: DynamoDBDocumentClient, data: Record<string,
 
   await client.send(
     new PutCommand({
-      TableName: TABLE_BUNDLES,
+      TableName: TABLE_CARDS,
       Item: item,
     })
   );
 
-  return cleanItem(item) as Bundle;
+  return cleanItem(item) as Card;
 }
 
 /**
- * Get a bundle by id.
+ * Get a card by id.
  */
-async function getBundle(client: DynamoDBDocumentClient, id: string): Promise<Bundle | null> {
+async function getCard(client: DynamoDBDocumentClient, id: string): Promise<Card | null> {
   const result = await client.send(
     new GetCommand({
-      TableName: TABLE_BUNDLES,
-      Key: { PK: `BUNDLE#${id}`, SK: `BUNDLE#${id}` },
+      TableName: TABLE_CARDS,
+      Key: { PK: `CARD#${id}`, SK: `CARD#${id}` },
     })
   );
 
@@ -60,9 +60,9 @@ async function getBundle(client: DynamoDBDocumentClient, id: string): Promise<Bu
 }
 
 /**
- * Partial update of a bundle.
+ * Partial update of a card.
  */
-async function updateBundle(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<Bundle | null> {
+async function updateCard(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<Card | null> {
   const now = new Date().toISOString();
   const fields: Record<string, unknown> = { ...updates, updatedAt: now };
 
@@ -82,8 +82,8 @@ async function updateBundle(client: DynamoDBDocumentClient, id: string, updates:
 
   const result = await client.send(
     new UpdateCommand({
-      TableName: TABLE_BUNDLES,
-      Key: { PK: `BUNDLE#${id}`, SK: `BUNDLE#${id}` },
+      TableName: TABLE_CARDS,
+      Key: { PK: `CARD#${id}`, SK: `CARD#${id}` },
       UpdateExpression: `SET ${expressionParts.join(', ')}`,
       ExpressionAttributeNames: expressionAttrNames,
       ExpressionAttributeValues: expressionAttrValues,
@@ -95,36 +95,36 @@ async function updateBundle(client: DynamoDBDocumentClient, id: string, updates:
 }
 
 /**
- * Delete a bundle by id.
+ * Delete a card by id.
  */
-async function deleteBundle(client: DynamoDBDocumentClient, id: string): Promise<void> {
+async function deleteCard(client: DynamoDBDocumentClient, id: string): Promise<void> {
   await client.send(
     new DeleteCommand({
-      TableName: TABLE_BUNDLES,
-      Key: { PK: `BUNDLE#${id}`, SK: `BUNDLE#${id}` },
+      TableName: TABLE_CARDS,
+      Key: { PK: `CARD#${id}`, SK: `CARD#${id}` },
     })
   );
 }
 
 /**
- * List all bundles by scanning for items where PK begins with "BUNDLE#".
+ * List all cards by scanning for items where PK begins with "CARD#".
  */
-async function listBundles(client: DynamoDBDocumentClient): Promise<Bundle[]> {
+async function listCards(client: DynamoDBDocumentClient): Promise<Card[]> {
   const result = await client.send(
     new ScanCommand({
-      TableName: TABLE_BUNDLES,
+      TableName: TABLE_CARDS,
       FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'BUNDLE#' },
+      ExpressionAttributeValues: { ':prefix': 'CARD#' },
     })
   );
 
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Bundle);
+  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Card);
 }
 
 export {
-  createBundle,
-  getBundle,
-  updateBundle,
-  deleteBundle,
-  listBundles,
+  createCard,
+  getCard,
+  updateCard,
+  deleteCard,
+  listCards,
 };

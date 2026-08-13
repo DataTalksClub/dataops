@@ -1,10 +1,10 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { listTemplates, instantiateTemplate } from '../db/templates';
-import { createBundle, listBundles } from '../db/bundles';
+import { createCard, listCards } from '../db/cards';
 import { createNotification } from '../db/notifications';
 import { generateRecurringTasks, cronMatchesDate } from '../db/recurring';
-import type { Template, Bundle } from '../types';
+import type { Template, Card } from '../types';
 import { evaluateSponsorBookingAlerts } from '../sponsorCrm/alerts';
 import { evaluateSponsorFinanceAlerts } from '../sponsorFinance/alerts';
 import { berlinDate } from '../sponsorFinance/core';
@@ -50,7 +50,7 @@ function formatAnchorDate(dateStr: string): string {
 
 /**
  * Run the cron logic: scan templates with triggerType "automatic",
- * evaluate their schedule against the current date, and create bundles
+ * evaluate their schedule against the current date, and create cards
  * for matches (with duplicate prevention).
  */
 async function runCron(
@@ -67,8 +67,8 @@ async function runCron(
     (t: Template) => t.triggerType === 'automatic' && t.triggerSchedule && t.triggerEnabled !== false
   );
 
-  // 2. Get all existing bundles for duplicate detection
-  const allBundles = await listBundles(client);
+  // 2. Get all existing cards for duplicate detection
+  const allCards = await listCards(client);
 
   const created: string[] = [];
   let skipped = 0;
@@ -144,8 +144,8 @@ async function runCron(
       const anchorDate = anchorDateObj.toISOString().split('T')[0];
 
       // 5. Duplicate check: same templateId + anchorDate
-      const duplicate = allBundles.find(
-        (b: Bundle) => b.templateId === template.id && b.anchorDate === anchorDate
+      const duplicate = allCards.find(
+        (b: Card) => b.templateId === template.id && b.anchorDate === anchorDate
       );
 
       if (duplicate) {
@@ -156,7 +156,7 @@ async function runCron(
           await createNotification(client, {
             type: 'automation-failure',
             message: `${template.name} workflow run was missing ${recoveredTasks.length} task(s); cron recovered them for ${formatAnchorDate(anchorDate)}`,
-            bundleId: duplicate.id,
+            cardId: duplicate.id,
             templateId: template.id,
             dueAt: anchorDate,
             metadata: {
@@ -168,8 +168,8 @@ async function runCron(
         continue;
       }
 
-      // 6. Create the bundle
-      const bundleData: Record<string, unknown> = {
+      // 6. Create the card
+      const cardData: Record<string, unknown> = {
         title: `${template.name} - ${formatAnchorDate(anchorDate)}`,
         anchorDate,
         templateId: template.id,
@@ -177,33 +177,33 @@ async function runCron(
         status: 'active',
       };
 
-      // Copy template fields to bundle
+      // Copy template fields to card
       if (template.emoji) {
-        bundleData.emoji = template.emoji;
+        cardData.emoji = template.emoji;
       }
       if (template.tags && template.tags.length > 0) {
-        bundleData.tags = template.tags;
+        cardData.tags = template.tags;
       }
       if (template.references && template.references.length > 0) {
-        bundleData.references = template.references;
+        cardData.references = template.references;
       }
-      if (template.bundleLinkDefinitions && template.bundleLinkDefinitions.length > 0) {
-        bundleData.bundleLinks = template.bundleLinkDefinitions.map((def) => ({
+      if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
+        cardData.cardLinks = template.cardLinkDefinitions.map((def) => ({
           name: def.name,
           url: '',
         }));
       }
 
-      const bundle = await createBundle(client, bundleData);
+      const card = await createCard(client, cardData);
 
       // 7. Instantiate template tasks
-      await instantiateTemplate(client, template.id, bundle.id, anchorDate);
+      await instantiateTemplate(client, template.id, card.id, anchorDate);
 
       // 8. Create notification (targeted to template's defaultAssigneeId if set)
       const notificationData: Record<string, unknown> = {
         type: 'stage-change',
-        message: `${template.name} bundle auto-created for ${formatAnchorDate(anchorDate)}`,
-        bundleId: bundle.id,
+        message: `${template.name} card auto-created for ${formatAnchorDate(anchorDate)}`,
+        cardId: card.id,
         templateId: template.id,
         dueAt: anchorDate,
       };
@@ -212,7 +212,7 @@ async function runCron(
       }
       await createNotification(client, notificationData);
 
-      created.push(bundle.id);
+      created.push(card.id);
     } catch (err: unknown) {
       failures++;
       await createNotification(client, {

@@ -287,7 +287,7 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
   before(async () => {
     process.env.SPONSOR_COMMUNICATION_SEND_ENABLED = 'true';
     process.env.SPONSOR_COMMUNICATIONS_TEST_HMAC_KEYRING = JSON.stringify(hmac);
-    process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_BUNDLE = JSON.stringify(templateBundle);
+    process.env.SPONSOR_COMMUNICATIONS_TEST_TEMPLATE_CARD = JSON.stringify(templateBundle);
     await raw.send(new CreateTableCommand({
       TableName: TABLE,
       BillingMode: 'PAY_PER_REQUEST',

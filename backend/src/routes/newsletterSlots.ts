@@ -14,7 +14,7 @@ import {
 import { storageSnapshotDigest } from "../db/boundedPagination";
 import { createHash } from "crypto";
 import { getCrmRecord } from "../db/sponsorCrm";
-import { getBundle } from "../db/bundles";
+import { getCard } from "../db/cards";
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
     statusCode,
     headers: { "Content-Type": "application/json" },
@@ -37,7 +37,7 @@ const WRITABLE_FIELDS = new Set([
   "campaignLabel",
   "campaignNumber",
   "status",
-  "bundleId",
+  "cardId",
   "bookedByUserId",
   "bookedByDisplayName",
   "sponsorBookingId",
@@ -103,7 +103,7 @@ function validate(body: any, partial = false) {
     (!Number.isSafeInteger(body.campaignNumber) || body.campaignNumber < 0)
   )
     return "Invalid campaignNumber";
-  for (const name of ["bundleId", "bookedByUserId", "sponsorBookingId"])
+  for (const name of ["cardId", "bookedByUserId", "sponsorBookingId"])
     if (body[name] != null && !ID.test(String(body[name])))
       return `Invalid ${name}`;
   if (
@@ -171,7 +171,7 @@ function alerts(items: NewsletterSlot[], today: string) {
       !item.bookedByDisplayName
     )
       add("reserved-missing-booker", "error");
-    if (days >= 0 && days <= workflowLeadDays && !item.bundleId)
+    if (days >= 0 && days <= workflowLeadDays && !item.cardId)
       add("publication-missing-workflow", "warning");
   }
   const groups = new Map<string, NewsletterSlot[]>();
@@ -273,19 +273,19 @@ export async function handleNewsletterSlotRoutes(
       query.today || new Date().toISOString().slice(0, 10),
     );
     for (const item of items.filter(
-      (value) => value.bundleId && value.status !== "cancelled",
+      (value) => value.cardId && value.status !== "cancelled",
     )) {
-      const bundle = await getBundle(client, String(item.bundleId));
-      const links = bundle?.bundleLinks || [];
+      const card = await getCard(client, String(item.cardId));
+      const links = card?.cardLinks || [];
       const hasCampaign = links.some(
         (link) =>
           /campaign/i.test(String(link.name)) &&
           /^https:\/\//.test(String(link.url)),
       );
       if (
-        !bundle ||
+        !card ||
         !hasCampaign ||
-        !["announced", "after-event", "done"].includes(String(bundle.stage))
+        !["announced", "after-event", "done"].includes(String(card.stage))
       )
         current.push({
           reasonCode: "linked-workflow-incomplete",
@@ -355,8 +355,8 @@ export async function handleNewsletterSlotRoutes(
       !(await getCrmRecord(client, "booking", String(body.sponsorBookingId)))
     )
       return json(422, { error: "Sponsor booking unavailable" });
-    if (body.bundleId && !(await getBundle(client, String(body.bundleId))))
-      return json(422, { error: "Bundle unavailable" });
+    if (body.cardId && !(await getCard(client, String(body.cardId))))
+      return json(422, { error: "Card unavailable" });
     try {
       const result = await createNewsletterSlot(client, {
         ...body,

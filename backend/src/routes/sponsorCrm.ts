@@ -24,7 +24,7 @@ const page = (items: CrmRecord[], event: LambdaEvent) => {
   };
 };
 function validateList(event:LambdaEvent,kind:string){const query=event.queryStringParameters||{},limit=Number(query.limit||50),cursor=Number(query.cursor||0);if(!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(cursor)||cursor<0)return'Invalid pagination';if(query.migrationSnapshot&&!['true'].includes(query.migrationSnapshot))return'Invalid migration snapshot mode';if(query.status&&kind==='booking'&&!STATUSES.has(query.status))return'Invalid status filter';if(query.from&&!realDate(query.from))return'Invalid from date';if(query.to&&!realDate(query.to))return'Invalid to date';if(query.from&&query.to&&query.from>query.to)return'Invalid date range';if(query.organizationId&&!ID.test(query.organizationId))return'Invalid organizationId filter';if(query.active&&!['true','false'].includes(query.active))return'Invalid active filter';return'';}
-const safeBookingSummary = (booking: CrmRecord) => ({ id: booking.id, organizationId: booking.organizationId, slotType: booking.slotType, status: booking.status, plannedPublicationDate: booking.plannedPublicationDate, scheduleEntryId: booking.scheduleEntryId, bundleId: booking.bundleId, version: booking.version, updatedAt: booking.updatedAt });
+const safeBookingSummary = (booking: CrmRecord) => ({ id: booking.id, organizationId: booking.organizationId, slotType: booking.slotType, status: booking.status, plannedPublicationDate: booking.plannedPublicationDate, scheduleEntryId: booking.scheduleEntryId, cardId: booking.cardId, version: booking.version, updatedAt: booking.updatedAt });
 function validateOrganization(body: Record<string, unknown>, partial = false) { return (!partial && !text(body.displayName, 200)) || (body.displayName !== undefined && !text(body.displayName, 200)) || (body.notes !== undefined && typeof body.notes !== 'string') ? 'Invalid organization fields' : ''; }
 function validateContact(body: Record<string, unknown>, partial = false) {
   if ((!partial && (!ID.test(String(body.organizationId || '')) || !text(body.name, 200))) || (body.name !== undefined && !text(body.name, 200))) return 'Invalid contact fields';
@@ -36,7 +36,7 @@ function validateBooking(body: Record<string, unknown>, partial = false) {
   if ((!partial || body.slotType !== undefined) && !SLOT_TYPES.has(String(body.slotType))) return 'Invalid slotType';
   if ((!partial || body.status !== undefined) && !STATUSES.has(String(body.status))) return 'Invalid status';
   for (const name of ['plannedPublicationDate','materialDeadline','nextActionDate']) if (body[name] != null && !realDate(body[name])) return `Invalid ${name}`;
-  for (const name of ['primaryContactId','scheduleEntryId','bundleId']) if (body[name] != null && !ID.test(String(body[name]))) return `Invalid ${name}`;
+  for (const name of ['primaryContactId','scheduleEntryId','cardId']) if (body[name] != null && !ID.test(String(body[name]))) return `Invalid ${name}`;
   if (body.artifactUrls !== undefined && (!Array.isArray(body.artifactUrls) || body.artifactUrls.length > 20 || body.artifactUrls.some(url => { try { const parsed = new URL(String(url)); return parsed.protocol !== 'https:'; } catch { return true; } }))) return 'Invalid artifactUrls';
   return '';
 }

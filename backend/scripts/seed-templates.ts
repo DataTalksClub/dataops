@@ -27,7 +27,7 @@ const NEWSLETTER_PHASES: WorkflowPhase[] = [
   { id: 'performance', name: 'Performance stats and sponsor report', stage: 'after-event' },
 ];
 
-const NEWSLETTER_REQUIRED_BUNDLE_LINKS = [
+const NEWSLETTER_REQUIRED_CARD_LINKS = [
   'Sponsorship document',
   'Mailchimp newsletter',
   'LinkedIn',
@@ -176,7 +176,7 @@ const PODCAST_PHASES: WorkflowPhase[] = [
   { id: 'follow-up-archive', name: 'Guest follow-up, newsletter, social, and archive', stage: 'after-event' },
 ];
 
-const PODCAST_REQUIRED_BUNDLE_LINKS = [
+const PODCAST_REQUIRED_CARD_LINKS = [
   'Guest email',
   'Podcast document',
   'Luma',
@@ -503,7 +503,7 @@ const TAX_REPORT_PHASES: WorkflowPhase[] = [
   { id: 'cleanup', name: 'Processed folders and workflow closure', stage: 'after-event' },
 ];
 
-const TAX_REPORT_REQUIRED_BUNDLE_LINKS = [
+const TAX_REPORT_REQUIRED_CARD_LINKS = [
   'Monthly report/spreadsheet',
   'Accountant upload/share link',
   'Accountant email thread',
@@ -616,7 +616,7 @@ const OSS_PHASES: WorkflowPhase[] = [
   { id: 'promotion-follow-up', name: 'Guest sharing, recommendations, and social announcement', stage: 'after-event' },
 ];
 
-const OSS_REQUIRED_BUNDLE_LINKS = [
+const OSS_REQUIRED_CARD_LINKS = [
   'Guest email',
   'Tool GitHub',
   'Recording source',
@@ -771,7 +771,7 @@ const BOOK_OF_THE_WEEK_PHASES: WorkflowPhase[] = [
   { id: 'giveaway-closeout', name: 'Winner selection and publisher handoff', stage: 'after-event' },
 ];
 
-const BOOK_OF_THE_WEEK_REQUIRED_BUNDLE_LINKS = [
+const BOOK_OF_THE_WEEK_REQUIRED_CARD_LINKS = [
   'Author email',
   'Publisher or sponsor contact',
   'Book or publisher source link',
@@ -1028,11 +1028,11 @@ function withBookOfTheWeekTaskSemantics(tasks: TaskDefinition[]): TaskDefinition
     const docContext = BOOK_OF_THE_WEEK_DOC_CONTEXT[task.refId] || {};
     const proofRequirement = bookOfTheWeekProofRequirement(task);
     const waiting = BOOK_OF_THE_WEEK_WAITING_TASKS[task.refId];
-    const requiredBundleLinks = bookOfTheWeekRequiredBundleLinks(task);
+    const requiredCardLinks = bookOfTheWeekRequiredCardLinks(task);
     const validation: Record<string, unknown> = {
       operatorAction: task.description,
       completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
-      requiredBundleLinks,
+      requiredCardLinks,
       reminderSemantics: {
         due: true,
         overdue: true,
@@ -1113,7 +1113,7 @@ function bookOfTheWeekProofRequirement(task: TaskDefinition): ProofRequirement {
   return { type: 'comment', label: 'Manual completion confirmation', required: false };
 }
 
-function bookOfTheWeekRequiredBundleLinks(task: TaskDefinition): string[] {
+function bookOfTheWeekRequiredCardLinks(task: TaskDefinition): string[] {
   if (task.requiredLinkName) {
     return [task.requiredLinkName];
   }
@@ -1142,7 +1142,7 @@ function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
     const docContext = PODCAST_DOC_CONTEXT[task.refId] || {};
     const proofRequirement = podcastProofRequirement(task);
     const waitingFor = PODCAST_WAITING_TASKS[task.refId];
-    const requiredBundleLinks = task.refId === 'schedule-podcast-spotify'
+    const requiredCardLinks = task.refId === 'schedule-podcast-spotify'
       ? ['Spotify for Podcasters', 'Public Spotify episode', 'Apple Podcasts episode']
       : task.requiredLinkName
         ? [task.requiredLinkName]
@@ -1150,7 +1150,7 @@ function withPodcastTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
     const validation: Record<string, unknown> = {
       operatorAction: task.description,
       completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
-      requiredBundleLinks,
+      requiredCardLinks,
       reminderSemantics: {
         due: true,
         overdue: true,
@@ -1211,15 +1211,15 @@ function withTaxReportTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
     const docContext = TAX_REPORT_DOC_CONTEXT[task.refId] || {};
     const proofRequirement = taxReportProofRequirement(task);
     const waitingFor = TAX_REPORT_WAITING_TASKS[task.refId];
-    const requiredBundleLinks = taxReportRequiredBundleLinks(task);
+    const requiredCardLinks = taxReportRequiredCardLinks(task);
     const validation: Record<string, unknown> = {
       operatorAction: task.description,
       completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
-      requiredBundleLinks,
+      requiredCardLinks,
       reminderSemantics: {
         due: true,
         overdue: true,
-        missingEvidence: proofRequirement.required !== false || requiredBundleLinks.length > 0 || task.requiresFile === true,
+        missingEvidence: proofRequirement.required !== false || requiredCardLinks.length > 0 || task.requiresFile === true,
         waitingFollowUp: Boolean(waitingFor),
         followUpNotificationType: 'follow-up-due',
         monthlySequentialDueDate: true,
@@ -1284,12 +1284,12 @@ function taxReportProofRequirement(task: TaskDefinition): ProofRequirement {
   return { type: 'comment', label: 'Manual completion confirmation', required: false };
 }
 
-function taxReportRequiredBundleLinks(task: TaskDefinition): string[] {
+function taxReportRequiredCardLinks(task: TaskDefinition): string[] {
   if (task.requiredLinkName) {
     return [task.requiredLinkName];
   }
   if (task.refId === 'organize-invoices-folders') {
-    return TAX_REPORT_REQUIRED_BUNDLE_LINKS;
+    return TAX_REPORT_REQUIRED_CARD_LINKS;
   }
   return [];
 }
@@ -1302,7 +1302,7 @@ function taxReportSkipClosure(refId: string): Record<string, unknown> | undefine
     auditNote: 'Use only when the standing bookkeeping spreadsheet is the report source and the operator records the month/range in the comment.',
     suppresses: {
       'fixed monthly spreadsheet reused': {
-        bundleLinks: ['Monthly report/spreadsheet'],
+        cardLinks: ['Monthly report/spreadsheet'],
         requiredLink: true,
         proof: true,
       },
@@ -1338,11 +1338,11 @@ function withNewsletterTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] 
     const docContext = NEWSLETTER_DOC_CONTEXT[task.refId] || {};
     const proofRequirement = newsletterProofRequirement(task);
     const waitingFor = NEWSLETTER_WAITING_TASKS[task.refId];
-    const requiredBundleLinks = newsletterRequiredBundleLinks(task);
+    const requiredCardLinks = newsletterRequiredCardLinks(task);
     const validation: Record<string, unknown> = {
       operatorAction: task.description,
       completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
-      requiredBundleLinks,
+      requiredCardLinks,
       reminderSemantics: {
         due: true,
         overdue: true,
@@ -1403,13 +1403,13 @@ function newsletterSkipClosure(refId: string): Record<string, unknown> | undefin
   };
   if (refId === 'add-newsletter-performance') {
     skipClosure.suppresses = {
-      'not sponsored this week': { bundleLinks: ['LinkedIn', 'X'], proof: true },
-      'no social stats available': { bundleLinks: ['LinkedIn', 'X'], proof: true },
+      'not sponsored this week': { cardLinks: ['LinkedIn', 'X'], proof: true },
+      'no social stats available': { cardLinks: ['LinkedIn', 'X'], proof: true },
     };
   }
   if (refId === 'send-performance-to-sponsor') {
     skipClosure.suppresses = {
-      'not sponsored this week': { bundleLinks: ['*'], proof: true },
+      'not sponsored this week': { cardLinks: ['*'], proof: true },
     };
   }
   return skipClosure;
@@ -1445,7 +1445,7 @@ function newsletterProofRequirement(task: TaskDefinition): ProofRequirement {
   return { type: 'comment', label: 'Manual completion confirmation', required: false };
 }
 
-function newsletterRequiredBundleLinks(task: TaskDefinition): string[] {
+function newsletterRequiredCardLinks(task: TaskDefinition): string[] {
   if (task.requiredLinkName) {
     return [task.requiredLinkName];
   }
@@ -1470,7 +1470,7 @@ function withOssTaskSemantics(tasks: TaskDefinition[]): TaskDefinition[] {
     const validation: Record<string, unknown> = {
       operatorAction: task.description,
       completionProof: proofRequirement.required === false ? 'No proof required beyond task completion' : proofRequirement.label,
-      requiredBundleLinks: ossRequiredBundleLinks(task),
+      requiredCardLinks: ossRequiredCardLinks(task),
       reminderSemantics: {
         due: true,
         overdue: true,
@@ -1548,7 +1548,7 @@ function ossProofRequirement(task: TaskDefinition): ProofRequirement {
   return { type: 'comment', label: 'Manual completion confirmation', required: false };
 }
 
-function ossRequiredBundleLinks(task: TaskDefinition): string[] {
+function ossRequiredCardLinks(task: TaskDefinition): string[] {
   const refs: Record<string, string[]> = {
     'reach-out-github-authors': ['Tool GitHub'],
     'reach-out-tool-author': ['Guest email', 'Tool GitHub'],
@@ -1591,7 +1591,7 @@ const DEFAULT_TEMPLATES = [
     triggerSchedule: '0 9 * * 1',
     triggerLeadDays: 14,
     references: [],
-    bundleLinkDefinitions: NEWSLETTER_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    cardLinkDefinitions: NEWSLETTER_REQUIRED_CARD_LINKS.map((name) => ({ name })),
     taskDefinitions: withNewsletterTaskSemantics([
       {
         refId: 'create-sponsorship-document',
@@ -1715,7 +1715,7 @@ const DEFAULT_TEMPLATES = [
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [],
-    bundleLinkDefinitions: BOOK_OF_THE_WEEK_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    cardLinkDefinitions: BOOK_OF_THE_WEEK_REQUIRED_CARD_LINKS.map((name) => ({ name })),
     taskDefinitions: withBookOfTheWeekTaskSemantics([
       {
         refId: 'reach-out-to-book-authors',
@@ -1877,7 +1877,7 @@ const DEFAULT_TEMPLATES = [
       { name: 'DataOps podcast assistant README', url: 'assistants/podcast/README.md' },
       { name: 'DataOps podcast assistant process', url: 'assistants/podcast/process/podcast.md' },
     ],
-    bundleLinkDefinitions: PODCAST_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    cardLinkDefinitions: PODCAST_REQUIRED_CARD_LINKS.map((name) => ({ name })),
     taskDefinitions: withPodcastTaskSemantics([
       {
         refId: 'obtain-speaker-email',
@@ -2171,7 +2171,7 @@ const DEFAULT_TEMPLATES = [
       'reference.overview.events-live-webinar',
     ],
     references: [],
-    bundleLinkDefinitions: [
+    cardLinkDefinitions: [
       { name: 'Guest email' },
       { name: 'Luma' },
       { name: 'Meetup' },
@@ -2419,7 +2419,7 @@ const DEFAULT_TEMPLATES = [
       'reference.overview.events-live-workshop',
     ],
     references: [],
-    bundleLinkDefinitions: [
+    cardLinkDefinitions: [
       { name: 'Workshop document' },
       { name: 'Guest email' },
       { name: 'Luma' },
@@ -2696,7 +2696,7 @@ const DEFAULT_TEMPLATES = [
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [],
-    bundleLinkDefinitions: OSS_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    cardLinkDefinitions: OSS_REQUIRED_CARD_LINKS.map((name) => ({ name })),
     taskDefinitions: withOssTaskSemantics([
       {
         refId: 'reach-out-github-authors',
@@ -2802,7 +2802,7 @@ const DEFAULT_TEMPLATES = [
     references: [
       { name: 'Free courses page', url: 'https://datatalks.club/blog/guide-to-free-online-courses-at-datatalks-club.html' },
     ],
-    bundleLinkDefinitions: [],
+    cardLinkDefinitions: [],
     taskDefinitions: [
       {
         refId: 'create-event-standard-process',
@@ -2875,7 +2875,7 @@ const DEFAULT_TEMPLATES = [
       'template.social-media.template-linkedin-and-x-announcement-article',
     ],
     references: [],
-    bundleLinkDefinitions: [
+    cardLinkDefinitions: [
       { name: 'Mailchimp Newsletter link' },
       { name: 'Sponsorship document' },
     ],
@@ -2930,7 +2930,7 @@ const DEFAULT_TEMPLATES = [
     triggerSchedule: '0 9 1 * *',
     triggerLeadDays: 0,
     references: [],
-    bundleLinkDefinitions: TAX_REPORT_REQUIRED_BUNDLE_LINKS.map((name) => ({ name })),
+    cardLinkDefinitions: TAX_REPORT_REQUIRED_CARD_LINKS.map((name) => ({ name })),
     taskDefinitions: withTaxReportTaskSemantics([
       {
         refId: 'open-bookkeeping-report',
@@ -3005,7 +3005,7 @@ const DEFAULT_TEMPLATES = [
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [],
-    bundleLinkDefinitions: [
+    cardLinkDefinitions: [
       { name: 'Guest email' },
       { name: 'Maven' },
       { name: 'Youtube' },
@@ -3071,7 +3071,7 @@ const DEFAULT_TEMPLATES = [
     defaultAssigneeId: GRACE_ID,
     triggerType: 'manual',
     references: [],
-    bundleLinkDefinitions: [
+    cardLinkDefinitions: [
       { name: 'Youtube' },
       { name: 'Summary Document' },
     ],

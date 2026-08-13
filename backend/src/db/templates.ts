@@ -10,13 +10,13 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
   TABLE_AUDIT_EVENTS,
-  TABLE_BUNDLES,
+  TABLE_CARDS,
   TABLE_CALENDAR,
   TABLE_NOTIFICATIONS,
   TABLE_TASKS,
   TABLE_TEMPLATES,
 } from './setup';
-import { createTask, listTasksByBundle } from './tasks';
+import { createTask, listTasksByCard } from './tasks';
 import type { Template, Task, TemplateAuditAction, TemplateAuditEvent } from '../types';
 
 export class TemplateVersionConflictError extends Error {
@@ -27,7 +27,7 @@ export class TemplateVersionConflictError extends Error {
 }
 
 export interface TemplateReferenceCounts {
-  bundles: number;
+  cards: number;
   tasks: number;
   recurrences: number;
   schedules: number;
@@ -418,15 +418,15 @@ async function countMatches(
 
 /** Server-owned persisted reference scan. Only category counts leave this layer. */
 async function countTemplateReferences(client: DynamoDBDocumentClient, templateId: string): Promise<TemplateReferenceCounts> {
-  const [bundles, taskRows, recurrences, schedules, calendar, notifications] = await Promise.all([
-    countMatches(client, TABLE_BUNDLES, 'templateId = :templateId', templateId),
+  const [cards, taskRows, recurrences, schedules, calendar, notifications] = await Promise.all([
+    countMatches(client, TABLE_CARDS, 'templateId = :templateId', templateId),
     countMatches(client, TABLE_TASKS, 'begins_with(PK, :taskPrefix) AND templateId = :templateId', templateId, undefined, { ':taskPrefix': 'TASK#' }),
     countMatches(client, TABLE_TASKS, 'begins_with(PK, :recurringPrefix) AND templateId = :templateId', templateId, undefined, { ':recurringPrefix': 'RECURRING#' }),
     countMatches(client, TABLE_TASKS, 'begins_with(PK, :schedulePrefix) AND templateId = :templateId', templateId, undefined, { ':schedulePrefix': 'SCHEDULE#' }),
     countMatches(client, TABLE_CALENDAR, 'templateId = :templateId', templateId),
     countMatches(client, TABLE_NOTIFICATIONS, 'templateId = :templateId OR #metadata.templateId = :templateId', templateId, { '#metadata': 'metadata' }),
   ]);
-  const counts = { bundles, tasks: taskRows, recurrences, schedules, calendar, notifications };
+  const counts = { cards, tasks: taskRows, recurrences, schedules, calendar, notifications };
   return { ...counts, total: Object.values(counts).reduce((sum, value) => sum + value, 0) };
 }
 
@@ -476,14 +476,14 @@ async function listTemplates(client: DynamoDBDocumentClient): Promise<Template[]
  * Instantiate a template: fetch the template, and for each taskDefinition
  * create a task with a calculated date (anchorDate + offsetDays).
  */
-async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: string, bundleId: string, anchorDate: string): Promise<Task[]> {
+async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: string, cardId: string, anchorDate: string): Promise<Task[]> {
   const template = await getTemplate(client, templateId);
   if (!template) {
     throw new Error(`Template not found: ${templateId}`);
   }
 
   const taskDefinitions = template.taskDefinitions || [];
-  const existingTasks = await listTasksByBundle(client, bundleId);
+  const existingTasks = await listTasksByCard(client, cardId);
   const existingRefs = new Set(
     existingTasks
       .filter((task) => task.templateId === templateId && task.templateTaskRef)
@@ -502,7 +502,7 @@ async function instantiateTemplate(client: DynamoDBDocumentClient, templateId: s
 
     const taskData: Record<string, unknown> = {
       description: def.description,
-      bundleId,
+      cardId,
       templateId,
       date: taskDate,
       source: 'template',

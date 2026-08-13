@@ -74,13 +74,13 @@ async function expectNoHorizontalOverflow(page, route = page.url()) {
 
 async function createCardWithTask(request) {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const cardResponse = await request.post(`${baseURL}/api/bundles`, {
+  const cardResponse = await request.post(`${baseURL}/api/cards`, {
     data: { title: `Characterization card ${suffix}`, anchorDate: "2026-08-12", stage: "preparation" },
   });
   expect(cardResponse.ok()).toBe(true);
-  const card = (await cardResponse.json()).bundle;
+  const card = (await cardResponse.json()).card;
   const taskResponse = await request.post(`${baseURL}/api/tasks`, {
-    data: { description: `Characterization task ${suffix}`, date: "2026-08-12", bundleId: card.id },
+    data: { description: `Characterization task ${suffix}`, date: "2026-08-12", cardId: card.id },
   });
   expect(taskResponse.ok()).toBe(true);
   return { card, task: await taskResponse.json() };
@@ -162,13 +162,13 @@ test.describe("pre-refactor frontend module characterization", () => {
     await expect(page).toHaveURL(/\/#\/cards\/archive$/);
 
     await page.goto(`${baseURL}/#/cards?cardId=${encodeURIComponent(card.id)}`);
-    await expect(page.locator("#bundle-panel")).toBeVisible();
-    await expect(page.locator("#bundle-panel-title")).toHaveText(card.title);
+    await expect(page.locator("#card-panel")).toBeVisible();
+    await expect(page.locator("#card-panel-title")).toHaveText(card.title);
     await page.reload();
-    await expect(page.locator("#bundle-panel-title")).toHaveText(card.title);
+    await expect(page.locator("#card-panel-title")).toHaveText(card.title);
 
     await page.goto(`${baseURL}/#/cards?cardId=${encodeURIComponent(card.id)}&taskId=${encodeURIComponent(task.id)}`);
-    await expect(page.locator("#bundle-panel")).toBeVisible();
+    await expect(page.locator("#card-panel")).toBeVisible();
     await expect(page.locator("#task-panel")).toBeVisible();
     await expect(page.locator("#task-panel-title")).toHaveText(task.description);
     await page.locator("#task-panel-close").click();

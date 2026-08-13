@@ -14,7 +14,7 @@
  *   --dry-run         Print what would be imported without writing to DB
  *   --templates-only  Only import Trello templates
  *   --csv-only        Only import CSV tasks
- *   --cards-only      Only import active Trello cards as bundles+tasks
+ *   --cards-only      Only import active Trello cards as cards+tasks
  *   --include-done    Also import done CSV tasks (skipped by default)
  *   --source          Local Trello JSON export to import instead of bundled data
  *   --source-todo     Local TODO CSV export to import instead of bundled data
@@ -34,7 +34,7 @@ import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient, startLocal } from '../src/db/client';
 import { createTables, TABLE_TASKS } from '../src/db/setup';
 import { createTemplate, listTemplates } from '../src/db/templates';
-import { createBundle, getBundle, updateBundle } from '../src/db/bundles';
+import { createCard, getCard, updateCard } from '../src/db/cards';
 import { createTask, getTask, updateTask } from '../src/db/tasks';
 import { createArtifact, getArtifact, updateArtifact } from '../src/db/artifacts';
 import { appendAssistantJobEvent } from '../src/db/assistantJobs';
@@ -315,7 +315,7 @@ function extractTags(labels: { name: string }[]): string[] {
 }
 
 /**
- * Map Trello list name to bundle stage.
+ * Map Trello list name to card stage.
  */
 function mapStageFromList(listName: string): string {
   const lower = listName.toLowerCase();
@@ -440,7 +440,7 @@ function extractInstructionsUrl(text: string): { description: string; instructio
   return { description: cleaned, instructionsUrl: url };
 }
 
-function extractBundleLinks(card: TrelloCard): { name: string; url: string }[] {
+function extractCardLinks(card: TrelloCard): { name: string; url: string }[] {
   const attachments = card.attachments || [];
   const candidates = [
     ...attachments.map((a) => ({ name: a.name || a.url, url: a.url })),
@@ -611,7 +611,7 @@ function resolveInstructionDocFromUrl(url: string | null): { instructionDocId?: 
 }
 
 // ---------------------------------------------------------------------------
-// Trello card -> Bundle + Tasks mapping
+// Trello card -> Card + Tasks mapping
 // ---------------------------------------------------------------------------
 
 function extractDateFromCardName(name: string): string | null {
@@ -633,44 +633,44 @@ function extractDateFromCardName(name: string): string | null {
   return null;
 }
 
-function trelloCardToBundle(card: TrelloCard, listName: string) {
-  const fallbackDate = card.dateLastActivity
-    ? card.dateLastActivity.split('T')[0]
+function cardFromTrello(trelloCard: TrelloCard, listName: string) {
+  const fallbackDate = trelloCard.dateLastActivity
+    ? trelloCard.dateLastActivity.split('T')[0]
     : new Date().toISOString().split('T')[0];
-  const anchorDate = card.due
-    ? card.due.split('T')[0]
-    : extractDateFromCardName(card.name) || fallbackDate;
+  const anchorDate = trelloCard.due
+    ? trelloCard.due.split('T')[0]
+    : extractDateFromCardName(trelloCard.name) || fallbackDate;
 
-  // Extract emoji from card name and strip it from title
-  const emoji = extractEmoji(card.name);
-  const title = emoji ? card.name.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{FE0F}\u{1F3FB}-\u{1F3FF}]+\s*/u, '').trim() : card.name;
+  // Extract emoji from trelloCard name and strip it from title
+  const emoji = extractEmoji(trelloCard.name);
+  const title = emoji ? trelloCard.name.replace(/^[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{FE0F}\u{1F3FB}-\u{1F3FF}]+\s*/u, '').trim() : trelloCard.name;
 
-  const bundle: Record<string, unknown> = {
+  const card: Record<string, unknown> = {
     title,
     anchorDate,
-    description: card.desc || null,
-    status: card.closed ? 'archived' : 'active',
+    description: trelloCard.desc || null,
+    status: trelloCard.closed ? 'archived' : 'active',
     stage: mapStageFromList(listName),
   };
 
-  if (emoji) bundle.emoji = emoji;
+  if (emoji) card.emoji = emoji;
 
   // Extract tags from labels
-  const tags = extractTags(card.labels);
-  if (tags.length > 0) bundle.tags = tags;
+  const tags = extractTags(trelloCard.labels);
+  if (tags.length > 0) card.tags = tags;
 
   // Extract references from description
-  const references = extractReferences(card.desc);
-  if (references.length > 0) bundle.references = references;
+  const references = extractReferences(trelloCard.desc);
+  if (references.length > 0) card.references = references;
 
-  // Extract bundle links from attachments (renamed from links)
-  const bundleLinks = extractBundleLinks(card);
-  if (bundleLinks.length > 0) bundle.bundleLinks = bundleLinks;
+  // Extract card links from attachments (renamed from links)
+  const cardLinks = extractCardLinks(trelloCard);
+  if (cardLinks.length > 0) card.cardLinks = cardLinks;
 
-  return bundle;
+  return card;
 }
 
-function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloChecklist[], bundleId: string | null) {
+function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloChecklist[], cardId: string | null) {
   const cardChecklists = (card.idChecklists || [])
     .map((clId) => boardChecklists.find((cl) => cl.id === clId))
     .filter((cl): cl is TrelloChecklist => Boolean(cl))
@@ -702,7 +702,7 @@ function trelloChecklistItemsToTasks(card: TrelloCard, boardChecklists: TrelloCh
       };
       if (instructionsUrl) taskData.instructionsUrl = instructionsUrl;
       if (assigneeId) taskData.assigneeId = assigneeId;
-      if (bundleId) taskData.bundleId = bundleId;
+      if (cardId) taskData.cardId = cardId;
       tasks.push(taskData);
       itemIndex++;
     }
@@ -732,7 +732,7 @@ interface TrelloArtifactPlan {
 interface TrelloActiveCardPlan {
   sourceKey: string;
   listName: string;
-  bundle: Record<string, unknown>;
+  card: Record<string, unknown>;
   tasks: Record<string, unknown>[];
   artifacts: TrelloArtifactPlan[];
   warnings: string[];
@@ -741,15 +741,15 @@ interface TrelloActiveCardPlan {
 interface TrelloActiveCardStats {
   cardsPlanned: number;
   cardsSkipped: number;
-  bundlesCreated: number;
-  bundlesUpdated: number;
+  cardsCreated: number;
+  cardsUpdated: number;
   tasksPlanned: number;
   tasksCreated: number;
   tasksUpdated: number;
   artifactsPlanned: number;
   artifactsCreated: number;
   artifactsUpdated: number;
-  bundleLinks: number;
+  cardLinks: number;
   waitingTasks: number;
   proofRequirements: number;
   unresolvedProcessDocs: number;
@@ -780,15 +780,15 @@ interface TrelloActiveCardReport {
 const DEFAULT_TRELLO_ACTIVE_STATS: TrelloActiveCardStats = {
   cardsPlanned: 0,
   cardsSkipped: 0,
-  bundlesCreated: 0,
-  bundlesUpdated: 0,
+  cardsCreated: 0,
+  cardsUpdated: 0,
   tasksPlanned: 0,
   tasksCreated: 0,
   tasksUpdated: 0,
   artifactsPlanned: 0,
   artifactsCreated: 0,
   artifactsUpdated: 0,
-  bundleLinks: 0,
+  cardLinks: 0,
   waitingTasks: 0,
   proofRequirements: 0,
   unresolvedProcessDocs: 0,
@@ -912,7 +912,7 @@ function addReportWarning(report: TrelloActiveCardReport, warning: string, conte
   }
 }
 
-function buildTrelloArtifactPlans(card: TrelloCard, bundleId: string, warnings: string[]): TrelloArtifactPlan[] {
+function buildTrelloArtifactPlans(card: TrelloCard, cardId: string, warnings: string[]): TrelloArtifactPlan[] {
   const candidates = [
     ...(card.attachments || []).map((a) => ({ sourceId: a.id || a.url, name: a.name || a.url, url: a.url, source: 'attachment' })),
     ...extractMarkdownAndBareLinks(card.desc).map((link) => ({ sourceId: link.url, name: link.name, url: link.url, source: 'description-link' })),
@@ -943,7 +943,7 @@ function buildTrelloArtifactPlans(card: TrelloCard, bundleId: string, warnings: 
         storageUri: candidate.url,
         visibility: 'internal',
         dataClass: 'internal',
-        bundleId,
+        cardId,
         sourceType: 'migration',
         reviewedAt: card.dateLastActivity || new Date().toISOString(),
         tags: ['trello-import', candidate.source],
@@ -959,34 +959,34 @@ function buildTrelloArtifactPlans(card: TrelloCard, bundleId: string, warnings: 
 }
 
 function planTrelloActiveCard(
-  card: TrelloCard,
+  trelloCard: TrelloCard,
   listName: string,
   boardChecklists: TrelloChecklist[]
 ): TrelloActiveCardPlan {
-  const sourceKey = trelloCardSourceKey(card);
-  const bundleId = stableMigrationId('trello-card', card.id);
-  const bundle = trelloCardToBundle(card, listName);
+  const sourceKey = trelloCardSourceKey(trelloCard);
+  const cardId = stableMigrationId('trello-trelloCard', trelloCard.id);
+  const card = cardFromTrello(trelloCard, listName);
   const warnings: string[] = [];
-  const templateType = mapTemplateType(card.name, card.labels);
-  const bundleTags = new Set([...(Array.isArray(bundle.tags) ? bundle.tags as string[] : []), 'trello-import', templateType]);
-  const bundleLinks = extractBundleLinks(card);
+  const templateType = mapTemplateType(trelloCard.name, trelloCard.labels);
+  const cardTags = new Set([...(Array.isArray(card.tags) ? card.tags as string[] : []), 'trello-import', templateType]);
+  const cardLinks = extractCardLinks(trelloCard);
 
-  Object.assign(bundle, {
-    id: bundleId,
+  Object.assign(card, {
+    id: cardId,
     status: 'active',
-    tags: [...bundleTags].filter(Boolean),
-    bundleLinks,
-    description: appendMigrationProvenance(bundle.description as string | null | undefined, [
-      `source=trello-active-card`,
-      `source_card_id=${card.id}`,
+    tags: [...cardTags].filter(Boolean),
+    cardLinks,
+    description: appendMigrationProvenance(card.description as string | null | undefined, [
+      `source=trello-active-trelloCard`,
+      `source_card_id=${trelloCard.id}`,
       `source_list=${listName}`,
       `source_key=${sourceKey}`,
     ]),
   });
 
-  const artifacts = buildTrelloArtifactPlans(card, bundleId, warnings);
+  const artifacts = buildTrelloArtifactPlans(trelloCard, cardId, warnings);
   if (artifacts.length > 0) {
-    bundle.artifactRefs = artifacts.map((artifactPlan) => ({
+    card.artifactRefs = artifacts.map((artifactPlan) => ({
       artifactId: artifactPlan.artifact.id,
       type: artifactPlan.artifact.type,
       title: artifactPlan.artifact.title,
@@ -995,16 +995,16 @@ function planTrelloActiveCard(
     }));
   }
 
-  bundle.auditEventRefs = [{ auditEventId: stableMigrationId('trello-audit', sourceKey), action: 'created' }];
+  card.auditEventRefs = [{ auditEventId: stableMigrationId('trello-audit', sourceKey), action: 'created' }];
 
-  const cardChecklists = (card.idChecklists || [])
+  const cardChecklists = (trelloCard.idChecklists || [])
     .map((clId) => boardChecklists.find((cl) => cl.id === clId))
     .filter((cl): cl is TrelloChecklist => Boolean(cl))
     .sort((a, b) => a.pos - b.pos);
 
   const tasks: Record<string, unknown>[] = [];
-  const fallbackDate = card.dateLastActivity ? card.dateLastActivity.split('T')[0] : new Date().toISOString().split('T')[0];
-  const anchorDate = String(bundle.anchorDate || fallbackDate);
+  const fallbackDate = trelloCard.dateLastActivity ? trelloCard.dateLastActivity.split('T')[0] : new Date().toISOString().split('T')[0];
+  const anchorDate = String(card.anchorDate || fallbackDate);
   let itemIndex = 0;
   const sourceIds = new Set<string>([sourceKey]);
 
@@ -1012,11 +1012,11 @@ function planTrelloActiveCard(
     const phase = slugify(checklist.name) || mapStageFromList(listName);
     const items = (checklist.checkItems || []).sort((a, b) => a.pos - b.pos);
     for (const item of items) {
-      const itemSourceKey = trelloCheckItemSourceKey(card, checklist, item, itemIndex);
+      const itemSourceKey = trelloCheckItemSourceKey(trelloCard, checklist, item, itemIndex);
       if (sourceIds.has(itemSourceKey)) warnings.push(`duplicate source ID: ${itemSourceKey}`);
       sourceIds.add(itemSourceKey);
 
-      const rawDate = item.due || card.due || anchorDate;
+      const rawDate = item.due || trelloCard.due || anchorDate;
       const date = parseDate(rawDate) || anchorDate;
       if (!parseDate(rawDate)) warnings.push(`invalid date: ${rawDate}`);
 
@@ -1026,7 +1026,7 @@ function planTrelloActiveCard(
         warnings.push(`unknown assignee: ${cleanedName}`);
       }
 
-      const contextText = `${finalName}\n${card.name}\n${card.desc || ''}`;
+      const contextText = `${finalName}\n${trelloCard.name}\n${trelloCard.desc || ''}`;
       const proofText = `${finalName}\n${instructionsUrl || ''}`;
       const { safeUrls } = extractSafeUrls(proofText);
       const proof = inferTrelloProofRequirement(proofText, safeUrls);
@@ -1038,7 +1038,7 @@ function planTrelloActiveCard(
       const docResolution = resolveInstructionDocFromUrl(instructionsUrl);
       if (docResolution.unresolvedUrl) warnings.push(`unresolved process doc: ${docResolution.unresolvedUrl}`);
 
-      const taskId = stableMigrationId('trello-checkitem', `${card.id}-${checklist.id}-${item.id || itemIndex}`);
+      const taskId = stableMigrationId('trello-checkitem', `${trelloCard.id}-${checklist.id}-${item.id || itemIndex}`);
       const refId = slugify(`${checklist.name}-${finalName}`.substring(0, 60)) || `item-${itemIndex}`;
       let status = item.state === 'complete' ? 'done' : waiting ? 'waiting' : 'todo';
       const task: Record<string, unknown> = {
@@ -1047,13 +1047,13 @@ function planTrelloActiveCard(
         date,
         status,
         source: 'import',
-        bundleId,
+        cardId,
         templateTaskRef: `${refId}-${item.id || itemIndex}`,
         phase,
         tags: ['trello-import', templateType],
         comment: appendMigrationProvenance(waiting?.note, [
-          `source=trello-active-card`,
-          `source_card_id=${card.id}`,
+          `source=trello-active-trelloCard`,
+          `source_card_id=${trelloCard.id}`,
           `source_checklist_id=${checklist.id}`,
           `source_checkitem_id=${item.id || itemIndex}`,
           `source_list=${listName}`,
@@ -1092,10 +1092,10 @@ function planTrelloActiveCard(
   }
 
   if (!templateType || templateType === 'other') {
-    warnings.push(`unresolved workflow type: ${card.name}`);
+    warnings.push(`unresolved workflow type: ${trelloCard.name}`);
   }
 
-  return { sourceKey, listName, bundle, tasks, artifacts, warnings };
+  return { sourceKey, listName, card, tasks, artifacts, warnings };
 }
 
 async function upsertTrelloActiveCardPlan(
@@ -1103,14 +1103,14 @@ async function upsertTrelloActiveCardPlan(
   plan: TrelloActiveCardPlan,
   report: TrelloActiveCardReport
 ): Promise<void> {
-  const bundleId = String(plan.bundle.id);
-  const existingBundle = await getBundle(client, bundleId);
-  if (existingBundle) {
-    await updateBundle(client, bundleId, plan.bundle);
-    report.stats.bundlesUpdated++;
+  const cardId = String(plan.card.id);
+  const existingCard = await getCard(client, cardId);
+  if (existingCard) {
+    await updateCard(client, cardId, plan.card);
+    report.stats.cardsUpdated++;
   } else {
-    await createBundle(client, plan.bundle);
-    report.stats.bundlesCreated++;
+    await createCard(client, plan.card);
+    report.stats.cardsCreated++;
   }
 
   for (const task of plan.tasks) {
@@ -1140,11 +1140,11 @@ async function upsertTrelloActiveCardPlan(
   await appendAssistantJobEvent(client, {
     id: stableMigrationId('trello-audit', plan.sourceKey),
     action: 'created',
-    summary: `Imported Trello active card "${plan.bundle.title}" as operations-manager work`,
+    summary: `Imported Trello active card "${plan.card.title}" as operations-manager work`,
     metadata: {
       source: 'trello-active-card-migration',
       sourceKey: plan.sourceKey,
-      bundleId,
+      cardId,
       taskIds: plan.tasks.map((task) => task.id),
       artifactIds: plan.artifacts.map((artifactPlan) => artifactPlan.artifact.id),
     },
@@ -1174,7 +1174,7 @@ async function migrateTrelloActiveCards(
     report.stats.cardsPlanned++;
     report.stats.tasksPlanned += plan.tasks.length;
     report.stats.artifactsPlanned += plan.artifacts.length;
-    report.stats.bundleLinks += Array.isArray(plan.bundle.bundleLinks) ? plan.bundle.bundleLinks.length : 0;
+    report.stats.cardLinks += Array.isArray(plan.card.cardLinks) ? plan.card.cardLinks.length : 0;
     report.stats.waitingTasks += plan.tasks.filter((task) => task.status === 'waiting').length;
     report.stats.proofRequirements += plan.tasks.filter((task) => task.proofRequirement).length;
     for (const warning of plan.warnings) addReportWarning(report, warning, `${plan.sourceKey}`);
@@ -1806,7 +1806,7 @@ async function main() {
 
   const stats = {
     templates: 0,
-    bundles: 0,
+    cards: 0,
     tasks: 0,
     recurringConfigs: 0,
     skippedDuplicateTemplates: 0,
@@ -1866,11 +1866,11 @@ async function main() {
   }
 
   // -----------------------------------------------------------------------
-  // 2. Import active Trello cards as bundles + tasks
+  // 2. Import active Trello cards as cards + tasks
   // -----------------------------------------------------------------------
 
   if (IMPORT_ALL || CARDS_ONLY) {
-    console.log('\n--- Importing Active Trello Cards as Bundles ---');
+    console.log('\n--- Importing Active Trello Cards as Cards ---');
 
     const selection = selectActiveTrelloCards(allCards, allLists);
     const trelloReport = await migrateTrelloActiveCards(
@@ -1881,10 +1881,10 @@ async function main() {
       selection.skippedRecords
     );
     for (const plan of trelloReport.plans) {
-      const emoji = plan.bundle.emoji ? `${plan.bundle.emoji} ` : '';
-      const tags = plan.bundle.tags ? ` tags=${JSON.stringify(plan.bundle.tags)}` : '';
-      const stage = plan.bundle.stage ? ` stage=${plan.bundle.stage}` : '';
-      console.log(`  Bundle: ${emoji}${String(plan.bundle.title).substring(0, 70)} [${plan.listName}]${stage}${tags} tasks=${plan.tasks.length} artifacts=${plan.artifacts.length}`);
+      const emoji = plan.card.emoji ? `${plan.card.emoji} ` : '';
+      const tags = plan.card.tags ? ` tags=${JSON.stringify(plan.card.tags)}` : '';
+      const stage = plan.card.stage ? ` stage=${plan.card.stage}` : '';
+      console.log(`  Card: ${emoji}${String(plan.card.title).substring(0, 70)} [${plan.listName}]${stage}${tags} tasks=${plan.tasks.length} artifacts=${plan.artifacts.length}`);
       if (DRY_RUN) {
         for (const task of plan.tasks) {
           const instr = task.instructionDocId ? ` [doc: ${task.instructionDocId}]` : task.instructionsUrl ? ` [instructions: ${task.instructionsUrl}]` : '';
@@ -1895,7 +1895,7 @@ async function main() {
       }
     }
     printTrelloActiveCardReport(trelloReport);
-    stats.bundles += trelloReport.stats.bundlesCreated + (DRY_RUN ? trelloReport.stats.cardsPlanned : 0);
+    stats.cards += trelloReport.stats.cardsCreated + (DRY_RUN ? trelloReport.stats.cardsPlanned : 0);
     stats.tasks += DRY_RUN ? trelloReport.stats.tasksPlanned : trelloReport.stats.tasksCreated;
   }
 
@@ -1932,7 +1932,7 @@ async function main() {
 
   console.log('\n=== Migration Summary ===');
   console.log(`  Templates created:           ${stats.templates}`);
-  console.log(`  Bundles created:             ${stats.bundles}`);
+  console.log(`  Cards created:             ${stats.cards}`);
   console.log(`  ${DRY_RUN ? 'Tasks planned' : 'Tasks created'}:               ${stats.tasks}`);
   console.log(`  Skipped duplicate templates: ${stats.skippedDuplicateTemplates}`);
   console.log(`  Skipped recurring tasks:     ${stats.skippedRecurringTasks}`);
@@ -1958,10 +1958,10 @@ export {
   extractTags,
   mapStageFromList,
   extractReferences,
-  extractBundleLinks,
+  extractCardLinks,
   extractInstructionsUrl,
   extractAssigneeHint,
-  trelloCardToBundle,
+  cardFromTrello,
   trelloChecklistItemsToTasks,
   selectActiveTrelloCards,
   planTrelloActiveCard,

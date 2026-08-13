@@ -9,7 +9,7 @@ import { getClient, startLocal, stopLocal } from '../src/db/client';
 import {
   createTables,
   TABLE_AUDIT_EVENTS,
-  TABLE_BUNDLES,
+  TABLE_CARDS,
   TABLE_CALENDAR,
   TABLE_NOTIFICATIONS,
   TABLE_TASKS,
@@ -148,7 +148,7 @@ describe('runtime-template administration security and consistency', () => {
   it('blocks referenced deletion and archives an eligible template as a versioned retained tombstone', async () => {
     const referenced = await createAsAdmin('Referenced template private name');
     const rows = [
-      [TABLE_BUNDLES, 'BUNDLE#reference', { templateId: referenced.id }],
+      [TABLE_CARDS, 'CARD#reference', { templateId: referenced.id }],
       [TABLE_TASKS, 'TASK#reference', { templateId: referenced.id }],
       [TABLE_TASKS, 'RECURRING#reference', { templateId: referenced.id }],
       [TABLE_TASKS, 'SCHEDULE#reference', { templateId: referenced.id }],
@@ -164,7 +164,7 @@ describe('runtime-template administration security and consistency', () => {
     assert.strictEqual(blockedBody.code, 'template_in_use');
     assert.deepStrictEqual(blockedBody.references, {
       total: 6,
-      categories: { bundles: 1, tasks: 1, recurrences: 1, schedules: 1, calendar: 1, notifications: 1 },
+      categories: { cards: 1, tasks: 1, recurrences: 1, schedules: 1, calendar: 1, notifications: 1 },
     });
     const serialized = JSON.stringify(blockedBody);
     assert.ok(!serialized.includes(referenced.id));
@@ -201,23 +201,23 @@ describe('runtime-template administration security and consistency', () => {
     for (let batchStart = 0; batchStart < 225; batchStart += 25) {
       await client.send(new BatchWriteCommand({
         RequestItems: {
-          [TABLE_BUNDLES]: Array.from({ length: 25 }, (_, offset) => {
+          [TABLE_CARDS]: Array.from({ length: 25 }, (_, offset) => {
             const index = batchStart + offset;
-            const key = `BUNDLE#pagination-${String(index).padStart(3, '0')}`;
+            const key = `CARD#pagination-${String(index).padStart(3, '0')}`;
             return { PutRequest: { Item: { PK: key, SK: key, templateId: paginated.id, padding } } };
           }),
         },
       }));
     }
     const paginatedCounts = await countTemplateReferences(client, paginated.id);
-    assert.strictEqual(paginatedCounts.bundles, 225);
+    assert.strictEqual(paginatedCounts.cards, 225);
     assert.strictEqual(paginatedCounts.total, 225);
 
     const racing = await createAsAdmin('Reference race target');
     assert.strictEqual((await countTemplateReferences(client, racing.id)).total, 0);
-    const raceKey = 'BUNDLE#inserted-after-reference-scan';
+    const raceKey = 'CARD#inserted-after-reference-scan';
     await client.send(new PutCommand({
-      TableName: TABLE_BUNDLES,
+      TableName: TABLE_CARDS,
       Item: { PK: raceKey, SK: raceKey, id: 'inserted-after-reference-scan', templateId: racing.id },
     }));
     await deleteTemplateWithAudit(client, racing.id, racing.version, ADMIN_ID);
@@ -230,15 +230,15 @@ describe('runtime-template administration security and consistency', () => {
     assert.strictEqual(retained.Item?.id, racing.id);
     assert.ok(retained.Item?.archivedAt);
     const racedReference = await client.send(new GetCommand({
-      TableName: TABLE_BUNDLES,
+      TableName: TABLE_CARDS,
       Key: { PK: raceKey, SK: raceKey },
     }));
     assert.strictEqual(racedReference.Item?.templateId, retained.Item?.id);
 
-    const deniedBundle = await invoke('POST', '/api/bundles', {
+    const deniedCard = await invoke('POST', '/api/cards', {
       title: 'Must not use archived template', anchorDate: '2026-09-10', templateId: racing.id,
     }, operatorToken);
-    assert.strictEqual(deniedBundle.statusCode, 404, deniedBundle.body);
+    assert.strictEqual(deniedCard.statusCode, 404, deniedCard.body);
     const deniedTask = await invoke('POST', '/api/tasks', {
       description: 'Must not use archived template', date: '2026-09-10', templateId: racing.id,
     }, operatorToken);
@@ -264,12 +264,12 @@ describe('runtime-template administration security and consistency', () => {
       phases: [{ id: 'prepare', name: 'Preparation', stage: 'preparation' }],
       sourceDocIds: ['synthetic.process'],
       references: [{ name: 'Source', url: 'https://example.test/source' }],
-      bundleLinkDefinitions: [{ name: 'Result' }],
+      cardLinkDefinitions: [{ name: 'Result' }],
       taskDefinitions: [
         {
           refId: 'second-first', description: 'Reordered first', offsetDays: -2, phase: 'prepare',
           assigneeId: ADMIN_ID, instructionsUrl: 'https://example.test/instructions', instructionDocId: 'synthetic.sop', instructionStepId: '2',
-          systems: ['example-system'], validation: { requiredBundleLinks: ['Result'] }, proofRequirement: { type: 'comment', label: 'Note', required: true },
+          systems: ['example-system'], validation: { requiredCardLinks: ['Result'] }, proofRequirement: { type: 'comment', label: 'Note', required: true },
           requiredLinkName: 'Result', requiresFile: true, isMilestone: true, stageOnComplete: 'announced',
           artifactRefs: [{ artifactId: 'artifact-synthetic', type: 'report' }], assistantJobRefs: [{ assistantJobId: 'assistant-synthetic', status: 'approved' }],
           auditEventRefs: [{ auditEventId: 'audit-synthetic', action: 'reviewed' }], intakeRefs: [{ intakeItemId: 'intake-synthetic', source: 'manual' }],
@@ -285,20 +285,20 @@ describe('runtime-template administration security and consistency', () => {
     assert.deepStrictEqual(reloaded.taskDefinitions, definition.taskDefinitions);
     assert.deepStrictEqual(reloaded.sourceDocIds, definition.sourceDocIds);
 
-    const bundleResponse = await invoke('POST', '/api/bundles', {
-      title: 'Persisted fidelity bundle', anchorDate: '2026-09-10', templateId: reloaded.id,
+    const cardResponse = await invoke('POST', '/api/cards', {
+      title: 'Persisted fidelity card', anchorDate: '2026-09-10', templateId: reloaded.id,
     }, operatorToken);
-    assert.strictEqual(bundleResponse.statusCode, 201, bundleResponse.body);
-    const { bundle, tasks } = JSON.parse(bundleResponse.body);
+    assert.strictEqual(cardResponse.statusCode, 201, cardResponse.body);
+    const { card, tasks } = JSON.parse(cardResponse.body);
     assert.deepStrictEqual(tasks.map((task: Record<string, unknown>) => task.templateTaskRef), ['second-first', 'first-second']);
     assert.deepStrictEqual(tasks.map((task: Record<string, unknown>) => task.templateOffsetDays), [-2, 4]);
     assert.deepStrictEqual(tasks.map((task: Record<string, unknown>) => task.date), ['2026-09-08', '2026-09-14']);
     for (const key of ['description', 'phase', 'assigneeId', 'instructionsUrl', 'instructionDocId', 'instructionStepId', 'systems', 'validation', 'proofRequirement', 'requiredLinkName', 'requiresFile', 'isMilestone', 'stageOnComplete', 'artifactRefs', 'assistantJobRefs', 'auditEventRefs', 'intakeRefs']) {
       assert.deepStrictEqual(tasks[0][key], definition.taskDefinitions[0][key as keyof typeof definition.taskDefinitions[0]], key);
     }
-    assert.deepStrictEqual(bundle.references, definition.references);
-    assert.deepStrictEqual(bundle.bundleLinks, [{ name: 'Result', url: '' }]);
-    assert.deepStrictEqual(bundle.sourceDocIds, definition.sourceDocIds);
+    assert.deepStrictEqual(card.references, definition.references);
+    assert.deepStrictEqual(card.cardLinks, [{ name: 'Result', url: '' }]);
+    assert.deepStrictEqual(card.sourceDocIds, definition.sourceDocIds);
     assert.deepStrictEqual(tasks.map((task: Record<string, unknown>) => task.sourceDocIds), [definition.sourceDocIds, definition.sourceDocIds]);
   });
 

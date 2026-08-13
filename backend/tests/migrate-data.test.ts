@@ -9,11 +9,11 @@ import {
   extractTags,
   mapStageFromList,
   extractReferences,
-  extractBundleLinks,
+  extractCardLinks,
   extractInstructionsUrl,
   extractAssigneeHint,
   selectActiveTrelloCards,
-  trelloCardToBundle,
+  cardFromTrello,
   trelloChecklistItemsToTasks,
   migrateTrelloActiveCards,
   trelloTemplateToAppTemplate,
@@ -30,9 +30,9 @@ import {
 } from '../scripts/migrate-data';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
-import { listBundles } from '../src/db/bundles';
+import { listCards } from '../src/db/cards';
 import { listRecurringConfigs } from '../src/db/recurring';
-import { listTasksByBundle, listTasksByStatus } from '../src/db/tasks';
+import { listTasksByCard, listTasksByStatus } from '../src/db/tasks';
 import { listArtifacts } from '../src/db/artifacts';
 import { dryRunImport, validatePortableExport, writePortableExport } from '../src/export/portable';
 
@@ -148,31 +148,31 @@ describe('extractReferences', () => {
 });
 
 // ---------------------------------------------------------------------------
-// extractBundleLinks
+// extractCardLinks
 // ---------------------------------------------------------------------------
 
-describe('extractBundleLinks', () => {
-  it('extracts non-Trello attachments as bundle links', () => {
+describe('extractCardLinks', () => {
+  it('extracts non-Trello attachments as card links', () => {
     const card = {
       attachments: [
         { name: 'Luma event', url: 'https://lu.ma/abc' },
         { name: 'Trello img', url: 'https://trello.com/1/cards/xyz/image.png' },
       ],
     } as unknown as TrelloCard;
-    const links = extractBundleLinks(card);
+    const links = extractCardLinks(card);
     assert.deepStrictEqual(links, [{ name: 'Luma event', url: 'https://lu.ma/abc' }]);
   });
 
   it('returns empty array when no attachments', () => {
     const card = { attachments: [] } as unknown as TrelloCard;
-    assert.deepStrictEqual(extractBundleLinks(card), []);
+    assert.deepStrictEqual(extractCardLinks(card), []);
   });
 
   it('uses url as name when name is missing', () => {
     const card = {
       attachments: [{ url: 'https://example.com/file.pdf' }],
     } as unknown as TrelloCard;
-    const links = extractBundleLinks(card);
+    const links = extractCardLinks(card);
     assert.deepStrictEqual(links, [{ name: 'https://example.com/file.pdf', url: 'https://example.com/file.pdf' }]);
   });
 });
@@ -266,12 +266,12 @@ describe('mapTriggerType', () => {
 });
 
 // ---------------------------------------------------------------------------
-// trelloCardToBundle
+// cardFromTrello
 // ---------------------------------------------------------------------------
 
-describe('trelloCardToBundle', () => {
-  it('creates bundle with emoji, tags, stage, references, and bundleLinks', () => {
-    const card: TrelloCard = {
+describe('cardFromTrello', () => {
+  it('creates card with emoji, tags, stage, references, and cardLinks', () => {
+    const trelloCard: TrelloCard = {
       id: 'card1',
       name: '\u{1F4F0} [Newsletter] Weekly email #123 (15 Mar 2026)',
       desc: 'See [Process docs](https://docs.google.com/proc)',
@@ -285,25 +285,25 @@ describe('trelloCardToBundle', () => {
       dateLastActivity: '2026-03-10T12:00:00.000Z',
     };
 
-    const bundle = trelloCardToBundle(card, 'Preparation');
+    const card = cardFromTrello(trelloCard, 'Preparation');
 
-    assert.strictEqual(bundle.emoji, '\u{1F4F0}');
-    assert.deepStrictEqual(bundle.tags, ['Newsletter']);
-    assert.strictEqual(bundle.stage, 'preparation');
-    assert.strictEqual(bundle.status, 'active');
-    assert.deepStrictEqual(bundle.references, [
+    assert.strictEqual(card.emoji, '\u{1F4F0}');
+    assert.deepStrictEqual(card.tags, ['Newsletter']);
+    assert.strictEqual(card.stage, 'preparation');
+    assert.strictEqual(card.status, 'active');
+    assert.deepStrictEqual(card.references, [
       { name: 'Process docs', url: 'https://docs.google.com/proc' },
     ]);
-    assert.deepStrictEqual(bundle.bundleLinks, [
+    assert.deepStrictEqual(card.cardLinks, [
       { name: 'Luma event', url: 'https://lu.ma/abc' },
       { name: 'Process docs', url: 'https://docs.google.com/proc' },
     ]);
     // Should NOT have the old links field
-    assert.strictEqual(bundle.links, undefined);
+    assert.strictEqual(card.links, undefined);
   });
 
   it('sets status to archived for closed cards', () => {
-    const card: TrelloCard = {
+    const trelloCard: TrelloCard = {
       id: 'card2',
       name: 'Old card',
       closed: true,
@@ -315,13 +315,13 @@ describe('trelloCardToBundle', () => {
       dateLastActivity: '2025-01-01T00:00:00.000Z',
     };
 
-    const bundle = trelloCardToBundle(card, 'Done');
-    assert.strictEqual(bundle.status, 'archived');
-    assert.strictEqual(bundle.stage, 'done');
+    const card = cardFromTrello(trelloCard, 'Done');
+    assert.strictEqual(card.status, 'archived');
+    assert.strictEqual(card.stage, 'done');
   });
 
   it('maps After event list to after-event stage', () => {
-    const card: TrelloCard = {
+    const trelloCard: TrelloCard = {
       id: 'card3',
       name: 'Some card',
       closed: false,
@@ -332,9 +332,9 @@ describe('trelloCardToBundle', () => {
       attachments: [],
     };
 
-    const bundle = trelloCardToBundle(card, 'After event');
-    assert.strictEqual(bundle.stage, 'after-event');
-    assert.strictEqual(bundle.status, 'active');
+    const card = cardFromTrello(trelloCard, 'After event');
+    assert.strictEqual(card.stage, 'after-event');
+    assert.strictEqual(card.status, 'active');
   });
 });
 
@@ -371,7 +371,7 @@ describe('trelloChecklistItemsToTasks', () => {
     const card = makeCard();
     const checklists = [makeChecklist([{ name: 'Task A' }])];
 
-    const tasks = trelloChecklistItemsToTasks(card, checklists, 'bundle1');
+    const tasks = trelloChecklistItemsToTasks(card, checklists, 'card1');
     assert.strictEqual(tasks.length, 1);
     assert.strictEqual(tasks[0].source, 'template');
   });
@@ -382,7 +382,7 @@ describe('trelloChecklistItemsToTasks', () => {
       { name: 'Create a MailChimp campaign ([link](https://docs.google.com/doc123))' },
     ])];
 
-    const tasks = trelloChecklistItemsToTasks(card, checklists, 'bundle1');
+    const tasks = trelloChecklistItemsToTasks(card, checklists, 'card1');
     assert.strictEqual(tasks[0].instructionsUrl, 'https://docs.google.com/doc123');
     assert.strictEqual(tasks[0].comment, undefined);
     assert.strictEqual((tasks[0].description as string).includes('Create a MailChimp campaign'), true);
@@ -392,7 +392,7 @@ describe('trelloChecklistItemsToTasks', () => {
     const card = makeCard();
     const checklists = [makeChecklist([{ name: 'Do something' }])];
 
-    const tasks = trelloChecklistItemsToTasks(card, checklists, 'bundle1');
+    const tasks = trelloChecklistItemsToTasks(card, checklists, 'card1');
     assert.ok(tasks[0].templateTaskRef);
     assert.strictEqual(typeof tasks[0].templateTaskRef, 'string');
   });
@@ -403,17 +403,17 @@ describe('trelloChecklistItemsToTasks', () => {
       { name: 'Review content (assignee: Valeriia)' },
     ])];
 
-    const tasks = trelloChecklistItemsToTasks(card, checklists, 'bundle1');
+    const tasks = trelloChecklistItemsToTasks(card, checklists, 'card1');
     assert.strictEqual(tasks[0].assigneeId, 'valeriia');
     assert.ok(!(tasks[0].description as string).includes('assignee'));
   });
 
-  it('sets bundleId when provided', () => {
+  it('sets cardId when provided', () => {
     const card = makeCard();
     const checklists = [makeChecklist([{ name: 'Task A' }])];
 
-    const tasks = trelloChecklistItemsToTasks(card, checklists, 'bundle123');
-    assert.strictEqual(tasks[0].bundleId, 'bundle123');
+    const tasks = trelloChecklistItemsToTasks(card, checklists, 'card123');
+    assert.strictEqual(tasks[0].cardId, 'card123');
   });
 
   it('handles completed tasks', () => {
@@ -556,7 +556,7 @@ describe('Trello active-card migration', () => {
     assert.ok(selection.skippedRecords.some((record) => record.sourceId === 'card-done' && record.reason === 'inactive-list'));
   });
 
-  it('imports active cards idempotently as bundles, tasks, artifacts, notifications, and valid portable export data', async () => {
+  it('imports active cards idempotently as cards, tasks, artifacts, notifications, and valid portable export data', async () => {
     const trello = await loadFixture();
     const selection = selectActiveTrelloCards(trello.cards, trello.lists);
     const dryRunReport = await migrateTrelloActiveCards(null, selection.activeCards, trello.checklists, selection.listMap, selection.skippedRecords);
@@ -569,8 +569,8 @@ describe('Trello active-card migration', () => {
 
     const preparationPlan = dryRunReport.plans.find((plan) => plan.sourceKey === 'trello:card:card-preparation');
     assert.ok(preparationPlan);
-    assert.strictEqual(preparationPlan.bundle.stage, 'preparation');
-    assert.ok((preparationPlan.bundle.bundleLinks as { url: string }[]).some((link) => link.url === 'https://lu.ma/prep-event'));
+    assert.strictEqual(preparationPlan.card.stage, 'preparation');
+    assert.ok((preparationPlan.card.cardLinks as { url: string }[]).some((link) => link.url === 'https://lu.ma/prep-event'));
     const docTask = preparationPlan.tasks.find((task) => String(task.description).includes('Create podcast document'));
     assert.strictEqual(docTask?.instructionDocId, 'sop.media.podcast.create-podcast-document');
     const waitingTask = preparationPlan.tasks.find((task) => String(task.description).includes('Follow up with guest'));
@@ -582,11 +582,11 @@ describe('Trello active-card migration', () => {
     assert.strictEqual(lumaTask?.requiredLinkName, 'Luma');
 
     const announcedPlan = dryRunReport.plans.find((plan) => plan.sourceKey === 'trello:card:card-announced');
-    assert.strictEqual(announcedPlan?.bundle.stage, 'announced');
+    assert.strictEqual(announcedPlan?.card.stage, 'announced');
     assert.ok(announcedPlan?.tasks.some((task) => task.status === 'waiting' && task.waitingFor === 'Sponsor'));
 
     const afterEventPlan = dryRunReport.plans.find((plan) => plan.sourceKey === 'trello:card:card-after-event');
-    assert.strictEqual(afterEventPlan?.bundle.stage, 'after-event');
+    assert.strictEqual(afterEventPlan?.card.stage, 'after-event');
     assert.ok(afterEventPlan?.artifacts.some((artifactPlan) => artifactPlan.artifact.sourceType === 'migration'));
     assert.ok(afterEventPlan?.tasks.some((task) => task.status === 'done' && task.link === 'https://youtube.com/watch?v=duckdb123'));
 
@@ -597,27 +597,27 @@ describe('Trello active-card migration', () => {
       await createTables(client);
 
       const firstReport = await migrateTrelloActiveCards(client, selection.activeCards, trello.checklists, selection.listMap, selection.skippedRecords);
-      assert.strictEqual(firstReport.stats.bundlesCreated, 3);
+      assert.strictEqual(firstReport.stats.cardsCreated, 3);
       assert.strictEqual(firstReport.stats.tasksCreated, 7);
       assert.ok(firstReport.stats.artifactsCreated >= 3);
       assert.strictEqual(firstReport.stats.followUpNotificationsCreated, 2);
 
       const secondReport = await migrateTrelloActiveCards(client, selection.activeCards, trello.checklists, selection.listMap, selection.skippedRecords);
-      assert.strictEqual(secondReport.stats.bundlesCreated, 0);
+      assert.strictEqual(secondReport.stats.cardsCreated, 0);
       assert.strictEqual(secondReport.stats.tasksCreated, 0);
-      assert.strictEqual(secondReport.stats.bundlesUpdated, 3);
+      assert.strictEqual(secondReport.stats.cardsUpdated, 3);
       assert.strictEqual(secondReport.stats.tasksUpdated, 7);
       assert.strictEqual(secondReport.stats.followUpNotificationsCreated, 0);
 
-      const bundles = await listBundles(client);
-      assert.strictEqual(bundles.length, 3);
-      assert.deepStrictEqual(new Set(bundles.map((bundle) => bundle.stage)), new Set(['preparation', 'announced', 'after-event']));
-      const prepBundle = bundles.find((bundle) => bundle.stage === 'preparation');
-      assert.ok(prepBundle);
-      assert.ok(prepBundle.description?.includes('source_key=trello:card:card-preparation'));
-      assert.ok(prepBundle.artifactRefs && prepBundle.artifactRefs.length > 0);
+      const cards = await listCards(client);
+      assert.strictEqual(cards.length, 3);
+      assert.deepStrictEqual(new Set(cards.map((card) => card.stage)), new Set(['preparation', 'announced', 'after-event']));
+      const prepCard = cards.find((card) => card.stage === 'preparation');
+      assert.ok(prepCard);
+      assert.ok(prepCard.description?.includes('source_key=trello:card:card-preparation'));
+      assert.ok(prepCard.artifactRefs && prepCard.artifactRefs.length > 0);
 
-      const prepTasks = await listTasksByBundle(client, prepBundle.id);
+      const prepTasks = await listTasksByCard(client, prepCard.id);
       assert.ok(prepTasks.some((task) => task.instructionDocId === 'sop.media.podcast.create-podcast-document'));
       assert.ok(prepTasks.some((task) => task.status === 'waiting' && task.waitingFor === 'Guest' && task.followUpAt === '2026-06-18'));
       assert.ok(prepTasks.some((task) => task.requiredLinkName === 'Luma' && task.proofRequirement?.type === 'url'));
@@ -637,7 +637,7 @@ describe('Trello active-card migration', () => {
       assert.strictEqual(validation.valid, true);
       const dryRun = await dryRunImport(exportDir);
       assert.strictEqual(dryRun.valid, true);
-      assert.strictEqual(dryRun.wouldWrite.bundles, 3);
+      assert.strictEqual(dryRun.wouldWrite.cards, 3);
       assert.strictEqual(dryRun.wouldWrite.tasks, 7);
       assert.ok(dryRun.wouldWrite.artifacts >= 3);
       assert.strictEqual(dryRun.wouldWrite.notifications, 2);

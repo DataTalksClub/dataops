@@ -122,7 +122,7 @@ async function routeSponsors(page) {
     plannedPublicationDate: "2026-09-18",
     materialDeadline: "2026-09-08",
     nextActionDate: "2026-09-03",
-    bundleId: "linked-newsletter",
+    cardId: "linked-newsletter",
     notes: "Confirm the public campaign link before scheduling.",
     version: 2,
   };

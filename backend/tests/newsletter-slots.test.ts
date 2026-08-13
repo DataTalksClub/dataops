@@ -14,7 +14,7 @@ import {
   listNewsletterAlertRecords,
 } from "../src/db/newsletterSlots";
 import { createCrmRecord } from "../src/db/sponsorCrm";
-import { createBundle } from "../src/db/bundles";
+import { createCard } from "../src/db/cards";
 import { handleNewsletterSlotRoutes } from "../src/routes/newsletterSlots";
 import {
   readNewsletterSlots,
@@ -336,25 +336,25 @@ describe("newsletter slots", () => {
     assert.equal(recurred.occurrence, 2);
     assert.notEqual(recurred.id, alert.id);
 
-    const bundle = await createBundle(client, {
+    const card = await createCard(client, {
       title: "Synthetic incomplete newsletter",
       anchorDate: "2026-11-20",
       stage: "planning",
-      bundleLinks: [{ name: "Mailchimp campaign", url: "" }],
+      cardLinks: [{ name: "Mailchimp campaign", url: "" }],
     });
     const bundled = data(
       await invoke("POST", "/api/newsletter-slots", {
         ...valid,
-        sourceKey: "bundle-truth",
+        sourceKey: "card-truth",
         publicationDate: "2026-11-20",
-        bundleId: bundle.id,
+        cardId: card.id,
       }),
     );
-    const bundleResult = data(
+    const cardResult = data(
       await invoke("GET", "/api/newsletter-slots", undefined, {}, range),
     );
     assert.ok(
-      bundleResult.alerts.some(
+      cardResult.alerts.some(
         (item: any) =>
           item.slotId === bundled.id &&
           item.reasonCode === "linked-workflow-incomplete",

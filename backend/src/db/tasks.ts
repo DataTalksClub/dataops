@@ -150,15 +150,15 @@ async function listTasksByDateRange(client: DynamoDBDocumentClient, startDate: s
 }
 
 /**
- * List tasks for a specific bundle using GSI-Bundle.
+ * List tasks for a specific card using GSI-Card.
  */
-async function listTasksByBundle(client: DynamoDBDocumentClient, bundleId: string): Promise<Task[]> {
+async function listTasksByCard(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
   const result = await client.send(
     new QueryCommand({
       TableName: TABLE_TASKS,
-      IndexName: 'GSI-Bundle',
-      KeyConditionExpression: 'bundleId = :bid',
-      ExpressionAttributeValues: { ':bid': bundleId },
+      IndexName: 'GSI-Card',
+      KeyConditionExpression: 'cardId = :bid',
+      ExpressionAttributeValues: { ':bid': cardId },
     })
   );
 
@@ -189,6 +189,6 @@ export {
   deleteTask,
   listTasksByDate,
   listTasksByDateRange,
-  listTasksByBundle,
+  listTasksByCard,
   listTasksByStatus,
 };

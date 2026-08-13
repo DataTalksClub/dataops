@@ -4,7 +4,7 @@ import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { getClient, startLocal, stopLocal } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createTask, getTask, updateTask } from '../src/db/tasks';
-import { createBundle, updateBundle } from '../src/db/bundles';
+import { createCard, updateCard } from '../src/db/cards';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { MailchimpProvider, MailingExportProviderError } from '../src/mailingExports/mailchimp';
 import { readDapierMailchimpCredential } from '../src/mailingExports/credentials';
@@ -199,7 +199,7 @@ describe('mailing-list export service', () => {
     assert.ok(!artifactList.body.includes(`mailing-private/mailing-exports/mailchimp/${cfg.id}`));
 
     const task = await createTask(client, { description: 'Synthetic privacy task', date: '2026-07-14' });
-    const bundle = await createBundle(client, { title: 'Synthetic privacy bundle', anchorDate: '2026-07-14' });
+    const card = await createCard(client, { title: 'Synthetic privacy card', anchorDate: '2026-07-14' });
     const updatedArtifact = await route({
       httpMethod: 'PUT', path: `/api/artifacts/${completed.artifactId}`,
       body: JSON.stringify({ description: 'Safe operator description' }),
@@ -208,7 +208,7 @@ describe('mailing-list export service', () => {
     assert.ok(!updatedArtifact.body.includes('s3://'));
     const attached = await route({
       httpMethod: 'PUT', path: `/api/artifacts/${completed.artifactId}/attach`,
-      body: JSON.stringify({ taskId: task.id, bundleId: bundle.id }),
+      body: JSON.stringify({ taskId: task.id, cardId: card.id }),
     }, client);
     assert.strictEqual(attached.statusCode, 200);
     assert.ok(!attached.body.includes('s3://'));
@@ -216,12 +216,12 @@ describe('mailing-list export service', () => {
 
     // The HTTP-edge privacy guard also protects legacy references already stored before this fix.
     await updateTask(client, task.id, { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] });
-    await updateBundle(client, bundle.id, { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] });
+    await updateCard(client, card.id, { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] });
     const { handler } = await import('../src/handler');
     const taskRead = await handler({ httpMethod: 'GET', path: `/api/tasks/${task.id}` }, {});
-    const bundleRead = await handler({ httpMethod: 'GET', path: `/api/bundles/${bundle.id}` }, {});
+    const cardRead = await handler({ httpMethod: 'GET', path: `/api/cards/${card.id}` }, {});
     assert.ok('body' in taskRead && !taskRead.body.includes('s3://'));
-    assert.ok('body' in bundleRead && !bundleRead.body.includes('s3://'));
+    assert.ok('body' in cardRead && !cardRead.body.includes('s3://'));
 
     setArtifactDownloadSignerForTests(async (_client, _command, options) => {
       assert.strictEqual(options?.expiresIn, 300);

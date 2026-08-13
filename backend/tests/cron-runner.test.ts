@@ -5,10 +5,10 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
 import { createTemplate, listTemplates, updateTemplate } from '../src/db/templates';
-import { listBundles } from '../src/db/bundles';
+import { listCards } from '../src/db/cards';
 import { listUndismissedNotifications } from '../src/db/notifications';
 import { createRecurringConfig, updateRecurringConfig } from '../src/db/recurring';
-import { deleteTask, listTasksByBundle, listTasksByDate } from '../src/db/tasks';
+import { deleteTask, listTasksByCard, listTasksByDate } from '../src/db/tasks';
 import { runCron, formatAnchorDate } from '../src/cron/runner';
 
 describe('Cron runner', () => {
@@ -39,7 +39,7 @@ describe('Cron runner', () => {
     });
   });
 
-  it('creates a bundle for a weekly template when cron matches', async () => {
+  it('creates a card for a weekly template when cron matches', async () => {
     // Create a template with automatic trigger, every Monday (day 1)
     const template = await createTemplate(client, {
       name: 'Weekly Newsletter',
@@ -63,15 +63,15 @@ describe('Cron runner', () => {
     assert.strictEqual(result.templates.skipped, 0);
     assert.strictEqual(result.recurring.generated.length, 0);
 
-    // Verify the bundle was created
-    const bundles = await listBundles(client);
-    const createdBundle = bundles.find((b) => b.id === result.created[0]);
-    assert.ok(createdBundle, 'Bundle should exist');
-    assert.strictEqual(createdBundle.templateId, template.id);
+    // Verify the card was created
+    const cards = await listCards(client);
+    const createdCard = cards.find((b) => b.id === result.created[0]);
+    assert.ok(createdCard, 'Card should exist');
+    assert.strictEqual(createdCard.templateId, template.id);
 
     // Anchor date should be March 2 + 14 days = March 16
-    assert.strictEqual(createdBundle.anchorDate, '2026-03-16');
-    assert.ok(createdBundle.title!.includes('Weekly Newsletter'));
+    assert.strictEqual(createdCard.anchorDate, '2026-03-16');
+    assert.ok(createdCard.title!.includes('Weekly Newsletter'));
   });
 
   it('runs standalone recurring tasks and automatic template workflows in one cron pass', async () => {
@@ -112,15 +112,15 @@ describe('Cron runner', () => {
     assert.strictEqual(recurringTask.source, 'recurring');
     assert.strictEqual(recurringTask.assigneeId, 'user-grace');
 
-    const bundles = await listBundles(client);
-    const bundle = bundles.find((item) => item.templateId === template.id && item.anchorDate === '2029-01-09');
-    assert.ok(bundle);
-    const bundleTasks = await listTasksByBundle(client, bundle.id);
-    assert.strictEqual(bundleTasks.length, 1);
-    assert.strictEqual(bundleTasks[0].source, 'template');
-    assert.strictEqual(bundleTasks[0].templateTaskRef, 'draft');
-    assert.deepStrictEqual(bundleTasks[0].proofRequirement, { type: 'comment', label: 'Draft reviewed' });
-    assert.strictEqual(bundleTasks[0].instructionDocId, 'sop.newsletter.draft');
+    const cards = await listCards(client);
+    const card = cards.find((item) => item.templateId === template.id && item.anchorDate === '2029-01-09');
+    assert.ok(card);
+    const cardTasks = await listTasksByCard(client, card.id);
+    assert.strictEqual(cardTasks.length, 1);
+    assert.strictEqual(cardTasks[0].source, 'template');
+    assert.strictEqual(cardTasks[0].templateTaskRef, 'draft');
+    assert.deepStrictEqual(cardTasks[0].proofRequirement, { type: 'comment', label: 'Draft reviewed' });
+    assert.strictEqual(cardTasks[0].instructionDocId, 'sop.newsletter.draft');
 
     await updateRecurringConfig(client, recurring.id, { enabled: false });
   });
@@ -153,9 +153,9 @@ describe('Cron runner', () => {
 
     const recurringTasks = (await listTasksByDate(client, '2029-01-04')).filter((task) => task.recurringConfigId === recurring.id);
     assert.strictEqual(recurringTasks.length, 1);
-    const bundles = (await listBundles(client)).filter((bundle) => bundle.templateId === template.id && bundle.anchorDate === '2029-01-04');
-    assert.strictEqual(bundles.length, 1);
-    assert.strictEqual((await listTasksByBundle(client, bundles[0].id)).length, 1);
+    const cards = (await listCards(client)).filter((card) => card.templateId === template.id && card.anchorDate === '2029-01-04');
+    assert.strictEqual(cards.length, 1);
+    assert.strictEqual((await listTasksByCard(client, cards[0].id)).length, 1);
 
     await updateRecurringConfig(client, recurring.id, { enabled: false });
   });
@@ -196,7 +196,7 @@ describe('Cron runner', () => {
     await updateRecurringConfig(client, recurring.id, { enabled: false });
   });
 
-  it('recovers missing template tasks for an existing automatic bundle instead of duplicating the bundle', async () => {
+  it('recovers missing template tasks for an existing automatic card instead of duplicating the card', async () => {
     const template = await createTemplate(client, {
       name: 'Recover partial workflow',
       type: 'workflow',
@@ -211,9 +211,9 @@ describe('Cron runner', () => {
 
     const wednesday = new Date('2029-01-10T09:00:00Z');
     await runCron(client, wednesday);
-    const bundle = (await listBundles(client)).find((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
-    assert.ok(bundle);
-    const originalTasks = await listTasksByBundle(client, bundle.id);
+    const card = (await listCards(client)).find((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
+    assert.ok(card);
+    const originalTasks = await listTasksByCard(client, card.id);
     assert.strictEqual(originalTasks.length, 2);
     await deleteTask(client, originalTasks[0].id);
 
@@ -222,19 +222,19 @@ describe('Cron runner', () => {
     assert.strictEqual(recovered.templates.skipped, 1);
     assert.strictEqual(recovered.templates.recovered, 1);
 
-    const bundles = (await listBundles(client)).filter((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
-    assert.strictEqual(bundles.length, 1);
-    const recoveredTasks = await listTasksByBundle(client, bundle.id);
+    const cards = (await listCards(client)).filter((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
+    assert.strictEqual(cards.length, 1);
+    const recoveredTasks = await listTasksByCard(client, card.id);
     assert.strictEqual(recoveredTasks.length, 2);
 
     const notifications = await listUndismissedNotifications(client);
-    assert.ok(notifications.some((notification) => notification.type === 'automation-failure' && notification.bundleId === bundle.id));
+    assert.ok(notifications.some((notification) => notification.type === 'automation-failure' && notification.cardId === card.id));
   });
 
   it('is idempotent -- no duplicates on second call', async () => {
-    // Get current bundle count
-    const bundlesBefore = await listBundles(client);
-    const countBefore = bundlesBefore.length;
+    // Get current card count
+    const cardsBefore = await listCards(client);
+    const countBefore = cardsBefore.length;
 
     // Run cron again on the same Monday
     const monday = new Date('2026-03-02T09:00:00Z');
@@ -243,13 +243,13 @@ describe('Cron runner', () => {
     assert.strictEqual(result.created.length, 0);
     assert.ok(result.skipped >= 1, 'Should have skipped at least 1');
 
-    // Bundle count should not increase
-    const bundlesAfter = await listBundles(client);
-    assert.strictEqual(bundlesAfter.length, countBefore);
+    // Card count should not increase
+    const cardsAfter = await listCards(client);
+    assert.strictEqual(cardsAfter.length, countBefore);
   });
 
-  it('creates a notification when bundle is auto-created', async () => {
-    // Create a new template to get a fresh bundle
+  it('creates a notification when card is auto-created', async () => {
+    // Create a new template to get a fresh card
     const template = await createTemplate(client, {
       name: 'Social Media Weekly',
       type: 'social',
@@ -270,7 +270,7 @@ describe('Cron runner', () => {
     // Check notification was created
     const notifications = await listUndismissedNotifications(client);
     const notification = notifications.find(
-      (n) => n.bundleId === result.created[0]
+      (n) => n.cardId === result.created[0]
     );
 
     assert.ok(notification, 'Notification should exist');
@@ -291,31 +291,31 @@ describe('Cron runner', () => {
       ],
     });
 
-    // Get bundle count before
-    const bundlesBefore = await listBundles(client);
-    const countBefore = bundlesBefore.length;
+    // Get card count before
+    const cardsBefore = await listCards(client);
+    const countBefore = cardsBefore.length;
 
     // Run cron on a date that would match any daily cron
     const date = new Date('2026-04-15T09:00:00Z');
     const result = await runCron(client, date);
 
-    // Should not have created a bundle for the manual template
+    // Should not have created a card for the manual template
     // (may create for other auto templates if they match this date)
-    const bundlesAfter = await listBundles(client);
-    const newBundles = bundlesAfter.filter(
-      (b) => !bundlesBefore.find((bb) => bb.id === b.id)
+    const cardsAfter = await listCards(client);
+    const newCards = cardsAfter.filter(
+      (b) => !cardsBefore.find((bb) => bb.id === b.id)
     );
 
-    // None of the new bundles should be from the manual template
+    // None of the new cards should be from the manual template
     const manualTemplates = (await listTemplates(client)).filter(
       (t) => t.name === 'Manual Template'
     );
-    for (const bundle of newBundles) {
+    for (const card of newCards) {
       for (const mt of manualTemplates) {
         assert.notStrictEqual(
-          bundle.templateId,
+          card.templateId,
           mt.id,
-          'No bundle should be created from manual template'
+          'No card should be created from manual template'
         );
       }
     }
@@ -332,31 +332,31 @@ describe('Cron runner', () => {
       ],
     });
 
-    const bundlesBefore = await listBundles(client);
+    const cardsBefore = await listCards(client);
 
     const date = new Date('2026-04-15T09:00:00Z');
     await runCron(client, date);
 
-    const bundlesAfter = await listBundles(client);
-    const newBundles = bundlesAfter.filter(
-      (b) => !bundlesBefore.find((bb) => bb.id === b.id)
+    const cardsAfter = await listCards(client);
+    const newCards = cardsAfter.filter(
+      (b) => !cardsBefore.find((bb) => bb.id === b.id)
     );
 
     const noScheduleTemplates = (await listTemplates(client)).filter(
       (t) => t.name === 'No Schedule Template'
     );
-    for (const bundle of newBundles) {
+    for (const card of newCards) {
       for (const nst of noScheduleTemplates) {
         assert.notStrictEqual(
-          bundle.templateId,
+          card.templateId,
           nst.id,
-          'No bundle should be created from template with empty schedule'
+          'No card should be created from template with empty schedule'
         );
       }
     }
   });
 
-  it('creates tasks from template when bundle is auto-created', async () => {
+  it('creates tasks from template when card is auto-created', async () => {
     const template = await createTemplate(client, {
       name: 'Tasks Template',
       type: 'test',
@@ -375,10 +375,10 @@ describe('Cron runner', () => {
 
     assert.ok(result.created.length >= 1);
 
-    // Find the bundle for this template
-    const bundles = await listBundles(client);
-    const bundle = bundles.find((b) => b.templateId === template.id);
-    assert.ok(bundle, 'Bundle for template should exist');
+    // Find the card for this template
+    const cards = await listCards(client);
+    const card = cards.find((b) => b.templateId === template.id);
+    assert.ok(card, 'Card for template should exist');
   });
 
   it('handles triggerLeadDays of 0 correctly', async () => {
@@ -396,10 +396,10 @@ describe('Cron runner', () => {
     const date = new Date('2026-06-15T09:00:00Z');
     const result = await runCron(client, date);
 
-    const bundles = await listBundles(client);
-    const bundle = bundles.find((b) => b.templateId === template.id);
-    assert.ok(bundle);
-    assert.strictEqual(bundle.anchorDate, '2026-06-15'); // Same day as cron fire
+    const cards = await listCards(client);
+    const card = cards.find((b) => b.templateId === template.id);
+    assert.ok(card);
+    assert.strictEqual(card.anchorDate, '2026-06-15'); // Same day as cron fire
   });
 
   for (const failing of [

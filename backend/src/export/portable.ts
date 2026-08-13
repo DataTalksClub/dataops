@@ -5,7 +5,7 @@ import path from 'path';
 import { ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
-  TABLE_BUNDLES,
+  TABLE_CARDS,
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
@@ -66,7 +66,7 @@ interface ValidationResult {
 type ExportEntityName =
   | 'users'
   | 'tasks'
-  | 'bundles'
+  | 'cards'
   | 'templates'
   | 'recurring_configs'
   | 'files'
@@ -161,11 +161,11 @@ const ENTITY_SPECS: EntitySpec[] = [
     map: mapTask,
   },
   {
-    name: 'bundles',
-    filename: 'bundles.jsonl',
-    tableName: TABLE_BUNDLES,
-    prefix: 'BUNDLE#',
-    map: mapBundle,
+    name: 'cards',
+    filename: 'cards.jsonl',
+    tableName: TABLE_CARDS,
+    prefix: 'CARD#',
+    map: mapCard,
   },
   {
     name: 'templates',
@@ -303,7 +303,7 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
     assignee_id: optionalString(item.assigneeId),
     created_by: optionalString(item.createdBy),
     assistant_execution_ref: optionalJsonStringOrObject(item.assistantExecutionRef),
-    bundle_id: optionalString(item.bundleId),
+    card_id: optionalString(item.cardId),
     template_id: optionalString(item.templateId),
     template_task_ref: optionalString(item.templateTaskRef),
     template_offset_days: optionalNumber(item.templateOffsetDays),
@@ -323,9 +323,9 @@ function mapTask(item: Record<string, unknown>): JsonRecord {
   });
 }
 
-function mapBundle(item: Record<string, unknown>): JsonRecord {
+function mapCard(item: Record<string, unknown>): JsonRecord {
   return stripEmpty({
-    bundle_id: optionalString(item.id),
+    card_id: optionalString(item.id),
     title: optionalString(item.title),
     description: optionalString(item.description),
     anchor_date: optionalString(item.anchorDate),
@@ -334,7 +334,7 @@ function mapBundle(item: Record<string, unknown>): JsonRecord {
     status: optionalString(item.status),
     stage: optionalString(item.stage),
     references: jsonArray(item.references),
-    bundle_links: jsonArray(item.bundleLinks),
+    card_links: jsonArray(item.cardLinks),
     emoji: optionalString(item.emoji),
     tags: stringArray(item.tags),
     artifact_refs: jsonArray(item.artifactRefs),
@@ -357,7 +357,7 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     phases: jsonArray(item.phases),
     source_doc_ids: stringArray(item.sourceDocIds),
     references: jsonArray(item.references),
-    bundle_link_definitions: jsonArray(item.bundleLinkDefinitions),
+    card_link_definitions: jsonArray(item.cardLinkDefinitions),
     task_definitions: jsonArray(item.taskDefinitions),
     trigger_type: optionalString(item.triggerType),
     trigger_schedule: optionalString(item.triggerSchedule),
@@ -395,7 +395,7 @@ function mapFile(item: Record<string, unknown>): JsonRecord {
   return stripEmpty({
     file_id: optionalString(item.id),
     task_id: optionalString(item.taskId),
-    bundle_id: optionalString(item.bundleId),
+    card_id: optionalString(item.cardId),
     filename: optionalString(item.filename),
     category: optionalString(item.category),
     tags: stringArray(item.tags),
@@ -424,7 +424,7 @@ function mapArtifact(item: Record<string, unknown>): JsonRecord {
     visibility: optionalString(item.visibility),
     data_class: optionalString(item.dataClass),
     task_id: optionalString(item.taskId),
-    bundle_id: optionalString(item.bundleId),
+    card_id: optionalString(item.cardId),
     assistant_job_id: optionalString(item.assistantJobId),
     file_id: optionalString(item.fileId),
     source_type: optionalString(item.sourceType),
@@ -445,7 +445,7 @@ function mapAssistantJob(item: Record<string, unknown>): JsonRecord {
     title: optionalString(item.title),
     status: optionalString(item.status),
     task_id: optionalString(item.taskId),
-    bundle_id: optionalString(item.bundleId),
+    card_id: optionalString(item.cardId),
     requested_by: optionalString(item.requestedBy),
     input_refs: jsonArray(item.inputRefs),
     output_artifact_ids: stringArray(item.outputArtifactIds),
@@ -508,7 +508,7 @@ function mapIntakeItem(item: Record<string, unknown>): JsonRecord {
     file_refs: jsonArray(item.fileRefs),
     artifact_refs: jsonArray(item.artifactRefs),
     task_ids: stringArray(item.taskIds),
-    bundle_ids: stringArray(item.bundleIds),
+    card_ids: stringArray(item.cardIds),
     assistant_job_ids: stringArray(item.assistantJobIds),
     assistant_readiness: optionalJsonStringOrObject(item.assistantReadiness),
     duplicate_of_intake_item_id: optionalString(item.duplicateOfIntakeItemId),
@@ -534,7 +534,7 @@ function mapNotification(item: Record<string, unknown>): JsonRecord {
     user_id: optionalString(item.userId),
     task_id: optionalString(item.taskId),
     intake_item_id: optionalString(item.intakeItemId),
-    bundle_id: optionalString(item.bundleId),
+    card_id: optionalString(item.cardId),
     template_id: optionalString(item.templateId),
     recurring_config_id: optionalString(item.recurringConfigId),
     metadata: optionalJsonStringOrObject(item.metadata),
@@ -866,7 +866,7 @@ function optionalTaskHistoryField(
   }
   const seenIds = new Set<string>();
   const taskId = typeof task.task_id === 'string' ? task.task_id : '';
-  const bundleId = typeof task.bundle_id === 'string' ? task.bundle_id : '';
+  const cardId = typeof task.card_id === 'string' ? task.card_id : '';
   for (const [index, item] of value.entries()) {
     const itemContext = `${context}.task_history[${index}]`;
     if (item === null || typeof item !== 'object' || Array.isArray(item)) {
@@ -883,9 +883,9 @@ function optionalTaskHistoryField(
     if (eventTaskId && taskId && eventTaskId !== taskId) {
       errors.push(`${itemContext} taskId must match parent task_id`);
     }
-    const eventBundleId = optionalStringField(event, 'bundleId', errors, itemContext);
-    if (eventBundleId && bundleId && eventBundleId !== bundleId) {
-      errors.push(`${itemContext} bundleId must match parent bundle_id`);
+    const eventCardId = optionalStringField(event, 'cardId', errors, itemContext);
+    if (eventCardId && cardId && eventCardId !== cardId) {
+      errors.push(`${itemContext} cardId must match parent card_id`);
     }
     optionalEnum(event, 'action', VALID_TASK_HISTORY_ACTIONS, errors, itemContext);
     optionalReference(event, 'actorId', userIds, errors, itemContext);
@@ -1052,7 +1052,7 @@ function validateCompletedTaskProof(
   proofRequirement: JsonRecord | null,
   taskFileIds: Set<string>,
   approvedArtifactTaskIds: Set<string>,
-  approvedArtifactBundleIds: Set<string>,
+  approvedArtifactCardIds: Set<string>,
   approvedArtifactIds: Set<string>,
   errors: string[],
   context: string
@@ -1090,10 +1090,10 @@ function validateCompletedTaskProof(
         .filter((artifactId): artifactId is string => typeof artifactId === 'string' && artifactId.length > 0)
       : [];
     const taskIdHasApproved = taskId ? approvedArtifactTaskIds.has(taskId) : false;
-    const bundleId = typeof task.bundle_id === 'string' ? task.bundle_id : null;
-    const bundleIdHasApproved = bundleId ? approvedArtifactBundleIds.has(bundleId) : false;
+    const cardId = typeof task.card_id === 'string' ? task.card_id : null;
+    const cardIdHasApproved = cardId ? approvedArtifactCardIds.has(cardId) : false;
     const refHasApproved = taskArtifactRefIds.some((artifactId) => approvedArtifactIds.has(artifactId));
-    if (!taskIdHasApproved && !bundleIdHasApproved && !refHasApproved) {
+    if (!taskIdHasApproved && !cardIdHasApproved && !refHasApproved) {
       errors.push(`${context} cannot be done without required approved artifact proof`);
     }
   }
@@ -1239,7 +1239,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   const userIds = collectIds(recordsByEntity.users || [], 'user_id', 'users', errors);
   const taskIds = collectIds(recordsByEntity.tasks || [], 'task_id', 'tasks', errors);
-  const bundleIds = collectIds(recordsByEntity.bundles || [], 'bundle_id', 'bundles', errors);
+  const cardIds = collectIds(recordsByEntity.cards || [], 'card_id', 'cards', errors);
   const templateIds = collectIds(recordsByEntity.templates || [], 'template_id', 'templates', errors);
   const recurringConfigIds = collectIds(recordsByEntity.recurring_configs || [], 'recurring_config_id', 'recurring_configs', errors);
   const fileIds = collectIds(recordsByEntity.files || [], 'file_id', 'files', errors);
@@ -1259,11 +1259,11 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
       .map((artifact) => artifact.task_id)
       .filter((taskId): taskId is string => typeof taskId === 'string' && taskId.length > 0)
   );
-  const approvedArtifactBundleIds = new Set(
+  const approvedArtifactCardIds = new Set(
     (recordsByEntity.artifacts || [])
       .filter((artifact) => artifact.status === 'approved')
-      .map((artifact) => artifact.bundle_id)
-      .filter((bundleId): bundleId is string => typeof bundleId === 'string' && bundleId.length > 0)
+      .map((artifact) => artifact.card_id)
+      .filter((cardId): cardId is string => typeof cardId === 'string' && cardId.length > 0)
   );
   const approvedArtifactIds = new Set(
     (recordsByEntity.artifacts || [])
@@ -1306,7 +1306,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(task, 'created_by', userIds, errors, context);
     optionalAssistantExecutionRef(task, errors, context);
     optionalReference(task, 'completed_by', userIds, errors, context);
-    optionalReference(task, 'bundle_id', bundleIds, errors, context);
+    optionalReference(task, 'card_id', cardIds, errors, context);
     optionalReference(task, 'template_id', templateIds, errors, context);
     optionalReference(task, 'recurring_config_id', recurringConfigIds, errors, context);
     if (Array.isArray(task.assistant_job_refs)) {
@@ -1323,30 +1323,30 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
         }
       });
     }
-    validateCompletedTaskProof(task, proofRequirement, taskFileIds, approvedArtifactTaskIds, approvedArtifactBundleIds, approvedArtifactIds, errors, context);
+    validateCompletedTaskProof(task, proofRequirement, taskFileIds, approvedArtifactTaskIds, approvedArtifactCardIds, approvedArtifactIds, errors, context);
   }
 
-  for (const [index, bundle] of (recordsByEntity.bundles || []).entries()) {
-    const context = `bundles[${index}]`;
-    validateDateField(bundle, 'anchor_date', errors, context);
-    validateDateOrTimestampField(bundle, 'created_at', errors, context);
-    validateDateOrTimestampField(bundle, 'updated_at', errors, context);
-    optionalReference(bundle, 'template_id', templateIds, errors, context);
-    optionalStringArrayField(bundle, 'source_doc_ids', errors, context);
-    optionalStringField(bundle, 'emoji', errors, context);
-    optionalRefArrayField(bundle, 'artifact_refs', 'artifactId', errors, context);
-    optionalRefArrayField(bundle, 'assistant_job_refs', 'assistantJobId', errors, context);
-    optionalRefArrayField(bundle, 'intake_refs', 'intakeItemId', errors, context);
-    optionalRefArrayField(bundle, 'audit_event_refs', 'auditEventId', errors, context);
-    if (Array.isArray(bundle.assistant_job_refs)) {
-      bundle.assistant_job_refs.forEach((ref, refIndex) => {
+  for (const [index, card] of (recordsByEntity.cards || []).entries()) {
+    const context = `cards[${index}]`;
+    validateDateField(card, 'anchor_date', errors, context);
+    validateDateOrTimestampField(card, 'created_at', errors, context);
+    validateDateOrTimestampField(card, 'updated_at', errors, context);
+    optionalReference(card, 'template_id', templateIds, errors, context);
+    optionalStringArrayField(card, 'source_doc_ids', errors, context);
+    optionalStringField(card, 'emoji', errors, context);
+    optionalRefArrayField(card, 'artifact_refs', 'artifactId', errors, context);
+    optionalRefArrayField(card, 'assistant_job_refs', 'assistantJobId', errors, context);
+    optionalRefArrayField(card, 'intake_refs', 'intakeItemId', errors, context);
+    optionalRefArrayField(card, 'audit_event_refs', 'auditEventId', errors, context);
+    if (Array.isArray(card.assistant_job_refs)) {
+      card.assistant_job_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
           optionalReference(ref as JsonRecord, 'assistantJobId', assistantJobIds, errors, `${context}.assistant_job_refs[${refIndex}]`);
         }
       });
     }
-    if (Array.isArray(bundle.intake_refs)) {
-      bundle.intake_refs.forEach((ref, refIndex) => {
+    if (Array.isArray(card.intake_refs)) {
+      card.intake_refs.forEach((ref, refIndex) => {
         if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
           optionalReference(ref as JsonRecord, 'intakeItemId', intakeItemIds, errors, `${context}.intake_refs[${refIndex}]`);
         }
@@ -1391,7 +1391,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     const context = `files[${index}]`;
     validateDateOrTimestampField(file, 'created_at', errors, context);
     optionalReference(file, 'task_id', taskIds, errors, context);
-    optionalReference(file, 'bundle_id', bundleIds, errors, context);
+    optionalReference(file, 'card_id', cardIds, errors, context);
   }
 
   for (const [index, artifact] of (recordsByEntity.artifacts || []).entries()) {
@@ -1415,7 +1415,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(artifact, 'updated_at', errors, context, true);
     validateDateOrTimestampField(artifact, 'reviewed_at', errors, context);
     optionalReference(artifact, 'task_id', taskIds, errors, context);
-    optionalReference(artifact, 'bundle_id', bundleIds, errors, context);
+    optionalReference(artifact, 'card_id', cardIds, errors, context);
     optionalReference(artifact, 'file_id', fileIds, errors, context);
     optionalReference(artifact, 'assistant_job_id', assistantJobIds, errors, context);
     optionalReference(artifact, 'created_by', userIds, errors, context);
@@ -1435,9 +1435,9 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     requireString(job, 'title', errors, context);
     const status = optionalEnum(job, 'status', VALID_ASSISTANT_JOB_STATUSES, errors, context);
     optionalReference(job, 'task_id', taskIds, errors, context);
-    optionalReference(job, 'bundle_id', bundleIds, errors, context);
-    if (job.task_id === undefined && job.bundle_id === undefined) {
-      errors.push(`${context} must reference task_id or bundle_id`);
+    optionalReference(job, 'card_id', cardIds, errors, context);
+    if (job.task_id === undefined && job.card_id === undefined) {
+      errors.push(`${context} must reference task_id or card_id`);
     }
     optionalReference(job, 'requested_by', userIds, errors, context);
     optionalReference(job, 'retry_of_job_id', assistantJobIds, errors, context);
@@ -1534,7 +1534,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(item, 'duplicate_of_intake_item_id', intakeItemIds, errors, context);
     optionalStringArrayField(item, 'received_channels', errors, context);
     optionalStringArrayField(item, 'task_ids', errors, context);
-    optionalStringArrayField(item, 'bundle_ids', errors, context);
+    optionalStringArrayField(item, 'card_ids', errors, context);
     optionalStringArrayField(item, 'assistant_job_ids', errors, context);
     optionalStringArrayField(item, 'related_intake_item_ids', errors, context);
     optionalStringArrayField(item, 'tags', errors, context);
@@ -1573,9 +1573,9 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
         if (typeof taskId === 'string' && !taskIds.has(taskId)) errors.push(`${context}.task_ids[${taskIndex}] references missing task_id: ${taskId}`);
       });
     }
-    if (Array.isArray(item.bundle_ids)) {
-      item.bundle_ids.forEach((bundleId, bundleIndex) => {
-        if (typeof bundleId === 'string' && !bundleIds.has(bundleId)) errors.push(`${context}.bundle_ids[${bundleIndex}] references missing bundle_id: ${bundleId}`);
+    if (Array.isArray(item.card_ids)) {
+      item.card_ids.forEach((cardId, cardIndex) => {
+        if (typeof cardId === 'string' && !cardIds.has(cardId)) errors.push(`${context}.card_ids[${cardIndex}] references missing card_id: ${cardId}`);
       });
     }
     if (Array.isArray(item.assistant_job_ids)) {
@@ -1634,7 +1634,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     optionalReference(notification, 'user_id', userIds, errors, context);
     optionalReference(notification, 'task_id', taskIds, errors, context);
     optionalReference(notification, 'intake_item_id', intakeItemIds, errors, context);
-    optionalReference(notification, 'bundle_id', bundleIds, errors, context);
+    optionalReference(notification, 'card_id', cardIds, errors, context);
     optionalReference(notification, 'template_id', templateIds, errors, context);
     optionalReference(notification, 'recurring_config_id', recurringConfigIds, errors, context);
     optionalStringOrObjectField(notification, 'metadata', errors, context);

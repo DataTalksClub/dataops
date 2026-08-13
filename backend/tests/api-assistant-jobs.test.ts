@@ -22,21 +22,21 @@ describe('API - Assistant jobs', () => {
     delete process.env.IS_LOCAL;
   });
 
-  async function createBundle(): Promise<Record<string, unknown>> {
+  async function createCard(): Promise<Record<string, unknown>> {
     const res = await handler({
       httpMethod: 'POST',
-      path: '/api/bundles',
-      body: JSON.stringify({ title: 'Assistant bundle', anchorDate: '2026-06-28' }),
+      path: '/api/cards',
+      body: JSON.stringify({ title: 'Assistant card', anchorDate: '2026-06-28' }),
     }, {});
     assert.strictEqual(res.statusCode, 201, res.body);
-    return JSON.parse(res.body).bundle;
+    return JSON.parse(res.body).card;
   }
 
-  async function createTask(bundleId?: string): Promise<Record<string, unknown>> {
+  async function createTask(cardId?: string): Promise<Record<string, unknown>> {
     const res = await handler({
       httpMethod: 'POST',
       path: '/api/tasks',
-      body: JSON.stringify({ description: 'Assistant task', date: '2026-06-28', bundleId }),
+      body: JSON.stringify({ description: 'Assistant task', date: '2026-06-28', cardId }),
     }, {});
     assert.strictEqual(res.statusCode, 201, res.body);
     return JSON.parse(res.body);
@@ -77,11 +77,11 @@ describe('API - Assistant jobs', () => {
   }
 
   it('creates, submits, runs, attaches artifacts, and approves a workflow-linked job', async () => {
-    const bundle = await createBundle();
-    const task = await createTask(String(bundle.id));
+    const card = await createCard();
+    const task = await createTask(String(card.id));
     const job = await createAssistantJob({
       taskId: task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       approvalRequired: true,
       maxAttempts: 2,
     });
@@ -89,7 +89,7 @@ describe('API - Assistant jobs', () => {
     assert.ok(job.id);
     assert.strictEqual(job.status, 'draft');
     assert.strictEqual(job.taskId, task.id);
-    assert.strictEqual(job.bundleId, bundle.id);
+    assert.strictEqual(job.cardId, card.id);
 
     const taskWithRef = await handler({ httpMethod: 'GET', path: `/api/tasks/${task.id}` }, {});
     assert.deepStrictEqual(JSON.parse(taskWithRef.body).assistantJobRefs, [{
@@ -109,7 +109,7 @@ describe('API - Assistant jobs', () => {
     }, {});
     assert.strictEqual(running.statusCode, 200, running.body);
 
-    const artifact = await createArtifact({ taskId: task.id, bundleId: bundle.id });
+    const artifact = await createArtifact({ taskId: task.id, cardId: card.id });
     const attach = await handler({
       httpMethod: 'POST',
       path: `/api/assistant-jobs/${job.id}/artifacts`,
@@ -284,11 +284,11 @@ describe('API - Assistant jobs', () => {
   });
 
   it('runs the deterministic podcast dry-run path without external credentials', async () => {
-    const bundle = await createBundle();
-    const task = await createTask(String(bundle.id));
+    const card = await createCard();
+    const task = await createTask(String(card.id));
     const job = await createAssistantJob({
       taskId: task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       approvalRequired: true,
       inputRefs: [{ type: 'url', uri: 'https://example.com/guest' }],
     });

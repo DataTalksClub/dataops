@@ -24,7 +24,7 @@ function shouldAutoCreateTables(): boolean {
 }
 
 const TABLE_TASKS = tableName('DATAOPS_TASKS_TABLE', 'Tasks', 'tasks');
-const TABLE_BUNDLES = tableName('DATAOPS_BUNDLES_TABLE', 'Projects', 'bundles');
+const TABLE_CARDS = tableName('DATAOPS_CARDS_TABLE', 'Projects', 'cards');
 const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates', 'templates');
 const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users', 'users');
 const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files', 'files');
@@ -45,7 +45,7 @@ const TABLE_CONVERSATIONAL_STATE = tableName(
 );
 
 /**
- * Create all application tables (Tasks, Bundles, Templates) with GSIs.
+ * Create all application tables (Tasks, Cards, Templates) with GSIs.
  * Idempotent — silently ignores ResourceInUseException if a table already exists.
  */
 async function createTables(client: DynamoDBDocumentClient): Promise<void> {
@@ -126,7 +126,7 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
         { AttributeName: 'SK', AttributeType: 'S' as const },
         { AttributeName: 'date', AttributeType: 'S' as const },
         { AttributeName: 'status', AttributeType: 'S' as const },
-        { AttributeName: 'bundleId', AttributeType: 'S' as const },
+        { AttributeName: 'cardId', AttributeType: 'S' as const },
       ],
       GlobalSecondaryIndexes: [
         {
@@ -138,9 +138,9 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
           Projection: { ProjectionType: 'ALL' as const },
         },
         {
-          IndexName: 'GSI-Bundle',
+          IndexName: 'GSI-Card',
           KeySchema: [
-            { AttributeName: 'bundleId', KeyType: 'HASH' as const },
+            { AttributeName: 'cardId', KeyType: 'HASH' as const },
             { AttributeName: 'date', KeyType: 'RANGE' as const },
           ],
           Projection: { ProjectionType: 'ALL' as const },
@@ -157,7 +157,7 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
     {
-      TableName: TABLE_BUNDLES,
+      TableName: TABLE_CARDS,
       KeySchema: [
         { AttributeName: 'PK', KeyType: 'HASH' as const },
         { AttributeName: 'SK', KeyType: 'RANGE' as const },
@@ -364,7 +364,7 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
 async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
   const tableNames = [
     TABLE_TASKS,
-    TABLE_BUNDLES,
+    TABLE_CARDS,
     TABLE_TEMPLATES,
     TABLE_USERS,
     TABLE_FILES,
@@ -398,7 +398,7 @@ export {
   deleteTables,
   shouldAutoCreateTables,
   TABLE_TASKS,
-  TABLE_BUNDLES,
+  TABLE_CARDS,
   TABLE_TEMPLATES,
   TABLE_USERS,
   TABLE_FILES,

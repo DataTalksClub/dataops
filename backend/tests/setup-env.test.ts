@@ -10,7 +10,7 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
       const mod = setup.default || setup;
       console.log(JSON.stringify({
         tasks: mod.TABLE_TASKS,
-        bundles: mod.TABLE_BUNDLES,
+        cards: mod.TABLE_CARDS,
         templates: mod.TABLE_TEMPLATES,
         users: mod.TABLE_USERS,
         files: mod.TABLE_FILES,
@@ -49,7 +49,7 @@ describe('DynamoDB table setup environment', () => {
     const setup = runSetupProbe({});
 
     assert.strictEqual(setup.tasks, 'Tasks');
-    assert.strictEqual(setup.bundles, 'Projects');
+    assert.strictEqual(setup.cards, 'Projects');
     assert.strictEqual(setup.templates, 'Templates');
     assert.strictEqual(setup.users, 'Users');
     assert.strictEqual(setup.files, 'Files');
@@ -65,7 +65,7 @@ describe('DynamoDB table setup environment', () => {
   it('uses production table names from DATAOPS environment variables', () => {
     const setup = runSetupProbe({
       DATAOPS_TASKS_TABLE: 'prod-tasks',
-      DATAOPS_BUNDLES_TABLE: 'prod-bundles',
+      DATAOPS_CARDS_TABLE: 'prod-cards',
       DATAOPS_TEMPLATES_TABLE: 'prod-templates',
       DATAOPS_USERS_TABLE: 'prod-users',
       DATAOPS_FILES_TABLE: 'prod-files',
@@ -78,7 +78,7 @@ describe('DynamoDB table setup environment', () => {
     });
 
     assert.strictEqual(setup.tasks, 'prod-tasks');
-    assert.strictEqual(setup.bundles, 'prod-bundles');
+    assert.strictEqual(setup.cards, 'prod-cards');
     assert.strictEqual(setup.templates, 'prod-templates');
     assert.strictEqual(setup.users, 'prod-users');
     assert.strictEqual(setup.files, 'prod-files');
@@ -95,7 +95,7 @@ describe('DynamoDB table setup environment', () => {
     const setup = runSetupProbe({ DATAOPS_STACK_NAME: 'dataops-v1' });
 
     assert.strictEqual(setup.tasks, 'dataops-v1-tasks');
-    assert.strictEqual(setup.bundles, 'dataops-v1-bundles');
+    assert.strictEqual(setup.cards, 'dataops-v1-cards');
     assert.strictEqual(setup.templates, 'dataops-v1-templates');
     assert.strictEqual(setup.users, 'dataops-v1-users');
     assert.strictEqual(setup.files, 'dataops-v1-files');

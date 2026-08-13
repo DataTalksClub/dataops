@@ -8,38 +8,38 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Helper: ISO-8601 timestamp pattern
 const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/;
 
-// Helper: archive and delete a bundle
-async function archiveAndDelete(request, bundleId) {
-  await request.put(`/api/bundles/${bundleId}/archive`);
-  await request.delete(`/api/bundles/${bundleId}`);
+// Helper: archive and delete a card
+async function archiveAndDelete(request, cardId) {
+  await request.put(`/api/cards/${cardId}/archive`);
+  await request.delete(`/api/cards/${cardId}`);
 }
 
-test.describe('Bundle CRUD API', () => {
+test.describe('Card CRUD API', () => {
   // ──────────────────────────────────────────────────────────────────
-  // POST /api/bundles -- Create
+  // POST /api/cards -- Create
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('POST /api/bundles', () => {
-    test('creates a bundle with required fields only (title + anchorDate)', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+  test.describe('POST /api/cards', () => {
+    test('creates a card with required fields only (title + anchorDate)', async ({ request }) => {
+      const res = await request.post('/api/cards', {
         data: { title: 'ML Zoomcamp 2026', anchorDate: '2026-06-01' },
       });
       expect(res.status()).toBe(201);
 
       const body = await res.json();
-      expect(body.bundle).toBeDefined();
-      expect(body.bundle.id).toMatch(UUID_RE);
-      expect(body.bundle.title).toBe('ML Zoomcamp 2026');
-      expect(body.bundle.anchorDate).toBe('2026-06-01');
-      expect(body.bundle.createdAt).toMatch(ISO_TS_RE);
-      expect(body.bundle.updatedAt).toMatch(ISO_TS_RE);
+      expect(body.card).toBeDefined();
+      expect(body.card.id).toMatch(UUID_RE);
+      expect(body.card.title).toBe('ML Zoomcamp 2026');
+      expect(body.card.anchorDate).toBe('2026-06-01');
+      expect(body.card.createdAt).toMatch(ISO_TS_RE);
+      expect(body.card.updatedAt).toMatch(ISO_TS_RE);
 
       // No tasks key when no templateId provided
       expect(body.tasks).toBeUndefined();
     });
 
-    test('creates a bundle with optional description', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+    test('creates a card with optional description', async ({ request }) => {
+      const res = await request.post('/api/cards', {
         data: {
           title: 'Newsletter',
           anchorDate: '2026-03-01',
@@ -49,13 +49,13 @@ test.describe('Bundle CRUD API', () => {
       expect(res.status()).toBe(201);
 
       const body = await res.json();
-      expect(body.bundle.description).toBe('Weekly newsletter');
-      expect(body.bundle.title).toBe('Newsletter');
-      expect(body.bundle.anchorDate).toBe('2026-03-01');
+      expect(body.card.description).toBe('Weekly newsletter');
+      expect(body.card.title).toBe('Newsletter');
+      expect(body.card.anchorDate).toBe('2026-03-01');
     });
 
     test('returns 400 when title is missing', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+      const res = await request.post('/api/cards', {
         data: { anchorDate: '2026-06-01' },
       });
       expect(res.status()).toBe(400);
@@ -66,7 +66,7 @@ test.describe('Bundle CRUD API', () => {
     });
 
     test('returns 400 when anchorDate is missing', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+      const res = await request.post('/api/cards', {
         data: { title: 'Test' },
       });
       expect(res.status()).toBe(400);
@@ -77,7 +77,7 @@ test.describe('Bundle CRUD API', () => {
     });
 
     test('returns 400 for invalid anchorDate format', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+      const res = await request.post('/api/cards', {
         data: { title: 'Bad date', anchorDate: '06-01-2026' },
       });
       expect(res.status()).toBe(400);
@@ -87,7 +87,7 @@ test.describe('Bundle CRUD API', () => {
     });
 
     test('returns 400 for empty title string', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+      const res = await request.post('/api/cards', {
         data: { title: '   ', anchorDate: '2026-06-01' },
       });
       expect(res.status()).toBe(400);
@@ -98,7 +98,7 @@ test.describe('Bundle CRUD API', () => {
     });
 
     test('returns 201 and Content-Type application/json', async ({ request }) => {
-      const res = await request.post('/api/bundles', {
+      const res = await request.post('/api/cards', {
         data: { title: 'Content-Type test', anchorDate: '2026-07-01' },
       });
       expect(res.status()).toBe(201);
@@ -107,162 +107,162 @@ test.describe('Bundle CRUD API', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // GET /api/bundles -- List all
+  // GET /api/cards -- List all
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('GET /api/bundles', () => {
-    test('lists all bundles as an array', async ({ request }) => {
-      // Ensure at least one bundle exists
-      await request.post('/api/bundles', {
+  test.describe('GET /api/cards', () => {
+    test('lists all cards as an array', async ({ request }) => {
+      // Ensure at least one card exists
+      await request.post('/api/cards', {
         data: { title: 'List test', anchorDate: '2026-07-01' },
       });
 
-      const res = await request.get('/api/bundles');
+      const res = await request.get('/api/cards');
       expect(res.status()).toBe(200);
 
       const body = await res.json();
-      expect(body.bundles).toBeInstanceOf(Array);
-      expect(body.bundles.length).toBeGreaterThan(0);
+      expect(body.cards).toBeInstanceOf(Array);
+      expect(body.cards.length).toBeGreaterThan(0);
     });
 
     test('returns Content-Type application/json', async ({ request }) => {
-      const res = await request.get('/api/bundles');
+      const res = await request.get('/api/cards');
       expect(res.status()).toBe(200);
       expect(res.headers()['content-type']).toBe('application/json');
     });
 
-    test('each bundle in the list has expected fields', async ({ request }) => {
-      await request.post('/api/bundles', {
+    test('each card in the list has expected fields', async ({ request }) => {
+      await request.post('/api/cards', {
         data: { title: 'Fields check', anchorDate: '2026-08-01' },
       });
 
-      const res = await request.get('/api/bundles');
+      const res = await request.get('/api/cards');
       const body = await res.json();
 
-      const bundle = body.bundles.find((b) => b.title === 'Fields check');
-      expect(bundle).toBeDefined();
-      expect(bundle.id).toMatch(UUID_RE);
-      expect(bundle.anchorDate).toBe('2026-08-01');
-      expect(bundle.createdAt).toBeTruthy();
-      expect(bundle.updatedAt).toBeTruthy();
+      const card = body.cards.find((b) => b.title === 'Fields check');
+      expect(card).toBeDefined();
+      expect(card.id).toMatch(UUID_RE);
+      expect(card.anchorDate).toBe('2026-08-01');
+      expect(card.createdAt).toBeTruthy();
+      expect(card.updatedAt).toBeTruthy();
     });
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // GET /api/bundles/:id -- Single bundle
+  // GET /api/cards/:id -- Single card
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('GET /api/bundles/:id', () => {
-    test('returns the bundle when it exists', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
+  test.describe('GET /api/cards/:id', () => {
+    test('returns the card when it exists', async ({ request }) => {
+      const create = await request.post('/api/cards', {
         data: { title: 'Fetch me', anchorDate: '2026-07-01', description: 'desc' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const res = await request.get(`/api/bundles/${bundle.id}`);
+      const res = await request.get(`/api/cards/${card.id}`);
       expect(res.status()).toBe(200);
 
       const body = await res.json();
-      expect(body.bundle.id).toBe(bundle.id);
-      expect(body.bundle.title).toBe('Fetch me');
-      expect(body.bundle.description).toBe('desc');
-      expect(body.bundle.anchorDate).toBe('2026-07-01');
+      expect(body.card.id).toBe(card.id);
+      expect(body.card.title).toBe('Fetch me');
+      expect(body.card.description).toBe('desc');
+      expect(body.card.anchorDate).toBe('2026-07-01');
     });
 
-    test('returns 404 for a non-existent bundle', async ({ request }) => {
-      const res = await request.get('/api/bundles/does-not-exist');
+    test('returns 404 for a non-existent card', async ({ request }) => {
+      const res = await request.get('/api/cards/does-not-exist');
       expect(res.status()).toBe(404);
 
       const body = await res.json();
-      expect(body.error).toBe('Bundle not found');
+      expect(body.error).toBe('Card not found');
     });
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // PUT /api/bundles/:id -- Update
+  // PUT /api/cards/:id -- Update
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('PUT /api/bundles/:id', () => {
-    test('updates the title of an existing bundle', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
+  test.describe('PUT /api/cards/:id', () => {
+    test('updates the title of an existing card', async ({ request }) => {
+      const create = await request.post('/api/cards', {
         data: { title: 'Old Title', anchorDate: '2026-07-01' },
       });
-      const { bundle: original } = await create.json();
+      const { card: original } = await create.json();
 
-      const res = await request.put(`/api/bundles/${original.id}`, {
+      const res = await request.put(`/api/cards/${original.id}`, {
         data: { title: 'New Title' },
       });
       expect(res.status()).toBe(200);
 
       const body = await res.json();
-      expect(body.bundle.title).toBe('New Title');
-      expect(body.bundle.id).toBe(original.id);
+      expect(body.card.title).toBe('New Title');
+      expect(body.card.id).toBe(original.id);
     });
 
     test('updates the description', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
-        data: { title: 'Desc bundle', anchorDate: '2026-07-01', description: 'original' },
+      const create = await request.post('/api/cards', {
+        data: { title: 'Desc card', anchorDate: '2026-07-01', description: 'original' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const res = await request.put(`/api/bundles/${bundle.id}`, {
+      const res = await request.put(`/api/cards/${card.id}`, {
         data: { description: 'updated description' },
       });
       expect(res.status()).toBe(200);
 
       const body = await res.json();
-      expect(body.bundle.description).toBe('updated description');
+      expect(body.card.description).toBe('updated description');
     });
 
     test('updates the anchorDate', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
-        data: { title: 'Date bundle', anchorDate: '2026-07-01' },
+      const create = await request.post('/api/cards', {
+        data: { title: 'Date card', anchorDate: '2026-07-01' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const res = await request.put(`/api/bundles/${bundle.id}`, {
+      const res = await request.put(`/api/cards/${card.id}`, {
         data: { anchorDate: '2026-08-15' },
       });
       expect(res.status()).toBe(200);
 
       const body = await res.json();
-      expect(body.bundle.anchorDate).toBe('2026-08-15');
+      expect(body.card.anchorDate).toBe('2026-08-15');
     });
 
     test('updatedAt changes after an update', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
-        data: { title: 'Timestamp bundle', anchorDate: '2026-07-01' },
+      const create = await request.post('/api/cards', {
+        data: { title: 'Timestamp card', anchorDate: '2026-07-01' },
       });
-      const { bundle: original } = await create.json();
+      const { card: original } = await create.json();
 
       // Small delay so timestamps differ
       await new Promise((r) => setTimeout(r, 50));
 
-      const res = await request.put(`/api/bundles/${original.id}`, {
+      const res = await request.put(`/api/cards/${original.id}`, {
         data: { title: 'Updated timestamp' },
       });
-      const { bundle: updated } = await res.json();
+      const { card: updated } = await res.json();
 
       expect(updated.updatedAt).not.toBe(original.updatedAt);
     });
 
-    test('returns 404 for a non-existent bundle', async ({ request }) => {
-      const res = await request.put('/api/bundles/does-not-exist', {
+    test('returns 404 for a non-existent card', async ({ request }) => {
+      const res = await request.put('/api/cards/does-not-exist', {
         data: { title: 'New' },
       });
       expect(res.status()).toBe(404);
 
       const body = await res.json();
-      expect(body.error).toBe('Bundle not found');
+      expect(body.error).toBe('Card not found');
     });
 
     test('returns 400 when body has no valid fields', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
+      const create = await request.post('/api/cards', {
         data: { title: 'No valid fields', anchorDate: '2026-07-01' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const res = await request.put(`/api/bundles/${bundle.id}`, {
+      const res = await request.put(`/api/cards/${card.id}`, {
         data: { unknownField: 'value' },
       });
       expect(res.status()).toBe(400);
@@ -270,20 +270,20 @@ test.describe('Bundle CRUD API', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // DELETE /api/bundles/:id -- Delete
+  // DELETE /api/cards/:id -- Delete
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('DELETE /api/bundles/:id', () => {
-    test('deletes an archived bundle and returns 204', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
+  test.describe('DELETE /api/cards/:id', () => {
+    test('deletes an archived card and returns 204', async ({ request }) => {
+      const create = await request.post('/api/cards', {
         data: { title: 'Delete me', anchorDate: '2026-07-01' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
       // Archive first
-      await request.put(`/api/bundles/${bundle.id}/archive`);
+      await request.put(`/api/cards/${card.id}/archive`);
 
-      const del = await request.delete(`/api/bundles/${bundle.id}`);
+      const del = await request.delete(`/api/cards/${card.id}`);
       expect(del.status()).toBe(204);
 
       // Verify the response body is empty
@@ -291,54 +291,54 @@ test.describe('Bundle CRUD API', () => {
       expect(text).toBe('');
     });
 
-    test('deleted bundle is no longer retrievable', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
+    test('deleted card is no longer retrievable', async ({ request }) => {
+      const create = await request.post('/api/cards', {
         data: { title: 'Delete and verify', anchorDate: '2026-07-01' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
       // Archive first, then delete
-      await request.put(`/api/bundles/${bundle.id}/archive`);
-      await request.delete(`/api/bundles/${bundle.id}`);
+      await request.put(`/api/cards/${card.id}/archive`);
+      await request.delete(`/api/cards/${card.id}`);
 
-      const get = await request.get(`/api/bundles/${bundle.id}`);
+      const get = await request.get(`/api/cards/${card.id}`);
       expect(get.status()).toBe(404);
     });
 
-    test('returns 400 when deleting a non-archived bundle', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
-        data: { title: 'Active bundle', anchorDate: '2026-07-01' },
+    test('returns 400 when deleting a non-archived card', async ({ request }) => {
+      const create = await request.post('/api/cards', {
+        data: { title: 'Active card', anchorDate: '2026-07-01' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const del = await request.delete(`/api/bundles/${bundle.id}`);
+      const del = await request.delete(`/api/cards/${card.id}`);
       expect(del.status()).toBe(400);
 
       const body = await del.json();
-      expect(body.error).toBe('Only archived bundles can be deleted');
+      expect(body.error).toBe('Only archived cards can be deleted');
     });
 
-    test('returns 404 for a non-existent bundle', async ({ request }) => {
-      const res = await request.delete('/api/bundles/does-not-exist');
+    test('returns 404 for a non-existent card', async ({ request }) => {
+      const res = await request.delete('/api/cards/does-not-exist');
       expect(res.status()).toBe(404);
 
       const body = await res.json();
-      expect(body.error).toBe('Bundle not found');
+      expect(body.error).toBe('Card not found');
     });
   });
 
   // ──────────────────────────────────────────────────────────────────
-  // GET /api/bundles/:id/tasks -- Bundle tasks
+  // GET /api/cards/:id/tasks -- Card tasks
   // ──────────────────────────────────────────────────────────────────
 
-  test.describe('GET /api/bundles/:id/tasks', () => {
-    test('returns an empty tasks array for a bundle with no tasks', async ({ request }) => {
-      const create = await request.post('/api/bundles', {
-        data: { title: 'No tasks bundle', anchorDate: '2026-07-01' },
+  test.describe('GET /api/cards/:id/tasks', () => {
+    test('returns an empty tasks array for a card with no tasks', async ({ request }) => {
+      const create = await request.post('/api/cards', {
+        data: { title: 'No tasks card', anchorDate: '2026-07-01' },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const res = await request.get(`/api/bundles/${bundle.id}/tasks`);
+      const res = await request.get(`/api/cards/${card.id}/tasks`);
       expect(res.status()).toBe(200);
 
       const body = await res.json();
@@ -346,7 +346,7 @@ test.describe('Bundle CRUD API', () => {
       expect(body.tasks).toHaveLength(0);
     });
 
-    test('returns tasks that belong to the bundle', async ({ request }) => {
+    test('returns tasks that belong to the card', async ({ request }) => {
       // Create a template with 2 tasks
       const tmplRes = await request.post('/api/templates', {
         data: {
@@ -359,36 +359,36 @@ test.describe('Bundle CRUD API', () => {
       });
       const { template } = await tmplRes.json();
 
-      // Create bundle with that template to generate tasks
-      const create = await request.post('/api/bundles', {
+      // Create card with that template to generate tasks
+      const create = await request.post('/api/cards', {
         data: { title: 'Has tasks', anchorDate: '2026-05-01', templateId: template.id },
       });
-      const { bundle } = await create.json();
+      const { card } = await create.json();
 
-      const res = await request.get(`/api/bundles/${bundle.id}/tasks`);
+      const res = await request.get(`/api/cards/${card.id}/tasks`);
       expect(res.status()).toBe(200);
 
       const body = await res.json();
       expect(body.tasks).toHaveLength(2);
-      expect(body.tasks.every((t) => t.bundleId === bundle.id)).toBe(true);
+      expect(body.tasks.every((t) => t.cardId === card.id)).toBe(true);
     });
 
-    test('returns 404 for a non-existent bundle', async ({ request }) => {
-      const res = await request.get('/api/bundles/does-not-exist/tasks');
+    test('returns 404 for a non-existent card', async ({ request }) => {
+      const res = await request.get('/api/cards/does-not-exist/tasks');
       expect(res.status()).toBe(404);
 
       const body = await res.json();
-      expect(body.error).toBe('Bundle not found');
+      expect(body.error).toBe('Card not found');
     });
   });
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Bundle with template
+// Card with template
 // ──────────────────────────────────────────────────────────────────
 
-test.describe('Bundle with template', () => {
-  test('creates bundle from template and generates tasks with correct dates', async ({ request }) => {
+test.describe('Card with template', () => {
+  test('creates card from template and generates tasks with correct dates', async ({ request }) => {
     // Create template with offsets -7, 0, +3
     const tmplRes = await request.post('/api/templates', {
       data: {
@@ -402,8 +402,8 @@ test.describe('Bundle with template', () => {
     });
     const { template } = await tmplRes.json();
 
-    // Create bundle with anchorDate 2026-04-15
-    const res = await request.post('/api/bundles', {
+    // Create card with anchorDate 2026-04-15
+    const res = await request.post('/api/cards', {
       data: {
         title: 'Community Meetup',
         anchorDate: '2026-04-15',
@@ -414,11 +414,11 @@ test.describe('Bundle with template', () => {
 
     const body = await res.json();
 
-    // Verify bundle
-    expect(body.bundle).toBeDefined();
-    expect(body.bundle.id).toMatch(UUID_RE);
-    expect(body.bundle.title).toBe('Community Meetup');
-    expect(body.bundle.templateId).toBe(template.id);
+    // Verify card
+    expect(body.card).toBeDefined();
+    expect(body.card.id).toMatch(UUID_RE);
+    expect(body.card.title).toBe('Community Meetup');
+    expect(body.card.templateId).toBe(template.id);
 
     // Verify tasks array is returned
     expect(body.tasks).toBeDefined();
@@ -429,7 +429,7 @@ test.describe('Bundle with template', () => {
     expect(dates).toEqual(['2026-04-08', '2026-04-15', '2026-04-18']);
   });
 
-  test('template tasks have source "template" and correct bundleId', async ({ request }) => {
+  test('template tasks have source "template" and correct cardId', async ({ request }) => {
     const tmplRes = await request.post('/api/templates', {
       data: {
         name: 'Source check template', type: 'test',
@@ -441,9 +441,9 @@ test.describe('Bundle with template', () => {
     });
     const { template } = await tmplRes.json();
 
-    const res = await request.post('/api/bundles', {
+    const res = await request.post('/api/cards', {
       data: {
-        title: 'Source check bundle',
+        title: 'Source check card',
         anchorDate: '2026-05-01',
         templateId: template.id,
       },
@@ -453,11 +453,11 @@ test.describe('Bundle with template', () => {
     expect(body.tasks).toHaveLength(2);
     for (const task of body.tasks) {
       expect(task.source).toBe('template');
-      expect(task.bundleId).toBe(body.bundle.id);
+      expect(task.cardId).toBe(body.card.id);
     }
   });
 
-  test('template tasks are retrievable via GET /api/bundles/:id/tasks', async ({ request }) => {
+  test('template tasks are retrievable via GET /api/cards/:id/tasks', async ({ request }) => {
     const tmplRes = await request.post('/api/templates', {
       data: {
         name: 'Retrieve template', type: 'test',
@@ -470,23 +470,23 @@ test.describe('Bundle with template', () => {
     });
     const { template } = await tmplRes.json();
 
-    const createRes = await request.post('/api/bundles', {
+    const createRes = await request.post('/api/cards', {
       data: {
         title: 'Conference',
         anchorDate: '2026-04-15',
         templateId: template.id,
       },
     });
-    const { bundle, tasks: createdTasks } = await createRes.json();
+    const { card, tasks: createdTasks } = await createRes.json();
 
     // Verify via the sub-route
-    const tasksRes = await request.get(`/api/bundles/${bundle.id}/tasks`);
+    const tasksRes = await request.get(`/api/cards/${card.id}/tasks`);
     expect(tasksRes.status()).toBe(200);
 
     const tasksBody = await tasksRes.json();
     expect(tasksBody.tasks).toHaveLength(3);
     expect(tasksBody.tasks.every((t) => t.source === 'template')).toBe(true);
-    expect(tasksBody.tasks.every((t) => t.bundleId === bundle.id)).toBe(true);
+    expect(tasksBody.tasks.every((t) => t.cardId === card.id)).toBe(true);
 
     // Verify dates match what was returned at creation
     const fetchedDates = tasksBody.tasks.map((t) => t.date).sort();
@@ -506,9 +506,9 @@ test.describe('Bundle with template', () => {
     });
     const { template } = await tmplRes.json();
 
-    const res = await request.post('/api/bundles', {
+    const res = await request.post('/api/cards', {
       data: {
-        title: 'RefId bundle',
+        title: 'RefId card',
         anchorDate: '2026-06-10',
         templateId: template.id,
       },
@@ -520,7 +520,7 @@ test.describe('Bundle with template', () => {
   });
 
   test('returns 404 when templateId does not exist', async ({ request }) => {
-    const res = await request.post('/api/bundles', {
+    const res = await request.post('/api/cards', {
       data: {
         title: 'Bad template',
         anchorDate: '2026-01-01',
@@ -533,10 +533,10 @@ test.describe('Bundle with template', () => {
     expect(body.error).toBe('Template not found');
   });
 
-  test('no bundle is created when templateId does not exist', async ({ request }) => {
+  test('no card is created when templateId does not exist', async ({ request }) => {
     // Attempt to create with bad template
     const rejectedTitle = 'Should not exist from bad template';
-    await request.post('/api/bundles', {
+    await request.post('/api/cards', {
       data: {
         title: rejectedTitle,
         anchorDate: '2026-01-01',
@@ -545,10 +545,10 @@ test.describe('Bundle with template', () => {
     });
 
     // Verify the rejected payload was not persisted. Other E2E specs share the
-    // same test server and may create/delete unrelated bundles in parallel.
-    const after = await request.get('/api/bundles');
+    // same test server and may create/delete unrelated cards in parallel.
+    const after = await request.get('/api/cards');
     const afterBody = await after.json();
-    expect(afterBody.bundles.some((bundle) => bundle.title === rejectedTitle)).toBe(false);
+    expect(afterBody.cards.some((card) => card.title === rejectedTitle)).toBe(false);
   });
 });
 
@@ -564,12 +564,12 @@ test.describe('Old project endpoints return 404', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Tasks filtered by bundleId
+// Tasks filtered by cardId
 // ──────────────────────────────────────────────────────────────────
 
-test.describe('Tasks filtered by bundleId', () => {
-  test('GET /api/tasks?bundleId returns tasks for that bundle', async ({ request }) => {
-    // Create a bundle with template tasks
+test.describe('Tasks filtered by cardId', () => {
+  test('GET /api/tasks?cardId returns tasks for that card', async ({ request }) => {
+    // Create a card with template tasks
     const tmplRes = await request.post('/api/templates', {
       data: {
         name: 'Filter test template', type: 'test',
@@ -581,22 +581,22 @@ test.describe('Tasks filtered by bundleId', () => {
     });
     const { template } = await tmplRes.json();
 
-    const createRes = await request.post('/api/bundles', {
+    const createRes = await request.post('/api/cards', {
       data: {
-        title: 'Filter bundle',
+        title: 'Filter card',
         anchorDate: '2026-09-01',
         templateId: template.id,
       },
     });
-    const { bundle } = await createRes.json();
+    const { card } = await createRes.json();
 
-    const res = await request.get(`/api/tasks?bundleId=${bundle.id}`);
+    const res = await request.get(`/api/tasks?cardId=${card.id}`);
     expect(res.status()).toBe(200);
 
     const body = await res.json();
     expect(body.tasks.length).toBe(2);
     for (const task of body.tasks) {
-      expect(task.bundleId).toBe(bundle.id);
+      expect(task.cardId).toBe(card.id);
     }
   });
 });
@@ -606,17 +606,17 @@ test.describe('Tasks filtered by bundleId', () => {
 // ──────────────────────────────────────────────────────────────────
 
 test.describe('Canonical workflow page', () => {
-  test('navigating to #/bundles opens the Workflows section in the canonical Tasks surface', async ({ page }) => {
-    await page.goto('/#/bundles');
+  test('navigating to #/cards opens the Workflows section in the canonical Tasks surface', async ({ page }) => {
+    await page.goto('/#/cards');
     await expect(page.locator('#library-title')).toHaveText('Tasks - Workflows');
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('[data-workspace-view="tasks"]')).toHaveAttribute('aria-current', 'page');
   });
 
-  test('primary navigation exposes one Tasks entry instead of a second Bundles shell', async ({ page }) => {
+  test('primary navigation exposes one Tasks entry instead of a second Cards shell', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('[data-workspace-view="tasks"]')).toBeVisible();
-    await expect(page.locator('nav a[href="#/bundles"]')).toHaveCount(0);
+    await expect(page.locator('nav a[href="#/cards"]')).toHaveCount(0);
     await expect(page.locator('nav a[href="#/projects"]')).toHaveCount(0);
   });
 });
@@ -642,76 +642,76 @@ test.describe('Existing routes', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────
-// Bundle data model: new fields, stage, archive, delete guard
+// Card data model: new fields, stage, archive, delete guard
 // (Tests for issue #18)
 // ──────────────────────────────────────────────────────────────────
 
-test.describe('Bundle data model updates (issue #18)', () => {
+test.describe('Card data model updates (issue #18)', () => {
 
-  // Scenario: Create a bundle with all new fields
-  test('creates a bundle with all new fields (emoji, tags, references, bundleLinks)', async ({ request }) => {
-    const res = await request.post('/api/bundles', {
+  // Scenario: Create a card with all new fields
+  test('creates a card with all new fields (emoji, tags, references, cardLinks)', async ({ request }) => {
+    const res = await request.post('/api/cards', {
       data: {
         title: 'Newsletter Mar 2026',
         anchorDate: '2026-03-15',
         emoji: '📰',
         tags: ['newsletter'],
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-        bundleLinks: [{ name: 'Luma', url: '' }],
+        cardLinks: [{ name: 'Luma', url: '' }],
       },
     });
     expect(res.status()).toBe(201);
 
     const body = await res.json();
-    expect(body.bundle.emoji).toBe('📰');
-    expect(body.bundle.tags).toEqual(['newsletter']);
-    expect(body.bundle.references).toEqual([{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-    expect(body.bundle.bundleLinks).toEqual([{ name: 'Luma', url: '' }]);
-    expect(body.bundle.stage).toBe('preparation');
-    expect(body.bundle.status).toBe('active');
+    expect(body.card.emoji).toBe('📰');
+    expect(body.card.tags).toEqual(['newsletter']);
+    expect(body.card.references).toEqual([{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
+    expect(body.card.cardLinks).toEqual([{ name: 'Luma', url: '' }]);
+    expect(body.card.stage).toBe('preparation');
+    expect(body.card.status).toBe('active');
   });
 
-  // Scenario: Create a bundle with only required fields (backward compatibility)
-  test('creates a bundle with only required fields -- defaults stage and status', async ({ request }) => {
-    const res = await request.post('/api/bundles', {
-      data: { title: 'Simple Bundle', anchorDate: '2026-04-01' },
+  // Scenario: Create a card with only required fields (backward compatibility)
+  test('creates a card with only required fields -- defaults stage and status', async ({ request }) => {
+    const res = await request.post('/api/cards', {
+      data: { title: 'Simple Card', anchorDate: '2026-04-01' },
     });
     expect(res.status()).toBe(201);
 
     const body = await res.json();
-    expect(body.bundle.stage).toBe('preparation');
-    expect(body.bundle.status).toBe('active');
-    expect(body.bundle.emoji).toBeUndefined();
-    expect(body.bundle.tags).toBeUndefined();
-    expect(body.bundle.references).toBeUndefined();
-    expect(body.bundle.bundleLinks).toBeUndefined();
+    expect(body.card.stage).toBe('preparation');
+    expect(body.card.status).toBe('active');
+    expect(body.card.emoji).toBeUndefined();
+    expect(body.card.tags).toBeUndefined();
+    expect(body.card.references).toBeUndefined();
+    expect(body.card.cardLinks).toBeUndefined();
   });
 
-  // Scenario: Update a bundle stage
-  test('updates a bundle stage from preparation to announced', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+  // Scenario: Update a card stage
+  test('updates a card stage from preparation to announced', async ({ request }) => {
+    const create = await request.post('/api/cards', {
       data: { title: 'Stage test', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
-    expect(bundle.stage).toBe('preparation');
+    const { card } = await create.json();
+    expect(card.stage).toBe('preparation');
 
-    const res = await request.put(`/api/bundles/${bundle.id}`, {
+    const res = await request.put(`/api/cards/${card.id}`, {
       data: { stage: 'announced' },
     });
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.bundle.stage).toBe('announced');
+    expect(body.card.stage).toBe('announced');
   });
 
   // Scenario: Reject invalid stage value
   test('rejects invalid stage value with 400', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+    const create = await request.post('/api/cards', {
       data: { title: 'Invalid stage', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.put(`/api/bundles/${bundle.id}`, {
+    const res = await request.put(`/api/cards/${card.id}`, {
       data: { stage: 'invalid-stage' },
     });
     expect(res.status()).toBe(400);
@@ -722,12 +722,12 @@ test.describe('Bundle data model updates (issue #18)', () => {
 
   // Scenario: Reject invalid status value
   test('rejects invalid status value with 400', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+    const create = await request.post('/api/cards', {
       data: { title: 'Invalid status', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.put(`/api/bundles/${bundle.id}`, {
+    const res = await request.put(`/api/cards/${card.id}`, {
       data: { status: 'invalid-status' },
     });
     expect(res.status()).toBe(400);
@@ -736,157 +736,157 @@ test.describe('Bundle data model updates (issue #18)', () => {
     expect(body.error).toContain('Invalid status');
   });
 
-  // Scenario: Update bundle with references and bundleLinks
-  test('updates bundle with references and bundleLinks', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+  // Scenario: Update card with references and cardLinks
+  test('updates card with references and cardLinks', async ({ request }) => {
+    const create = await request.post('/api/cards', {
       data: { title: 'Links update', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.put(`/api/bundles/${bundle.id}`, {
+    const res = await request.put(`/api/cards/${card.id}`, {
       data: {
         references: [{ name: 'Process doc', url: 'https://docs.google.com/proc' }],
-        bundleLinks: [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }],
+        cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }],
       },
     });
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.bundle.references).toEqual([{ name: 'Process doc', url: 'https://docs.google.com/proc' }]);
-    expect(body.bundle.bundleLinks).toEqual([{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }]);
+    expect(body.card.references).toEqual([{ name: 'Process doc', url: 'https://docs.google.com/proc' }]);
+    expect(body.card.cardLinks).toEqual([{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }]);
   });
 
-  // Scenario: Archive a bundle via the archive endpoint
-  test('archives a bundle via PUT /api/bundles/:id/archive', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+  // Scenario: Archive a card via the archive endpoint
+  test('archives a card via PUT /api/cards/:id/archive', async ({ request }) => {
+    const create = await request.post('/api/cards', {
       data: { title: 'Archive me', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
-    expect(bundle.status).toBe('active');
+    const { card } = await create.json();
+    expect(card.status).toBe('active');
 
-    const res = await request.put(`/api/bundles/${bundle.id}/archive`);
+    const res = await request.put(`/api/cards/${card.id}/archive`);
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.bundle.status).toBe('archived');
-    expect(body.bundle.id).toBe(bundle.id);
+    expect(body.card.status).toBe('archived');
+    expect(body.card.id).toBe(card.id);
   });
 
-  // Scenario: Archive returns 404 for non-existent bundle
-  test('archive returns 404 for non-existent bundle', async ({ request }) => {
-    const res = await request.put('/api/bundles/does-not-exist/archive');
+  // Scenario: Archive returns 404 for non-existent card
+  test('archive returns 404 for non-existent card', async ({ request }) => {
+    const res = await request.put('/api/cards/does-not-exist/archive');
     expect(res.status()).toBe(404);
   });
 
-  // Scenario: Delete a non-archived bundle is rejected
-  test('delete of non-archived bundle returns 400', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+  // Scenario: Delete a non-archived card is rejected
+  test('delete of non-archived card returns 400', async ({ request }) => {
+    const create = await request.post('/api/cards', {
       data: { title: 'Cannot delete active', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.delete(`/api/bundles/${bundle.id}`);
+    const res = await request.delete(`/api/cards/${card.id}`);
     expect(res.status()).toBe(400);
 
     const body = await res.json();
-    expect(body.error).toBe('Only archived bundles can be deleted');
+    expect(body.error).toBe('Only archived cards can be deleted');
   });
 
-  // Scenario: Delete an archived bundle succeeds
-  test('delete of archived bundle returns 204', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+  // Scenario: Delete an archived card succeeds
+  test('delete of archived card returns 204', async ({ request }) => {
+    const create = await request.post('/api/cards', {
       data: { title: 'Archive then delete', anchorDate: '2026-05-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
     // Archive first
-    await request.put(`/api/bundles/${bundle.id}/archive`);
+    await request.put(`/api/cards/${card.id}/archive`);
 
-    const del = await request.delete(`/api/bundles/${bundle.id}`);
+    const del = await request.delete(`/api/cards/${card.id}`);
     expect(del.status()).toBe(204);
 
     // Verify gone
-    const get = await request.get(`/api/bundles/${bundle.id}`);
+    const get = await request.get(`/api/cards/${card.id}`);
     expect(get.status()).toBe(404);
   });
 
-  // Scenario: Retrieve a bundle with new fields via GET
+  // Scenario: Retrieve a card with new fields via GET
   test('GET returns all new fields that were set on creation', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+    const create = await request.post('/api/cards', {
       data: {
         title: 'Full GET test',
         anchorDate: '2026-06-01',
         emoji: '🎙️',
         tags: ['podcast', 'weekly'],
         references: [{ name: 'Docs', url: 'https://example.com/docs' }],
-        bundleLinks: [{ name: 'YouTube', url: 'https://youtube.com/x' }],
+        cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/x' }],
       },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.get(`/api/bundles/${bundle.id}`);
+    const res = await request.get(`/api/cards/${card.id}`);
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.bundle.emoji).toBe('🎙️');
-    expect(body.bundle.tags).toEqual(['podcast', 'weekly']);
-    expect(body.bundle.references).toEqual([{ name: 'Docs', url: 'https://example.com/docs' }]);
-    expect(body.bundle.bundleLinks).toEqual([{ name: 'YouTube', url: 'https://youtube.com/x' }]);
-    expect(body.bundle.stage).toBe('preparation');
-    expect(body.bundle.status).toBe('active');
+    expect(body.card.emoji).toBe('🎙️');
+    expect(body.card.tags).toEqual(['podcast', 'weekly']);
+    expect(body.card.references).toEqual([{ name: 'Docs', url: 'https://example.com/docs' }]);
+    expect(body.card.cardLinks).toEqual([{ name: 'YouTube', url: 'https://youtube.com/x' }]);
+    expect(body.card.stage).toBe('preparation');
+    expect(body.card.status).toBe('active');
   });
 
-  // Scenario: Existing bundle without new fields still works
-  test('bundle without new fields still returns correctly', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
-      data: { title: 'Minimal bundle', anchorDate: '2026-01-01' },
+  // Scenario: Existing card without new fields still works
+  test('card without new fields still returns correctly', async ({ request }) => {
+    const create = await request.post('/api/cards', {
+      data: { title: 'Minimal card', anchorDate: '2026-01-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.get(`/api/bundles/${bundle.id}`);
+    const res = await request.get(`/api/cards/${card.id}`);
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.bundle.title).toBe('Minimal bundle');
+    expect(body.card.title).toBe('Minimal card');
     // New optional fields are not present
-    expect(body.bundle.emoji).toBeUndefined();
-    expect(body.bundle.tags).toBeUndefined();
-    expect(body.bundle.references).toBeUndefined();
-    expect(body.bundle.bundleLinks).toBeUndefined();
+    expect(body.card.emoji).toBeUndefined();
+    expect(body.card.tags).toBeUndefined();
+    expect(body.card.references).toBeUndefined();
+    expect(body.card.cardLinks).toBeUndefined();
   });
 
   // Test all valid stages
   test('can cycle through all valid stages', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+    const create = await request.post('/api/cards', {
       data: { title: 'Stage cycle', anchorDate: '2026-06-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
     const stages = ['announced', 'after-event', 'done'];
     for (const stage of stages) {
-      const res = await request.put(`/api/bundles/${bundle.id}`, {
+      const res = await request.put(`/api/cards/${card.id}`, {
         data: { stage },
       });
       expect(res.status()).toBe(200);
       const body = await res.json();
-      expect(body.bundle.stage).toBe(stage);
+      expect(body.card.stage).toBe(stage);
     }
   });
 
   // Test updating emoji and tags
   test('updates emoji and tags via PUT', async ({ request }) => {
-    const create = await request.post('/api/bundles', {
+    const create = await request.post('/api/cards', {
       data: { title: 'Emoji tags update', anchorDate: '2026-06-01' },
     });
-    const { bundle } = await create.json();
+    const { card } = await create.json();
 
-    const res = await request.put(`/api/bundles/${bundle.id}`, {
+    const res = await request.put(`/api/cards/${card.id}`, {
       data: { emoji: '📰', tags: ['newsletter', 'weekly'] },
     });
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.bundle.emoji).toBe('📰');
-    expect(body.bundle.tags).toEqual(['newsletter', 'weekly']);
+    expect(body.card.emoji).toBe('📰');
+    expect(body.card.tags).toEqual(['newsletter', 'weekly']);
   });
 });

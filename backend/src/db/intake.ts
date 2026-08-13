@@ -22,7 +22,7 @@ export interface IntakeFilters {
   priority?: string;
   tag?: string;
   taskId?: string;
-  bundleId?: string;
+  cardId?: string;
   assistantReadinessStatus?: string;
   duplicateState?: string;
   from?: string;
@@ -90,7 +90,7 @@ function matchesFilters(item: IntakeItem, filters: IntakeFilters): boolean {
     if (value === undefined || value === null || value === '') continue;
     if (key === 'tag' && !(item.tags || []).includes(String(value))) return false;
     else if (key === 'taskId' && !(item.taskIds || []).includes(String(value))) return false;
-    else if (key === 'bundleId' && !(item.bundleIds || []).includes(String(value))) return false;
+    else if (key === 'cardId' && !(item.cardIds || []).includes(String(value))) return false;
     else if (key === 'assistantReadinessStatus' && item.assistantReadiness?.status !== value) return false;
     else if (key === 'duplicateState' && value === 'duplicates' && !item.duplicateOfIntakeItemId) return false;
     else if (key === 'duplicateState' && value === 'not-duplicates' && item.duplicateOfIntakeItemId) return false;
@@ -102,7 +102,7 @@ function matchesFilters(item: IntakeItem, filters: IntakeFilters): boolean {
     else if (key === 'followUpFrom' && String(item.followUpAt || '') < String(value)) return false;
     else if (key === 'followUpTo' && String(item.followUpAt || '').slice(0, 10) > String(value).slice(0, 10)) return false;
     else if (key === 'standaloneOnly' && String(value) === 'true' && (item.taskIds || []).length > 0) return false;
-    else if (!['tag', 'taskId', 'bundleId', 'assistantReadinessStatus', 'duplicateState', 'from', 'to', 'dueFollowUpAt', 'followUpFrom', 'followUpTo', 'standaloneOnly'].includes(key)) {
+    else if (!['tag', 'taskId', 'cardId', 'assistantReadinessStatus', 'duplicateState', 'from', 'to', 'dueFollowUpAt', 'followUpFrom', 'followUpTo', 'standaloneOnly'].includes(key)) {
       if ((item as unknown as Record<string, unknown>)[key] !== value) return false;
     }
   }
@@ -129,7 +129,7 @@ async function createIntakeItem(
     fileRefs: [],
     artifactRefs: [],
     taskIds: [],
-    bundleIds: [],
+    cardIds: [],
     assistantJobIds: [],
     relatedIntakeItemIds: [],
     tags: [],
@@ -170,7 +170,7 @@ async function createIntakeItemIfAbsent(
     fileRefs: [],
     artifactRefs: [],
     taskIds: [],
-    bundleIds: [],
+    cardIds: [],
     assistantJobIds: [],
     relatedIntakeItemIds: [],
     tags: [],
@@ -339,9 +339,9 @@ async function listIntakeItems(
       expressionAttrValues[':taskId'] = value;
       continue;
     }
-    if (key === 'bundleId') {
-      filterExpressions.push('contains(bundleIds, :bundleId)');
-      expressionAttrValues[':bundleId'] = value;
+    if (key === 'cardId') {
+      filterExpressions.push('contains(cardIds, :cardId)');
+      expressionAttrValues[':cardId'] = value;
       continue;
     }
     if (key === 'assistantReadinessStatus') {

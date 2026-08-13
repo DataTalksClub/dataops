@@ -55,7 +55,7 @@
       "id": "home",
       "surface": "Home",
       "route": "/#/",
-      "apiBoundaries": ["/api/tasks", "/api/bundles", "/api/notifications", "/docs/process-quality"],
+      "apiBoundaries": ["/api/tasks", "/api/cards", "/api/notifications", "/docs/process-quality"],
       "roleIds": ["operator", "admin"],
       "states": [
         { "id": "home.loading", "kind": "loading", "description": "Home exposes an accessible loading state while feeds resolve.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Home preserves real ready data and honest partial failure recovery" }] } },
@@ -92,7 +92,7 @@
     {
       "id": "tasks",
       "surface": "Tasks and proof",
-      "route": "/#/tasks?taskId=<id>&date=<date>&bundleId=<id>&contextBundleId=<id>",
+      "route": "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
       "apiBoundaries": ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
       "roleIds": ["operator", "admin"],
       "states": [
@@ -112,8 +112,8 @@
     {
       "id": "workflows",
       "surface": "Workflows",
-      "route": "/#/bundles?bundleId=<id>&taskId=<id>",
-      "apiBoundaries": ["/api/bundles", "/api/tasks", "/api/artifacts"],
+      "route": "/#/cards?cardId=<id>&taskId=<id>",
+      "apiBoundaries": ["/api/cards", "/api/tasks", "/api/artifacts"],
       "roleIds": ["operator", "admin"],
       "states": [
         { "id": "workflows.empty", "kind": "empty", "description": "The workflow list renders an honest empty state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
@@ -130,7 +130,7 @@
       "id": "templates",
       "surface": "Runtime templates",
       "route": "/#/templates?templateId=<id>",
-      "apiBoundaries": ["/api/templates", "/api/bundles"],
+      "apiBoundaries": ["/api/templates", "/api/cards"],
       "roleIds": ["operator", "admin"],
       "states": [
         { "id": "templates.operator-read", "kind": "ready", "roleIds": ["operator"], "description": "An operator can read a template and instantiate a workflow.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/runtime-template-admin.spec.js", "title": "keeps operator controls absent and denies a spoofed direct mutation in production auth mode" }] } },

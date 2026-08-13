@@ -4,7 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { getClient } from '../db/client';
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
-import { getBundle, updateBundle } from '../db/bundles';
+import { getCard, updateCard } from '../db/cards';
 import { getFile } from '../db/files';
 import { getTask, updateTask } from '../db/tasks';
 import { isLocalFilesystemStorageAllowed } from '../storage';
@@ -144,7 +144,7 @@ function validateArtifactFields(fields: Record<string, unknown>, requireCoreFiel
   if (fields.sourceType !== undefined && (!isNonEmptyString(fields.sourceType) || !SOURCE_TYPES.has(fields.sourceType))) {
     return `sourceType must be one of: ${Array.from(SOURCE_TYPES).join(', ')}`;
   }
-  for (const field of ['taskId', 'bundleId', 'assistantJobId', 'fileId', 'createdBy', 'reviewedBy', 'reviewedAt']) {
+  for (const field of ['taskId', 'cardId', 'assistantJobId', 'fileId', 'createdBy', 'reviewedBy', 'reviewedAt']) {
     if (fields[field] !== undefined && typeof fields[field] !== 'string') return `${field} must be a string`;
   }
   const tagsError = validateStringArray(fields.tags, 'tags');
@@ -172,7 +172,7 @@ function mergeArtifactRef(refs: ArtifactRef[] | undefined, ref: ArtifactRef): Ar
 
 async function validateRelationships(client: DynamoDBDocumentClient, fields: Record<string, unknown>): Promise<string | null> {
   if (fields.taskId && !(await getTask(client, String(fields.taskId)))) return 'Task not found';
-  if (fields.bundleId && !(await getBundle(client, String(fields.bundleId)))) return 'Bundle not found';
+  if (fields.cardId && !(await getCard(client, String(fields.cardId)))) return 'Card not found';
   if (fields.fileId && !(await getFile(client, String(fields.fileId)))) return 'File not found';
   return null;
 }
@@ -196,7 +196,7 @@ async function handleCreate(event: LambdaEvent, client: DynamoDBDocumentClient):
   };
 
   for (const field of [
-    'description', 'filename', 'contentType', 'checksum', 'sizeBytes', 'taskId', 'bundleId',
+    'description', 'filename', 'contentType', 'checksum', 'sizeBytes', 'taskId', 'cardId',
     'assistantJobId', 'fileId', 'createdBy', 'reviewedBy', 'reviewedAt', 'tags', 'metadata',
   ]) {
     if (body[field] !== undefined) artifactData[field] = body[field];
@@ -223,7 +223,7 @@ async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): P
   const params = event.queryStringParameters || {};
   const artifacts = await listArtifacts(client, {
     taskId: params.taskId,
-    bundleId: params.bundleId,
+    cardId: params.cardId,
     assistantJobId: params.assistantJobId,
     fileId: params.fileId,
     status: params.status,
@@ -240,7 +240,7 @@ async function handleUpdate(id: string, event: LambdaEvent, client: DynamoDBDocu
 
   const allowedFields = [
     'type', 'title', 'description', 'status', 'storageProvider', 'storageUri', 'filename', 'contentType',
-    'checksum', 'sizeBytes', 'visibility', 'dataClass', 'taskId', 'bundleId', 'assistantJobId', 'fileId',
+    'checksum', 'sizeBytes', 'visibility', 'dataClass', 'taskId', 'cardId', 'assistantJobId', 'fileId',
     'sourceType', 'reviewedBy', 'reviewedAt', 'tags', 'metadata',
   ];
   const updates: Record<string, unknown> = {};
@@ -270,8 +270,8 @@ async function handleAttach(id: string, event: LambdaEvent, client: DynamoDBDocu
   const body = parseBody(event);
   if (!body) return jsonResponse(400, { error: 'Request body is required' });
   const taskId = isNonEmptyString(body.taskId) ? body.taskId : undefined;
-  const bundleId = isNonEmptyString(body.bundleId) ? body.bundleId : undefined;
-  if (!taskId && !bundleId) return jsonResponse(400, { error: 'taskId or bundleId is required' });
+  const cardId = isNonEmptyString(body.cardId) ? body.cardId : undefined;
+  if (!taskId && !cardId) return jsonResponse(400, { error: 'taskId or cardId is required' });
 
   const updates: Record<string, unknown> = {};
   const ref = artifactRef(existing);
@@ -281,11 +281,11 @@ async function handleAttach(id: string, event: LambdaEvent, client: DynamoDBDocu
     updates.taskId = taskId;
     await updateTask(client, taskId, { artifactRefs: mergeArtifactRef(task.artifactRefs, ref) });
   }
-  if (bundleId) {
-    const bundle = await getBundle(client, bundleId);
-    if (!bundle) return jsonResponse(404, { error: 'Bundle not found' });
-    updates.bundleId = bundleId;
-    await updateBundle(client, bundleId, { artifactRefs: mergeArtifactRef(bundle.artifactRefs, ref) });
+  if (cardId) {
+    const card = await getCard(client, cardId);
+    if (!card) return jsonResponse(404, { error: 'Card not found' });
+    updates.cardId = cardId;
+    await updateCard(client, cardId, { artifactRefs: mergeArtifactRef(card.artifactRefs, ref) });
   }
 
   const artifact = await updateArtifact(client, id, updates);

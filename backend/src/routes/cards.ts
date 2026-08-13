@@ -1,14 +1,14 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
 import {
-  createBundle,
-  getBundle,
-  updateBundle,
-  deleteBundle,
-  listBundles,
-} from '../db/bundles';
+  createCard,
+  getCard,
+  updateCard,
+  deleteCard,
+  listCards,
+} from '../db/cards';
 import { getTemplate, instantiateTemplate } from '../db/templates';
-import { listTasksByBundle } from '../db/tasks';
+import { listTasksByCard } from '../db/tasks';
 import type { LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -23,7 +23,7 @@ function isRecordArrayWithStringId(value: unknown, idField: string): boolean {
   ));
 }
 
-function validateBundleRefs(body: Record<string, unknown>): string | null {
+function validateCardRefs(body: Record<string, unknown>): string | null {
   if (body.sourceDocIds !== undefined && (
     !Array.isArray(body.sourceDocIds)
     || !body.sourceDocIds.every((item) => typeof item === 'string')
@@ -43,54 +43,54 @@ function validateBundleRefs(body: Record<string, unknown>): string | null {
 }
 
 /**
- * Handle all /api/bundles routes.
+ * Handle all /api/cards routes.
  */
-async function handleBundleRoutes(path: string, method: string, rawBody: string | null): Promise<LambdaResponse | null> {
-  // Match /api/bundles paths
-  if (!path.startsWith('/api/bundles')) {
+async function handleCardRoutes(path: string, method: string, rawBody: string | null): Promise<LambdaResponse | null> {
+  // Match /api/cards paths
+  if (!path.startsWith('/api/cards')) {
     return null;
   }
 
   const client = await getClient();
 
   try {
-    // Parse the path segments after /api/bundles
-    const suffix = path.slice('/api/bundles'.length);
+    // Parse the path segments after /api/cards
+    const suffix = path.slice('/api/cards'.length);
 
-    // Route: /api/bundles (collection)
+    // Route: /api/cards (collection)
     if (suffix === '' || suffix === '/') {
       return await handleCollection(method, rawBody, client);
     }
 
-    // Route: /api/bundles/:id/archive
+    // Route: /api/cards/:id/archive
     const archiveMatch = suffix.match(/^\/([^/]+)\/archive\/?$/);
     if (archiveMatch) {
       const id = archiveMatch[1];
       return await handleArchive(method, id, client);
     }
 
-    // Route: /api/bundles/:id/tasks
+    // Route: /api/cards/:id/tasks
     const tasksMatch = suffix.match(/^\/([^/]+)\/tasks\/?$/);
     if (tasksMatch) {
       const id = tasksMatch[1];
-      return await handleBundleTasks(method, id, client);
+      return await handleCardTasks(method, id, client);
     }
 
-    // Route: /api/bundles/:id
+    // Route: /api/cards/:id
     const idMatch = suffix.match(/^\/([^/]+)\/?$/);
     if (idMatch) {
       const id = idMatch[1];
       return await handleSingle(method, id, rawBody, client);
     }
 
-    // No match within /api/bundles
+    // No match within /api/cards
     return {
       statusCode: 404,
       headers: JSON_HEADERS,
       body: JSON.stringify({ error: 'Not found' }),
     };
   } catch (err: unknown) {
-    console.error('Bundle route error:', err);
+    console.error('Card route error:', err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,
@@ -100,15 +100,15 @@ async function handleBundleRoutes(path: string, method: string, rawBody: string 
 }
 
 /**
- * Handle /api/bundles collection routes (GET list, POST create).
+ * Handle /api/cards collection routes (GET list, POST create).
  */
 async function handleCollection(method: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   if (method === 'GET') {
-    const bundles = await listBundles(client);
+    const cards = await listCards(client);
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ bundles }),
+      body: JSON.stringify({ cards }),
     };
   }
 
@@ -151,7 +151,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       };
     }
 
-    // If templateId is provided, verify template exists before creating bundle
+    // If templateId is provided, verify template exists before creating card
     let template = null;
     if (body.templateId) {
       template = await getTemplate(client, body.templateId as string);
@@ -183,7 +183,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
         body: JSON.stringify({ error: `Invalid status value. Must be one of: ${VALID_STATUSES.join(', ')}` }),
       };
     }
-    const refsError = validateBundleRefs(body);
+    const refsError = validateCardRefs(body);
     if (refsError) {
       return {
         statusCode: 400,
@@ -192,39 +192,39 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       };
     }
 
-    // Build bundle data
-    const bundleData: Record<string, unknown> = {
+    // Build card data
+    const cardData: Record<string, unknown> = {
       title: body.title,
       anchorDate: body.anchorDate,
       stage: body.stage || 'preparation',
       status: body.status || 'active',
     };
     if (body.description !== undefined) {
-      bundleData.description = body.description;
+      cardData.description = body.description;
     }
     if (body.templateId !== undefined) {
-      bundleData.templateId = body.templateId;
+      cardData.templateId = body.templateId;
     }
 
-    // When templateId is provided, copy template fields to bundle (caller values take precedence)
+    // When templateId is provided, copy template fields to card (caller values take precedence)
     if (template) {
       if (body.sourceDocIds !== undefined) {
-        bundleData.sourceDocIds = body.sourceDocIds;
+        cardData.sourceDocIds = body.sourceDocIds;
       } else if (template.sourceDocIds && template.sourceDocIds.length > 0) {
-        bundleData.sourceDocIds = template.sourceDocIds;
+        cardData.sourceDocIds = template.sourceDocIds;
       }
       // Copy references from template if caller didn't provide them
       if (body.references !== undefined) {
-        bundleData.references = body.references;
+        cardData.references = body.references;
       } else if (template.references && template.references.length > 0) {
-        bundleData.references = template.references;
+        cardData.references = template.references;
       }
 
-      // Create bundleLinks from template bundleLinkDefinitions if caller didn't provide them
-      if (body.bundleLinks !== undefined) {
-        bundleData.bundleLinks = body.bundleLinks;
-      } else if (template.bundleLinkDefinitions && template.bundleLinkDefinitions.length > 0) {
-        bundleData.bundleLinks = template.bundleLinkDefinitions.map((def: { name: string }) => ({
+      // Create cardLinks from template cardLinkDefinitions if caller didn't provide them
+      if (body.cardLinks !== undefined) {
+        cardData.cardLinks = body.cardLinks;
+      } else if (template.cardLinkDefinitions && template.cardLinkDefinitions.length > 0) {
+        cardData.cardLinks = template.cardLinkDefinitions.map((def: { name: string }) => ({
           name: def.name,
           url: '',
         }));
@@ -232,62 +232,62 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 
       // Copy emoji from template if caller didn't provide it
       if (body.emoji !== undefined) {
-        bundleData.emoji = body.emoji;
+        cardData.emoji = body.emoji;
       } else if (template.emoji) {
-        bundleData.emoji = template.emoji;
+        cardData.emoji = template.emoji;
       }
 
       // Copy tags from template if caller didn't provide them
       if (body.tags !== undefined) {
-        bundleData.tags = body.tags;
+        cardData.tags = body.tags;
       } else if (template.tags && template.tags.length > 0) {
-        bundleData.tags = template.tags;
+        cardData.tags = template.tags;
       }
     } else {
       // No template - use caller-provided values directly
       if (body.references !== undefined) {
-        bundleData.references = body.references;
+        cardData.references = body.references;
       }
-      if (body.bundleLinks !== undefined) {
-        bundleData.bundleLinks = body.bundleLinks;
+      if (body.cardLinks !== undefined) {
+        cardData.cardLinks = body.cardLinks;
       }
       if (body.emoji !== undefined) {
-        bundleData.emoji = body.emoji;
+        cardData.emoji = body.emoji;
       }
       if (body.tags !== undefined) {
-        bundleData.tags = body.tags;
+        cardData.tags = body.tags;
       }
       if (body.sourceDocIds !== undefined) {
-        bundleData.sourceDocIds = body.sourceDocIds;
+        cardData.sourceDocIds = body.sourceDocIds;
       }
     }
     for (const field of ['artifactRefs', 'assistantJobRefs', 'auditEventRefs']) {
       if (body[field] !== undefined) {
-        bundleData[field] = body[field];
+        cardData[field] = body[field];
       }
     }
 
-    const bundle = await createBundle(client, bundleData);
+    const card = await createCard(client, cardData);
 
     // If templateId provided, instantiate the template
     if (body.templateId) {
       const tasks = await instantiateTemplate(
         client,
         body.templateId as string,
-        bundle.id,
+        card.id,
         body.anchorDate as string
       );
       return {
         statusCode: 201,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ bundle, tasks }),
+        body: JSON.stringify({ card, tasks }),
       };
     }
 
     return {
       statusCode: 201,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ bundle }),
+      body: JSON.stringify({ card }),
     };
   }
 
@@ -300,22 +300,22 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 }
 
 /**
- * Handle /api/bundles/:id single resource routes (GET, PUT, DELETE).
+ * Handle /api/cards/:id single resource routes (GET, PUT, DELETE).
  */
 async function handleSingle(method: string, id: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   if (method === 'GET') {
-    const bundle = await getBundle(client, id);
-    if (!bundle) {
+    const card = await getCard(client, id);
+    if (!card) {
       return {
         statusCode: 404,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Bundle not found' }),
+        body: JSON.stringify({ error: 'Card not found' }),
       };
     }
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ bundle }),
+      body: JSON.stringify({ card }),
     };
   }
 
@@ -340,13 +340,13 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
       };
     }
 
-    // Check bundle exists
-    const existing = await getBundle(client, id);
+    // Check card exists
+    const existing = await getCard(client, id);
     if (!existing) {
       return {
         statusCode: 404,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Bundle not found' }),
+        body: JSON.stringify({ error: 'Card not found' }),
       };
     }
 
@@ -369,7 +369,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         body: JSON.stringify({ error: `Invalid status value. Must be one of: ${VALID_STATUSES.join(', ')}` }),
       };
     }
-    const refsError = validateBundleRefs(body);
+    const refsError = validateCardRefs(body);
     if (refsError) {
       return {
         statusCode: 400,
@@ -380,7 +380,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
 
     // Only allow updating known fields
     const allowedFields = [
-      'title', 'description', 'anchorDate', 'references', 'bundleLinks', 'emoji', 'tags', 'stage', 'status',
+      'title', 'description', 'anchorDate', 'references', 'cardLinks', 'emoji', 'tags', 'stage', 'status',
       'sourceDocIds', 'artifactRefs', 'assistantJobRefs', 'auditEventRefs',
     ];
     const updates: Record<string, unknown> = {};
@@ -398,34 +398,34 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
       };
     }
 
-    const bundle = await updateBundle(client, id, updates);
+    const card = await updateCard(client, id, updates);
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ bundle }),
+      body: JSON.stringify({ card }),
     };
   }
 
   if (method === 'DELETE') {
-    const existing = await getBundle(client, id);
+    const existing = await getCard(client, id);
     if (!existing) {
       return {
         statusCode: 404,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Bundle not found' }),
+        body: JSON.stringify({ error: 'Card not found' }),
       };
     }
 
-    // Only archived bundles can be permanently deleted
+    // Only archived cards can be permanently deleted
     if (existing.status !== 'archived') {
       return {
         statusCode: 400,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Only archived bundles can be deleted' }),
+        body: JSON.stringify({ error: 'Only archived cards can be deleted' }),
       };
     }
 
-    await deleteBundle(client, id);
+    await deleteCard(client, id);
     return {
       statusCode: 204,
       headers: JSON_HEADERS,
@@ -442,7 +442,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
 }
 
 /**
- * Handle /api/bundles/:id/archive sub-route (PUT only).
+ * Handle /api/cards/:id/archive sub-route (PUT only).
  */
 async function handleArchive(method: string, id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   if (method !== 'PUT') {
@@ -453,27 +453,27 @@ async function handleArchive(method: string, id: string, client: DynamoDBDocumen
     };
   }
 
-  const existing = await getBundle(client, id);
+  const existing = await getCard(client, id);
   if (!existing) {
     return {
       statusCode: 404,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ error: 'Bundle not found' }),
+      body: JSON.stringify({ error: 'Card not found' }),
     };
   }
 
-  const bundle = await updateBundle(client, id, { status: 'archived' });
+  const card = await updateCard(client, id, { status: 'archived' });
   return {
     statusCode: 200,
     headers: JSON_HEADERS,
-    body: JSON.stringify({ bundle }),
+    body: JSON.stringify({ card }),
   };
 }
 
 /**
- * Handle /api/bundles/:id/tasks sub-route (GET only).
+ * Handle /api/cards/:id/tasks sub-route (GET only).
  */
-async function handleBundleTasks(method: string, id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleCardTasks(method: string, id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   if (method !== 'GET') {
     return {
       statusCode: 405,
@@ -482,17 +482,17 @@ async function handleBundleTasks(method: string, id: string, client: DynamoDBDoc
     };
   }
 
-  // Check bundle exists
-  const bundle = await getBundle(client, id);
-  if (!bundle) {
+  // Check card exists
+  const card = await getCard(client, id);
+  if (!card) {
     return {
       statusCode: 404,
       headers: JSON_HEADERS,
-      body: JSON.stringify({ error: 'Bundle not found' }),
+      body: JSON.stringify({ error: 'Card not found' }),
     };
   }
 
-  const tasks = await listTasksByBundle(client, id);
+  const tasks = await listTasksByCard(client, id);
   return {
     statusCode: 200,
     headers: JSON_HEADERS,
@@ -500,4 +500,4 @@ async function handleBundleTasks(method: string, id: string, client: DynamoDBDoc
   };
 }
 
-export { handleBundleRoutes };
+export { handleCardRoutes };

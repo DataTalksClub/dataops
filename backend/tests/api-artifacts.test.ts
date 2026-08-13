@@ -32,14 +32,14 @@ describe('API - Artifacts', () => {
     return JSON.parse(res.body);
   }
 
-  async function createBundle(): Promise<Record<string, unknown>> {
+  async function createCard(): Promise<Record<string, unknown>> {
     const res = await handler({
       httpMethod: 'POST',
-      path: '/api/bundles',
-      body: JSON.stringify({ title: 'Artifact bundle', anchorDate: '2026-06-28' }),
+      path: '/api/cards',
+      body: JSON.stringify({ title: 'Artifact card', anchorDate: '2026-06-28' }),
     }, {});
     assert.strictEqual(res.statusCode, 201, res.body);
-    return JSON.parse(res.body).bundle;
+    return JSON.parse(res.body).card;
   }
 
   async function registerArtifact(body: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -165,14 +165,14 @@ describe('API - Artifacts', () => {
     assert.strictEqual(JSON.parse(doneRes.body).status, 'done');
   });
 
-  it('allows approved bundle artifacts to satisfy task artifact proof', async () => {
-    const bundle = await createBundle();
+  it('allows approved card artifacts to satisfy task artifact proof', async () => {
+    const card = await createCard();
     const task = await createTask({
-      bundleId: bundle.id,
+      cardId: card.id,
       proofRequirement: { type: 'artifact', label: 'Published artifact' },
     });
     await registerArtifact({
-      bundleId: bundle.id,
+      cardId: card.id,
       status: 'approved',
       reviewedBy: 'ops-reviewer',
     });

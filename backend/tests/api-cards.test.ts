@@ -5,7 +5,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables, deleteTables } from '../src/db/setup';
-import { createBundle } from '../src/db/bundles';
+import { createCard } from '../src/db/cards';
 import { createTemplate } from '../src/db/templates';
 import { createTask } from '../src/db/tasks';
 import type { LambdaResponse } from '../src/types';
@@ -19,7 +19,7 @@ function invoke(method: string, path: string, body?: unknown): Promise<LambdaRes
   return handler(event, {});
 }
 
-describe('API — Bundles', () => {
+describe('API — Cards', () => {
   let client: DynamoDBDocumentClient;
 
   before(async () => {
@@ -49,11 +49,11 @@ describe('API — Bundles', () => {
     });
   });
 
-  // ---- POST /api/bundles ----
+  // ---- POST /api/cards ----
 
-  describe('POST /api/bundles', () => {
-    it('creates a bundle with valid title and anchorDate', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+  describe('POST /api/cards', () => {
+    it('creates a card with valid title and anchorDate', async () => {
+      const res = await invoke('POST', '/api/cards', {
         title: 'ML Zoomcamp 2026',
         anchorDate: '2026-06-01',
       });
@@ -62,19 +62,19 @@ describe('API — Bundles', () => {
       assert.strictEqual(res.headers!['Content-Type'], 'application/json');
 
       const body = JSON.parse(res.body);
-      assert.ok(body.bundle);
-      assert.ok(body.bundle.id);
-      assert.strictEqual(body.bundle.title, 'ML Zoomcamp 2026');
-      assert.strictEqual(body.bundle.anchorDate, '2026-06-01');
-      assert.strictEqual(body.bundle.stage, 'preparation');
-      assert.strictEqual(body.bundle.status, 'active');
-      assert.ok(body.bundle.createdAt);
-      assert.ok(body.bundle.updatedAt);
+      assert.ok(body.card);
+      assert.ok(body.card.id);
+      assert.strictEqual(body.card.title, 'ML Zoomcamp 2026');
+      assert.strictEqual(body.card.anchorDate, '2026-06-01');
+      assert.strictEqual(body.card.stage, 'preparation');
+      assert.strictEqual(body.card.status, 'active');
+      assert.ok(body.card.createdAt);
+      assert.ok(body.card.updatedAt);
       assert.strictEqual(body.tasks, undefined);
     });
 
-    it('creates a bundle with optional description', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+    it('creates a card with optional description', async () => {
+      const res = await invoke('POST', '/api/cards', {
         title: 'Newsletter',
         anchorDate: '2026-03-01',
         description: 'Weekly newsletter',
@@ -82,46 +82,46 @@ describe('API — Bundles', () => {
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.description, 'Weekly newsletter');
+      assert.strictEqual(body.card.description, 'Weekly newsletter');
     });
 
-    it('creates a bundle with all new fields', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+    it('creates a card with all new fields', async () => {
+      const res = await invoke('POST', '/api/cards', {
         title: 'Newsletter Mar 2026',
         anchorDate: '2026-03-15',
         emoji: '📰',
         tags: ['newsletter'],
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-        bundleLinks: [{ name: 'Luma', url: '' }],
+        cardLinks: [{ name: 'Luma', url: '' }],
       });
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.emoji, '📰');
-      assert.deepStrictEqual(body.bundle.tags, ['newsletter']);
-      assert.deepStrictEqual(body.bundle.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-      assert.deepStrictEqual(body.bundle.bundleLinks, [{ name: 'Luma', url: '' }]);
-      assert.strictEqual(body.bundle.stage, 'preparation');
-      assert.strictEqual(body.bundle.status, 'active');
+      assert.strictEqual(body.card.emoji, '📰');
+      assert.deepStrictEqual(body.card.tags, ['newsletter']);
+      assert.deepStrictEqual(body.card.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
+      assert.deepStrictEqual(body.card.cardLinks, [{ name: 'Luma', url: '' }]);
+      assert.strictEqual(body.card.stage, 'preparation');
+      assert.strictEqual(body.card.status, 'active');
     });
 
-    it('creates a bundle with only required fields (backward compatibility)', async () => {
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Simple Bundle',
+    it('creates a card with only required fields (backward compatibility)', async () => {
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Simple Card',
         anchorDate: '2026-04-01',
       });
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.stage, 'preparation');
-      assert.strictEqual(body.bundle.status, 'active');
-      assert.strictEqual(body.bundle.emoji, undefined);
-      assert.strictEqual(body.bundle.tags, undefined);
-      assert.strictEqual(body.bundle.references, undefined);
-      assert.strictEqual(body.bundle.bundleLinks, undefined);
+      assert.strictEqual(body.card.stage, 'preparation');
+      assert.strictEqual(body.card.status, 'active');
+      assert.strictEqual(body.card.emoji, undefined);
+      assert.strictEqual(body.card.tags, undefined);
+      assert.strictEqual(body.card.references, undefined);
+      assert.strictEqual(body.card.cardLinks, undefined);
     });
 
-    it('creates a bundle with a template and instantiates tasks', async () => {
+    it('creates a card with a template and instantiates tasks', async () => {
       const template = await createTemplate(client, {
         name: 'Event Template',
         taskDefinitions: [
@@ -131,7 +131,7 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
+      const res = await invoke('POST', '/api/cards', {
         title: 'Community Meetup',
         anchorDate: '2026-04-15',
         templateId: template.id,
@@ -140,8 +140,8 @@ describe('API — Bundles', () => {
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
 
-      assert.ok(body.bundle);
-      assert.strictEqual(body.bundle.templateId, template.id);
+      assert.ok(body.card);
+      assert.strictEqual(body.card.templateId, template.id);
 
       assert.ok(body.tasks);
       assert.strictEqual(body.tasks.length, 3);
@@ -150,13 +150,13 @@ describe('API — Bundles', () => {
       assert.deepStrictEqual(dates, ['2026-04-08', '2026-04-15', '2026-04-18']);
 
       for (const task of body.tasks) {
-        assert.strictEqual(task.bundleId, body.bundle.id);
+        assert.strictEqual(task.cardId, body.card.id);
         assert.strictEqual(task.source, 'template');
       }
     });
 
     it('returns 404 when templateId does not exist', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+      const res = await invoke('POST', '/api/cards', {
         title: 'Test',
         anchorDate: '2026-01-01',
         templateId: 'nonexistent-id',
@@ -168,7 +168,7 @@ describe('API — Bundles', () => {
     });
 
     it('returns 400 when title is missing', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+      const res = await invoke('POST', '/api/cards', {
         anchorDate: '2026-06-01',
       });
 
@@ -178,7 +178,7 @@ describe('API — Bundles', () => {
     });
 
     it('returns 400 when title is empty string', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+      const res = await invoke('POST', '/api/cards', {
         title: '  ',
         anchorDate: '2026-06-01',
       });
@@ -189,7 +189,7 @@ describe('API — Bundles', () => {
     });
 
     it('returns 400 when anchorDate is missing', async () => {
-      const res = await invoke('POST', '/api/bundles', {
+      const res = await invoke('POST', '/api/cards', {
         title: 'Test',
       });
 
@@ -199,7 +199,7 @@ describe('API — Bundles', () => {
     });
 
     it('returns 400 for malformed JSON body', async () => {
-      const res = await invoke('POST', '/api/bundles', 'not valid json{{');
+      const res = await invoke('POST', '/api/cards', 'not valid json{{');
 
       assert.strictEqual(res.statusCode, 400);
       const body = JSON.parse(res.body);
@@ -207,130 +207,130 @@ describe('API — Bundles', () => {
     });
   });
 
-  // ---- GET /api/bundles ----
+  // ---- GET /api/cards ----
 
-  describe('GET /api/bundles', () => {
-    it('returns 200 with an array of bundles', async () => {
-      const res = await invoke('GET', '/api/bundles');
+  describe('GET /api/cards', () => {
+    it('returns 200 with an array of cards', async () => {
+      const res = await invoke('GET', '/api/cards');
 
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.headers!['Content-Type'], 'application/json');
 
       const body = JSON.parse(res.body);
-      assert.ok(Array.isArray(body.bundles));
-      assert.ok(body.bundles.length > 0);
+      assert.ok(Array.isArray(body.cards));
+      assert.ok(body.cards.length > 0);
     });
   });
 
-  // ---- GET /api/bundles/:id ----
+  // ---- GET /api/cards/:id ----
 
-  describe('GET /api/bundles/:id', () => {
-    it('returns 200 with the bundle for a valid id', async () => {
-      const created = await createBundle(client, {
-        title: 'My Bundle',
+  describe('GET /api/cards/:id', () => {
+    it('returns 200 with the card for a valid id', async () => {
+      const created = await createCard(client, {
+        title: 'My Card',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('GET', `/api/bundles/${created.id}`);
+      const res = await invoke('GET', `/api/cards/${created.id}`);
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
-      assert.ok(body.bundle);
-      assert.strictEqual(body.bundle.id, created.id);
-      assert.strictEqual(body.bundle.title, 'My Bundle');
+      assert.ok(body.card);
+      assert.strictEqual(body.card.id, created.id);
+      assert.strictEqual(body.card.title, 'My Card');
     });
 
-    it('returns 404 for a non-existent bundle', async () => {
-      const res = await invoke('GET', '/api/bundles/does-not-exist');
+    it('returns 404 for a non-existent card', async () => {
+      const res = await invoke('GET', '/api/cards/does-not-exist');
 
       assert.strictEqual(res.statusCode, 404);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Bundle not found');
+      assert.strictEqual(body.error, 'Card not found');
     });
 
-    it('returns bundle with all new fields via GET', async () => {
-      const created = await createBundle(client, {
-        title: 'Full Bundle',
+    it('returns card with all new fields via GET', async () => {
+      const created = await createCard(client, {
+        title: 'Full Card',
         anchorDate: '2026-07-01',
         emoji: '🎙️',
         tags: ['podcast'],
         references: [{ name: 'Overview', url: 'https://example.com/overview' }],
-        bundleLinks: [{ name: 'YouTube', url: 'https://youtube.com/123' }],
+        cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/123' }],
         stage: 'announced',
         status: 'active',
       });
 
-      const res = await invoke('GET', `/api/bundles/${created.id}`);
+      const res = await invoke('GET', `/api/cards/${created.id}`);
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.emoji, '🎙️');
-      assert.deepStrictEqual(body.bundle.tags, ['podcast']);
-      assert.deepStrictEqual(body.bundle.references, [{ name: 'Overview', url: 'https://example.com/overview' }]);
-      assert.deepStrictEqual(body.bundle.bundleLinks, [{ name: 'YouTube', url: 'https://youtube.com/123' }]);
-      assert.strictEqual(body.bundle.stage, 'announced');
-      assert.strictEqual(body.bundle.status, 'active');
+      assert.strictEqual(body.card.emoji, '🎙️');
+      assert.deepStrictEqual(body.card.tags, ['podcast']);
+      assert.deepStrictEqual(body.card.references, [{ name: 'Overview', url: 'https://example.com/overview' }]);
+      assert.deepStrictEqual(body.card.cardLinks, [{ name: 'YouTube', url: 'https://youtube.com/123' }]);
+      assert.strictEqual(body.card.stage, 'announced');
+      assert.strictEqual(body.card.status, 'active');
     });
 
-    it('existing bundle without new fields still works', async () => {
-      const created = await createBundle(client, {
-        title: 'Old style bundle',
+    it('existing card without new fields still works', async () => {
+      const created = await createCard(client, {
+        title: 'Old style card',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('GET', `/api/bundles/${created.id}`);
+      const res = await invoke('GET', `/api/cards/${created.id}`);
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
-      assert.ok(body.bundle);
-      assert.strictEqual(body.bundle.title, 'Old style bundle');
+      assert.ok(body.card);
+      assert.strictEqual(body.card.title, 'Old style card');
     });
   });
 
-  // ---- PUT /api/bundles/:id ----
+  // ---- PUT /api/cards/:id ----
 
-  describe('PUT /api/bundles/:id', () => {
-    it('updates a bundle and returns 200', async () => {
-      const created = await createBundle(client, {
+  describe('PUT /api/cards/:id', () => {
+    it('updates a card and returns 200', async () => {
+      const created = await createCard(client, {
         title: 'Old Title',
         anchorDate: '2026-01-01',
       });
 
       await new Promise((r) => setTimeout(r, 10));
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
         title: 'New Title',
       });
 
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.title, 'New Title');
-      assert.ok(body.bundle.updatedAt > created.updatedAt);
+      assert.strictEqual(body.card.title, 'New Title');
+      assert.ok(body.card.updatedAt > created.updatedAt);
     });
 
     it('updates stage to announced', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Stage test',
         anchorDate: '2026-01-01',
         stage: 'preparation',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
         stage: 'announced',
       });
 
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.stage, 'announced');
+      assert.strictEqual(body.card.stage, 'announced');
     });
 
     it('rejects invalid stage value', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Invalid stage test',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
         stage: 'invalid-stage',
       });
 
@@ -340,12 +340,12 @@ describe('API — Bundles', () => {
     });
 
     it('rejects invalid status value', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Invalid status test',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
         status: 'invalid-status',
       });
 
@@ -354,196 +354,196 @@ describe('API — Bundles', () => {
       assert.ok(body.error.includes('Invalid status'));
     });
 
-    it('updates references and bundleLinks', async () => {
-      const created = await createBundle(client, {
+    it('updates references and cardLinks', async () => {
+      const created = await createCard(client, {
         title: 'Links update test',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
         references: [{ name: 'Process doc', url: 'https://docs.google.com/proc' }],
-        bundleLinks: [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }],
+        cardLinks: [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }],
       });
 
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.deepStrictEqual(body.bundle.references, [{ name: 'Process doc', url: 'https://docs.google.com/proc' }]);
-      assert.deepStrictEqual(body.bundle.bundleLinks, [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }]);
+      assert.deepStrictEqual(body.card.references, [{ name: 'Process doc', url: 'https://docs.google.com/proc' }]);
+      assert.deepStrictEqual(body.card.cardLinks, [{ name: 'YouTube', url: 'https://youtube.com/watch?v=123' }]);
     });
 
     it('updates emoji and tags', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Emoji tags update',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {
         emoji: '📰',
         tags: ['newsletter', 'weekly'],
       });
 
       assert.strictEqual(res.statusCode, 200);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.emoji, '📰');
-      assert.deepStrictEqual(body.bundle.tags, ['newsletter', 'weekly']);
+      assert.strictEqual(body.card.emoji, '📰');
+      assert.deepStrictEqual(body.card.tags, ['newsletter', 'weekly']);
     });
 
-    it('returns 404 when updating a non-existent bundle', async () => {
-      const res = await invoke('PUT', '/api/bundles/does-not-exist', {
+    it('returns 404 when updating a non-existent card', async () => {
+      const res = await invoke('PUT', '/api/cards/does-not-exist', {
         title: 'New',
       });
 
       assert.strictEqual(res.statusCode, 404);
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Bundle not found');
+      assert.strictEqual(body.error, 'Card not found');
     });
 
     it('returns 400 when body is empty', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Test',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, {});
+      const res = await invoke('PUT', `/api/cards/${created.id}`, {});
 
       assert.strictEqual(res.statusCode, 400);
     });
 
     it('returns 400 for malformed JSON', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Test',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}`, 'bad json');
+      const res = await invoke('PUT', `/api/cards/${created.id}`, 'bad json');
       assert.strictEqual(res.statusCode, 400);
     });
   });
 
-  // ---- PUT /api/bundles/:id/archive ----
+  // ---- PUT /api/cards/:id/archive ----
 
-  describe('PUT /api/bundles/:id/archive', () => {
-    it('archives a bundle and returns 200', async () => {
-      const created = await createBundle(client, {
+  describe('PUT /api/cards/:id/archive', () => {
+    it('archives a card and returns 200', async () => {
+      const created = await createCard(client, {
         title: 'Archive me',
         anchorDate: '2026-01-01',
         status: 'active',
       });
 
-      const res = await invoke('PUT', `/api/bundles/${created.id}/archive`);
+      const res = await invoke('PUT', `/api/cards/${created.id}/archive`);
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.bundle.status, 'archived');
-      assert.strictEqual(body.bundle.id, created.id);
+      assert.strictEqual(body.card.status, 'archived');
+      assert.strictEqual(body.card.id, created.id);
     });
 
-    it('returns 404 for a non-existent bundle', async () => {
-      const res = await invoke('PUT', '/api/bundles/does-not-exist/archive');
+    it('returns 404 for a non-existent card', async () => {
+      const res = await invoke('PUT', '/api/cards/does-not-exist/archive');
       assert.strictEqual(res.statusCode, 404);
     });
 
     it('returns 405 for non-PUT methods', async () => {
-      const created = await createBundle(client, {
+      const created = await createCard(client, {
         title: 'Method test',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('GET', `/api/bundles/${created.id}/archive`);
+      const res = await invoke('GET', `/api/cards/${created.id}/archive`);
       assert.strictEqual(res.statusCode, 405);
     });
   });
 
-  // ---- DELETE /api/bundles/:id ----
+  // ---- DELETE /api/cards/:id ----
 
-  describe('DELETE /api/bundles/:id', () => {
-    it('deletes an archived bundle and returns 204', async () => {
-      const created = await createBundle(client, {
+  describe('DELETE /api/cards/:id', () => {
+    it('deletes an archived card and returns 204', async () => {
+      const created = await createCard(client, {
         title: 'Delete me',
         anchorDate: '2026-01-01',
         status: 'archived',
       });
 
-      const res = await invoke('DELETE', `/api/bundles/${created.id}`);
+      const res = await invoke('DELETE', `/api/cards/${created.id}`);
       assert.strictEqual(res.statusCode, 204);
 
-      const getRes = await invoke('GET', `/api/bundles/${created.id}`);
+      const getRes = await invoke('GET', `/api/cards/${created.id}`);
       assert.strictEqual(getRes.statusCode, 404);
     });
 
-    it('returns 400 when deleting a non-archived bundle', async () => {
-      const created = await createBundle(client, {
-        title: 'Active bundle',
+    it('returns 400 when deleting a non-archived card', async () => {
+      const created = await createCard(client, {
+        title: 'Active card',
         anchorDate: '2026-01-01',
         status: 'active',
       });
 
-      const res = await invoke('DELETE', `/api/bundles/${created.id}`);
+      const res = await invoke('DELETE', `/api/cards/${created.id}`);
       assert.strictEqual(res.statusCode, 400);
 
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Only archived bundles can be deleted');
+      assert.strictEqual(body.error, 'Only archived cards can be deleted');
     });
 
-    it('returns 400 when deleting a bundle without status set', async () => {
-      const created = await createBundle(client, {
-        title: 'No status bundle',
+    it('returns 400 when deleting a card without status set', async () => {
+      const created = await createCard(client, {
+        title: 'No status card',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('DELETE', `/api/bundles/${created.id}`);
+      const res = await invoke('DELETE', `/api/cards/${created.id}`);
       assert.strictEqual(res.statusCode, 400);
 
       const body = JSON.parse(res.body);
-      assert.strictEqual(body.error, 'Only archived bundles can be deleted');
+      assert.strictEqual(body.error, 'Only archived cards can be deleted');
     });
 
-    it('returns 404 when deleting a non-existent bundle', async () => {
-      const res = await invoke('DELETE', '/api/bundles/does-not-exist');
+    it('returns 404 when deleting a non-existent card', async () => {
+      const res = await invoke('DELETE', '/api/cards/does-not-exist');
       assert.strictEqual(res.statusCode, 404);
     });
   });
 
-  // ---- GET /api/bundles/:id/tasks ----
+  // ---- GET /api/cards/:id/tasks ----
 
-  describe('GET /api/bundles/:id/tasks', () => {
-    it('returns tasks for a bundle', async () => {
-      const bundle = await createBundle(client, {
-        title: 'Task List Bundle',
+  describe('GET /api/cards/:id/tasks', () => {
+    it('returns tasks for a card', async () => {
+      const card = await createCard(client, {
+        title: 'Task List Card',
         anchorDate: '2026-01-01',
       });
 
       await createTask(client, {
         description: 'Task 1',
-        bundleId: bundle.id,
+        cardId: card.id,
         date: '2026-01-01',
         status: 'todo',
       });
       await createTask(client, {
         description: 'Task 2',
-        bundleId: bundle.id,
+        cardId: card.id,
         date: '2026-01-02',
         status: 'todo',
       });
 
-      const res = await invoke('GET', `/api/bundles/${bundle.id}/tasks`);
+      const res = await invoke('GET', `/api/cards/${card.id}/tasks`);
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
       assert.ok(Array.isArray(body.tasks));
       assert.strictEqual(body.tasks.length, 2);
       for (const task of body.tasks) {
-        assert.strictEqual(task.bundleId, bundle.id);
+        assert.strictEqual(task.cardId, card.id);
       }
     });
 
-    it('returns empty tasks array for bundle with no tasks', async () => {
-      const bundle = await createBundle(client, {
-        title: 'No Tasks Bundle',
+    it('returns empty tasks array for card with no tasks', async () => {
+      const card = await createCard(client, {
+        title: 'No Tasks Card',
         anchorDate: '2026-01-01',
       });
 
-      const res = await invoke('GET', `/api/bundles/${bundle.id}/tasks`);
+      const res = await invoke('GET', `/api/cards/${card.id}/tasks`);
       assert.strictEqual(res.statusCode, 200);
 
       const body = JSON.parse(res.body);
@@ -551,8 +551,8 @@ describe('API — Bundles', () => {
       assert.strictEqual(body.tasks.length, 0);
     });
 
-    it('returns 404 for tasks of a non-existent bundle', async () => {
-      const res = await invoke('GET', '/api/bundles/does-not-exist/tasks');
+    it('returns 404 for tasks of a non-existent card', async () => {
+      const res = await invoke('GET', '/api/cards/does-not-exist/tasks');
       assert.strictEqual(res.statusCode, 404);
     });
   });
@@ -569,37 +569,37 @@ describe('API — Bundles', () => {
   // ---- Method not allowed ----
 
   describe('Method not allowed', () => {
-    it('returns 405 for PATCH /api/bundles', async () => {
-      const res = await invoke('PATCH', '/api/bundles');
+    it('returns 405 for PATCH /api/cards', async () => {
+      const res = await invoke('PATCH', '/api/cards');
       assert.strictEqual(res.statusCode, 405);
       const body = JSON.parse(res.body);
       assert.strictEqual(body.error, 'Method not allowed');
     });
 
-    it('returns 405 for POST /api/bundles/:id', async () => {
-      const bundle = await createBundle(client, {
+    it('returns 405 for POST /api/cards/:id', async () => {
+      const card = await createCard(client, {
         title: 'Test',
         anchorDate: '2026-01-01',
       });
-      const res = await invoke('POST', `/api/bundles/${bundle.id}`);
+      const res = await invoke('POST', `/api/cards/${card.id}`);
       assert.strictEqual(res.statusCode, 405);
     });
 
-    it('returns 405 for PATCH /api/bundles/:id', async () => {
-      const bundle = await createBundle(client, {
+    it('returns 405 for PATCH /api/cards/:id', async () => {
+      const card = await createCard(client, {
         title: 'Test',
         anchorDate: '2026-01-01',
       });
-      const res = await invoke('PATCH', `/api/bundles/${bundle.id}`);
+      const res = await invoke('PATCH', `/api/cards/${card.id}`);
       assert.strictEqual(res.statusCode, 405);
     });
 
-    it('returns 405 for POST /api/bundles/:id/tasks', async () => {
-      const bundle = await createBundle(client, {
+    it('returns 405 for POST /api/cards/:id/tasks', async () => {
+      const card = await createCard(client, {
         title: 'Test',
         anchorDate: '2026-01-01',
       });
-      const res = await invoke('POST', `/api/bundles/${bundle.id}/tasks`);
+      const res = await invoke('POST', `/api/cards/${card.id}/tasks`);
       assert.strictEqual(res.statusCode, 405);
     });
   });
@@ -608,19 +608,19 @@ describe('API — Bundles', () => {
 
   describe('Content-Type header', () => {
     it('all API responses include Content-Type: application/json', async () => {
-      const res200 = await invoke('GET', '/api/bundles');
+      const res200 = await invoke('GET', '/api/cards');
       assert.strictEqual(res200.headers!['Content-Type'], 'application/json');
 
-      const res404 = await invoke('GET', '/api/bundles/nonexistent');
+      const res404 = await invoke('GET', '/api/cards/nonexistent');
       assert.strictEqual(res404.headers!['Content-Type'], 'application/json');
 
-      const res201 = await invoke('POST', '/api/bundles', {
+      const res201 = await invoke('POST', '/api/cards', {
         title: 'CT Test',
         anchorDate: '2026-01-01',
       });
       assert.strictEqual(res201.headers!['Content-Type'], 'application/json');
 
-      const res405 = await invoke('PATCH', '/api/bundles');
+      const res405 = await invoke('PATCH', '/api/cards');
       assert.strictEqual(res405.headers!['Content-Type'], 'application/json');
     });
   });
@@ -628,21 +628,21 @@ describe('API — Bundles', () => {
   // ---- Issue #20: Template instantiation with new fields ----
 
   describe('Template instantiation with new fields (issue #20)', () => {
-    it('bundle inherits emoji, tags, references, and bundleLinks from template', async () => {
+    it('card inherits emoji, tags, references, and cardLinks from template', async () => {
       const template = await createTemplate(client, {
         name: 'Full Template',
         type: 'event',
         emoji: '📰',
         tags: ['newsletter', 'weekly'],
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-        bundleLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
+        cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
         taskDefinitions: [
           { refId: 'prep', description: 'Prepare', offsetDays: -7 },
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Inherited Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Inherited Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
@@ -650,10 +650,10 @@ describe('API — Bundles', () => {
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
 
-      assert.strictEqual(body.bundle.emoji, '📰');
-      assert.deepStrictEqual(body.bundle.tags, ['newsletter', 'weekly']);
-      assert.deepStrictEqual(body.bundle.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-      assert.deepStrictEqual(body.bundle.bundleLinks, [{ name: 'Luma', url: '' }, { name: 'YouTube', url: '' }]);
+      assert.strictEqual(body.card.emoji, '📰');
+      assert.deepStrictEqual(body.card.tags, ['newsletter', 'weekly']);
+      assert.deepStrictEqual(body.card.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
+      assert.deepStrictEqual(body.card.cardLinks, [{ name: 'Luma', url: '' }, { name: 'YouTube', url: '' }]);
     });
 
     it('caller-provided values override template values', async () => {
@@ -667,8 +667,8 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Override Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Override Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
         emoji: '🎉',
@@ -678,8 +678,8 @@ describe('API — Bundles', () => {
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
 
-      assert.strictEqual(body.bundle.emoji, '🎉');
-      assert.deepStrictEqual(body.bundle.tags, ['custom']);
+      assert.strictEqual(body.card.emoji, '🎉');
+      assert.deepStrictEqual(body.card.tags, ['custom']);
     });
 
     it('tasks have instructionsUrl set correctly (not in comment)', async () => {
@@ -696,8 +696,8 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Instructions Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Instructions Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
@@ -719,8 +719,8 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Assignee Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Assignee Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
@@ -744,8 +744,8 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'RequiredLink Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'RequiredLink Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
@@ -766,8 +766,8 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Tags Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Tags Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
@@ -779,7 +779,7 @@ describe('API — Bundles', () => {
       }
     });
 
-    it('creates a representative workflow bundle with task proof and relationship refs', async () => {
+    it('creates a representative workflow card with task proof and relationship refs', async () => {
       const template = await createTemplate(client, {
         name: 'Representative Workflow Template',
         type: 'workflow',
@@ -791,7 +791,7 @@ describe('API — Bundles', () => {
         ],
         sourceDocIds: ['workflow.definition.example'],
         references: [{ name: 'Workflow guide', url: 'https://example.com/workflow-guide' }],
-        bundleLinkDefinitions: [{ name: 'External tracker' }],
+        cardLinkDefinitions: [{ name: 'External tracker' }],
         taskDefinitions: [
           {
             refId: 'prepare',
@@ -811,32 +811,32 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Representative Workflow Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Representative Workflow Card',
         anchorDate: '2026-07-20',
         templateId: template.id,
-        artifactRefs: [{ artifactId: 'bundle-artifact-planned', type: 'package' }],
-        assistantJobRefs: [{ assistantJobId: 'bundle-assistant-planned', assistantType: 'orchestration' }],
-        auditEventRefs: [{ auditEventId: 'bundle-audit-planned', action: 'created' }],
+        artifactRefs: [{ artifactId: 'card-artifact-planned', type: 'package' }],
+        assistantJobRefs: [{ assistantJobId: 'card-assistant-planned', assistantType: 'orchestration' }],
+        auditEventRefs: [{ auditEventId: 'card-audit-planned', action: 'created' }],
       });
 
       assert.strictEqual(res.statusCode, 201);
       const body = JSON.parse(res.body);
 
-      assert.ok(body.bundle.id);
-      assert.strictEqual(body.bundle.templateId, template.id);
-      assert.strictEqual(body.bundle.anchorDate, '2026-07-20');
-      assert.strictEqual(body.bundle.stage, 'preparation');
-      assert.strictEqual(body.bundle.status, 'active');
-      assert.deepStrictEqual(body.bundle.references, [{ name: 'Workflow guide', url: 'https://example.com/workflow-guide' }]);
-      assert.deepStrictEqual(body.bundle.bundleLinks, [{ name: 'External tracker', url: '' }]);
-      assert.deepStrictEqual(body.bundle.tags, ['ops', 'model']);
-      assert.deepStrictEqual(body.bundle.artifactRefs, [{ artifactId: 'bundle-artifact-planned', type: 'package' }]);
-      assert.deepStrictEqual(body.bundle.assistantJobRefs, [{ assistantJobId: 'bundle-assistant-planned', assistantType: 'orchestration' }]);
-      assert.deepStrictEqual(body.bundle.auditEventRefs, [{ auditEventId: 'bundle-audit-planned', action: 'created' }]);
+      assert.ok(body.card.id);
+      assert.strictEqual(body.card.templateId, template.id);
+      assert.strictEqual(body.card.anchorDate, '2026-07-20');
+      assert.strictEqual(body.card.stage, 'preparation');
+      assert.strictEqual(body.card.status, 'active');
+      assert.deepStrictEqual(body.card.references, [{ name: 'Workflow guide', url: 'https://example.com/workflow-guide' }]);
+      assert.deepStrictEqual(body.card.cardLinks, [{ name: 'External tracker', url: '' }]);
+      assert.deepStrictEqual(body.card.tags, ['ops', 'model']);
+      assert.deepStrictEqual(body.card.artifactRefs, [{ artifactId: 'card-artifact-planned', type: 'package' }]);
+      assert.deepStrictEqual(body.card.assistantJobRefs, [{ assistantJobId: 'card-assistant-planned', assistantType: 'orchestration' }]);
+      assert.deepStrictEqual(body.card.auditEventRefs, [{ auditEventId: 'card-audit-planned', action: 'created' }]);
 
       assert.strictEqual(body.tasks.length, 1);
-      assert.strictEqual(body.tasks[0].bundleId, body.bundle.id);
+      assert.strictEqual(body.tasks[0].cardId, body.card.id);
       assert.strictEqual(body.tasks[0].templateId, template.id);
       assert.strictEqual(body.tasks[0].templateTaskRef, 'prepare');
       assert.strictEqual(body.tasks[0].date, '2026-07-17');
@@ -860,18 +860,18 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const createRes = await invoke('POST', '/api/bundles', {
-        title: 'Stage Transition Bundle',
+      const createRes = await invoke('POST', '/api/cards', {
+        title: 'Stage Transition Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
 
       assert.strictEqual(createRes.statusCode, 201);
       const createBody = JSON.parse(createRes.body);
-      const bundleId = createBody.bundle.id;
+      const cardId = createBody.card.id;
 
-      // Verify bundle starts at "preparation"
-      assert.strictEqual(createBody.bundle.stage, 'preparation');
+      // Verify card starts at "preparation"
+      assert.strictEqual(createBody.card.stage, 'preparation');
 
       // Find the milestone task
       const milestoneTask = createBody.tasks.find((t: any) => t.templateTaskRef === 'milestone');
@@ -883,11 +883,11 @@ describe('API — Bundles', () => {
       });
       assert.strictEqual(updateRes.statusCode, 200);
 
-      // Verify bundle stage changed to "after-event"
-      const bundleRes = await invoke('GET', `/api/bundles/${bundleId}`);
-      assert.strictEqual(bundleRes.statusCode, 200);
-      const bundleBody = JSON.parse(bundleRes.body);
-      assert.strictEqual(bundleBody.bundle.stage, 'after-event');
+      // Verify card stage changed to "after-event"
+      const cardRes = await invoke('GET', `/api/cards/${cardId}`);
+      assert.strictEqual(cardRes.statusCode, 200);
+      const cardBody = JSON.parse(cardRes.body);
+      assert.strictEqual(cardBody.card.stage, 'after-event');
     });
 
     it('non-milestone task completion does not trigger stage transition', async () => {
@@ -900,15 +900,15 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const createRes = await invoke('POST', '/api/bundles', {
-        title: 'No Stage Transition Bundle',
+      const createRes = await invoke('POST', '/api/cards', {
+        title: 'No Stage Transition Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });
 
       assert.strictEqual(createRes.statusCode, 201);
       const createBody = JSON.parse(createRes.body);
-      const bundleId = createBody.bundle.id;
+      const cardId = createBody.card.id;
 
       // Find the regular task (no stageOnComplete)
       const regularTask = createBody.tasks.find((t: any) => t.templateTaskRef === 'regular');
@@ -920,11 +920,11 @@ describe('API — Bundles', () => {
       });
       assert.strictEqual(updateRes.statusCode, 200);
 
-      // Verify bundle stage is still "preparation"
-      const bundleRes = await invoke('GET', `/api/bundles/${bundleId}`);
-      assert.strictEqual(bundleRes.statusCode, 200);
-      const bundleBody = JSON.parse(bundleRes.body);
-      assert.strictEqual(bundleBody.bundle.stage, 'preparation');
+      // Verify card stage is still "preparation"
+      const cardRes = await invoke('GET', `/api/cards/${cardId}`);
+      assert.strictEqual(cardRes.statusCode, 200);
+      const cardBody = JSON.parse(cardRes.body);
+      assert.strictEqual(cardBody.card.stage, 'preparation');
     });
 
     it('task dates are correctly calculated from anchor date and offset days', async () => {
@@ -940,8 +940,8 @@ describe('API — Bundles', () => {
         ],
       });
 
-      const res = await invoke('POST', '/api/bundles', {
-        title: 'Date Calc Bundle',
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Date Calc Card',
         anchorDate: '2026-06-15',
         templateId: template.id,
       });

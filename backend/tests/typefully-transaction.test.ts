@@ -1076,10 +1076,10 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
       ACTOR_ID,
       NOW
     );
-    const replacementProofBundle = (
+    const replacementProofCard = (
       replacementDraft!.data as Record<string, JsonValue>
     ).proof as Record<string, JsonValue>;
-    const replacementProofs = replacementProofBundle
+    const replacementProofs = replacementProofCard
       .proofs as Array<Record<string, JsonValue>>;
     assert.deepEqual(
       newProposal?.spec.sourceRefs,
@@ -1154,9 +1154,9 @@ describe('production Typefully proposal/approval/worker/outbox transaction', {
       const tamperAttemptId = await approvedRevisedAttempt(210 + sourceIndex);
       const current = await currentAttemptDraft(tamperAttemptId);
       assert.equal(current.proposal.spec.sourceRefs.length, 2);
-      const bundle = (current.draft.data as Record<string, JsonValue>)
+      const card = (current.draft.data as Record<string, JsonValue>)
         .proof as Record<string, JsonValue>;
-      const proof = (bundle.proofs as Array<Record<string, JsonValue>>)[sourceIndex];
+      const proof = (card.proofs as Array<Record<string, JsonValue>>)[sourceIndex];
       const payloadKey = {
         PK: `PRIVATE_PAYLOAD#${String(proof.payloadRef)}`,
         SK: 'META',

@@ -3,7 +3,7 @@ import assert from 'node:assert';
 
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables } from '../src/db/setup';
-import { createBundle, getBundle } from '../src/db/bundles';
+import { createCard, getCard } from '../src/db/cards';
 import { getIntakeItem } from '../src/db/intake';
 import { getTask, createTask } from '../src/db/tasks';
 import { createUser } from '../src/db/users';
@@ -81,15 +81,15 @@ describe('intake API', () => {
     assert.match(JSON.parse(signedUrl.body).error, /signed URLs/);
   });
 
-  it('attaches intake to tasks and bundles without copying raw content', async () => {
+  it('attaches intake to tasks and cards without copying raw content', async () => {
     const client = await getClient();
     const user = await createUser(client, { name: 'Intake Owner', email: 'intake-owner@example.com', passwordHash: 'x' });
-    const bundle = await createBundle(client, { title: 'Inbox workflow', anchorDate: '2026-07-01', status: 'active' });
+    const card = await createCard(client, { title: 'Inbox workflow', anchorDate: '2026-07-01', status: 'active' });
     const task = await createTask(client, {
       description: 'Existing workflow task',
       date: '2026-07-01',
       assigneeId: user.id,
-      bundleId: bundle.id,
+      cardId: card.id,
     });
     const created = JSON.parse((await request('POST', '/api/intake', {
       title: 'Attach this source',
@@ -100,35 +100,35 @@ describe('intake API', () => {
 
     const attach = await request('POST', `/api/intake/${created.id}/attach`, {
       taskIds: [task.id],
-      bundleIds: [bundle.id],
+      cardIds: [card.id],
     });
     assert.strictEqual(attach.statusCode, 200);
     const item = JSON.parse(attach.body).item;
     assert.strictEqual(item.status, 'attached');
     assert.deepStrictEqual(item.taskIds, [task.id]);
-    assert.deepStrictEqual(item.bundleIds, [bundle.id]);
+    assert.deepStrictEqual(item.cardIds, [card.id]);
 
     const updatedTask = await getTask(client, task.id);
-    const updatedBundle = await getBundle(client, bundle.id);
+    const updatedCard = await getCard(client, card.id);
     assert.ok(updatedTask?.intakeRefs?.some((ref) => ref.intakeItemId === created.id));
-    assert.ok(updatedBundle?.intakeRefs?.some((ref) => ref.intakeItemId === created.id));
+    assert.ok(updatedCard?.intakeRefs?.some((ref) => ref.intakeItemId === created.id));
     assert.strictEqual(updatedTask?.comment, undefined);
-    assert.strictEqual(updatedBundle?.description, undefined);
+    assert.strictEqual(updatedCard?.description, undefined);
   });
 
   it('converts intake to a task and prepares assistant input refs/job', async () => {
     const client = await getClient();
-    const bundle = await createBundle(client, { title: 'Assistant intake workflow', anchorDate: '2026-07-02', tags: ['podcast'] });
+    const card = await createCard(client, { title: 'Assistant intake workflow', anchorDate: '2026-07-02', tags: ['podcast'] });
     const created = JSON.parse((await request('POST', '/api/intake', {
       title: 'Podcast source material',
       note: 'Guest links https://example.com/guest',
       tags: ['podcast'],
-      bundleIds: [bundle.id],
+      cardIds: [card.id],
     })).body).item;
 
     const converted = await request('POST', `/api/intake/${created.id}/convert-task`, {
       date: '2026-07-02',
-      bundleId: bundle.id,
+      cardId: card.id,
     });
     assert.strictEqual(converted.statusCode, 201);
     const convertedBody = JSON.parse(converted.body);
@@ -143,7 +143,7 @@ describe('intake API', () => {
       assistantType: 'podcast',
       createJob: true,
       taskId: convertedBody.task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
     });
     assert.strictEqual(prepared.statusCode, 200);
     const preparedBody = JSON.parse(prepared.body);

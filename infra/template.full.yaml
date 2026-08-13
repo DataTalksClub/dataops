@@ -990,7 +990,7 @@ Resources:
           AttributeType: S
         - AttributeName: status
           AttributeType: S
-        - AttributeName: bundleId
+        - AttributeName: cardId
           AttributeType: S
       KeySchema:
         - AttributeName: PK
@@ -1006,9 +1006,9 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
-        - IndexName: GSI-Bundle
+        - IndexName: GSI-Card
           KeySchema:
-            - AttributeName: bundleId
+            - AttributeName: cardId
               KeyType: HASH
             - AttributeName: date
               KeyType: RANGE
@@ -1030,12 +1030,12 @@ Resources:
         - Key: DataClass
           Value: ExecutionState
 
-  DataOpsBundlesTable:
+  DataOpsCardsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      TableName: !Sub ${AWS::StackName}-bundles
+      TableName: !Sub ${AWS::StackName}-cards
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
         SSEEnabled: true
@@ -1895,7 +1895,7 @@ Resources:
             Resource:
               - !GetAtt DataOpsTasksTable.Arn
               - !Sub ${DataOpsTasksTable.Arn}/index/*
-              - !GetAtt DataOpsBundlesTable.Arn
+              - !GetAtt DataOpsCardsTable.Arn
               - !GetAtt DataOpsTemplatesTable.Arn
               - !GetAtt DataOpsUsersTable.Arn
               - !GetAtt DataOpsFilesTable.Arn
@@ -2169,9 +2169,9 @@ Outputs:
   DataOpsTasksTableName:
     Description: DynamoDB table for task and recurring execution state
     Value: !Ref DataOpsTasksTable
-  DataOpsBundlesTableName:
-    Description: DynamoDB table for workflow bundles
-    Value: !Ref DataOpsBundlesTable
+  DataOpsCardsTableName:
+    Description: DynamoDB table for workflow cards
+    Value: !Ref DataOpsCardsTable
   DataOpsTemplatesTableName:
     Description: DynamoDB table for runtime template projections
     Value: !Ref DataOpsTemplatesTable

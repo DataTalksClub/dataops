@@ -106,10 +106,10 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const bundleId = 'release-bundle-1';
+    const cardId = 'release-card-1';
     const anchorDate = '2026-03-10';
 
-    const tasks = await instantiateTemplate(client, template.id, bundleId, anchorDate);
+    const tasks = await instantiateTemplate(client, template.id, cardId, anchorDate);
 
     assert.strictEqual(tasks.length, 3);
 
@@ -119,7 +119,7 @@ describe('Templates data layer', () => {
     // -2 days from 2026-03-10 = 2026-03-08
     assert.strictEqual(tasks[0].date, '2026-03-08');
     assert.strictEqual(tasks[0].description, 'Prepare release');
-    assert.strictEqual(tasks[0].bundleId, bundleId);
+    assert.strictEqual(tasks[0].cardId, cardId);
     assert.strictEqual(tasks[0].source, 'template');
     assert.strictEqual(tasks[0].templateTaskRef, 'prep');
     assert.strictEqual(tasks[0].status, 'todo');
@@ -144,7 +144,7 @@ describe('Templates data layer', () => {
 
   it('instantiateTemplate throws for non-existent template', async () => {
     await assert.rejects(
-      () => instantiateTemplate(client, 'no-such-template', 'bundle-1', '2026-01-01'),
+      () => instantiateTemplate(client, 'no-such-template', 'card-1', '2026-01-01'),
       { message: 'Template not found: no-such-template' }
     );
   });
@@ -160,7 +160,7 @@ describe('Templates data layer', () => {
       defaultAssigneeId: 'user-grace',
       sourceDocIds: ['task-template.tasks.newsletter'],
       references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-      bundleLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
+      cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
       triggerType: 'automatic',
       triggerSchedule: '0 9 * * 1',
       triggerLeadDays: 14,
@@ -175,7 +175,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(template.defaultAssigneeId, 'user-grace');
     assert.deepStrictEqual(template.sourceDocIds, ['task-template.tasks.newsletter']);
     assert.deepStrictEqual(template.references, [{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-    assert.deepStrictEqual(template.bundleLinkDefinitions, [{ name: 'Luma' }, { name: 'YouTube' }]);
+    assert.deepStrictEqual(template.cardLinkDefinitions, [{ name: 'Luma' }, { name: 'YouTube' }]);
     assert.strictEqual(template.triggerType, 'automatic');
     assert.strictEqual(template.triggerSchedule, '0 9 * * 1');
     assert.strictEqual(template.triggerLeadDays, 14);
@@ -295,7 +295,7 @@ describe('Templates data layer', () => {
     assert.strictEqual(fetched.defaultAssigneeId, undefined);
     assert.strictEqual(fetched.sourceDocIds, undefined);
     assert.strictEqual(fetched.references, undefined);
-    assert.strictEqual(fetched.bundleLinkDefinitions, undefined);
+    assert.strictEqual(fetched.cardLinkDefinitions, undefined);
     assert.strictEqual(fetched.triggerType, undefined);
     assert.strictEqual(fetched.triggerSchedule, undefined);
     assert.strictEqual(fetched.triggerLeadDays, undefined);
@@ -317,7 +317,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-inst-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-inst-1', '2026-06-15');
     assert.strictEqual(tasks.length, 1);
     assert.strictEqual(tasks[0].instructionsUrl, 'https://docs.google.com/instructions');
     // comment should NOT be set to the instructionsUrl
@@ -349,7 +349,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-doc-context-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-doc-context-1', '2026-06-15');
 
     assert.strictEqual(tasks.length, 1);
     assert.strictEqual(tasks[0].instructionsUrl, 'https://docs.google.com/instructions');
@@ -376,7 +376,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-assignee-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-assignee-1', '2026-06-15');
     assert.strictEqual(tasks.length, 2);
 
     const withAssignee = tasks.find(t => t.templateTaskRef === 'with-assignee');
@@ -399,7 +399,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-link-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-link-1', '2026-06-15');
     const withLink = tasks.find(t => t.templateTaskRef === 'with-link');
     const noLink = tasks.find(t => t.templateTaskRef === 'no-link');
 
@@ -420,7 +420,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-stage-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-stage-1', '2026-06-15');
     const milestone = tasks.find(t => t.templateTaskRef === 'milestone');
     const regular = tasks.find(t => t.templateTaskRef === 'regular');
 
@@ -442,7 +442,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-tags-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-tags-1', '2026-06-15');
     for (const task of tasks) {
       assert.deepStrictEqual(task.tags, ['podcast', 'content']);
     }
@@ -460,7 +460,7 @@ describe('Templates data layer', () => {
       ],
       sourceDocIds: ['workflow.definition.example'],
       references: [{ name: 'Workflow brief', url: 'https://example.com/brief' }],
-      bundleLinkDefinitions: [{ name: 'External status' }],
+      cardLinkDefinitions: [{ name: 'External status' }],
       taskDefinitions: [
         {
           refId: 'collect-inputs',
@@ -488,13 +488,13 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-workflow-model-1', '2026-07-10');
+    const tasks = await instantiateTemplate(client, template.id, 'card-workflow-model-1', '2026-07-10');
     assert.strictEqual(tasks.length, 2);
 
     const collectInputs = tasks.find((task) => task.templateTaskRef === 'collect-inputs');
     assert.ok(collectInputs);
     assert.strictEqual(collectInputs.date, '2026-07-08');
-    assert.strictEqual(collectInputs.bundleId, 'bundle-workflow-model-1');
+    assert.strictEqual(collectInputs.cardId, 'card-workflow-model-1');
     assert.strictEqual(collectInputs.templateId, template.id);
     assert.strictEqual(collectInputs.assigneeId, 'user-specialist');
     assert.strictEqual(collectInputs.status, 'todo');
@@ -536,7 +536,7 @@ describe('Templates data layer', () => {
       ],
     });
 
-    const tasks = await instantiateTemplate(client, template.id, 'bundle-dates-1', '2026-06-15');
+    const tasks = await instantiateTemplate(client, template.id, 'card-dates-1', '2026-06-15');
     tasks.sort((a, b) => a.date.localeCompare(b.date));
 
     assert.strictEqual(tasks[0].date, '2026-06-01');

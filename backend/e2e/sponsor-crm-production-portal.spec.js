@@ -74,7 +74,7 @@ test.describe("production sponsor CRM portal", () => {
         plannedPublicationDate: "2026-08-20",
         materialDeadline: "2026-08-10",
         nextActionDate: "2026-08-01",
-        bundleId: "newsletter-bundle-1",
+        cardId: "newsletter-card-1",
         version: 2,
       };
     let financeStage = "unclassified",

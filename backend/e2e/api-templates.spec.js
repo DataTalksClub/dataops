@@ -14,7 +14,7 @@ test.describe('Template API - New fields (issue #17)', () => {
         tags: ['newsletter'],
         defaultAssigneeId: 'user-grace',
         references: [{ name: 'Style guide', url: 'https://docs.google.com/style' }],
-        bundleLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
+        cardLinkDefinitions: [{ name: 'Luma' }, { name: 'YouTube' }],
         triggerType: 'automatic',
         triggerSchedule: '0 9 * * 1',
         triggerLeadDays: 14,
@@ -35,7 +35,7 @@ test.describe('Template API - New fields (issue #17)', () => {
     expect(t.tags).toEqual(['newsletter']);
     expect(t.defaultAssigneeId).toBe('user-grace');
     expect(t.references).toEqual([{ name: 'Style guide', url: 'https://docs.google.com/style' }]);
-    expect(t.bundleLinkDefinitions).toEqual([{ name: 'Luma' }, { name: 'YouTube' }]);
+    expect(t.cardLinkDefinitions).toEqual([{ name: 'Luma' }, { name: 'YouTube' }]);
     expect(t.triggerType).toBe('automatic');
     expect(t.triggerSchedule).toBe('0 9 * * 1');
     expect(t.triggerLeadDays).toBe(14);
@@ -63,7 +63,7 @@ test.describe('Template API - New fields (issue #17)', () => {
     expect(t.tags).toBeUndefined();
     expect(t.defaultAssigneeId).toBeUndefined();
     expect(t.references).toBeUndefined();
-    expect(t.bundleLinkDefinitions).toBeUndefined();
+    expect(t.cardLinkDefinitions).toBeUndefined();
     expect(t.triggerType).toBeUndefined();
     expect(t.triggerSchedule).toBeUndefined();
     expect(t.triggerLeadDays).toBeUndefined();
@@ -272,7 +272,7 @@ test.describe('Template API - New fields (issue #17)', () => {
         tags: ['weekly'],
         defaultAssigneeId: 'user-grace',
         references: [{ name: 'Guide', url: 'https://example.com' }],
-        bundleLinkDefinitions: [{ name: 'Luma' }],
+        cardLinkDefinitions: [{ name: 'Luma' }],
         triggerType: 'automatic',
         triggerSchedule: '0 9 * * 1',
         triggerLeadDays: 7,
@@ -301,7 +301,7 @@ test.describe('Template API - New fields (issue #17)', () => {
     expect(t.tags).toEqual(['weekly']);
     expect(t.defaultAssigneeId).toBe('user-grace');
     expect(t.references).toEqual([{ name: 'Guide', url: 'https://example.com' }]);
-    expect(t.bundleLinkDefinitions).toEqual([{ name: 'Luma' }]);
+    expect(t.cardLinkDefinitions).toEqual([{ name: 'Luma' }]);
     expect(t.triggerType).toBe('automatic');
     expect(t.triggerSchedule).toBe('0 9 * * 1');
     expect(t.triggerLeadDays).toBe(7);

@@ -9,7 +9,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { startLocal, stopLocal, getClient } from '../src/db/client';
 import { createTables, TABLE_TEMPLATES } from '../src/db/setup';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
-import { createBundle, updateBundle } from '../src/db/bundles';
+import { createCard, updateCard } from '../src/db/cards';
 import { createArtifact } from '../src/db/artifacts';
 import { createFile } from '../src/db/files';
 import { createIntakeItem } from '../src/db/intake';
@@ -86,16 +86,16 @@ describe('portable execution data export', () => {
         taskDefinitions: [], createdAt: '2026-06-20T00:00:00.000Z', updatedAt: '2026-06-20T00:00:00.000Z',
       },
     }));
-    const bundle = await createBundle(client, {
+    const card = await createCard(client, {
       title: 'Representative workflow run',
       anchorDate: '2026-06-27',
       templateId: template.id,
       sourceDocIds: ['workflow.definition.example'],
       emoji: template.emoji,
       status: 'active',
-      artifactRefs: [{ artifactId: 'artifact-bundle-ref', type: 'document' }],
+      artifactRefs: [{ artifactId: 'artifact-card-ref', type: 'document' }],
       assistantJobRefs: [{ assistantJobId: 'assistant-job-export', assistantType: 'podcast' }],
-      auditEventRefs: [{ auditEventId: 'audit-bundle-ref', action: 'created' }],
+      auditEventRefs: [{ auditEventId: 'audit-card-ref', action: 'created' }],
     });
     const task = await createTask(client, {
       description: 'Send external follow-up',
@@ -108,7 +108,7 @@ describe('portable execution data export', () => {
         proposalVersion: 1,
         canonicalPayloadHash: `sha256:${'a'.repeat(64)}`,
       },
-      bundleId: bundle.id,
+      cardId: card.id,
       templateId: template.id,
       templateTaskRef: 'send-follow-up',
       templateOffsetDays: -7,
@@ -130,7 +130,7 @@ describe('portable execution data export', () => {
         {
           id: 'history-waiting-started',
           taskId: 'task-export-stable',
-          bundleId: bundle.id,
+          cardId: card.id,
           action: 'waiting-started',
           actorId: user.id,
           channel: 'email',
@@ -142,7 +142,7 @@ describe('portable execution data export', () => {
         {
           id: 'history-follow-up-sent',
           taskId: 'task-export-stable',
-          bundleId: bundle.id,
+          cardId: card.id,
           action: 'follow-up-sent',
           actorId: user.id,
           channel: 'email',
@@ -180,7 +180,7 @@ describe('portable execution data export', () => {
     });
     await createFile(client, {
       taskId: task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       filename: 'proof.txt',
       category: 'document',
       storagePath: `uploads/${task.id}/proof.txt`,
@@ -191,7 +191,7 @@ describe('portable execution data export', () => {
       title: 'Podcast prep assistant',
       status: 'waiting_approval',
       taskId: task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       requestedBy: user.id,
       inputRefs: [{ type: 'task', id: task.id }],
       outputArtifactIds: [],
@@ -213,7 +213,7 @@ describe('portable execution data export', () => {
       dataClass: 'public',
       visibility: 'public',
       taskId: task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       assistantJobId: assistantJob.id,
       sourceType: 'manual-link',
       createdBy: user.id,
@@ -241,7 +241,7 @@ describe('portable execution data export', () => {
       fileRefs: [{ fileId: 'file-export-ref', filename: 'source.txt', storageUri: 'https://example.com/source-file' }],
       artifactRefs: [{ artifactId: artifact.id, type: artifact.type, title: artifact.title, status: artifact.status }],
       taskIds: [task.id],
-      bundleIds: [bundle.id],
+      cardIds: [card.id],
       assistantJobIds: [assistantJob.id],
       assistantReadiness: {
         assistantType: 'podcast',
@@ -272,7 +272,7 @@ describe('portable execution data export', () => {
       summary: 'Bounded follow-up context',
       receivedChannels: ['manual'],
       taskIds: [],
-      bundleIds: [],
+      cardIds: [],
       tags: ['follow-up'],
       priority: 'normal',
       dataClass: 'internal',
@@ -289,7 +289,7 @@ describe('portable execution data export', () => {
       }],
     });
     await updateTask(client, task.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
-    await updateBundle(client, bundle.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
+    await updateCard(client, card.id, { intakeRefs: [{ intakeItemId: intake.id, source: intake.source, title: intake.title, status: intake.status }] });
     await appendAssistantJobEvent(client, {
       assistantJobId: assistantJob.id,
       actorId: user.id,
@@ -303,7 +303,7 @@ describe('portable execution data export', () => {
       message: 'Follow up with guest',
       userId: user.id,
       taskId: task.id,
-      bundleId: bundle.id,
+      cardId: card.id,
       templateId: template.id,
       dueAt: '2026-06-21T09:00:00.000Z',
     });
@@ -336,7 +336,7 @@ describe('portable execution data export', () => {
     assert.strictEqual(result.manifest.schema_version, 'dataops.execution.v1');
     assert.strictEqual(result.manifest.entity_counts.users, 1);
     assert.strictEqual(result.manifest.entity_counts.tasks, 2);
-    assert.strictEqual(result.manifest.entity_counts.bundles, 1);
+    assert.strictEqual(result.manifest.entity_counts.cards, 1);
     assert.strictEqual(result.manifest.entity_counts.templates, 3);
     assert.strictEqual(result.manifest.entity_counts.recurring_configs, 1);
     assert.strictEqual(result.manifest.entity_counts.files, 1);
@@ -387,13 +387,13 @@ describe('portable execution data export', () => {
     assert.match(tasksJsonl, /"completed_at":"2026-06-20T12:00:00.000Z"/);
     assert.doesNotMatch(tasksJsonl, /"PK"|"SK"/);
 
-    const bundlesJsonl = await fs.readFile(path.join(exportDir, 'bundles.jsonl'), 'utf8');
-    assert.match(bundlesJsonl, /"artifact_refs":\[\{"artifactId":"artifact-bundle-ref","type":"document"\}\]/);
-    assert.match(bundlesJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
-    assert.match(bundlesJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
-    assert.match(bundlesJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-bundle-ref","action":"created"\}\]/);
-    assert.match(bundlesJsonl, /"emoji":"🧭"/);
-    assert.match(bundlesJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
+    const cardsJsonl = await fs.readFile(path.join(exportDir, 'cards.jsonl'), 'utf8');
+    assert.match(cardsJsonl, /"artifact_refs":\[\{"artifactId":"artifact-card-ref","type":"document"\}\]/);
+    assert.match(cardsJsonl, /"assistant_job_refs":\[\{"assistantJobId":"assistant-job-export","assistantType":"podcast"\}\]/);
+    assert.match(cardsJsonl, /"intake_refs":\[\{"intakeItemId":"intake-export","source":"manual","title":"Exported intake","status":"converted"\}\]/);
+    assert.match(cardsJsonl, /"audit_event_refs":\[\{"auditEventId":"audit-card-ref","action":"created"\}\]/);
+    assert.match(cardsJsonl, /"emoji":"🧭"/);
+    assert.match(cardsJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
     assert.match(templatesJsonl, /"phases":\[\{"id":"preparation","name":"Preparation","stage":"preparation"\}\]/);
@@ -431,7 +431,7 @@ describe('portable execution data export', () => {
     assert.match(artifactsJsonl, /"storage_uri":"https:\/\/example.com\/source-document"/);
     assert.match(artifactsJsonl, /"status":"approved"/);
     assert.match(artifactsJsonl, /"task_id"/);
-    assert.match(artifactsJsonl, /"bundle_id"/);
+    assert.match(artifactsJsonl, /"card_id"/);
     assert.match(artifactsJsonl, /"assistant_job_id":"assistant-job-export"/);
     assert.match(artifactsJsonl, /"metadata":\{"source":"operator"\}/);
     assert.doesNotMatch(artifactsJsonl, /binary|password|token/i);

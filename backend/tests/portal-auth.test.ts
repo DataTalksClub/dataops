@@ -384,36 +384,36 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(waitingTask.waitingFor, 'guest bio');
     assert.strictEqual(waitingTask.followUpAt, '2028-10-06');
 
-    const createBundleResponse = await handler(
+    const createCardResponse = await handler(
       {
         httpMethod: 'POST',
-        path: '/api/bundles',
-        body: JSON.stringify({ title: `Portal action bundle ${suffix}`, anchorDate: '2028-10-05' }),
+        path: '/api/cards',
+        body: JSON.stringify({ title: `Portal action card ${suffix}`, anchorDate: '2028-10-05' }),
         headers,
       },
       {},
     );
-    assert.strictEqual(createBundleResponse.statusCode, 201);
-    const createdBundle = JSON.parse(createBundleResponse.body).bundle;
+    assert.strictEqual(createCardResponse.statusCode, 201);
+    const createdCard = JSON.parse(createCardResponse.body).card;
 
-    const updateBundleResponse = await handler(
+    const updateCardResponse = await handler(
       {
         httpMethod: 'PUT',
-        path: `/api/bundles/${createdBundle.id}`,
+        path: `/api/cards/${createdCard.id}`,
         body: JSON.stringify({
           stage: 'announced',
-          bundleLinks: [{ name: 'Podcast doc', url: 'https://example.com/doc' }],
+          cardLinks: [{ name: 'Podcast doc', url: 'https://example.com/doc' }],
           references: [{ name: 'Guest notes', url: 'https://example.com/notes' }],
         }),
         headers,
       },
       {},
     );
-    assert.strictEqual(updateBundleResponse.statusCode, 200);
-    const updatedBundle = JSON.parse(updateBundleResponse.body).bundle;
-    assert.strictEqual(updatedBundle.stage, 'announced');
-    assert.deepStrictEqual(updatedBundle.bundleLinks, [{ name: 'Podcast doc', url: 'https://example.com/doc' }]);
-    assert.deepStrictEqual(updatedBundle.references, [{ name: 'Guest notes', url: 'https://example.com/notes' }]);
+    assert.strictEqual(updateCardResponse.statusCode, 200);
+    const updatedCard = JSON.parse(updateCardResponse.body).card;
+    assert.strictEqual(updatedCard.stage, 'announced');
+    assert.deepStrictEqual(updatedCard.cardLinks, [{ name: 'Podcast doc', url: 'https://example.com/doc' }]);
+    assert.deepStrictEqual(updatedCard.references, [{ name: 'Guest notes', url: 'https://example.com/notes' }]);
 
     const deniedRecurringResponse = await handler(
       {

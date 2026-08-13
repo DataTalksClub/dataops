@@ -110,7 +110,7 @@ export function validateRuntimeEnvironment(env) {
   assert.equal(env.AWS_REGION, CONTRACT.region, "region mismatch");
   assert.equal(env.AWS_DEFAULT_REGION, CONTRACT.region, "default region mismatch");
   assert.equal(env.AWS_ROLE_ARN, CONTRACT.roleArn, "role input mismatch");
-  for (const name of ["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3", "AWS_CA_BUNDLE"]) {
+  for (const name of ["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3", "AWS_CA_CARD"]) {
     assert.ok(!env[name], `${name} override rejected`);
   }
   assert.ok(PHASES.includes(env.SPONSOR_RESET_PHASE), "unknown phase");

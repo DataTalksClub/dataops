@@ -31,9 +31,9 @@ async function installBerlinBoundaryClock(page) {
   await page.clock.setFixedTime(new Date(BERLIN_MIDNIGHT_BOUNDARY_INSTANT));
 }
 
-async function installBundleCreatedAtOverride(page, bundleId, createdAt) {
+async function installCardCreatedAtOverride(page, cardId, createdAt) {
   await page.route(
-    (url) => url.pathname === '/api/bundles' || url.pathname === '/api/bundles/' + bundleId,
+    (url) => url.pathname === '/api/cards' || url.pathname === '/api/cards/' + cardId,
     async (route) => {
       if (route.request().method() !== 'GET') {
         await route.continue();
@@ -42,13 +42,13 @@ async function installBundleCreatedAtOverride(page, bundleId, createdAt) {
 
       const response = await route.fetch();
       const body = await response.json();
-      if (Array.isArray(body.bundles)) {
-        body.bundles = body.bundles.map((bundle) =>
-          bundle.id === bundleId ? { ...bundle, createdAt } : bundle
+      if (Array.isArray(body.cards)) {
+        body.cards = body.cards.map((card) =>
+          card.id === cardId ? { ...card, createdAt } : card
         );
       }
-      if (body.bundle && body.bundle.id === bundleId) {
-        body.bundle = { ...body.bundle, createdAt };
+      if (body.card && body.card.id === cardId) {
+        body.card = { ...body.card, createdAt };
       }
       await route.fulfill({ response, json: body });
     }
@@ -60,6 +60,6 @@ module.exports = {
   BERLIN_TIME_ZONE,
   berlinBusinessDate,
   installBerlinBoundaryClock,
-  installBundleCreatedAtOverride,
+  installCardCreatedAtOverride,
   offsetBusinessDate,
 };

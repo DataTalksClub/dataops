@@ -199,10 +199,10 @@ function validateTemplateFields(body: Record<string, unknown>): string | null {
       return 'references must be an array of objects with string name and url';
     }
   }
-  if (body.bundleLinkDefinitions !== undefined) {
-    if (!Array.isArray(body.bundleLinkDefinitions) || !body.bundleLinkDefinitions.every((item) => item && typeof item === 'object' && !Array.isArray(item)
+  if (body.cardLinkDefinitions !== undefined) {
+    if (!Array.isArray(body.cardLinkDefinitions) || !body.cardLinkDefinitions.every((item) => item && typeof item === 'object' && !Array.isArray(item)
       && typeof (item as Record<string, unknown>).name === 'string')) {
-      return 'bundleLinkDefinitions must be an array of objects with string name';
+      return 'cardLinkDefinitions must be an array of objects with string name';
     }
   }
   return null;
@@ -365,7 +365,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
     // Pick optional template-level fields
     const optionalFields = [
       'emoji', 'tags', 'defaultAssigneeId', 'phases', 'sourceDocIds', 'references',
-      'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
+      'cardLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
       'triggerEnabled',
     ];
     for (const field of optionalFields) {
@@ -450,7 +450,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
     const allowedFields = [
       'name', 'type', 'taskDefinitions',
       'emoji', 'tags', 'defaultAssigneeId', 'phases', 'sourceDocIds', 'references',
-      'bundleLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
+      'cardLinkDefinitions', 'triggerType', 'triggerSchedule', 'triggerLeadDays',
       'triggerEnabled',
     ];
     const updates: Record<string, unknown> = {};

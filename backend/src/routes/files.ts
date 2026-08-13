@@ -250,7 +250,7 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
   // Create metadata record
   const fileData: Record<string, unknown> = {
     taskId,
-    bundleId: task.bundleId,
+    cardId: task.cardId,
     filename: parsed.file.filename,
     category,
     storagePath,

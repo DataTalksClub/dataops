@@ -5,8 +5,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 test.describe('Cron runner API', () => {
 
-  // Scenario: Cron runner creates a bundle for a weekly template
-  test('POST /api/cron/run creates a bundle for an automatic template', async ({ request }) => {
+  // Scenario: Cron runner creates a card for a weekly template
+  test('POST /api/cron/run creates a card for an automatic template', async ({ request }) => {
     // Create a template with automatic trigger, every day (to guarantee match)
     const tmplRes = await request.post('/api/templates', {
       data: {
@@ -33,22 +33,22 @@ test.describe('Cron runner API', () => {
     expect(Array.isArray(cronBody.created)).toBe(true);
     expect(typeof cronBody.skipped).toBe('number');
 
-    // Find the bundle created for our template
-    const bundlesRes = await request.get('/api/bundles');
-    const { bundles } = await bundlesRes.json();
-    const createdBundle = bundles.find((b) => b.templateId === template.id);
+    // Find the card created for our template
+    const cardsRes = await request.get('/api/cards');
+    const { cards } = await cardsRes.json();
+    const createdCard = cards.find((b) => b.templateId === template.id);
 
-    expect(createdBundle).toBeDefined();
-    expect(createdBundle.templateId).toBe(template.id);
-    expect(createdBundle.anchorDate).toBeDefined();
-    expect(createdBundle.title).toContain('Cron Test Newsletter');
+    expect(createdCard).toBeDefined();
+    expect(createdCard.templateId).toBe(template.id);
+    expect(createdCard.anchorDate).toBeDefined();
+    expect(createdCard.title).toContain('Cron Test Newsletter');
 
-    // Verify tasks were created for this bundle
-    const tasksRes = await request.get(`/api/bundles/${createdBundle.id}/tasks`);
+    // Verify tasks were created for this card
+    const tasksRes = await request.get(`/api/cards/${createdCard.id}/tasks`);
     expect(tasksRes.status()).toBe(200);
     const { tasks } = await tasksRes.json();
     expect(tasks.length).toBe(2);
-    expect(tasks.every((t) => t.bundleId === createdBundle.id)).toBe(true);
+    expect(tasks.every((t) => t.cardId === createdCard.id)).toBe(true);
 
     // Clean up: delete the template
     await request.delete(`/api/templates/${template.id}`);
@@ -72,14 +72,14 @@ test.describe('Cron runner API', () => {
     expect(tmplRes.status()).toBe(201);
     const { template } = await tmplRes.json();
 
-    // First run - should create a bundle
+    // First run - should create a card
     const firstRun = await request.post('/api/cron/run');
     expect(firstRun.status()).toBe(200);
     const firstBody = await firstRun.json();
 
-    // Get bundle count after first run
-    const afterFirst = await request.get('/api/bundles');
-    const countAfterFirst = (await afterFirst.json()).bundles.length;
+    // Get card count after first run
+    const afterFirst = await request.get('/api/cards');
+    const countAfterFirst = (await afterFirst.json()).cards.length;
 
     // Second run - should skip (no duplicates)
     const secondRun = await request.post('/api/cron/run');
@@ -89,20 +89,20 @@ test.describe('Cron runner API', () => {
     // skipped should be >= 1 (our template)
     expect(secondBody.skipped).toBeGreaterThanOrEqual(1);
 
-    // Bundle count should not have increased for our template
-    const afterSecond = await request.get('/api/bundles');
-    const bundlesAfterSecond = (await afterSecond.json()).bundles;
-    const bundlesForTemplate = bundlesAfterSecond.filter(
+    // Card count should not have increased for our template
+    const afterSecond = await request.get('/api/cards');
+    const cardsAfterSecond = (await afterSecond.json()).cards;
+    const cardsForTemplate = cardsAfterSecond.filter(
       (b) => b.templateId === template.id
     );
-    expect(bundlesForTemplate.length).toBe(1);
+    expect(cardsForTemplate.length).toBe(1);
 
     // Clean up
     await request.delete(`/api/templates/${template.id}`);
   });
 
-  // Scenario: Notification is created when bundle is auto-created
-  test('notification is created when bundle is auto-created', async ({ request }) => {
+  // Scenario: Notification is created when card is auto-created
+  test('notification is created when card is auto-created', async ({ request }) => {
     // Create a template
     const tmplRes = await request.post('/api/templates', {
       data: {
@@ -132,7 +132,7 @@ test.describe('Cron runner API', () => {
 
     expect(notification).toBeDefined();
     expect(notification.message).toContain('Notification Test Template');
-    expect(notification.bundleId).toBeDefined();
+    expect(notification.cardId).toBeDefined();
     expect(notification.dismissed).toBe(false);
 
     // Clean up
@@ -157,12 +157,12 @@ test.describe('Cron runner API', () => {
     // Run cron
     await request.post('/api/cron/run');
 
-    // Verify no bundle was created for the manual template
-    const bundlesRes = await request.get('/api/bundles');
-    const { bundles } = await bundlesRes.json();
-    const manualBundles = bundles.filter((b) => b.templateId === template.id);
+    // Verify no card was created for the manual template
+    const cardsRes = await request.get('/api/cards');
+    const { cards } = await cardsRes.json();
+    const manualCards = cards.filter((b) => b.templateId === template.id);
 
-    expect(manualBundles.length).toBe(0);
+    expect(manualCards.length).toBe(0);
 
     // Clean up
     await request.delete(`/api/templates/${template.id}`);

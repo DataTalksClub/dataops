@@ -63,7 +63,7 @@ export interface ArtifactRecord {
   visibility?: ArtifactDataClass;
   dataClass: ArtifactDataClass;
   taskId?: string;
-  bundleId?: string;
+  cardId?: string;
   assistantJobId?: string;
   fileId?: string;
   sourceType: ArtifactSourceType;
@@ -164,7 +164,7 @@ export interface IntakeItem {
   fileRefs: IntakeFileRef[];
   artifactRefs: ArtifactRef[];
   taskIds: string[];
-  bundleIds: string[];
+  cardIds: string[];
   assistantJobIds: string[];
   assistantReadiness?: IntakeAssistantReadiness;
   duplicateOfIntakeItemId?: string;
@@ -208,7 +208,7 @@ export type AssistantJobEventAction =
   | 'succeeded';
 
 export interface AssistantJobInputRef {
-  type: 'source-message' | 'file' | 'url' | 'doc' | 'task' | 'bundle' | 'artifact' | 'other' | string;
+  type: 'source-message' | 'file' | 'url' | 'doc' | 'task' | 'card' | 'artifact' | 'other' | string;
   id?: string;
   uri?: string;
   title?: string;
@@ -240,7 +240,7 @@ export interface AssistantJobRecord {
   title: string;
   status: AssistantJobStatus;
   taskId?: string;
-  bundleId?: string;
+  cardId?: string;
   requestedBy?: string;
   inputRefs: AssistantJobInputRef[];
   outputArtifactIds: string[];
@@ -286,7 +286,7 @@ export type TaskHistoryAction =
 export interface TaskHistoryEvent {
   id: string;
   taskId: string;
-  bundleId?: string;
+  cardId?: string;
   action: TaskHistoryAction;
   actorId?: string;
   channel?: string;
@@ -329,7 +329,7 @@ export interface Task {
     canonicalPayloadHash: string;
   };
   tags?: string[];
-  bundleId?: string;
+  cardId?: string;
   templateId?: string;
   templateTaskRef?: string;
   templateOffsetDays?: number;
@@ -352,7 +352,7 @@ export interface Task {
 export interface FileRecord {
   id: string;
   taskId: string;
-  bundleId?: string;
+  cardId?: string;
   filename: string;
   category: 'image' | 'invoice' | 'document';
   tags?: string[];
@@ -365,14 +365,14 @@ export interface FileRecord {
   createdAt: string;
 }
 
-// --- Bundle ---
+// --- Card ---
 
-export interface BundleLink {
+export interface CardLink {
   name: string;
   url: string;
 }
 
-export interface Bundle {
+export interface Card {
   id: string;
   title?: string;
   description?: string | null;
@@ -380,8 +380,8 @@ export interface Bundle {
   templateId?: string;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
-  references?: BundleLink[];
-  bundleLinks?: BundleLink[];
+  references?: CardLink[];
+  cardLinks?: CardLink[];
   emoji?: string;
   tags?: string[];
   stage?: string;
@@ -401,7 +401,7 @@ export interface Reference {
   url: string;
 }
 
-export interface BundleLinkDefinition {
+export interface CardLinkDefinition {
   name: string;
 }
 
@@ -437,7 +437,7 @@ export interface Template {
   phases?: WorkflowPhase[];
   sourceDocIds?: string[];
   references?: Reference[];
-  bundleLinkDefinitions?: BundleLinkDefinition[];
+  cardLinkDefinitions?: CardLinkDefinition[];
   triggerType?: string;
   triggerSchedule?: string;
   triggerLeadDays?: number;
@@ -526,7 +526,7 @@ export interface Notification {
   type?: NotificationType | string;
   taskId?: string;
   intakeItemId?: string;
-  bundleId?: string;
+  cardId?: string;
   templateId?: string;
   recurringConfigId?: string;
   metadata?: Record<string, unknown>;

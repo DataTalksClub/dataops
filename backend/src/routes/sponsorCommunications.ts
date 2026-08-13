@@ -133,9 +133,9 @@ async function validatePresentationState(
     || suggestion.bookingId !== payload.payload.bookingId
     || suggestion.organizationId !== payload.payload.organizationId
     || templates.digest !== config.templateBundleDigest
-    || templates.bundle.generation !== config.templateBundleGeneration
+    || templates.card.generation !== config.templateBundleGeneration
   ) throw new Error('Source, template, or suppression configuration changed');
-  const template = templates.bundle.templates.find((item) => item.id === payload.payload.templateId);
+  const template = templates.card.templates.find((item) => item.id === payload.payload.templateId);
   if (
     !template
     || template.version !== payload.payload.templateVersion
@@ -215,7 +215,7 @@ export async function handleSponsorCommunicationRoutes(
         ...input,
         enabled: body.enabled === true && process.env.SPONSOR_COMMUNICATION_SEND_ENABLED === 'true',
         generation: (previous?.generation || 0) + 1,
-        templateBundleGeneration: templates.bundle.generation,
+        templateBundleGeneration: templates.card.generation,
         templateBundleDigest: templates.digest,
         hmacSecretVersionId: keyring.secretVersionId,
         hmacActiveVersion: keyring.activeVersion,
@@ -333,10 +333,10 @@ export async function handleSponsorCommunicationRoutes(
       const key = await loadHmacKeyring();
       validateSendConfig(config, key.keyring);
       const templates = await loadTemplateBundle();
-      if (templates.digest !== config.templateBundleDigest || templates.bundle.generation !== config.templateBundleGeneration) {
+      if (templates.digest !== config.templateBundleDigest || templates.card.generation !== config.templateBundleGeneration) {
         return json(409, { error: 'Template configuration changed; reconcile before drafting' });
       }
-      const template = templates.bundle.templates.find((item) => item.id === suggestion.communicationType)!;
+      const template = templates.card.templates.find((item) => item.id === suggestion.communicationType)!;
       const rendered = renderTemplate(template, {
         organizationName: String(organization.displayName),
         publicationDate: typeof booking.plannedPublicationDate === 'string' ? booking.plannedPublicationDate : undefined,
@@ -358,7 +358,7 @@ export async function handleSponsorCommunicationRoutes(
         templateId: template.id,
         templateVersion: template.version,
         templateDigest: sha256(JSON.stringify(template)),
-        templateBundleGeneration: templates.bundle.generation,
+        templateBundleGeneration: templates.card.generation,
         bookingId: booking.id,
         bookingVersion: booking.version,
         organizationId: organization.id,

@@ -32,15 +32,15 @@ describe('Notifications data layer', () => {
 
   it('createNotification returns a notification with id, createdAt, dismissed=false', async () => {
     const notification = await createNotification(client, {
-      message: 'Newsletter bundle auto-created for Mar 15',
-      bundleId: 'bundle-123',
+      message: 'Newsletter card auto-created for Mar 15',
+      cardId: 'card-123',
       templateId: 'template-456',
     });
 
     assert.ok(notification.id);
     assert.ok(notification.createdAt);
-    assert.strictEqual(notification.message, 'Newsletter bundle auto-created for Mar 15');
-    assert.strictEqual(notification.bundleId, 'bundle-123');
+    assert.strictEqual(notification.message, 'Newsletter card auto-created for Mar 15');
+    assert.strictEqual(notification.cardId, 'card-123');
     assert.strictEqual(notification.dismissed, false);
     assert.strictEqual((notification as Record<string, unknown>).PK, undefined);
     assert.strictEqual((notification as Record<string, unknown>).SK, undefined);
@@ -156,7 +156,7 @@ describe('Notifications data layer', () => {
       status: 'waiting',
       waitingFor: 'Speaker',
       followUpAt: '2098-01-15T09:00:00.000Z',
-      bundleId: 'bundle-follow-up-test',
+      cardId: 'card-follow-up-test',
     });
     await createTask(client, {
       description: 'Future waiting task',
@@ -180,7 +180,7 @@ describe('Notifications data layer', () => {
     assert.strictEqual(created.length, 1);
     assert.strictEqual(created[0].type, 'follow-up-due');
     assert.strictEqual(created[0].taskId, dueTask.id);
-    assert.strictEqual(created[0].bundleId, 'bundle-follow-up-test');
+    assert.strictEqual(created[0].cardId, 'card-follow-up-test');
     assert.strictEqual(created[0].dueAt, '2098-01-15T09:00:00.000Z');
     assert.ok(created[0].message.includes('Confirm speaker bio'));
     assert.ok(created[0].message.includes('Speaker'));

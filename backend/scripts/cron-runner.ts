@@ -12,10 +12,10 @@ import { runCron } from '../src/cron/runner';
 
   console.log('Running cron...');
   const result = await runCron(client);
-  console.log(`Created: ${result.created.length} bundles`);
+  console.log(`Created: ${result.created.length} cards`);
   console.log(`Skipped: ${result.skipped} (duplicates)`);
   if (result.created.length > 0) {
-    console.log('Bundle IDs:', result.created);
+    console.log('Card IDs:', result.created);
   }
   process.exit(0);
 })();
