@@ -136,7 +136,7 @@ def test_normal_source_and_push_deploy_cannot_enter_the_destructive_sequence():
     deploy_at = workflow.index("- name: Deploy DataOps v1 stack")
     assert protection_at < build_at < deploy_at
     assert workflow.count("- issue-166-phase-a") == 1
-    assert "issue-166-phase-b" not in workflow
+    assert workflow.count("- issue-166-phase-b") == 1
     assert "issue-166-phase-c" not in workflow
     assert "issue-166-phase-d" not in workflow
 
@@ -159,7 +159,14 @@ def test_phase_a_requires_exact_identity_and_replaces_task_dependent_post_deploy
     )
     for guard in required_guards:
         assert guard in workflow
-    assert workflow.count("b4e83537-7cf6-41cb-a281-8a52f678b1a3") == 2
+    phase_a_preflight = workflow.split(
+        '- name: "Verify issue #166 Phase A preflight and exact backup"', 1
+    )[1].split('- name: "Verify issue #166 Phase B exact recovery point and quiescence"', 1)[0]
+    phase_a_result = workflow.split(
+        '- name: "Assert bounded issue #166 Phase A result"', 1
+    )[1].split('- name: "Assert bounded issue #166 Phase B result"', 1)[0]
+    assert phase_a_preflight.count("b4e83537-7cf6-41cb-a281-8a52f678b1a3") == 1
+    assert phase_a_result.count("b4e83537-7cf6-41cb-a281-8a52f678b1a3") == 1
 
     assert "node scripts/deploy/prepare-issue-166-phase-a.mjs .aws-sam/build/template.yaml" in workflow
     assert workflow.count("if: env.DEPLOYMENT_MODE == 'issue-166-phase-a'") == 3
@@ -179,12 +186,12 @@ def test_phase_a_processed_template_guards_have_no_uninstalled_runtime_dependenc
     assert "from 'js-yaml'" not in workflow
     assert "safeLoad(" not in workflow
     assert workflow.count("--output json > \"$deployed_template\"") == 1
-    assert workflow.count("--output json > \"$processed_template\"") == 1
-    assert workflow.count("const encodedTemplate = JSON.parse(readFileSync(") == 2
-    assert workflow.count("? JSON.parse(encodedTemplate)") == 2
+    assert workflow.count("--output json > \"$processed_template\"") == 2
+    assert workflow.count("const encodedTemplate = JSON.parse(readFileSync(") == 3
+    assert workflow.count("? JSON.parse(encodedTemplate)") == 3
     assert workflow.count(
         "Processed CloudFormation template must be a JSON object"
-    ) == 2
+    ) == 3
 
 
 def _workflow_node_blocks() -> list[str]:
@@ -201,7 +208,7 @@ def _workflow_node_blocks() -> list[str]:
 
 def test_phase_a_processed_template_guards_accept_only_json_objects(tmp_path: Path):
     blocks = _workflow_node_blocks()
-    assert len(blocks) == 2
+    assert len(blocks) == 3
     steady = _synthetic_built_template()
     phase_a = copy.deepcopy(steady)
     phase_a["Metadata"] = {"DataOpsIssue166Cutover": {"Issue": 166, "Phase": "A"}}
@@ -212,9 +219,17 @@ def test_phase_a_processed_template_guards_accept_only_json_objects(tmp_path: Pa
     tasks = phase_a["Resources"]["DataOpsTasksTable"]
     tasks["DeletionPolicy"] = "Delete"
     tasks["UpdateReplacePolicy"] = "Delete"
+    phase_b = copy.deepcopy(phase_a)
+    phase_b["Metadata"]["DataOpsIssue166Cutover"]["Phase"] = "B"
+    phase_b["Resources"].pop("DataOpsTasksTable")
+    phase_b["Outputs"].pop("DataOpsTasksTableName")
 
     for index, (block, template, arguments) in enumerate(
-        ((blocks[0], steady, ["normal"]), (blocks[1], phase_a, []))
+        (
+            (blocks[0], phase_a, ["issue-166-phase-b"]),
+            (blocks[1], phase_a, []),
+            (blocks[2], phase_b, []),
+        )
     ):
         fixture = tmp_path / f"template-{index}.json"
         for encoded in (template, json.dumps(template)):

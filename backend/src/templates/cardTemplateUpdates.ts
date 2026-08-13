@@ -139,7 +139,12 @@ function digest(value: unknown): string {
 }
 
 function taskVersion(task: Task): number {
-  return typeof task.version === 'number' ? task.version : 1;
+  if (!Number.isInteger(task.version) || task.version < 1) {
+    throw new CardTemplateUpdateInvalidStateError(
+      `Task ${task.id} has an invalid optimistic-concurrency version`,
+    );
+  }
+  return task.version;
 }
 
 function cardDefinitionValue(card: Card, field: typeof CARD_FIELDS[number]): unknown {

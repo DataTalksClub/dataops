@@ -117,19 +117,26 @@ describe('API — reviewed Card Template updates', () => {
     const followUp = byRef.get('follow-up') as any;
 
     await updateTask(client, announce.id, {
-      status: 'waiting',
-      waitingFor: 'Synthetic private reply',
-      comment: 'Synthetic private operator note',
-      artifactRefs: [{ artifactId: 'artifact-synthetic-proof' }],
+      expectedVersion: announce.version,
+      patch: {
+        status: 'waiting',
+        waitingFor: 'Synthetic private reply',
+        comment: 'Synthetic private operator note',
+        artifactRefs: [{ artifactId: 'artifact-synthetic-proof' }],
+      },
     });
     await updateTask(client, host.id, {
-      status: 'done',
-      completedBy: 'operator-template-review',
-      completedAt: '2026-04-15T12:00:00.000Z',
-      link: 'https://example.invalid/private-proof',
+      expectedVersion: host.version,
+      patch: {
+        status: 'done',
+        completedBy: 'operator-template-review',
+        completedAt: '2026-04-15T12:00:00.000Z',
+        link: 'https://example.invalid/private-proof',
+      },
     });
     await updateTask(client, followUp.id, {
-      waitingFor: 'Synthetic follow-up response',
+      expectedVersion: followUp.version,
+      patch: { waitingFor: 'Synthetic follow-up response' },
     });
     const linked = await invoke('PUT', `/api/cards/${cardId}`, {
       cardLinks: [
@@ -230,7 +237,10 @@ describe('API — reviewed Card Template updates', () => {
     const preview = parsed(await invoke('GET', `/api/cards/${cardId}/template-update`)).preview;
     const beforeCard = await getCard(client, cardId);
     const announce = (await listTasksByCard(client, cardId)).find(({ templateTaskRef }) => templateTaskRef === 'announce')!;
-    await updateTask(client, announce.id, { comment: 'Typed while preview was open' });
+    await updateTask(client, announce.id, {
+      expectedVersion: announce.version,
+      patch: { comment: 'Typed while preview was open' },
+    });
 
     const stale = await invoke('POST', `/api/cards/${cardId}/template-update`, {
       previewToken: preview.previewToken,
@@ -264,7 +274,10 @@ describe('API — reviewed Card Template updates', () => {
     const firstPreview = previews.find((result: any) => result.cardId === first.card.id).preview;
     const secondPreview = previews.find((result: any) => result.cardId === second.card.id).preview;
     const secondTask = (await listTasksByCard(client, second.card.id))[0];
-    await updateTask(client, secondTask.id, { comment: 'Concurrent batch input' });
+    await updateTask(client, secondTask.id, {
+      expectedVersion: secondTask.version,
+      patch: { comment: 'Concurrent batch input' },
+    });
 
     const applied = await invoke('POST', '/api/cards/template-updates/apply', {
       updates: [

@@ -135,6 +135,9 @@ export function createRouteState(context) {
     detail.activeTaskPanelId = null;
     detail.activeTaskPanelTask = null;
     detail.activeTaskPanelArtifacts = [];
+    detail.activeTaskPanelDraft = null;
+    detail.activeTaskPanelConflict = null;
+    detail.activeTaskMutationBusy = false;
     taskPanel.hidden = true;
     if (!cardPanel.hidden) {
       cardPanel.inert = false;
@@ -161,6 +164,9 @@ export function createRouteState(context) {
     detail.activeTaskPanelId = taskId;
     detail.activeTaskPanelTask = null;
     detail.activeTaskPanelArtifacts = [];
+    detail.activeTaskPanelDraft = null;
+    detail.activeTaskPanelConflict = null;
+    detail.activeTaskMutationBusy = false;
     taskPanelTitle.textContent = "Loading task...";
     taskPanelBody.replaceChildren();
     taskPanel.hidden = false;

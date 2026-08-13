@@ -11,13 +11,45 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_TASKS } from './tableNames';
 import type { Task } from '../types';
 
+type TaskMutableField = Exclude<
+  keyof Task,
+  'id' | 'version' | 'taskHistory' | 'createdAt' | 'updatedAt'
+>;
+
+type TaskPatch = {
+  [Field in TaskMutableField]?: Task[Field] | null;
+};
+
+interface TaskMutation {
+  expectedVersion: number;
+  patch: TaskPatch;
+  historyEvents?: Task['taskHistory'];
+}
+
+type AdditiveTaskPatch = (currentTask: Task) => TaskPatch;
+
+class TaskVersionConflictError extends Error {
+  readonly taskId: string;
+  readonly expectedVersion: number;
+
+  constructor(taskId: string, expectedVersion: number) {
+    super(`Task ${taskId} changed from expected version ${expectedVersion}`);
+    this.name = 'TaskVersionConflictError';
+    this.taskId = taskId;
+    this.expectedVersion = expectedVersion;
+  }
+}
+
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item, returning a clean object.
  */
 function cleanItem(item: Record<string, unknown> | undefined): Task | null {
   if (!item) return null;
   const { PK, SK, ...rest } = item;
-  return { ...rest, version: typeof rest.version === 'number' ? rest.version : 1 } as unknown as Task;
+  if (!Number.isInteger(rest.version) || Number(rest.version) < 1 || !Array.isArray(rest.taskHistory)) {
+    throw new Error(`Task ${String(rest.id || PK || 'unknown')} is not in the canonical versioned shape`);
+  }
+  return rest as unknown as Task;
 }
 
 /**
@@ -37,12 +69,14 @@ async function createTask(client: DynamoDBDocumentClient, taskData: Record<strin
     status: 'todo',
     ...taskData,
     version: 1,
+    taskHistory: [],
   };
 
   await client.send(
     new PutCommand({
       TableName: TABLE_TASKS,
       Item: item,
+      ConditionExpression: 'attribute_not_exists(PK)',
     })
   );
 
@@ -53,10 +87,27 @@ async function createTask(client: DynamoDBDocumentClient, taskData: Record<strin
  * Get a task by id. Returns the clean object or null if not found.
  */
 async function getTask(client: DynamoDBDocumentClient, id: string): Promise<Task | null> {
+  return getTaskWithConsistency(client, id, false);
+}
+
+/**
+ * Read the canonical Task after a failed condition so an API conflict response
+ * never returns a stale pre-write snapshot.
+ */
+async function getTaskConsistent(client: DynamoDBDocumentClient, id: string): Promise<Task | null> {
+  return getTaskWithConsistency(client, id, true);
+}
+
+async function getTaskWithConsistency(
+  client: DynamoDBDocumentClient,
+  id: string,
+  consistentRead: boolean,
+): Promise<Task | null> {
   const result = await client.send(
     new GetCommand({
       TableName: TABLE_TASKS,
       Key: { PK: `TASK#${id}`, SK: `TASK#${id}` },
+      ...(consistentRead ? { ConsistentRead: true } : {}),
     })
   );
 
@@ -64,13 +115,22 @@ async function getTask(client: DynamoDBDocumentClient, id: string): Promise<Task
 }
 
 /**
- * Partial update of a task. Builds an UpdateExpression from the updates object.
- * Always updates updatedAt.
+ * Conditionally mutate one canonical Task row. Task fields, timestamp, version,
+ * and history events are applied by one DynamoDB write.
  */
-async function updateTask(client: DynamoDBDocumentClient, id: string, updates: Record<string, unknown>): Promise<Task | null> {
+async function updateTask(
+  client: DynamoDBDocumentClient,
+  id: string,
+  mutation: TaskMutation,
+): Promise<Task> {
+  if (!Number.isInteger(mutation.expectedVersion) || mutation.expectedVersion < 1) {
+    throw new TypeError('expectedVersion must be an integer greater than or equal to 1');
+  }
   const now = new Date().toISOString();
-  const { version: _ignoredVersion, ...safeUpdates } = updates;
-  const fields: Record<string, unknown> = { ...safeUpdates, updatedAt: now };
+  const fields: Record<string, unknown> = { ...mutation.patch, updatedAt: now };
+  const forbiddenFields = ['PK', 'SK', 'id', 'version', 'taskHistory', 'createdAt', 'updatedAt', 'expectedVersion'];
+  const suppliedForbiddenField = forbiddenFields.find((field) => Object.hasOwn(mutation.patch, field));
+  if (suppliedForbiddenField) throw new TypeError(`${suppliedForbiddenField} is not an allowed Task patch field`);
 
   const expressionParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
@@ -85,35 +145,89 @@ async function updateTask(client: DynamoDBDocumentClient, id: string, updates: R
     expressionAttrValues[valueToken] = value;
     i++;
   }
-  expressionParts.push('#version = if_not_exists(#version, :versionBase) + :versionIncrement');
+  expressionParts.push('#version = :nextVersion');
   expressionAttrNames['#version'] = 'version';
-  expressionAttrValues[':versionBase'] = 1;
-  expressionAttrValues[':versionIncrement'] = 1;
+  expressionAttrValues[':expectedVersion'] = mutation.expectedVersion;
+  expressionAttrValues[':nextVersion'] = mutation.expectedVersion + 1;
 
-  const result = await client.send(
-    new UpdateCommand({
+  if (mutation.historyEvents?.length) {
+    expressionParts.push('#taskHistory = list_append(#taskHistory, :historyEvents)');
+    expressionAttrNames['#taskHistory'] = 'taskHistory';
+    expressionAttrValues[':historyEvents'] = mutation.historyEvents;
+  }
+
+  try {
+    const result = await client.send(new UpdateCommand({
       TableName: TABLE_TASKS,
       Key: { PK: `TASK#${id}`, SK: `TASK#${id}` },
       UpdateExpression: `SET ${expressionParts.join(', ')}`,
+      ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion',
       ExpressionAttributeNames: expressionAttrNames,
       ExpressionAttributeValues: expressionAttrValues,
       ReturnValues: 'ALL_NEW',
-    })
-  );
+    }));
 
-  return cleanItem(result.Attributes as Record<string, unknown>);
+    return cleanItem(result.Attributes as Record<string, unknown>) as Task;
+  } catch (error) {
+    if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
+      throw new TaskVersionConflictError(id, mutation.expectedVersion);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Add one caller-owned reference without replaying a stale Task snapshot.
+ * The initial conditional attempt may be followed by one strongly-consistent
+ * refetch/remerge attempt; a second conflict is surfaced to the caller.
+ */
+async function updateTaskAdditive(
+  client: DynamoDBDocumentClient,
+  initialTask: Task,
+  buildPatch: AdditiveTaskPatch,
+): Promise<Task> {
+  let currentTask = initialTask;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await updateTask(client, currentTask.id, {
+        expectedVersion: currentTask.version,
+        patch: buildPatch(currentTask),
+      });
+    } catch (error) {
+      if (!(error instanceof TaskVersionConflictError) || attempt === 1) throw error;
+      const refreshed = await getTaskConsistent(client, currentTask.id);
+      if (!refreshed) throw error;
+      currentTask = refreshed;
+    }
+  }
+  throw new Error('Unreachable additive Task mutation state');
 }
 
 /**
  * Delete a task by id.
  */
-async function deleteTask(client: DynamoDBDocumentClient, id: string): Promise<void> {
-  await client.send(
-    new DeleteCommand({
+async function deleteTask(
+  client: DynamoDBDocumentClient,
+  id: string,
+  expectedVersion: number,
+): Promise<void> {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    throw new TypeError('expectedVersion must be an integer greater than or equal to 1');
+  }
+  try {
+    await client.send(new DeleteCommand({
       TableName: TABLE_TASKS,
       Key: { PK: `TASK#${id}`, SK: `TASK#${id}` },
-    })
-  );
+      ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion',
+      ExpressionAttributeNames: { '#version': 'version' },
+      ExpressionAttributeValues: { ':expectedVersion': expectedVersion },
+    }));
+  } catch (error) {
+    if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
+      throw new TaskVersionConflictError(id, expectedVersion);
+    }
+    throw error;
+  }
 }
 
 /**
@@ -191,10 +305,14 @@ async function listTasksByStatus(client: DynamoDBDocumentClient, status: string)
 export {
   createTask,
   getTask,
+  getTaskConsistent,
   updateTask,
+  updateTaskAdditive,
   deleteTask,
   listTasksByDate,
   listTasksByDateRange,
   listTasksByCard,
   listTasksByStatus,
+  TaskVersionConflictError,
 };
+export type { AdditiveTaskPatch, TaskMutation, TaskPatch };

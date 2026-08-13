@@ -299,7 +299,7 @@ export interface TaskHistoryEvent {
 
 export interface Task {
   id: string;
-  /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
+  /** Monotonic optimistic-concurrency token. */
   version: number;
   description: string;
   date: string;
@@ -351,7 +351,7 @@ export interface Task {
   assistantJobRefs?: AssistantJobRef[];
   intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
-  taskHistory?: TaskHistoryEvent[];
+  taskHistory: TaskHistoryEvent[];
   createdAt: string;
   updatedAt: string;
 }

@@ -439,6 +439,8 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
         PK: `TASK#${taskId}`,
         SK: `TASK#${taskId}`,
         id: taskId,
+        version: 1,
+        taskHistory: [],
         description: 'Different task',
         date: collision.date,
         status: 'todo',

@@ -12,7 +12,7 @@ import {
 import { createArtifact, getArtifact, listArtifacts, updateArtifact } from '../db/artifacts';
 import { getCard, updateCard } from '../db/cards';
 import { createNotification } from '../db/notifications';
-import { getTask, updateTask } from '../db/tasks';
+import { getTask, updateTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tasks';
 import type {
   ArtifactRecord,
   ArtifactRef,
@@ -221,7 +221,9 @@ async function mirrorJobRef(client: DynamoDBDocumentClient, job: AssistantJobRec
   const ref = assistantJobRef(job);
   if (job.taskId) {
     const task = await getTask(client, job.taskId);
-    if (task) await updateTask(client, job.taskId, { assistantJobRefs: mergeAssistantJobRef(task.assistantJobRefs, ref) });
+    if (task) await updateTaskAdditive(client, task, (currentTask) => ({
+      assistantJobRefs: mergeAssistantJobRef(currentTask.assistantJobRefs, ref),
+    }));
   }
   if (job.cardId) {
     const card = await getCard(client, job.cardId);
@@ -233,7 +235,9 @@ async function mirrorArtifactRef(client: DynamoDBDocumentClient, job: AssistantJ
   const ref = artifactRef(artifact);
   if (job.taskId) {
     const task = await getTask(client, job.taskId);
-    if (task) await updateTask(client, job.taskId, { artifactRefs: mergeArtifactRef(task.artifactRefs, ref) });
+    if (task) await updateTaskAdditive(client, task, (currentTask) => ({
+      artifactRefs: mergeArtifactRef(currentTask.artifactRefs, ref),
+    }));
   }
   if (job.cardId) {
     const card = await getCard(client, job.cardId);
@@ -253,8 +257,11 @@ async function mirrorApprovedArtifactProof(
   if (!task || !task.requiredLinkName || task.link) return;
 
   await updateTask(client, job.taskId, {
-    link: artifact.storageUri,
-    artifactRefs: mergeArtifactRef(task.artifactRefs, artifactRef(artifact)),
+    expectedVersion: task.version,
+    patch: {
+      link: artifact.storageUri,
+      artifactRefs: mergeArtifactRef(task.artifactRefs, artifactRef(artifact)),
+    },
   });
 
   const cardId = job.cardId || task.cardId;
@@ -739,6 +746,7 @@ async function handleAssistantJobRoutes(event: LambdaEvent, client: DynamoDBDocu
 
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof TaskVersionConflictError) throw err;
     if (err instanceof Error && (
       err.message.includes('metadata must')
       || err.message.includes('must not contain secrets')

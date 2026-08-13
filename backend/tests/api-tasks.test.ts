@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -45,6 +46,8 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.description, 'Review draft');
       assert.strictEqual(body.date, '2026-03-10');
       assert.strictEqual(body.status, 'todo');
+      assert.strictEqual(body.version, 1);
+      assert.deepStrictEqual(body.taskHistory, []);
       assert.ok(body.createdAt);
       assert.ok(body.updatedAt);
     });
@@ -445,6 +448,192 @@ describe('API — CRUD for tasks', () => {
   // ── PUT /api/tasks/:id ─────────────────────────────────────────────
 
   describe('PUT /api/tasks/:id', () => {
+    it('requires only expectedVersion as the write precondition', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Precondition task', date: '2026-03-10' }),
+      }, {})).body);
+
+      for (const invalidBody of [
+        { status: 'done' },
+        { status: 'done', expectedVersion: 0 },
+        { status: 'done', expectedVersion: 1.5 },
+        { status: 'done', expectedVersion: '1' },
+        { status: 'done', version: created.version },
+        { status: 'done', version: created.version, expectedVersion: created.version },
+      ]) {
+        const response = await handler({
+          httpMethod: 'PUT',
+          path: `/api/tasks/${created.id}`,
+          body: JSON.stringify(invalidBody),
+        }, {});
+        assert.strictEqual(response.statusCode, 400, JSON.stringify(invalidBody));
+      }
+
+      const unchanged = JSON.parse((await handler({
+        httpMethod: 'GET',
+        path: `/api/tasks/${created.id}`,
+      }, {})).body);
+      assert.strictEqual(unchanged.version, 1);
+      assert.strictEqual(unchanged.status, 'todo');
+      assert.deepStrictEqual(unchanged.taskHistory, []);
+    });
+
+    it('requires expectedVersion for every Task action', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Action preconditions', date: '2026-03-10' }),
+      }, {})).body);
+      for (const action of ['mark-waiting', 'follow-up-sent', 'response-received', 'unblocked', 'resolve-done']) {
+        const response = await handler({
+          httpMethod: 'POST',
+          path: `/api/tasks/${created.id}/actions/${action}`,
+          body: JSON.stringify({}),
+        }, {});
+        assert.strictEqual(response.statusCode, 400, action);
+        assert.strictEqual(JSON.parse(response.body).error, 'expectedVersion is required');
+      }
+    });
+
+    it('returns one winner and a canonical currentTask to a concurrent loser', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Concurrent API task', date: '2026-03-10' }),
+      }, {})).body);
+
+      const [left, right] = await Promise.all([
+        handler({
+          httpMethod: 'PUT',
+          path: `/api/tasks/${created.id}`,
+          body: JSON.stringify({ comment: 'left', expectedVersion: created.version }),
+        }, {}),
+        handler({
+          httpMethod: 'PUT',
+          path: `/api/tasks/${created.id}`,
+          body: JSON.stringify({ comment: 'right', expectedVersion: created.version }),
+        }, {}),
+      ]);
+      const winner = [left, right].find((response) => response.statusCode === 200);
+      const loser = [left, right].find((response) => response.statusCode === 409);
+      assert.ok(winner);
+      assert.ok(loser);
+      const winnerTask = JSON.parse(winner.body);
+      const conflict = JSON.parse(loser.body);
+      assert.strictEqual(winnerTask.version, 2);
+      assert.deepStrictEqual(conflict, {
+        error: 'Task changed; review the current task and retry',
+        code: 'task_version_conflict',
+        expectedVersion: 1,
+        currentVersion: 2,
+        currentTask: winnerTask,
+      });
+      assert.strictEqual(conflict.currentTask.PK, undefined);
+      assert.strictEqual(conflict.currentTask.SK, undefined);
+      assert.ok(['left', 'right'].includes(winnerTask.comment));
+    });
+
+    it('strongly reads Task validation state before PUT and action conditions', async () => {
+      const { route } = await import('../src/router');
+      const current = {
+        id: 'strong-validation-task',
+        version: 4,
+        taskHistory: [],
+        description: 'Strong validation read',
+        date: '2026-03-10',
+        status: 'todo',
+        createdAt: '2026-03-01T00:00:00.000Z',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      };
+      const cases = [
+        {
+          path: `/api/tasks/${current.id}`,
+          method: 'PUT',
+          body: { comment: 'accepted', expectedVersion: current.version },
+          next: { ...current, version: 5, comment: 'accepted' },
+        },
+        {
+          path: `/api/tasks/${current.id}/actions/mark-waiting`,
+          method: 'POST',
+          body: {
+            waitingFor: 'Reviewer',
+            followUpAt: '2026-03-12',
+            channel: 'portal',
+            note: 'Waiting for review',
+            expectedVersion: current.version,
+          },
+          next: {
+            ...current,
+            version: 5,
+            status: 'waiting',
+            waitingFor: 'Reviewer',
+            followUpAt: '2026-03-12',
+            taskHistory: [{
+              id: 'history-strong-validation',
+              taskId: current.id,
+              action: 'waiting-started',
+              createdAt: '2026-03-01T00:00:01.000Z',
+            }],
+          },
+        },
+      ];
+
+      for (const testCase of cases) {
+        const validationReads: Array<boolean | undefined> = [];
+        let updates = 0;
+        const fakeClient = {
+          send: async (command: unknown) => {
+            if (command instanceof GetCommand) {
+              validationReads.push(command.input.ConsistentRead);
+              const task = command.input.ConsistentRead
+                ? current
+                : { ...current, version: current.version + 1 };
+              return { Item: { PK: `TASK#${current.id}`, SK: `TASK#${current.id}`, ...task } };
+            }
+            if (command instanceof UpdateCommand) {
+              updates += 1;
+              return { Attributes: { PK: `TASK#${current.id}`, SK: `TASK#${current.id}`, ...testCase.next } };
+            }
+            throw new Error(`Unexpected command ${(command as { constructor?: { name?: string } }).constructor?.name}`);
+          },
+        };
+
+        const response = await route({
+          httpMethod: testCase.method,
+          path: testCase.path,
+          body: JSON.stringify(testCase.body),
+        }, fakeClient as any);
+
+        assert.strictEqual(response.statusCode, 200, `${testCase.method} ${response.body}`);
+        assert.deepStrictEqual(validationReads, [true]);
+        assert.strictEqual(updates, 1);
+      }
+    });
+
+    it('returns task_not_found when a stale write follows a conditional delete', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Delete race', date: '2026-03-10' }),
+      }, {})).body);
+      const deleted = await handler({
+        httpMethod: 'DELETE',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ expectedVersion: created.version }),
+      }, {});
+      assert.strictEqual(deleted.statusCode, 204);
+
+      const staleWrite = await handler({
+        httpMethod: 'PUT',
+        path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ comment: 'must not recreate', expectedVersion: created.version }),
+      }, {});
+      assert.strictEqual(staleWrite.statusCode, 404);
+      assert.strictEqual(JSON.parse(staleWrite.body).code, 'task_not_found');
+    });
+
     it('updates a task and returns 200', async () => {
       const createRes = await handler({
         httpMethod: 'POST',
@@ -458,7 +647,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done', comment: 'Completed' }),
+        body: JSON.stringify({ status: 'done', comment: 'Completed', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -466,6 +655,7 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.status, 'done');
       assert.strictEqual(body.comment, 'Completed');
       assert.strictEqual(body.description, 'Update me');
+      assert.strictEqual(body.version, 2);
       assert.ok(body.updatedAt > created.updatedAt);
     });
 
@@ -481,7 +671,7 @@ describe('API — CRUD for tasks', () => {
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
         headers: { 'x-user-id': 'ops-manager' },
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -496,7 +686,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: '/api/tasks/nonexistent-id-999',
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: 1 }),
       }, {});
 
       assert.strictEqual(res.statusCode, 404);
@@ -553,7 +743,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done', id: 'hacked', PK: 'bad', createdAt: '1999-01-01' }),
+        body: JSON.stringify({ status: 'done', id: 'hacked', PK: 'bad', createdAt: '1999-01-01', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -574,7 +764,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ id: 'hacked', PK: 'bad' }),
+        body: JSON.stringify({ id: 'hacked', PK: 'bad', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -598,6 +788,7 @@ describe('API — CRUD for tasks', () => {
           waitingFor: 'Venue response',
           followUpAt: '2026-03-15T10:30:00.000Z',
           comment: 'Waiting for venue response',
+          expectedVersion: created.version,
         }),
       }, {});
 
@@ -628,7 +819,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'waiting' }),
+        body: JSON.stringify({ status: 'waiting', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -651,6 +842,7 @@ describe('API — CRUD for tasks', () => {
           status: 'waiting',
           waitingFor: 'Venue response',
           followUpAt: '2026-03-15T10:30:00.000Z',
+          expectedVersion: created.version,
         }),
       }, {});
 
@@ -677,7 +869,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'todo' }),
+        body: JSON.stringify({ status: 'todo', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -705,7 +897,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -733,6 +925,7 @@ describe('API — CRUD for tasks', () => {
           channel: 'email',
           followUpAt: '2026-07-01',
           note: 'Asked for logo and copy',
+          expectedVersion: created.version,
         }),
       }, {});
       assert.strictEqual(waitingRes.statusCode, 200);
@@ -754,6 +947,7 @@ describe('API — CRUD for tasks', () => {
           channel: 'email',
           note: 'Sent second reminder',
           nextFollowUpAt: '2026-07-02',
+          expectedVersion: waiting.version,
         }),
       }, {});
       assert.strictEqual(followUpRes.statusCode, 200);
@@ -768,7 +962,11 @@ describe('API — CRUD for tasks', () => {
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/response-received`,
         headers: { 'x-user-id': 'ops-manager' },
-        body: JSON.stringify({ note: 'Sponsor sent the assets' }),
+        body: JSON.stringify({
+          note: 'Sponsor sent the assets',
+          channel: 'email',
+          expectedVersion: followedUp.version,
+        }),
       }, {});
       assert.strictEqual(responseRes.statusCode, 200);
       const unblocked = JSON.parse(responseRes.body);
@@ -777,6 +975,67 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(unblocked.followUpAt, null);
       assert.strictEqual(unblocked.taskHistory.length, 3);
       assert.strictEqual(unblocked.taskHistory[2].action, 'response-received');
+    });
+
+    it('does not lose or duplicate concurrent lifecycle history', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Concurrent follow-ups', date: '2026-06-28' }),
+      }, {})).body);
+      const waiting = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/mark-waiting`,
+        body: JSON.stringify({
+          waitingFor: 'Sponsor',
+          channel: 'email',
+          followUpAt: '2026-07-01',
+          note: 'Initial request',
+          expectedVersion: created.version,
+        }),
+      }, {})).body);
+
+      const followUpRequest = (note: string) => handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/follow-up-sent`,
+        body: JSON.stringify({
+          channel: 'email',
+          note,
+          nextFollowUpAt: '2026-07-02',
+          expectedVersion: waiting.version,
+        }),
+      }, {});
+      const [left, right] = await Promise.all([
+        followUpRequest('Concurrent left'),
+        followUpRequest('Concurrent right'),
+      ]);
+      const winner = [left, right].find((response) => response.statusCode === 200);
+      const loser = [left, right].find((response) => response.statusCode === 409);
+      assert.ok(winner);
+      assert.ok(loser);
+      const afterRace = JSON.parse(winner.body);
+      assert.strictEqual(afterRace.version, 3);
+      assert.strictEqual(afterRace.taskHistory.length, 2);
+      const acceptedNote = afterRace.taskHistory.at(-1).note;
+      const losingNote = acceptedNote === 'Concurrent left' ? 'Concurrent right' : 'Concurrent left';
+
+      const retried = await handler({
+        httpMethod: 'POST',
+        path: `/api/tasks/${created.id}/actions/follow-up-sent`,
+        body: JSON.stringify({
+          channel: 'email',
+          note: losingNote,
+          nextFollowUpAt: '2026-07-03',
+          expectedVersion: JSON.parse(loser.body).currentVersion,
+        }),
+      }, {});
+      assert.strictEqual(retried.statusCode, 200, retried.body);
+      const afterRetry = JSON.parse(retried.body);
+      assert.strictEqual(afterRetry.version, 4);
+      assert.deepStrictEqual(
+        afterRetry.taskHistory.map((event: any) => event.note),
+        ['Initial request', acceptedNote, losingNote],
+      );
     });
 
     it('requires channel, note, and follow-up date for follow-up actions', async () => {
@@ -790,12 +1049,12 @@ describe('API — CRUD for tasks', () => {
       const missingWaiting = await handler({
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/mark-waiting`,
-        body: JSON.stringify({ waitingFor: 'Sponsor', followUpAt: '2026-07-01', note: 'Missing channel' }),
+        body: JSON.stringify({ waitingFor: 'Sponsor', followUpAt: '2026-07-01', note: 'Missing channel', expectedVersion: created.version }),
       }, {});
       assert.strictEqual(missingWaiting.statusCode, 400);
       assert.strictEqual(JSON.parse(missingWaiting.body).error, 'channel is required');
 
-      await handler({
+      const waitingRes = await handler({
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/mark-waiting`,
         body: JSON.stringify({
@@ -803,13 +1062,14 @@ describe('API — CRUD for tasks', () => {
           channel: 'email',
           followUpAt: '2026-07-01',
           note: 'Waiting for assets',
+          expectedVersion: created.version,
         }),
       }, {});
 
       const missingFollowUpNote = await handler({
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/follow-up-sent`,
-        body: JSON.stringify({ channel: 'email', nextFollowUpAt: '2026-07-02' }),
+        body: JSON.stringify({ channel: 'email', nextFollowUpAt: '2026-07-02', expectedVersion: JSON.parse(waitingRes.body).version }),
       }, {});
       assert.strictEqual(missingFollowUpNote.statusCode, 400);
       assert.strictEqual(JSON.parse(missingFollowUpNote.body).error, 'note is required');
@@ -817,7 +1077,7 @@ describe('API — CRUD for tasks', () => {
       const missingFollowUpDate = await handler({
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/follow-up-sent`,
-        body: JSON.stringify({ channel: 'email', note: 'Sent reminder' }),
+        body: JSON.stringify({ channel: 'email', note: 'Sent reminder', expectedVersion: JSON.parse(waitingRes.body).version }),
       }, {});
       assert.strictEqual(missingFollowUpDate.statusCode, 400);
       assert.strictEqual(JSON.parse(missingFollowUpDate.body).error, 'nextFollowUpAt is required');
@@ -835,7 +1095,7 @@ describe('API — CRUD for tasks', () => {
       }, {});
       const created = JSON.parse(createRes.body);
 
-      await handler({
+      const waitingRes = await handler({
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/mark-waiting`,
         body: JSON.stringify({
@@ -843,13 +1103,14 @@ describe('API — CRUD for tasks', () => {
           channel: 'email',
           followUpAt: '2026-07-01',
           note: 'Waiting for approval',
+          expectedVersion: created.version,
         }),
       }, {});
 
       const blocked = await handler({
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/resolve-done`,
-        body: JSON.stringify({ note: 'Speaker replied' }),
+        body: JSON.stringify({ note: 'Speaker replied', expectedVersion: JSON.parse(waitingRes.body).version }),
       }, {});
       assert.strictEqual(blocked.statusCode, 400);
       assert.strictEqual(JSON.parse(blocked.body).error, "Cannot mark task as done: required link 'Luma' is not filled");
@@ -858,7 +1119,11 @@ describe('API — CRUD for tasks', () => {
         httpMethod: 'POST',
         path: `/api/tasks/${created.id}/actions/resolve-done`,
         headers: { 'x-user-id': 'ops-manager' },
-        body: JSON.stringify({ note: 'Speaker replied and page is ready', link: 'https://luma.com/event' }),
+        body: JSON.stringify({
+          note: 'Speaker replied and page is ready',
+          link: 'https://luma.com/event',
+          expectedVersion: JSON.parse(waitingRes.body).version,
+        }),
       }, {});
       assert.strictEqual(resolved.statusCode, 200);
       const body = JSON.parse(resolved.body);
@@ -866,6 +1131,7 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(body.waitingFor, null);
       assert.strictEqual(body.followUpAt, null);
       assert.strictEqual(body.completedBy, 'ops-manager');
+      assert.strictEqual(body.version, 3);
       assert.strictEqual(body.taskHistory[body.taskHistory.length - 2].action, 'wait-resolved');
       assert.strictEqual(body.taskHistory[body.taskHistory.length - 1].action, 'completed');
     });
@@ -874,6 +1140,23 @@ describe('API — CRUD for tasks', () => {
   // ── DELETE /api/tasks/:id ──────────────────────────────────────────
 
   describe('DELETE /api/tasks/:id', () => {
+    it('rejects a missing or alternate delete precondition', async () => {
+      const created = JSON.parse((await handler({
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Delete precondition', date: '2026-03-10' }),
+      }, {})).body);
+      for (const body of [{}, { version: created.version }]) {
+        const response = await handler({
+          httpMethod: 'DELETE',
+          path: `/api/tasks/${created.id}`,
+          body: JSON.stringify(body),
+        }, {});
+        assert.strictEqual(response.statusCode, 400);
+      }
+      assert.ok(await handler({ httpMethod: 'GET', path: `/api/tasks/${created.id}` }, {}));
+    });
+
     it('deletes a task and returns 204', async () => {
       const createRes = await handler({
         httpMethod: 'POST',
@@ -885,6 +1168,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'DELETE',
         path: `/api/tasks/${created.id}`,
+        body: JSON.stringify({ expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 204);
@@ -897,14 +1181,15 @@ describe('API — CRUD for tasks', () => {
       assert.strictEqual(getRes.statusCode, 404);
     });
 
-    it('returns 204 for a nonexistent task (idempotent)', async () => {
+    it('returns 404 for a nonexistent task', async () => {
       const res = await handler({
         httpMethod: 'DELETE',
         path: '/api/tasks/nonexistent-id-999',
+        body: JSON.stringify({ expectedVersion: 1 }),
       }, {});
 
-      assert.strictEqual(res.statusCode, 204);
-      assert.strictEqual(res.body, '');
+      assert.strictEqual(res.statusCode, 404);
+      assert.strictEqual(JSON.parse(res.body).code, 'task_not_found');
     });
   });
 
@@ -1105,6 +1390,7 @@ describe('API — CRUD for tasks', () => {
           validation: 'Check the shared doc',
           assigneeId: 'user-valeriia',
           tags: ['newsletter'],
+          expectedVersion: created.version,
         }),
       }, {});
 
@@ -1132,7 +1418,7 @@ describe('API — CRUD for tasks', () => {
       const badSystems = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ systems: ['github', 42] }),
+        body: JSON.stringify({ systems: ['github', 42], expectedVersion: created.version }),
       }, {});
       assert.strictEqual(badSystems.statusCode, 400);
       assert.match(JSON.parse(badSystems.body).error, /systems/);
@@ -1140,7 +1426,7 @@ describe('API — CRUD for tasks', () => {
       const badValidation = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ validation: ['nope'] }),
+        body: JSON.stringify({ validation: ['nope'], expectedVersion: created.version }),
       }, {});
       assert.strictEqual(badValidation.statusCode, 400);
       assert.match(JSON.parse(badValidation.body).error, /validation/);
@@ -1163,7 +1449,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -1186,7 +1472,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done', link: 'https://luma.com/event' }),
+        body: JSON.stringify({ status: 'done', link: 'https://luma.com/event', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -1211,7 +1497,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -1233,7 +1519,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -1258,7 +1544,7 @@ describe('API — CRUD for tasks', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: created.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -1290,6 +1576,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           status: 'done',
           artifactRefs: [{ artifactId: 'artifact-1', type: 'draft', storageUri: 's3://bucket/draft.md' }],
+          expectedVersion: artifactTask.version,
         }),
       }, {});
       assert.strictEqual(refOnlyDone.statusCode, 400);
@@ -1311,10 +1598,14 @@ describe('API — CRUD for tasks', () => {
         }),
       }, {});
 
+      const refreshedArtifactTask = JSON.parse((await handler({
+        httpMethod: 'GET',
+        path: `/api/tasks/${artifactTask.id}`,
+      }, {})).body);
       const artifactDone = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${artifactTask.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: refreshedArtifactTask.version }),
       }, {});
       assert.strictEqual(artifactDone.statusCode, 200);
       const artifactDoneBody = JSON.parse(artifactDone.body);
@@ -1334,7 +1625,7 @@ describe('API — CRUD for tasks', () => {
       const statusDone = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${statusTask.id}`,
-        body: JSON.stringify({ status: 'done', externalStatus: 'approved' }),
+        body: JSON.stringify({ status: 'done', externalStatus: 'approved', expectedVersion: statusTask.version }),
       }, {});
       assert.strictEqual(statusDone.statusCode, 200);
       const statusDoneBody = JSON.parse(statusDone.body);
@@ -1366,7 +1657,7 @@ describe('API — CRUD for tasks', () => {
       const sponsorDocWrongSkip = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${sponsorDocTask.id}`,
-        body: JSON.stringify({ status: 'done', comment: 'no sponsor' }),
+        body: JSON.stringify({ status: 'done', comment: 'no sponsor', expectedVersion: sponsorDocTask.version }),
       }, {});
       assert.strictEqual(sponsorDocWrongSkip.statusCode, 400);
       assert.strictEqual(JSON.parse(sponsorDocWrongSkip.body).error, "Cannot mark task as done: required link 'Sponsorship document' is not filled");
@@ -1374,7 +1665,7 @@ describe('API — CRUD for tasks', () => {
       const skippedSponsorDoc = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${sponsorDocTask.id}`,
-        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week' }),
+        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week', expectedVersion: sponsorDocTask.version }),
       }, {});
       assert.strictEqual(skippedSponsorDoc.statusCode, 200);
       const skippedSponsorDocBody = JSON.parse(skippedSponsorDoc.body);
@@ -1398,7 +1689,7 @@ describe('API — CRUD for tasks', () => {
       const missingSkip = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${linkTask.id}`,
-        body: JSON.stringify({ status: 'done', comment: 'no sponsor' }),
+        body: JSON.stringify({ status: 'done', comment: 'no sponsor', expectedVersion: linkTask.version }),
       }, {});
       assert.strictEqual(missingSkip.statusCode, 400);
       assert.strictEqual(JSON.parse(missingSkip.body).error, "Cannot mark task as done: required link 'LinkedIn' is not filled");
@@ -1406,7 +1697,7 @@ describe('API — CRUD for tasks', () => {
       const skippedLink = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${linkTask.id}`,
-        body: JSON.stringify({ status: 'done', comment: '[2026-04-01T09:00:00.000Z] not sponsored this week' }),
+        body: JSON.stringify({ status: 'done', comment: '[2026-04-01T09:00:00.000Z] not sponsored this week', expectedVersion: linkTask.version }),
       }, {});
       assert.strictEqual(skippedLink.statusCode, 200);
       const skippedLinkBody = JSON.parse(skippedLink.body);
@@ -1430,7 +1721,7 @@ describe('API — CRUD for tasks', () => {
       const skippedFile = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${fileTask.id}`,
-        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week' }),
+        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week', expectedVersion: fileTask.version }),
       }, {});
       assert.strictEqual(skippedFile.statusCode, 200);
       const skippedFileBody = JSON.parse(skippedFile.body);
@@ -1453,7 +1744,7 @@ describe('API — CRUD for tasks', () => {
       const normalFileDone = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${normalFileTask.id}`,
-        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week' }),
+        body: JSON.stringify({ status: 'done', comment: 'not sponsored this week', expectedVersion: normalFileTask.version }),
       }, {});
       assert.strictEqual(normalFileDone.statusCode, 400);
       assert.strictEqual(JSON.parse(normalFileDone.body).error, 'Cannot mark task as done: required file has not been uploaded');
@@ -1495,7 +1786,7 @@ describe('API — CRUD for tasks', () => {
       const blockedDone = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${task.id}`,
-        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
+        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled', expectedVersion: task.version }),
       }, {});
       assert.strictEqual(blockedDone.statusCode, 400);
       assert.strictEqual(JSON.parse(blockedDone.body).error, "Cannot mark task as done: required card link 'Mailchimp newsletter' is not filled");
@@ -1515,7 +1806,7 @@ describe('API — CRUD for tasks', () => {
       const doneRes = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${task.id}`,
-        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
+        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled', expectedVersion: task.version }),
       }, {});
       assert.strictEqual(doneRes.statusCode, 200);
       assert.strictEqual(JSON.parse(doneRes.body).status, 'done');
@@ -1543,7 +1834,7 @@ describe('API — CRUD for tasks', () => {
       const updateDone = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${task.id}`,
-        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled' }),
+        body: JSON.stringify({ status: 'done', externalStatus: 'Mailchimp campaign scheduled', expectedVersion: task.version }),
       }, {});
       assert.strictEqual(updateDone.statusCode, 400);
       assert.strictEqual(JSON.parse(updateDone.body).error, "Cannot mark task as done: required shared card link 'Mailchimp newsletter' needs a workflow card");
@@ -1615,6 +1906,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           status: 'done',
           externalStatus: 'Performance stats recorded',
+          expectedVersion: statsTask.version,
         }),
       }, {});
       assert.strictEqual(blockedStats.statusCode, 400);
@@ -1626,6 +1918,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           status: 'done',
           comment: 'not sponsored this week',
+          expectedVersion: statsTask.version,
         }),
       }, {});
       assert.strictEqual(skippedStats.statusCode, 200);
@@ -1669,6 +1962,7 @@ describe('API — CRUD for tasks', () => {
         body: JSON.stringify({
           status: 'done',
           comment: 'no social stats available',
+          expectedVersion: missingMailchimpTask.version,
         }),
       }, {});
       assert.strictEqual(socialOnlySkip.statusCode, 400);
@@ -1714,7 +2008,7 @@ describe('API — CRUD for tasks', () => {
       await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${created.id}`,
-        body: JSON.stringify({ status: 'archived' }),
+        body: JSON.stringify({ status: 'archived', expectedVersion: created.version }),
       }, {});
 
       const res = await handler({
@@ -1799,7 +2093,7 @@ describe('API — CRUD for tasks', () => {
       const updateRes = await handler({
         httpMethod: 'PUT',
         path: '/api/tasks/' + created.id,
-        body: JSON.stringify({ description: 'Updated ad hoc task' }),
+        body: JSON.stringify({ description: 'Updated ad hoc task', expectedVersion: created.version }),
       }, {});
       assert.strictEqual(updateRes.statusCode, 200);
       const updated = JSON.parse(updateRes.body);
@@ -1808,7 +2102,7 @@ describe('API — CRUD for tasks', () => {
       const doneRes = await handler({
         httpMethod: 'PUT',
         path: '/api/tasks/' + created.id,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: updated.version }),
       }, {});
       assert.strictEqual(doneRes.statusCode, 200);
       const done = JSON.parse(doneRes.body);
@@ -1826,6 +2120,7 @@ describe('API — CRUD for tasks', () => {
       const deleteRes = await handler({
         httpMethod: 'DELETE',
         path: '/api/tasks/' + created.id,
+        body: JSON.stringify({ expectedVersion: done.version }),
       }, {});
       assert.strictEqual(deleteRes.statusCode, 204);
 

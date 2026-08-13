@@ -216,7 +216,10 @@ describe('mailing-list export service', () => {
     assert.ok(!JSON.stringify((await getTask(client, task.id))?.artifactRefs).includes('s3://'));
 
     // The HTTP-edge privacy guard also protects legacy references already stored before this fix.
-    await updateTask(client, task.id, { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] });
+    await updateTask(client, task.id, {
+      expectedVersion: task.version + 1,
+      patch: { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] },
+    });
     await updateCard(client, card.id, { artifactRefs: [{ artifactId: completed.artifactId, storageUri: 's3://mailing-private/private-key' }] });
     const { handler } = await import('../src/handler');
     const taskRead = await handler({ httpMethod: 'GET', path: `/api/tasks/${task.id}` }, {});

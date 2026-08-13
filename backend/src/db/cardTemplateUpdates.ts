@@ -94,6 +94,14 @@ function entityVersionCondition(version: number) {
   };
 }
 
+function taskVersionCondition(version: number) {
+  return {
+    ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion',
+    ExpressionAttributeNames: { '#version': 'version' },
+    ExpressionAttributeValues: { ':expectedVersion': version },
+  };
+}
+
 function auditKey(id: string) {
   return { PK: `AUDIT_EVENT#${id}`, SK: `AUDIT_EVENT#${id}` };
 }
@@ -178,7 +186,7 @@ function appliedExistingTask(
     else delete next.templateSourceRevision;
     next.templateDefinitionSnapshot = structuredClone(update.target!);
   }
-  next.version = (before.version || 1) + 1;
+  next.version = before.version + 1;
   next.updatedAt = now;
   return compact(next) as Task;
 }
@@ -199,6 +207,7 @@ function addedTask(
   return compact({
     id,
     version: 1,
+    taskHistory: [],
     createdAt: now,
     updatedAt: now,
     ...templateTaskProjection(template, definition, order, card.anchorDate, card.id),
@@ -212,7 +221,7 @@ function taskPut(task: Task, expectedVersion?: number) {
       Item: compact({ PK: `TASK#${task.id}`, SK: `TASK#${task.id}`, ...task }) as Dict,
       ...(expectedVersion === undefined
         ? { ConditionExpression: 'attribute_not_exists(PK)' }
-        : entityVersionCondition(expectedVersion)),
+        : taskVersionCondition(expectedVersion)),
     },
   };
 }
@@ -257,8 +266,16 @@ async function testTransaction(
     if (condition.includes('attribute_not_exists(PK)') && current) {
       throw new CardTemplateUpdateConflictError();
     }
-    if (expected !== undefined && (!current || Number(current.version || 1) !== Number(expected))) {
-      throw new CardTemplateUpdateConflictError();
+    if (expected !== undefined) {
+      const permitsMissingVersion = condition.includes('attribute_not_exists(#version)');
+      const versionMatches = current?.version === expected;
+      const missingVersionMatches = permitsMissingVersion
+        && current !== undefined
+        && current.version === undefined
+        && expected === 1;
+      if (!current || (!versionMatches && !missingVersionMatches)) {
+        throw new CardTemplateUpdateConflictError();
+      }
     }
     if (entry.Put) snapshots.push({ tableName, key, item: current || null });
   }
@@ -363,7 +380,7 @@ export async function applyCardTemplateUpdate(
     }
     const task = appliedExistingTask(update, template, now);
     replacements.set(task.id, task);
-    transaction.push(taskPut(task, update.before!.version || 1));
+    transaction.push(taskPut(task, update.before!.version));
   }
 
   transaction.push({

@@ -188,12 +188,15 @@ describe('Seed recurring script', () => {
     assert.strictEqual(notificationsAfterSecondCron.length, 2);
 
     await updateTask(client, slackTask.id, {
-      instructionDocId: '',
-      systems: [],
+      expectedVersion: slackTask.version,
+      patch: { instructionDocId: '', systems: [] },
     });
     await updateTask(client, trelloTask.id, {
-      instructionDocId: 'sop.operator.override',
-      systems: ['operator-system'],
+      expectedVersion: trelloTask.version,
+      patch: {
+        instructionDocId: 'sop.operator.override',
+        systems: ['operator-system'],
+      },
     });
     const manualTask = await createTask(client, {
       description: 'Invite people to Slack from Airtable',

@@ -396,7 +396,7 @@ describe('API - File uploads', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${task.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 400);
@@ -435,7 +435,7 @@ describe('API - File uploads', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${task.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
@@ -457,7 +457,7 @@ describe('API - File uploads', () => {
       const res = await handler({
         httpMethod: 'PUT',
         path: `/api/tasks/${task.id}`,
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'done', expectedVersion: task.version }),
       }, {});
 
       assert.strictEqual(res.statusCode, 200);
