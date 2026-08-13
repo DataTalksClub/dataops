@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
+import json
+import re
 import subprocess
+import textwrap
+from pathlib import Path
 
 import yaml
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
@@ -65,6 +67,7 @@ def _run_preparer(path: Path) -> subprocess.CompletedProcess[str]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -168,6 +171,75 @@ def test_phase_a_requires_exact_identity_and_replaces_task_dependent_post_deploy
     assert "ReservedConcurrentExecutions === 0" in workflow
     assert "GSI-Bundle" in workflow
     assert "Issue #166 Phase A advanced the table schema" in workflow
+
+
+def test_phase_a_processed_template_guards_have_no_uninstalled_runtime_dependency():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "from 'js-yaml'" not in workflow
+    assert "safeLoad(" not in workflow
+    assert workflow.count("--output json > \"$deployed_template\"") == 1
+    assert workflow.count("--output json > \"$processed_template\"") == 1
+    assert workflow.count("const encodedTemplate = JSON.parse(readFileSync(") == 2
+    assert workflow.count("? JSON.parse(encodedTemplate)") == 2
+    assert workflow.count(
+        "Processed CloudFormation template must be a JSON object"
+    ) == 2
+
+
+def _workflow_node_blocks() -> list[str]:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    return [
+        textwrap.dedent(block)
+        for block in re.findall(
+            r"node --input-type=module[^\n]*<<'JS'\n(.*?)\n          JS",
+            workflow,
+            re.DOTALL,
+        )
+    ]
+
+
+def test_phase_a_processed_template_guards_accept_only_json_objects(tmp_path: Path):
+    blocks = _workflow_node_blocks()
+    assert len(blocks) == 2
+    steady = _synthetic_built_template()
+    phase_a = copy.deepcopy(steady)
+    phase_a["Metadata"] = {"DataOpsIssue166Cutover": {"Issue": 166, "Phase": "A"}}
+    for logical_id in ("BackendFunction", "ConversationalExecutionWorkerFunction"):
+        properties = phase_a["Resources"][logical_id]["Properties"]
+        properties["ReservedConcurrentExecutions"] = 0
+        properties.pop("Events")
+    tasks = phase_a["Resources"]["DataOpsTasksTable"]
+    tasks["DeletionPolicy"] = "Delete"
+    tasks["UpdateReplacePolicy"] = "Delete"
+
+    for index, (block, template, arguments) in enumerate(
+        ((blocks[0], steady, ["normal"]), (blocks[1], phase_a, []))
+    ):
+        fixture = tmp_path / f"template-{index}.json"
+        for encoded in (template, json.dumps(template)):
+            fixture.write_text(json.dumps(encoded), encoding="utf-8")
+            completed = subprocess.run(
+                ["node", "--input-type=module", "-", *arguments, str(fixture)],
+                input=block,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert completed.returncode == 0, completed.stderr
+
+        fixture.write_text(json.dumps(yaml.safe_dump(template)), encoding="utf-8")
+        rejected = subprocess.run(
+            ["node", "--input-type=module", "-", *arguments, str(fixture)],
+            input=block,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rejected.returncode != 0
+        assert "SyntaxError" in rejected.stderr
 
 
 def test_phase_a_preparer_contains_no_aws_or_data_movement_commands():
