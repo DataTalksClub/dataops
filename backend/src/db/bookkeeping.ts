@@ -253,7 +253,6 @@ export type PrepareDocumentInput = {
   accountId?: string;
   statementMonth?: string;
   idempotencyKey: string;
-  runId: string;
   sourceRef: string;
   s3Key: string;
   expiresAt: string;
@@ -289,8 +288,7 @@ export async function prepareDocument(
   const existing = await lookupDocumentHash(client, input.sha256);
   if (existing.state !== "absent") {
     const owned =
-      existing.document?.creatorIdempotencyKey === input.idempotencyKey &&
-      existing.document?.createdByRunId === input.runId;
+      existing.document?.creatorIdempotencyKey === input.idempotencyKey;
     return {
       outcome:
         existing.state === "active"
@@ -321,7 +319,6 @@ export async function prepareDocument(
     prepareExpiresAt: input.expiresAt,
     uploadAuthorizationExpiresAt: input.uploadAuthorizationExpiresAt,
     creatorIdempotencyKey: input.idempotencyKey,
-    createdByRunId: input.runId,
     sourceRef: input.sourceRef,
     linkRefCount: 0,
     reportRefCount: 0,
@@ -334,7 +331,6 @@ export async function prepareDocument(
     documentId: id,
     state: "pending",
     creatorIdempotencyKey: input.idempotencyKey,
-    createdByRunId: input.runId,
     expiresAt: input.expiresAt,
     createdAt: now,
     updatedAt: now,
@@ -355,8 +351,7 @@ export async function prepareDocument(
     const winner = await lookupDocumentHash(client, input.sha256);
     if (winner.state === "absent") throw error;
     const owned =
-      winner.document?.creatorIdempotencyKey === input.idempotencyKey &&
-      winner.document?.createdByRunId === input.runId;
+      winner.document?.creatorIdempotencyKey === input.idempotencyKey;
     return {
       outcome:
         winner.state === "active"
@@ -376,7 +371,6 @@ export async function activateDocument(
   id: string,
   sha256: string,
   idempotencyKey: string,
-  runId: string,
   versionId: string,
   verifiedByteSize: number,
 ) {
@@ -390,9 +384,9 @@ export async function activateDocument(
             TableName: TABLE_BOOKKEEPING,
             Key: { PK: documentKey(id), SK: documentKey(id) },
             UpdateExpression: "SET #status = :active, sha256 = :hash, verifiedByteSize = :size, objectVersionId = :version, updatedAt = :now REMOVE prepareExpiresAt",
-            ConditionExpression: "#status = :pending AND declaredSha256 = :hash AND creatorIdempotencyKey = :owner AND createdByRunId = :run",
+            ConditionExpression: "#status = :pending AND declaredSha256 = :hash AND creatorIdempotencyKey = :owner",
             ExpressionAttributeNames: { "#status": "status" },
-            ExpressionAttributeValues: { ":active": "active", ":pending": "pending", ":hash": sha256, ":size": verifiedByteSize, ":version": versionId, ":owner": idempotencyKey, ":run": runId, ":now": now },
+            ExpressionAttributeValues: { ":active": "active", ":pending": "pending", ":hash": sha256, ":size": verifiedByteSize, ":version": versionId, ":owner": idempotencyKey, ":now": now },
           },
         },
         {
@@ -400,9 +394,9 @@ export async function activateDocument(
             TableName: TABLE_BOOKKEEPING,
             Key: { PK: hashKey(sha256), SK: hashKey(sha256) },
             UpdateExpression: "SET #state = :active, updatedAt = :now",
-            ConditionExpression: "#state = :pending AND documentId = :id AND creatorIdempotencyKey = :owner AND createdByRunId = :run",
+            ConditionExpression: "#state = :pending AND documentId = :id AND creatorIdempotencyKey = :owner",
             ExpressionAttributeNames: { "#state": "state" },
-            ExpressionAttributeValues: { ":active": "active", ":pending": "pending", ":id": id, ":owner": idempotencyKey, ":run": runId, ":now": now },
+            ExpressionAttributeValues: { ":active": "active", ":pending": "pending", ":id": id, ":owner": idempotencyKey, ":now": now },
           },
         },
       ],
@@ -415,7 +409,6 @@ export async function renewDocumentPrepareLease(
   id: string,
   sha256: string,
   idempotencyKey: string,
-  runId: string,
   expiresAt: string,
   uploadAuthorizationExpiresAt: string,
 ) {
@@ -423,8 +416,8 @@ export async function renewDocumentPrepareLease(
     client,
     {
       TransactItems: [
-        { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(id), SK: documentKey(id) }, UpdateExpression: "SET prepareExpiresAt = :expiry, uploadAuthorizationExpiresAt = :uploadExpiry, updatedAt = :now", ConditionExpression: "#status = :pending AND creatorIdempotencyKey = :owner AND createdByRunId = :run", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":expiry": expiresAt, ":uploadExpiry": uploadAuthorizationExpiresAt, ":now": new Date().toISOString(), ":pending": "pending", ":owner": idempotencyKey, ":run": runId } } },
-        { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: hashKey(sha256), SK: hashKey(sha256) }, UpdateExpression: "SET expiresAt = :expiry, updatedAt = :now", ConditionExpression: "#state = :pending AND documentId = :id AND creatorIdempotencyKey = :owner AND createdByRunId = :run", ExpressionAttributeNames: { "#state": "state" }, ExpressionAttributeValues: { ":expiry": expiresAt, ":now": new Date().toISOString(), ":pending": "pending", ":id": id, ":owner": idempotencyKey, ":run": runId } } },
+        { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(id), SK: documentKey(id) }, UpdateExpression: "SET prepareExpiresAt = :expiry, uploadAuthorizationExpiresAt = :uploadExpiry, updatedAt = :now", ConditionExpression: "#status = :pending AND creatorIdempotencyKey = :owner", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":expiry": expiresAt, ":uploadExpiry": uploadAuthorizationExpiresAt, ":now": new Date().toISOString(), ":pending": "pending", ":owner": idempotencyKey } } },
+        { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: hashKey(sha256), SK: hashKey(sha256) }, UpdateExpression: "SET expiresAt = :expiry, updatedAt = :now", ConditionExpression: "#state = :pending AND documentId = :id AND creatorIdempotencyKey = :owner", ExpressionAttributeNames: { "#state": "state" }, ExpressionAttributeValues: { ":expiry": expiresAt, ":now": new Date().toISOString(), ":pending": "pending", ":id": id, ":owner": idempotencyKey } } },
       ],
     },
   );
@@ -434,15 +427,14 @@ export async function markDocumentCleanupRequired(
   client: DynamoDBDocumentClient,
   id: string,
   idempotencyKey: string,
-  runId: string,
 ) {
   await transact(client, { TransactItems: [{ Update: {
       TableName: TABLE_BOOKKEEPING,
       Key: { PK: documentKey(id), SK: documentKey(id) },
       UpdateExpression: "SET #status = :cleanup, updatedAt = :now",
-      ConditionExpression: "creatorIdempotencyKey = :owner AND createdByRunId = :run AND #status = :pending",
+      ConditionExpression: "creatorIdempotencyKey = :owner AND #status = :pending",
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: { ":cleanup": "cleanup-required", ":pending": "pending", ":owner": idempotencyKey, ":run": runId, ":now": new Date().toISOString() },
+      ExpressionAttributeValues: { ":cleanup": "cleanup-required", ":pending": "pending", ":owner": idempotencyKey, ":now": new Date().toISOString() },
     } }] });
 }
 
@@ -451,14 +443,13 @@ export async function removePendingDocumentClaim(
   id: string,
   sha256: string,
   idempotencyKey: string,
-  runId: string,
 ) {
   await transact(
     client,
     {
       TransactItems: [
-        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(id), SK: documentKey(id) }, ConditionExpression: "creatorIdempotencyKey = :owner AND createdByRunId = :run AND #status <> :active", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":owner": idempotencyKey, ":run": runId, ":active": "active" } } },
-        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: hashKey(sha256), SK: hashKey(sha256) }, ConditionExpression: "documentId = :id AND creatorIdempotencyKey = :owner AND createdByRunId = :run AND #state <> :active", ExpressionAttributeNames: { "#state": "state" }, ExpressionAttributeValues: { ":id": id, ":owner": idempotencyKey, ":run": runId, ":active": "active" } } },
+        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(id), SK: documentKey(id) }, ConditionExpression: "creatorIdempotencyKey = :owner AND #status <> :active", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":owner": idempotencyKey, ":active": "active" } } },
+        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: hashKey(sha256), SK: hashKey(sha256) }, ConditionExpression: "documentId = :id AND creatorIdempotencyKey = :owner AND #state <> :active", ExpressionAttributeNames: { "#state": "state" }, ExpressionAttributeValues: { ":id": id, ":owner": idempotencyKey, ":active": "active" } } },
       ],
     },
   );
@@ -466,7 +457,7 @@ export async function removePendingDocumentClaim(
 
 export async function createDocumentLink(
   client: DynamoDBDocumentClient,
-  input: { documentId: string; transactionId: string; coverageType: string; runId?: string; sourceRef?: string },
+  input: { documentId: string; transactionId: string; coverageType: string },
 ) {
   const id = createHash("sha256")
     .update(`link#${input.documentId}#${input.transactionId}#${input.coverageType}`)
@@ -479,8 +470,6 @@ export async function createDocumentLink(
     documentId: input.documentId,
     transactionId: input.transactionId,
     coverageType: input.coverageType,
-    ...(input.runId ? { createdByRunId: input.runId } : {}),
-    ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -504,22 +493,6 @@ export async function createDocumentLink(
   }
 }
 
-export async function deleteRunOwnedLink(
-  client: DynamoDBDocumentClient,
-  link: BookkeepingItem,
-  runId: string,
-) {
-  await transact(
-    client,
-    {
-      TransactItems: [
-        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: key("link", link.id), SK: key("link", link.id) }, ConditionExpression: "createdByRunId = :run", ExpressionAttributeValues: { ":run": runId } } },
-        { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(String(link.documentId)), SK: documentKey(String(link.documentId)) }, UpdateExpression: "SET updatedAt = :now ADD linkRefCount :minus", ConditionExpression: "linkRefCount > :zero", ExpressionAttributeValues: { ":minus": -1, ":zero": 0, ":now": new Date().toISOString() } } },
-      ],
-    },
-  );
-}
-
 export async function deleteDocumentLink(
   client: DynamoDBDocumentClient,
   link: BookkeepingItem,
@@ -533,88 +506,6 @@ export async function deleteDocumentLink(
       ],
     },
   );
-}
-
-export async function markDocumentRollbackDeleting(
-  client: DynamoDBDocumentClient,
-  id: string,
-  runId: string,
-) {
-  await transact(client, { TransactItems: [{ Update: {
-      TableName: TABLE_BOOKKEEPING,
-      Key: { PK: documentKey(id), SK: documentKey(id) },
-      UpdateExpression: "SET #status = :deleting, updatedAt = :now",
-      ConditionExpression: "createdByRunId = :run AND (#status = :active OR #status = :deleting) AND uploadAuthorizationExpiresAt < :now AND (attribute_not_exists(linkRefCount) OR linkRefCount = :zero) AND (attribute_not_exists(reportRefCount) OR reportRefCount = :zero)",
-      ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: { ":run": runId, ":active": "active", ":deleting": "rollback-deleting", ":zero": 0, ":now": new Date().toISOString() },
-    } }] });
-}
-
-export async function removeRollbackDocument(
-  client: DynamoDBDocumentClient,
-  id: string,
-  sha256: string,
-  runId: string,
-) {
-  await transact(
-    client,
-    {
-      TransactItems: [
-        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(id), SK: documentKey(id) }, ConditionExpression: "createdByRunId = :run AND #status = :deleting", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":run": runId, ":deleting": "rollback-deleting" } } },
-        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: hashKey(sha256), SK: hashKey(sha256) }, ConditionExpression: "documentId = :id AND createdByRunId = :run", ExpressionAttributeValues: { ":id": id, ":run": runId } } },
-      ],
-    },
-  );
-}
-
-export async function listRunOwnedItems(
-  client: DynamoDBDocumentClient,
-  kind: "document" | "link",
-  runId: string,
-) {
-  const all = await listBookkeepingItems(client, kind);
-  return all.filter((item) => item.createdByRunId === runId);
-}
-
-export async function listRunOwnedPage(
-  client: DynamoDBDocumentClient,
-  kind: "document" | "link",
-  runId: string,
-  nextToken?: string,
-  limit = 100,
-) {
-  let ExclusiveStartKey: Record<string, unknown> | undefined;
-  if (nextToken) {
-    if (nextToken.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(nextToken))
-      throw new Error("invalid-page-token");
-    try {
-      ExclusiveStartKey = JSON.parse(Buffer.from(nextToken, "base64url").toString("utf8"));
-      if (
-        !ExclusiveStartKey ||
-        typeof ExclusiveStartKey.PK !== "string" ||
-        typeof ExclusiveStartKey.SK !== "string" ||
-        Object.keys(ExclusiveStartKey).some((name) => !["PK", "SK"].includes(name))
-      )
-        throw new Error("invalid-page-token");
-    } catch {
-      throw new Error("invalid-page-token");
-    }
-  }
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_BOOKKEEPING,
-      FilterExpression: "begins_with(PK, :prefix) AND createdByRunId = :run",
-      ExpressionAttributeValues: { ":prefix": `${kind.toUpperCase()}#`, ":run": runId },
-      ExclusiveStartKey,
-      Limit: Math.max(1, Math.min(limit, 100)),
-    }),
-  );
-  return {
-    items: (result.Items || []).map((item) => clean(item as Record<string, unknown>)!),
-    nextToken: result.LastEvaluatedKey
-      ? Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString("base64url")
-      : undefined,
-  };
 }
 
 export async function addDocumentReportReference(

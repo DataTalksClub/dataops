@@ -36,13 +36,10 @@ import {
   createDocumentLink,
   deleteBookkeepingItem,
   deleteDocumentLink,
-  deleteRunOwnedLink,
   markDocumentCleanupRequired,
-  markDocumentRollbackDeleting,
   putBookkeepingItem,
   removeDocumentReportReference,
   removePendingDocumentClaim,
-  removeRollbackDocument,
   renewDocumentPrepareLease,
   updateBookkeepingTransaction,
 } from '../src/db/bookkeeping';
@@ -827,8 +824,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     });
   });
 
-  it('guards every document cleanup, rollback, link, report, delete, and duplicate path', async () => {
-    const runId = 'guard-matrix-run';
+  it('guards every document cleanup, link, report, delete, and duplicate path', async () => {
     const owner = 'guard-matrix-owner';
     const hashFor = (index: number) => index.toString(16).padStart(64, '0');
     const makeDocument = async (
@@ -840,7 +836,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
         ...key('DOCUMENT', id), id, documentType: 'invoice', status: 'active',
         sha256: hashFor(id.length), declaredSha256: hashFor(id.length),
         objectVersionId: `version-${label}`, verifiedByteSize: 900,
-        creatorIdempotencyKey: owner, createdByRunId: runId,
+        creatorIdempotencyKey: owner,
         uploadAuthorizationExpiresAt: '2020-01-01T00:00:00.000Z',
         linkRefCount: 0, reportRefCount: 0,
         createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
@@ -869,37 +865,25 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await unchanged(deleteDoc, () => deleteBookkeepingItem(client, 'document', String(deleteDoc.id)));
 
     const cleanup = await makeDocument('cleanup', { status: 'pending', objectVersionId: undefined });
-    await unchanged(cleanup, () => markDocumentCleanupRequired(client, String(cleanup.id), owner, runId));
+    await unchanged(cleanup, () => markDocumentCleanupRequired(client, String(cleanup.id), owner));
 
     const lease = await makeDocument('lease', { status: 'pending', objectVersionId: undefined });
     await put(client, TABLE_BOOKKEEPING, {
       ...key('DOCUMENT_HASH', String(lease.declaredSha256)),
-      documentId: lease.id, state: 'pending', creatorIdempotencyKey: owner, createdByRunId: runId,
+      documentId: lease.id, state: 'pending', creatorIdempotencyKey: owner,
     });
     await unchanged(lease, () => renewDocumentPrepareLease(
-      client, String(lease.id), String(lease.declaredSha256), owner, runId,
+      client, String(lease.id), String(lease.declaredSha256), owner,
       '2099-01-01T00:00:00.000Z', '2099-01-01T00:00:00.000Z',
     ));
 
     const pending = await makeDocument('pending-remove', { status: 'pending', objectVersionId: undefined });
     await put(client, TABLE_BOOKKEEPING, {
       ...key('DOCUMENT_HASH', String(pending.declaredSha256)),
-      documentId: pending.id, state: 'pending', creatorIdempotencyKey: owner, createdByRunId: runId,
+      documentId: pending.id, state: 'pending', creatorIdempotencyKey: owner,
     });
     await unchanged(pending, () => removePendingDocumentClaim(
-      client, String(pending.id), String(pending.declaredSha256), owner, runId,
-    ));
-
-    const rollback = await makeDocument('rollback');
-    await unchanged(rollback, () => markDocumentRollbackDeleting(client, String(rollback.id), runId));
-
-    const rollbackDelete = await makeDocument('rollback-delete', { status: 'rollback-deleting' });
-    await put(client, TABLE_BOOKKEEPING, {
-      ...key('DOCUMENT_HASH', String(rollbackDelete.sha256)),
-      documentId: rollbackDelete.id, state: 'active', createdByRunId: runId,
-    });
-    await unchanged(rollbackDelete, () => removeRollbackDocument(
-      client, String(rollbackDelete.id), String(rollbackDelete.sha256), runId,
+      client, String(pending.id), String(pending.declaredSha256), owner,
     ));
 
     const linkCreate = await makeDocument('link-create');
@@ -910,22 +894,18 @@ describe('sponsor finance production DynamoDB transactions', () => {
       coverageType: 'invoice',
     }));
 
-    for (const kind of ['ordinary', 'run-owned'] as const) {
-      const document = await makeDocument(`link-delete-${kind}`, { linkRefCount: 1 });
-      const link = {
-        ...key('LINK', `guard-${kind}`), id: `guard-${kind}`,
-        documentId: document.id, transactionId: `transaction-${kind}`,
-        coverageType: 'invoice', createdByRunId: runId,
-        createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
-      };
-      await put(client, TABLE_BOOKKEEPING, link);
-      await unchanged(document, () => kind === 'ordinary'
-        ? deleteDocumentLink(client, link as never)
-        : deleteRunOwnedLink(client, link as never, runId));
-      assert.ok((await client.send(new GetCommand({
-        TableName: TABLE_BOOKKEEPING, Key: { PK: link.PK, SK: link.SK },
-      }))).Item);
-    }
+    const linkDelete = await makeDocument('link-delete', { linkRefCount: 1 });
+    const link = {
+      ...key('LINK', 'guard-link'), id: 'guard-link',
+      documentId: linkDelete.id, transactionId: 'transaction-link',
+      coverageType: 'invoice',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await put(client, TABLE_BOOKKEEPING, link);
+    await unchanged(linkDelete, () => deleteDocumentLink(client, link as never));
+    assert.ok((await client.send(new GetCommand({
+      TableName: TABLE_BOOKKEEPING, Key: { PK: link.PK, SK: link.SK },
+    }))).Item);
 
     const reportAdd = await makeDocument('report-add');
     await unchanged(reportAdd, () => addDocumentReportReference(client, String(reportAdd.id), 'report-add'));

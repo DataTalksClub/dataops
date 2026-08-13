@@ -8,7 +8,6 @@
  * Run without --write for an offline source inventory.
  */
 
-import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { inspectArchives, openArchiveMember } from "./bookkeeping-document-import/archive";
@@ -117,7 +116,6 @@ export async function main(argv = process.argv.slice(2)) {
   const archiveDigestByAlias = new Map(manifest.archives.map((archive) => [archive.alias, archive.sha256.replace(/^sha256:/, "")]));
   const inventoryBySource = new Map(inventory.accepted.map((item) => [`${item.archive}\0${item.member}`, item]));
   const documentIds = new Map<string, string>();
-  const runId = randomUUID();
   let createdDocuments = 0;
   let existingDocuments = 0;
   let createdLinks = 0;
@@ -132,7 +130,6 @@ export async function main(argv = process.argv.slice(2)) {
     if (!archived || !archivePath || !archiveSha256) throw new ImportFailure("manifest-source-missing");
     const ownership = {
       idempotencyKey: `document-import:${sha256.slice(0, 32)}`,
-      runId,
     };
     const prepared = await api.request<{
       outcome: "created" | "retry" | "existing";

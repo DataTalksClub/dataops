@@ -19,15 +19,11 @@ import {
   deleteBookkeepingItem,
   deleteDocumentLink,
   deleteDeletingReport,
-  deleteRunOwnedLink,
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
-  listRunOwnedItems,
-  listRunOwnedPage,
   lookupDocumentHash,
   markDocumentCleanupRequired,
-  markDocumentRollbackDeleting,
   markGenerationCleanupRequired,
   markReportDeleting,
   markReportGenerated,
@@ -35,7 +31,6 @@ import {
   prepareDocument,
   removePendingDocumentClaim,
   removeDocumentReportReference,
-  removeRollbackDocument,
   renewDocumentPrepareLease,
   type BookkeepingItem,
   updateBookkeepingTransaction,
@@ -180,7 +175,6 @@ function publicDocument(document: Record<string, unknown>) {
     creatorIdempotencyKey: _owner,
     declaredSha256: _declaredHash,
     sha256: _verifiedHash,
-    createdByRunId: _run,
     sourceRef: _source,
     ...safe
   } = document;
@@ -188,7 +182,7 @@ function publicDocument(document: Record<string, unknown>) {
 }
 
 function publicLink(link: Record<string, unknown>) {
-  const { createdByRunId: _run, sourceRef: _source, ...safe } = link;
+  const { sourceRef: _source, ...safe } = link;
   return safe;
 }
 
@@ -397,7 +391,6 @@ export async function handleBookkeepingRoutes(
       byteSize > limit ||
       !DOCUMENT_TYPES.has(documentType) ||
       !OPAQUE.test(String(body.idempotencyKey || "")) ||
-      !OPAQUE.test(String(body.runId || "")) ||
       !OPAQUE.test(String(body.sourceRef || "")) ||
       (statement &&
         (!OPAQUE.test(String(body.accountId || "")) ||
@@ -423,7 +416,6 @@ export async function handleBookkeepingRoutes(
       documentType,
       ...(statement ? { accountId: String(body.accountId), statementMonth: String(body.statementMonth) } : {}),
       idempotencyKey: String(body.idempotencyKey),
-      runId: String(body.runId),
       sourceRef: String(body.sourceRef),
       s3Key: "documents/{id}",
       expiresAt: new Date(Date.now() + Math.max(900, Number(process.env.BOOKKEEPING_PREPARE_TTL_SECONDS || 900)) * 1000).toISOString(),
@@ -439,19 +431,17 @@ export async function handleBookkeepingRoutes(
           client,
           String(stale.id),
           String(stale.creatorIdempotencyKey),
-          String(stale.createdByRunId),
         );
         const head = await headDocumentObject(bucket, String(stale.s3Key));
         if (head) await deleteExactDocumentObject(bucket, stale, head.VersionId);
-        await removePendingDocumentClaim(client, String(stale.id), sha256, String(stale.creatorIdempotencyKey), String(stale.createdByRunId));
+        await removePendingDocumentClaim(client, String(stale.id), sha256, String(stale.creatorIdempotencyKey));
         prepared = await prepareDocument(client, {
           sha256,
           byteSize,
           documentType,
           ...(statement ? { accountId: String(body.accountId), statementMonth: String(body.statementMonth) } : {}),
           idempotencyKey: String(body.idempotencyKey),
-          runId: String(body.runId),
-          sourceRef: String(body.sourceRef),
+              sourceRef: String(body.sourceRef),
           s3Key: "documents/{id}",
           expiresAt: new Date(Date.now() + Math.max(900, Number(process.env.BOOKKEEPING_PREPARE_TTL_SECONDS || 900)) * 1000).toISOString(),
           uploadAuthorizationExpiresAt,
@@ -464,8 +454,7 @@ export async function handleBookkeepingRoutes(
       const cleanup = prepared.document;
       if (
         !cleanup ||
-        cleanup.creatorIdempotencyKey !== body.idempotencyKey ||
-        cleanup.createdByRunId !== body.runId
+        cleanup.creatorIdempotencyKey !== body.idempotencyKey
       )
         return json(409, { error: "Pending cleanup required" });
       if (
@@ -482,7 +471,6 @@ export async function handleBookkeepingRoutes(
           String(cleanup.id),
           sha256,
           String(cleanup.creatorIdempotencyKey),
-          String(cleanup.createdByRunId),
         );
         prepared = await prepareDocument(client, {
           sha256,
@@ -495,8 +483,7 @@ export async function handleBookkeepingRoutes(
               }
             : {}),
           idempotencyKey: String(body.idempotencyKey),
-          runId: String(body.runId),
-          sourceRef: String(body.sourceRef),
+              sourceRef: String(body.sourceRef),
           s3Key: "documents/{id}",
           expiresAt: new Date(
             Date.now() +
@@ -522,7 +509,6 @@ export async function handleBookkeepingRoutes(
         String(prepared.document!.id),
         sha256,
         String(body.idempotencyKey),
-        String(body.runId),
         new Date(
           Date.now() +
             Math.max(
@@ -564,13 +550,12 @@ export async function handleBookkeepingRoutes(
   const cancel = path.match(/^\/api\/bookkeeping\/documents\/([^/]+)\/cancel$/);
   if (cancel && method === "POST") {
     const body = parse(event.body || null);
-    if (!body || !OPAQUE.test(String(body.idempotencyKey || "")) || !OPAQUE.test(String(body.runId || "")))
+    if (!body || !OPAQUE.test(String(body.idempotencyKey || "")))
       return json(400, { error: "Invalid request" });
     const document = await getRawDocument(client, cancel[1]);
     if (!document) return json(200, { outcome: "absent" });
     if (
       document.creatorIdempotencyKey !== body.idempotencyKey ||
-      document.createdByRunId !== body.runId ||
       !["pending", "cleanup-required"].includes(String(document.status))
     )
       return json(409, { error: "Cleanup refused" });
@@ -585,14 +570,13 @@ export async function handleBookkeepingRoutes(
           client,
           cancel[1],
           String(body.idempotencyKey),
-          String(body.runId),
         );
       const head = await headDocumentObject(bucket, String(document.s3Key));
       if (head) await deleteExactDocumentObject(bucket, document, head.VersionId);
-      await removePendingDocumentClaim(client, cancel[1], String(document.declaredSha256), String(body.idempotencyKey), String(body.runId));
+      await removePendingDocumentClaim(client, cancel[1], String(document.declaredSha256), String(body.idempotencyKey));
       return json(200, { outcome: "cancelled" });
     } catch {
-      await markDocumentCleanupRequired(client, cancel[1], String(body.idempotencyKey), String(body.runId)).catch(() => undefined);
+      await markDocumentCleanupRequired(client, cancel[1], String(body.idempotencyKey)).catch(() => undefined);
       return json(503, { error: "Cleanup required" });
     }
   }
@@ -610,8 +594,7 @@ export async function handleBookkeepingRoutes(
       const body = parse(event.body || null);
       if (
         !body ||
-        doc.creatorIdempotencyKey !== body.idempotencyKey ||
-        doc.createdByRunId !== body.runId
+        doc.creatorIdempotencyKey !== body.idempotencyKey
       )
         return json(409, { error: "Completion refused" });
       return json(200, { outcome: "existing", document: publicDocument(doc) });
@@ -623,9 +606,7 @@ export async function handleBookkeepingRoutes(
       if (
         !body ||
         !OPAQUE.test(String(body.idempotencyKey || "")) ||
-        !OPAQUE.test(String(body.runId || "")) ||
-        doc.creatorIdempotencyKey !== body.idempotencyKey ||
-        doc.createdByRunId !== body.runId
+          doc.creatorIdempotencyKey !== body.idempotencyKey
       )
         return json(409, { error: "Completion refused" });
       const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "";
@@ -641,7 +622,6 @@ export async function handleBookkeepingRoutes(
             client,
             complete[1],
             String(body.idempotencyKey),
-            String(body.runId),
           );
           if (
             Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
@@ -657,7 +637,6 @@ export async function handleBookkeepingRoutes(
             complete[1],
             String(doc.declaredSha256),
             String(body.idempotencyKey),
-            String(body.runId),
           );
           return json(400, { error: "Uploaded object verification failed" });
         } catch {
@@ -665,7 +644,6 @@ export async function handleBookkeepingRoutes(
             client,
             complete[1],
             String(body.idempotencyKey),
-            String(body.runId),
           ).catch(() => undefined);
           return json(503, { error: "Cleanup required" });
         }
@@ -682,7 +660,6 @@ export async function handleBookkeepingRoutes(
             client,
             complete[1],
             String(body.idempotencyKey),
-            String(body.runId),
           );
           if (
             Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
@@ -695,14 +672,12 @@ export async function handleBookkeepingRoutes(
             complete[1],
             String(doc.declaredSha256),
             String(body.idempotencyKey),
-            String(body.runId),
           );
         } catch {
           await markDocumentCleanupRequired(
             client,
             complete[1],
             String(body.idempotencyKey),
-            String(body.runId),
           ).catch(() => undefined);
           return json(503, { error: "Cleanup required" });
         }
@@ -714,7 +689,6 @@ export async function handleBookkeepingRoutes(
           complete[1],
           verified.sha256,
           String(body.idempotencyKey),
-          String(body.runId),
           verified.versionId,
           verified.size,
         );
@@ -731,7 +705,6 @@ export async function handleBookkeepingRoutes(
             client,
             complete[1],
             String(body.idempotencyKey),
-            String(body.runId),
           );
           if (
             Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
@@ -744,14 +717,12 @@ export async function handleBookkeepingRoutes(
             complete[1],
             verified.sha256,
             String(body.idempotencyKey),
-            String(body.runId),
           );
         } catch {
           await markDocumentCleanupRequired(
             client,
             complete[1],
             String(body.idempotencyKey),
-            String(body.runId),
           ).catch(() => undefined);
         }
         return json(503, { error: "Document activation failed" });
@@ -1068,134 +1039,6 @@ export async function handleBookkeepingRoutes(
     }
     return json(200, { accounts });
   }
-  const runRoute = path.match(
-    /^\/api\/bookkeeping\/migration-runs\/([^/]+)\/(reconcile|rollback)$/,
-  );
-  if (runRoute && method === "POST") {
-    const runId = runRoute[1];
-    if (!OPAQUE.test(runId)) return json(400, { error: "Invalid request" });
-    const body = parse(event.body || null) || {};
-    if (runRoute[2] === "reconcile") {
-      const kind = body.kind === "link" ? "link" : "document";
-      let page: Awaited<ReturnType<typeof listRunOwnedPage>>;
-      try {
-        page = await listRunOwnedPage(
-          client,
-          kind,
-          runId,
-          typeof body.nextToken === "string" ? body.nextToken : undefined,
-          Number(body.limit || 100),
-        );
-      } catch {
-        return json(400, { error: "Invalid page token" });
-      }
-      return json(200, {
-        runId,
-        kind,
-        items: page.items.map((item) =>
-          kind === "document"
-            ? {
-                id: item.id,
-                status: item.status,
-                byteSize: item.verifiedByteSize || item.byteSize,
-                documentType: item.documentType,
-                accountId: item.accountId,
-                statementMonth: item.statementMonth,
-              }
-            : {
-                id: item.id,
-                documentId: item.documentId,
-                transactionId: item.transactionId,
-                coverageType: item.coverageType,
-              },
-        ),
-        nextToken: page.nextToken,
-      });
-    }
-    let links = await listRunOwnedItems(client, "link", runId);
-    let documents = await listRunOwnedItems(client, "document", runId);
-    const refused = documents.filter(
-      (document) =>
-        Number(document.linkRefCount || 0) >
-          links.filter((link) => link.documentId === document.id).length ||
-        Number(document.reportRefCount || 0) > 0 ||
-        Date.parse(String(document.uploadAuthorizationExpiresAt || "")) >=
-          Date.now(),
-    );
-    const deferred = documents.filter(
-      (document) =>
-        Date.parse(String(document.uploadAuthorizationExpiresAt || "")) >=
-        Date.now(),
-    );
-    if (body.write !== true)
-      return json(200, {
-        runId,
-        write: false,
-        links: links.length,
-        documents: documents.length,
-        eligibleDocuments: documents.length - refused.length,
-        refusedDocuments: refused.length,
-        deferredDocuments: deferred.length,
-      });
-    let linksDeleted = 0;
-    let documentsDeleted = 0;
-    let refusedDocuments = 0;
-    let failedDocuments = 0;
-    for (const link of links) {
-      try {
-        await deleteRunOwnedLink(client, link, runId);
-        linksDeleted += 1;
-      } catch (error) {
-        if ((error as Error).name !== "TransactionCanceledException") throw error;
-      }
-    }
-    documents = await listRunOwnedItems(client, "document", runId);
-    for (const document of documents) {
-      try {
-        await markDocumentRollbackDeleting(client, document.id, runId);
-      } catch (error) {
-        if (
-          ["ConditionalCheckFailedException", "TransactionCanceledException"].includes(
-            (error as Error).name,
-          )
-        ) {
-          refusedDocuments += 1;
-          continue;
-        }
-        throw error;
-      }
-      const rawDocument = await getRawDocument(client, document.id);
-      if (!rawDocument) continue;
-      try {
-        await deleteExactDocumentObject(
-          process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "",
-          rawDocument,
-          String(rawDocument.objectVersionId || ""),
-        );
-        await removeRollbackDocument(
-          client,
-          document.id,
-          String(document.sha256 || document.declaredSha256),
-          runId,
-        );
-        documentsDeleted += 1;
-      } catch {
-        failedDocuments += 1;
-      }
-    }
-    links = await listRunOwnedItems(client, "link", runId);
-    documents = await listRunOwnedItems(client, "document", runId);
-    return json(200, {
-      runId,
-      write: true,
-      linksDeleted,
-      documentsDeleted,
-      refusedDocuments,
-      failedDocuments,
-      remainingLinks: links.length,
-      remainingDocuments: documents.length,
-    });
-  }
   // Account/link/report metadata use the same private table and authenticated boundary.
   const resource = path.match(
     /^\/api\/bookkeeping\/(accounts|documents|links|reports)(?:\/([^/]+))?$/,
@@ -1246,17 +1089,10 @@ export async function handleBookkeepingRoutes(
           !(await getBookkeepingItem(client, "bookkeeping", String(body.transactionId)))
         )
           return json(404, { error: "Link target not found" });
-        if (
-          (body.runId !== undefined && !OPAQUE.test(String(body.runId))) ||
-          (body.sourceRef !== undefined && !OPAQUE.test(String(body.sourceRef)))
-        )
-          return json(400, { error: "Invalid request" });
         const result = await createDocumentLink(client, {
           documentId: String(body.documentId),
           transactionId: String(body.transactionId),
           coverageType: String(body.coverageType),
-          ...(body.runId ? { runId: String(body.runId) } : {}),
-          ...(body.sourceRef ? { sourceRef: String(body.sourceRef) } : {}),
         });
         const safeLink = publicLink(result.item);
         return json(result.outcome === "created" ? 201 : 200, {

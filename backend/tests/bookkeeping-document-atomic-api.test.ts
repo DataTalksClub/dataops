@@ -2,16 +2,14 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert";
 import { createHash } from "crypto";
 import { Readable } from "stream";
-import { DeleteCommand, UpdateCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { UpdateCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handler } from "../src/handler";
 import { getClient } from "../src/db/client";
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from "../scripts/local-dynamodb";
 import { TABLE_BOOKKEEPING } from "../scripts/local-dynamodb";
 import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from "../src/routes/bookkeeping";
-import { addDocumentReportReference, putBookkeepingItem } from "../src/db/bookkeeping";
-import { createUser } from "../src/db/users";
-import { createBrowserSession, deleteSession } from "../src/db/sessions";
+import { putBookkeepingItem } from "../src/db/bookkeeping";
 
 const invoke = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
   handler({ httpMethod: method, path, headers, body: body === undefined ? null : JSON.stringify(body) }, {});
@@ -58,22 +56,21 @@ describe("atomic bookkeeping document API", () => {
   });
 
   it("allows one concurrent hash owner and makes completion retry idempotent", async () => {
-    const request = (runId: string) =>
+    const request = (requestId: string) =>
       invoke("POST", "/api/bookkeeping/documents/prepare", {
         sha256,
         byteSize: pdf.length,
         documentType: "receipt",
-        idempotencyKey: `${runId}-owner`,
-        runId,
-        sourceRef: `${runId}-source`,
+        idempotencyKey: `${requestId}-owner`,
+        sourceRef: `${requestId}-source`,
       });
     const prepared = await Promise.all([request("concurrent-a"), request("concurrent-b")]);
     assert.deepEqual(prepared.map((response) => response.statusCode).sort(), [201, 409]);
     assert.equal(signedInputs.at(-1)?.IfNoneMatch, "*");
     const winner = prepared.find((response) => response.statusCode === 201)!;
     const body = JSON.parse(winner.body);
-    const runId = prepared[0] === winner ? "concurrent-a" : "concurrent-b";
-    const ownership = { idempotencyKey: `${runId}-owner`, runId };
+    const requestId = prepared[0] === winner ? "concurrent-a" : "concurrent-b";
+    const ownership = { idempotencyKey: `${requestId}-owner` };
     const completed = await Promise.all([
       invoke("POST", `/api/bookkeeping/documents/${body.document.id}/complete`, ownership),
       invoke("POST", `/api/bookkeeping/documents/${body.document.id}/complete`, ownership),
@@ -91,7 +88,7 @@ describe("atomic bookkeeping document API", () => {
     const transaction = JSON.parse((await invoke("POST", "/api/bookkeeping/transactions", {
       transactionDate: "2026-07-01", counterparty: "Synthetic", description: "Concurrent link", amount: "1.00", currency: "EUR",
     })).body);
-    const body = { documentId, transactionId: transaction.id, coverageType: "evidence", runId: "concurrent-link-run", sourceRef: "concurrent-link-source" };
+    const body = { documentId, transactionId: transaction.id, coverageType: "evidence" };
     const responses = await Promise.all([
       invoke("POST", "/api/bookkeeping/links", body),
       invoke("POST", "/api/bookkeeping/links", body),
@@ -108,7 +105,7 @@ describe("atomic bookkeeping document API", () => {
     const expected = Buffer.from("%PDF-expected-different");
     const expectedHash = createHash("sha256").update(expected).digest("hex");
     objectBytes = Buffer.from("%PDF-invalid-upload-value");
-    const ownership = { idempotencyKey: "invalid-owner", runId: "invalid-run" };
+    const ownership = { idempotencyKey: "invalid-owner" };
     const prepared = await invoke("POST", "/api/bookkeeping/documents/prepare", {
       sha256: expectedHash,
       byteSize: objectBytes.length,
@@ -130,7 +127,7 @@ describe("atomic bookkeeping document API", () => {
     const expected = Buffer.from("%PDF-deferred-A");
     objectBytes = Buffer.from("%PDF-deferred-B");
     const hash = createHash("sha256").update(expected).digest("hex");
-    const ownership = { idempotencyKey: "deferred-owner", runId: "deferred-run" };
+    const ownership = { idempotencyKey: "deferred-owner" };
     const request = { sha256: hash, byteSize: expected.length, documentType: "receipt", ...ownership, sourceRef: "deferred-source" };
     const prepared = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/prepare", request)).body);
     assert.equal((await invoke("POST", `/api/bookkeeping/documents/${prepared.document.id}/complete`, ownership)).statusCode, 409);
@@ -148,152 +145,6 @@ describe("atomic bookkeeping document API", () => {
     assert.equal(recovered.statusCode, 201);
   });
 
-  it("rolls back only run-owned resources and refuses external references", async () => {
-    const tx = JSON.parse((await invoke("POST", "/api/bookkeeping/transactions", { transactionDate: "2026-07-01", counterparty: "Synthetic", description: "Synthetic", amount: "1.00", currency: "EUR" })).body);
-    const tx2 = JSON.parse((await invoke("POST", "/api/bookkeeping/transactions", { transactionDate: "2026-07-02", counterparty: "Synthetic", description: "Synthetic", amount: "2.00", currency: "EUR" })).body);
-    const runId = "rollback-run";
-    const rollbackPdf = Buffer.from("%PDF-rollback-synthetic");
-    objectBytes = rollbackPdf;
-    const hash = createHash("sha256").update(rollbackPdf).digest("hex");
-    const ownership = { idempotencyKey: "rollback-owner", runId };
-    const prepared = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/prepare", { sha256: hash, byteSize: rollbackPdf.length, documentType: "receipt", ...ownership, sourceRef: "rollback-source" })).body);
-    await invoke("POST", `/api/bookkeeping/documents/${prepared.document.id}/complete`, ownership);
-    const runLink = JSON.parse((await invoke("POST", "/api/bookkeeping/links", { documentId: prepared.document.id, transactionId: tx.id, coverageType: "evidence", runId, sourceRef: "run-link" })).body);
-    assert.equal(runLink.createdByRunId, undefined);
-    assert.equal(runLink.sourceRef, undefined);
-    assert.equal(runLink.link.createdByRunId, undefined);
-    const external = JSON.parse((await invoke("POST", "/api/bookkeeping/links", { documentId: prepared.document.id, transactionId: tx2.id, coverageType: "evidence" })).body);
-    const preview = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/rollback`, { write: false })).body);
-    assert.deepEqual({ links: preview.links, documents: preview.documents, refused: preview.refusedDocuments }, { links: 1, documents: 1, refused: 1 });
-    const refused = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/rollback`, { write: true })).body);
-    assert.equal(refused.remainingDocuments, 1);
-    assert.equal((await invoke("DELETE", `/api/bookkeeping/links/${external.id}`)).statusCode, 204);
-    const rolledBack = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/rollback`, { write: true })).body);
-    assert.equal(rolledBack.remainingDocuments, 0);
-    assert.equal(deletedVersions.at(-1), "version-1");
-    const retry = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/rollback`, { write: true })).body);
-    assert.deepEqual({ documents: retry.remainingDocuments, links: retry.remainingLinks }, { documents: 0, links: 0 });
-    objectBytes = pdf;
-  });
-
-  it("paginates complete run reconciliation and rejects malformed tokens", async () => {
-    const runId = `paged-run-${Date.now()}`;
-    const created = [];
-    for (let index = 0; index < 105; index++)
-      created.push((await putBookkeepingItem(client, "link", {
-        documentId: `synthetic-document-${index}`,
-        transactionId: `synthetic-transaction-${index}`,
-        coverageType: "evidence",
-        createdByRunId: runId,
-      }, `paged-link-${index}`)).item);
-    try {
-      const ids = new Set<string>();
-      let nextToken: string | undefined;
-      let pages = 0;
-      do {
-        const response = await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/reconcile`, {
-          kind: "link", limit: 17, ...(nextToken ? { nextToken } : {}),
-        });
-        assert.equal(response.statusCode, 200);
-        const page = JSON.parse(response.body);
-        page.items.forEach((item: { id: string }) => ids.add(item.id));
-        nextToken = page.nextToken;
-        pages += 1;
-      } while (nextToken);
-      assert.equal(ids.size, 105);
-      assert.ok(pages > 1);
-      assert.equal((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/reconcile`, { kind: "link", nextToken: "not-a-valid-token" })).statusCode, 400);
-    } finally {
-      await Promise.all(created.map((item) => client.send(new DeleteCommand({
-        TableName: TABLE_BOOKKEEPING,
-        Key: { PK: `LINK#${item.id}`, SK: `LINK#${item.id}` },
-      }))));
-    }
-  });
-
-  it("serializes link/report reference races against rollback deletion", async () => {
-    const activate = async (runId: string, value: Buffer) => {
-      objectBytes = value;
-      const hash = createHash("sha256").update(value).digest("hex");
-      const ownership = { idempotencyKey: `${runId}-owner`, runId };
-      const prepared = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/prepare", {
-        sha256: hash, byteSize: value.length, documentType: "receipt", ...ownership, sourceRef: `${runId}-source`,
-      })).body);
-      assert.equal((await invoke("POST", `/api/bookkeeping/documents/${prepared.document.id}/complete`, ownership)).statusCode, 200);
-      return prepared.document.id as string;
-    };
-    const transaction = JSON.parse((await invoke("POST", "/api/bookkeeping/transactions", {
-      transactionDate: "2026-07-09", counterparty: "Synthetic", description: "Rollback race", amount: "9.00", currency: "EUR",
-    })).body);
-
-    const linkRun = `link-race-${Date.now()}`;
-    const linkDocument = await activate(linkRun, Buffer.from("%PDF-link-race"));
-    const [linkResponse, linkRollbackResponse] = await Promise.all([
-      invoke("POST", "/api/bookkeeping/links", {
-        documentId: linkDocument, transactionId: transaction.id, coverageType: "evidence", runId: linkRun, sourceRef: "link-race-source",
-      }),
-      invoke("POST", `/api/bookkeeping/migration-runs/${linkRun}/rollback`, { write: true }),
-    ]);
-    const linkRollback = JSON.parse(linkRollbackResponse.body);
-    assert.ok([0, 1].includes(linkRollback.remainingDocuments));
-    const linkTruth = JSON.parse((await invoke("POST", "/api/bookkeeping/links/lookup", { tuples: [{ documentId: linkDocument, transactionId: transaction.id, coverageType: "evidence" }] })).body).results[0];
-    assert.equal(linkTruth.state, linkRollback.remainingDocuments === 1 ? "active" : "absent");
-    if (linkResponse.statusCode !== 201) assert.equal(linkRollback.remainingDocuments, 0);
-
-    const reportRun = `report-race-${Date.now()}`;
-    const reportDocument = await activate(reportRun, Buffer.from("%PDF-report-race"));
-    const [referenceResult, reportRollbackResponse] = await Promise.allSettled([
-      addDocumentReportReference(client, reportDocument, "synthetic-racing-report"),
-      invoke("POST", `/api/bookkeeping/migration-runs/${reportRun}/rollback`, { write: true }),
-    ]);
-    assert.equal(reportRollbackResponse.status, "fulfilled");
-    const reportRollback = JSON.parse(reportRollbackResponse.status === "fulfilled" ? reportRollbackResponse.value.body : "{}");
-    if (referenceResult.status === "fulfilled" && referenceResult.value)
-      assert.equal(reportRollback.remainingDocuments, 1);
-    else
-      assert.equal(reportRollback.remainingDocuments, 0);
-
-    const refusedRun = `report-refusal-${Date.now()}`;
-    const refusedDocument = await activate(refusedRun, Buffer.from("%PDF-report-refusal"));
-    assert.equal(await addDocumentReportReference(client, refusedDocument, "synthetic-existing-report"), true);
-    const refusedRollback = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${refusedRun}/rollback`, { write: true })).body);
-    assert.deepEqual(
-      { refused: refusedRollback.refusedDocuments, remaining: refusedRollback.remainingDocuments },
-      { refused: 1, remaining: 1 },
-    );
-    objectBytes = pdf;
-  });
-
-  it("checkpoints an exact-version rollback deletion failure and succeeds on retry", async () => {
-    const runId = `delete-failure-${Date.now()}`;
-    const value = Buffer.from("%PDF-exact-version-delete-failure");
-    objectBytes = value;
-    const hash = createHash("sha256").update(value).digest("hex");
-    const ownership = { idempotencyKey: `${runId}-owner`, runId };
-    const prepared = JSON.parse((await invoke("POST", "/api/bookkeeping/documents/prepare", {
-      sha256: hash, byteSize: value.length, documentType: "receipt", ...ownership, sourceRef: `${runId}-source`,
-    })).body);
-    await invoke("POST", `/api/bookkeeping/documents/${prepared.document.id}/complete`, ownership);
-    setBookkeepingStorageForTests({ send: async (command: any) => {
-      if (command.constructor.name === "DeleteObjectCommand") {
-        assert.equal(command.input.VersionId, "version-1");
-        throw new Error("synthetic-delete-failure");
-      }
-      return {};
-    } } as any, async () => "https://upload.invalid/signed");
-    const failed = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/rollback`, { write: true })).body);
-    assert.deepEqual({ failed: failed.failedDocuments, remaining: failed.remainingDocuments }, { failed: 1, remaining: 1 });
-    let retriedVersion = "";
-    setBookkeepingStorageForTests({ send: async (command: any) => {
-      if (command.constructor.name === "DeleteObjectCommand") retriedVersion = command.input.VersionId;
-      return {};
-    } } as any, async () => "https://upload.invalid/signed");
-    const retried = JSON.parse((await invoke("POST", `/api/bookkeeping/migration-runs/${runId}/rollback`, { write: true })).body);
-    assert.deepEqual({ failed: retried.failedDocuments, remaining: retried.remainingDocuments }, { failed: 0, remaining: 0 });
-    assert.equal(retriedVersion, "version-1");
-    objectBytes = pdf;
-  });
-
   it("rejects all unauthorized probes with the same generic response", async () => {
     process.env.SKIP_AUTH = "false";
     try {
@@ -305,8 +156,6 @@ describe("atomic bookkeeping document API", () => {
         ["POST", "/api/bookkeeping/documents/nonexistent/cancel", {}],
         ["POST", "/api/bookkeeping/links/lookup", { tuples: [] }],
         ["GET", "/api/bookkeeping/documents"],
-        ["POST", "/api/bookkeeping/migration-runs/nonexistent/rollback", { write: false }],
-        ["POST", "/api/bookkeeping/migration-runs/nonexistent/reconcile", { kind: "document" }],
       ];
       const credentialHeaders = [
         {},
@@ -320,57 +169,6 @@ describe("atomic bookkeeping document API", () => {
       assert.ok(probes.every((response) => response.statusCode === 401 && response.body === '{"error":"Unauthorized"}'));
     } finally {
       process.env.SKIP_AUTH = "true";
-    }
-  });
-
-  it("authorizes every migration route with a browser cookie and rejects expired or revoked sessions", async () => {
-    const saved = Object.fromEntries([
-      "DATAOPS_DOCS_DOMAIN", "WORK_ENGINE_AUTH_MODE", "AUTH_BASE_URL", "AUTH_ISSUER",
-      "AUTH_JWKS_URL", "AUTH_CLIENT_ID", "AUTH_CALLBACK_URL", "AUTH_LOGOUT_URL",
-    ].map((key) => [key, process.env[key]]));
-    process.env.SKIP_AUTH = "false";
-    Object.assign(process.env, {
-      DATAOPS_DOCS_DOMAIN: "true",
-      WORK_ENGINE_AUTH_MODE: "portal",
-      AUTH_BASE_URL: "https://auth.example.test",
-      AUTH_ISSUER: "https://issuer.example.test/pool",
-      AUTH_JWKS_URL: "https://issuer.example.test/pool/.well-known/jwks.json",
-      AUTH_CLIENT_ID: "synthetic-client",
-      AUTH_CALLBACK_URL: "https://ops.example.test/auth/callback",
-      AUTH_LOGOUT_URL: "https://ops.example.test/",
-    });
-    try {
-      const user = await createUser(client, { name: "Browser importer", email: `browser-${Date.now()}@example.test`, role: "operator" });
-      const active = await createBrowserSession(client, user.id, { lifetimeSeconds: 3600 });
-      const headers = { cookie: `dataops_session=${active.token}` };
-      const routes: Array<[string, string, unknown?]> = [
-        ["POST", "/api/bookkeeping/transactions/resolve", { sourceKeys: ["absent"] }],
-        ["POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }],
-        ["POST", "/api/bookkeeping/documents/prepare", {}],
-        ["POST", "/api/bookkeeping/documents/nonexistent/complete", {}],
-        ["POST", "/api/bookkeeping/documents/nonexistent/cancel", { idempotencyKey: "synthetic-owner", runId: "synthetic-run" }],
-        ["POST", "/api/bookkeeping/links/lookup", { tuples: [] }],
-        ["GET", "/api/bookkeeping/documents"],
-        ["POST", "/api/bookkeeping/migration-runs/nonexistent/rollback", { write: false }],
-        ["POST", "/api/bookkeeping/migration-runs/nonexistent/reconcile", { kind: "document" }],
-      ];
-      const authorized = await Promise.all(routes.map(([method, route, body]) => invoke(method, route, body, headers)));
-      assert.ok(authorized.every((response) => response.statusCode !== 401));
-
-      const expired = await createBrowserSession(client, user.id, { lifetimeSeconds: -1 });
-      const revoked = await createBrowserSession(client, user.id, { lifetimeSeconds: 3600 });
-      await deleteSession(client, revoked.token);
-      for (const token of [expired.token, revoked.token]) {
-        const response = await invoke("POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }, { cookie: `dataops_session=${token}` });
-        assert.equal(response.statusCode, 401);
-        assert.equal(response.body, '{"error":"Unauthorized"}');
-      }
-    } finally {
-      process.env.SKIP_AUTH = "true";
-      for (const [key, value] of Object.entries(saved)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
     }
   });
 
