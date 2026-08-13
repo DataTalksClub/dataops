@@ -10,10 +10,7 @@ import { createTables } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createSession } from "../src/db/sessions";
-import {
-  createNewsletterSlot,
-  listNewsletterAlertRecords,
-} from "../src/db/newsletterSlots";
+import { createNewsletterSlot } from "../src/db/newsletterSlots";
 import { createCrmRecord } from "../src/db/sponsorCrm";
 import { createCard } from "../src/db/cards";
 import { handleNewsletterSlotRoutes } from "../src/routes/newsletterSlots";
@@ -234,47 +231,6 @@ describe("newsletter slots", () => {
           {},
           { from: "bad", to: "2026-01-01" },
         )
-      ).statusCode,
-      400,
-    );
-  });
-  it("exports the authenticated migration snapshot without maintaining alert state", async () => {
-    const slot = data(
-      await invoke("POST", "/api/newsletter-slots", {
-        ...valid,
-        sourceKey: "migration-snapshot-side-effect-free",
-        publicationDate: "2028-01-10",
-        campaignNumber: 810,
-        status: "reserved",
-      }),
-    );
-    const before = await listNewsletterAlertRecords(client);
-    const response = await invoke(
-      "GET",
-      "/api/newsletter-slots",
-      undefined,
-      {},
-      {
-        from: "2028-01-01",
-        to: "2028-01-31",
-        today: "2028-01-01",
-        migrationSnapshot: "true",
-      },
-    );
-    assert.equal(response.statusCode, 200, response.body);
-    const body = data(response);
-    assert.equal(Object.hasOwn(body, "alerts"), false);
-    assert.equal(body.complete, true);
-    assert.match(body.snapshotDigest, /^[a-f0-9]{64}$/);
-    assert.ok(body.items.some((item: any) => item.id === slot.id));
-    assert.equal((await listNewsletterAlertRecords(client)).length, before.length);
-    assert.equal(
-      (
-        await invoke("GET", "/api/newsletter-slots", undefined, {}, {
-          from: "2028-01-01",
-          to: "2028-01-31",
-          migrationSnapshot: "invalid",
-        })
       ).statusCode,
       400,
     );

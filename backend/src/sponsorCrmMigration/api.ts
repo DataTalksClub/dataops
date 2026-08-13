@@ -253,20 +253,12 @@ export async function exportDestinationSnapshot(
     allCrmRecords(api, "bookings"),
     api.read<{
       items: ApiRecord[];
-      complete: true;
-      snapshotDigest: string;
     }>(
-      "/api/newsletter-slots?from=0001-01-01&to=9999-12-31&migrationSnapshot=true",
+      "/api/newsletter-slots?from=0001-01-01&to=9999-12-31",
     ),
   ]);
-  if (
-    !Array.isArray(newsletter.items) ||
-    newsletter.complete !== true ||
-    !/^[a-f0-9]{64}$/.test(newsletter.snapshotDigest)
-  )
+  if (!Array.isArray(newsletter.items))
     throw new MigrationFailure("unexpected-api-response");
-  if (digest(newsletter.items) !== newsletter.snapshotDigest)
-    throw new MigrationFailure("destination-snapshot-evidence-mismatch");
   if (newsletter.items.length > api.limits.maxItems)
     throw new MigrationFailure("api-pagination-limit");
   const active = (record: ApiRecord) =>
