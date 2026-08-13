@@ -6,7 +6,7 @@ Holiday source facts are shipped with the application and refreshed through auth
 
 The read-only `CalendarOverlayProvider` in `backend/src/calendar/overlays.ts` lets another feature project display-only records. Providers do not gain calendar CRUD access and their records are never persisted in the calendar table.
 
-## Private workbook migration
+## Private workbook import
 
 Dry-run is the default and makes no network calls:
 

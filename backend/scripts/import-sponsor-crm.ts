@@ -3,13 +3,13 @@
 /**
  * One-off Sponsor CRM source importer.
  *
- * This intentionally has no migration plan, approval manifest, checkpoint,
+ * This intentionally has no generalized plan, approval manifest, checkpoint,
  * resume, destination snapshot, reconciliation, rollback, or cleanup engine.
  * It reads one retained raw JSON export and writes through the ordinary CRM
  * API. Run without --write to validate and count the source records.
  *
  * Usage:
- *   tsx scripts/migrate-sponsor-crm.ts --source sponsor.json \
+ *   tsx scripts/import-sponsor-crm.ts --source sponsor.json \
  *     [--status-map statuses.json] [--api-base-url URL] \
  *     [--confirm-origin URL] [--write]
  *

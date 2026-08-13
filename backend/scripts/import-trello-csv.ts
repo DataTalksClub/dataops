@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Migration script: imports data from Trello board export and CSV spreadsheets
+ * One-off import script for Trello board exports and CSV spreadsheets
  * into the DataOps work-engine module (persistent LevelDB via dynalite).
  *
  * Prerequisites:
  *   Stop the dev server first (LevelDB only allows one process at a time).
  *
  * Usage:
- *   IS_LOCAL=true tsx scripts/migrate-data.ts [--dry-run] [--templates-only] [--csv-only] [--cards-only]
+ *   IS_LOCAL=true tsx scripts/import-trello-csv.ts [--dry-run] [--templates-only] [--csv-only] [--cards-only]
  *
  * Flags:
  *   --dry-run         Print what would be imported without writing to DB
@@ -1766,11 +1766,11 @@ function printCsvReport(report: CsvMigrationReport): void {
 }
 
 // ---------------------------------------------------------------------------
-// Main migration
+// Main import
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log('=== DataOps Work-Engine Migration Script ===');
+  console.log('=== DataOps Work-Engine Import Script ===');
   if (DRY_RUN) console.log('** DRY RUN - no data will be written **\n');
 
   const needsTrello = IMPORT_ALL || TEMPLATES_ONLY || CARDS_ONLY;
@@ -1941,7 +1941,7 @@ async function main() {
   // Summary
   // -----------------------------------------------------------------------
 
-  console.log('\n=== Migration Summary ===');
+  console.log('\n=== Import Summary ===');
   console.log(`  Templates created:           ${stats.templates}`);
   console.log(`  Cards created:             ${stats.cards}`);
   console.log(`  ${DRY_RUN ? 'Tasks planned' : 'Tasks created'}:               ${stats.tasks}`);
@@ -2004,12 +2004,12 @@ export {
 };
 
 // Only run main() when executed directly (not when imported for testing)
-const isDirectExecution = process.argv[1]?.endsWith('migrate-data.ts') || process.argv[1]?.endsWith('migrate-data.js');
+const isDirectExecution = process.argv[1]?.endsWith('import-trello-csv.ts') || process.argv[1]?.endsWith('import-trello-csv.js');
 if (isDirectExecution) {
   main()
     .then(() => process.exit(0))
     .catch((err: unknown) => {
-      console.error('Migration failed:', err);
+      console.error('Import failed:', err);
       process.exit(1);
     });
 }
