@@ -16,30 +16,6 @@ on:
       - "samconfig.toml"
       - "scripts/deploy/**"
   workflow_dispatch:
-    inputs:
-      deployment_mode:
-        description: "Only the reviewed issue #166 Phase D reopen is available until cleanup."
-        required: true
-        type: choice
-        default: issue-166-phase-d
-        options:
-          - issue-166-phase-d
-      issue_166_commit:
-        description: Exact 40-character dispatched commit SHA.
-        required: true
-        type: string
-      issue_166_phase_c_table_id:
-        description: Exact reviewed physical TableId created by successful issue #166 Phase C.
-        required: true
-        type: string
-      issue_168_accepted_commit:
-        description: Exact Tester/PM-accepted issue #168 commit contained in this artifact.
-        required: true
-        type: string
-      issue_166_confirmation:
-        description: Exact Phase D writer-reopen confirmation.
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -98,40 +74,16 @@ jobs:
       - name: Validate SAM template
         run: make sam-validate
 
-      - name: Serialize SHA-bound Phase D source readiness input
-        run: |
-          set -euo pipefail
-          node scripts/deploy/serialize-issue-166-phase-d-source.mjs \
-            infra/template.full.yaml \
-            "$RUNNER_TEMP/issue-166-phase-d-readiness/source-template.json" \
-            "$GITHUB_SHA"
-
-      - name: Upload SHA-bound Phase D source readiness input
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-166-phase-d-readiness-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: ${{ runner.temp }}/issue-166-phase-d-readiness/source-template.json
-          if-no-files-found: error
-          retention-days: 1
-
 
 
   deploy:
     name: Deploy DataOps v1 app
     runs-on: ubuntu-latest
     needs: checks
-    # Commit 1 of the two-commit Phase D closeout never deploys on push.
-    # Ordinary push deploy returns only in the post-success cleanup commit.
-    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       id-token: write
     env:
-      DEPLOYMENT_MODE: ${{ inputs.deployment_mode || '' }}
-      ISSUE_166_COMMIT: ${{ inputs.issue_166_commit || '' }}
-      ISSUE_166_PHASE_C_TABLE_ID: ${{ inputs.issue_166_phase_c_table_id || '' }}
-      ISSUE_168_ACCEPTED_COMMIT: ${{ inputs.issue_168_accepted_commit || '' }}
-      ISSUE_166_CONFIRMATION: ${{ inputs.issue_166_confirmation || '' }}
       AUTH_BASE_URL: https://auth.dtcdev.click
       AUTH_USER_POOL_ID: us-east-1_H7nJu52Bs
       AUTH_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
@@ -187,60 +139,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Download exact SHA-bound Phase D source readiness input
-        uses: actions/download-artifact@v4
-        with:
-          name: issue-166-phase-d-readiness-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: ${{ runner.temp }}/issue-166-phase-d-readiness
-
-      # Operator rollout is deliberately ancestor-by-ancestor:
-      # 55b2d00f22df45d5d55d9a834e4068da28a1d1da -> manual Phase A ->
-      # f32af76898f3f13501798d7b9b12605da2d70974 -> manual Phase B ->
-      # b6b1ce9031412682b9cf660a92876c312b9a584a -> manual Phase C ->
-      # accepted D1/#168 -> manual Phase D.
-      # This job never runs on push, so #179 cannot write transitional rows.
-      - name: Validate bounded Phase D dispatch and accepted writers
-        run: |
-          set -euo pipefail
-          if [ "$DEPLOYMENT_MODE" != "issue-166-phase-d" ] \
-            || [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ] \
-            || [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "Issue #166 Phase D requires an explicit manual dispatch of main" >&2
-            exit 1
-          fi
-          if ! [[ "$ISSUE_166_COMMIT" =~ ^[0-9a-f]{40}$ ]] || [ "$ISSUE_166_COMMIT" != "$GITHUB_SHA" ]; then
-            echo "Issue #166 Phase D commit must exactly match the dispatched commit" >&2
-            exit 1
-          fi
-
-          # Intentionally impossible until sanitized Phase C evidence and #168
-          # Tester/PM acceptance provide exact immutable identities.
-          reviewed_phase_c_table_id="6464cf95-cdab-4260-8424-25176e8a0d1b"
-          accepted_issue_168_commit="41dca9e3748fe627c195f48a7f97ae203b343f60"
-          if ! [[ "$reviewed_phase_c_table_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
-            || [ "$ISSUE_166_PHASE_C_TABLE_ID" != "$reviewed_phase_c_table_id" ]; then
-            echo "Issue #166 Phase D is blocked until the reviewed Phase C TableId replaces its sentinel" >&2
-            exit 1
-          fi
-          if ! [[ "$accepted_issue_168_commit" =~ ^[0-9a-f]{40}$ ]] \
-            || [ "$ISSUE_168_ACCEPTED_COMMIT" != "$accepted_issue_168_commit" ]; then
-            echo "Issue #166 Phase D is blocked until the accepted #168 commit replaces its sentinel" >&2
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor b6b1ce9031412682b9cf660a92876c312b9a584a "$GITHUB_SHA" \
-            || ! git merge-base --is-ancestor 02ee455efad09865ecdbd578e940c59e0bf7dc36 "$GITHUB_SHA" \
-            || ! git merge-base --is-ancestor "$accepted_issue_168_commit" "$GITHUB_SHA"; then
-            echo "Issue #166 Phase D requires repaired Phase C and accepted #179/#168 commits in the dispatched artifact" >&2
-            exit 1
-          fi
-          if [ "$ISSUE_166_CONFIRMATION" != "reopen-canonical-writers-on-empty-final-dataops-v1-tasks" ]; then
-            echo "Issue #166 Phase D operator confirmation does not match" >&2
-            exit 1
-          fi
-
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -263,114 +161,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
 
-
-      - name: Verify exact deployed Phase C state before reopen
-        run: |
-          set -euo pipefail
-          stack_json="$(aws cloudformation describe-stacks --stack-name dataops-v1 --output json)"
-          if [ "$(jq -r '.Stacks[0].StackStatus' <<<"$stack_json")" != "UPDATE_COMPLETE" ]; then
-            echo "Issue #166 Phase D requires dataops-v1 to be UPDATE_COMPLETE" >&2
-            exit 1
-          fi
-          if [ "$(jq -r '.Stacks[0].Outputs[] | select(.OutputKey == "DataOpsTasksTableName") | .OutputValue' <<<"$stack_json")" != "dataops-v1-tasks" ]; then
-            echo "Issue #166 Phase D requires the canonical Phase C Tasks output" >&2
-            exit 1
-          fi
-
-          processed_template="$RUNNER_TEMP/dataops-issue-166-phase-d-preflight-template.json"
-          aws cloudformation get-template --stack-name dataops-v1 --template-stage Processed \
-            --query TemplateBody --output json > "$processed_template"
-          node --input-type=module - "$processed_template" <<'JS'
-          import { readFileSync } from 'node:fs';
-          const encoded = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const template = typeof encoded === 'string' ? JSON.parse(encoded) : encoded;
-          if (!template || typeof template !== 'object' || Array.isArray(template)) {
-            throw new Error('Issue #166 Phase D processed Phase C template must be a JSON object');
-          }
-          const resources = template?.Resources ?? {};
-          const tasks = resources.DataOpsTasksTable;
-          const backend = resources.BackendFunction;
-          const worker = resources.ConversationalExecutionWorkerFunction;
-          const attributes = (tasks?.Properties?.AttributeDefinitions ?? []).map(({ AttributeName }) => AttributeName).sort();
-          const indexes = (tasks?.Properties?.GlobalSecondaryIndexes ?? []).map(({ IndexName }) => IndexName).sort();
-          const exact = JSON.stringify(template?.Metadata?.DataOpsIssue166Cutover) === JSON.stringify({ Issue: 166, Phase: 'C' })
-            && tasks?.Type === 'AWS::DynamoDB::Table'
-            && tasks?.DeletionPolicy === 'Retain' && tasks?.UpdateReplacePolicy === 'Retain'
-            && JSON.stringify(tasks?.Properties?.TableName) === JSON.stringify({ 'Fn::Sub': '${AWS::StackName}-tasks' })
-            && JSON.stringify(attributes) === JSON.stringify(['PK', 'SK', 'cardId', 'date', 'status'])
-            && JSON.stringify(indexes) === JSON.stringify(['GSI-Card', 'GSI-Date', 'GSI-Status'])
-            && backend?.Properties?.ReservedConcurrentExecutions === 0
-            && worker?.Properties?.ReservedConcurrentExecutions === 0
-            && JSON.stringify(worker?.Properties?.Environment?.Variables?.DATAOPS_TASKS_TABLE)
-              === JSON.stringify({ Ref: 'DataOpsTasksTable' })
-            && JSON.stringify(resources.BackendFunctionRole?.Properties?.Policies).includes('DataOpsTasksTable')
-            && JSON.stringify(resources.ConversationalExecutionWorkerFunctionRole?.Properties?.Policies).includes('DataOpsTasksTable');
-          if (!exact || JSON.stringify(template).includes('bundleId') || JSON.stringify(template).includes('GSI-Bundle')) {
-            throw new Error('Issue #166 Phase D requires the exact deployed Phase C marker, final schema, dependencies, and closure');
-          }
-          JS
-
-          table_name="$(aws cloudformation describe-stack-resource --stack-name dataops-v1 \
-            --logical-resource-id DataOpsTasksTable --query 'StackResourceDetail.PhysicalResourceId' --output text)"
-          if [ "$table_name" != "dataops-v1-tasks" ]; then
-            echo "Issue #166 Phase D refuses an unexpected Tasks table identity" >&2
-            exit 1
-          fi
-          table_json="$(aws dynamodb describe-table --table-name "$table_name" --output json)"
-          if ! jq -e --arg tableId "$ISSUE_166_PHASE_C_TABLE_ID" '
-            .Table.TableStatus == "ACTIVE"
-            and .Table.TableId == $tableId
-            and .Table.TableId != "b4e83537-7cf6-41cb-a281-8a52f678b1a3"
-            and .Table.BillingModeSummary.BillingMode == "PAY_PER_REQUEST"
-            and .Table.SSEDescription.Status == "ENABLED"
-            and ([.Table.AttributeDefinitions[].AttributeName] | sort == ["PK", "SK", "cardId", "date", "status"])
-            and .Table.KeySchema == [{"AttributeName":"PK","KeyType":"HASH"},{"AttributeName":"SK","KeyType":"RANGE"}]
-            and ([.Table.GlobalSecondaryIndexes[].IndexStatus] | all(. == "ACTIVE"))
-            and ([.Table.GlobalSecondaryIndexes[].IndexName] | sort == ["GSI-Card", "GSI-Date", "GSI-Status"])
-            and ([.Table.GlobalSecondaryIndexes[] | {IndexName,KeySchema,Projection}] | sort_by(.IndexName)) == ([
-              {IndexName:"GSI-Card",KeySchema:[{AttributeName:"cardId",KeyType:"HASH"},{AttributeName:"date",KeyType:"RANGE"}],Projection:{ProjectionType:"ALL"}},
-              {IndexName:"GSI-Date",KeySchema:[{AttributeName:"date",KeyType:"HASH"},{AttributeName:"status",KeyType:"RANGE"}],Projection:{ProjectionType:"ALL"}},
-              {IndexName:"GSI-Status",KeySchema:[{AttributeName:"status",KeyType:"HASH"},{AttributeName:"date",KeyType:"RANGE"}],Projection:{ProjectionType:"ALL"}}
-            ] | sort_by(.IndexName))
-          ' <<<"$table_json" >/dev/null; then
-            echo "Issue #166 Phase D requires the exact reviewed empty Phase C table" >&2
-            exit 1
-          fi
-          table_arn="$(jq -r '.Table.TableArn' <<<"$table_json")"
-          if [ "$(aws dynamodb describe-continuous-backups --table-name "$table_name" \
-            --query 'ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus' --output text)" != "ENABLED" ]; then
-            echo "Issue #166 Phase D requires Phase C PITR to remain enabled" >&2
-            exit 1
-          fi
-          tags_json="$(aws dynamodb list-tags-of-resource --resource-arn "$table_arn" --output json)"
-          if ! jq -e '([.Tags[] | select(.Key == "Project" and .Value == "DataOps")] | length) == 1
-            and ([.Tags[] | select(.Key == "App" and .Value == "DataOpsV1")] | length) == 1
-            and ([.Tags[] | select(.Key == "DataClass" and .Value == "ExecutionState")] | length) == 1' <<<"$tags_json" >/dev/null; then
-            echo "Issue #166 Phase D requires the exact Phase C ownership tags" >&2
-            exit 1
-          fi
-          if [ "$(aws dynamodb scan --table-name "$table_name" --consistent-read --select COUNT --query Count --output text)" != "0" ]; then
-            echo "Issue #166 Phase D refuses to reopen against a nonempty Tasks table" >&2
-            exit 1
-          fi
-          for logical_id in BackendFunction ConversationalExecutionWorkerFunction; do
-            function_name="$(aws cloudformation describe-stack-resource --stack-name dataops-v1 \
-              --logical-resource-id "$logical_id" --query 'StackResourceDetail.PhysicalResourceId' --output text)"
-            if [ "$(aws lambda get-function-concurrency --function-name "$function_name" \
-              --query ReservedConcurrentExecutions --output text)" != "0" ]; then
-              echo "Issue #166 Phase D requires zero concurrency for $logical_id before reopen" >&2
-              exit 1
-            fi
-            function_arn="$(aws lambda get-function --function-name "$function_name" --query Configuration.FunctionArn --output text)"
-            if [ "$(aws events list-rule-names-by-target --target-arn "$function_arn" --query 'RuleNames | length(@)' --output text)" != "0" ] \
-              || [ "$(aws lambda list-event-source-mappings --function-name "$function_name" \
-              --query 'EventSourceMappings[?State==`Enabled` || State==`Enabling` || State==`Creating`] | length(@)' --output text)" != "0" ]; then
-              echo "Issue #166 Phase D requires all $logical_id triggers closed before reopen" >&2
-              exit 1
-            fi
-          done
-          echo "Issue #166 Phase D preflight proved exact empty Phase C state and closed writers."
-
       - name: Build SAM artifact
         run: make sam-build
 
@@ -382,16 +172,6 @@ jobs:
 
       - name: Test packaged frontend isolation
         run: make test-sam-frontend-isolation
-
-      - name: Verify accepted canonical Task and Card writer artifact
-        run: |
-          set -euo pipefail
-          node scripts/deploy/verify-issue-166-phase-d-readiness.mjs \
-            "$RUNNER_TEMP/issue-166-phase-d-readiness/source-template.json" \
-            .aws-sam/build/BackendFunction \
-            .aws-sam/build/ConversationalExecutionWorkerFunction \
-            "$GITHUB_SHA"
-          sam validate --template-file .aws-sam/build/template.yaml --region "$AWS_REGION"
 
       - name: Deploy DataOps v1 stack
         run: |
@@ -544,164 +324,6 @@ jobs:
               "ParameterKey=SponsorSesFromAddress,ParameterValue=$SPONSOR_SES_FROM_ADDRESS" \
               "ParameterKey=SponsorSesConfigurationSetName,ParameterValue=$SPONSOR_SES_CONFIGURATION_SET_NAME"
 
-
-      - name: Prove final steady state before seeds and read-only smoke
-        run: |
-          set -euo pipefail
-          stack_json="$(aws cloudformation describe-stacks --stack-name dataops-v1 --output json)"
-          if [ "$(jq -r '.Stacks[0].StackStatus' <<<"$stack_json")" != "UPDATE_COMPLETE" ]; then
-            echo "Issue #166 Phase D stack update did not reach UPDATE_COMPLETE" >&2
-            exit 1
-          fi
-          processed_template="$RUNNER_TEMP/dataops-issue-166-phase-d-result-template.json"
-          aws cloudformation get-template --stack-name dataops-v1 --template-stage Processed \
-            --query TemplateBody --output json > "$processed_template"
-          node --input-type=module - "$processed_template" <<'JS'
-          import { readFileSync } from 'node:fs';
-          const encoded = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-          const template = typeof encoded === 'string' ? JSON.parse(encoded) : encoded;
-          if (!template || typeof template !== 'object' || Array.isArray(template)) {
-            throw new Error('Issue #166 Phase D processed final template must be a JSON object');
-          }
-          const resources = template?.Resources ?? {};
-          const tasks = resources.DataOpsTasksTable;
-          const attributes = (tasks?.Properties?.AttributeDefinitions ?? []).map(({ AttributeName }) => AttributeName).sort();
-          const indexes = (tasks?.Properties?.GlobalSecondaryIndexes ?? []).map(({ IndexName }) => IndexName).sort();
-          const exactEvents = [
-            ['BackendFunctionDailyBackendCron', 'AWS::Events::Rule'],
-            ['BackendFunctionDailyBackendExport', 'AWS::Events::Rule'],
-            ['BackendFunctionDailyMailingExport', 'AWS::Events::Rule'],
-            ['ConversationalExecutionWorkerFunctionQueuedAttemptStream', 'AWS::Lambda::EventSourceMapping'],
-            ['ConversationalExecutionWorkerFunctionExecutionRecovery', 'AWS::Events::Rule'],
-            ['ConversationalExecutionWorkerFunctionExecutionHealthPulse', 'AWS::Events::Rule'],
-          ].every(([id, type]) => resources[id]?.Type === type);
-          const exact = template?.Metadata?.DataOpsIssue166Cutover === undefined
-            && tasks?.Type === 'AWS::DynamoDB::Table'
-            && tasks?.DeletionPolicy === 'Retain' && tasks?.UpdateReplacePolicy === 'Retain'
-            && JSON.stringify(tasks?.Properties?.TableName) === JSON.stringify({ 'Fn::Sub': '${AWS::StackName}-tasks' })
-            && JSON.stringify(attributes) === JSON.stringify(['PK', 'SK', 'cardId', 'date', 'status'])
-            && JSON.stringify(indexes) === JSON.stringify(['GSI-Card', 'GSI-Date', 'GSI-Status'])
-            && resources.BackendFunction?.Properties?.ReservedConcurrentExecutions === undefined
-            && resources.ConversationalExecutionWorkerFunction?.Properties?.ReservedConcurrentExecutions === undefined
-            && JSON.stringify(resources.ConversationalExecutionWorkerFunction?.Properties?.Environment?.Variables?.DATAOPS_TASKS_TABLE)
-              === JSON.stringify({ Ref: 'DataOpsTasksTable' })
-            && JSON.stringify(template?.Outputs?.DataOpsTasksTableName?.Value)
-              === JSON.stringify({ Ref: 'DataOpsTasksTable' })
-            && JSON.stringify(resources.BackendFunctionRole?.Properties?.Policies).includes('DataOpsTasksTable')
-            && JSON.stringify(resources.ConversationalExecutionWorkerFunctionRole?.Properties?.Policies).includes('DataOpsTasksTable')
-            && exactEvents;
-          if (!exact || JSON.stringify(template).includes('bundleId') || JSON.stringify(template).includes('GSI-Bundle')) {
-            throw new Error('Issue #166 Phase D did not deploy the exact marker-free final table and writer dependencies');
-          }
-          JS
-
-          table_name="$(aws cloudformation describe-stack-resource --stack-name dataops-v1 \
-            --logical-resource-id DataOpsTasksTable --query StackResourceDetail.PhysicalResourceId --output text)"
-          table_json="$(aws dynamodb describe-table --table-name "$table_name" --output json)"
-          output_table_name="$(jq -r '.Stacks[0].Outputs[] | select(.OutputKey == "DataOpsTasksTableName") | .OutputValue' <<<"$stack_json")"
-          if [ "$table_name" != "dataops-v1-tasks" ] || [ "$output_table_name" != "$table_name" ] \
-            || ! jq -e --arg tableId "$ISSUE_166_PHASE_C_TABLE_ID" '
-            .Table.TableStatus == "ACTIVE"
-            and .Table.TableId == $tableId
-            and .Table.TableId != "b4e83537-7cf6-41cb-a281-8a52f678b1a3"
-            and .Table.BillingModeSummary.BillingMode == "PAY_PER_REQUEST"
-            and .Table.SSEDescription.Status == "ENABLED"
-            and ([.Table.AttributeDefinitions[].AttributeName] | sort == ["PK", "SK", "cardId", "date", "status"])
-            and .Table.KeySchema == [{"AttributeName":"PK","KeyType":"HASH"},{"AttributeName":"SK","KeyType":"RANGE"}]
-            and ([.Table.GlobalSecondaryIndexes[].IndexStatus] | all(. == "ACTIVE"))
-            and ([.Table.GlobalSecondaryIndexes[].IndexName] | sort == ["GSI-Card", "GSI-Date", "GSI-Status"])
-            and ([.Table.GlobalSecondaryIndexes[] | {IndexName,KeySchema,Projection}] | sort_by(.IndexName)) == ([
-              {IndexName:"GSI-Card",KeySchema:[{AttributeName:"cardId",KeyType:"HASH"},{AttributeName:"date",KeyType:"RANGE"}],Projection:{ProjectionType:"ALL"}},
-              {IndexName:"GSI-Date",KeySchema:[{AttributeName:"date",KeyType:"HASH"},{AttributeName:"status",KeyType:"RANGE"}],Projection:{ProjectionType:"ALL"}},
-              {IndexName:"GSI-Status",KeySchema:[{AttributeName:"status",KeyType:"HASH"},{AttributeName:"date",KeyType:"RANGE"}],Projection:{ProjectionType:"ALL"}}
-            ] | sort_by(.IndexName))
-          ' <<<"$table_json" >/dev/null; then
-            echo "Issue #166 Phase D changed the reviewed table identity or final schema" >&2
-            exit 1
-          fi
-          table_arn="$(jq -r '.Table.TableArn' <<<"$table_json")"
-          if [ "$(aws dynamodb describe-continuous-backups --table-name "$table_name" \
-            --query 'ContinuousBackupsDescription.PointInTimeRecoveryDescription.PointInTimeRecoveryStatus' --output text)" != "ENABLED" ]; then
-            echo "Issue #166 Phase D did not retain PITR" >&2
-            exit 1
-          fi
-          tags_json="$(aws dynamodb list-tags-of-resource --resource-arn "$table_arn" --output json)"
-          if ! jq -e '([.Tags[] | select(.Key == "Project" and .Value == "DataOps")] | length) == 1
-            and ([.Tags[] | select(.Key == "App" and .Value == "DataOpsV1")] | length) == 1
-            and ([.Tags[] | select(.Key == "DataClass" and .Value == "ExecutionState")] | length) == 1' <<<"$tags_json" >/dev/null; then
-            echo "Issue #166 Phase D did not retain exact Tasks-table ownership tags" >&2
-            exit 1
-          fi
-          canonical_task_count=0
-          last_evaluated_key=""
-          while true; do
-            scan_args=(
-              dynamodb scan
-              --table-name "$table_name"
-              --consistent-read
-              --no-paginate
-              --limit 100
-              --filter-expression 'begins_with(#pk, :taskPrefix)'
-              --projection-expression '#pk,#sk,#version,#history,#card,#bundle'
-              --expression-attribute-names '{"#pk":"PK","#sk":"SK","#version":"version","#history":"taskHistory","#card":"cardId","#bundle":"bundleId"}'
-              --expression-attribute-values '{":taskPrefix":{"S":"TASK#"}}'
-              --output json
-            )
-            if [ -n "$last_evaluated_key" ]; then
-              scan_args+=(--exclusive-start-key "$last_evaluated_key")
-            fi
-            page_json="$(aws "${scan_args[@]}")"
-            if ! jq -e '
-              all(.Items[];
-                (.PK.S | type == "string" and startswith("TASK#"))
-                and (.SK.S == .PK.S)
-                and ((.version | keys) == ["N"])
-                and (.version.N | test("^[1-9][0-9]*$"))
-                and ((.taskHistory | keys) == ["L"])
-                and ((has("cardId") | not) or ((.cardId | keys) == ["S"] and (.cardId.S | length) > 0))
-                and (has("bundleId") | not)
-              )
-            ' <<<"$page_json" >/dev/null; then
-              echo "Issue #166 Phase D observed a noncanonical Task after writer reopen" >&2
-              exit 1
-            fi
-            canonical_task_count=$((canonical_task_count + $(jq -r '.Count' <<<"$page_json")))
-            last_evaluated_key="$(jq -c '.LastEvaluatedKey // empty' <<<"$page_json")"
-            if [ -z "$last_evaluated_key" ]; then
-              break
-            fi
-          done
-          for logical_id in BackendFunction ConversationalExecutionWorkerFunction; do
-            function_name="$(aws cloudformation describe-stack-resource --stack-name dataops-v1 \
-              --logical-resource-id "$logical_id" --query StackResourceDetail.PhysicalResourceId --output text)"
-            concurrency_json="$(aws lambda get-function-concurrency --function-name "$function_name" --output json)"
-            if ! jq -e 'has("ReservedConcurrentExecutions") | not' <<<"$concurrency_json" >/dev/null; then
-              echo "Issue #166 Phase D did not remove reserved concurrency for $logical_id" >&2
-              exit 1
-            fi
-          done
-          backend_name="$(aws cloudformation describe-stack-resource --stack-name dataops-v1 \
-            --logical-resource-id BackendFunction --query StackResourceDetail.PhysicalResourceId --output text)"
-          worker_name="$(aws cloudformation describe-stack-resource --stack-name dataops-v1 \
-            --logical-resource-id ConversationalExecutionWorkerFunction --query StackResourceDetail.PhysicalResourceId --output text)"
-          if [ "$(aws lambda get-function-configuration --function-name "$backend_name" \
-            --query Environment.Variables.DATAOPS_DEPLOYMENT_ID --output text)" != "$GITHUB_SHA" ] \
-            || [ "$(aws lambda get-function-configuration --function-name "$worker_name" \
-            --query Environment.Variables.DATAOPS_TASKS_TABLE --output text)" != "$table_name" ]; then
-            echo "Issue #166 Phase D deployed function configuration does not resolve the reviewed artifact/table" >&2
-            exit 1
-          fi
-          backend_arn="$(aws lambda get-function --function-name "$backend_name" --query Configuration.FunctionArn --output text)"
-          worker_arn="$(aws lambda get-function --function-name "$worker_name" --query Configuration.FunctionArn --output text)"
-          if [ "$(aws events list-rule-names-by-target --target-arn "$backend_arn" --query 'RuleNames | length(@)' --output text)" != "3" ] \
-            || [ "$(aws events list-rule-names-by-target --target-arn "$worker_arn" --query 'RuleNames | length(@)' --output text)" != "2" ] \
-            || [ "$(aws lambda list-event-source-mappings --function-name "$worker_name" \
-            --query 'EventSourceMappings[?State==`Enabled` || State==`Enabling` || State==`Creating`] | length(@)' --output text)" != "1" ]; then
-            echo "Issue #166 Phase D did not restore the exact writer trigger set" >&2
-            exit 1
-          fi
-          echo "Issue #166 Phase D deployed canonical writers; canonical Task count after reopen: $canonical_task_count."
-
       - name: Seed runtime users, workflow templates, and recurring configs
         run: |
           set -euo pipefail
@@ -710,7 +332,7 @@ jobs:
             --logical-resource-id BackendFunction \
             --query "StackResourceDetail.PhysicalResourceId" \
             --output text)"
-          seed_response="$RUNNER_TEMP/issue-166-phase-d-runtime-seeds.json"
+          seed_response="$RUNNER_TEMP/dataops-runtime-seeds.json"
           seed_error="$(aws lambda invoke \
             --function-name "$backend_function" \
             --cli-binary-format raw-in-base64-out \
@@ -773,39 +395,3 @@ jobs:
           done
           echo "Backend smoke test failed after retries: root expected 302 got $code; /login expected 302 got $login_code"
           exit 1
-
-      - name: Authenticated read-only Task smoke after canonical seeds
-        run: |
-          set -euo pipefail
-          backend_url="$(aws cloudformation describe-stacks --stack-name dataops-v1 \
-            --query "Stacks[0].Outputs[?OutputKey=='BackendUrl'].OutputValue" --output text)"
-          backend_url="${backend_url%/}"
-          portal_secret_name="$(aws cloudformation describe-stacks --stack-name dataops-v1 \
-            --query "Stacks[0].Outputs[?OutputKey=='WorkEnginePortalSecretName'].OutputValue" --output text)"
-          portal_secret="$(aws secretsmanager get-secret-value --secret-id "$portal_secret_name" --query SecretString --output text)"
-          list_body="$RUNNER_TEMP/issue-166-phase-d-task-list.json"
-          get_body="$RUNNER_TEMP/issue-166-phase-d-task-get.json"
-          list_code="$(curl -sS -o "$list_body" -w "%{http_code}" \
-            -H "x-portal-auth: true" -H "x-portal-secret: $portal_secret" \
-            -H "x-user-id: 00000000-0000-0000-0000-000000000001" \
-            "$backend_url/api/tasks?status=todo")"
-          get_code="$(curl -sS -o "$get_body" -w "%{http_code}" \
-            -H "x-portal-auth: true" -H "x-portal-secret: $portal_secret" \
-            -H "x-user-id: 00000000-0000-0000-0000-000000000001" \
-            "$backend_url/api/tasks/issue-166-phase-d-empty-proof")"
-          unset portal_secret
-          if [ "$list_code" != "200" ] || ! jq -e '
-            (.tasks | type == "array")
-            and all(.tasks[];
-              (.id | type == "string" and length > 0)
-              and (.version | type == "number" and floor == . and . >= 1)
-              and (.taskHistory | type == "array")
-              and ((has("cardId") | not) or (.cardId | type == "string" and length > 0))
-              and (has("bundleId") | not)
-            )
-          ' "$list_body" >/dev/null \
-            || [ "$get_code" != "404" ] || ! jq -e '.error == "Task not found"' "$get_body" >/dev/null; then
-            echo "Issue #166 Phase D authenticated read-only Task list/get smoke failed" >&2
-            exit 1
-          fi
-          echo "Authenticated read-only Task list/get smoke proved the canonical Task surface."
