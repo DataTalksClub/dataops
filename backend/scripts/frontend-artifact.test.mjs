@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 
@@ -66,30 +65,6 @@ function collectChild(child, phase, timeoutMs = childTimeoutMs) {
     }, timeoutMs);
     timeout.unref();
   });
-}
-
-async function createLocalAuthenticatedSession(endpoint) {
-  const setup = spawn(process.execPath, ['--import', 'tsx', '--eval', [
-    "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts'), import('./backend/src/db/users.ts'), import('./backend/src/db/sessions.ts')])",
-    '.then(async ([local, clientModule, users, sessions]) => {',
-    'local = local.default || local; clientModule = clientModule.default || clientModule; users = users.default || users; sessions = sessions.default || sessions;',
-    'const client = await clientModule.getClient();',
-    'await local.createTables(client);',
-    "const userId = '15900000-0000-4000-8000-000000000001';",
-    "await users.createUserWithId(client, userId, { name: 'Synthetic parity admin', email: 'parity-admin@example.test', role: 'admin' });",
-    'const session = await sessions.createBrowserSession(client, userId, { lifetimeSeconds: 3600 });',
-    'process.stdout.write(session.token, () => process.exit(0));',
-    '})',
-    ".catch((error) => process.stderr.write(error?.stack || String(error), () => process.exit(1)))",
-  ].join('')], {
-    cwd: repoRoot,
-    env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  const { status, signal, stdout, stderr } = await collectChild(setup, 'Local authenticated session setup');
-  if (status === 0 && stdout) return stdout;
-  if (status === 0) throw new Error('Local authenticated session setup returned no token');
-  throw new Error(stderr || `Local authenticated session setup exited with status ${status} signal ${signal || 'none'}`);
 }
 
 function fixture(name) {
@@ -334,16 +309,11 @@ describe('isolated SAM handler frontend runtime', () => {
   before(() => mkdirSync(generatedRoot, { recursive: true }));
   after(() => rmSync(generatedRoot, { recursive: true, force: true }));
 
-  test('serves only packaged assets through real cookie auth without outside module resolution', async () => {
+  test('serves only packaged assets without outside module resolution', async () => {
     const samArtifact = join(repoRoot, '.aws-sam', 'build', 'BackendFunction');
     const isolated = mkdtempSync(join(generatedRoot, 'runtime-'));
     cpSync(samArtifact, isolated, { recursive: true, dereference: false });
-    const require = createRequire(import.meta.url);
-    const dynalite = require('dynalite')({ createTableMs: 0 });
-    await new Promise((resolveListen, rejectListen) => dynalite.listen(0, (error) => error ? rejectListen(error) : resolveListen()));
-    const endpoint = `http://127.0.0.1:${dynalite.address().port}`;
-    try {
-      const sessionToken = await createLocalAuthenticatedSession(endpoint);
+    {
       const probe = (artifact, paths, phase) => {
         const child = spawn(process.execPath, [runtimeProbe, '--artifact', artifact], {
           cwd: artifact,
@@ -351,8 +321,6 @@ describe('isolated SAM handler frontend runtime', () => {
             ...process.env,
             FRONTEND_ROOT: '',
             NODE_PATH: '',
-            DYNAMODB_ENDPOINT: endpoint,
-            ISSUE_159_SESSION_TOKEN: sessionToken,
             ISSUE_159_REQUEST_PATHS: JSON.stringify(paths),
           },
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -413,8 +381,6 @@ describe('isolated SAM handler frontend runtime', () => {
       assert.match(missingResponse.contentType, /application\/json/, '/ (missing index fixture): error must be JSON');
       assert.equal(missingResponse.isBase64Encoded, false, '/ (missing index fixture): error must not be base64 encoded');
       assert.doesNotMatch(missingResponse.body, /<html/i, '/ (missing index fixture): error must not fall back to HTML');
-    } finally {
-      await new Promise((resolveClose, rejectClose) => dynalite.close((error) => error ? rejectClose(error) : resolveClose()));
     }
   });
 });

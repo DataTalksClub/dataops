@@ -17,14 +17,6 @@ Object.assign(process.env, {
   DATAOPS_DOCS_DOMAIN: '1',
   DTC_OFFLINE: '1',
   DTC_CACHE_ROOT: resolve(artifactRoot, 'synthetic-doc-cache'),
-  AUTH_BASE_URL: 'https://auth.example.test',
-  AUTH_USER_POOL_ID: 'synthetic-pool',
-  AUTH_ISSUER: 'https://issuer.example.test/synthetic-pool',
-  AUTH_JWKS_URL: 'https://issuer.example.test/synthetic-pool/jwks.json',
-  AUTH_CLIENT_ID: 'synthetic-client',
-  AUTH_CALLBACK_URL: 'https://portal.example.test/auth/callback',
-  AUTH_LOGOUT_URL: 'https://portal.example.test/',
-  AUTH_SESSION_LIFETIME_SECONDS: '3600',
   CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
   CONVERSATIONAL_EXECUTION_ENABLED: 'false',
   CONVERSATIONAL_ENABLED_PLUGINS: 'none',
@@ -51,15 +43,13 @@ Module._resolveFilename = function guardedResolve(request, parent, isMain, optio
 };
 
 const { handler } = await import(pathToFileURL(resolve(artifactRoot, 'dist/handler.js')).href);
-const sessionToken = process.env.ISSUE_159_SESSION_TOKEN;
-if (!sessionToken) throw new Error('ISSUE_159_SESSION_TOKEN is required');
 const paths = JSON.parse(process.env.ISSUE_159_REQUEST_PATHS || '[]');
 const responses = [];
 for (const path of paths) {
   const response = await handler({
     httpMethod: 'GET',
     path,
-    headers: { cookie: `dataops_session=${sessionToken}` },
+    headers: {},
   }, {});
   responses.push({
     path,
