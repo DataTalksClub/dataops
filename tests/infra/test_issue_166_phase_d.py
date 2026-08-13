@@ -278,7 +278,8 @@ def test_phase_d_workflow_is_manual_exact_and_fail_closed_until_evidence_exists(
         "actions/download-artifact@v4"
     ) < workflow.index("git merge-base --is-ancestor")
     assert "PENDING_REVIEWED_PHASE_C_TABLE_ID" in workflow
-    assert "PENDING_ACCEPTED_ISSUE_168_COMMIT" in workflow
+    assert "PENDING_ACCEPTED_ISSUE_168_COMMIT" not in workflow
+    assert "41dca9e3748fe627c195f48a7f97ae203b343f60" in workflow
     assert "02ee455efad09865ecdbd578e940c59e0bf7dc36" in workflow
     assert 'git merge-base --is-ancestor "$accepted_issue_168_commit"' in workflow
     assert "reopen-canonical-writers-on-empty-final-dataops-v1-tasks" in workflow
