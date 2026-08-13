@@ -1966,13 +1966,6 @@ Resources:
         - Statement:
             Effect: Allow
             Action:
-              - dynamodb:TransactWriteItems
-            Resource:
-              - !GetAtt DataOpsTemplatesTable.Arn
-              - !GetAtt DataOpsAuditEventsTable.Arn
-        - Statement:
-            Effect: Allow
-            Action:
               - secretsmanager:GetSecretValue
             Resource:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*

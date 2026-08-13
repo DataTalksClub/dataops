@@ -211,30 +211,17 @@ def test_dataops_execution_tables_match_backend_access_patterns():
     assert "AttributeName: taskId" in files
 
 
-def test_backend_template_transactions_are_scoped_to_templates_and_audit_events():
+def test_backend_has_no_retired_runtime_template_transaction_permission():
     template = _load_template()
     policies = template["Resources"]["BackendFunction"]["Properties"]["Policies"]
-    transaction_statements = [
-        policy["Statement"]
+    transaction_resources = [
+        resource
         for policy in policies
         if "dynamodb:TransactWriteItems" in policy.get("Statement", {}).get("Action", [])
-    ]
-    expected_resources = {
-        json.dumps({"GetAtt": "DataOpsTemplatesTable.Arn"}, sort_keys=True),
-        json.dumps({"GetAtt": "DataOpsAuditEventsTable.Arn"}, sort_keys=True),
-    }
-    matching = [
-        statement
-        for statement in transaction_statements
-        if {
-            json.dumps(resource, sort_keys=True)
-            for resource in statement.get("Resource", [])
-        } == expected_resources
+        for resource in policy["Statement"].get("Resource", [])
     ]
 
-    assert len(matching) == 1
-    assert matching[0]["Effect"] == "Allow"
-    assert matching[0]["Action"] == ["dynamodb:TransactWriteItems"]
+    assert {"GetAtt": "DataOpsTemplatesTable.Arn"} not in transaction_resources
 
 
 def test_conversational_state_table_is_retained_private_stream_ready_state():
@@ -1113,18 +1100,23 @@ def test_dataops_export_archive_bucket_is_private_retained_and_versioned():
     assert "Value: DataOpsV1ExecutionExports" in bucket
 
 
-def test_deploy_workflow_seeds_and_verifies_runtime_templates():
+def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda():
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "Seed runtime users, workflow templates, and recurring configs" in workflow
+    assert "Seed runtime users and recurring configs" in workflow
     assert "DataOpsTasksTableName" in workflow
     assert "DataOpsUsersTableName" in workflow
-    assert "DataOpsTemplatesTableName" in workflow
     assert "scripts/seed-users.ts" in workflow
-    assert "scripts/seed-templates.ts" in workflow
     assert "scripts/seed-recurring.ts" in workflow
-    assert workflow.index("scripts/seed-users.ts") < workflow.index("scripts/seed-templates.ts")
-    assert workflow.index("scripts/seed-templates.ts") < workflow.index("scripts/seed-recurring.ts")
+    assert "aws lambda invoke" in workflow
+    assert '"dataopsAction":"sync-templates"' in workflow
+    assert ".total == 11" in workflow
+    assert workflow.index("scripts/seed-users.ts") < workflow.index("aws lambda invoke")
+    assert workflow.index("aws lambda invoke") < workflow.index("scripts/seed-recurring.ts")
+    assert "scripts/seed-templates.ts" not in workflow
+    assert "secretsmanager get-secret-value" not in workflow
+    assert "actions/checkout" in workflow
+    assert "repository: DataTalksClub/dataops-knowledge" not in workflow
     assert "Smoke test deployed single-origin backend" in workflow
     assert "backend_url" in workflow
 

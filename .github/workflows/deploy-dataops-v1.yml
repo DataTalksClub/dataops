@@ -322,9 +322,10 @@ jobs:
               "ParameterKey=SponsorSesFromAddress,ParameterValue=$SPONSOR_SES_FROM_ADDRESS" \
               "ParameterKey=SponsorSesConfigurationSetName,ParameterValue=$SPONSOR_SES_CONFIGURATION_SET_NAME"
 
-      - name: Seed runtime users, workflow templates, and recurring configs
+      - name: Seed runtime users and recurring configs
         working-directory: ${{ github.workspace }}/backend
         run: |
+          set -euo pipefail
           export DATAOPS_TASKS_TABLE="$(aws cloudformation describe-stacks \
             --stack-name dataops-v1 \
             --query "Stacks[0].Outputs[?OutputKey=='DataOpsTasksTableName'].OutputValue" \
@@ -333,12 +334,31 @@ jobs:
             --stack-name dataops-v1 \
             --query "Stacks[0].Outputs[?OutputKey=='DataOpsUsersTableName'].OutputValue" \
             --output text)"
-          export DATAOPS_TEMPLATES_TABLE="$(aws cloudformation describe-stacks \
-            --stack-name dataops-v1 \
-            --query "Stacks[0].Outputs[?OutputKey=='DataOpsTemplatesTableName'].OutputValue" \
-            --output text)"
           npm exec -- tsx scripts/seed-users.ts
-          npm exec -- tsx scripts/seed-templates.ts
+
+          backend_function="$(aws cloudformation describe-stack-resource \
+            --stack-name dataops-v1 \
+            --logical-resource-id BackendFunction \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)"
+          sync_error="$(aws lambda invoke \
+            --function-name "$backend_function" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"source":"dataops.deploy","detail-type":"Template Sync","detail":{"dataopsAction":"sync-templates"}}' \
+            --query FunctionError \
+            --output text \
+            /tmp/dataops-template-sync.json)"
+          if [ "$sync_error" != "None" ]; then
+            echo "Git-authored template projection failed inside the deployed Lambda" >&2
+            exit 1
+          fi
+          if ! jq -e '.statusCode == 200 and (.body | fromjson | .total == 11)' \
+            /tmp/dataops-template-sync.json >/dev/null; then
+            echo "Git-authored template projection did not confirm exactly 11 definitions" >&2
+            exit 1
+          fi
+          echo "Projected 11 Git-authored workflow templates."
+
           npm exec -- tsx scripts/seed-recurring.ts
 
       - name: Smoke test deployed single-origin backend

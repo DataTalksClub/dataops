@@ -4,9 +4,9 @@
  * Validates internal DataOps document references.
  *
  * Checks that every `related_docs` entry, wiki reference, markdown link, and
- * image target in the documentation corpus resolves, that every task template
- * is registered with the right doc type, and that the doc IDs referenced by
- * `seed-templates.ts` exist.
+ * image target in the documentation corpus resolves and that every task
+ * template is registered with the right doc type. Git-authored workflow
+ * definitions are validated in the private knowledge repository.
  *
  * Usage:
  *   npx tsx scripts/validate-docs-links.ts [--repo-root <path>] [--content-root <path>]
@@ -33,11 +33,6 @@ const WIKI_REF_RE = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
 const CODE_BLOCK_RE = /```[\s\S]*?```/g;
 const INLINE_CODE_RE = /`[^`]+`/g;
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
-const SOURCE_DOC_IDS_RE = /sourceDocIds\s*:\s*\[([\s\S]*?)\]/g;
-const INSTRUCTION_DOC_ID_RE = /instructionDocId\s*:\s*['"]([^'"]+)['"]/g;
-const STRING_LITERAL_RE = /['"]([^'"]+)['"]/g;
-const SOURCE_DOC_IDS_CONST_RE = /const\s+([A-Z0-9_]*SOURCE_DOC_IDS)\s*=\s*\[([\s\S]*?)\];/g;
-const EXTERNAL_DOC_OBJECT_RE = /\{\s*id:\s*['"]([^'"]+)['"]\s*,\s*path:\s*['"]([^'"]+)['"]\s*,\s*reason:\s*['"]([^'"]+)['"]\s*,?\s*\}/g;
 
 interface MarkdownReference {
   sourcePath: string;
@@ -64,7 +59,6 @@ export function validate(repoRoot: string, contentRoot = 'content'): string[] {
   violations.push(...validateWikiRefs(root, markdownFiles, registry));
   violations.push(...validateMarkdownRefs(root, markdownFiles, registry));
   violations.push(...validateTaskTemplateDocs(root, registry));
-  violations.push(...validateBackendSeedDocIds(root, registry));
   return violations;
 }
 
@@ -166,65 +160,6 @@ function validateTaskTemplateDocs(repoRoot: string, registry: DocumentRegistry):
     }
   }
   return violations;
-}
-
-function validateBackendSeedDocIds(repoRoot: string, registry: DocumentRegistry): string[] {
-  const seedPath = join(repoRoot, 'backend', 'scripts', 'seed-templates.ts');
-  if (!existsSync(seedPath)) return ['backend/scripts/seed-templates.ts: seed template source is required'];
-
-  const text = readFileSync(seedPath, 'utf8');
-  const source = repoPath(repoRoot, seedPath);
-  const externalDocs = externalSeedDocs(text);
-  const violations: string[] = [];
-
-  for (const [docId, info] of externalDocs) {
-    if (registryResolves(registry, docId)) continue;
-    if (info.path.startsWith('content/')) {
-      violations.push(`${source}: external sourceDocId '${docId}' points into content/: ${info.path}`);
-    }
-    if (!existsSync(join(repoRoot, info.path))) {
-      violations.push(`${source}: external sourceDocId '${docId}' path not found: ${info.path}`);
-    }
-    if (!info.reason.trim()) {
-      violations.push(`${source}: external sourceDocId '${docId}' needs a reason`);
-    }
-  }
-
-  for (const docId of [...sourceDocIds(text)].sort()) {
-    if (externalDocs.has(docId)) continue;
-    if (!registryResolves(registry, docId)) {
-      violations.push(`${source}: sourceDocIds reference not found: '${docId}'`);
-    }
-  }
-
-  const instructionIds = new Set([...text.matchAll(INSTRUCTION_DOC_ID_RE)].map((match) => match[1]));
-  for (const docId of [...instructionIds].sort()) {
-    if (!registryResolves(registry, docId)) {
-      violations.push(`${source}: instructionDocId reference not found: '${docId}'`);
-    }
-  }
-
-  return violations;
-}
-
-function sourceDocIds(seedText: string): Set<string> {
-  const docIds = new Set<string>();
-  for (const match of seedText.matchAll(SOURCE_DOC_IDS_RE)) {
-    for (const literal of match[1].matchAll(STRING_LITERAL_RE)) docIds.add(literal[1]);
-  }
-  for (const match of seedText.matchAll(SOURCE_DOC_IDS_CONST_RE)) {
-    if (match[1].includes('EXTERNAL_SOURCE_DOC_IDS')) continue;
-    for (const literal of match[2].matchAll(STRING_LITERAL_RE)) docIds.add(literal[1]);
-  }
-  return docIds;
-}
-
-function externalSeedDocs(seedText: string): Map<string, { path: string; reason: string }> {
-  const docs = new Map<string, { path: string; reason: string }>();
-  for (const match of seedText.matchAll(EXTERNAL_DOC_OBJECT_RE)) {
-    docs.set(match[1], { path: match[2], reason: match[3] });
-  }
-  return docs;
 }
 
 function stripCodeBlocks(markdown: string): string {
