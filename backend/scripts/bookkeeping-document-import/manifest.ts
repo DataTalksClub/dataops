@@ -1,3 +1,4 @@
+/** Validation for the retained raw bookkeeping archive manifest. */
 import { createHash } from "crypto";
 import { ImportFailure, MAX_INPUT_CARDINALITY, type Manifest } from "./types";
 

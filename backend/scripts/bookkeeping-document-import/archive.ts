@@ -1,3 +1,4 @@
+/** Bounded reader for retained raw bookkeeping archives. */
 import { createHash } from "crypto";
 import { createReadStream, promises as fs } from "fs";
 import { Transform } from "stream";

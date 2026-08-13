@@ -1,3 +1,4 @@
+/** Script-local types for retained bookkeeping source archives. */
 export type CoverageType = "evidence" | "statement-coverage";
 export type DocumentType =
   | "invoice"

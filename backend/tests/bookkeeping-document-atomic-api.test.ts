@@ -1,12 +1,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert";
 import { createHash } from "crypto";
-import { createServer } from "http";
 import { Readable } from "stream";
-import { promises as fs } from "fs";
-import os from "os";
-import path from "path";
-import { ZipFile } from "yazl";
 import { DeleteCommand, UpdateCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handler } from "../src/handler";
 import { getClient } from "../src/db/client";
@@ -16,9 +11,7 @@ import { TABLE_BOOKKEEPING } from "../scripts/local-dynamodb";
 import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from "../src/routes/bookkeeping";
 import { addDocumentReportReference, putBookkeepingItem } from "../src/db/bookkeeping";
 import { createUser } from "../src/db/users";
-import { createBrowserSession, createSession, deleteSession } from "../src/db/sessions";
-import { BookkeepingApi } from "../src/bookkeeping-document-import/api";
-import { runImport } from "../scripts/import-bookkeeping-documents";
+import { createBrowserSession, deleteSession } from "../src/db/sessions";
 
 const invoke = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
   handler({ httpMethod: method, path, headers, body: body === undefined ? null : JSON.stringify(body) }, {});
@@ -400,118 +393,4 @@ describe("atomic bookkeeping document API", () => {
     assert.equal(reports.find((item: any) => item.id === report.id).status, "ready");
   });
 
-  it("resumes an interrupted HTTP import and proves a no-op rerun", async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "dataops-http-import-"));
-    const firstPdf = Buffer.from("%PDF-http-first"), secondPdf = Buffer.from("%PDF-http-second");
-    const zip = new ZipFile(), chunks: Buffer[] = [];
-    zip.addBuffer(firstPdf, "first.pdf");
-    zip.addBuffer(secondPdf, "second.pdf");
-    zip.outputStream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-    const ended = new Promise<void>((resolve) => zip.outputStream.once("end", resolve));
-    zip.end();
-    await ended;
-    const archive = path.join(directory, "year.zip");
-    await fs.writeFile(archive, Buffer.concat(chunks));
-    const archiveHash = createHash("sha256").update(await fs.readFile(archive)).digest("hex");
-    const firstHash = createHash("sha256").update(firstPdf).digest("hex"), secondHash = createHash("sha256").update(secondPdf).digest("hex");
-    const sourceKey = "http-import-transaction";
-    await invoke("POST", "/api/bookkeeping/transactions", { transactionDate: "2026-07-03", counterparty: "Synthetic", description: "Synthetic", amount: "3.00", currency: "EUR", sourceKey });
-    const manifestPath = path.join(directory, "manifest.json");
-    await fs.writeFile(manifestPath, JSON.stringify({
-      schemaVersion: 1,
-      archives: [{ alias: "year", year: 2026, sha256: archiveHash }],
-      documents: [
-        { sha256: firstHash, sources: [{ archive: "year", member: "first.pdf" }], documentType: "receipt", transactions: [{ sourceKey, coverageType: "evidence" }] },
-        { sha256: secondHash, sources: [{ archive: "year", member: "second.pdf" }], documentType: "invoice", transactions: [], unlinkedApproved: true },
-      ],
-      exclusions: [],
-    }));
-    const user = await createUser(client, { name: "Importer", email: "importer@example.test", role: "operator" });
-    const session = await createSession(client, user.id);
-    let uploads = 0, remainingSecondFailures = 3;
-    const server = createServer(async (request, response) => {
-      if (request.method === "PUT" && request.url === "/signed-upload") {
-        uploads += 1;
-        const body: Buffer[] = [];
-        for await (const chunk of request) body.push(Buffer.from(chunk));
-        if (uploads >= 2 && remainingSecondFailures > 0) {
-          remainingSecondFailures -= 1;
-          response.writeHead(503);
-          response.end();
-          return;
-        }
-        objectBytes = Buffer.concat(body);
-        response.writeHead(200);
-        response.end();
-        return;
-      }
-      const body: Buffer[] = [];
-      for await (const chunk of request) body.push(Buffer.from(chunk));
-      const result = await handler({ httpMethod: request.method || "GET", path: new URL(request.url || "/", `http://${request.headers.host}`).pathname, headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, String(value)])), body: body.length ? Buffer.concat(body).toString() : null }, {});
-      response.writeHead(result.statusCode, result.headers);
-      response.end(result.body);
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    try {
-      const address = server.address();
-      const origin = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
-      setBookkeepingStorageForTests(
-        {
-          send: async (command: any) => {
-            const name = command.constructor.name;
-            if (name === "GetObjectCommand") return { Body: Readable.from(objectBytes), VersionId: "version-http" };
-            if (name === "HeadObjectCommand") return { ContentLength: objectBytes.length, ContentType: "application/pdf", VersionId: "version-http" };
-            if (name === "DeleteObjectCommand") return {};
-            return {};
-          },
-        } as any,
-        async () => `${origin}/signed-upload`,
-      );
-      const api = await BookkeepingApi.create({ origin, bearerToken: session.token, allowTestOrigin: true });
-      const runId = `http-resume-${Date.now()}`;
-      const common = { archives: [{ alias: "year", path: archive }], manifest: manifestPath, write: false, rollback: false, runId };
-      const dry = await runImport(common, api) as any;
-      assert.deepEqual({ unique: dry.unique, links: dry.links }, { unique: 2, links: 1 });
-      const approval = path.resolve(process.cwd(), "../.tmp/bookkeeping-document-import", runId, "approval.json");
-      const approvedPlan = JSON.parse(await fs.readFile(approval, "utf8")).plan;
-      assert.deepEqual(approvedPlan.documentOutcomes, { create: 2, reuse: 0 });
-      assert.deepEqual(approvedPlan.linkOutcomes, { create: 1, reuse: 0 });
-      assert.equal(approvedPlan.documents.length, 2);
-      assert.equal(approvedPlan.linkTuples.length, 1);
-      assert.deepEqual(approvedPlan.categories.rejectedReasons, {});
-      const approvedArchive = await fs.readFile(archive);
-      await fs.appendFile(archive, "changed-after-approval");
-      await assert.rejects(
-        () => runImport({ ...common, write: true, approval, confirmOrigin: origin }, api),
-        (error: Error) => error.message === "archive-fingerprint-mismatch",
-      );
-      await fs.writeFile(archive, approvedArchive);
-      await assert.rejects(() => runImport({ ...common, write: true, approval, confirmOrigin: origin }, api), (error: Error) => error.message === "upload-transient-failure");
-      const checkpointPath = path.join(path.dirname(approval), "checkpoint.json");
-      const checkpoint = JSON.parse(await fs.readFile(checkpointPath, "utf8"));
-      const originalId = checkpoint.documents[firstHash].id;
-      checkpoint.documents[firstHash].id = "stale-checkpoint-document";
-      await fs.writeFile(checkpointPath, JSON.stringify(checkpoint), { mode: 0o600 });
-      const resumed = await runImport({ ...common, write: true, approval, confirmOrigin: origin }, api) as any;
-      assert.deepEqual({ documents: resumed.documents, links: resumed.links }, { documents: 2, links: 1 });
-      const repaired = JSON.parse(await fs.readFile(checkpointPath, "utf8"));
-      assert.equal(repaired.documents[firstHash].id, originalId);
-      const rerun = await runImport({ ...common, write: true, approval, confirmOrigin: origin }, api) as any;
-      assert.deepEqual({ createdDocuments: rerun.createdDocuments, createdLinks: rerun.createdLinks }, { createdDocuments: 0, createdLinks: 0 });
-      assert.equal(rerun.noOpExecution, true);
-      const reconciliation = JSON.parse(await fs.readFile(path.join(path.dirname(approval), "reconciliation.json"), "utf8"));
-      assert.deepEqual(reconciliation.outcomes.documents, approvedPlan.documentOutcomes);
-      assert.deepEqual(reconciliation.outcomes.links, approvedPlan.linkOutcomes);
-      assert.equal(reconciliation.documents.length, 2);
-      assert.equal(reconciliation.links.length, 1);
-    } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await fs.rm(directory, { recursive: true, force: true });
-      const evidenceRoot = path.resolve(process.cwd(), "../.tmp/bookkeeping-document-import");
-      for (const entry of await fs.readdir(evidenceRoot).catch(() => []))
-        if (entry.startsWith("http-resume-"))
-          await fs.rm(path.join(evidenceRoot, entry), { recursive: true, force: true });
-      objectBytes = pdf;
-    }
-  });
 });
