@@ -269,7 +269,9 @@ export function createAccountShell({
 
   async function refreshAccountIdentity(mePayload, members, localContext) {
     const availableMembers = Array.isArray(members)
-      ? members.filter((member) => member && member.id)
+      ? members.filter(
+          (member) => member && member.id && member.disabled !== true,
+        )
       : [];
     let actor = currentOperatorFromPayload(mePayload);
     let localPreview = false;
