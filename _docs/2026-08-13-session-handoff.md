@@ -124,7 +124,24 @@ guard checked only off the critical path is worse than no guard.
    a `CodeUri`, so all six build the same artifact. Building once and copying
    measured *slower* and nearly shipped a broken artifact, so the real lever is
    bundling with esbuild to shrink the 78 MB artifact.
-6. **Purge the corpus from git history.** Removed from the working tree but
+6. **Move the application stack template to `aws-infra`.**
+   `infra/template.full.yaml` is the last infrastructure definition left in this
+   repository. It cannot simply move: all six Lambdas use `CodeUri: ..` with a
+   makefile build, so SAM packages the app from here and the template has to sit
+   beside the code it packages. Moving it means decoupling the artifact — either
+   upload it to S3 and pass the key as a parameter, or have CI check out
+   `aws-infra` during deploy. `aws-infra` also has no CI; its stacks are applied
+   by a credentialed operator. The same decoupling is what would make a smaller
+   deploy possible.
+7. **Finish auditing one-shot migration scripts.** The reset and GSI apparatus
+   are gone. Still to classify: `migrate-sponsor-crm.ts`, `scrub-task-titles.ts`,
+   `dry-run-import.ts`, `restore-drill.ts`, the `import-*` scripts, and
+   `export-templates-to-yaml.ts`, which its own header says to delete once the
+   authored templates become the source of truth. `migrate-data.ts` stays: it is
+   what repopulates the tables after the deploy. The rule that keeps catching
+   things: a migration that has run, and a guard for a migration that has
+   finished, are dead code.
+8. **Purge the corpus from git history.** Removed from the working tree but
    still in all 405 commits; the pack is 123 MB. Needs a force-push when no
    other session has uncommitted work. Note it does not un-publish: rotate
    anything credential-shaped rather than relying on the rewrite.
