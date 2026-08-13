@@ -38,8 +38,9 @@ The earlier plan targeted Python. The dependency analysis reversed it:
   stateful, actively-developed core — is already TypeScript. Porting it to
   Python is the bigger, riskier rewrite.
 - The Python backend's only **runtime** third-party deps are `minsearch` and
-  `python-frontmatter`. `frontmatter` has a drop-in Node equivalent
-  (`gray-matter`); `sop_parse`/`sop_lint` are pure stdlib logic.
+  `python-frontmatter`. The TypeScript port splits the frontmatter delimiters
+  locally and parses YAML with the backend's existing `js-yaml` dependency;
+  `sop_parse`/`sop_lint` are pure stdlib logic.
 - `minsearch` is the heaviest dependency in the whole system — it pulls in
   `scikit-learn` + `numpy` + `scipy` + `pandas`. Replacing it with
   `zerosearch-node` (zero-dependency BM25-lite) **removes** the single largest
@@ -119,7 +120,7 @@ server).
 | `work-engine/src/{routes,db,...}` | `backend/src/{work,platform}` |
 | `lambda-functions/src/.../{api_handler,github_store,docs_index,local_server}.py` | `backend/src/docs/*` (TS) |
 | `lambda-functions/.../{sop_parse,sop_lint}.py` + `scripts/sop_*.py` | `backend/src/docs/sop/*` + `backend/scripts` CLI (TS) |
-| `python-frontmatter` | `gray-matter` (npm) |
+| `python-frontmatter` | local delimiter splitting + `js-yaml` (npm) |
 | `minsearch` (Python, scikit-learn, pickle) | `zerosearch-node` (BM25-lite, portable index) |
 | `lambda-functions/template.*.yaml` | `infra/` |
 | Python migration tooling (`Pillow`, `openpyxl`, `slugify`, `httpx`) | not ported (one-time); replace only if still needed (`sharp`, `exceljs`, `slugify`, `fetch`) |
@@ -128,13 +129,13 @@ server).
 
 **Backend runtime deps after consolidation:** AWS SDK v3
 (`@aws-sdk/client-dynamodb`, `lib-dynamodb`, `client-s3`,
-`client-secrets-manager`) + `zerosearch-node` + `gray-matter`. Everything else
+`client-secrets-manager`) + `zerosearch-node` + `js-yaml`. Everything else
 the docs backend used is Node stdlib (`crypto`, `zlib`, `path`, `url`, etc.).
 
 **Lambda resource impact:** replacing `minsearch` with `zerosearch-node` drops
 `scikit-learn`/`numpy`/`scipy`/`pandas` — ~100–250 MB of dependencies and the
 multi-second cold start caused by importing them. `zerosearch-node` is
-dependency-free, so the backend's runtime tree stays at AWS SDK + `gray-matter`
+dependency-free, so the backend's search runtime stays at AWS SDK + `js-yaml`
 + `zerosearch-node`. Node cold start for such a package is typically
 ~150–300 ms.
 

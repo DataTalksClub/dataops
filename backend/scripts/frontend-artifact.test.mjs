@@ -18,22 +18,33 @@ const allowlist = readFrontendAssetManifest().files.map((sourcePath) => [
   `dist/frontend/${sourcePath}`,
 ]);
 
-function createLocalSchema(endpoint) {
+function createLocalAuthenticatedSession(endpoint) {
   return new Promise((resolveSetup, rejectSetup) => {
     const setup = spawn(process.execPath, ['--import', 'tsx', '--eval', [
-      "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts')])",
-      '.then(async ([local, client]) => local.createTables(await client.getClient()))',
+      "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts'), import('./backend/src/db/users.ts'), import('./backend/src/db/sessions.ts')])",
+      '.then(async ([local, clientModule, users, sessions]) => {',
+      'const client = await clientModule.getClient();',
+      'await local.createTables(client);',
+      "const userId = '15900000-0000-4000-8000-000000000001';",
+      "await users.createUserWithId(client, userId, { name: 'Synthetic parity admin', email: 'parity-admin@example.test', role: 'admin' });",
+      'const session = await sessions.createBrowserSession(client, userId, { lifetimeSeconds: 3600 });',
+      'process.stdout.write(session.token);',
+      '})',
     ].join('')], {
       cwd: repoRoot,
       env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let stdout = '';
     let stderr = '';
+    setup.stdout.setEncoding('utf8');
     setup.stderr.setEncoding('utf8');
+    setup.stdout.on('data', (chunk) => { stdout += chunk; });
     setup.stderr.on('data', (chunk) => { stderr += chunk; });
     setup.once('error', rejectSetup);
     setup.once('exit', (status) => {
-      if (status === 0) resolveSetup();
+      if (status === 0 && stdout) resolveSetup(stdout);
+      else if (status === 0) rejectSetup(new Error('Local authenticated session setup returned no token'));
       else rejectSetup(new Error(stderr || `Local schema setup exited with status ${status}`));
     });
   });
@@ -279,7 +290,7 @@ describe('isolated SAM handler frontend runtime', () => {
     const dynalite = require('dynalite')({ createTableMs: 0 });
     await new Promise((resolveListen, rejectListen) => dynalite.listen(0, (error) => error ? rejectListen(error) : resolveListen()));
     const endpoint = `http://127.0.0.1:${dynalite.address().port}`;
-    await createLocalSchema(endpoint);
+    const sessionToken = await createLocalAuthenticatedSession(endpoint);
     const probe = (artifact, paths) => new Promise((resolveProbe, rejectProbe) => {
       const child = spawn(process.execPath, [runtimeProbe, '--artifact', artifact], {
         cwd: artifact,
@@ -288,6 +299,7 @@ describe('isolated SAM handler frontend runtime', () => {
           FRONTEND_ROOT: '',
           NODE_PATH: '',
           DYNAMODB_ENDPOINT: endpoint,
+          ISSUE_159_SESSION_TOKEN: sessionToken,
           ISSUE_159_REQUEST_PATHS: JSON.stringify(paths),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -306,7 +318,7 @@ describe('isolated SAM handler frontend runtime', () => {
       const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api']);
       assert.equal(positive.status, 0, positive.stderr);
       const result = JSON.parse(positive.stdout);
-      assert.equal(result.outsideModuleResolution, false);
+      assert.equal(result.outsideModuleResolution, false, JSON.stringify(result.outsideModuleResolutions));
       const responses = new Map(result.responses.map((response) => [response.path, response]));
       for (const path of ['/', '/workspace/deep-link']) {
         const response = responses.get(path);

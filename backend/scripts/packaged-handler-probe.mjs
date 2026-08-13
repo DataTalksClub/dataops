@@ -36,40 +36,30 @@ Object.assign(process.env, {
 const builtins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
 const originalResolve = Module._resolveFilename;
 let outsideModuleResolution = false;
+const outsideModuleResolutions = [];
 Module._resolveFilename = function guardedResolve(request, parent, isMain, options) {
   const result = originalResolve.call(this, request, parent, isMain, options);
   if (typeof result === 'string' && !builtins.has(result) && result !== request) {
     const absolute = resolve(result);
     if (absolute !== artifactRoot && !absolute.startsWith(artifactRoot + sep)) {
       outsideModuleResolution = true;
+      outsideModuleResolutions.push(absolute);
       throw new Error(`Packaged handler attempted outside module resolution: ${absolute}`);
     }
   }
   return result;
 };
 
-const [{ handler }, { getClient }, { createUserWithId }, { createBrowserSession }] = await Promise.all([
-  import(pathToFileURL(resolve(artifactRoot, 'dist/handler.js')).href),
-  import(pathToFileURL(resolve(artifactRoot, 'dist/db/client.js')).href),
-  import(pathToFileURL(resolve(artifactRoot, 'dist/db/users.js')).href),
-  import(pathToFileURL(resolve(artifactRoot, 'dist/db/sessions.js')).href),
-]);
-
-const client = await getClient();
-const userId = '15900000-0000-4000-8000-000000000001';
-await createUserWithId(client, userId, {
-  name: 'Synthetic parity admin',
-  email: 'parity-admin@example.test',
-  role: 'admin',
-});
-const session = await createBrowserSession(client, userId, { lifetimeSeconds: 3600 });
+const { handler } = await import(pathToFileURL(resolve(artifactRoot, 'dist/handler.js')).href);
+const sessionToken = process.env.ISSUE_159_SESSION_TOKEN;
+if (!sessionToken) throw new Error('ISSUE_159_SESSION_TOKEN is required');
 const paths = JSON.parse(process.env.ISSUE_159_REQUEST_PATHS || '[]');
 const responses = [];
 for (const path of paths) {
   const response = await handler({
     httpMethod: 'GET',
     path,
-    headers: { cookie: `dataops_session=${session.token}` },
+    headers: { cookie: `dataops_session=${sessionToken}` },
   }, {});
   responses.push({
     path,
@@ -79,4 +69,4 @@ for (const path of paths) {
     isBase64Encoded: Boolean(response.isBase64Encoded),
   });
 }
-process.stdout.write(JSON.stringify({ outsideModuleResolution, responses }), () => process.exit(0));
+process.stdout.write(JSON.stringify({ outsideModuleResolution, outsideModuleResolutions, responses }), () => process.exit(0));

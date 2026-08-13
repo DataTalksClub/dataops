@@ -18,6 +18,7 @@ import { resolve, sep } from 'node:path';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
+import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { handleDocsRoutes, isDocsRoute } from './contentApi';
 import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
@@ -54,9 +55,9 @@ let contentStore: ContentsApiGithubStore | null = null;
 
 function frontendRoot(): string {
   if (process.env.FRONTEND_ROOT) return resolve(process.env.FRONTEND_ROOT);
-  // Compiled layout: dist/docs -> dist/frontend. Local development passes an
-  // explicit FRONTEND_ROOT pointing at the same top-level frontend source.
-  return resolve(__dirname, '..', 'frontend');
+  // Both the tsc runtime and the bundled Lambda place the canonical frontend
+  // beside the top-level compiled modules in dist/frontend.
+  return resolve(RUNTIME_ROOT, 'frontend');
 }
 
 function store(): ContentsApiGithubStore {

@@ -10,16 +10,17 @@
  *   text:    title, summary, description, purpose, headings, body, tags, systems
  *   keyword: path, id, domain, doc_type
  *
- * Frontmatter is parsed with `gray-matter` (the Node equivalent of
- * `python-frontmatter`, per `docs/TARGET_ARCHITECTURE.md`).
+ * Frontmatter is split locally and parsed with the backend's direct YAML
+ * dependency, so the Lambda bundle has no optional parser resolution.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, posix, sep } from 'node:path';
 
-import matter from 'gray-matter';
+import yaml from 'js-yaml';
 
 import type { SearchDocument } from '../searchIndex';
+import { splitFrontmatter } from '../sop/parse';
 
 // ── Markdown cleaning regexes (ported from docs_index.py) ─────────────────────
 
@@ -143,9 +144,11 @@ export interface ExtractOptions {
  * record built by Python `iter_docs`.
  */
 export function extractDoc(repoPath: string, rawText: string, options: ExtractOptions = {}): SearchDocument {
-  const parsed = matter(rawText);
-  const metadata = parsed.data as Record<string, unknown>;
-  const body = parsed.content;
+  const [rawFrontmatter, body] = splitFrontmatter(rawText);
+  const loaded = rawFrontmatter ? yaml.load(rawFrontmatter) : {};
+  const metadata = loaded && typeof loaded === 'object' && !Array.isArray(loaded)
+    ? loaded as Record<string, unknown>
+    : {};
 
   const headings = extractHeadings(body);
   const stem = repoPath.split('/').pop()!.replace(/\.md$/, '');
