@@ -340,16 +340,21 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
     },
   ];
 
-  for (const def of tableDefinitions) {
-    try {
-      await client.send(new CreateTableCommand(def));
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'ResourceInUseException') {
-        continue;
+  // Issued together rather than one at a time: this runs once per test process
+  // and in local setup, where sixteen sequential round trips is the slowest
+  // part of the fixture. Tables are independent, so ordering buys nothing.
+  await Promise.all(
+    tableDefinitions.map(async (def) => {
+      try {
+        await client.send(new CreateTableCommand(def));
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'ResourceInUseException') {
+          return;
+        }
+        throw err;
       }
-      throw err;
-    }
-  }
+    }),
+  );
 }
 
 /**

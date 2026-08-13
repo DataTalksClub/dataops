@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'child_process';
 import path from 'path';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
   const workDir = path.resolve(__dirname, '..');
@@ -122,29 +123,24 @@ describe('DynamoDB table setup environment', () => {
 
 describe('missing infrastructure fails loudly', () => {
   it('names the table and says the application does not create it', async () => {
-    const { getClient } = await import('../src/db/client');
-    const client = await getClient();
+    // Wrap a stub exactly the way getClient does. Calling getClient() here
+    // would start a dynalite server this file never stops, which keeps the
+    // test process alive and stalls the whole run.
+    const lib = await import('@aws-sdk/lib-dynamodb');
+    const { failLoudlyOnMissingTable } = await import('../src/db/client');
     const notFound = Object.assign(new Error('Requested resource not found'), {
       name: 'ResourceNotFoundException',
     });
-    (client as unknown as { send: unknown }).send = undefined;
-
-    // Re-wrap a stub the same way getClient does, then assert the translation.
-    const { DynamoDBDocumentClient } = await import('@aws-sdk/lib-dynamodb');
-    const stub = Object.create(DynamoDBDocumentClient.prototype) as { send: unknown };
+    const stub = Object.create(lib.DynamoDBDocumentClient.prototype) as { send: unknown };
     stub.send = async () => { throw notFound; };
-    const mod = await import('../src/db/client');
-    const wrap = (mod as unknown as Record<string, unknown>).failLoudlyOnMissingTable as
-      | ((c: unknown) => { send: (cmd: unknown) => Promise<unknown> })
-      | undefined;
-    if (!wrap) return; // not exported; covered by the integration path instead
 
-    const wrapped = wrap(stub);
+    const wrapped = failLoudlyOnMissingTable(stub as unknown as DynamoDBDocumentClient);
     await assert.rejects(
-      () => wrapped.send({ input: { TableName: 'dataops-v1-cards' } }),
+      () => wrapped.send({ input: { TableName: 'dataops-v1-cards' } } as never),
       (error: Error) => {
         assert.match(error.message, /dataops-v1-cards/);
         assert.match(error.message, /never created by the application/);
+        assert.strictEqual(error.name, 'ResourceNotFoundException');
         return true;
       },
     );

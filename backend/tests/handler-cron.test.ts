@@ -1,12 +1,18 @@
-import { describe, it, after } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { handler } from '../src/handler';
 import { stopLocal } from '../src/db/client';
+import { useTestDatabase } from './helpers/db';
 
 describe('handler - EventBridge scheduled events', () => {
+  before(async () => {
+    // Tables come from infrastructure in production; the suite creates them.
+    await useTestDatabase();
+  });
+
   after(async () => {
     await stopLocal();
   });

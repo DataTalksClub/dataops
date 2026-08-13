@@ -136,4 +136,4 @@ function failLoudlyOnMissingTable(client: DynamoDBDocumentClient): DynamoDBDocum
   return client;
 }
 
-export { getClient, startLocal, stopLocal };
+export { getClient, startLocal, stopLocal, failLoudlyOnMissingTable };

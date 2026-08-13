@@ -295,7 +295,7 @@ test("matrix content is public-safe", () => {
   assert.doesNotMatch(matrixText, /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i, "matrix must not contain production-like identifiers");
 });
 
-test("local CI and both deployment workflow paths verify the SAM frontend immediately after build", () => {
+test("local CI and the deployment workflow verify the SAM frontend immediately after build", () => {
   const verifier = "node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction";
   const makefile = readFileSync(resolve(repoRoot, "Makefile"), "utf8");
   const verifyTarget = makefile.match(/^verify-sam-frontend:\s*\n((?:\t.*\n)+)/m);
@@ -322,24 +322,32 @@ test("local CI and both deployment workflow paths verify the SAM frontend immedi
     assert.notEqual(end, -1, `workflow needs ${nextName} job after ${name}`);
     return workflow.slice(start, end);
   }
-  for (const [name, body] of [["checks", workflowJob("checks", "deploy")], ["deploy", workflowJob("deploy")]]) {
-    const frontendUnitRuns = ["run: npm run test:frontend:unit", "run: npm run test:frontend:coverage"]
-      .reduce((count, command) => count + body.split(command).length - 1, 0);
-    assert.equal(frontendUnitRuns, 1, `${name} must run frontend unit tests exactly once`);
-    const buildCommand = "run: make sam-build";
-    const verifyCommand = `run: ${verifier}`;
-    assert.equal(body.split(buildCommand).length - 1, 1, `${name} must build SAM exactly once`);
-    assert.equal(body.split(verifyCommand).length - 1, 1, `${name} must verify the actual BackendFunction exactly once`);
-    const buildAt = body.indexOf(buildCommand);
-    const verifyAt = body.indexOf(verifyCommand);
-    assert.ok(buildAt < verifyAt, `${name} must verify after SAM build`);
-    const between = body.slice(buildAt + buildCommand.length, verifyAt);
-    assert.doesNotMatch(between, /^\s*run:/m, `${name} must verify immediately after SAM build with no intervening command`);
-    if (name === "deploy") {
-      const deployAt = body.indexOf("sam deploy");
-      assert.ok(deployAt > verifyAt, "deploy job must verify the SAM frontend before sam deploy");
-    }
-  }
+  const buildCommand = "run: make sam-build";
+  const verifyCommand = `run: ${verifier}`;
+  const checks = workflowJob("checks", "deploy");
+  const deploy = workflowJob("deploy");
+
+  // The SAM artifact is built once, on the deploy path, because that build is
+  // the one that ships. The guard therefore has to sit in the deploy job: a
+  // check that only runs off the critical path proves nothing about what is
+  // deployed. The checks job keeps template validation so a malformed template
+  // still fails before deploy.
+  const frontendUnitRuns = ["run: npm run test:frontend:unit", "run: npm run test:frontend:coverage"]
+    .reduce((count, command) => count + checks.split(command).length - 1, 0);
+  assert.equal(frontendUnitRuns, 1, "checks must run frontend unit tests exactly once");
+  assert.match(checks, /run: make sam-validate/, "checks must validate the SAM template");
+  assert.equal(checks.split(buildCommand).length - 1, 0, "checks must not duplicate the deploy job's SAM build");
+  assert.equal(checks.split(verifyCommand).length - 1, 0, "checks must not verify an artifact it does not build");
+
+  assert.equal(deploy.split(buildCommand).length - 1, 1, "deploy must build SAM exactly once");
+  assert.equal(deploy.split(verifyCommand).length - 1, 1, "deploy must verify the actual BackendFunction exactly once");
+  const buildAt = deploy.indexOf(buildCommand);
+  const verifyAt = deploy.indexOf(verifyCommand);
+  assert.ok(buildAt < verifyAt, "deploy must verify after SAM build");
+  const between = deploy.slice(buildAt + buildCommand.length, verifyAt);
+  assert.doesNotMatch(between, /^\s*run:/m, "deploy must verify immediately after SAM build with no intervening command");
+  const deployAt = deploy.indexOf("sam deploy");
+  assert.ok(deployAt > verifyAt, "deploy job must verify the SAM frontend before sam deploy");
 });
 
 test("every required state has accepted behavior evidence", () => {

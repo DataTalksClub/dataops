@@ -2,7 +2,8 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 
 import { handler } from '../src/handler';
-import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { stopLocal } from '../src/db/client';
+import { useTestDatabase } from './helpers/db';
 import { createUserWithId } from '../src/db/users';
 import { normalizeUserCode } from '../src/db/cliAuth';
 
@@ -61,10 +62,9 @@ describe('CLI device authorization', () => {
 
   before(async () => {
     process.env.IS_LOCAL = 'true';
-    await startLocal();
+    const { client } = await useTestDatabase();
     const warmUp = await handler({ httpMethod: 'GET', path: '/api/health' }, {});
     assert.strictEqual(warmUp.statusCode, 200);
-    const client = await getClient();
     await createUserWithId(client, 'device-operator', {
       name: 'Device Operator',
       email: 'device-operator@datatalks.club',
