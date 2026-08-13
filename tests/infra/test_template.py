@@ -15,6 +15,7 @@ TEMPLATE = REPO_ROOT / "infra" / "template.full.yaml"
 DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions-dataops.yaml"
 LEGACY_DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions.yaml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
+E2E_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate-backend-e2e.yml"
 
 ALARM_CONTRACT = {
     "ConversationalExecutionOutcomeUnknownAlarm": ("execution-outcome-unknown", "ExecutionOutcomeUnknown", 1, 300, 1, "Sum"),
@@ -1126,6 +1127,40 @@ def test_deploy_workflow_seeds_and_verifies_runtime_templates():
     assert workflow.index("scripts/seed-templates.ts") < workflow.index("scripts/seed-recurring.ts")
     assert "Smoke test deployed single-origin backend" in workflow
     assert "backend_url" in workflow
+
+
+def test_browser_e2e_is_visible_but_cannot_block_or_queue_deployment():
+    deploy_workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    e2e_workflow = E2E_WORKFLOW.read_text(encoding="utf-8")
+    checks = deploy_workflow.split("\n  checks:\n", 1)[1].split("\n  deploy:\n", 1)[0]
+
+    assert "Playwright" not in checks
+    assert "test:e2e" not in checks
+    assert "playwright-report" not in checks
+    assert "needs: checks" in deploy_workflow
+    for required_step in (
+        "Run frontend unit coverage",
+        "Run backend tests",
+        "Typecheck backend",
+        "Build backend",
+        "Validate SAM template",
+    ):
+        assert required_step in checks
+
+    assert "backend/**" in e2e_workflow
+    assert "frontend/**" in e2e_workflow
+    assert "workflow_dispatch:" in e2e_workflow
+    assert "group: dataops-backend-e2e-${{ github.ref }}" in e2e_workflow
+    assert "cancel-in-progress: true" in e2e_workflow
+    assert "timeout-minutes: 45" in e2e_workflow
+    assert "playwright install --with-deps chromium" in e2e_workflow
+    assert "npm --prefix backend run test:e2e" in e2e_workflow
+    assert "if: failure()" in e2e_workflow
+    assert "backend/playwright-report/" in e2e_workflow
+    assert "backend/test-results/" in e2e_workflow
+    assert "retention-days: 7" in e2e_workflow
+    assert "id-token: write" not in e2e_workflow
+    assert "configure-aws-credentials" not in e2e_workflow
 
 
 def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():

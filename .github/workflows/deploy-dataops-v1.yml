@@ -52,9 +52,6 @@ jobs:
       - name: Install Node workspace dependencies
         run: npm ci
 
-      - name: Install backend Playwright Chromium
-        run: npm exec --workspace dataops-backend -- playwright install --with-deps chromium
-
       - name: Run frontend unit coverage
         run: npm run test:frontend:coverage
 
@@ -67,20 +64,6 @@ jobs:
 
       - name: Build backend
         run: npm --prefix backend run build
-
-      - name: Run backend Playwright E2E
-        run: npm --prefix backend run test:e2e
-
-      - name: Upload backend Playwright artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-playwright-artifacts
-          path: |
-            backend/playwright-report/
-            backend/test-results/
-          if-no-files-found: ignore
-          retention-days: 7
 
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3

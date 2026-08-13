@@ -1,0 +1,64 @@
+name: Validate Backend Browser E2E
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/validate-backend-e2e.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "package.json"
+      - "package-lock.json"
+  pull_request:
+    paths:
+      - ".github/workflows/validate-backend-e2e.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dataops-backend-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-e2e:
+    name: Validate backend browser flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Node workspace dependencies
+        run: npm ci
+
+      - name: Install backend Playwright Chromium
+        run: npm exec --workspace dataops-backend -- playwright install --with-deps chromium
+
+      - name: Run backend Playwright E2E
+        run: npm --prefix backend run test:e2e
+
+      - name: Upload backend Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-playwright-artifacts
+          path: |
+            backend/playwright-report/
+            backend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
