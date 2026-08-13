@@ -219,7 +219,7 @@ jobs:
           # Intentionally impossible until sanitized Phase C evidence and #168
           # Tester/PM acceptance provide exact immutable identities.
           reviewed_phase_c_table_id="PENDING_REVIEWED_PHASE_C_TABLE_ID"
-          accepted_issue_168_commit="PENDING_ACCEPTED_ISSUE_168_COMMIT"
+          accepted_issue_168_commit="41dca9e3748fe627c195f48a7f97ae203b343f60"
           if ! [[ "$reviewed_phase_c_table_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] \
             || [ "$ISSUE_166_PHASE_C_TABLE_ID" != "$reviewed_phase_c_table_id" ]; then
             echo "Issue #166 Phase D is blocked until the reviewed Phase C TableId replaces its sentinel" >&2
