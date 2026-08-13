@@ -1163,38 +1163,25 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await context.close();
   });
 
-  test('runtime templates and recurring enforce real admin persistence, conflicts, reference safety, and role denial', async ({ browser }) => {
+  test('Git-authored templates stay read-only while recurring retains admin persistence and role denial', async ({ browser }) => {
     const admin = await portalContext(browser, servers.admin);
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
     await page.goto('/#/recurring');
     await expect(page.getByRole('region', { name: 'Recurring operations' })).toContainText('No recurring configs yet');
-    await page.goto('/#/templates');
     const id = unique('runtime-template');
-    const definition = {
-      name: `Synthetic runtime ${id}`, type: 'manual', triggerType: 'manual', sourceDocIds: ['sop.synthetic.capability'],
-      taskDefinitions: [{ refId: 'synthetic-step', description: 'Verify synthetic runtime behavior', offsetDays: 0 }],
-    };
-    const createdResponse = await admin.request.post('/api/templates', { data: definition });
-    expect(createdResponse.status()).toBe(201);
-    const created = (await json(createdResponse)).template;
-    const updatedResponse = await admin.request.put(`/api/templates/${created.id}`, { data: {
-      ...definition, name: `${definition.name} updated`, expectedVersion: created.version,
+    const projections = (await json(await admin.request.get('/api/templates'))).templates;
+    const projection = projections.find((template) => template.type === 'synthetic-git-workflow');
+    expect(projection).toBeTruthy();
+    for (const context of [admin, operator]) {
+      expect((await context.request.post('/api/templates', { data: { name: 'Retired mutation' } })).status()).toBe(405);
+      expect((await context.request.put(`/api/templates/${projection.id}`, { data: { name: 'Retired mutation' } })).status()).toBe(405);
+      expect((await context.request.delete(`/api/templates/${projection.id}`)).status()).toBe(405);
+    }
+    const card = await admin.request.post('/api/cards', { data: {
+      title: `Projected ${id}`, anchorDate: '2026-08-12', templateId: projection.id,
     } });
-    expect(updatedResponse.status()).toBe(200);
-    const updated = (await json(updatedResponse)).template;
-    const conflict = await admin.request.put(`/api/templates/${created.id}`, { data: { ...definition, expectedVersion: created.version } });
-    expect(conflict.status()).toBe(409);
-    const invalid = await admin.request.post('/api/templates', { data: { name: '', type: 'manual', taskDefinitions: [] } });
-    expect(invalid.status()).toBe(400);
-    const denied = await operator.request.put(`/api/templates/${created.id}`, { data: { ...definition, expectedVersion: updated.version } });
-    expect(denied.status()).toBe(403);
-
-    const card = await admin.request.post('/api/cards', { data: { title: `Referenced ${id}`, anchorDate: '2026-08-12', templateId: created.id } });
     expect(card.status()).toBe(201);
-    const blockedDelete = await admin.request.delete(`/api/templates/${created.id}`, { data: { expectedVersion: updated.version } });
-    expect(blockedDelete.status()).toBe(409);
-    expect((await json(blockedDelete)).code).toBe('template_in_use');
 
     const recurringResponse = await admin.request.post('/api/recurring', { data: {
       description: `Synthetic recurring ${id}`, cronExpression: '0 9 * * 1', enabled: true,
@@ -1213,53 +1200,15 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     expect((await operator.request.get('/api/recurring')).status()).toBe(200);
     expect((await operator.request.post('/api/recurring/generate', { data: { startDate: '2026-08-12', endDate: '2026-08-12' } })).status()).toBe(200);
 
-    await page.goto('/#/templates');
-    await page.goto(`/#/templates?templateId=${created.id}`);
-    await expect(page.locator('.runtime-template-editor')).toContainText(`${definition.name} updated`);
-    await expect(page.locator('[data-template-save-state]')).toContainText(/No unsaved changes|Saved/);
-    const editor = page.locator('.runtime-template-editor');
-    const persistedUiName = `${definition.name} saved in browser`;
-    await editor.getByLabel('Name', { exact: true }).fill(persistedUiName);
-    await editor.getByRole('button', { name: 'Save template' }).click();
-    await expect(page.locator('[data-template-save-state]')).toContainText('Saved');
-    await page.reload();
-    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue(persistedUiName);
-    const browserInstantiation = await admin.request.post('/api/cards', { data: {
-      title: `Browser-saved template instance ${id}`, anchorDate: '2026-08-12', templateId: created.id,
-    } });
-    expect(browserInstantiation.status()).toBe(201);
-    const browserCard = (await json(browserInstantiation)).card;
-    expect(browserCard.templateId).toBe(created.id);
-    const instantiatedTasks = await json(await admin.request.get(`/api/tasks?cardId=${browserCard.id}`));
-    expect(JSON.stringify(instantiatedTasks)).toContain('Verify synthetic runtime behavior');
-
-    await editor.getByLabel('Name', { exact: true }).fill('');
-    await editor.getByRole('button', { name: 'Save template' }).click();
-    await expect(page.locator('.runtime-template-feedback')).toContainText('Review the highlighted fields before saving');
-    const invalidTemplateName = editor.locator('input[aria-invalid="true"]');
-    await expect(invalidTemplateName).toBeVisible();
-
-    await invalidTemplateName.fill(`${persistedUiName} local draft`);
-    const currentTemplate = (await json(await admin.request.get(`/api/templates/${created.id}`))).template;
-    const concurrent = await admin.request.put(`/api/templates/${created.id}`, { data: {
-      ...definition, name: `${persistedUiName} server version`, expectedVersion: currentTemplate.version,
-    } });
-    expect(concurrent.status()).toBe(200);
-    await editor.getByRole('button', { name: 'Save template' }).click();
-    await expect(page.locator('.runtime-template-feedback')).toContainText('A newer server version');
-    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue(`${persistedUiName} local draft`);
-
-    await page.goto('/#/templates');
-    await page.reload();
-    const serverVersionRow = page.locator('.runtime-template-row', { hasText: `${persistedUiName} server version` });
-    await expect(serverVersionRow).toBeVisible();
-    await serverVersionRow.click();
-    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue(`${persistedUiName} server version`);
-    await editor.getByRole('button', { name: 'Delete template' }).click();
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
-    await expect(page.locator('.runtime-template-feedback')).toContainText('This template is still referenced');
+    await page.goto(`/#/templates?templateId=${projection.id}`);
+    const inspector = page.locator('.runtime-template-projection');
+    await expect(inspector).toContainText('Synthetic Git-authored workflow');
+    await expect(inspector).toContainText('workflow-templates/synthetic-git-workflow.yaml');
+    await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Delete template' })).toHaveCount(0);
 
     await page.goto('/#/recurring');
+    await page.reload();
     const recurringSection = page.getByRole('region', { name: 'Recurring operations' });
     const recurringRow = recurringSection.locator('.ops-recurring-item', { hasText: `Synthetic recurring ${id}` });
     await expect(recurringRow).toBeVisible();
@@ -1278,7 +1227,7 @@ test.describe.serial('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('.runtime-template-inspector')).toContainText('Synthetic route failure (503)');
     await clearFaults(admin.request);
     await page.reload();
-    await expect(serverVersionRow).toBeVisible();
+    await expect(page.locator('.runtime-template-row', { hasText: 'Synthetic Git-authored workflow' })).toBeVisible();
 
     const operatorPage = await operator.newPage();
     await operatorPage.goto('/#/templates');

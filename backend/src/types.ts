@@ -448,9 +448,6 @@ export interface Template {
   sourceRevision?: string;
   /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
   version: number;
-  /** Historical rows may still carry retired runtime-editor tombstones. */
-  archivedAt?: string;
-  archivedBy?: string;
   createdAt: string;
   updatedAt: string;
 }

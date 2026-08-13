@@ -236,7 +236,7 @@ test.describe('Migration: references from description', () => {
 test.describe('Migration: task source and templateTaskRef', () => {
   test('template instantiation creates tasks with source template and templateTaskRef', async ({ request }) => {
     // Create a template with task definitions that include instructionsUrl
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Migration TemplateTaskRef Test',
         type: 'newsletter',
@@ -331,7 +331,7 @@ test.describe('Migration: assigneeId on tasks', () => {
 
 test.describe('Migration: templates with emoji, tags, and triggerType', () => {
   test('creates a template with emoji, tags, and triggerType', async ({ request }) => {
-    const res = await request.post('/api/templates', {
+    const res = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Newsletter Migration Test',
         type: 'newsletter',
@@ -358,7 +358,7 @@ test.describe('Migration: templates with emoji, tags, and triggerType', () => {
   });
 
   test('creates a template with manual trigger type', async ({ request }) => {
-    const res = await request.post('/api/templates', {
+    const res = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Podcast Migration Test',
         type: 'podcast',
@@ -379,7 +379,7 @@ test.describe('Migration: templates with emoji, tags, and triggerType', () => {
   });
 
   test('template without emoji or tags still works', async ({ request }) => {
-    const res = await request.post('/api/templates', {
+    const res = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Plain Template Test',
         type: 'other',

@@ -187,7 +187,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     const routes = [
       ["/tasks", "Tasks - Work Queue", ".ops-work-queue"],
       ["/templates", "Tasks - Templates", ".runtime-template-inspector"],
-      ["/recurring", "Tasks - Templates", ".ops-recurring-section"],
+      ["/recurring", "Tasks - Recurring", ".ops-recurring-section"],
       ["/inbox", "Inbox", ".ops-inbox"],
       ["/assistants", "Tasks - Assistants", ".assistant-workspace"],
       ["/artifacts", "Tasks - Artifacts", '[aria-label="Artifacts"]'],
@@ -208,8 +208,9 @@ test.describe("pre-refactor frontend module characterization", () => {
       await expectNoHorizontalOverflow(page, route);
     }
     await page.goto(`${baseURL}/#/templates`);
-    await page.getByRole("button", { name: "New runtime template" }).click();
-    await expect(page.locator(".runtime-template-editor")).toBeVisible();
+    await page.locator(".runtime-template-row").first().click();
+    await expect(page.locator(".runtime-template-projection")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save template" })).toHaveCount(0);
     await page.goto(`${baseURL}/#/newsletter`);
     await page.getByRole("button", { name: "Add slot" }).click();
     await expect(page.locator(".newsletter-surface dialog")).toBeVisible();

@@ -132,6 +132,7 @@ async function resetFixtures() {
   const template = {
     PK: 'TEMPLATE#parity-template', SK: 'TEMPLATE#parity-template', id: 'parity-template', name: 'Synthetic runtime template',
     description: 'Public-safe deterministic template', type: 'manual', triggerType: 'manual', version: 1, defaultAssigneeId: adminId,
+    sourcePath: 'workflow-templates/parity-template.yaml', sourceRevision: '0123456789abcdef0123456789abcdef01234567',
     sourceDocIds: ['sop.synthetic.parity'], taskDefinitions: [{ refId: '1', description: 'Verify synthetic proof', offsetDays: 0, proofRequirement: { required: true, type: 'comment', label: 'Synthetic note' } }],
     createdAt: fixedNow, updatedAt: fixedNow,
   };

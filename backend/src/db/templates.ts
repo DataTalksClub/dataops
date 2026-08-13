@@ -75,8 +75,7 @@ async function getTemplate(client: DynamoDBDocumentClient, id: string): Promise<
     })
   );
 
-  const template = result.Item ? cleanItem(result.Item as Record<string, unknown>) : null;
-  return template?.archivedAt ? null : template;
+  return result.Item ? cleanItem(result.Item as Record<string, unknown>) : null;
 }
 
 /** Test/local helper. Production definitions are replaced from Git. */
@@ -157,7 +156,7 @@ async function listTemplates(client: DynamoDBDocumentClient): Promise<Template[]
   do {
     const result = await client.send(new ScanCommand({
       TableName: TABLE_TEMPLATES,
-      FilterExpression: 'begins_with(PK, :prefix) AND attribute_not_exists(archivedAt)',
+      FilterExpression: 'begins_with(PK, :prefix)',
       ExpressionAttributeValues: { ':prefix': 'TEMPLATE#' },
       ExclusiveStartKey: exclusiveStartKey,
       ConsistentRead: true,

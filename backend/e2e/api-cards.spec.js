@@ -348,7 +348,7 @@ test.describe('Card CRUD API', () => {
 
     test('returns tasks that belong to the card', async ({ request }) => {
       // Create a template with 2 tasks
-      const tmplRes = await request.post('/api/templates', {
+      const tmplRes = await request.post('/__e2e__/template-fixtures', {
         data: {
           name: 'Tasks test', type: 'test',
           taskDefinitions: [
@@ -390,7 +390,7 @@ test.describe('Card CRUD API', () => {
 test.describe('Card with template', () => {
   test('creates card from template and generates tasks with correct dates', async ({ request }) => {
     // Create template with offsets -7, 0, +3
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'E2E Event', type: 'event',
         taskDefinitions: [
@@ -430,7 +430,7 @@ test.describe('Card with template', () => {
   });
 
   test('template tasks have source "template" and correct cardId', async ({ request }) => {
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Source check template', type: 'test',
         taskDefinitions: [
@@ -458,7 +458,7 @@ test.describe('Card with template', () => {
   });
 
   test('template tasks are retrievable via GET /api/cards/:id/tasks', async ({ request }) => {
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Retrieve template', type: 'test',
         taskDefinitions: [
@@ -495,7 +495,7 @@ test.describe('Card with template', () => {
   });
 
   test('template tasks have correct templateTaskRef from refId', async ({ request }) => {
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'RefId template', type: 'test',
         taskDefinitions: [
@@ -570,7 +570,7 @@ test.describe('Old project endpoints return 404', () => {
 test.describe('Tasks filtered by cardId', () => {
   test('GET /api/tasks?cardId returns tasks for that card', async ({ request }) => {
     // Create a card with template tasks
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Filter test template', type: 'test',
         taskDefinitions: [

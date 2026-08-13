@@ -8,8 +8,8 @@ test.describe('canonical DataOps frontend', () => {
   test('resolves legacy hash routes inside one navigation shell', async ({ page, request }) => {
     await page.goto('/#/');
     await expect(page.locator('#document-list')).toBeVisible();
-    await expect(page.locator('[data-workspace-view="home"]')).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('[data-workspace-view="inbox"]')).toBeVisible();
+    await expect(page.locator('button[data-workspace-view="home"]')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('button[data-workspace-view="inbox"]')).toBeVisible();
 
     await page.goto('/#/cards');
     await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
@@ -100,23 +100,15 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.locator('[data-assistant-lifecycle="approve"]')).toBeVisible();
   });
 
-  test('creates and deletes a database-backed runtime template', async ({ page }) => {
-    const id = suffix();
+  test('inspects the database-backed Git projection without mutation controls', async ({ page }) => {
     await page.goto('/#/templates');
-    await expect(page.getByRole('button', { name: 'New runtime template' })).toBeVisible();
-    await page.getByRole('button', { name: 'New runtime template' }).click();
-    await page.getByLabel('Name').fill(`Canonical template ${id}`);
-    await page.getByLabel('Source document IDs').fill('synthetic-process-doc');
-    await page.getByLabel('Description').fill('Synthetic canonical task');
-    await page.getByLabel('Proof type').selectOption('comment');
-    await page.getByLabel('Proof label').fill('Completion note');
-    await expect(page.locator('.runtime-template-json')).toHaveAttribute('readonly', '');
-    await page.getByRole('button', { name: 'Create template' }).click();
-    await expect(page.locator('.runtime-template-row', { hasText: `Canonical template ${id}` })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Delete template' })).toBeVisible();
-    await page.getByRole('button', { name: 'Delete template' }).click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-ok').click();
-    await expect(page.locator('.runtime-template-row', { hasText: `Canonical template ${id}` })).toHaveCount(0);
+    const row = page.locator('.runtime-template-row', { hasText: 'Synthetic Git-authored workflow' });
+    await expect(row).toBeVisible();
+    await row.click();
+    const projection = page.locator('.runtime-template-projection');
+    await expect(projection).toContainText('workflow-templates/synthetic-git-workflow.yaml');
+    await expect(projection).toContainText('0123456789ab');
+    await expect(projection.getByRole('button', { name: 'Create card' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /template/i }).filter({ hasText: /new|save|delete/i })).toHaveCount(0);
   });
 });

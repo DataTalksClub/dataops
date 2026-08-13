@@ -13,7 +13,7 @@ function utcDateString(offsetDays = 0) {
  * Helper: create a template via API and return the template object.
  */
 async function createTemplate(request, data) {
-  const res = await request.post('/api/templates', { data });
+  const res = await request.post('/__e2e__/template-fixtures', { data });
   expect(res.status()).toBe(201);
   const body = await res.json();
   return body.template;
@@ -457,7 +457,7 @@ test.describe('Template instantiation - date calculation', () => {
         await request.put('/api/cards/' + card.id + '/archive');
         await request.delete('/api/cards/' + card.id);
       }
-      if (template) await request.delete('/api/templates/' + template.id);
+      if (template) await request.delete('/__e2e__/template-fixtures/' + template.id);
     }
   });
 

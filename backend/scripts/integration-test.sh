@@ -78,10 +78,10 @@ test_endpoint "List cards" \
   '{"httpMethod":"GET","path":"/api/cards"}' \
   '"cards"'
 
-# Create a template
-test_endpoint "Create template" \
-  '{"httpMethod":"POST","path":"/api/templates","body":"{\"name\":\"Test\",\"type\":\"test\",\"taskDefinitions\":[{\"refId\":\"t1\",\"description\":\"Task 1\",\"offsetDays\":-7}]}"}' \
-  '"name":"Test"'
+# Runtime templates are projections; production mutation is unavailable.
+test_endpoint "Template mutation is retired" \
+  '{"httpMethod":"POST","path":"/api/templates","body":"{}"}' \
+  '"authority":"git-authored-workflow-templates"'
 
 # Create recurring config
 test_endpoint "Create recurring config" \

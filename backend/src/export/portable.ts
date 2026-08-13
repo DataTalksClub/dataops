@@ -134,9 +134,6 @@ const VALID_ARTIFACT_DATA_CLASSES = new Set(['public', 'internal', 'private', 's
 const VALID_ARTIFACT_SOURCE_TYPES = new Set(['manual-link', 'manual-upload', 'assistant-output', 'import', 'migration', 'system']);
 const VALID_ASSISTANT_JOB_STATUSES = new Set(['draft', 'queued', 'running', 'waiting_approval', 'approved', 'rejected', 'retrying', 'succeeded', 'failed', 'canceled']);
 const VALID_ASSISTANT_EVENT_ACTIONS = new Set(['created', 'queued', 'started', 'log-appended', 'artifact-attached', 'approval-requested', 'approved', 'rejected', 'retry-requested', 'failed', 'canceled', 'succeeded']);
-const VALID_TEMPLATE_AUDIT_ACTIONS = new Set(['create', 'update', 'delete']);
-const VALID_TEMPLATE_AUDIT_OUTCOMES = new Set(['success', 'rejected']);
-const VALID_TEMPLATE_AUDIT_REASONS = new Set(['template_in_use', 'version_conflict']);
 const VALID_INTAKE_SOURCES = new Set(['telegram', 'email', 'manual', 'file', 'link', 'import', 'assistant', 'unknown']);
 const VALID_INTAKE_STATUSES = new Set(['new', 'triaged', 'attached', 'converted', 'ignored', 'duplicate', 'blocked', 'archived']);
 const VALID_INTAKE_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
@@ -363,9 +360,9 @@ function mapTemplate(item: Record<string, unknown>): JsonRecord {
     trigger_schedule: optionalString(item.triggerSchedule),
     trigger_lead_days: optionalNumber(item.triggerLeadDays),
     trigger_enabled: optionalBoolean(item.triggerEnabled),
+    source_path: optionalString(item.sourcePath),
+    source_revision: optionalString(item.sourceRevision),
     version: optionalNumber(item.version) || 1,
-    archived_at: optionalString(item.archivedAt),
-    archived_by: optionalString(item.archivedBy),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
@@ -469,14 +466,8 @@ function mapAuditEvent(item: Record<string, unknown>): JsonRecord {
     audit_event_id: optionalString(item.id),
     record_type: optionalString(item.recordType),
     assistant_job_id: optionalString(item.assistantJobId),
-    template_id: optionalString(item.templateId),
     actor_id: optionalString(item.actorId),
     action: optionalString(item.action),
-    outcome: optionalString(item.outcome),
-    reason: optionalString(item.reason),
-    prior_version: optionalNumber(item.priorVersion),
-    result_version: optionalNumber(item.resultVersion),
-    changed_fields: stringArray(item.changedFields),
     summary: optionalString(item.summary),
     metadata: optionalJsonStringOrObject(item.metadata),
     created_at: optionalString(item.createdAt),
@@ -1360,8 +1351,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     requireString(template, 'type', errors, context);
     validateDateOrTimestampField(template, 'created_at', errors, context);
     validateDateOrTimestampField(template, 'updated_at', errors, context);
-    validateDateOrTimestampField(template, 'archived_at', errors, context);
-    optionalReference(template, 'archived_by', userIds, errors, context);
+    optionalStringField(template, 'source_path', errors, context);
+    optionalStringField(template, 'source_revision', errors, context);
     optionalStringField(template, 'emoji', errors, context);
     optionalStringArrayField(template, 'source_doc_ids', errors, context);
     optionalBooleanField(template, 'trigger_enabled', errors, context);
@@ -1484,27 +1475,11 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
 
   for (const [index, event] of (recordsByEntity.audit_events || []).entries()) {
     const context = `audit_events[${index}]`;
-    if (event.record_type === 'runtime_template_audit_event') {
-      requireString(event, 'template_id', errors, context);
-      requireString(event, 'actor_id', errors, context);
-      optionalReference(event, 'template_id', templateIds, errors, context);
-      optionalReference(event, 'actor_id', userIds, errors, context);
-      optionalEnum(event, 'action', VALID_TEMPLATE_AUDIT_ACTIONS, errors, context);
-      const outcome = optionalEnum(event, 'outcome', VALID_TEMPLATE_AUDIT_OUTCOMES, errors, context);
-      if (event.reason !== undefined) optionalEnum(event, 'reason', VALID_TEMPLATE_AUDIT_REASONS, errors, context);
-      if (outcome === 'rejected' && event.reason === undefined) {
-        errors.push(`${context} rejected template audit event requires reason`);
-      }
-      optionalIntegerField(event, 'prior_version', errors, context, 1);
-      optionalIntegerField(event, 'result_version', errors, context, 1);
-      optionalStringArrayField(event, 'changed_fields', errors, context);
-    } else {
-      requireString(event, 'summary', errors, context);
-      requireString(event, 'action', errors, context);
-      optionalEnum(event, 'action', VALID_ASSISTANT_EVENT_ACTIONS, errors, context);
-      optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
-      optionalReference(event, 'actor_id', userIds, errors, context);
-    }
+    requireString(event, 'summary', errors, context);
+    requireString(event, 'action', errors, context);
+    optionalEnum(event, 'action', VALID_ASSISTANT_EVENT_ACTIONS, errors, context);
+    optionalReference(event, 'assistant_job_id', assistantJobIds, errors, context);
+    optionalReference(event, 'actor_id', userIds, errors, context);
     validateDateOrTimestampField(event, 'created_at', errors, context, true);
     validateNoSecretPayload(event, errors, context);
   }

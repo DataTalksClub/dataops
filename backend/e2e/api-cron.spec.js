@@ -8,7 +8,7 @@ test.describe('Cron runner API', () => {
   // Scenario: Cron runner creates a card for a weekly template
   test('POST /api/cron/run creates a card for an automatic template', async ({ request }) => {
     // Create a template with automatic trigger, every day (to guarantee match)
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Cron Test Newsletter',
         type: 'newsletter',
@@ -51,13 +51,13 @@ test.describe('Cron runner API', () => {
     expect(tasks.every((t) => t.cardId === createdCard.id)).toBe(true);
 
     // Clean up: delete the template
-    await request.delete(`/api/templates/${template.id}`);
+    await request.delete(`/__e2e__/template-fixtures/${template.id}`);
   });
 
   // Scenario: Cron runner is idempotent (no duplicates)
   test('POST /api/cron/run is idempotent -- no duplicates on second call', async ({ request }) => {
     // Create a template with automatic trigger
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Idempotent Test',
         type: 'test',
@@ -98,13 +98,13 @@ test.describe('Cron runner API', () => {
     expect(cardsForTemplate.length).toBe(1);
 
     // Clean up
-    await request.delete(`/api/templates/${template.id}`);
+    await request.delete(`/__e2e__/template-fixtures/${template.id}`);
   });
 
   // Scenario: Notification is created when card is auto-created
   test('notification is created when card is auto-created', async ({ request }) => {
     // Create a template
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Notification Test Template',
         type: 'test',
@@ -136,13 +136,13 @@ test.describe('Cron runner API', () => {
     expect(notification.dismissed).toBe(false);
 
     // Clean up
-    await request.delete(`/api/templates/${template.id}`);
+    await request.delete(`/__e2e__/template-fixtures/${template.id}`);
   });
 
   // Scenario: Cron runner skips templates without automatic trigger
   test('cron runner skips templates with manual trigger', async ({ request }) => {
     // Create a manual template
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Manual Only Template',
         type: 'test',
@@ -165,7 +165,7 @@ test.describe('Cron runner API', () => {
     expect(manualCards.length).toBe(0);
 
     // Clean up
-    await request.delete(`/api/templates/${template.id}`);
+    await request.delete(`/__e2e__/template-fixtures/${template.id}`);
   });
 });
 
@@ -174,7 +174,7 @@ test.describe('Notifications API', () => {
   // Scenario: GET /api/notifications returns undismissed notifications
   test('GET /api/notifications returns undismissed notifications sorted by most recent', async ({ request }) => {
     // Ensure at least one notification exists (create via cron)
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Notif List Test',
         type: 'test',
@@ -213,13 +213,13 @@ test.describe('Notifications API', () => {
     }
 
     // Clean up
-    await request.delete(`/api/templates/${template.id}`);
+    await request.delete(`/__e2e__/template-fixtures/${template.id}`);
   });
 
   // Scenario: Dismiss a notification
   test('PUT /api/notifications/:id/dismiss marks notification as dismissed', async ({ request }) => {
     // Create a template and run cron to get a notification
-    const tmplRes = await request.post('/api/templates', {
+    const tmplRes = await request.post('/__e2e__/template-fixtures', {
       data: {
         name: 'Dismiss Test Template',
         type: 'test',
@@ -255,7 +255,7 @@ test.describe('Notifications API', () => {
     expect(dismissed).toBeUndefined();
 
     // Clean up
-    await request.delete(`/api/templates/${template.id}`);
+    await request.delete(`/__e2e__/template-fixtures/${template.id}`);
   });
 
   test('PUT /api/notifications/:id/dismiss returns 404 for non-existent notification', async ({ request }) => {

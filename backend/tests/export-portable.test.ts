@@ -45,6 +45,8 @@ describe('portable execution data export', () => {
     let template = await createTemplate(client, {
       name: 'Representative workflow',
       type: 'workflow',
+      sourcePath: 'workflow-templates/representative-workflow.yaml',
+      sourceRevision: 'synthetic-source-revision',
       emoji: '🧭',
       phases: [
         { id: 'preparation', name: 'Preparation', stage: 'preparation' },
@@ -398,6 +400,8 @@ describe('portable execution data export', () => {
     assert.match(templatesJsonl, /"proofRequirement":\{"type":"url","label":"Source document"\}/);
     assert.match(templatesJsonl, /"emoji":"🧭"/);
     assert.match(templatesJsonl, /"version":2/);
+    assert.match(templatesJsonl, /"source_path":"workflow-templates\/representative-workflow.yaml"/);
+    assert.match(templatesJsonl, /"source_revision":"synthetic-source-revision"/);
     assert.match(templatesJsonl, /"template_id":"legacy-versionless-export"/);
     assert.match(templatesJsonl, /"version":1/);
 
@@ -613,23 +617,6 @@ describe('portable execution data export', () => {
         }) + '\n',
         'utf8'
       );
-      await fs.appendFile(
-        path.join(brokenDir, 'audit_events.jsonl'),
-        JSON.stringify({
-          audit_event_id: 'template-audit-invalid',
-          record_type: 'runtime_template_audit_event',
-          template_id: 'template-broken-doc-context',
-          actor_id: 'missing-user',
-          action: 'purge',
-          outcome: 'rejected',
-          reason: 'unsafe_reason',
-          prior_version: 0,
-          result_version: 1.5,
-          changed_fields: ['name', 42],
-          created_at: '2026-06-27T00:00:00.000Z',
-        }) + '\n',
-        'utf8'
-      );
       await fs.writeFile(
         path.join(brokenDir, 'notifications.jsonl'),
         JSON.stringify({
@@ -715,11 +702,6 @@ describe('portable execution data export', () => {
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].assistantJobRefs[0] missing required string field assistantJobId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].intakeRefs[0] missing required string field intakeItemId')));
       assert.ok(validation.errors.some((error) => error.includes('templates[0].task_definitions[0].auditEventRefs[0] missing required string field auditEventId')));
-      assert.ok(validation.errors.some((error) => error.includes('field action has unknown value: purge')));
-      assert.ok(validation.errors.some((error) => error.includes('field reason has unknown value: unsafe_reason')));
-      assert.ok(validation.errors.some((error) => error.includes('field prior_version must be an integer >= 1')));
-      assert.ok(validation.errors.some((error) => error.includes('field result_version must be an integer >= 1')));
-      assert.ok(validation.errors.some((error) => error.includes('field changed_fields must be an array of strings')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field instruction_doc_id must be a string when present')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field systems must be an array of strings when present')));
       assert.ok(validation.errors.some((error) => error.includes('recurring_configs[0] field proof_requirement.type must be one of')));

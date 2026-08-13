@@ -12,7 +12,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createBrowserSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
-import { createTemplate } from '../src/db/templates';
+import { createTemplate, deleteTemplate, updateTemplate } from '../src/db/templates';
 import { backfillDocumentHashClaims } from '../src/db/bookkeeping';
 import {
   setBookkeepingArchiveUploaderForTests,
@@ -211,6 +211,43 @@ const server = http.createServer(async (req, res) => {
     e2eMailingProviderMode = mode as typeof e2eMailingProviderMode;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ mode: e2eMailingProviderMode }));
+    return;
+  }
+
+  // Test-only fixture seam for tests whose subject is Card/Cron behavior. It
+  // never ships with the Lambda and cannot be confused with the read-only
+  // production /api/templates authority boundary.
+  const templateFixture = parsed.pathname.match(/^\/__e2e__\/template-fixtures(?:\/([^/]+))?$/);
+  if (templateFixture) {
+    try {
+      const client = await getClient();
+      const id = templateFixture[1];
+      const payload = body ? JSON.parse(body) : {};
+      if (req.method === 'POST' && !id) {
+        const template = await createTemplate(client, payload);
+        res.writeHead(201, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ template }));
+        return;
+      }
+      if (req.method === 'PUT' && id) {
+        const template = await updateTemplate(client, id, payload);
+        res.writeHead(template ? 200 : 404, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(template ? { template } : { error: 'Template fixture not found' }));
+        return;
+      }
+      if (req.method === 'DELETE' && id) {
+        await deleteTemplate(client, id);
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+    } catch {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid synthetic template fixture' }));
+      return;
+    }
+    res.writeHead(405, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method not allowed' }));
     return;
   }
 

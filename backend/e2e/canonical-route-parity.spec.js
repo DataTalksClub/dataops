@@ -270,66 +270,6 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
   });
 
-  test('guards desktop and mobile notification navigation while a runtime-template draft is dirty', async ({ page }) => {
-    test.setTimeout(60000);
-    const cases = [
-      { viewport: { width: 1440, height: 900 }, bell: '#work-bell-button', label: 'desktop' },
-      { viewport: { width: 390, height: 844 }, bell: '#mobile-work-bell-button', label: 'mobile' },
-    ];
-
-    for (const scenario of cases) {
-      await page.setViewportSize(scenario.viewport);
-      await page.goto('/#/templates');
-      await page.waitForLoadState('networkidle');
-      await page.getByRole('button', { name: 'New runtime template' }).click();
-      const draftName = `Dirty notification ${scenario.label} ${suffix()}`;
-      await page.getByLabel('Name').fill(draftName);
-      await expect(page.locator('[data-template-save-state]')).toHaveText('Unsaved changes');
-
-      const notificationRequests = [];
-      const recordNotificationRequest = (request) => {
-        const url = new URL(request.url());
-        if (request.method() === 'GET' && url.pathname === '/work/api/notifications') notificationRequests.push(request);
-      };
-      page.on('request', recordNotificationRequest);
-      const bell = page.locator(scenario.bell);
-      await bell.click();
-      await expect(page.locator('#confirm-modal')).toBeVisible();
-      await expect(page.locator('#confirm-cancel')).toBeFocused();
-      await expect(page).toHaveURL(/\/#\/templates$/);
-      expect(notificationRequests).toHaveLength(0);
-
-      await page.keyboard.press('Enter');
-      await expect(page.locator('#confirm-modal')).toBeHidden();
-      await expect(page).toHaveURL(/\/#\/templates$/);
-      await expect(page.locator('[data-tasks-section="templates"]')).toHaveAttribute('aria-current', 'page');
-      await expect(page.getByLabel('Name')).toHaveValue(draftName);
-      await expect(page.locator('[data-template-save-state]')).toHaveText('Unsaved changes');
-      await expect(bell).toBeFocused();
-      expect(notificationRequests).toHaveLength(0);
-
-      const historyLength = await page.evaluate(() => history.length);
-      await bell.click();
-      await expect(page.locator('#confirm-modal')).toBeVisible();
-      await page.locator('#confirm-ok').click();
-      await expect(page).toHaveURL(/\/#\/notifications$/);
-      await expect(page.locator('#work-bell-panel')).toBeVisible();
-      await expect(page.locator('#work-bell-close')).toBeFocused();
-      await expect(page.locator('#confirm-modal')).toBeHidden();
-      await expect(page.locator('.runtime-template-editor')).toBeHidden();
-      await expect.poll(() => notificationRequests.length).toBe(1);
-      await page.waitForTimeout(200);
-      expect(notificationRequests).toHaveLength(1);
-      expect(await page.evaluate(() => history.length)).toBe(historyLength + 1);
-
-      await page.evaluate(() => { window.location.hash = '#/tasks'; });
-      await expect(page).toHaveURL(/\/#\/tasks$/);
-      await expect(page.locator('#confirm-modal')).toBeHidden();
-      await expect(page.locator('#library-title')).toHaveText('Tasks - Work Queue');
-      page.off('request', recordNotificationRequest);
-    }
-  });
-
   test('keeps desktop and mobile notification counts synchronized across refresh, failure, and retry', async ({ page, request }) => {
     const id = suffix();
     const createDueTask = async (label) => {
@@ -446,7 +386,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await clearRouteFaults(request);
   });
 
-  test('keeps runtime-template Back canonical for clean and dirty mobile detail', async ({ page, request }) => {
+  test('keeps Git-authored template Back canonical on mobile detail', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     const exactRoute = new RegExp(`/#/templates\\?templateId=${fixture.template.id}$`);
     const templateRow = () => page.locator('.runtime-template-row', { hasText: fixture.template.name });
@@ -455,7 +395,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.goto('/#/templates');
     await templateRow().click();
     await expect(page).toHaveURL(exactRoute);
-    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(fixture.template.name);
+    await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);
 
     await page.setViewportSize({ width: 390, height: 844 });
     const cleanBack = page.getByRole('button', { name: 'Back to template list' });
@@ -464,54 +404,22 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await cleanBack.click();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-editor')).toBeHidden();
+    await expect(page.locator('.runtime-template-projection')).toContainText('Select a Git-authored template');
     await expect(page.locator('.runtime-template-search')).toBeFocused();
     expect(await page.evaluate(() => history.length)).toBe(cleanHistoryLength + 1);
 
     await page.reload();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-editor')).toBeHidden();
+    await expect(page.locator('.runtime-template-projection')).toContainText('Select a Git-authored template');
     await page.goBack();
     await expect(page).toHaveURL(exactRoute);
-    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(fixture.template.name);
+    await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);
     await page.goForward();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
 
-    await page.goto('/#/templates');
-    await templateRow().click();
-    await expect(page).toHaveURL(exactRoute);
-    const dirtyName = `Dirty Back ${fixture.id}`;
-    await page.getByLabel('Name', { exact: true }).fill(dirtyName);
-    await expect(page.locator('[data-template-save-state]')).toHaveText('Unsaved changes');
-    const dirtyBack = page.getByRole('button', { name: 'Back to template list' });
-    const dirtyHistoryLength = await page.evaluate(() => history.length);
-    await dirtyBack.click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await expect(page.locator('#confirm-cancel')).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(exactRoute);
-    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(dirtyName);
-    await expect(page.locator('[data-template-save-state]')).toHaveText('Unsaved changes');
-    await expect(dirtyBack).toBeFocused();
-    expect(await page.evaluate(() => history.length)).toBe(dirtyHistoryLength);
-
-    await dirtyBack.click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-ok').click();
-    await expect(page).toHaveURL(/\/#\/templates$/);
-    await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-editor')).toBeHidden();
-    await expect(page.locator('.runtime-template-search')).toBeFocused();
-    expect(await page.evaluate(() => history.length)).toBe(dirtyHistoryLength + 1);
-    await page.reload();
-    await expect(page).toHaveURL(/\/#\/templates$/);
-    await expect(page.locator('.runtime-template-editor')).toBeHidden();
-    await page.goBack();
-    await expect(page).toHaveURL(exactRoute);
-    await expect(page.getByLabel('Name', { exact: true })).toHaveValue(fixture.template.name);
-    await expect(page.getByLabel('Name', { exact: true })).not.toHaveValue(dirtyName);
+    await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
   });
 
   test('contains task and workflow dialog focus and restores recreated route targets', async ({ page, request }) => {

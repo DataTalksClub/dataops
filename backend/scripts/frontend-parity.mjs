@@ -22,7 +22,7 @@ const states = [
   'task-proof-waiting-return',
   'workflow-detail',
   'assistant-detail-baseline',
-  'template-admin-saved',
+  'template-projection-readonly',
   'notifications-dismissed',
   'sponsor-booking-role-safe',
   'docs-search-detail',
@@ -188,17 +188,12 @@ async function navigateState(page, baseURL, state) {
     await settle(page);
     await page.locator('.assistant-detail h3').filter({ hasText: 'Synthetic assistant baseline' }).waitFor();
     result.mutation = 'non-mutating-list-detail';
-  } else if (state === 'template-admin-saved') {
+  } else if (state === 'template-projection-readonly') {
     await page.goto(`${baseURL}/#/templates?templateId=parity-template`);
     await settle(page);
-    const name = page.getByLabel('Name');
-    await name.waitFor();
-    await name.fill('Synthetic runtime template saved');
-    await page.getByRole('button', { name: 'Save template' }).click();
-    await page.waitForTimeout(500);
-    const feedback = await page.locator('.runtime-template-feedback').innerText();
-    if (!feedback.includes('Saved version 2.')) throw new Error(`Template save did not succeed: ${feedback}`);
-    result.mutation = 'template-version-2';
+    await page.locator('.runtime-template-projection').waitFor();
+    await page.getByText('workflow-templates/parity-template.yaml').waitFor();
+    result.mutation = 'non-mutating-template-projection';
   } else if (state === 'notifications-dismissed') {
     await page.goto(`${baseURL}/#/notifications`);
     await settle(page);
