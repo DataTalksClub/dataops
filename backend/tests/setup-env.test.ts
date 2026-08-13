@@ -8,7 +8,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
   const workDir = path.resolve(__dirname, '..');
   const script = `
-    import('./src/db/setup.ts').then((setup) => {
+    import('./src/db/tableNames.ts').then((setup) => {
       const mod = setup.default || setup;
       console.log(JSON.stringify({
         tasks: mod.TABLE_TASKS,
@@ -112,20 +112,24 @@ describe('DynamoDB table setup environment', () => {
   });
 
   it('has no way for the application to create its own tables', async () => {
-    // Tables are defined in infrastructure. The application used to create them
-    // on cold start when an environment variable said so; that path is gone.
-    const source = await readFile(new URL('../src/db/setup.ts', import.meta.url), 'utf8');
-    assert.ok(!/shouldAutoCreateTables/.test(source), 'setup.ts must not decide to create tables');
+    const names = await readFile(new URL('../src/db/tableNames.ts', import.meta.url), 'utf8');
+    const client = await readFile(new URL('../src/db/client.ts', import.meta.url), 'utf8');
     const handler = await readFile(new URL('../src/handler.ts', import.meta.url), 'utf8');
+    for (const [name, source] of [['tableNames.ts', names], ['client.ts', client], ['handler.ts', handler]]) {
+      assert.ok(!/CreateTableCommand|DeleteTableCommand|dynalite|startLocal|createTables/.test(source), `${name} must not create local infrastructure`);
+    }
     assert.ok(!/createTables/.test(handler), 'the request handler must never create tables');
+
+    const localSetup = await readFile(new URL('../scripts/local-dynamodb.ts', import.meta.url), 'utf8');
+    assert.match(localSetup, /CreateTableCommand/);
+    assert.match(localSetup, /DeleteTableCommand/);
+    assert.match(localSetup, /dynalite/);
   });
 });
 
 describe('missing infrastructure fails loudly', () => {
   it('names the table and says the application does not create it', async () => {
-    // Wrap a stub exactly the way getClient does. Calling getClient() here
-    // would start a dynalite server this file never stops, which keeps the
-    // test process alive and stalls the whole run.
+    // Wrap a stub exactly the way getClient does without reaching AWS.
     const lib = await import('@aws-sdk/lib-dynamodb');
     const { failLoudlyOnMissingTable } = await import('../src/db/client');
     const notFound = Object.assign(new Error('Requested resource not found'), {

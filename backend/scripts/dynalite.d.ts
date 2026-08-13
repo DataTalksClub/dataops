@@ -5,7 +5,7 @@ declare module 'dynalite' {
   }
 
   interface DynaliteServer {
-    listen(port: number, callback: (err?: Error) => void): void;
+    listen(port: number, host: string, callback: (err?: Error) => void): void;
     close(callback: (err?: Error) => void): void;
     address(): { port: number };
   }

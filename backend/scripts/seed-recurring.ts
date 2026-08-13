@@ -1,7 +1,7 @@
 import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal } from '../src/db/client';
-import { createTables, TABLE_TASKS } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import {
   createRecurringConfig,
   listRecurringConfigs,
@@ -11,16 +11,6 @@ import {
 import { updateTask } from '../src/db/tasks';
 import { getUser } from '../src/db/users';
 import type { RecurringConfig, Task } from '../src/types';
-
-function shouldUseLocalDynamo(): boolean {
-  return (
-    process.env.IS_LOCAL === 'true' ||
-    process.env.IS_LOCAL === '1' ||
-    process.env.NODE_ENV === 'test' ||
-    process.env.NODE_ENV === 'local' ||
-    Boolean(process.env.DYNAMODB_ENDPOINT)
-  );
-}
 
 const OPERATOR_USER_ID = '00000000-0000-0000-0000-000000000001';
 const SLACK_INVITE_DOC_ID = 'sop.community.book-of-the-week.invite-people-to-slack-from-the-airtable-form';
@@ -193,15 +183,7 @@ async function repairExistingGeneratedTasks(
 }
 
 async function seed(): Promise<SeedRecurringReport> {
-  const useLocalDynamo = shouldUseLocalDynamo();
-  const port = useLocalDynamo && !process.env.DYNAMODB_ENDPOINT
-    ? await startLocal()
-    : undefined;
-  const client = await getClient(port);
-
-  if (useLocalDynamo) {
-    await createTables(client);
-  }
+  const client = await getClient();
 
   await assertOperatorUserExists(client);
 

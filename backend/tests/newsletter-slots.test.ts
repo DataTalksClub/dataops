@@ -6,8 +6,9 @@ import ExcelJS from "exceljs";
 import { DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handler } from "../src/handler";
-import { createTables } from "../src/db/setup";
-import { getClient, startLocal, stopLocal } from "../src/db/client";
+import { createTables } from "../scripts/local-dynamodb";
+import { getClient } from "../src/db/client";
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createSession } from "../src/db/sessions";
 import {
   createNewsletterSlot,

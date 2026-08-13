@@ -5,7 +5,7 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
-import { TABLE_SPONSOR_CRM } from '../db/setup';
+import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import {
   derivedStatus,
   mergeProviderFact,

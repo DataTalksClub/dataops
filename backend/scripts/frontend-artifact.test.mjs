@@ -18,6 +18,18 @@ const allowlist = readFrontendAssetManifest().files.map((sourcePath) => [
   `dist/frontend/${sourcePath}`,
 ]);
 
+function createLocalSchema(endpoint) {
+  const setup = spawnSync(process.execPath, ['--import', 'tsx', '--eval', [
+    "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts')])",
+    '.then(async ([local, client]) => local.createTables(await client.getClient()))',
+  ].join('')], {
+    cwd: repoRoot,
+    env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
+    encoding: 'utf8',
+  });
+  assert.equal(setup.status, 0, setup.stderr);
+}
+
 function fixture(name) {
   const root = mkdtempSync(join(generatedRoot, `${name}-`));
   const source = join(root, 'source');
@@ -258,6 +270,7 @@ describe('isolated SAM handler frontend runtime', () => {
     const dynalite = require('dynalite')({ createTableMs: 0 });
     await new Promise((resolveListen, rejectListen) => dynalite.listen(0, (error) => error ? rejectListen(error) : resolveListen()));
     const endpoint = `http://127.0.0.1:${dynalite.address().port}`;
+    createLocalSchema(endpoint);
     const probe = (artifact, paths) => new Promise((resolveProbe, rejectProbe) => {
       const child = spawn(process.execPath, [runtimeProbe, '--artifact', artifact], {
         cwd: artifact,

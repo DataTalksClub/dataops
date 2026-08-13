@@ -5,7 +5,7 @@ import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { createArtifactIfAbsent, deleteArtifact, getArtifact, updateArtifact } from '../db/artifacts';
 import { createIntakeItemIfAbsent, getIntakeItem, updateIntakeItem } from '../db/intake';
-import { TABLE_AUDIT_EVENTS } from '../db/setup';
+import { TABLE_AUDIT_EVENTS } from '../db/tableNames';
 import type { ArtifactRecord, ArtifactRef, IntakeItem, LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };

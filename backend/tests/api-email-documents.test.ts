@@ -4,8 +4,9 @@ import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-
 import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal, stopLocal } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { listIntakeItems } from '../src/db/intake';
 import { resetEmailDocumentIntakeStateForTests, setEmailDocumentIntakeClientsForTests } from '../src/routes/emailDocuments';

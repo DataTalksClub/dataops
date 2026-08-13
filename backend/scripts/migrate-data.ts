@@ -31,8 +31,8 @@ import fs from 'fs';
 import path from 'path';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal } from '../src/db/client';
-import { createTables, TABLE_TASKS } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import { createTemplate, listTemplates } from '../src/db/templates';
 import { createCard, getCard, updateCard } from '../src/db/cards';
 import { createTask, getTask, updateTask } from '../src/db/tasks';
@@ -1810,10 +1810,8 @@ async function main() {
   // Connect to DB (persistent LevelDB in .data/)
   let client: DynamoDBDocumentClient | null = null;
   if (!DRY_RUN) {
-    console.log('\nStarting local DynamoDB (persistent)...');
-    const port = await startLocal();
-    client = await getClient(port);
-    await createTables(client);
+    console.log('\nConnecting to configured DynamoDB...');
+    client = await getClient();
     console.log('  DB ready.');
   }
 

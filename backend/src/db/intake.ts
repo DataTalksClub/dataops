@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_INTAKE } from './setup';
+import { TABLE_INTAKE } from './tableNames';
 import type { IntakeItem } from '../types';
 
 export interface IntakeFilters {

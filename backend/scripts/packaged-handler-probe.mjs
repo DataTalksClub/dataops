@@ -14,7 +14,6 @@ Object.assign(process.env, {
   NODE_ENV: 'test',
   IS_LOCAL: 'false',
   SKIP_AUTH: 'false',
-  DATAOPS_AUTO_CREATE_TABLES: 'true',
   DATAOPS_DOCS_DOMAIN: '1',
   DTC_OFFLINE: '1',
   DTC_CACHE_ROOT: resolve(artifactRoot, 'synthetic-doc-cache'),
@@ -49,16 +48,14 @@ Module._resolveFilename = function guardedResolve(request, parent, isMain, optio
   return result;
 };
 
-const [{ handler }, { getClient }, { createTables }, { createUserWithId }, { createBrowserSession }] = await Promise.all([
+const [{ handler }, { getClient }, { createUserWithId }, { createBrowserSession }] = await Promise.all([
   import(pathToFileURL(resolve(artifactRoot, 'dist/handler.js')).href),
   import(pathToFileURL(resolve(artifactRoot, 'dist/db/client.js')).href),
-  import(pathToFileURL(resolve(artifactRoot, 'dist/db/setup.js')).href),
   import(pathToFileURL(resolve(artifactRoot, 'dist/db/users.js')).href),
   import(pathToFileURL(resolve(artifactRoot, 'dist/db/sessions.js')).href),
 ]);
 
 const client = await getClient();
-await createTables(client);
 const userId = '15900000-0000-4000-8000-000000000001';
 await createUserWithId(client, userId, {
   name: 'Synthetic parity admin',

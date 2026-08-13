@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { GetCommand, PutCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { TABLE_CALENDAR } from './setup';
+import { TABLE_CALENDAR } from './tableNames';
 import type { HolidayOccurrence } from '../calendar/holidays';
 import { holidaySnapshot } from '../calendar/holidays';
 

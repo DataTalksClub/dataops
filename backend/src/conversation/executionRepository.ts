@@ -9,7 +9,7 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_CONVERSATIONAL_STATE, TABLE_USERS } from '../db/setup';
+import { TABLE_CONVERSATIONAL_STATE, TABLE_USERS } from '../db/tableNames';
 import {
   expiryFrom,
   validateConversationalRecord,

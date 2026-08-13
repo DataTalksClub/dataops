@@ -8,7 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { TABLE_BOOKKEEPING } from "./setup";
+import { TABLE_BOOKKEEPING } from "./tableNames";
 
 export type BookkeepingItem = Record<string, unknown> & {
   id: string;

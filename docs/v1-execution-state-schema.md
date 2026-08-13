@@ -50,7 +50,8 @@ the private `WorkEngineFunction` that uses them through the portal broker.
 Runtime state access lives in `backend/`:
 
 - `backend/src/types.ts` defines the runtime entities.
-- `backend/src/db/setup.ts` creates local/prototype DynamoDB tables.
+- `backend/src/db/tableNames.ts` resolves declared runtime table names.
+- `backend/scripts/setup-local.ts` owns explicit local dynalite setup and seeds.
 - `backend/docs/specs.md` documents the original model.
 
 For production V1:
@@ -58,7 +59,8 @@ For production V1:
 - SAM/CloudFormation owns table lifecycle.
 - Production handlers don't create tables on cold start.
 - Table names come from environment variables.
-- Local/test mode may keep dynalite and auto-created local tables.
+- Local/test tooling may create dynalite tables only through script/test-owned
+  setup helpers that are excluded from the Lambda artifact.
 
 ## Storage Boundary
 
@@ -133,9 +135,10 @@ Local defaults may map to the existing prototype names:
 - `Notifications`
 - `Sessions`
 
-Current implementation reads these environment variables in `work-engine` and
-keeps the local defaults above. The Lambda handler auto-creates tables only in
-test/local mode or when `DATAOPS_AUTO_CREATE_TABLES=true`.
+Current implementation reads these environment variables in `backend/` and
+keeps the local names above. The Lambda handler never creates tables. Local
+developers run `npm --prefix backend run setup:local`, while tests explicitly
+start an in-memory database fixture.
 
 The deployed SAM template declares stack-owned DynamoDB tables with names such
 as `${AWS::StackName}-tasks`, `${AWS::StackName}-cards`, and
@@ -523,7 +526,7 @@ Postgres tables can map almost directly from the application entities:
 Use this checklist when implementing the schema.
 
 - Move production table names to environment variables.
-- Keep local dynalite defaults for tests and development.
+- Keep explicit script/test-owned dynalite setup for tests and development.
 - Add SAM table resources with PITR and retain policy.
 - Add least-privilege DynamoDB permissions for `WorkEngineFunction`.
 - Add tests for table-name resolution.

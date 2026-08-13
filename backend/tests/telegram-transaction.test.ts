@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { GetCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { createTables, TABLE_CONVERSATIONAL_STATE } from '../src/db/setup';
+import { createTables, TABLE_CONVERSATIONAL_STATE } from '../scripts/local-dynamodb';
 import {
   appendConversationOutbound,
   consumeConversationalActionAndAppend,

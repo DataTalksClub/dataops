@@ -8,7 +8,7 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
-import { TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/setup';
+import { TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import { getCrmRecord } from '../db/sponsorCrm';
 import { derivedStatus, normalizeEmail, payloadDeleteAt, suppressionKey, validateSendConfig } from './core';
 import {

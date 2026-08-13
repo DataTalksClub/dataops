@@ -1,7 +1,7 @@
 import { describe, it, after } from 'node:test';
 import assert from 'node:assert';
 import { handler } from '../src/handler';
-import { stopLocal } from '../src/db/client';
+import { stopLocal } from '../scripts/local-dynamodb';
 
 describe('handler', () => {
   after(async () => {

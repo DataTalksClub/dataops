@@ -110,12 +110,25 @@ assertLoopbackListener();
 installRepresentativeNetworkGuard();
 
 async function main(): Promise<void> {
-  const [{ handler }, { seed: seedUsers }, { seed: seedTemplates }, { stopLocal }] = await Promise.all([
-    import('../src/handler'),
-    import('./seed-users'),
-    import('./seed-templates'),
-    import('../src/db/client'),
+  const [{ setupLocalEnvironment }, { stopLocal }] = await Promise.all([
+    import('./setup-local'),
+    import('./local-dynamodb'),
   ]);
+
+  if (!process.env.DYNAMODB_ENDPOINT) {
+    await setupLocalEnvironment({ persistent: true, seed: SEED_MODE === 'default' });
+  } else if (SEED_MODE === 'default') {
+    const [{ seed: seedUsers }, { seed: seedTemplates }, { seed: seedRecurring }] = await Promise.all([
+      import('./seed-users'),
+      import('./seed-templates'),
+      import('./seed-recurring'),
+    ]);
+    await seedUsers();
+    await seedTemplates();
+    await seedRecurring();
+  }
+
+  const { handler } = await import('../src/handler');
 
   const server = http.createServer(async (request, response) => {
     const parsed = new URL(request.url || '/', `http://${HOST}:${PORT}`);
@@ -158,20 +171,6 @@ async function main(): Promise<void> {
     }
   });
 
-  async function runSeeds(): Promise<void> {
-    if (SEED_MODE === 'none') {
-      console.log('Seed mode none; existing local tables are unchanged.');
-      return;
-    }
-    try {
-      await seedUsers();
-      await seedTemplates();
-      console.log('Seed data initialized.');
-    } catch (error) {
-      console.error('Seed error (non-fatal):', error);
-    }
-  }
-
   let stopping = false;
   async function shutdown(signal: string): Promise<void> {
     if (stopping) return;
@@ -197,7 +196,7 @@ async function main(): Promise<void> {
     });
   }
 
-  await runSeeds();
+  if (SEED_MODE === 'none') console.log('Seed mode none; existing local tables are unchanged.');
   try {
     await new Promise<void>((resolve, reject) => {
       const startupError = (error: Error) => reject(error);

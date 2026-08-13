@@ -6,8 +6,9 @@ import os from 'os';
 import path from 'path';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables, TABLE_TEMPLATES } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables, TABLE_TEMPLATES } from '../scripts/local-dynamodb';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
 import { createCard, updateCard } from '../src/db/cards';
 import { createArtifact } from '../src/db/artifacts';

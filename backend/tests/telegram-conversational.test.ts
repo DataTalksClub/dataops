@@ -5,9 +5,10 @@ import path from 'path';
 import { encode as encodeJpeg } from 'jpeg-js';
 import { PutCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal, stopLocal } from '../src/db/client';
-import { createTables } from '../src/db/setup';
-import { TABLE_CONVERSATIONAL_STATE } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
+import { TABLE_CONVERSATIONAL_STATE } from '../scripts/local-dynamodb';
 import { createUserWithId, updateUser } from '../src/db/users';
 import {
   createConversation,

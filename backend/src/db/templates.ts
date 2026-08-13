@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_TEMPLATES } from './setup';
+import { TABLE_TEMPLATES } from './tableNames';
 import { createTask, listTasksByCard } from './tasks';
 import type { Template, Task } from '../types';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';

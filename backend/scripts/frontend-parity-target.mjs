@@ -27,7 +27,6 @@ Object.assign(process.env, {
   IS_LOCAL: 'false',
   SKIP_AUTH: 'false',
   DYNAMODB_ENDPOINT: args['--dynamo'],
-  DATAOPS_AUTO_CREATE_TABLES: 'true',
   DATAOPS_DOCS_DOMAIN: '1',
   WORK_ENGINE_AUTH_MODE: 'portal',
   DTC_OFFLINE: '1',
@@ -68,29 +67,28 @@ if (mode === 'sam') {
 }
 
 const modulePath = (sourcePath, samPath) => pathToFileURL(resolve(moduleRoot, mode === 'source' ? sourcePath : samPath)).href;
-const [handlerModule, clientModule, setup, users, sessions] = await Promise.all([
+const [handlerModule, clientModule, tablesModule, users, sessions] = await Promise.all([
   import(modulePath('src/handler.ts', 'dist/handler.js')),
   import(modulePath('src/db/client.ts', 'dist/db/client.js')),
-  import(modulePath('src/db/setup.ts', 'dist/db/setup.js')),
+  import(modulePath('src/db/tableNames.ts', 'dist/db/tableNames.js')),
   import(modulePath('src/db/users.ts', 'dist/db/users.js')),
   import(modulePath('src/db/sessions.ts', 'dist/db/sessions.js')),
 ]);
 const client = await clientModule.getClient();
-await setup.createTables(client);
 await users.createUserWithId(client, adminId, { name: 'Synthetic parity admin', email: 'parity-admin@example.test', role: 'admin' });
 await users.createUserWithId(client, operatorId, { name: 'Synthetic parity operator', email: 'parity-operator@example.test', role: 'operator' });
 const adminSession = await sessions.createBrowserSession(client, adminId, { lifetimeSeconds: 3600 });
 const operatorSession = await sessions.createBrowserSession(client, operatorId, { lifetimeSeconds: 3600 });
 
 const tables = {
-  tasks: setup.TABLE_TASKS,
-  cards: setup.TABLE_CARDS,
-  templates: setup.TABLE_TEMPLATES,
-  artifacts: setup.TABLE_ARTIFACTS,
-  assistants: setup.TABLE_ASSISTANT_JOBS,
-  intake: setup.TABLE_INTAKE,
-  notifications: setup.TABLE_NOTIFICATIONS,
-  sponsor: setup.TABLE_SPONSOR_CRM,
+  tasks: tablesModule.TABLE_TASKS,
+  cards: tablesModule.TABLE_CARDS,
+  templates: tablesModule.TABLE_TEMPLATES,
+  artifacts: tablesModule.TABLE_ARTIFACTS,
+  assistants: tablesModule.TABLE_ASSISTANT_JOBS,
+  intake: tablesModule.TABLE_INTAKE,
+  notifications: tablesModule.TABLE_NOTIFICATIONS,
+  sponsor: tablesModule.TABLE_SPONSOR_CRM,
 };
 
 async function put(tableName, item) {

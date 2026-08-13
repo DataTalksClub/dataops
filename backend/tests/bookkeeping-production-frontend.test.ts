@@ -3,8 +3,9 @@ import assert from 'node:assert';
 import path from 'path';
 import { readFileSync } from 'node:fs';
 import { handler } from '../src/handler';
-import { getClient, startLocal, stopLocal } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { createBrowserSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
 

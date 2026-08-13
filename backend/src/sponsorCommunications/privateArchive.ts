@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { PutCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../db/client';
-import { TABLE_SPONSOR_CRM } from '../db/setup';
+import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { canonicalJson } from './core';
 
 const PRIVATE_TYPES = new Set([

@@ -15,7 +15,7 @@ import {
   TABLE_TASKS,
   TABLE_TEMPLATES,
   TABLE_USERS,
-} from '../db/setup';
+} from '../db/tableNames';
 import {
   CONVERSATIONAL_ENTITY_SPECS,
   restoredRecord,

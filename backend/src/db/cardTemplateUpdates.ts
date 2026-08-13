@@ -13,7 +13,7 @@ import {
   TABLE_CARDS,
   TABLE_TASKS,
   TABLE_TEMPLATES,
-} from './setup';
+} from './tableNames';
 import type { AuditEventRef, Card, Task, Template } from '../types';
 import { templateTaskProjection } from '../templates/cardTemplateProjection';
 import {

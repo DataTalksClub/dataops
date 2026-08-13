@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_NOTIFICATIONS, TABLE_TASKS } from './setup';
+import { TABLE_NOTIFICATIONS, TABLE_TASKS } from './tableNames';
 import { createTask } from './tasks';
 import type { RecurringConfig, Task } from '../types';
 

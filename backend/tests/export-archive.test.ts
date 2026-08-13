@@ -6,8 +6,9 @@ import zlib from 'zlib';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { createTask } from '../src/db/tasks';
 import { validatePortableExport } from '../src/export/portable';
 import {

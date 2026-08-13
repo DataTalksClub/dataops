@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_NOTIFICATIONS } from './setup';
+import { TABLE_NOTIFICATIONS } from './tableNames';
 import { listIntakeItems } from './intake';
 import { listTasksByStatus } from './tasks';
 import type { IntakeItem, Notification, Task } from '../types';

@@ -9,7 +9,7 @@ import {
   TABLE_CONVERSATIONAL_STATE,
   TABLE_TASKS,
   TABLE_USERS,
-} from '../db/setup';
+} from '../db/tableNames';
 import type { Task } from '../types';
 import {
   type CapabilityExecutor,

@@ -1,5 +1,5 @@
-// IMPORTANT: Set NODE_ENV=test BEFORE any src/ imports so dynalite uses
-// memdown (in-memory, no .data/ directory written to disk).
+// Set the test/runtime flags before importing the handler. Local database
+// startup remains explicit in runSeeds() below.
 process.env.NODE_ENV = 'test';
 process.env.IS_LOCAL = 'true';
 
@@ -24,10 +24,12 @@ import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../src/docs/gi
 import { configureDocsRuntime } from '../src/docs/contentApi';
 import { configurePortalStore } from '../src/docs/portal';
 import { seed as seedUsers } from './seed-users';
+import { setupLocalDynamo, stopLocal } from './local-dynamodb';
 import type { LambdaEvent } from '../src/types';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 let e2eBrowserSessionToken = '';
+let localDatabaseReady = false;
 const e2eBookkeepingObjects = new Map<string, Buffer>();
 type E2eRouteFault = {
   method?: string;
@@ -328,6 +330,10 @@ const server = http.createServer(async (req, res) => {
 // Seed users and templates before starting the server
 async function runSeeds() {
   try {
+    if (!localDatabaseReady) {
+      await setupLocalDynamo({ persistent: false });
+      localDatabaseReady = true;
+    }
     await seedUsers();
     await createTemplate(await getClient(), {
       name: 'Synthetic Git-authored workflow',
@@ -378,12 +384,13 @@ export async function start(): Promise<void> {
 }
 
 export async function stop(): Promise<void> {
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((err) => {
       if (err) return reject(err);
       resolve();
     });
   });
+  await stopLocal();
 }
 
 // Allow running directly (e.g. tsx scripts/test-server.ts)
@@ -397,13 +404,13 @@ if (require.main === module) {
   process.on('SIGINT', () => {
     console.log('\nShutting down test server...');
     server.close(() => {
-      process.exit(0);
+      void stopLocal().finally(() => process.exit(0));
     });
   });
 
   process.on('SIGTERM', () => {
     server.close(() => {
-      process.exit(0);
+      void stopLocal().finally(() => process.exit(0));
     });
   });
 }

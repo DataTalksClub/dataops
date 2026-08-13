@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { TABLE_CALENDAR } from './setup';
+import { TABLE_CALENDAR } from './tableNames';
 
 export type CalendarItem = Record<string, unknown> & { id:string; version:number; startKey:string; endKey:string; createdAt:string; updatedAt:string };
 const pk=(id:string)=>`ITEM#${id}`;

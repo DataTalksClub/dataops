@@ -8,7 +8,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_TASKS } from './setup';
+import { TABLE_TASKS } from './tableNames';
 import type { Task } from '../types';
 
 /**

@@ -1,8 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import {
   DEFAULT_ZAI_BASE_URL,
   DEFAULT_ZAI_MODEL,

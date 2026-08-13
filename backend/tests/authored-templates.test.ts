@@ -6,8 +6,9 @@ import { tmpdir } from 'node:os';
 
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { createTemplate, listTemplates } from '../src/db/templates';
 import {
   loadAuthoredTemplatesFromDirectory,

@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_CARDS } from './setup';
+import { TABLE_CARDS } from './tableNames';
 import type { Card } from '../types';
 
 /**

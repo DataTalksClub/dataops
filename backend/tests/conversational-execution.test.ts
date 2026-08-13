@@ -2,8 +2,9 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { GetCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables, TABLE_CONVERSATIONAL_STATE } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables, TABLE_CONVERSATIONAL_STATE } from '../scripts/local-dynamodb';
 import { createUserWithId, updateUser } from '../src/db/users';
 import {
   createChannelBinding,

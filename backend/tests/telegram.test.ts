@@ -1,8 +1,9 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { MAX_UPDATE_BYTES } from '../src/conversation/telegramAdapter';
 import {
   MAX_MAINTENANCE_REPLY_DEADLINE_MS,

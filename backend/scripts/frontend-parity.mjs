@@ -119,12 +119,26 @@ None.
   return cache;
 }
 
+function createLocalSchema(endpoint) {
+  const setup = spawnSync(process.execPath, ['--import', 'tsx', '--eval', [
+    "Promise.all([import('./backend/scripts/local-dynamodb.ts'), import('./backend/src/db/client.ts')])",
+    '.then(async ([local, client]) => local.createTables(await client.getClient()))',
+  ].join('')], {
+    cwd: repoRoot,
+    env: { ...process.env, DYNAMODB_ENDPOINT: endpoint },
+    encoding: 'utf8',
+  });
+  if (setup.status !== 0) throw new Error(`Local schema setup failed:\n${setup.stderr}`);
+}
+
 async function launchTarget(target, port, root) {
   const require = createRequire(import.meta.url);
   const dynalite = require('dynalite')({ createTableMs: 0 });
   await new Promise((resolveListen, rejectListen) => dynalite.listen(0, '127.0.0.1', (error) => error ? rejectListen(error) : resolveListen()));
+  const endpoint = `http://127.0.0.1:${dynalite.address().port}`;
+  createLocalSchema(endpoint);
   const cache = createDocsCache(target);
-  const child = spawn(process.execPath, ['--import', 'tsx', targetServer, '--mode', target, '--root', root, '--port', String(port), '--dynamo', `http://127.0.0.1:${dynalite.address().port}`, '--cache', cache], {
+  const child = spawn(process.execPath, ['--import', 'tsx', targetServer, '--mode', target, '--root', root, '--port', String(port), '--dynamo', endpoint, '--cache', cache], {
     cwd: repoRoot,
     env: { ...process.env, NODE_PATH: '' },
     stdio: ['ignore', 'pipe', 'pipe'],

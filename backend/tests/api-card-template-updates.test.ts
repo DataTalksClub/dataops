@@ -5,8 +5,9 @@ import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { handler } from '../src/handler';
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables, TABLE_AUDIT_EVENTS } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables, TABLE_AUDIT_EVENTS } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
 import { createTask, getTask, listTasksByCard, updateTask } from '../src/db/tasks';
 import { createTemplate, getTemplate, updateTemplate } from '../src/db/templates';

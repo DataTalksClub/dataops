@@ -5,7 +5,7 @@ import {
   type DynamoDBDocumentClient,
   type ScanCommandOutput,
 } from '@aws-sdk/lib-dynamodb';
-import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/setup';
+import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { berlinDate, digest } from './core';
 import { financeEnabled, projectFinance } from './repository';
 

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { TABLE_SPONSOR_CRM } from './setup';
+import { TABLE_SPONSOR_CRM } from './tableNames';
 import {
   collectBoundedPages,
   type StoragePaginationLimits,

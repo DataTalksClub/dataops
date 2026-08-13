@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 
-import { TABLE_CONVERSATIONAL_STATE } from '../db/setup';
+import { TABLE_CONVERSATIONAL_STATE } from '../db/tableNames';
 import {
   validateConversationalRecord,
   type ConversationalRecord,

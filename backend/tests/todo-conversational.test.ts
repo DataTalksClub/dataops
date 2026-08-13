@@ -8,13 +8,14 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal, stopLocal } from '../src/db/client';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import {
   createTables,
   TABLE_CONVERSATIONAL_STATE,
   TABLE_TASKS,
   TABLE_USERS,
-} from '../src/db/setup';
+} from '../scripts/local-dynamodb';
 import { createUserWithId } from '../src/db/users';
 import {
   createChannelBinding,

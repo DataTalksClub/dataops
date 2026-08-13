@@ -2,8 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
 import { scrubTaskTitle, scrubStoredTaskTitles } from '../scripts/scrub-task-titles';
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import { createTask, getTask } from '../src/db/tasks';
 import type { Task } from '../src/types';
 

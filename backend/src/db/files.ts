@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_FILES } from './setup';
+import { TABLE_FILES } from './tableNames';
 import type { FileRecord } from '../types';
 
 /**

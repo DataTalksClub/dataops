@@ -16,21 +16,20 @@
  * and is returned verbatim). A second run therefore reports zero changes.
  *
  * Usage:
- *   IS_LOCAL=true tsx scripts/scrub-task-titles.ts [--dry-run]
+ *   DYNAMODB_ENDPOINT=http://127.0.0.1:8000 tsx scripts/scrub-task-titles.ts [--dry-run]
  *
  * Flags:
  *   --dry-run  Print what would change without writing to the DB.
  *
- * Run against the same environment that holds the migrated data (local
- * persistent dynalite, or a configured DynamoDB endpoint via IS_LOCAL /
- * DYNAMODB_ENDPOINT).
+ * Run against the same environment that holds the migrated data: an explicit
+ * local DYNAMODB_ENDPOINT or declared AWS tables selected by DATAOPS_* names.
  */
 
 import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal } from '../src/db/client';
-import { TABLE_TASKS } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import { updateTask } from '../src/db/tasks';
 import type { Task } from '../src/types';
 
@@ -140,9 +139,8 @@ async function main(): Promise<void> {
 
   let client: DynamoDBDocumentClient | null = null;
   if (!dryRun) {
-    console.log('Starting local DynamoDB (persistent)...');
-    const port = await startLocal();
-    client = await getClient(port);
+    console.log('Connecting to configured DynamoDB...');
+    client = await getClient();
     console.log('  DB ready.');
   }
 

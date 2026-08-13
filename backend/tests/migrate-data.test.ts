@@ -28,9 +28,10 @@ import {
   type TrelloCard,
   type TrelloChecklist,
 } from '../scripts/migrate-data';
-import { startLocal, stopLocal, getClient } from '../src/db/client';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { findContentRoot } from './helpers/content';
-import { createTables } from '../src/db/setup';
+import { createTables } from '../scripts/local-dynamodb';
 import { listCards } from '../src/db/cards';
 import { listRecurringConfigs } from '../src/db/recurring';
 import { listTasksByCard, listTasksByStatus } from '../src/db/tasks';

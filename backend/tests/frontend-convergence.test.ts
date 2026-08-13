@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { handler } from '../src/handler';
-import { stopLocal } from '../src/db/client';
+import { stopLocal } from '../scripts/local-dynamodb';
 import { serveCanonicalFrontend } from '../src/docs/portal';
 
 const repoRoot = path.resolve(__dirname, '..', '..');

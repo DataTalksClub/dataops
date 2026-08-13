@@ -88,6 +88,17 @@ Install local dependencies:
 make setup
 ```
 
+Initialize the persistent local DynamoDB schema and seed users, Git-authored
+templates, and recurring operations:
+
+```bash
+npm --prefix backend run setup:local
+```
+
+This is the only supported table-creation entry point. Application and seed
+commands assume their target tables already exist; production tables remain
+owned by CloudFormation.
+
 ### 1. Start the work-engine dev server
 
 ```bash

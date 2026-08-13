@@ -8,7 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { TABLE_NEWSLETTER_SLOTS } from "./setup";
+import { TABLE_NEWSLETTER_SLOTS } from "./tableNames";
 import {
   collectBoundedPages,
   type StoragePaginationLimits,

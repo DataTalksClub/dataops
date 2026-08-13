@@ -5,7 +5,7 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_CONVERSATIONAL_STATE } from '../db/setup';
+import { TABLE_CONVERSATIONAL_STATE } from '../db/tableNames';
 
 type HeartbeatComponent = 'execution_worker' | 'recovery' | 'result_dispatcher';
 

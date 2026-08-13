@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_ASSISTANT_JOBS, TABLE_AUDIT_EVENTS } from './setup';
+import { TABLE_ASSISTANT_JOBS, TABLE_AUDIT_EVENTS } from './tableNames';
 import type { AssistantJobEvent, AssistantJobRecord } from '../types';
 
 export interface AssistantJobFilters {

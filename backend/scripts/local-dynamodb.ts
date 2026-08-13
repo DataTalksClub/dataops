@@ -3,40 +3,77 @@ import {
   DeleteTableCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import fs from 'node:fs';
+import path from 'node:path';
+import dynalite from 'dynalite';
+import type { DynaliteServer } from 'dynalite';
+import { getClient } from '../src/db/client';
+import {
+  TABLE_TASKS,
+  TABLE_CARDS,
+  TABLE_TEMPLATES,
+  TABLE_USERS,
+  TABLE_FILES,
+  TABLE_ARTIFACTS,
+  TABLE_ASSISTANT_JOBS,
+  TABLE_AUDIT_EVENTS,
+  TABLE_INTAKE,
+  TABLE_NOTIFICATIONS,
+  TABLE_SESSIONS,
+  TABLE_BOOKKEEPING,
+  TABLE_SPONSOR_CRM,
+  TABLE_NEWSLETTER_SLOTS,
+  TABLE_CALENDAR,
+  TABLE_CONVERSATIONAL_STATE,
+} from '../src/db/tableNames';
 
-/**
- * Resolve a table name. Infrastructure passes each table's name explicitly;
- * DATAOPS_TABLE_PREFIX is the shared prefix those names are built from, so a
- * second environment can run the same code against its own tables.
- */
-function tableName(envName: string, fallback: string, suffix: string): string {
-  const explicitName = process.env[envName];
-  if (explicitName) return explicitName;
+const DATA_DIR = path.join(__dirname, '..', '.data');
+let dynaliteServer: DynaliteServer | null = null;
+let previousEndpoint: string | undefined;
 
-  const prefix = process.env.DATAOPS_TABLE_PREFIX;
-  return prefix ? `${prefix}-${suffix}` : fallback;
+type LocalDynamoOptions = {
+  port?: number;
+  persistent?: boolean;
+};
+
+/** Start explicit loopback-only dynalite owned by local/test tooling. */
+async function startLocal(options: LocalDynamoOptions = {}): Promise<number> {
+  if (dynaliteServer) return dynaliteServer.address().port;
+
+  const dynaliteOptions: { createTableMs: number; path?: string } = { createTableMs: 0 };
+  if (options.persistent) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    dynaliteOptions.path = DATA_DIR;
+  }
+
+  previousEndpoint = process.env.DYNAMODB_ENDPOINT;
+  dynaliteServer = dynalite(dynaliteOptions);
+  await new Promise<void>((resolve, reject) => {
+    dynaliteServer!.listen(options.port || 0, '127.0.0.1', (error?: Error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+  const port = dynaliteServer.address().port;
+  process.env.DYNAMODB_ENDPOINT = `http://127.0.0.1:${port}`;
+  return port;
 }
 
-const TABLE_TASKS = tableName('DATAOPS_TASKS_TABLE', 'Tasks', 'tasks');
-const TABLE_CARDS = tableName('DATAOPS_CARDS_TABLE', 'Projects', 'cards');
-const TABLE_TEMPLATES = tableName('DATAOPS_TEMPLATES_TABLE', 'Templates', 'templates');
-const TABLE_USERS = tableName('DATAOPS_USERS_TABLE', 'Users', 'users');
-const TABLE_FILES = tableName('DATAOPS_FILES_TABLE', 'Files', 'files');
-const TABLE_ARTIFACTS = tableName('DATAOPS_ARTIFACTS_TABLE', 'Artifacts', 'artifacts');
-const TABLE_ASSISTANT_JOBS = tableName('DATAOPS_ASSISTANT_JOBS_TABLE', 'AssistantJobs', 'assistant-jobs');
-const TABLE_AUDIT_EVENTS = tableName('DATAOPS_AUDIT_EVENTS_TABLE', 'AuditEvents', 'audit-events');
-const TABLE_INTAKE = tableName('DATAOPS_INTAKE_TABLE', 'IntakeItems', 'intake');
-const TABLE_NOTIFICATIONS = tableName('DATAOPS_NOTIFICATIONS_TABLE', 'Notifications', 'notifications');
-const TABLE_SESSIONS = tableName('DATAOPS_SESSIONS_TABLE', 'Sessions', 'sessions');
-const TABLE_BOOKKEEPING = tableName('DATAOPS_BOOKKEEPING_TABLE', 'Bookkeeping', 'bookkeeping');
-const TABLE_SPONSOR_CRM = tableName('DATAOPS_SPONSOR_CRM_TABLE', 'SponsorCrm', 'sponsor-crm');
-const TABLE_NEWSLETTER_SLOTS = tableName('DATAOPS_NEWSLETTER_SLOTS_TABLE', 'NewsletterSlots', 'newsletter-slots');
-const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'Calendar', 'calendar');
-const TABLE_CONVERSATIONAL_STATE = tableName(
-  'DATAOPS_CONVERSATIONAL_STATE_TABLE',
-  'ConversationalState',
-  'conversational-state'
-);
+/** Close script-owned dynalite and restore the caller's previous endpoint. */
+async function stopLocal(): Promise<void> {
+  if (!dynaliteServer) return;
+  const server = dynaliteServer;
+  dynaliteServer = null;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error?: Error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+  if (previousEndpoint === undefined) delete process.env.DYNAMODB_ENDPOINT;
+  else process.env.DYNAMODB_ENDPOINT = previousEndpoint;
+  previousEndpoint = undefined;
+}
 
 /**
  * Create all application tables (Tasks, Cards, Templates) with GSIs.
@@ -392,7 +429,18 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
   }
 }
 
+/** Start dynalite and create the complete local schema explicitly. */
+async function setupLocalDynamo(options: LocalDynamoOptions = {}): Promise<DynamoDBDocumentClient> {
+  const port = await startLocal(options);
+  const client = await getClient(port);
+  await createTables(client);
+  return client;
+}
+
 export {
+  startLocal,
+  stopLocal,
+  setupLocalDynamo,
   createTables,
   deleteTables,
   TABLE_TASKS,

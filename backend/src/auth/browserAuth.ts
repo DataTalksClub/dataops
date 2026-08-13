@@ -1,7 +1,7 @@
 import { createHash, createPublicKey, randomBytes, verify as verifySignature, type JsonWebKey } from 'node:crypto';
 import { DeleteCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_SESSIONS } from '../db/setup';
+import { TABLE_SESSIONS } from '../db/tableNames';
 import { createBrowserSession, deleteSession, getSession } from '../db/sessions';
 import { getUser, getUsersByNormalizedEmail } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';

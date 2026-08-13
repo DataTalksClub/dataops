@@ -8,7 +8,7 @@ import {
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_CONVERSATIONAL_STATE } from '../db/setup';
+import { TABLE_CONVERSATIONAL_STATE } from '../db/tableNames';
 import {
   expiryFrom,
   isExpired,

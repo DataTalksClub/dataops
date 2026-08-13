@@ -7,7 +7,7 @@ import {
   UpdateCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
-import { TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/setup';
+import { TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import { getCrmRecord } from '../db/sponsorCrm';
 import { normalizeEmail, payloadDeleteAt, sha256, suppressionKey, type HmacKeyring, type SendConfig } from './core';
 import type {

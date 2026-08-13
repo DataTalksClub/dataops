@@ -25,7 +25,8 @@ import { after } from 'node:test';
 import { ScanCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { getClient, startLocal, stopLocal } from '../../src/db/client';
+import { getClient } from '../../src/db/client';
+import { startLocal, stopLocal } from '../../scripts/local-dynamodb';
 import {
   createTables,
   TABLE_TASKS,
@@ -44,7 +45,7 @@ import {
   TABLE_NEWSLETTER_SLOTS,
   TABLE_CALENDAR,
   TABLE_CONVERSATIONAL_STATE,
-} from '../../src/db/setup';
+} from '../../scripts/local-dynamodb';
 
 const ALL_TABLES = [
   TABLE_TASKS,

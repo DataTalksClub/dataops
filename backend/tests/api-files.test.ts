@@ -3,8 +3,9 @@ import assert from 'node:assert';
 import fs from 'fs';
 import path from 'path';
 
-import { startLocal, stopLocal, getClient } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
+import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { createTables } from '../scripts/local-dynamodb';
 import type { LambdaResponse } from '../src/types';
 
 const TEST_UPLOAD_DIR = path.join(__dirname, '..', 'test-uploads-api-' + process.pid);

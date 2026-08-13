@@ -1,17 +1,6 @@
-import { getClient, startLocal } from '../src/db/client';
-import { createTables } from '../src/db/setup';
+import { getClient } from '../src/db/client';
 import { listUsers, createUserWithId, getUserByEmail } from '../src/db/users';
 import type { User } from '../src/types';
-
-function shouldUseLocalDynamo(): boolean {
-  return (
-    process.env.IS_LOCAL === 'true' ||
-    process.env.IS_LOCAL === '1' ||
-    process.env.NODE_ENV === 'test' ||
-    process.env.NODE_ENV === 'local' ||
-    Boolean(process.env.DYNAMODB_ENDPOINT)
-  );
-}
 
 /**
  * Simple SHA-256 hash using Web Crypto API.
@@ -34,15 +23,7 @@ const USERS = [
 const DEFAULT_PASSWORD = '111';
 
 async function seed(): Promise<void> {
-  const useLocalDynamo = shouldUseLocalDynamo();
-  const port = useLocalDynamo && !process.env.DYNAMODB_ENDPOINT
-    ? await startLocal()
-    : undefined;
-  const client = await getClient(port);
-
-  if (useLocalDynamo) {
-    await createTables(client);
-  }
+  const client = await getClient();
 
   // Hash the default password once
   const passwordHash = await hashPassword(DEFAULT_PASSWORD);

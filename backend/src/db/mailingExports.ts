@@ -1,6 +1,6 @@
 import { GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { TABLE_ARTIFACTS } from './setup';
+import { TABLE_ARTIFACTS } from './tableNames';
 import type { MailingExportJob } from '../mailingExports/types';
 
 const key = (id: string) => ({ PK: `MAILING_EXPORT#${id}`, SK: `MAILING_EXPORT#${id}` });

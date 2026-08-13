@@ -175,7 +175,8 @@ Table requirements:
 - deletion protection or retain policy for production
 - least-privilege IAM from `WorkEngineFunction`
 - environment variables for table names
-- local/test defaults can keep dynalite auto-create behavior.
+- local/test tooling explicitly starts dynalite and creates tables through
+  `npm --prefix backend run setup:local`; runtime code never does either.
 
 `DataOpsSessionsTable` is session state for the legacy/standalone work-engine
 auth model and local tests. It is not the shared production portal session

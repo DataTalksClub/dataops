@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { handler } from '../src/handler';
-import { stopLocal } from '../src/db/client';
+import { stopLocal } from '../scripts/local-dynamodb';
 import { useTestDatabase } from './helpers/db';
 
 describe('handler - EventBridge scheduled events', () => {

@@ -9,7 +9,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { createTables, TABLE_CONVERSATIONAL_STATE, TABLE_USERS } from '../src/db/setup';
+import { createTables, TABLE_CONVERSATIONAL_STATE, TABLE_USERS } from '../scripts/local-dynamodb';
 import { createUserWithId } from '../src/db/users';
 import {
   createChannelBinding,

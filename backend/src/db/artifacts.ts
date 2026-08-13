@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_ARTIFACTS } from './setup';
+import { TABLE_ARTIFACTS } from './tableNames';
 import type { ArtifactRecord } from '../types';
 
 export interface ArtifactFilters {
