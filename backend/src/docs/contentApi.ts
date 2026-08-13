@@ -437,6 +437,31 @@ async function runCorpusLint(rt: DocsRuntime): Promise<LambdaResponse> {
   return jsonResponse(200, { docs: results, total_violations: totalViolations });
 }
 
+/**
+ * The content token grants read and write on the knowledge repository. When it
+ * lapses, browsing degrades and saving an edit fails outright, so an operator
+ * should see it coming here rather than discover it mid-edit.
+ */
+function contentTokenFinding(rt: DocsRuntime): Record<string, unknown> | null {
+  const store = rt.store as { contentTokenDaysRemaining?: number | null; githubUrl?: string };
+  const days = typeof store?.contentTokenDaysRemaining === 'number' ? store.contentTokenDaysRemaining : null;
+  if (days === null || days > 60) return null;
+
+  const expired = days < 0;
+  return {
+    id: 'content-token:expiry',
+    category: 'access',
+    severity: expired || days <= 14 ? 'error' : 'warning',
+    title: expired ? 'Process document access has expired' : 'Process document access expires soon',
+    summary: expired
+      ? 'The knowledge repository token has expired. Process documents cannot be read or edited until it is rotated.'
+      : `The knowledge repository token expires in ${days} days. Rotate it before then to keep process documents readable and editable.`,
+    repoUrl: store?.githubUrl,
+    daysRemaining: days,
+    remediation: 'docs/knowledge-repo-access.md',
+  };
+}
+
 async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
   await rt.ensureSynced();
   const findings: Record<string, unknown>[] = [];
@@ -446,6 +471,8 @@ async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
   } catch (error) {
     validationErrors.push((error as Error).message);
   }
+  const tokenFinding = contentTokenFinding(rt);
+  if (tokenFinding) findings.push(tokenFinding);
   for (const file of collectMarkdown(rt.contentRoot).sort()) {
     const text = readFileSync(file, 'utf-8');
     if (!text.includes('schema_version: 1')) continue;

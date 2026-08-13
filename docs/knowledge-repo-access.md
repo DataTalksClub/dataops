@@ -60,13 +60,13 @@ there is nothing to reconfigure on the GitHub side.
      --secret-string 'github_pat_…'
    ```
 
-4. Update the recorded expiry so the reminder stays accurate:
+4. Update the tag so the secret still records its own expiry. The portal
+   warning needs no update; it reads the live value from GitHub.
 
    ```bash
    aws secretsmanager tag-resource \
      --secret-id dataops-v1/knowledge/github-token \
      --tags Key=ExpiresOn,Value=YYYY-MM-DD
-   gh variable set DATAOPS_KNOWLEDGE_TOKEN_EXPIRES_AT -R DataTalksClub/dataops -b YYYY-MM-DD
    ```
 
 5. Confirm the new token reaches the repository:
@@ -85,7 +85,14 @@ value is picked up on the next cold start.
 
 ## Expiry reminder
 
-`.github/workflows/check-knowledge-token.yml` runs weekly and compares today
-against `DATAOPS_KNOWLEDGE_TOKEN_EXPIRES_AT`. It warns from 60 days out and
-fails the run inside 14 days, so an expiring token surfaces as a red workflow
-rather than as a broken portal.
+The portal reports this itself; nothing is configured and no date is recorded
+in CI. GitHub returns the expiry on every authenticated response:
+
+```
+github-authentication-token-expiration: 2027-08-14 06:23:04 UTC
+```
+
+`githubStore` records that header, and `/docs/process-quality` raises a finding
+from 60 days out, escalating to an error inside 14 days or once expired. Because
+the value is observed rather than configured, rotating the token updates the
+warning on its own.

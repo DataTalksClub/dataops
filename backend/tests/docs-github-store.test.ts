@@ -221,3 +221,47 @@ describe('githubStore - read/list/commit (GitHub mocked)', () => {
     await assert.rejects(() => noToken.tree(), GitHubError);
   });
 });
+
+describe('content token expiry', () => {
+  const headerResponse = (expiry: string | null) => ({
+    ok: true,
+    status: 200,
+    headers: { get: (name: string) => (name === 'github-authentication-token-expiration' ? expiry : null) },
+    text: async () => JSON.stringify({ tree: [] }),
+  });
+
+  function storeWith(expiry: string | null) {
+    return new ContentsApiGithubStore({
+      owner: 'DataTalksClub',
+      repo: 'dataops-knowledge',
+      branch: 'main',
+      token: 'test-token',
+      cacheDir: mkdtempSync(join(tmpdir(), 'token-expiry-')),
+      fetchImpl: (async () => headerResponse(expiry)) as unknown as typeof fetch,
+    });
+  }
+
+  it('observes the expiry GitHub reports instead of a configured date', async () => {
+    const store = storeWith('2027-08-14 06:23:04 UTC');
+    assert.strictEqual(store.contentTokenExpiry, null);
+    await store.request('GET', '/repos/DataTalksClub/dataops-knowledge');
+    assert.strictEqual(store.contentTokenExpiry?.toISOString(), '2027-08-14T06:23:04.000Z');
+  });
+
+  it('reports remaining days so an operator can act before access lapses', async () => {
+    const store = storeWith(null);
+    await store.request('GET', '/repos/DataTalksClub/dataops-knowledge');
+    assert.strictEqual(store.contentTokenDaysRemaining, null, 'unobserved expiry is not a fault');
+
+    const soon = new Date(Date.now() + 3 * 86_400_000);
+    const dated = storeWith(`${soon.toISOString().slice(0, 19).replace('T', ' ')} UTC`);
+    await dated.request('GET', '/repos/DataTalksClub/dataops-knowledge');
+    assert.ok((dated.contentTokenDaysRemaining ?? -1) <= 3);
+  });
+
+  it('ignores an unparseable expiry header rather than throwing', async () => {
+    const store = storeWith('not a date');
+    await store.request('GET', '/repos/DataTalksClub/dataops-knowledge');
+    assert.strictEqual(store.contentTokenExpiry, null);
+  });
+});

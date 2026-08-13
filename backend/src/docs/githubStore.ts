@@ -163,6 +163,7 @@ export class ContentsApiGithubStore implements GithubStore {
   private treeCache: Record<string, GithubTreeEntry> | null = null;
   private hydrated = false;
   private secretsClient: SecretsManagerClient | null = null;
+  private tokenExpiresAt: Date | null = null;
 
   constructor(config: GithubStoreConfig) {
     this.owner = config.owner;
@@ -177,6 +178,22 @@ export class ContentsApiGithubStore implements GithubStore {
 
   get githubUrl(): string {
     return `https://github.com/${this.owner}/${this.repo}`;
+  }
+
+  /**
+   * When the content token stops working, reading and editing process documents
+   * both break. GitHub returns the expiry on every authenticated response, so
+   * the live value is observed rather than configured, and a rotation is picked
+   * up without anyone remembering to update a recorded date.
+   */
+  get contentTokenExpiry(): Date | null {
+    return this.tokenExpiresAt;
+  }
+
+  /** Days until the content token expires, or null while it is unobserved. */
+  get contentTokenDaysRemaining(): number | null {
+    if (!this.tokenExpiresAt) return null;
+    return Math.floor((this.tokenExpiresAt.getTime() - Date.now()) / 86_400_000);
   }
 
   reset(): void {
@@ -348,6 +365,18 @@ export class ContentsApiGithubStore implements GithubStore {
   }
 
   /** Issue a GitHub API request, returning the parsed JSON (or `{}`). */
+  /**
+   * GitHub reports fine-grained token expiry as
+   * `github-authentication-token-expiration: 2027-08-14 06:23:04 UTC`.
+   * Classic tokens and unauthenticated calls omit it, so absence is not a fault.
+   */
+  private recordTokenExpiry(resp: { headers: { get(name: string): string | null } }): void {
+    const header = resp.headers.get('github-authentication-token-expiration');
+    if (!header) return;
+    const parsed = new Date(header.replace(' UTC', 'Z').replace(' ', 'T'));
+    if (!Number.isNaN(parsed.getTime())) this.tokenExpiresAt = parsed;
+  }
+
   async request(method: string, path: string, body?: Record<string, unknown>): Promise<unknown> {
     const token = await this.token();
     if (!token) throw new GitHubError('GITHUB_TOKEN is not configured');
@@ -368,6 +397,7 @@ export class ContentsApiGithubStore implements GithubStore {
     } catch (err) {
       throw new GitHubError(`GitHub ${method} ${path} failed: ${(err as Error).message}`);
     }
+    this.recordTokenExpiry(resp);
     const raw = await resp.text();
     if (!resp.ok) {
       throw new GitHubError(`GitHub ${method} ${path} failed: HTTP ${resp.status}: ${raw}`);
