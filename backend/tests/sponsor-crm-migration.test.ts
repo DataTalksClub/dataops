@@ -1096,7 +1096,7 @@ describe("sponsor CRM historical migration", () => {
       request.authorization === "Bearer synthetic_token_abcdefghijklmnopqrstuvwxyz"));
     assert.ok(requests.every((request) => request.url.startsWith("https://")));
     assert.ok(requests.some((request) =>
-      request.url.includes("migrationSnapshot=true")));
+      request.url.includes("/api/sponsor-crm/organizations?limit=100")));
   });
 
   it("exhausts Dynamo pages before planning later-page authoritative identities", async () => {

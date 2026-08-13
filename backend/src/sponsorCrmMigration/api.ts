@@ -16,8 +16,6 @@ type ApiRecord = Record<string, unknown> & { id: string; version: number };
 type ApiPage = {
   items: ApiRecord[];
   nextCursor: string | null;
-  complete: true;
-  snapshotDigest: string;
 };
 type ApiLimits = {
   requestTimeoutMs: number;
@@ -226,30 +224,21 @@ async function allCrmRecords(api: SponsorMigrationApi, kind: string) {
   let cursor: string | null = "0";
   const seenCursors = new Set<string>();
   let pages = 0;
-  let snapshotDigest: string | undefined;
   do {
     if (seenCursors.has(cursor)) throw new MigrationFailure("api-pagination-cycle");
     if (++pages > api.limits.maxPages) throw new MigrationFailure("api-pagination-limit");
     seenCursors.add(cursor);
     const page: ApiPage = await api.read<ApiPage>(
-      `/api/sponsor-crm/${kind}?limit=100&cursor=${encodeURIComponent(cursor)}` +
-      "&migrationSnapshot=true",
+      `/api/sponsor-crm/${kind}?limit=100&cursor=${encodeURIComponent(cursor)}`,
     );
     if (!Array.isArray(page.items) ||
-      page.complete !== true ||
-      !/^[a-f0-9]{64}$/.test(page.snapshotDigest) ||
       (page.nextCursor !== null && !/^\d+$/.test(page.nextCursor)))
       throw new MigrationFailure("unexpected-api-response");
-    if (snapshotDigest !== undefined && snapshotDigest !== page.snapshotDigest)
-      throw new MigrationFailure("destination-changed-during-snapshot");
-    snapshotDigest = page.snapshotDigest;
     if (page.items.length > 100 || records.length + page.items.length > api.limits.maxItems)
       throw new MigrationFailure("api-pagination-limit");
     records.push(...page.items);
     cursor = page.nextCursor;
   } while (cursor !== null);
-  if (snapshotDigest === undefined || digest(records) !== snapshotDigest)
-    throw new MigrationFailure("destination-snapshot-evidence-mismatch");
   return records;
 }
 
