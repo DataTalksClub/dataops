@@ -48,7 +48,7 @@ TASK_TEMPLATE_SECTIONS = [
     "summary",
     "purpose",
     "references",
-    "required-bundle-links",
+    "required-card-links",
     "task-definitions",
 ]
 TASK_TEMPLATE_SYSTEMS = {"dataops", "datatasks"}

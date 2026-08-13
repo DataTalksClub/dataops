@@ -44,7 +44,7 @@ class QualityFinding:
     instruction_doc_id: str = ""
     task_ref: str = ""
     task_id: str = ""
-    bundle_id: str = ""
+    card_id: str = ""
     status: str = "open"
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,7 +67,7 @@ class QualityFinding:
             "instructionDocId": self.instruction_doc_id,
             "taskRef": self.task_ref,
             "taskId": self.task_id,
-            "bundleId": self.bundle_id,
+            "cardId": self.card_id,
         }
         for key, value in optional.items():
             if value:

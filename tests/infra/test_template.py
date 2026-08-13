@@ -159,7 +159,7 @@ def test_dataops_execution_tables_have_retention_pitr_and_tags():
     template = TEMPLATE.read_text(encoding="utf-8")
     durable_tables = [
         "DataOpsTasksTable",
-        "DataOpsBundlesTable",
+        "DataOpsCardsTable",
         "DataOpsTemplatesTable",
         "DataOpsUsersTable",
         "DataOpsFilesTable",
@@ -201,11 +201,11 @@ def test_dataops_execution_tables_match_backend_access_patterns():
     files = _resource_block(template, "DataOpsFilesTable")
 
     assert "IndexName: GSI-Date" in tasks
-    assert "IndexName: GSI-Bundle" in tasks
+    assert "IndexName: GSI-Card" in tasks
     assert "IndexName: GSI-Status" in tasks
     assert "AttributeName: date" in tasks
     assert "AttributeName: status" in tasks
-    assert "AttributeName: bundleId" in tasks
+    assert "AttributeName: cardId" in tasks
 
     assert "IndexName: GSI-Task" in files
     assert "AttributeName: taskId" in files
@@ -878,7 +878,7 @@ def test_dataops_table_outputs_are_available_for_backend_env_wiring():
     template = TEMPLATE.read_text(encoding="utf-8")
     expected_outputs = [
         "DataOpsTasksTableName",
-        "DataOpsBundlesTableName",
+        "DataOpsCardsTableName",
         "DataOpsTemplatesTableName",
         "DataOpsUsersTableName",
         "DataOpsFilesTableName",
@@ -957,7 +957,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "BASIC_AUTH_PASSWORD_SECRET_NAME" not in backend
     assert "DATAOPS_STACK_NAME: !Ref AWS::StackName" in backend
     assert "DATAOPS_TASKS_TABLE:" not in backend
-    assert "DATAOPS_BUNDLES_TABLE:" not in backend
+    assert "DATAOPS_CARDS_TABLE:" not in backend
     assert "DATAOPS_TEMPLATES_TABLE:" not in backend
     assert "DATAOPS_USERS_TABLE:" not in backend
     assert "DATAOPS_FILES_TABLE:" not in backend

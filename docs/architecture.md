@@ -35,7 +35,7 @@ flowchart TB
   Backend -->|serves| Frontend[frontend/index.html and assets]
   Backend -->|routes /docs, /folders, /images, /lint, /parse| DocsApi[Docs API]
   Backend -->|routes /search| Search[Search handler]
-  Backend -->|routes /api/*| WorkApi[Work API: tasks, bundles, templates, etc]
+  Backend -->|routes /api/*| WorkApi[Work API: tasks, cards, templates, etc]
   DocsApi --> Cache[/Lambda /tmp GitHub content cache/]
   Search --> Index[/Lambda /tmp zerosearch-node index/]
   Backend -->|download tarball, read blobs, write contents| GitHub[(GitHub repo)]
@@ -53,7 +53,7 @@ The deployed function is `BackendFunction`, a single TypeScript/Node Lambda
 - GitHub-backed persistence.
 - Search through a `zerosearch-node` index.
 - Compatibility `/git/*` endpoints used by the frontend.
-- All work `/api/*` routes (tasks, bundles, templates, recurring, files,
+- All work `/api/*` routes (tasks, cards, templates, recurring, files,
   artifacts, assistant jobs, notifications, intake, users) served in-process.
 
 One Lambda serves everything from a single Function URL. There is no separate

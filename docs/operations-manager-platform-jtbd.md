@@ -18,7 +18,7 @@ artifacts are part of one flow.
 The analysis is grounded in:
 
 - `backend/docs/specs.md`: imported source product problem, data model, task
-  types, templates, bundles, recurring configs, required links, required files,
+  types, templates, cards, recurring configs, required links, required files,
   stages, and dashboard goals.
 - `backend/docs/data.md`: Trello board and spreadsheet analysis, including
   active columns, templates, open tasks, completed recurring tasks, and daily
@@ -26,10 +26,10 @@ The analysis is grounded in:
 - `backend/docs/templates.md`: canonical workflow templates for newsletter,
   podcast, webinar, workshop, book of the week, OSS, course, social media, tax
   report, Maven lightning lesson, and office hours.
-- `backend/src/types.ts`: current platform objects for tasks, bundles,
+- `backend/src/types.ts`: current platform objects for tasks, cards,
   templates, recurring configs, users, files, and notifications.
 - `frontend/src/app.js`: canonical portal behavior for dashboard, tasks,
-  bundles, templates, recurring configs, notifications, required links, and
+  cards, templates, recurring configs, notifications, required links, and
   completion checkboxes.
 - `content/tasks/templates/*.md`: transitional imported task templates and
   due-date offsets; long-term canonical templates belong in the private
@@ -83,7 +83,7 @@ The platform should turn scattered operations into a single work queue:
 - task templates create the step at the right time;
 - recurring configs create periodic operational work;
 - reminders bring work back when someone has not replied;
-- bundle links collect the artifacts produced by work;
+- card links collect the artifacts produced by work;
 - files and comments preserve evidence;
 - notifications surface risk and deadlines;
 - the dashboard gives the operator the next action.
@@ -93,21 +93,21 @@ The platform should turn scattered operations into a single work queue:
 The current code already contains useful primitives:
 
 - Login and session-based access.
-- Dashboard route with active bundles and tasks due today.
+- Dashboard route with active cards and tasks due today.
 - "Assigned to me" behavior on the dashboard.
-- Task list with date, range, status, assignee, and bundle filters.
+- Task list with date, range, status, assignee, and card filters.
 - Ad-hoc task creation.
-- Bundle list and bundle detail pages.
+- Card list and card detail pages.
 - Template list and template editor.
 - Recurring config page.
 - Notification bell and notification page.
 - Task checkboxes to mark done or todo.
 - Required link fields that block completion until a URL is saved.
-- Bundle links that store workflow-specific URLs.
+- Card links that store workflow-specific URLs.
 - Template references that resolve through the private document registry.
 - Task instructions URLs or IDs that open process docs inside the authenticated
   app.
-- Stage transitions for bundles, including preparation, announced,
+- Stage transitions for cards, including preparation, announced,
   after-event, and done.
 - File records in the data model.
 
@@ -129,7 +129,7 @@ The dashboard must show:
 - Waiting: tasks blocked on a guest, sponsor, author, speaker, publisher,
   internal reviewer, freelancer, accountant, or Alexey.
 - Follow-ups due: waiting tasks whose follow-up date is today or earlier.
-- Active workflows: bundles grouped by risk and next due action.
+- Active workflows: cards grouped by risk and next due action.
 - Recurring operations: generated periodic tasks that need attention.
 - Notifications: new risk alerts, missed deadlines, generated workflow runs,
   and failed automations.
@@ -200,7 +200,7 @@ The platform should show each task with:
 - status;
 - due date;
 - assignee;
-- workflow bundle;
+- workflow card;
 - source: template, recurring, manual, email, Telegram, assistant, or import;
 - instructions link;
 - required evidence;
@@ -243,10 +243,10 @@ Incoming work arrives from people and systems:
 
 Expected user action:
 
-- Convert the incoming item into either an ad-hoc task or a workflow bundle.
+- Convert the incoming item into either an ad-hoc task or a workflow card.
 - Attach the source message or paste the source link.
 - Assign an owner and due date.
-- If the item belongs to an active workflow, attach it to the bundle instead of
+- If the item belongs to an active workflow, attach it to the card instead of
   leaving it as a standalone task.
 - If it creates a new repeatable pattern, flag it as a template/process
   improvement.
@@ -255,7 +255,7 @@ Acceptance criteria:
 
 - The user can create an ad-hoc task in less than one minute.
 - The user can attach an ad-hoc task to an existing workflow.
-- The user can create a new workflow bundle from a template when a trigger
+- The user can create a new workflow card from a template when a trigger
   occurs.
 - The user can mark an incoming item as "needs clarification" with a follow-up
   date.
@@ -329,12 +329,12 @@ Platform actions:
 - Select a template.
 - Enter the anchor date and required variables.
 - Review generated tasks.
-- Create the bundle.
+- Create the card.
 
 Acceptance criteria:
 
 - Automatic templates are generated from their cron schedules.
-- Manual templates require a person to create a bundle and set the anchor date.
+- Manual templates require a person to create a card and set the anchor date.
 - Generated tasks inherit instructions, required links, required files,
   assignee defaults, and tags.
 - The created workflow appears immediately in active workflows.
@@ -348,9 +348,9 @@ forward without reconstructing state from memory.
 
 Platform actions:
 
-- Open a bundle from the dashboard.
+- Open a card from the dashboard.
 - Review progress, stage, anchor date, links, references, tasks, and comments.
-- Save bundle links such as Luma, Meetup, YouTube, Mailchimp, sponsorship doc,
+- Save card links such as Luma, Meetup, YouTube, Mailchimp, sponsorship doc,
   publisher, Dropbox, Airtable, or website URL.
 - Complete active tasks from the checklist.
 
@@ -359,7 +359,7 @@ Acceptance criteria:
 - Workflow detail shows stage, progress, next due task, overdue count, and
   waiting count.
 - Workflow links are shown above the checklist.
-- Required bundle links are visibly empty until filled.
+- Required card links are visibly empty until filled.
 - Process docs are available as contextual instruction icons on the relevant
   tasks.
 - Completed tasks are retained for audit but do not distract from active work.
@@ -416,7 +416,7 @@ Acceptance criteria:
 - The app blocks completion when required proof is missing.
 - The app tells the user which proof is missing.
 - Proof is visible from both the task row and workflow detail.
-- Completing a proof task updates the related bundle link when applicable.
+- Completing a proof task updates the related card link when applicable.
 - Completion history includes user and timestamp.
 
 ### JTBD 6: Handle recurring operations without remembering schedules
@@ -586,7 +586,7 @@ Examples:
 
 Acceptance criteria:
 
-- Completing a milestone can move the bundle to the next stage.
+- Completing a milestone can move the card to the next stage.
 - Stage changes create or surface the next group of tasks.
 - Stage changes are logged.
 - Manual stage override requires a comment.
@@ -637,17 +637,17 @@ Task close rules:
 - If `requiresFile` is true, at least one file must be attached.
 - If the task is waiting, it must be moved back to todo or done before closure.
 - If the task is a milestone with `stageOnComplete`, completing it changes or
-  proposes the bundle stage.
-- If the task produces a bundle link, completion should sync the task link into
-  the bundle link slot.
+  proposes the card stage.
+- If the task produces a card link, completion should sync the task link into
+  the card link slot.
 
-## Workflow Bundle Behavior
+## Workflow Card Behavior
 
-A bundle is the operator's main unit of work. It represents a concrete instance
+A card is the operator's main unit of work. It represents a concrete instance
 of a repeatable operation, such as "Newsletter #180", "Podcast with guest X",
 "Monthly tax report May 2026", or "Book of the Week: book Y".
 
-Every active bundle should show:
+Every active card should show:
 
 - title;
 - type and tags;
@@ -666,12 +666,12 @@ Every active bundle should show:
 - done task history;
 - comments and audit events.
 
-Bundle actions:
+Card actions:
 
 - Start from template.
 - Open from dashboard.
 - Edit links.
-- Add an ad-hoc task to the bundle.
+- Add an ad-hoc task to the card.
 - Mark task done.
 - Mark task waiting.
 - Add comment.
@@ -683,10 +683,10 @@ Acceptance criteria:
 
 - The operator does not need to switch to the generic task list to complete a
   workflow task.
-- The operator can see why a bundle is not done.
-- A bundle cannot be marked done while active tasks remain unfinished.
-- A bundle cannot be marked done while required links/files are missing.
-- A done bundle can be archived but remains searchable.
+- The operator can see why a card is not done.
+- A card cannot be marked done while active tasks remain unfinished.
+- A card cannot be marked done while required links/files are missing.
+- A done card can be archived but remains searchable.
 
 ## Platform Screens
 
@@ -724,7 +724,7 @@ Must include:
 - Date and date-range filters.
 - Status/state filters.
 - Assignee filter.
-- Bundle filter.
+- Card filter.
 - Source filter.
 - Search.
 - Inline required link field.
@@ -760,7 +760,7 @@ Must include:
 
 Important clicks:
 
-- Save bundle link.
+- Save card link.
 - Save task link.
 - Upload file.
 - Mark done.
@@ -977,7 +977,7 @@ Current state:
 
 Product response:
 
-- Bundle risk indicators.
+- Card risk indicators.
 - Missing artifact panel.
 - Stage-aware next actions.
 - Required evidence before completion.
@@ -1009,7 +1009,7 @@ Product response:
 ### Task acceptance criteria
 
 - User can create ad-hoc task with description, due date, assignee, source, and
-  optional bundle.
+  optional card.
 - User can edit description, due date, assignee, comment, link, and state.
 - User can mark task done.
 - User can reopen task.
@@ -1066,7 +1066,7 @@ Product response:
   changes, link saves, file uploads, and stage changes are recorded.
 - Audit entries include actor and timestamp.
 - Done and archived work remains searchable.
-- Bundle history can explain why a workflow was delayed.
+- Card history can explain why a workflow was delayed.
 
 ## V1 Product Shape
 
@@ -1104,7 +1104,7 @@ The first meaningful version should not be "docs plus search". It should be:
 
 - Add missing evidence panel.
 - Add active/waiting/done task grouping.
-- Add ad-hoc task-to-bundle attachment.
+- Add ad-hoc task-to-card attachment.
 - Add workflow-level "cannot close because..." checks.
 - Add audit trail.
 

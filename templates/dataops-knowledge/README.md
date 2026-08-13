@@ -47,7 +47,7 @@ The intended model:
 - the backup job compares the current commit SHA to
   `s3://$DATAOPS_KNOWLEDGE_BACKUP_BUCKET/$DATAOPS_KNOWLEDGE_BACKUP_PREFIX/latest/manifest.json`;
 - if the SHA matches, the job exits without uploading;
-- if the SHA changed, the job uploads a Git archive zip, a full Git bundle, a
+- if the SHA changed, the job uploads a Git archive zip, a full Git card, a
   manifest, and checksums.
 
 Required repository variables in the private knowledge repo:
@@ -73,5 +73,5 @@ arn:aws:s3:::<backup-bucket>/<prefix>/*
 Restore options:
 
 - inspect files by downloading the latest zip archive;
-- restore full Git history with `git clone dataops-knowledge-<sha>.bundle`;
+- restore full Git history with `git clone dataops-knowledge-<sha>.card`;
 - verify downloaded objects against `checksums.sha256` and `manifest.json`.

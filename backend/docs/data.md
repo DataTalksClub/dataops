@@ -143,11 +143,11 @@ Columns: `Date, Task, Notes, Status, Date finished, Process document title, Proc
   emoji: string | null,    // e.g. "📰", "🎙️"
   tags: string[],          // e.g. ["Newsletter"]
   defaultAssigneeId: string | null,
-  references: [{ name: string, url: string }],       // fixed links for every bundle
-  bundleLinkDefinitions: [{ name: string }],          // link slots to fill per bundle
+  references: [{ name: string, url: string }],       // fixed links for every card
+  cardLinkDefinitions: [{ name: string }],          // link slots to fill per card
   triggerType: "automatic" | "manual",
   triggerSchedule: string | null,   // cron expression
-  triggerLeadDays: number | null,   // days before anchor to create bundle
+  triggerLeadDays: number | null,   // days before anchor to create card
   taskDefinitions: [
     {
       refId: string,       // e.g. "collect-topics"
@@ -167,7 +167,7 @@ Columns: `Date, Task, Notes, Status, Date finished, Process document title, Proc
 
 Templates are flat: one level of task definitions. No nested checklists or sub-steps.
 
-### Bundles
+### Cards
 
 ```javascript
 {
@@ -179,7 +179,7 @@ Templates are flat: one level of task definitions. No nested checklists or sub-s
   status: "active" | "archived",
   emoji: string | null,    // inherited from template
   references: [{ name: string, url: string }],  // from template, read-only
-  bundleLinks: [{ name: string, url: string }],  // fillable slots
+  cardLinks: [{ name: string, url: string }],  // fillable slots
   tags: string[],          // inherited from template
   createdAt: ISO timestamp,
   updatedAt: ISO timestamp
@@ -199,7 +199,7 @@ Templates are flat: one level of task definitions. No nested checklists or sub-s
   link: string | null,     // URL deliverable (e.g. Luma event link)
   requiredLinkName: string | null, // if set, task needs link before completion
   assigneeId: string | null,
-  bundleId: UUID | null,   // link to bundle
+  cardId: UUID | null,   // link to card
   source: "manual" | "telegram" | "email" | "recurring" | "template",
   templateTaskRef: string | null,  // refId from template
   tags: string[],
@@ -243,26 +243,26 @@ Templates are flat: one level of task definitions. No nested checklists or sub-s
 
 **offsetDays derivation**: Trello templates don't have explicit day offsets. The migration script assigns offsets based on checklist ordering (early checklists get negative offsets, later ones get 0 or positive). This requires manual review.
 
-### 4.2 Trello Cards (non-template) -> Bundles + Tasks
+### 4.2 Trello Cards (non-template) -> Cards + Tasks
 
-Each non-template Trello card in active lists (Preparation, Announced, After event) maps to a Bundle, with its checklist items becoming Tasks.
+Each non-template Trello card in active lists (Preparation, Announced, After event) maps to a Card, with its checklist items becoming Tasks.
 
 | Trello Card | App Entity |
 |-------------|-----------|
-| Card | Bundle |
-| Card name | Bundle `title` |
-| Card due date or date from name | Bundle `anchorDate` |
-| Card description | Bundle `description` |
-| Card attachments (non-Trello URLs) | Bundle `bundleLinks` |
-| Card label emoji + tag | Bundle `emoji` + `tags` |
-| Checklist items | Tasks (linked via `bundleId`) |
+| Card | Card |
+| Card name | Card `title` |
+| Card due date or date from name | Card `anchorDate` |
+| Card description | Card `description` |
+| Card attachments (non-Trello URLs) | Card `cardLinks` |
+| Card label emoji + tag | Card `emoji` + `tags` |
+| Checklist items | Tasks (linked via `cardId`) |
 | Item text | Task `description` |
 | Item state (complete/incomplete) | Task `status` (done/todo) |
 | Item markdown links | Task `instructionsUrl` (first link extracted) |
 
 ### 4.3 CSV Tasks -> Tasks (standalone)
 
-CSV tasks map directly to standalone tasks (no bundle):
+CSV tasks map directly to standalone tasks (no card):
 
 | CSV Column | Task Field |
 |-----------|-----------|
@@ -271,7 +271,7 @@ CSV tasks map directly to standalone tasks (no bundle):
 | Notes | `comment` |
 | Status (NEW) | `status` = "todo" |
 | Status (DONE) | `status` = "done" |
-| (no bundle) | `bundleId` = null |
+| (no card) | `cardId` = null |
 | "manual" | `source` = "manual" |
 
 ### 4.4 Recurring Tasks (from CSV patterns) -> Recurring Configs
@@ -334,7 +334,7 @@ The app now has a dedicated `instructionsUrl` field on tasks. The migration extr
 
 ### 5.6 Card Description vs Task Comment
 
-Trello card descriptions contain extensive links to Google Docs (overview docs, process docs). These map to the bundle's `references` array and the bundle's `description` field.
+Trello card descriptions contain extensive links to Google Docs (overview docs, process docs). These map to the card's `references` array and the card's `description` field.
 
 ### 5.7 Done Cards (Historical Data)
 

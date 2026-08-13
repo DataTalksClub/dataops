@@ -5,7 +5,7 @@ DataOps is the combined DataTalks.Club operations portal.
 Version 1 focuses on operations docs and tasks:
 
 - process docs, SOPs, templates, references, playbooks, prompts, and search
-- task workflows, bundles, recurring work, required links, and execution state
+- task workflows, cards, recurring work, required links, and execution state
 - AWS Lambda deployment with GitHub Actions OIDC
 
 The deployed V1 app is the DataTalks.Club operations portal for

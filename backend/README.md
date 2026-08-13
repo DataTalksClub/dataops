@@ -1,7 +1,7 @@
 # DataOps Backend
 
 Single TypeScript backend for DataTalks.Club operations: tasks, workflow
-bundles, recurring work, notifications, files, artifacts, assistant jobs, docs
+cards, recurring work, notifications, files, artifacts, assistant jobs, docs
 content API, search, and portal/auth.
 
 This directory is an internal DataOps runtime surface. Operators should

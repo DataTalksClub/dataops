@@ -27,7 +27,7 @@ AWS-native backups and portable exports.
 Before any restore, make sure both layers are active:
 
 1. **DynamoDB PITR** - point-in-time recovery is enabled on all durable
-   execution tables (tasks, bundles, templates, users, files, notifications).
+   execution tables (tasks, cards, templates, users, files, notifications).
    This protects against accidental deletes and bad updates.
 2. **Portable export archive** - an application-level JSONL snapshot bundled as
    a retained offsite archive that does not depend on DynamoDB internals. This
@@ -44,7 +44,7 @@ aws dynamodb create-backup \
   --backup-name dataops-v1-tasks-pre-migration-$(date +%Y%m%d%H%M%S)
 ```
 
-Repeat for each durable table: `bundles`, `templates`, `users`, `files`,
+Repeat for each durable table: `cards`, `templates`, `users`, `files`,
 `notifications`. Tag or name backups with the environment, date, and reason.
 
 ## Portable Export
@@ -69,7 +69,7 @@ The export produces:
 manifest.json
 users.jsonl
 tasks.jsonl
-bundles.jsonl
+cards.jsonl
 templates.jsonl
 recurring_configs.jsonl
 files.jsonl
@@ -123,7 +123,7 @@ Output:
   "wouldWrite": {
     "users": 3,
     "tasks": 12,
-    "bundles": 2,
+    "cards": 2,
     ...
   },
   "skipped": {}
@@ -200,7 +200,7 @@ Run this sequence end-to-end before production data becomes critical:
 ### Smoke Checks After Restore
 
 - List today's tasks (`GET /api/tasks?date=<today>`)
-- Open a workflow bundle (`GET /api/bundles/:id`)
+- Open a workflow card (`GET /api/cards/:id`)
 - Instantiate a workflow template
 - Generate recurring tasks
 - List due notifications (`GET /api/notifications`)

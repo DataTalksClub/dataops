@@ -214,7 +214,7 @@ knowledge should remain in the private repository.
 The private knowledge repository should back itself up to private S3 once per
 day. The backup job should compare the current Git commit SHA to the latest S3
 backup manifest and upload a new archive only when the commit changed. Each
-backup should include a Git archive zip for quick inspection, a Git bundle for
+backup should include a Git archive zip for quick inspection, a Git card for
 full-history restore, a JSON manifest, and SHA-256 checksums.
 
 ### 3. `DataTalksClub/aws-infra`
@@ -289,7 +289,7 @@ s3://dtc-dataops-artifacts/
         logs/
   files/
     tasks/{task_id}/
-    bundles/{bundle_id}/
+    cards/{card_id}/
   reports/
     finance/
   exports/
@@ -304,7 +304,7 @@ DataOps should store metadata in DynamoDB:
 - artifact type;
 - URL or storage path;
 - task ID;
-- bundle ID;
+- card ID;
 - assistant job ID;
 - owner;
 - status;
@@ -336,7 +336,7 @@ remain outside Git.
 | Invoices/receipts/statements | Dropbox/S3/finance system | Private finance records |
 | Tax report zip | Dropbox/S3, linked in task | Private finance artifact |
 | Runtime tasks | DynamoDB | Execution state |
-| Runtime workflow bundles | DynamoDB | Execution state |
+| Runtime workflow cards | DynamoDB | Execution state |
 | Recurring configs | DynamoDB with optional Git seed | Runtime schedule state |
 | Audit history | DynamoDB | Execution history |
 | Domain/OIDC/IAM | `aws-infra` | Shared infrastructure ownership |
@@ -412,7 +412,7 @@ s3://dtc-dataops-artifacts/assistant-jobs/podcast/{job_id}/
     run.log
 ```
 
-The official workflow bundle stores:
+The official workflow card stores:
 
 - guest name;
 - topic;
@@ -471,7 +471,7 @@ id: workflow.podcast
 name: Podcast
 trigger: manual
 anchor: stream_date
-bundle_links:
+card_links:
   - guest_email
   - podcast_document
   - luma
@@ -619,9 +619,9 @@ Settings
 
 How that maps internally:
 
-- Home reads DynamoDB tasks, bundles, reminders, notifications, doc health, and
+- Home reads DynamoDB tasks, cards, reminders, notifications, doc health, and
   assistant jobs.
-- Workflows read DynamoDB bundles and Git-backed workflow definitions.
+- Workflows read DynamoDB cards and Git-backed workflow definitions.
 - Tasks read DynamoDB tasks and Git-backed instruction docs.
 - Inbox reads DynamoDB/S3 intake records.
 - Assistants read DynamoDB jobs, S3 files, and Git-backed prompts.

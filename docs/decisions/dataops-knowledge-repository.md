@@ -105,8 +105,8 @@ portal edits to the correct repository.
 | Product/runtime code | `DataTalksClub/dataops` public repo | Portal frontend, Lambda APIs, work-engine code, assistant service code, tests, app deployment, schemas, sanitized local development seeds, public-safe product architecture docs | Canonical private process repo after migration, raw operational docs/templates/prompts, private artifacts, long-lived runtime records |
 | Process knowledge | `DataTalksClub/dataops-knowledge` private repo | SOPs, references, playbooks, communication templates, workflow templates, assistant prompts/process instructions, small doc images, validation schemas, lightweight generated indexes | Runtime task instances, audit events, assistant jobs, generated documents, raw recordings, invoices, DynamoDB exports |
 | Shared infrastructure | `DataTalksClub/aws-infra` | Account-level OIDC, IAM, Route 53, certificates, shared buckets, shared deployment wrappers | App source, app-specific Lambda code, process content |
-| Runtime execution state | DynamoDB tables owned by the `dataops-v1` stack | Tasks, bundles, reminders, runtime templates loaded from Git, recurring configs, file metadata, artifact metadata, assistant job metadata, audit events | Canonical process docs and template source files |
-| Private/bulky artifacts | S3, Dropbox, Google Drive, or equivalent private storage | Raw uploads, recordings, transcripts, invoices, receipts, guest-specific podcast drafts, generated assistant outputs, export bundles | Public process knowledge, app code |
+| Runtime execution state | DynamoDB tables owned by the `dataops-v1` stack | Tasks, cards, reminders, runtime templates loaded from Git, recurring configs, file metadata, artifact metadata, assistant job metadata, audit events | Canonical process docs and template source files |
+| Private/bulky artifacts | S3, Dropbox, Google Drive, or equivalent private storage | Raw uploads, recordings, transcripts, invoices, receipts, guest-specific podcast drafts, generated assistant outputs, export cards | Public process knowledge, app code |
 
 ## Knowledge Repository Contents
 
@@ -164,7 +164,7 @@ Rules:
   content-relative image layout selected during migration.
 - Lightweight indexes and registries can live under `indexes/` when they are
   either maintained metadata or deterministic generated files.
-- Large generated indexes, search bundles, and runtime caches remain generated
+- Large generated indexes, search cards, and runtime caches remain generated
   artifacts and are not hand-edited.
 - The repository is private by default. Curated examples may be made public
   only after a separate data review confirms they are safe, useful, and
@@ -187,7 +187,7 @@ Each template should include:
 
 - stable `id`, `type`, `name`, `schema_version`, and optional aliases
 - trigger and anchor-date model
-- bundle link definitions
+- card link definitions
 - phases and task stage mapping
 - task list with stable task IDs
 - offsets or scheduling rules
@@ -214,7 +214,7 @@ Runtime behavior:
 - DynamoDB may cache the current runtime template version for fast execution and
   historical task creation.
 - DynamoDB is not the source of truth for canonical template definitions.
-- Runtime tasks and bundles should store the template ID and template version
+- Runtime tasks and cards should store the template ID and template version
   used to create them so old executions remain explainable after template edits.
 - A full DynamoDB rebuild must be able to restore template definitions from Git
   plus runtime execution exports.
@@ -265,7 +265,7 @@ in private artifact storage with DynamoDB metadata.
 | `content/tasks/templates/` | Convert then move | `dataops-knowledge/workflow-templates/*.yaml` | Current Markdown remains transitional only until private YAML sources exist. Generate Markdown views only if needed. |
 | `content/images/` | Move after review | `dataops-knowledge/images/` or content-relative images | Keep SOP screenshots private by default. Copy public screenshots only after explicit review. |
 | `content/prompts/` | Move after review | `dataops-knowledge/assistant-prompts/` or `content/prompts/` | Process prompts are private operational knowledge, not runtime code. |
-| `content/indexes/` | Split | `dataops-knowledge/indexes/` for maintained registries; CI artifacts for generated search bundles | Do not hand-edit generated search indexes. |
+| `content/indexes/` | Split | `dataops-knowledge/indexes/` for maintained registries; CI artifacts for generated search cards | Do not hand-edit generated search indexes. |
 | `assistants/podcast/process/` | Move or duplicate after review | `dataops-knowledge/assistant-process/podcast/` | Reusable process knowledge. Code keeps references/config to load it. |
 | `assistants/podcast/templates/` | Move or duplicate after review | `dataops-knowledge/assistant-process/podcast/` or `assistant-prompts/podcast/` | Guest-intake and reusable templates are knowledge. |
 | `assistants/podcast/knowledge_base/` | Curate before moving | `dataops-knowledge/assistant-process/podcast/` or `examples/podcast/` | Only stable, reviewed, approved summaries/taxonomies move. Episode-specific or private artifact material stays external. |
@@ -337,7 +337,7 @@ Rollback and revert:
 - Rollback uses Git revert, not manual database repair.
 - The portal should expose recent knowledge commits and their validation status.
 - Runtime template sync should keep old template versions available for
-  existing task bundles.
+  existing task cards.
 
 ## Knowledge Repository CI
 
@@ -420,7 +420,7 @@ Create these after ADR acceptance:
    links, image checks, workflow-template validation, prompt validation, and
    search-index generation.
 3. Add daily private S3 backup for the knowledge repo using GitHub Actions OIDC,
-   a Git archive zip, a Git bundle, manifests, checksums, and skip-if-unchanged
+   a Git archive zip, a Git card, manifests, checksums, and skip-if-unchanged
    behavior based on the latest S3 manifest.
 4. Run data-safety review for `content/`, `content/images/`, `content/prompts/`,
    `content/tasks/templates/`, and assistant knowledge/example paths.

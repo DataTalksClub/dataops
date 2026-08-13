@@ -9,7 +9,7 @@ The combined project should let the team:
 
 - Find the private SOP or template needed to do operational work through the
   authenticated portal.
-- Turn recurring playbooks into task bundles.
+- Turn recurring playbooks into task cards.
 - Execute tasks from one unified task list.
 - Collect raw operational inputs from Telegram, email, files, and manual entry.
 - Run assistants that draft operational artifacts, starting with podcast prep
@@ -28,9 +28,9 @@ Role in the combined project: task execution system.
 
 Current capabilities:
 
-- Task, template, bundle, recurring-task, file, user, auth, email, Telegram, and
+- Task, template, card, recurring-task, file, user, auth, email, Telegram, and
   cron routes.
-- DynamoDB-backed data model for templates, bundles, tasks, recurring configs,
+- DynamoDB-backed data model for templates, cards, tasks, recurring configs,
   users, files, sessions, and notifications.
 - Vanilla JavaScript SPA served by a Lambda-style backend.
 - Local dev with dynalite and Node.js.
@@ -39,8 +39,8 @@ Current capabilities:
 Important concepts to retain:
 
 - Templates define repeatable workflows.
-- Bundles instantiate templates for concrete dates or events.
-- Tasks appear both inside bundles and in a unified task list.
+- Cards instantiate templates for concrete dates or events.
+- Tasks appear both inside cards and in a unified task list.
 - Tasks can carry instruction URLs, required links, file requirements, tags, and
   assignees.
 - Recurring configs generate routine operational tasks automatically.
@@ -90,14 +90,14 @@ Important concepts to retain:
 - Raw inputs go into an inbox before processing.
 - Processing is an explicit job with progress, logs, and retry behavior.
 - Generated podcast documents should be reviewed before becoming official
-  bundle artifacts.
+  card artifacts.
 
 ## Product Shape
 
 The shared product should be one internal DataTalks.Club Operations app with
 four primary surfaces:
 
-1. **Work**: tasks, bundles, recurring operations, assignments, due dates,
+1. **Work**: tasks, cards, recurring operations, assignments, due dates,
    execution status, and links/files needed to complete work.
 2. **Knowledge**: authenticated in-app access to private SOPs, templates,
    references, playbooks, prompts, screenshots, search, editing, linting, and
@@ -152,9 +152,9 @@ Additional fields to support the integration:
 - `taskDefinitions[].validation`: optional completion check copied or linked
   from the SOP.
 
-### Bundle
+### Card
 
-Bundles remain task-side execution records, but should link back to the docs
+Cards remain task-side execution records, but should link back to the docs
 that explain the workflow.
 
 Additional fields:
@@ -162,7 +162,7 @@ Additional fields:
 - `sourceTemplateDocId`
 - `relatedDocIds`
 - `stage`
-- `bundleLinks`
+- `cardLinks`
 - `references`
 
 ### Task
@@ -189,7 +189,7 @@ Fields:
 - `status`: `queued`, `running`, `needs-review`, `done`, or `failed`
 - `inputRefs`
 - `outputArtifactIds`
-- `bundleId`
+- `cardId`
 - `taskId`
 - `logPath`
 - `engine`
@@ -209,7 +209,7 @@ Fields:
 - `title`
 - `url`
 - `storagePath`
-- `bundleId`
+- `cardId`
 - `taskId`
 - `assistantJobId`
 - `status`
@@ -221,7 +221,7 @@ Fields:
 Use one product shell with shared navigation and auth, but keep storage
 boundaries clear.
 
-- DynamoDB stores operational execution state: users, tasks, bundles, recurring
+- DynamoDB stores operational execution state: users, tasks, cards, recurring
   configs, notifications, sessions, assistant jobs, artifacts, and files
   metadata.
 - Private GitHub markdown stores operational knowledge: SOPs, templates,
@@ -243,7 +243,7 @@ Avoid in the first merge:
 
 - Copying docs into DynamoDB as canonical records.
 - Moving task state into markdown.
-- Introducing a heavy workflow engine before the task/bundle model proves
+- Introducing a heavy workflow engine before the task/card model proves
   insufficient.
 - Replacing both frontends with a new framework before product integration is
   validated.
@@ -276,12 +276,12 @@ Deliverables:
 - Unified login/session behavior.
 - Consistent layout, mobile behavior, dark mode, and status messaging.
 - Link from tasks to instruction docs.
-- Link from docs/checklists/playbooks to task templates and bundles.
+- Link from docs/checklists/playbooks to task templates and cards.
 
 Acceptance:
 
 - A user can open a task and jump to its SOP.
-- A user can open an SOP and see related templates or active bundles.
+- A user can open an SOP and see related templates or active cards.
 - No separate mental model is required for "task app" versus "docs app".
 
 ### 3. Document Registry API
@@ -324,16 +324,16 @@ Acceptance:
 
 Deliverables:
 
-- Search across docs, templates, bundles, and tasks.
+- Search across docs, templates, cards, and tasks.
 - Filters for doc type, task status, domain, tag, system, assignee, due date, and
-  bundle/template.
+  card/template.
 - Search result cards that show whether the result is knowledge or executable
   work.
 
 Acceptance:
 
 - Searching for "Mailchimp newsletter" can surface SOPs, templates, active
-  tasks, and current bundles in one place.
+  tasks, and current cards in one place.
 
 ### 6. Operations Dashboard
 
@@ -342,7 +342,7 @@ Deliverables:
 - Today view.
 - Upcoming view.
 - Overdue view.
-- Active bundles by stage.
+- Active cards by stage.
 - Recurring task health.
 - Content lint/status summary for docs tied to active work.
 
@@ -357,14 +357,14 @@ Deliverables:
 - Bring `../podcast-assistant` into the portal as an assistant module.
 - Store assistant jobs in the portal.
 - Store raw inputs, generated outputs, logs, and review state.
-- Attach approved outputs to bundles as artifacts.
+- Attach approved outputs to cards as artifacts.
 - Preserve Telegram intake and progress reporting.
 
 Acceptance:
 
 - Podcast raw material can be submitted from Telegram or the portal.
 - A podcast document draft can be generated, reviewed, approved, and attached to
-  a Podcast bundle.
+  a Podcast card.
 
 ### 8. Migration
 
@@ -442,7 +442,7 @@ Tasks:
 - Add `instructionDocId` and related doc fields to templates/tasks.
 - Create migration/sync script for selected workflows.
 - Import top-priority templates.
-- Add UI links between templates, bundles, tasks, and docs.
+- Add UI links between templates, cards, tasks, and docs.
 
 ### Milestone 3: Unified Operator Experience
 
@@ -451,7 +451,7 @@ Outcome: daily operations happen from one product shell.
 Tasks:
 
 - Merge navigation and session handling.
-- Build Today, Upcoming, Overdue, and Active Bundles views.
+- Build Today, Upcoming, Overdue, and Active Cards views.
 - Add doc lint/status indicators where docs are used by active work.
 - Add end-to-end tests for core workflows.
 
@@ -463,7 +463,7 @@ Tasks:
 
 - Create template-from-doc flow.
 - Add review and publish flow for generated templates.
-- Wire recurring configs to template/bundle creation.
+- Wire recurring configs to template/card creation.
 - Add notifications for overdue and blocked work.
 
 ### Milestone 5: Cutover

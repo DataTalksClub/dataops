@@ -75,7 +75,7 @@ Use it for:
 ## S3 Versioning
 
 Use S3 versioning for buckets that store uploaded files, generated artifacts, or
-export bundles.
+export cards.
 
 DynamoDB records should reference S3 objects by `storage_uri`, checksum, and
 metadata. DynamoDB shouldn't store the file binaries.
@@ -128,7 +128,7 @@ Required archive layout:
 manifest.json
 users.jsonl
 tasks.jsonl
-bundles.jsonl
+cards.jsonl
 templates.jsonl
 recurring_configs.jsonl
 files.jsonl
@@ -226,7 +226,7 @@ Portable export includes metadata, not binaries.
 File and artifact records should include:
 
 - `file_id` or `artifact_id`
-- related task, bundle, or assistant job IDs
+- related task, card, or assistant job IDs
 - status/review metadata for artifacts
 - storage provider
 - `storage_uri`
@@ -261,17 +261,17 @@ The validator must check:
 
 Relationship checks:
 
-- every task `bundle_id` references an exported bundle or is empty
+- every task `card_id` references an exported card or is empty
 - every task `assignee_id` references an exported user or is empty
 - every task `template_id` references an exported template or is empty
 - every file `task_id` references an exported task
-- every artifact `task_id`, `bundle_id`, and `file_id` references an entity
+- every artifact `task_id`, `card_id`, and `file_id` references an entity
   from the same export or is empty
 - every artifact `assistant_job_id` references an exported assistant job or is
   empty
-- every assistant job `task_id`, `bundle_id`, `requested_by`,
+- every assistant job `task_id`, `card_id`, `requested_by`,
   `output_artifact_ids`, and `retry_of_job_id` references an exported entity or
-  is empty, and each job must reference at least one task or bundle
+  is empty, and each job must reference at least one task or card
 - every audit event `assistant_job_id` and `actor_id` references an exported
   entity or is empty
 - every notification relation references an exported entity or is empty
@@ -296,7 +296,7 @@ The export structure should map cleanly to relational tables:
 
 - `users.jsonl` to `users`
 - `tasks.jsonl` to `tasks`
-- `bundles.jsonl` to `bundles`
+- `cards.jsonl` to `cards`
 - `templates.jsonl` to `templates`
 - `recurring_configs.jsonl` to `recurring_configs`
 - `files.jsonl` to `files`
@@ -325,7 +325,7 @@ Run a restore drill before relying on production execution data:
 Minimum smoke checks:
 
 - list today's tasks
-- open a workflow bundle
+- open a workflow card
 - instantiate a template
 - generate recurring tasks
 - list due notifications

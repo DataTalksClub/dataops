@@ -27,7 +27,7 @@ connected to the portal.
 This schema is for runtime state:
 
 - tasks
-- workflow bundles
+- workflow cards
 - reminders
 - notifications
 - runtime template instances
@@ -75,7 +75,7 @@ Store in DynamoDB:
 
 - operator users or portal actors
 - tasks and task status
-- workflow bundles
+- workflow cards
 - instantiated template metadata
 - recurring task configs
 - reminders and notifications
@@ -110,7 +110,7 @@ Table defaults:
 Environment variables:
 
 - `DATAOPS_TASKS_TABLE`
-- `DATAOPS_BUNDLES_TABLE`
+- `DATAOPS_CARDS_TABLE`
 - `DATAOPS_TEMPLATES_TABLE`
 - `DATAOPS_USERS_TABLE`
 - `DATAOPS_FILES_TABLE`
@@ -138,7 +138,7 @@ keeps the local defaults above. The Lambda handler auto-creates tables only in
 test/local mode or when `DATAOPS_AUTO_CREATE_TABLES=true`.
 
 The deployed SAM template declares stack-owned DynamoDB tables with names such
-as `${AWS::StackName}-tasks`, `${AWS::StackName}-bundles`, and
+as `${AWS::StackName}-tasks`, `${AWS::StackName}-cards`, and
 `${AWS::StackName}-files`. The private `WorkEngineFunction` receives those table
 names through the `DATAOPS_*_TABLE` environment variables and has table-scoped
 DynamoDB permissions for the actions used by the work-engine data layer.
@@ -149,7 +149,7 @@ Every exported entity needs a stable application-level ID.
 
 Required rules:
 
-- IDs are explicit fields such as `task_id`, `bundle_id`, and `template_id`.
+- IDs are explicit fields such as `task_id`, `card_id`, and `template_id`.
 - DynamoDB `PK` and `SK` are implementation details, not the public data model.
 - Exports may include source keys for traceability, but migrations can't depend
   on source keys only.
@@ -181,7 +181,7 @@ Application fields:
 - `required_link_name`
 - `requires_file`
 - `assignee_id`
-- `bundle_id`
+- `card_id`
 - `template_id`
 - `template_task_ref`
 - `recurring_config_id`
@@ -197,30 +197,30 @@ Current DynamoDB access patterns:
 - get task by ID
 - list tasks for a date
 - list tasks in a date range
-- list tasks by bundle
+- list tasks by card
 - list tasks by status
 
 Recommended indexes:
 
 - table key: `PK=TASK#{task_id}`, `SK=TASK#{task_id}`
 - `GSI-Date`: partition `date`, sort `status`
-- `GSI-Bundle`: partition `bundle_id`, sort `date`
+- `GSI-Card`: partition `card_id`, sort `date`
 - `GSI-Status`: partition `status`, sort `date`
 
-## Bundles Table
+## Cards Table
 
-Bundles represent workflow runs or operating packages.
+Cards represent workflow runs or operating packages.
 
 Examples:
 
 - podcast episode
 - newsletter issue
 - webinar
-- recurring operations bundle
+- recurring operations card
 
 Application fields:
 
-- `bundle_id`
+- `card_id`
 - `title`
 - `description`
 - `anchor_date`
@@ -228,14 +228,14 @@ Application fields:
 - `status`
 - `stage`
 - `references`
-- `bundle_links`
+- `card_links`
 - `tags`
 - `created_at`
 - `updated_at`
 
 Recommended key:
 
-- `PK=BUNDLE#{bundle_id}`, `SK=BUNDLE#{bundle_id}`
+- `PK=CARD#{card_id}`, `SK=CARD#{card_id}`
 
 Optional future indexes:
 
@@ -255,7 +255,7 @@ Application fields:
 - `tags`
 - `default_assignee_id`
 - `references`
-- `bundle_link_definitions`
+- `card_link_definitions`
 - `task_definitions`
 - `trigger_type`
 - `trigger_schedule`
@@ -274,7 +274,7 @@ Recommended key:
 
 ## Recurring Configs Table
 
-Recurring configs are schedules that create repeated tasks or bundles.
+Recurring configs are schedules that create repeated tasks or cards.
 
 Application fields:
 
@@ -319,13 +319,13 @@ Recommended key:
 
 ## Files Table
 
-Files store metadata for files attached to tasks or workflow bundles.
+Files store metadata for files attached to tasks or workflow cards.
 
 Application fields:
 
 - `file_id`
 - `task_id`
-- `bundle_id`
+- `card_id`
 - `filename`
 - `category`
 - `tags`
@@ -338,7 +338,7 @@ Recommended indexes:
 
 - table key: `PK=FILE#{file_id}`, `SK=FILE#{file_id}`
 - `GSI-Task`: partition `task_id`, sort `SK`
-- later: `GSI-Bundle`: partition `bundle_id`, sort `created_at`
+- later: `GSI-Card`: partition `card_id`, sort `created_at`
 
 The current prototype uses `storagePath`, but production should use
 `storage_uri` and make the storage backend explicit.
@@ -365,7 +365,7 @@ Application fields:
 - `visibility`
 - `data_class`
 - `task_id`
-- `bundle_id`
+- `card_id`
 - `assistant_job_id`
 - `file_id`
 - `source_type`
@@ -381,7 +381,7 @@ Recommended key:
 
 - `PK=ARTIFACT#{artifact_id}`, `SK=ARTIFACT#{artifact_id}`
 
-The V1 implementation filters artifacts by task, bundle, assistant job, file,
+The V1 implementation filters artifacts by task, card, assistant job, file,
 status, and type. Dedicated GSIs can be added when production access patterns
 and volume require them.
 
@@ -398,7 +398,7 @@ Application fields:
 - `message`
 - `user_id`
 - `task_id`
-- `bundle_id`
+- `card_id`
 - `template_id`
 - `due_at`
 - `dismissed`
@@ -435,7 +435,7 @@ Fields:
 - `title`
 - `status`
 - `task_id`
-- `bundle_id`
+- `card_id`
 - `requested_by`
 - `input_refs`
 - `output_artifact_ids`
@@ -454,7 +454,7 @@ Fields:
 
 Statuses are `draft`, `queued`, `running`, `waiting_approval`, `approved`,
 `rejected`, `retrying`, `succeeded`, `failed`, and `canceled`. Jobs must link to
-at least one task or bundle. Outputs link to artifact metadata through
+at least one task or card. Outputs link to artifact metadata through
 `output_artifact_ids`; raw transcripts and unbounded logs are artifact/log
 references, not DynamoDB blobs.
 
@@ -484,9 +484,9 @@ The schema must support:
 - tasks due in the next seven days
 - tasks by assignee
 - tasks by status
-- tasks by bundle
-- active bundles
-- bundles by stage
+- tasks by card
+- active cards
+- cards by stage
 - recurring configs due soon
 - unread or due notifications
 - task-linked file/artifact metadata
@@ -509,7 +509,7 @@ Postgres tables can map almost directly from the application entities:
 
 - `users`
 - `tasks`
-- `bundles`
+- `cards`
 - `templates`
 - `recurring_configs`
 - `files`

@@ -59,7 +59,7 @@ flowchart TB
 
   subgraph Backend[Portal backend — single TypeScript Lambda]
     Docs[docs domain<br/>content API · GitHub store · SOP engine · search]
-    Work[work domain<br/>tasks · bundles · templates · recurring · artifacts · files]
+    Work[work domain<br/>tasks · cards · templates · recurring · artifacts · files]
     Asst[assistant domain<br/>job orchestration]
     Plat[platform<br/>auth · notifications · cron · http · db · secrets]
   end
@@ -77,7 +77,7 @@ Unchanged from today:
 
 - **GitHub markdown is the source of truth for content.** UI edits commit
   directly via the GitHub Contents API; the Lambda keeps a `/tmp` cache.
-- **DynamoDB holds execution state** (tasks, bundles, templates, recurring,
+- **DynamoDB holds execution state** (tasks, cards, templates, recurring,
   artifacts, files, sessions, notifications).
 - **The frontend stays static vanilla JS**, served by the backend. No framework.
 - **Runtime secrets live in AWS Secrets Manager**, not GitHub Actions secrets.
@@ -94,7 +94,7 @@ through assistant-job records.
 backend/                 # single TS Lambda app  ←  work-engine/ + lambda-functions/ merged
   src/
     docs/                #   content API, GitHub store, SOP parse/lint, search wiring
-    work/                #   tasks, bundles, templates, recurring, artifacts, files
+    work/                #   tasks, cards, templates, recurring, artifacts, files
     assistant/           #   assistant-job orchestration (enqueue, status, review)
     platform/            #   auth, sessions, notifications, cron, http, db, secrets
     router.ts  handler.ts

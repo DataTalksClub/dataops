@@ -20,11 +20,11 @@ Notes on mapping to our data model:
   - Tags: Newsletter
   - Title: Weekly email #{NUMBER}
 - Anchor date: Newsletter publish day
-- Trigger: automatic, weekly. Create bundle 14 days before publish day (sponsor needs 2 weeks lead time)
+- Trigger: automatic, weekly. Create card 14 days before publish day (sponsor needs 2 weeks lead time)
 
 Weekly newsletter published via MailChimp. Includes sponsored content, book of the week feature, event announcements, podcast highlights, and articles.
 
-Bundle links:
+Card links:
 - Sponsorship document
 - Mailchimp newsletter
 - LinkedIn
@@ -80,9 +80,9 @@ Tasks (15):
 - Anchor date: Monday of event week (Mon-Fri)
 - Trigger: manual. Created about 21 days before the Monday anchor date after a candidate book/date exists and an author or publisher has agreed
 
-Weekly book feature where authors answer community questions and winners receive free copies. Runs Monday through Friday of the event week. The Monday anchor date drives all task offsets; bundle creation stays manual because each run depends on a confirmed author/book/date.
+Weekly book feature where authors answer community questions and winners receive free copies. Runs Monday through Friday of the event week. The Monday anchor date drives all task offsets; card creation stays manual because each run depends on a confirmed author/book/date.
 
-Bundle links:
+Card links:
 - Author email
 - Publisher or sponsor contact
 - Book or publisher source link
@@ -120,7 +120,7 @@ Tasks (21):
 | `announce-event-linkedin` | -7 | `pre-event-promotion` | Required `LinkedIn announcement` link or scheduled-post proof; `[HUMAN]` LinkedIn account action. |
 | `remind-author-about-event` | -7 | `pre-event-promotion` | Reminder sent with website link. If Slack invite is not accepted, mark waiting and set `followUpAt`. |
 | `ask-authors-share-event` | -6 | `pre-event-promotion` | Capture author-share proof if available; otherwise record waiting/follow-up. |
-| `announce-book-event-linkedin` | 0 | `event-week` | Required `LinkedIn announcement`; completion advances bundle stage to `announced`; `[HUMAN]` LinkedIn account action. |
+| `announce-book-event-linkedin` | 0 | `event-week` | Required `LinkedIn announcement`; completion advances card stage to `announced`; `[HUMAN]` LinkedIn account action. |
 | `comment-from-alexey-linkedin` | 0 | `event-week` | Comment proof or `[HUMAN]` note when Alexey must do it directly. |
 | `announce-book-event-twitter` | 0 | `event-week` | Required `X announcement` proof link. |
 | `invite-author-to-slack` | 0 | `event-week` | Confirm invite sent/accepted; waiting state if author has not joined. |
@@ -147,7 +147,7 @@ Tasks (21):
 
 Live podcast recording streamed on YouTube, then edited and published to Spotify and Apple Podcasts. Most complex Trello-derived reference with 40 tasks. The canonical executable DataOps workflow is `content/tasks/templates/podcast.md` and `work-engine/scripts/seed-templates.ts`; it intentionally keeps 42 task refs by making the Dropbox recording upload and Podcast audio move explicit runtime tasks.
 
-Bundle links:
+Card links:
 - Guest email
 - Podcast document
 - Luma
@@ -261,7 +261,7 @@ Tasks (40):
 
 Live webinar streamed on YouTube. Similar workflow to podcast but without the podcast-specific publishing steps.
 
-Bundle links:
+Card links:
 - Guest email
 - Luma
 - Meetup
@@ -348,7 +348,7 @@ Tasks (28):
 
 Live workshop streamed on YouTube. Can be sponsored. Similar to webinar but includes workshop document creation and potential sponsorship handling.
 
-Bundle links:
+Card links:
 - Workshop document
 - Guest email
 - Luma
@@ -443,7 +443,7 @@ Tasks (30):
 
 Pre-recorded video showcasing an open-source tool. The executable DataOps workflow keeps 14 task refs from the original Trello-derived OSS template and adds phase, stable process-doc IDs, proof gates, required runtime links, waiting/follow-up metadata, and stage transitions.
 
-Bundle links:
+Card links:
 - Guest email
 - Tool GitHub
 - Recording source
@@ -483,7 +483,7 @@ Tasks (14):
 - `editing-video` (-12): external-status proof that edit passed review.
 - `add-timecodes-youtube` (-11): external-status proof that timecodes/links are updated.
 - `ask-authors-review-codes` (-10): completion note required; waiting follow-up for author review, cuts, or missing links.
-- `schedule-youtube-video` (0): required link `YouTube`; milestone moves bundle to `after-event`.
+- `schedule-youtube-video` (0): required link `YouTube`; milestone moves card to `after-event`.
 - `tell-author-publish-date` (0): completion note/external status that author was notified.
 - `add-to-oss-playlist` (+1): external-status proof that playlist status is confirmed.
 - `ask-guest-share-recording` (+1): completion note required; waiting follow-up for guest share/recommendations.
@@ -504,7 +504,7 @@ Tasks (14):
 
 Free online course promotion. Focus is on marketing and community engagement rather than content creation (course content is prepared separately).
 
-Bundle links:
+Card links:
 - [Free courses page](https://datatalks.club/blog/guide-to-free-online-courses-at-datatalks-club.html)
 - [Playbook to promote courses](https://docs.google.com/document/d/1ENqjMNPzG4gVTdQzFeDfwyReRbrw2fe2f6AFHrirVBM/edit)
 
@@ -531,11 +531,11 @@ Tasks (8):
   - Tags: Social media
   - Title: Weekly posts
 - Anchor date: Week start (Monday)
-- Trigger: automatic, weekly. Create bundle on Friday for the following week
+- Trigger: automatic, weekly. Create card on Friday for the following week
 
 Weekly social media content schedule. One post per day, Monday through Friday.
 
-Bundle links:
+Card links:
 - Mailchimp Newsletter link
 - Sponsorship document
 
@@ -566,11 +566,11 @@ Tasks (5):
   - Tags: Tax, Finance
   - Title: Tax Report
 - Anchor date: First day of the month when the workflow is generated
-- Trigger: automatic, monthly. Create bundle at `0 9 1 * *` with `triggerLeadDays: 0` (month must close before report work begins)
+- Trigger: automatic, monthly. Create card at `0 9 1 * *` with `triggerLeadDays: 0` (month must close before report work begins)
 
 Monthly tax/bookkeeping report. Involves reviewing financials, cross-checking bank accounts, and preparing a report for the accountants.
 
-Bundle links:
+Card links:
 - Monthly report/spreadsheet
 - Accountant upload/share link
 - Accountant email thread
@@ -584,7 +584,7 @@ Runtime notes:
 - The runtime template keeps 9 stable task refs by splitting Finom and Revolut statement export into separate required-file tasks.
 - Required runtime proof is not stored in Git: month-specific report link, Finom statement file, Revolut statement file, tax ZIP file, accountant upload/share link, and accountant email thread are captured on the generated workflow.
 - Waiting work uses status `waiting` with `waitingFor`, `followUpAt`, and a comment; due follow-ups appear through existing `follow-up-due` notifications.
-- The final cleanup task moves the bundle to `done` only after proof gates and unresolved waiting follow-ups are clear.
+- The final cleanup task moves the card to `done` only after proof gates and unresolved waiting follow-ups are clear.
 
 Tasks (9):
 
@@ -629,7 +629,7 @@ Tasks (9):
 
 Short-form educational content published on Maven platform. Events are created on Maven (not Luma/Meetup), and video editing involves cutting recordings with ffmpeg.
 
-Bundle links:
+Card links:
 - Guest email
 - Maven
 - Youtube
@@ -663,7 +663,7 @@ Tasks (7):
 
 Regular office hours hosted by Alexey. Post-event work involves video processing, summarization, and Maven announcements.
 
-Bundle links:
+Card links:
 - Youtube
 - Summary Document
 
@@ -752,7 +752,7 @@ Many tasks are repeated (with minor variations) across multiple templates. These
 - Share email list with sponsor (same instructions doc)
 
 ### Required deliverables (links)
-Several tasks produce deliverables that must be captured as bundle links:
+Several tasks produce deliverables that must be captured as card links:
 - Create event on Luma -> requires filling Luma link
 - Create event on Meetup -> requires filling Meetup link
 - Create events on LinkedIn -> requires filling LinkedIn link

@@ -26,7 +26,7 @@ def test_podcast_job_dry_run_accepts_export_field_names() -> None:
     metadata = podcast_job_dry_run_metadata({
         "assistant_job_id": "assistant-job-export",
         "title": "Exported job",
-        "input_refs": [{"type": "bundle", "id": "bundle-1"}],
+        "input_refs": [{"type": "card", "id": "card-1"}],
     })
 
     assert metadata["assistant_job_id"] == "assistant-job-export"

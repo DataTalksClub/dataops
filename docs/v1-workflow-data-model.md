@@ -1,6 +1,6 @@
 ---
 title: "V1 Workflow Data Model"
-summary: "Shared workflow contract for DataOps V1 workflow definitions, runtime bundles, tasks, reminders, proof, and migration-safe references."
+summary: "Shared workflow contract for DataOps V1 workflow definitions, runtime cards, tasks, reminders, proof, and migration-safe references."
 doc_type: reference
 tags:
   - v1
@@ -22,7 +22,7 @@ related_docs:
 ## Summary
 
 DataOps V1 uses one shared workflow model for daily operations. A workflow
-definition describes repeatable work in Git. A workflow bundle is one runtime
+definition describes repeatable work in Git. A workflow card is one runtime
 execution of that definition in DynamoDB. Tasks, reminders, file metadata,
 artifact references, assistant job references, and audit event references all
 use stable application IDs so the data can be exported and later migrated.
@@ -42,7 +42,7 @@ Store in Git under `content/`:
 
 Store in DynamoDB:
 
-- runtime workflow bundles
+- runtime workflow cards
 - task instances and follow-up state
 - recurring configs
 - notifications/reminders
@@ -67,7 +67,7 @@ DynamoDB `PK` and `SK` are implementation details only.
 Required stable IDs:
 
 - `template_id`
-- `bundle_id`
+- `card_id`
 - `task_id`
 - `notification_id`
 - `file_id`
@@ -94,7 +94,7 @@ Fields:
 - `default_assignee_id`
 - `source_doc_ids`
 - `references`
-- `bundle_link_definitions`
+- `card_link_definitions`
 - `task_definitions`
 - `trigger_type`
 - `trigger_schedule`
@@ -143,14 +143,14 @@ that are not indexed by the content registry must be called out as external
 source references and keep a local path or URL in `references` until the
 registry supports that source.
 
-## Runtime Bundle
+## Runtime Card
 
-A workflow bundle is one runtime execution package, such as one event, report,
+A workflow card is one runtime execution package, such as one event, report,
 newsletter issue, or podcast episode.
 
 Fields:
 
-- `bundle_id`
+- `card_id`
 - `title`
 - `description`
 - `anchor_date`
@@ -158,7 +158,7 @@ Fields:
 - `status`
 - `stage`
 - `references`
-- `bundle_links`
+- `card_links`
 - `tags`
 - `artifact_refs`
 - `assistant_job_refs`
@@ -166,7 +166,7 @@ Fields:
 - `created_at`
 - `updated_at`
 
-Tasks point back to the bundle with `bundle_id`. Bundle-level `artifact_refs`
+Tasks point back to the card with `card_id`. Card-level `artifact_refs`
 are lightweight context pointers; the artifacts table is the durable source for
 artifact metadata and review state.
 
@@ -198,7 +198,7 @@ Fields:
 - `required_link_name`
 - `requires_file`
 - `assignee_id`
-- `bundle_id`
+- `card_id`
 - `template_id`
 - `template_task_ref`
 - `recurring_config_id`
@@ -231,8 +231,8 @@ Completion semantics:
 - `proof_requirement.type=url` requires `link`.
 - `proof_requirement.type=file` requires exported file metadata.
 - `proof_requirement.type=artifact` requires an approved artifact record
-  attached to the task, attached to the task's bundle, or referenced by
-  `artifact_refs` from the task or bundle.
+  attached to the task, attached to the task's card, or referenced by
+  `artifact_refs` from the task or card.
 - `proof_requirement.type=comment` requires `comment`.
 - `proof_requirement.type=external-status` requires `external_status`.
 
@@ -259,7 +259,7 @@ Fields:
 - `message`
 - `user_id`
 - `task_id`
-- `bundle_id`
+- `card_id`
 - `template_id`
 - `due_at`
 - `dismissed`
@@ -311,7 +311,7 @@ Fields:
 - `visibility` or `data_class`: `public`, `internal`, `private`, or
   `sensitive`
 - `task_id`
-- `bundle_id`
+- `card_id`
 - `assistant_job_id`
 - `file_id`
 - `source_type`: `manual-link`, `manual-upload`, `assistant-output`, `import`,
@@ -331,7 +331,7 @@ be represented by artifact metadata instead of committed as durable artifacts.
 ## Assistant Job References
 
 Assistant job references connect workflow state to assistant runs without
-embedding job internals into tasks or bundles.
+embedding job internals into tasks or cards.
 
 Fields:
 
@@ -341,11 +341,11 @@ Fields:
 
 Assistant job records hold the detailed lifecycle: `draft`, `queued`,
 `running`, `waiting_approval`, `approved`, `rejected`, `retrying`,
-`succeeded`, `failed`, and `canceled`. Jobs are linked to a task, bundle, or
+`succeeded`, `failed`, and `canceled`. Jobs are linked to a task, card, or
 both; output artifacts are linked through `output_artifact_ids` and the
 artifact table. Workflow screens show the lightweight refs so the operator can
 request help, see whether a job is waiting/running/failed/needs approval, and
-act on the next step without leaving the task or bundle context.
+act on the next step without leaving the task or card context.
 
 ## Audit Events
 
@@ -363,7 +363,7 @@ Fields:
 - `summary`
 - `created_at`
 
-Tasks and bundles may hold `audit_event_refs` for fast context, but the audit
+Tasks and cards may hold `audit_event_refs` for fast context, but the audit
 event table remains the durable history source once implemented.
 
 ## Migration Contract
@@ -377,7 +377,7 @@ Every durable workflow entity must export with:
 - no binary payloads
 - omitted entity markers for entities that are not implemented yet
 
-The V1 portable export includes `templates.jsonl`, `bundles.jsonl`,
+The V1 portable export includes `templates.jsonl`, `cards.jsonl`,
 `tasks.jsonl`, `notifications.jsonl`, `files.jsonl`, `artifacts.jsonl`,
 `assistant_jobs.jsonl`, and `audit_events.jsonl`. Omitted entity markers are
 reserved for durable entities that are not implemented yet.

@@ -49,7 +49,7 @@ The DataOps workspace has two runtime components in production:
 
 1. **Portal** (Python Lambda) - serves the frontend, docs/search APIs, and
    brokers `/work/api/*` to the work-engine.
-2. **Work engine** (TypeScript Lambda) - owns task, bundle, and notification
+2. **Work engine** (TypeScript Lambda) - owns task, card, and notification
    state in DynamoDB.
 
 For local development you run both together so the Operations Home dashboard
@@ -131,7 +131,7 @@ When `WORK_ENGINE_DEV_URL` is set, the portal local server intercepts all
 `/work/*` requests and proxies them to the work-engine dev server:
 
 - `/work/api/tasks` -> `http://127.0.0.1:3000/api/tasks`
-- `/work/api/bundles` -> `http://127.0.0.1:3000/api/bundles`
+- `/work/api/cards` -> `http://127.0.0.1:3000/api/cards`
 - `/work/health` -> `http://127.0.0.1:3000/api/health`
 
 This mirrors the production broker path without requiring a deployed Lambda.
@@ -278,7 +278,7 @@ npm --prefix work-engine run build
 ```
 
 Run E2E tests when the change affects operator flows, browser UI, route
-behavior, task lifecycle behavior, bundle behavior, exports, recurring tasks, or
+behavior, task lifecycle behavior, card behavior, exports, recurring tasks, or
 end-to-end workflow behavior:
 
 ```bash

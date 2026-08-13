@@ -106,8 +106,8 @@ tags:
 ## Purpose
 <!-- sop-section-start: references -->
 ## References
-<!-- sop-section-start: required-bundle-links -->
-## Required Bundle Links
+<!-- sop-section-start: required-card-links -->
+## Required Card Links
 <!-- sop-section-start: task-definitions -->
 ## Task Definitions
 

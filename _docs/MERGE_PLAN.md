@@ -12,7 +12,7 @@ and create clear integration points.
 Source systems:
 
 - `../dtc-operations`: process docs, SOP editor, search, Lambda docs app
-- `../datatasks`: task execution engine, templates, bundles, recurring work
+- `../datatasks`: task execution engine, templates, cards, recurring work
 - `../podcast-assistant`: Telegram intake and AI drafting for podcast prep
 
 ## Product Result
@@ -20,7 +20,7 @@ Source systems:
 The merged portal will have these top-level areas:
 
 - `Home`: today, overdue, active workflows, inbox, assistant jobs
-- `Work`: tasks, bundles, workflows, recurring work, assignments
+- `Work`: tasks, cards, workflows, recurring work, assignments
 - `Processes`: SOPs, templates, references, playbooks, prompts, lint status
 - `Assistants`: podcast assistant first, later process-doc and newsletter helpers
 - `Artifacts`: files, generated docs, event links, transcripts, invoices, reports
@@ -101,7 +101,7 @@ Do not introduce React or another frontend framework in the merge milestone.
 Use separate stores for separate truth:
 
 - GitHub markdown is the source of truth for process knowledge.
-- DynamoDB stores execution state: users, tasks, bundles, workflows, recurring
+- DynamoDB stores execution state: users, tasks, cards, workflows, recurring
   work, assistant jobs, artifacts, sessions, and notifications.
 - S3 or GitHub stores generated files depending on the artifact type.
 - Lambda `/tmp` remains cache only, not durable storage.
@@ -118,7 +118,7 @@ Then add indexed records for:
 
 - workflows
 - task templates
-- active bundles
+- active cards
 - tasks
 - artifacts
 - assistant outputs
@@ -191,7 +191,7 @@ Tasks:
 - Keep its TypeScript build, tests, and Playwright tests passing from that
   subdirectory.
 - Add an adapter contract between portal backend and work engine.
-- Expose tasks, templates, bundles, recurring configs, users, files, and
+- Expose tasks, templates, cards, recurring configs, users, files, and
   notifications as portal concepts.
 - Add `instructionDocId`, `instructionStepId`, `phase`, `systems`, and required
   artifact fields to the task/template model.
@@ -201,7 +201,7 @@ Validation:
 - `npm test`, `npm run typecheck`, and focused Playwright tests pass in
   `work-engine/`.
 - A task can link to a process doc by ID.
-- A bundle can show related process docs.
+- A card can show related process docs.
 
 ### Phase 3: Import Podcast Assistant
 
@@ -243,12 +243,12 @@ Tasks:
 
 Validation:
 
-- Create Podcast bundle.
+- Create Podcast card.
 - Generate tasks.
 - Open a task and jump to its SOP.
 - Run podcast assistant.
 - Approve generated podcast doc.
-- Attach artifact to bundle.
+- Attach artifact to card.
 - Complete required-link tasks only after outputs exist.
 
 ### Phase 5: Consolidate Backend

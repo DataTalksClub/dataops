@@ -52,7 +52,7 @@ The deployed stack is still the protected Python docs/full-app Lambda:
 - `lambda-functions/template.full.yaml` defines `DocsFullAppFunction` and
   Secrets Manager access.
 - `lambda-functions/template.full.yaml` declares the DataOps execution tables.
-  It covers task/bundle/template/user state, file metadata, artifact metadata,
+  It covers task/card/template/user state, file metadata, artifact metadata,
   notifications, and sessions.
 - Durable execution tables have point-in-time recovery and retain policies.
 - `lambda-functions/template.full.yaml` defines `WorkEngineFunction` as a
@@ -129,7 +129,7 @@ Execution data belongs in DynamoDB, not Markdown:
 
 - users
 - tasks
-- workflow bundles
+- workflow cards
 - workflow/runtime templates
 - recurring configs
 - notifications
@@ -153,7 +153,7 @@ Process knowledge stays in Git-backed Markdown:
 The current work-engine code expects these logical entities:
 
 - tasks
-- bundles
+- cards
 - templates
 - users
 - files metadata
@@ -182,7 +182,7 @@ auth model and local tests. It is not the shared production portal session
 source in V1. Production browser sessions are owned by the Python portal. The
 sessions table is tagged as `SessionState` and intentionally does not get the
 same point-in-time recovery requirement as durable execution-state tables such
-as tasks, bundles, templates, users, files, and notifications.
+as tasks, cards, templates, users, files, and notifications.
 
 `DataOpsArtifactsTable` is durable execution state for artifact metadata only.
 It receives point-in-time recovery and retain policies, and `WorkEngineFunction`
@@ -214,7 +214,7 @@ Export format:
 manifest.json
 users.jsonl
 tasks.jsonl
-bundles.jsonl
+cards.jsonl
 templates.jsonl
 recurring_configs.jsonl
 files.jsonl
@@ -250,8 +250,8 @@ Portable exports need a validation path:
 - validate manifest/schema version
 - verify counts and checksums
 - verify required fields
-- verify references such as task bundle ID, task assignee ID, task file ID,
-  artifact task/bundle/job IDs, and template references
+- verify references such as task card ID, task assignee ID, task file ID,
+  artifact task/card/job IDs, and template references
 - support dry-run import
 - write a restore report with invalid/skipped records
 - run smoke checks after staging restore.
@@ -259,7 +259,7 @@ Portable exports need a validation path:
 The minimum smoke checks after restore:
 
 - list today tasks
-- open a workflow bundle
+- open a workflow card
 - instantiate a workflow template
 - generate recurring tasks
 - show file/artifact metadata

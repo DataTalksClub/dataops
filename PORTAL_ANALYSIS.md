@@ -18,7 +18,7 @@ The portal should answer these operator questions:
 
 The product becomes an operations OS for DataTalks.Club:
 
-- Work: tasks, bundles, due dates, assignments, statuses, files, required
+- Work: tasks, cards, due dates, assignments, statuses, files, required
   links, and recurring work.
 - Knowledge: private SOPs, templates, references, playbooks, screenshots,
   Looms, prompts, and search surfaced inside the authenticated portal.
@@ -35,12 +35,12 @@ Location: `../datatasks`
 What it gives us:
 
 - DynamoDB-backed execution state.
-- Data model for tasks, bundles, templates, recurring configs, users, files,
+- Data model for tasks, cards, templates, recurring configs, users, files,
   sessions, and notifications.
-- API routes for task-like operations, bundles, templates, recurring work,
+- API routes for task-like operations, cards, templates, recurring work,
   email, Telegram, files, users, auth, cron, and notifications.
 - Local development with Node.js, TypeScript, dynalite, and Playwright tests.
-- A product model close to what operations needs: template -> bundle -> tasks.
+- A product model close to what operations needs: template -> card -> tasks.
 
 Current limitation:
 
@@ -68,7 +68,7 @@ What it gives us:
 Current limitation:
 
 - It documents work, but it doesn't execute work.
-- It has process documents, but most are not connected into task bundles.
+- It has process documents, but most are not connected into task cards.
 - It doesn't know which process docs are used in active work.
 - It doesn't track whether a real podcast, newsletter, event, or finance report
   is done.
@@ -210,7 +210,7 @@ Needed:
 
 - One inbox in the portal.
 - Source metadata for each intake item.
-- Ability to convert intake into a task, bundle, doc draft, or assistant job.
+- Ability to convert intake into a task, card, doc draft, or assistant job.
 - Duplicate detection.
 - Attachment handling.
 - Clear ownership: who must triage the item.
@@ -227,7 +227,7 @@ Needed:
 - Job records for assistant runs.
 - Inputs, outputs, logs, status, retry state, and human review.
 - Portal UI for starting and monitoring assistant jobs.
-- Ability to attach generated artifacts to bundles and docs.
+- Ability to attach generated artifacts to cards and docs.
 - Policy for whether generated files are committed to Git, saved in object
   storage, or attached to execution records.
 
@@ -250,7 +250,7 @@ Operations produce these artifacts:
 
 Needed:
 
-- Artifact records with type, URL/file, owner, status, and related task/bundle.
+- Artifact records with type, URL/file, owner, status, and related task/card.
 - Required artifact checks before a task can be completed.
 - Search across artifacts.
 - A clear distinction between private files, public URLs, and generated docs.
@@ -292,17 +292,17 @@ Existing assets:
 Recommended portal flow:
 
 1. A guest/topic arrives from Telegram, email, LinkedIn, or manual entry.
-2. The operator creates a Podcast bundle or sends material to the Podcast
+2. The operator creates a Podcast card or sends material to the Podcast
    Assistant inbox.
 3. The assistant ingests notes, voice notes, screenshots, links, and files.
 4. The assistant drafts a podcast prep document.
 5. The operator reviews and approves the draft.
-6. The approved podcast document becomes an artifact on the Podcast bundle.
-7. The bundle creates tasks from the Podcast workflow definition.
+6. The approved podcast document becomes an artifact on the Podcast card.
+7. The card creates tasks from the Podcast workflow definition.
 8. Each task links to the relevant SOP or template.
-9. Required outputs are captured as bundle artifacts: podcast doc, Luma link,
+9. Required outputs are captured as card artifacts: podcast doc, Luma link,
    Meetup link, YouTube link, transcript, Spotify link, Apple link, DTC webpage.
-10. Milestone tasks move the bundle through stages: prep, announced, live,
+10. Milestone tasks move the card through stages: prep, announced, live,
     post-production, published, follow-up, done.
 
 What needs to be added:
@@ -310,7 +310,7 @@ What needs to be added:
 - A final podcast document template for the assistant.
 - A portal API for assistant job submission and status.
 - A job output review screen.
-- A mapping from Podcast bundle fields to podcast document placeholders.
+- A mapping from Podcast card fields to podcast document placeholders.
 - A stable workflow definition that connects the 40 DataTasks tasks to the
   relevant DTC Operations SOPs.
 - Validation checks for required outputs.
@@ -350,7 +350,7 @@ Target shape:
 - Today.
 - Overdue.
 - Waiting on review.
-- Active bundles.
+- Active cards.
 - Inbox items.
 - Assistant jobs.
 - Process quality warnings.
@@ -358,7 +358,7 @@ Target shape:
 ### Work
 
 - Tasks.
-- Bundles.
+- Cards.
 - Templates/workflows.
 - Recurring work.
 - Assignments.
@@ -391,7 +391,7 @@ Target shape:
 
 ### Search
 
-- One search across tasks, bundles, docs, templates, artifacts, and assistant
+- One search across tasks, cards, docs, templates, artifacts, and assistant
   outputs.
 
 ### Admin
@@ -428,7 +428,7 @@ Build:
 - Workflow/template model with phases.
 - Workflow-to-task generation.
 - Required artifact definitions.
-- Milestones and bundle stage transitions.
+- Milestones and card stage transitions.
 - Import script for Trello/DataTasks templates.
 - Manual review screen for generated workflows.
 
@@ -447,7 +447,7 @@ Build:
 - Replace local `documents/` output with portal artifacts.
 - Add assistant job records.
 - Add job status, logs, retry, and output review UI.
-- Connect approved output to Podcast bundles.
+- Connect approved output to Podcast cards.
 - Finalize the podcast document template.
 
 ### Phase 4: Build Daily Operations
@@ -458,7 +458,7 @@ Build:
 
 - Today/Overdue/Upcoming dashboard.
 - Inbox triage.
-- Recurring tasks and recurring bundles.
+- Recurring tasks and recurring cards.
 - Notifications.
 - Assignment and ownership views.
 - Process quality warnings for active workflows.
@@ -481,7 +481,7 @@ Build:
 ## First Concrete Slice
 
 The first useful slice should be Podcast because it exercises the full concept:
-process docs, task bundles, artifacts, assistant-generated documents, and
+process docs, task cards, artifacts, assistant-generated documents, and
 publishing steps.
 
 Scope:
@@ -497,7 +497,7 @@ Scope:
 - Add a portal page for Podcast Assistant inbox, processing jobs, and generated
   document review.
 - Create one end-to-end flow: raw Telegram material -> assistant draft -> review
-  -> Podcast bundle artifact -> tasks with SOP links.
+  -> Podcast card artifact -> tasks with SOP links.
 
 ## Key Decisions
 
@@ -513,7 +513,7 @@ Recommendation:
 
 - Private GitHub markdown is the source of truth for process knowledge.
 - DynamoDB is the source of truth for execution state.
-- Assistant outputs become artifacts that are attached to bundles.
+- Assistant outputs become artifacts that are attached to cards.
 
 ### Podcast Assistant
 

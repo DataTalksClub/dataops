@@ -58,7 +58,7 @@ Existing tools (Trello, Monday, Asana, Jira) don't fit because:
 
 Templates (playbooks) define reusable task sets for repeating workflows (newsletter, course, event, etc.).
 
-- Displayed as cards (like bundles), not a table
+- Displayed as cards (like cards), not a table
 - Card display format: emoji, tag, title - with anchor date shown as a separate UI element (badge/tag), not part of the title text
 - Clicking a card opens it for editing, including arranging items within
 - Can contain variables in the title (e.g., day)
@@ -73,16 +73,16 @@ Templates (playbooks) define reusable task sets for repeating workflows (newslet
   - Offset days (relative to anchor date)
   - Optional instructions URL (link to how-to document)
 - Templates have two kinds of links:
-  - References: fixed URLs that are the same for every bundle (process docs, server links, reference pages). Defined on the template, copied to every bundle.
-  - Bundle links: links that need to be filled during execution, unique per bundle (e.g., Luma event URL, YouTube link). Template defines the link names; bundles fill in the URLs.
-- Bundle creation triggers - two types:
-  - Automatic: template has a schedule (cron expression) that auto-creates bundles. The schedule defines when to create the bundle relative to the anchor date. Examples: Newsletter (weekly, 14 days before publish), Social Media Weekly (weekly, Friday before), Tax Report (monthly, 1st of following month)
-  - Manual: bundle is created by a person when a specific event happens (e.g., guest confirms a date, Alexey sends a recording). No schedule - user creates the bundle and sets the anchor date
+  - References: fixed URLs that are the same for every card (process docs, server links, reference pages). Defined on the template, copied to every card.
+  - Card links: links that need to be filled during execution, unique per card (e.g., Luma event URL, YouTube link). Template defines the link names; cards fill in the URLs.
+- Card creation triggers - two types:
+  - Automatic: template has a schedule (cron expression) that auto-creates cards. The schedule defines when to create the card relative to the anchor date. Examples: Newsletter (weekly, 14 days before publish), Social Media Weekly (weekly, Friday before), Tax Report (monthly, 1st of following month)
+  - Manual: card is created by a person when a specific event happens (e.g., guest confirms a date, Alexey sends a recording). No schedule - user creates the card and sets the anchor date
 - Some templates may not have a meaningful anchor date (e.g., Tax Report) - tasks are just sequential
 
-### Bundles
+### Cards
 
-A bundle is an instance of a template with a concrete anchor date. When created, all template tasks are generated with calculated due dates.
+A card is an instance of a template with a concrete anchor date. When created, all template tasks are generated with calculated due dates.
 
 - Displayed as cards with same format as templates: emoji, tag, title - with anchor date as a separate badge
 - Progress badge showing completed/total tasks
@@ -91,16 +91,16 @@ A bundle is an instance of a template with a concrete anchor date. When created,
 - Task dates calculated relative to the anchor date
 - Links:
   - References: inherited from template, pre-filled (process docs, server links)
-  - Bundle links: empty slots from template, filled during execution (e.g., Luma URL, YouTube link)
+  - Card links: empty slots from template, filled during execution (e.g., Luma URL, YouTube link)
   - Users can add custom extra links beyond template-defined ones
-- Can mark tasks as done within the bundle view
+- Can mark tasks as done within the card view
 - No direct delete - flow: archive -> delete
-- Bundles have stages that represent workflow progress:
-  - "preparation": initial stage when bundle is created, tasks being set up
+- Cards have stages that represent workflow progress:
+  - "preparation": initial stage when card is created, tasks being set up
   - "announced": event has been announced publicly
   - "after-event": the main event/milestone has passed, post-event tasks remain
   - "done": all tasks completed
-- Completing certain milestone tasks triggers automatic stage transitions (e.g., the "Actual stream" milestone moves bundle from "announced" to "after-event")
+- Completing certain milestone tasks triggers automatic stage transitions (e.g., the "Actual stream" milestone moves card from "announced" to "after-event")
 - Stage transitions can also be triggered manually
 
 ### Tasks
@@ -108,13 +108,13 @@ A bundle is an instance of a template with a concrete anchor date. When created,
 Three types with clear visual distinction:
 
 Template-based tasks:
-- Created automatically when a bundle is instantiated from a template
+- Created automatically when a card is instantiated from a template
 - Have relative deadlines calculated from anchor date
-- Appear in both the bundle card and the unified task list
+- Appear in both the card card and the unified task list
 
 Ad-hoc tasks:
 - Created via Telegram, email, or manually
-- Standalone tasks not part of any bundle
+- Standalone tasks not part of any card
 - Should display "ad-hoc" label (not "untitled")
 - Some require a link to the deliverable and cannot be marked as done without it (e.g., "publish article") - "required link" flag
 
@@ -126,12 +126,12 @@ Recurring tasks:
 All tasks:
 - Each task has: date, description, status, optional comment, optional link
 - Comment is not required at creation - can be added later
-- Easy to see which bundle a task belongs to
+- Easy to see which card a task belongs to
 - Compact display: less whitespace, more info on screen - Trello-style
 - No delete action - only mark as done, archive, then delete if needed
-- Filtering by date, tag, bundle, template, user, etc.
+- Filtering by date, tag, card, template, user, etc.
 - Task completion requirements: some tasks require specific actions before they can be marked done:
-  - Required link: task requires filling in a URL (e.g., "Create event on Luma" requires the Luma link to be added to the bundle)
+  - Required link: task requires filling in a URL (e.g., "Create event on Luma" requires the Luma link to be added to the card)
   - Required file: task requires uploading a file
   - These requirements are defined in the template task definition and enforced in the UI
 
@@ -172,7 +172,7 @@ Fields:
 - link: string, optional (URL associated with the task, e.g., Luma event link)
 - requiredLinkName: string, optional (label like "Luma" - if set, task cannot be marked done until `link` is filled)
 - assigneeId: string, optional (user ID)
-- bundleId: string, optional (links task to a bundle)
+- cardId: string, optional (links task to a card)
 - source: "manual", "template", "recurring", or "telegram"
 - templateTaskRef: string, optional (refId from the template task definition)
 - tags: array of strings, optional
@@ -181,9 +181,9 @@ Fields:
 
 DynamoDB keys: PK = TASK#{id}, SK = TASK#{id}
 GSI: DateIndex with PK = date, SK = TASK#{id}
-GSI: BundleIndex with PK = bundleId, SK = TASK#{id}
+GSI: CardIndex with PK = cardId, SK = TASK#{id}
 
-### Bundle
+### Card
 
 Fields:
 - id: UUID, auto-generated
@@ -195,16 +195,16 @@ Fields:
 - stage: "preparation", "announced", "after-event", or "done" - defaults to "preparation"
 - emoji: string, optional (inherited from template)
 - references: array of { name: string, url: string }, optional (fixed links inherited from template - process docs, server links)
-- bundleLinks: array of { name: string, url: string }, optional (slots to fill during execution - e.g., Luma URL, YouTube link)
+- cardLinks: array of { name: string, url: string }, optional (slots to fill during execution - e.g., Luma URL, YouTube link)
 - tags: array of strings, optional (inherited from template)
 - createdAt: ISO timestamp
 - updatedAt: ISO timestamp
 
-The bundle has two kinds of links:
-- References: inherited from the template, pre-filled with fixed URLs (process docs, server links). Read-only in the bundle view.
-- Bundle links: empty slots defined by the template's `bundleLinkDefinitions`, filled during execution. Each entry has a display name and a URL. When a task with `requiredLinkName` has its `link` filled, the corresponding bundle link is also updated.
+The card has two kinds of links:
+- References: inherited from the template, pre-filled with fixed URLs (process docs, server links). Read-only in the card view.
+- Card links: empty slots defined by the template's `cardLinkDefinitions`, filled during execution. Each entry has a display name and a URL. When a task with `requiredLinkName` has its `link` filled, the corresponding card link is also updated.
 
-DynamoDB keys: PK = BUNDLE#{id}, SK = BUNDLE#{id}
+DynamoDB keys: PK = CARD#{id}, SK = CARD#{id}
 
 ### Template
 
@@ -215,21 +215,21 @@ Fields:
 - emoji: string, optional (e.g., "📰", "🎙️")
 - tags: array of strings, optional
 - defaultAssigneeId: string, optional (default user for tasks)
-- references: array of { name: string, url: string }, optional (fixed links same for every bundle - process docs, server links)
-- bundleLinkDefinitions: array of { name: string }, optional (bundle link slots to be filled during execution)
+- references: array of { name: string, url: string }, optional (fixed links same for every card - process docs, server links)
+- cardLinkDefinitions: array of { name: string }, optional (card link slots to be filled during execution)
 - taskDefinitions: array, required, each element:
   - refId: string, required (slug identifier)
   - description: string, required
   - offsetDays: number, required (relative to anchor date) -- comment. not required, automatically calculated based on milestones. but for milestones it's required. 
   - isMilestone: boolean, optional (if true, fixed to the anchor date)
-  - stageOnComplete: string, optional (stage to transition bundle to when this milestone task is completed, e.g., "announced", "after-event", "done")
+  - stageOnComplete: string, optional (stage to transition card to when this milestone task is completed, e.g., "announced", "after-event", "done")
   - assigneeId: string, optional (overrides template default)
   - instructionsUrl: string, optional (URL to instruction document)
-  - requiredLinkName: string, optional (name of the bundle link that must be filled before task can be completed, e.g., "Luma")
+  - requiredLinkName: string, optional (name of the card link that must be filled before task can be completed, e.g., "Luma")
   - requiresFile: boolean, optional (if true, task cannot be completed without uploading a file)
 - triggerType: "automatic" or "manual", defaults to "manual"
-- triggerSchedule: string, optional (cron expression for auto-creating bundles, only for automatic triggers)
-- triggerLeadDays: number, optional (how many days before anchor date to create the bundle, only for automatic triggers)
+- triggerSchedule: string, optional (cron expression for auto-creating cards, only for automatic triggers)
+- triggerLeadDays: number, optional (how many days before anchor date to create the card, only for automatic triggers)
 - createdAt: ISO timestamp
 - updatedAt: ISO timestamp
 
@@ -274,30 +274,30 @@ All endpoints accept and return JSON. All endpoints are auth-gated - unauthentic
 
 - `GET /api/tasks?date=YYYY-MM-DD` - list tasks for a specific date
 - `GET /api/tasks?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` - list tasks in a date range
-- `POST /api/tasks` - create a task (body: { description, date, comment?, instructionsUrl?, link?, requiredLinkName?, source?, bundleId?, assigneeId?, tags? })
+- `POST /api/tasks` - create a task (body: { description, date, comment?, instructionsUrl?, link?, requiredLinkName?, source?, cardId?, assigneeId?, tags? })
 - `GET /api/tasks/:id` - get a single task
 - `PUT /api/tasks/:id` - update a task (body: subset of { description, date, status, comment, instructionsUrl, link, assigneeId, tags })
 - `DELETE /api/tasks/:id` - archive a task (soft delete)
 
-### Bundles API
+### Cards API
 
-- `GET /api/bundles` - list all bundles
-- `POST /api/bundles` - create a bundle (body: { title, anchorDate, description?, templateId?, emoji?, references?, bundleLinks?, tags? })
-- `GET /api/bundles/:id` - get a single bundle
-- `PUT /api/bundles/:id` - update a bundle (body: subset of { title, description, anchorDate, status, stage, emoji, references, bundleLinks, tags })
-- `PUT /api/bundles/:id/archive` - archive a bundle
-- `DELETE /api/bundles/:id` - permanently delete (only archived bundles)
-- `GET /api/bundles/:id/tasks` - list all tasks for a bundle
+- `GET /api/cards` - list all cards
+- `POST /api/cards` - create a card (body: { title, anchorDate, description?, templateId?, emoji?, references?, cardLinks?, tags? })
+- `GET /api/cards/:id` - get a single card
+- `PUT /api/cards/:id` - update a card (body: subset of { title, description, anchorDate, status, stage, emoji, references, cardLinks, tags })
+- `PUT /api/cards/:id/archive` - archive a card
+- `DELETE /api/cards/:id` - permanently delete (only archived cards)
+- `GET /api/cards/:id/tasks` - list all tasks for a card
 
-The references and bundleLinks fields are arrays of objects: [{ name: "Overview doc", url: "https://..." }, ...].
-When creating or updating a bundle, each array replaces the entire existing array.
+The references and cardLinks fields are arrays of objects: [{ name: "Overview doc", url: "https://..." }, ...].
+When creating or updating a card, each array replaces the entire existing array.
 
 ### Templates API
 
 - `GET /api/templates` - list all templates
-- `POST /api/templates` - create a template (body: { name, type, emoji?, tags?, defaultAssigneeId?, references?, bundleLinkDefinitions?, triggerType?, triggerSchedule?, triggerLeadDays?, taskDefinitions })
+- `POST /api/templates` - create a template (body: { name, type, emoji?, tags?, defaultAssigneeId?, references?, cardLinkDefinitions?, triggerType?, triggerSchedule?, triggerLeadDays?, taskDefinitions })
 - `GET /api/templates/:id` - get a single template
-- `PUT /api/templates/:id` - update a template (body: subset of { name, type, emoji, tags, defaultAssigneeId, references, bundleLinkDefinitions, triggerType, triggerSchedule, triggerLeadDays, taskDefinitions })
+- `PUT /api/templates/:id` - update a template (body: subset of { name, type, emoji, tags, defaultAssigneeId, references, cardLinkDefinitions, triggerType, triggerSchedule, triggerLeadDays, taskDefinitions })
 - `DELETE /api/templates/:id` - delete a template
 
 Each task definition: { refId, description, offsetDays, isMilestone?, assigneeId?, instructionsUrl?, requiredLinkName?, requiresFile? }.
@@ -324,47 +324,47 @@ Each task definition: { refId, description, offsetDays, isMilestone?, assigneeId
 ### Home Dashboard
 
 The default landing page:
-- Shows all active bundles on the left
+- Shows all active cards on the left
 - Shows all tasks assigned to the current user on the right
-- Notifications appear above the task list (e.g., "Newsletter bundle auto-created for Mar 15", "Tax Report bundle auto-created for February")
-  - Generated when automatic triggers create bundles
+- Notifications appear above the task list (e.g., "Newsletter card auto-created for Mar 15", "Tax Report card auto-created for February")
+  - Generated when automatic triggers create cards
   - Dismissible by the user
 - "Assigned to me" filter is on by default - can be toggled off to see everything
-- Tasks ordered by date, with filtering by bundle, template, tag, etc.
+- Tasks ordered by date, with filtering by card, template, tag, etc.
 
 ### Task List View
 
 Compact Trello-style display. Each task shows:
 - Date
 - Description (with markdown links rendered as clickable anchors)
-- Bundle link (clickable, navigates to bundle detail) or "ad-hoc" badge
+- Card link (clickable, navigates to card detail) or "ad-hoc" badge
 - Status checkbox
 - Instructions URL (clickable link to instruction document, if present)
 - Assignee
 - Completion requirements (if any):
-  - Required link: inline input field for the URL, pre-filled if the bundle link already has a value. The link name (e.g., "Luma") is shown as the field label. Task checkbox is disabled until the link is filled. When the link is saved, it also syncs to the bundle's bundleLinks array.
+  - Required link: inline input field for the URL, pre-filled if the card link already has a value. The link name (e.g., "Luma") is shown as the field label. Task checkbox is disabled until the link is filled. When the link is saved, it also syncs to the card's cardLinks array.
   - Required file: upload button. Task checkbox is disabled until the file is uploaded.
 
 Note: comments are not shown in the task list view. They are low priority and mostly for ad-hoc tasks.
 
-Filtering by: date/date range, tag, bundle, template, user.
+Filtering by: date/date range, tag, card, template, user.
 
-When loading tasks, the app collects unique bundleId values and fetches bundle details to display bundle titles.
+When loading tasks, the app collects unique cardId values and fetches card details to display card titles.
 
-### Bundle List View
+### Card List View
 
 Cards ordered/grouped by template type. Each card shows title, anchor date, description preview, and progress badge. Clicking navigates to detail view.
 
-### Bundle Detail View
+### Card Detail View
 
-- Bundle title, emoji, and anchor date
+- Card title, emoji, and anchor date
 - Description (with markdown links)
 - References section: read-only links inherited from template (process docs, server links)
-- Bundle links section: fillable link slots defined by template. Inline input for each. Users can also add custom extra links.
-- Tasks table: all bundle tasks with description, date, status toggle, instructions URL, and assignee
-  - Tasks with a required link show an inline input field linked to the corresponding bundle link. Filling it updates the bundle's bundleLinks array. Checkbox disabled until filled.
+- Card links section: fillable link slots defined by template. Inline input for each. Users can also add custom extra links.
+- Tasks table: all card tasks with description, date, status toggle, instructions URL, and assignee
+  - Tasks with a required link show an inline input field linked to the corresponding card link. Filling it updates the card's cardLinks array. Checkbox disabled until filled.
   - Tasks with a required file show an upload button. Checkbox disabled until file is uploaded.
-  - Task comments are not shown in the bundle detail view.
+  - Task comments are not shown in the card detail view.
 
 ### Templates View
 
@@ -374,7 +374,7 @@ Template editor:
 - Edit name, type, emoji, tags, default assignee
 - Trigger config: trigger type (automatic/manual), cron expression, lead days
 - References: manage fixed links (add/edit/remove)
-- Bundle link definitions: manage link slot names (add/edit/remove)
+- Card link definitions: manage link slot names (add/edit/remove)
 - Task definitions list with drag-and-drop reordering
 - Editing offset days, assignee overrides, milestone flag, requiredLinkName, requiresFile per task
 
@@ -391,7 +391,7 @@ Separate view with:
 
 ### Markdown Link Rendering
 
-Text fields (task description, task comment, bundle description) support markdown-style links: `[text](url)`. These are rendered as clickable HTML anchor tags that open in a new tab.
+Text fields (task description, task comment, card description) support markdown-style links: `[text](url)`. These are rendered as clickable HTML anchor tags that open in a new tab.
 
 The rendering function first escapes all HTML to prevent XSS, then converts markdown link patterns to anchor tags. Only the `[text](url)` pattern is supported - no other markdown formatting.
 
@@ -405,7 +405,7 @@ Known issues to fix:
 
 ### Date Handling
 
-When converting Trello cards to bundles, the anchor date is determined by this fallback chain:
+When converting Trello cards to cards, the anchor date is determined by this fallback chain:
 1. card.due (explicit due date)
 2. Date extracted from card name (e.g., "2026-Feb-15")
 3. card.dateLastActivity (when the card was last modified)
@@ -423,17 +423,17 @@ Result: description = "Create a MailChimp campaign", instructionsUrl = "https://
 
 The extracted instructionsUrl is stored on the template task definition. When tasks are instantiated, the URL is copied to the task's `instructionsUrl` field. For active card tasks (not templates), the instructionsUrl is stored directly in the task's `instructionsUrl` field.
 
-### Bundle Links from Attachments
+### Card Links from Attachments
 
-Trello cards have an attachments array. Non-image attachments (non-Trello URLs) are extracted as bundle links: { name: attachment.name, url: attachment.url }. Trello-hosted attachments (URLs matching trello.com/1/cards/) are skipped.
+Trello cards have an attachments array. Non-image attachments (non-Trello URLs) are extracted as card links: { name: attachment.name, url: attachment.url }. Trello-hosted attachments (URLs matching trello.com/1/cards/) are skipped.
 
-## Automatic Bundle Creation
+## Automatic Card Creation
 
-Templates with `triggerType: "automatic"` have bundles created automatically on a schedule. The `triggerSchedule` (cron expression) defines when to create bundles, and `triggerLeadDays` defines how many days before the anchor date the bundle should be created.
+Templates with `triggerType: "automatic"` have cards created automatically on a schedule. The `triggerSchedule` (cron expression) defines when to create cards, and `triggerLeadDays` defines how many days before the anchor date the card should be created.
 
-Implementation: AWS EventBridge Scheduler rules that invoke the Lambda on a schedule. For local development, a simple cron runner script that polls and creates bundles.
+Implementation: AWS EventBridge Scheduler rules that invoke the Lambda on a schedule. For local development, a simple cron runner script that polls and creates cards.
 
-When a bundle is auto-created, a notification is generated (e.g., "Newsletter bundle auto-created for Mar 15") that appears on the home dashboard.
+When a card is auto-created, a notification is generated (e.g., "Newsletter card auto-created for Mar 15") that appears on the home dashboard.
 
 ## Users
 
