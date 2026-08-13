@@ -3,7 +3,9 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
+SAM_FUNCTION_BUILD_TARGETS := build-BackendFunction build-ConversationalExecutionWorkerFunction build-ConversationalResultDispatcherFunction build-SponsorSendWorkerFunction build-SponsorSesEventFunction build-SponsorPrivateArchiveFunction
+
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build verify-sam-frontend ci clean $(SAM_FUNCTION_BUILD_TARGETS)
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -92,7 +94,7 @@ sam-validate: sam-local-aws-config
 	AWS_CONFIG_FILE=$(SAM_LOCAL_AWS_CONFIG) AWS_SHARED_CREDENTIALS_FILE=$(SAM_LOCAL_AWS_CREDENTIALS) AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=$(AWS_DEFAULT_REGION) sam validate --template-file infra/template.full.yaml
 
 sam-build:
-	sam build --config-env full-sandbox
+	sam build --parallel --config-env full-sandbox
 
 verify-sam-frontend:
 	node backend/scripts/verify-frontend-artifact.mjs --source frontend --artifact .aws-sam/build/BackendFunction
@@ -110,24 +112,5 @@ clean:
 	rm -f .tmp/dataops-content-search.index
 	npm run clean:backend
 
-build-BackendFunction:
-	npm ci
-	npm run build:backend
-	mkdir -p "$(ARTIFACTS_DIR)/backend"
-	cp -R backend/dist "$(ARTIFACTS_DIR)/dist"
-	cp package.json package-lock.json "$(ARTIFACTS_DIR)/"
-	cp backend/package.json "$(ARTIFACTS_DIR)/backend/package.json"
-	cp -R backend/vendor "$(ARTIFACTS_DIR)/backend/vendor"
-	cd "$(ARTIFACTS_DIR)" && npm ci --omit=dev --workspace dataops-backend
-	rm -rf "$(ARTIFACTS_DIR)/node_modules/zerosearch-node"
-	cp -R backend/vendor/zerosearch-node "$(ARTIFACTS_DIR)/node_modules/zerosearch-node"
-
-build-ConversationalExecutionWorkerFunction: build-BackendFunction
-
-build-SponsorSendWorkerFunction: build-BackendFunction
-
-build-SponsorSesEventFunction: build-BackendFunction
-
-build-SponsorPrivateArchiveFunction: build-BackendFunction
-
-build-ConversationalResultDispatcherFunction: build-BackendFunction
+$(SAM_FUNCTION_BUILD_TARGETS):
+	node backend/scripts/build-sam-artifact.mjs "$(ARTIFACTS_DIR)"

@@ -147,10 +147,6 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install Node workspace dependencies
-        run: npm ci
-
-
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
         with:
