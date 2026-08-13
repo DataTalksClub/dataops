@@ -10,6 +10,19 @@ Treat "continue where we stopped" as a prompt to check `_docs/PROCESS.md`,
 inspect the current issue/worktree/process state, and resume the next pipeline
 step.
 
+No backwards compatibility:
+
+- This project has no external consumers and no released API to protect. When
+  something is renamed, restructured, or replaced, change it everywhere in one
+  step and delete the old shape.
+- Do not add compatibility shims, aliases, legacy fallbacks, duplicate routes,
+  deprecated fields kept "just in case", dual-read/dual-write paths, or version
+  branches that keep old behavior alive alongside new behavior.
+- Migrate persisted data as part of the change rather than teaching the code to
+  read both the old and the new format.
+- If a change cannot be made atomically, say so and propose the sequencing
+  instead of leaving a permanent compatibility layer behind.
+
 This repo uses GitHub Issues in `DataTalksClub/dataops` as the work tracker.
 The orchestrator files raw user requests as issues with `needs grooming`, then
 role agents move each issue through the pipeline.
