@@ -301,26 +301,6 @@ export async function handleBookkeepingRoutes(
       return json(result.duplicate ? 200 : 201, result.item);
     }
   }
-  if (path === "/api/bookkeeping/transactions/resolve" && method === "POST") {
-    const body = parse(event.body || null);
-    const sourceKeys = body?.sourceKeys;
-    if (
-      !Array.isArray(sourceKeys) ||
-      sourceKeys.length < 1 ||
-      sourceKeys.length > 100 ||
-      sourceKeys.some((value) => typeof value !== "string" || !value || value.length > 300)
-    )
-      return json(400, { error: "Invalid request" });
-    const resolved = [];
-    const missing = [];
-    for (const sourceKey of [...new Set(sourceKeys as string[])]) {
-      const id = createHash("sha256").update(`source#${sourceKey}`).digest("hex");
-      const item = await getBookkeepingItem(client, "bookkeeping", id);
-      if (item?.sourceKey === sourceKey) resolved.push({ sourceKey, id: item.id });
-      else missing.push(sourceKey);
-    }
-    return json(200, { resolved, missing });
-  }
   if (path === "/api/bookkeeping/documents/hash-lookup" && method === "POST") {
     const body = parse(event.body || null);
     const hashes = body?.hashes;

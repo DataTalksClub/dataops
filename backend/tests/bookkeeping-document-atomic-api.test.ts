@@ -149,7 +149,6 @@ describe("atomic bookkeeping document API", () => {
     process.env.SKIP_AUTH = "false";
     try {
       const routes: Array<[string, string, unknown?]> = [
-        ["POST", "/api/bookkeeping/transactions/resolve", { sourceKeys: ["absent"] }],
         ["POST", "/api/bookkeeping/documents/hash-lookup", { hashes: [sha256] }],
         ["POST", "/api/bookkeeping/documents/prepare", {}],
         ["POST", "/api/bookkeeping/documents/nonexistent/complete", {}],
