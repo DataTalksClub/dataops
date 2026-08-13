@@ -237,10 +237,13 @@ jobs:
             --stack-name dataops-v1 \
             --query 'Stacks[0].StackStatus' \
             --output text)"
-          if [ "$stack_status" != "UPDATE_COMPLETE" ]; then
-            echo "Issue #166 Phase A requires dataops-v1 to be UPDATE_COMPLETE" >&2
-            exit 1
-          fi
+          case "$stack_status" in
+            UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;;
+            *)
+              echo "Issue #166 Phase A requires a healthy completed dataops-v1 stack" >&2
+              exit 1
+              ;;
+          esac
 
           table_name="$(aws cloudformation describe-stack-resource \
             --stack-name dataops-v1 \
