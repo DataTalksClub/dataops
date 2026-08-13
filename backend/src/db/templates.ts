@@ -301,6 +301,43 @@ async function updateTemplate(client: DynamoDBDocumentClient, id: string, update
 }
 
 /**
+ * Replace a complete Git-authored runtime projection while preserving its
+ * stable identity. A conditional write makes a concurrent old-editor mutation
+ * fail the deployment instead of silently winning or being overwritten.
+ */
+async function replaceTemplate(
+  client: DynamoDBDocumentClient,
+  id: string,
+  definition: Record<string, unknown>,
+  expectedVersion: number,
+): Promise<Template> {
+  const before = await rawTemplate(client, id);
+  if (!before) throw new TemplateVersionConflictError();
+  const now = new Date().toISOString();
+  const item = {
+    ...templateKey(id),
+    id,
+    createdAt: before.createdAt,
+    updatedAt: now,
+    ...definition,
+    version: expectedVersion + 1,
+  };
+  try {
+    await client.send(new PutCommand({
+      TableName: TABLE_TEMPLATES,
+      Item: item,
+      ConditionExpression: '#version = :expectedVersion OR (attribute_not_exists(#version) AND :expectedVersion = :versionOne)',
+      ExpressionAttributeNames: { '#version': 'version' },
+      ExpressionAttributeValues: { ':expectedVersion': expectedVersion, ':versionOne': 1 },
+    }));
+  } catch (error) {
+    if ((error as Error).name === 'ConditionalCheckFailedException') throw new TemplateVersionConflictError();
+    throw error;
+  }
+  return cleanItem(item) as Template;
+}
+
+/**
  * Delete a template by id.
  */
 async function deleteTemplateWithAudit(
@@ -591,6 +628,7 @@ export {
   createTemplateWithAudit,
   getTemplate,
   updateTemplate,
+  replaceTemplate,
   updateTemplateWithAudit,
   deleteTemplate,
   deleteTemplateWithAudit,

@@ -57,6 +57,7 @@ export function templateToYaml(template: Dict): Dict {
   const trigger: Dict = { mode: template.triggerType || 'manual' };
   assign(trigger, 'schedule', template.triggerSchedule);
   assign(trigger, 'lead_days', template.triggerLeadDays);
+  assign(trigger, 'enabled', template.triggerEnabled);
   doc.trigger = trigger;
 
   const references = (template.references as Dict[] | undefined) || [];
@@ -93,6 +94,7 @@ export function templateFromYaml(doc: Dict): Dict {
   assign(template, 'triggerType', trigger.mode);
   assign(template, 'triggerSchedule', trigger.schedule);
   assign(template, 'triggerLeadDays', trigger.lead_days);
+  assign(template, 'triggerEnabled', trigger.enabled);
 
   const phases = (doc.phases as Dict[] | undefined) || [];
   if (phases.length > 0) {
@@ -134,7 +136,7 @@ export interface TemplateValidationIssue {
  * document registry so a template can never point at a process document that
  * does not exist; that is the failure the Google Doc migration was about.
  */
-export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string>): TemplateValidationIssue[] {
+export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | null = null): TemplateValidationIssue[] {
   const issues: TemplateValidationIssue[] = [];
   const type = String(doc.type || '(untyped)');
   const fail = (message: string) => issues.push({ template: type, message });
@@ -162,7 +164,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string>): T
     if (typeof schedule.offset_days !== 'number') fail(`task '${id}' needs schedule.offset_days`);
 
     const docId = task.instruction_doc_id;
-    if (typeof docId === 'string' && !knownDocIds.has(docId)) {
+    if (typeof docId === 'string' && knownDocIds && !knownDocIds.has(docId)) {
       fail(`task '${id}' points at unknown process document '${docId}'`);
     }
     if (!docId && typeof task.instructions_url === 'string' && /docs\.google\.com/.test(task.instructions_url)) {

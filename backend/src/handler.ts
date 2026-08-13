@@ -12,6 +12,7 @@ import {
   conversationalRolloutSnapshot,
 } from './conversation/rollout';
 import { logConversationalEvent } from './conversation/observability';
+import { loadAuthoredTemplatesFromGithub, reconcileAuthoredTemplates } from './templates/authoredTemplates';
 
 let client: DynamoDBDocumentClient | null = null;
 let initialized = false;
@@ -33,6 +34,13 @@ function isScheduledEvent(event: unknown): boolean {
     e.source === 'aws.events' ||
     e['detail-type'] === 'Scheduled Event'
   );
+}
+
+function isTemplateSyncEvent(event: unknown): boolean {
+  if (typeof event !== 'object' || event === null) return false;
+  const raw = event as Record<string, unknown>;
+  const detail = raw.detail as Record<string, unknown> | undefined;
+  return raw.source === 'dataops.deploy' && detail?.dataopsAction === 'sync-templates';
 }
 
 async function handler(event: LambdaEvent | Record<string, unknown>, _context?: unknown): Promise<LambdaResponse | CronRunnerResult> {
@@ -69,6 +77,18 @@ async function handler(event: LambdaEvent | Record<string, unknown>, _context?: 
   }
 
   await ensureInitialized();
+
+  // IAM-only deployment invocation. The Lambda, not GitHub Actions, resolves
+  // the private-repository token through its existing Secrets Manager access.
+  if (isTemplateSyncEvent(event)) {
+    const authored = await loadAuthoredTemplatesFromGithub();
+    const result = await reconcileAuthoredTemplates(client!, authored);
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(result),
+    };
+  }
 
   // Handle EventBridge scheduled events
   if (isScheduledEvent(event)) {

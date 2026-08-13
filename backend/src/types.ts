@@ -443,6 +443,9 @@ export interface Template {
   triggerLeadDays?: number;
   triggerEnabled?: boolean;
   taskDefinitions?: TaskDefinition[];
+  /** Private-repository path and Git blob SHA for this runtime projection. */
+  sourcePath?: string;
+  sourceRevision?: string;
   /** Monotonic optimistic-concurrency token. Versionless persisted rows read as 1. */
   version: number;
   /** Retained tombstone fields. Archived templates are not available for new use. */
