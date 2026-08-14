@@ -1,3 +1,5 @@
+import { docsAvailabilityView } from "../core/operations-model.js";
+
 export function createOperationsOverview(context) {
   const {
     document,
@@ -114,6 +116,28 @@ export function createOperationsOverview(context) {
     body.textContent = bodyText;
     state.append(title, body);
     return state;
+  }
+
+  /**
+   * The one renderer for process-document availability.
+   *
+   * Every surface that must tell an outage from an empty corpus renders this
+   * node from the shared snapshot: an unreachable corpus carries the server's
+   * own message verbatim, an answered-but-empty corpus says so in different
+   * words, and a snapshot that is still loading renders nothing at all.
+   */
+  function renderDocsAvailabilityState(snapshot, options = {}) {
+    const view = docsAvailabilityView(snapshot, options);
+    if (!view) return null;
+    const node = renderHonestState(view.title, view.body);
+    node.classList.add("ops-docs-state");
+    node.dataset.docsState = view.docsState;
+    node.setAttribute("aria-label", "Process document availability");
+    const detail = document.createElement("small");
+    detail.className = "ops-docs-state-detail";
+    detail.textContent = view.detail;
+    node.append(detail);
+    return node;
   }
 
   async function refreshOperationsRecurringSnapshot(options = {}) {
@@ -523,6 +547,7 @@ export function createOperationsOverview(context) {
     operationsViewPath,
     operationsViewTitle,
     referenceCountLabel,
+    renderDocsAvailabilityState,
     renderHonestState,
     renderOperationalSurfaceStates,
     renderOperationsFutureSections,

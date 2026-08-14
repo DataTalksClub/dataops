@@ -11,6 +11,7 @@ export function createNavigationShell(context) {
     folderExists,
     folderPathFromLocation,
     getAssistantQueueState,
+    getDocsAvailability,
     getIntakeSurfaceState,
     getKnowledgeState,
     getTasksSectionForLegacyView,
@@ -376,7 +377,11 @@ export function createNavigationShell(context) {
       const exists = getKnowledgeState().allDocuments.some(
         (doc) => doc.path === docPath,
       );
-      if (exists) {
+      // During a docs outage the catalog is empty for every document, so a
+      // bookmarked document URL must still open the editor: it reports the
+      // outage there instead of silently dropping the operator on Home.
+      const docsUnavailable = getDocsAvailability().state === "unavailable";
+      if (exists || docsUnavailable) {
         await openDocument(docPath, {
           updateUrl: false,
           revealInTree: true,

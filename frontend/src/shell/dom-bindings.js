@@ -85,6 +85,7 @@ const SELECTORS = Object.freeze({
   tasksNavButton: "#tasks-nav-button",
   tasksNavSubmenu: "#tasks-nav-submenu",
   docContextReturn: "#doc-context-return",
+  docState: "#doc-state",
   taskPanel: "#task-panel",
   taskPanelTitle: "#task-panel-title",
   taskPanelBody: "#task-panel-body",

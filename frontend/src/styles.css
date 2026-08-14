@@ -1091,6 +1091,46 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   color: var(--text-heading);
 }
 
+/* Honest states quote server messages verbatim, including long absolute
+   paths. Break them instead of pushing the surface past the viewport. */
+.ops-honest-state {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Process document availability: one shared outage/empty state. */
+.ops-docs-state {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 14px 16px;
+  width: min(var(--content-width), 100%);
+}
+
+.ops-docs-state strong {
+  color: var(--text-heading);
+}
+
+.ops-docs-state[data-docs-state="unavailable"] {
+  border-color: var(--danger-border);
+}
+
+.ops-docs-state > * {
+  min-width: 0;
+}
+
+.ops-docs-state-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.doc-state {
+  margin-bottom: 16px;
+}
+
 /* Home interaction primitives */
 .work-bell-panel,
 .settings-menu {

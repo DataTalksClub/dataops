@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
+import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
 import { createKnowledgeSurface } from "../src/surfaces/knowledge/index.js";
+import { createOperationsOverview } from "../src/surfaces/operations-overview.js";
 import {
   FakeDocument,
   FakeElement,
@@ -96,6 +98,7 @@ function createKnowledgeHarness(options = {}) {
       "docContextReturn",
       "docMenuButton",
       "docPinButton",
+      "docState",
       "docTree",
       "documentList",
       "documentPath",
@@ -178,6 +181,11 @@ function createKnowledgeHarness(options = {}) {
     hash: "",
     ...options.location,
   };
+  // The production docs-availability renderer, so surfaces are checked against
+  // the shared component instead of a test double.
+  const { renderDocsAvailabilityState } = createOperationsOverview({ document });
+  let docsAvailability =
+    options.docsAvailability || emptyOperationsDocsSnapshot();
   const storageValues = new Map(Object.entries(options.storage || {}));
   const requests = [];
   const documentNavigationEvents = [];
@@ -244,6 +252,7 @@ function createKnowledgeHarness(options = {}) {
     escapeRegex: (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     getActiveTasksSection: () => "queue",
     getActiveWorkspaceView: () => "docs",
+    getDocsAvailability: () => docsAvailability,
     getOperationsQualitySnapshot: () => ({ loaded: true, findings: [] }),
     getOperationsRecurringSnapshot: () => ({ loaded: true, configs: [] }),
     getOperationsWorkSnapshot: () => ({ loaded: true, tasks: [] }),
@@ -280,6 +289,7 @@ function createKnowledgeHarness(options = {}) {
     refreshOperationsWorkSnapshot: refresh("work"),
     renameCurrentDoc() {},
     deleteCurrentDoc() {},
+    renderDocsAvailabilityState,
     renderHonestState: honestState,
     renderOperationsReference: (reference) => {
       const node = new FakeElement("a");
@@ -296,6 +306,9 @@ function createKnowledgeHarness(options = {}) {
     resetCardPanel() {},
     resetTaskPanel() {},
     scheduleAnimationFrame: (callback) => callback(),
+    setDocsAvailability: (snapshot) => {
+      docsAvailability = snapshot;
+    },
     setPageTitle: (...args) => pageTitles.push(args),
     setSaveState: (value) => statuses.push(`save:${value}`),
     setStatus: (value) => statuses.push(value),
@@ -328,6 +341,7 @@ function createKnowledgeHarness(options = {}) {
   return {
     api,
     body,
+    docsAvailability: () => docsAvailability,
     document,
     documentNavigationEvents,
     documentState,
@@ -453,22 +467,224 @@ describe("Knowledge surface boundary", () => {
     });
     await empty.api.loadDocuments();
     assert.deepEqual(empty.api.getAllDocuments(), []);
+    assert.deepEqual(empty.docsAvailability(), {
+      state: "loaded",
+      documentCount: 0,
+      error: "",
+      status: 0,
+    });
     assert.equal(empty.renderedWorkspace(), 1);
     assert.equal(empty.skeleton.hidden, true);
 
     const failed = createKnowledgeHarness({
       request: async () => {
-        throw new Error("Process Docs unavailable");
+        const error = new Error(
+          "Docs content root is unavailable: /missing/content",
+        );
+        error.status = 503;
+        throw error;
       },
     });
     await failed.api.loadDocuments();
-    assert.equal(failed.statuses.at(-1), "Process Docs unavailable");
+    // The failure is now carried by the shared snapshot, not by the
+    // permanently hidden #status-text element.
+    assert.deepEqual(failed.docsAvailability(), {
+      state: "unavailable",
+      documentCount: 0,
+      error: "Docs content root is unavailable: /missing/content",
+      status: 503,
+    });
+    assert.equal(
+      failed.statuses.includes("Docs content root is unavailable: /missing/content"),
+      false,
+    );
     assert.deepEqual(failed.api.getAllDocuments(), []);
     assert.deepEqual(
       failed.refreshes.map((entry) => entry.name),
       ["work", "recurring", "artifacts", "assistants", "quality"],
     );
+    // A failed load repaints the surface the operator is already looking at.
+    assert.equal(failed.renderedWorkspace(), 1);
     assert.equal(failed.skeleton.hidden, true);
+  });
+
+  test("marks docs as loading before the bootstrap catalog request settles", async () => {
+    let releaseDocs;
+    const harness = createKnowledgeHarness({
+      docsAvailability: {
+        state: "loaded",
+        documentCount: 4,
+        error: "",
+        status: 0,
+      },
+      request: () =>
+        new Promise((resolve) => {
+          releaseDocs = resolve;
+        }),
+    });
+
+    const loading = harness.api.loadDocuments();
+    assert.equal(harness.docsAvailability().state, "loading");
+    harness.api.renderDocsSurface([]);
+    assert.equal(
+      harness.elements.documentList.querySelector("[data-docs-state]"),
+      null,
+    );
+
+    releaseDocs({ documents: [] });
+    await loading;
+    assert.equal(harness.docsAvailability().state, "loaded");
+  });
+
+  test("falls back to an explicit reason when a docs failure carries no message", async () => {
+    const harness = createKnowledgeHarness({
+      request: async () => {
+        throw new Error("");
+      },
+    });
+    await harness.api.loadDocuments();
+    assert.deepEqual(harness.docsAvailability(), {
+      state: "unavailable",
+      documentCount: 0,
+      error: "Process documents could not be loaded and the server gave no reason.",
+      status: 0,
+    });
+  });
+
+  test("separates an unreachable corpus from an empty one on the Docs surface", async () => {
+    const outage = createKnowledgeHarness({
+      docsAvailability: {
+        state: "unavailable",
+        documentCount: 0,
+        error: "Docs content root is unavailable: /missing/content",
+        status: 503,
+      },
+    });
+    outage.api.renderDocsSurface([]);
+    const outageState =
+      outage.elements.documentList.querySelector("[data-docs-state]");
+    assert.equal(outageState.dataset.docsState, "unavailable");
+    assert.equal(
+      outageState.children[0].textContent,
+      "Process documents are unavailable",
+    );
+    assert.equal(
+      outageState.children[1].textContent,
+      "Docs content root is unavailable: /missing/content",
+    );
+    assert.equal(
+      outage.elements.documentList.textContent.includes(
+        "No process documents yet",
+      ),
+      false,
+    );
+    // The outage state precedes the quality drill-down on the surface.
+    const surface = outage.elements.documentList.children[0].children[1];
+    assert.deepEqual(
+      surface.children.map((child) => child.className),
+      [
+        "honest-state",
+        "ops-honest-state ops-docs-state",
+        "ops-section ops-quality-drilldown",
+        "ops-reference-grid",
+      ],
+    );
+
+    const emptyCorpus = createKnowledgeHarness({
+      docsAvailability: {
+        state: "loaded",
+        documentCount: 0,
+        error: "",
+        status: 0,
+      },
+    });
+    emptyCorpus.api.renderDocsSurface([]);
+    const emptyState =
+      emptyCorpus.elements.documentList.querySelector("[data-docs-state]");
+    assert.equal(emptyState.dataset.docsState, "empty");
+    assert.equal(
+      emptyState.children[0].textContent,
+      "No process documents yet",
+    );
+    assert.equal(
+      emptyCorpus.elements.documentList.textContent.includes(
+        "Process documents are unavailable",
+      ),
+      false,
+    );
+
+    const healthy = createKnowledgeHarness({
+      docsAvailability: {
+        state: "loaded",
+        documentCount: 2,
+        error: "",
+        status: 0,
+      },
+    });
+    healthy.api.renderDocsSurface([]);
+    assert.equal(
+      healthy.elements.documentList.querySelector("[data-docs-state]"),
+      null,
+    );
+  });
+
+  test("opens the docs outage state in the editor instead of a blank document", async () => {
+    const harness = createKnowledgeHarness({
+      request: async () => {
+        const error = new Error(
+          "Docs content root is unavailable: /missing/content",
+        );
+        error.status = 503;
+        throw error;
+      },
+    });
+
+    await harness.api.openDocument("content/reference/schedule.md");
+    assert.equal(harness.body.dataset.view, "editor");
+    assert.equal(harness.elements.docState.hidden, false);
+    const state = harness.elements.docState.children[0];
+    assert.equal(state.dataset.docsState, "unavailable");
+    assert.equal(
+      state.textContent.includes(
+        "Docs content root is unavailable: /missing/content",
+      ),
+      true,
+    );
+    assert.equal(harness.elements.editor.disabled, true);
+    assert.equal(harness.elements.documentTitle.disabled, true);
+    assert.equal(harness.documentState.currentDoc, null);
+    assert.equal(harness.docsAvailability().state, "unavailable");
+    assert.equal(
+      harness.statuses.includes(
+        "Docs content root is unavailable: /missing/content",
+      ),
+      false,
+    );
+
+    // The single-document route answers 404 while the whole content root is
+    // missing, so the shared snapshot is what tells an outage from one missing
+    // document, and the outage keeps the server's message.
+    const knownOutage = createKnowledgeHarness({
+      docsAvailability: {
+        state: "unavailable",
+        documentCount: 0,
+        error: "Docs content root is unavailable: /missing/content",
+        status: 503,
+      },
+      request: async () => {
+        const error = new Error("Document not found");
+        error.status = 404;
+        throw error;
+      },
+    });
+    await knownOutage.api.openDocument("content/reference/schedule.md");
+    const notice = knownOutage.elements.docState.children[0];
+    assert.equal(notice.dataset.docsState, "unavailable");
+    assert.equal(
+      notice.children[1].textContent,
+      "Docs content root is unavailable: /missing/content",
+    );
+    assert.equal(knownOutage.statuses.includes("Document not found"), false);
   });
 
   test("renders the Process Docs route with executable quality and reference context", () => {
@@ -640,6 +856,40 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(harness.openedTasks, ["task-launch"]);
   });
 
+  test("attributes an unavailable docs search source to process documents", async () => {
+    const harness = createKnowledgeHarness({
+      request: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname === "/search") {
+          const error = new Error(
+            "Docs content root is unavailable: /missing/content",
+          );
+          error.status = 503;
+          throw error;
+        }
+        return {};
+      },
+    });
+    harness.elements.searchInput.value = "launch";
+
+    await harness.api.refreshDocuments();
+    const banner = findAllByClass(
+      harness.elements.documentList,
+      "search-source-state",
+    )[0];
+    assert.equal(
+      banner.textContent.includes("Process documents could not load."),
+      true,
+    );
+    assert.equal(banner.textContent.includes("work sources"), false);
+    assert.equal(
+      banner.textContent.includes(
+        "process documents: Docs content root is unavailable: /missing/content",
+      ),
+      true,
+    );
+  });
+
   test("normalizes document and folder deep links and rejects stale references", () => {
     const documentRoute = createKnowledgeHarness({
       location: { pathname: "/operations/onboarding.md" },
@@ -733,7 +983,8 @@ describe("Knowledge surface boundary", () => {
       },
     });
     await missing.api.openDocument("content/removed.md");
-    assert.equal(missing.statuses.at(-2), "Document not found");
+    assert.equal(missing.statuses.at(-1), "Document not found");
+    assert.equal(missing.elements.docState.hidden, true);
     assert.equal(missing.documentState.currentDoc, null);
     assert.deepEqual(missing.history, []);
     assert.equal(missing.elements.editor.disabled, true);

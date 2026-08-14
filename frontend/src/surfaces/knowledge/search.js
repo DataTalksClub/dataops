@@ -345,17 +345,34 @@ export function createKnowledgeSearch(context, services) {
     const title = document.createElement("strong");
     title.textContent = "Partial search results";
     const body = document.createElement("span");
-    body.textContent =
-      "Some work sources could not load. Document results and any loaded work sources remain visible.";
+    // Attribute the failure to what actually failed. Calling a docs outage a
+    // work-source problem sent operators looking in the wrong system.
+    const docsFailed = unavailable.some((source) => source.source === "docs");
+    const workFailed = unavailable.some((source) => source.source !== "docs");
+    if (docsFailed && workFailed) {
+      body.textContent =
+        "Process documents and some work sources could not load. Results from the sources that answered remain visible.";
+    } else if (docsFailed) {
+      body.textContent =
+        "Process documents could not load. Work results remain visible, and no document results are shown for this query.";
+    } else {
+      body.textContent =
+        "Some work sources could not load. Document results and any loaded work sources remain visible.";
+    }
     section.append(title, body);
     const list = document.createElement("ul");
     for (const source of unavailable.slice(0, 5)) {
       const item = document.createElement("li");
-      item.textContent = `${source.source || "source"}: ${source.error || "unavailable"}`;
+      item.textContent = `${searchSourceLabel(source.source)}: ${source.error || "unavailable"}`;
       list.append(item);
     }
     section.append(list);
     return section;
+  }
+
+  function searchSourceLabel(source) {
+    if (source === "docs") return "process documents";
+    return source || "source";
   }
 
   function groupSearchResults(results) {

@@ -78,7 +78,7 @@ const REQUIRED = {
   },
   "process-docs": {
     route: "/#/processes",
-    states: ["loading", "empty", "result-detail", "create-read-edit", "backlinks", "validation", "git-failure"],
+    states: ["loading", "empty", "result-detail", "create-read-edit", "backlinks", "validation", "git-failure", "unavailable"],
   },
   admin: { route: "/#/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
   users: {

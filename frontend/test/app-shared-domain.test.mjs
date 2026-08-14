@@ -10,15 +10,19 @@ import {
   cardsFromWorkPayload,
   createOperationsModel,
   currentOperatorIdFromPayload,
+  docsAvailabilityView,
   emptyOperationsArtifactSnapshot,
   emptyOperationsAssistantSnapshot,
+  emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
   emptyOperationsRecurringSnapshot,
   emptyOperationsWorkSnapshot,
   labelizeWorkValue,
+  loadedOperationsDocsSnapshot,
   normalizeTemplateMatchValue,
   recurringConfigsFromPayload,
   settledPayload,
+  unavailableOperationsDocsSnapshot,
   usersFromWorkPayload,
 } from "../src/core/operations-model.js";
 import { createOperationsOverview } from "../src/surfaces/operations-overview.js";
@@ -473,6 +477,111 @@ describe("app shared operations domain characterization", () => {
     assert.match(finding.textContent, /Missing proof guidanceBlockingproof/);
     await finding.click();
     assert.deepEqual(opened.pop(), ["task", "task-2"]);
+  });
+
+  test("derives three docs-availability states from one bootstrap request", () => {
+    assert.deepEqual(emptyOperationsDocsSnapshot(), {
+      state: "loading",
+      documentCount: 0,
+      error: "",
+      status: 0,
+    });
+    assert.deepEqual(loadedOperationsDocsSnapshot([{ path: "a.md" }]), {
+      state: "loaded",
+      documentCount: 1,
+      error: "",
+      status: 0,
+    });
+    assert.deepEqual(loadedOperationsDocsSnapshot(null), {
+      state: "loaded",
+      documentCount: 0,
+      error: "",
+      status: 0,
+    });
+
+    const outage = new Error("Docs content root is unavailable: /missing");
+    outage.status = 503;
+    assert.deepEqual(unavailableOperationsDocsSnapshot(outage), {
+      state: "unavailable",
+      documentCount: 0,
+      error: "Docs content root is unavailable: /missing",
+      status: 503,
+    });
+    assert.deepEqual(unavailableOperationsDocsSnapshot(new Error("")), {
+      state: "unavailable",
+      documentCount: 0,
+      error: "Process documents could not be loaded and the server gave no reason.",
+      status: 0,
+    });
+
+    // Loading is never an outage, and an answered-but-empty corpus is not one
+    // either.
+    assert.equal(docsAvailabilityView(emptyOperationsDocsSnapshot()), null);
+    assert.equal(
+      docsAvailabilityView(emptyOperationsDocsSnapshot(), { includeEmpty: true }),
+      null,
+    );
+    assert.equal(docsAvailabilityView(loadedOperationsDocsSnapshot([])), null);
+    assert.equal(
+      docsAvailabilityView(loadedOperationsDocsSnapshot([{ path: "a.md" }]), {
+        includeEmpty: true,
+      }),
+      null,
+    );
+    assert.equal(
+      docsAvailabilityView(loadedOperationsDocsSnapshot([]), { includeEmpty: true })
+        .docsState,
+      "empty",
+    );
+    assert.equal(
+      docsAvailabilityView(unavailableOperationsDocsSnapshot(outage)).docsState,
+      "unavailable",
+    );
+  });
+
+  test("renders one docs availability component with distinct outage and empty copy", () => {
+    const document = new FakeDocument();
+    const { renderDocsAvailabilityState } = createOperationsOverview({ document });
+    const outage = new Error("Docs content root is unavailable: /missing");
+    outage.status = 503;
+
+    assert.equal(
+      renderDocsAvailabilityState(emptyOperationsDocsSnapshot(), {
+        includeEmpty: true,
+      }),
+      null,
+    );
+
+    const unavailable = renderDocsAvailabilityState(
+      unavailableOperationsDocsSnapshot(outage),
+      { includeEmpty: true },
+    );
+    assert.equal(unavailable.dataset.docsState, "unavailable");
+    assert.equal(unavailable.className, "ops-honest-state ops-docs-state");
+    assert.equal(
+      unavailable.getAttribute("aria-label"),
+      "Process document availability",
+    );
+    assert.equal(
+      unavailable.children[0].textContent,
+      "Process documents are unavailable",
+    );
+    assert.equal(
+      unavailable.children[1].textContent,
+      "Docs content root is unavailable: /missing",
+    );
+    assert.equal(unavailable.textContent.includes("No process documents yet"), false);
+
+    const empty = renderDocsAvailabilityState(loadedOperationsDocsSnapshot([]), {
+      includeEmpty: true,
+    });
+    assert.equal(empty.dataset.docsState, "empty");
+    assert.equal(empty.children[0].textContent, "No process documents yet");
+    assert.equal(
+      empty.textContent.includes("Process documents are unavailable"),
+      false,
+    );
+    assert.notEqual(empty.children[1].textContent, unavailable.children[1].textContent);
   });
 
   test("retains isolated browser coverage for assembled Home, Tasks, errors, and mobile safety", () => {

@@ -1362,6 +1362,14 @@
           "coverage": {
             "status": "runtime"
           }
+        },
+        {
+          "id": "process-docs.unavailable",
+          "kind": "error",
+          "description": "An unreachable docs content root reads as an outage carrying the server message, not as an empty corpus.",
+          "coverage": {
+            "status": "runtime"
+          }
         }
       ]
     },

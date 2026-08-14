@@ -162,6 +162,7 @@ function createWorkspaceHarness() {
   const snapshots = {
     artifact: { source: "artifact", loaded: false },
     assistant: { source: "assistant", loaded: false },
+    docs: { source: "docs", state: "loading" },
     quality: { source: "quality", loaded: false },
     recurring: { source: "recurring", loaded: false },
     work: { source: "work", loaded: false },
@@ -169,6 +170,7 @@ function createWorkspaceHarness() {
   const state = createWorkspaceState({
     emptyOperationsArtifactSnapshot: () => snapshots.artifact,
     emptyOperationsAssistantSnapshot: () => snapshots.assistant,
+    emptyOperationsDocsSnapshot: () => snapshots.docs,
     emptyOperationsQualitySnapshot: () => snapshots.quality,
     emptyOperationsRecurringSnapshot: () => snapshots.recurring,
     emptyOperationsWorkSnapshot: () => snapshots.work,
@@ -537,6 +539,8 @@ describe("runtime and shell production behavior", () => {
     assert.equal(state.tasksSurfaceState.recurringSnapshot, snapshots.recurring);
     assert.equal(state.operationsSurfaceState.artifactSnapshot, snapshots.artifact);
     assert.equal(state.overviewState.qualitySnapshot, snapshots.quality);
+    assert.equal(state.docsSnapshot, snapshots.docs);
+    assert.equal(state.homeSurfaceState.docsSnapshot, snapshots.docs);
     assert.deepEqual(state.knowledgeState.allDocuments, []);
     assert.equal(state.documentState.hasDraft, false);
 
@@ -552,6 +556,10 @@ describe("runtime and shell production behavior", () => {
     assert.equal(state.tasksSurfaceState.qualitySnapshot, quality);
     assert.equal(state.overviewState.assistantSnapshot, assistant);
     assert.equal(state.operationsSurfaceState.artifactSnapshot, artifact);
+
+    const docs = { state: "unavailable", error: "docs down", status: 503 };
+    state.docsSnapshot = docs;
+    assert.equal(state.homeSurfaceState.docsSnapshot, docs);
 
     const intake = { loaded: true, selectedId: "intake-1" };
     const mutation = { itemId: "intake-1", busy: true };

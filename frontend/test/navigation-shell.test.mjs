@@ -6,6 +6,7 @@ import {
   parseWorkspaceHash,
   workspaceRouteFor,
 } from "../src/core/workspace.js";
+import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
 import { createNavigationShell } from "../src/shell/navigation.js";
 import { FakeDocument, FakeElement, nextTicks } from "./support/fake-dom.mjs";
 
@@ -115,6 +116,8 @@ function createNavigationHarness(options = {}) {
     folderExists: (path) => path === "known-folder",
     folderPathFromLocation: () => options.folderPath || "",
     getAssistantQueueState: () => assistantQueue,
+    getDocsAvailability: () =>
+      options.docsAvailability || emptyOperationsDocsSnapshot(),
     getIntakeSurfaceState: () => intakeSurfaceState,
     getKnowledgeState: () => knowledge,
     getTasksSectionForLegacyView: (view) =>
@@ -389,6 +392,39 @@ describe("canonical navigation shell behavior", () => {
     });
     await doc.shell.initializeRouting(Promise.resolve());
     assert.deepEqual(doc.calls.find(([name]) => name === "open-doc"), [
+      "open-doc",
+      "process/example.md",
+      { revealInTree: true, updateUrl: false },
+    ]);
+
+    // A healthy corpus that simply does not contain the document keeps today's
+    // behavior; only a docs outage opens the document anyway.
+    const unknownDoc = createNavigationHarness({
+      documents: [],
+      docPath: "process/example.md",
+      hash: "",
+      pathname: "/process/example.md",
+    });
+    await unknownDoc.shell.initializeRouting(Promise.resolve());
+    assert.equal(
+      unknownDoc.calls.some(([name]) => name === "open-doc"),
+      false,
+    );
+
+    const outageDoc = createNavigationHarness({
+      docsAvailability: {
+        state: "unavailable",
+        documentCount: 0,
+        error: "Docs content root is unavailable: /missing/content",
+        status: 503,
+      },
+      documents: [],
+      docPath: "process/example.md",
+      hash: "",
+      pathname: "/process/example.md",
+    });
+    await outageDoc.shell.initializeRouting(Promise.resolve());
+    assert.deepEqual(outageDoc.calls.find(([name]) => name === "open-doc"), [
       "open-doc",
       "process/example.md",
       { revealInTree: true, updateUrl: false },

@@ -40,6 +40,7 @@ export function createHomeSurface(context) {
     refreshAccountIdentity,
     refreshDocuments,
     refreshWorkBell,
+    renderDocsAvailabilityState,
     renderHonestState,
     renderOperationsRuntimeState,
     request,
@@ -122,6 +123,12 @@ export function createHomeSurface(context) {
 
     const runtimeState = renderOperationsRuntimeState(model.runtime);
     if (runtimeState) wrap.append(runtimeState);
+
+    // Home reports a docs outage next to the work runtime state, and stays
+    // silent while docs are loading or the corpus is merely empty: Home is not
+    // where an operator looks for process documents.
+    const docsState = renderDocsAvailabilityState(state.docsSnapshot);
+    if (docsState) wrap.append(docsState);
 
     wrap.append(renderHomeAttentionQueue(model));
 
