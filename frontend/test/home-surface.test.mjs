@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
+import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
 import { createHomeSurface } from "../src/surfaces/home.js";
+import { createOperationsOverview } from "../src/surfaces/operations-overview.js";
 import {
   FakeDocument,
   FakeElement,
@@ -167,6 +169,7 @@ function createHomeHarness(options = {}) {
       user: users[0],
       workOwner: options.owner || users[0],
     },
+    docsSnapshot: options.docsSnapshot || emptyOperationsDocsSnapshot(),
     qualitySnapshot: options.qualitySnapshot || emptyQualitySnapshot(),
     recurringSnapshot: options.recurringSnapshot || {
       configs: [],
@@ -279,6 +282,10 @@ function createHomeHarness(options = {}) {
     refreshWorkBell: () => {
       calls.workBell += 1;
     },
+    // The production docs-availability renderer, so Home is checked against the
+    // shared component instead of a test double.
+    renderDocsAvailabilityState: createOperationsOverview({ document })
+      .renderDocsAvailabilityState,
     renderHonestState: honestState,
     renderOperationsRuntimeState: (runtime) => {
       if (!runtime.errors.length) return null;
@@ -406,6 +413,49 @@ describe("Home surface production behavior", () => {
       root.textContent.includes("no false work items are shown"),
       true,
     );
+  });
+
+  test("reports a docs outage on Home without hiding work or inventing a docs banner", () => {
+    const loading = createHomeHarness();
+    loading.surface.renderOperationsHome([]);
+    assert.equal(
+      loading.documentList.children[0].querySelector("[data-docs-state]"),
+      null,
+    );
+
+    const emptyCorpus = createHomeHarness({
+      docsSnapshot: { state: "loaded", documentCount: 0, error: "", status: 0 },
+    });
+    emptyCorpus.surface.renderOperationsHome([]);
+    assert.equal(
+      emptyCorpus.documentList.children[0].querySelector("[data-docs-state]"),
+      null,
+    );
+
+    const outage = createHomeHarness({
+      docsSnapshot: {
+        state: "unavailable",
+        documentCount: 0,
+        error: "Docs content root is unavailable: /missing/content",
+        status: 503,
+      },
+    });
+    outage.surface.renderOperationsHome([]);
+    const root = outage.documentList.children[0];
+    const banners = findAllByClass(root, "ops-docs-state");
+    assert.equal(banners.length, 1);
+    assert.equal(banners[0].dataset.docsState, "unavailable");
+    assert.equal(
+      banners[0].children[0].textContent,
+      "Process documents are unavailable",
+    );
+    assert.equal(
+      banners[0].children[1].textContent,
+      "Docs content root is unavailable: /missing/content",
+    );
+    // Work content still renders next to the docs banner.
+    assert.equal(root.querySelector(".home-status-strip") !== null, true);
+    assert.equal(root.textContent.includes("Needs your attention"), true);
   });
 
   test("scopes the Home model to the selected teammate while preserving signed-in identity", () => {

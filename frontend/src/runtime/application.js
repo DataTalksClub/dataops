@@ -1,7 +1,3 @@
-export function applicationRuntimeLoaded() {
-  return true;
-}
-
 import {
   addDaysIso, buildHomeAttentionItems, canonicalWorkspaceUrl,
   cardAnchorTone, cardsHeaderViewModel, compareIsoDate, dedupeWorkTasks,
@@ -19,8 +15,9 @@ import {
 import {
   assistantJobsFromPayload, cardsFromWorkPayload,
   currentOperatorIdFromPayload, emptyOperationsArtifactSnapshot,
-  emptyOperationsAssistantSnapshot, emptyOperationsQualitySnapshot,
-  emptyOperationsRecurringSnapshot, emptyOperationsWorkSnapshot,
+  emptyOperationsAssistantSnapshot, emptyOperationsDocsSnapshot,
+  emptyOperationsQualitySnapshot, emptyOperationsRecurringSnapshot,
+  emptyOperationsWorkSnapshot,
   labelizeWorkValue, normalizeTemplateMatchValue,
   recurringConfigsFromPayload, settledPayload, usersFromWorkPayload,
 } from "../core/operations-model.js";
@@ -70,6 +67,7 @@ const { apiUrl, request } = createApiClient({
 const workspaceState = createWorkspaceState({
   emptyOperationsArtifactSnapshot,
   emptyOperationsAssistantSnapshot,
+  emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
   emptyOperationsRecurringSnapshot,
   emptyOperationsWorkSnapshot,
@@ -109,6 +107,7 @@ const {
   docPinButton, pinnedSection, pinnedList, newDocForm, newDocPath,
   newDocTitle, newDocType, newDocSummary, workspaceNavButtons,
   tasksNavButton, tasksNavSubmenu, tasksNavSectionButtons, docContextReturn,
+  docState,
   taskPanel, taskPanelTitle, taskPanelBody, taskPanelClose, taskModalBackdrop,
   cardPanel, cardPanelTitle, cardPanelBody, cardPanelClose,
   cardModalBackdrop, diffModal, diffTitle, diffBody, lightbox,
@@ -285,6 +284,7 @@ const {
   operationsViewPath,
   operationsViewTitle,
   referenceCountLabel,
+  renderDocsAvailabilityState,
   renderHonestState,
   renderOperationalSurfaceStates,
   renderOperationsFutureSections,
@@ -367,6 +367,7 @@ const {
   refreshAccountIdentity,
   refreshDocuments,
   refreshWorkBell,
+  renderDocsAvailabilityState,
   renderHonestState,
   renderOperationsRuntimeState,
   request,
@@ -651,6 +652,7 @@ knowledgeSurface = createKnowledgeSurface({
   docContextReturn,
   docMenuButton,
   docPinButton,
+  docState,
   docTree,
   documentList,
   documentPath,
@@ -671,6 +673,7 @@ knowledgeSurface = createKnowledgeSurface({
   knowledgeState,
   getActiveTasksSection: () => workspaceState.activeTasksSection,
   getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
+  getDocsAvailability: () => workspaceState.docsSnapshot,
   getOperationsQualitySnapshot: () => workspaceState.qualitySnapshot,
   getOperationsRecurringSnapshot: () => workspaceState.recurringSnapshot,
   getOperationsWorkSnapshot: () => workspaceState.workSnapshot,
@@ -702,6 +705,7 @@ knowledgeSurface = createKnowledgeSurface({
   refreshOperationsWorkSnapshot,
   renameCurrentDoc: (...args) => renameCurrentDoc(...args),
   deleteCurrentDoc: (...args) => deleteCurrentDoc(...args),
+  renderDocsAvailabilityState,
   renderHonestState,
   renderOperationsReference,
   renderOperationsWorkspace,
@@ -712,6 +716,7 @@ knowledgeSurface = createKnowledgeSurface({
   resetCardPanel,
   resetTaskPanel,
   searchInput,
+  setDocsAvailability: (snapshot) => { workspaceState.docsSnapshot = snapshot; },
   setPageTitle,
   setSaveState: (...args) => setSaveState(...args),
   setStatus,
@@ -849,6 +854,7 @@ navigationShell = createNavigationShell({
   folderExists,
   folderPathFromLocation,
   getAssistantQueueState: () => workspaceState.assistantQueue,
+  getDocsAvailability: () => workspaceState.docsSnapshot,
   getIntakeSurfaceState: () => operationsSurfaceState,
   getKnowledgeState: () => knowledgeState,
   getTasksSectionForLegacyView: legacyViewToTasksSection,
@@ -956,9 +962,6 @@ bindApplicationEvents({
 });
 
 
-
-
-
 initializeAppShell({
   attachSidebarResize,
   enhanceSelect,
@@ -982,9 +985,6 @@ initializeAppShell({
   updateSaveState,
   windowRef: window,
 });
-
-// Title/path helpers for the new Home / Tasks / Docs IA.
-// ---------- Quick create: ad-hoc task and workflow ----------
 
 // Refresh "Saved · 2 min ago" every minute so the relative time stays current.
 setInterval(() => {

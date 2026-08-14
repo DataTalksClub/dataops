@@ -1,3 +1,9 @@
+import {
+  emptyOperationsDocsSnapshot,
+  loadedOperationsDocsSnapshot,
+  unavailableOperationsDocsSnapshot,
+} from "../../core/operations-model.js";
+
 export function createKnowledgeCatalog(context, services) {
   const {
     apiUrl,
@@ -16,6 +22,7 @@ export function createKnowledgeCatalog(context, services) {
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
     request,
+    setDocsAvailability,
     setStatus,
     storage,
   } = context;
@@ -33,6 +40,7 @@ export function createKnowledgeCatalog(context, services) {
 
   async function loadDocuments() {
     setStatus("Loading documents...");
+    setDocsAvailability(emptyOperationsDocsSnapshot());
     const skeleton = document.querySelector("#tree-skeleton");
     if (skeleton) skeleton.hidden = false;
 
@@ -48,6 +56,7 @@ export function createKnowledgeCatalog(context, services) {
     try {
       const payload = await request(apiUrl("/docs"));
       knowledgeState.allDocuments = payload.documents || [];
+      setDocsAvailability(loadedOperationsDocsSnapshot(knowledgeState.allDocuments));
       rebuildDocumentIdMap();
       populateFilterOptions();
       refreshDocuments();
@@ -55,7 +64,13 @@ export function createKnowledgeCatalog(context, services) {
       renderRecentlyViewed();
       renderPinned();
     } catch (error) {
-      setStatus(error.message);
+      // The bootstrap catalog request is the single source of docs
+      // availability. Record the outage with the server's own message and
+      // repaint, so the surface the operator is already looking at stops
+      // reading like an empty corpus.
+      knowledgeState.allDocuments = [];
+      setDocsAvailability(unavailableOperationsDocsSnapshot(error));
+      refreshDocuments();
     } finally {
       if (skeleton) skeleton.hidden = true;
     }

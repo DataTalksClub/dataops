@@ -41,4 +41,26 @@ function createDocsCacheRoot(name, documents = {}) {
   return cacheRoot;
 }
 
-module.exports = { createDocsCacheRoot, REPO_ROOT, TMP_ROOT };
+/**
+ * Return a spec-owned docs cache root that deliberately does not exist.
+ *
+ * The path is removed rather than never named, so a leftover directory from an
+ * earlier run cannot quietly turn an outage fixture into an empty corpus.
+ * Offline (`DTC_OFFLINE=1`) nothing recreates it, so `<root>/content` stays
+ * absent and every docs endpoint answers with the 503 that names the path.
+ *
+ * @param {string} name spec-unique directory name, relative to `<repo>/.tmp/`
+ * @returns {string} absolute, absent cache root for `DTC_CACHE_ROOT`
+ */
+function missingDocsCacheRoot(name) {
+  const cacheRoot = path.join(TMP_ROOT, name);
+  fs.rmSync(cacheRoot, { recursive: true, force: true });
+  return cacheRoot;
+}
+
+module.exports = {
+  createDocsCacheRoot,
+  missingDocsCacheRoot,
+  REPO_ROOT,
+  TMP_ROOT,
+};

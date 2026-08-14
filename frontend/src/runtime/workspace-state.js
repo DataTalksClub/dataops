@@ -2,6 +2,7 @@ export function createWorkspaceState(context) {
   const {
     emptyOperationsArtifactSnapshot,
     emptyOperationsAssistantSnapshot,
+    emptyOperationsDocsSnapshot,
     emptyOperationsQualitySnapshot,
     emptyOperationsRecurringSnapshot,
     emptyOperationsWorkSnapshot,
@@ -33,6 +34,9 @@ export function createWorkspaceState(context) {
   let artifactSnapshot = emptyOperationsArtifactSnapshot();
   let assistantSnapshot = emptyOperationsAssistantSnapshot();
   let qualitySnapshot = emptyOperationsQualitySnapshot();
+  // Docs availability starts as `loading`: the bootstrap `GET /docs` has not
+  // answered yet, and a pending request is not an outage.
+  let docsSnapshot = emptyOperationsDocsSnapshot();
   let intake = {
     filter: "actionable",
     selectedId: null,
@@ -75,6 +79,9 @@ export function createWorkspaceState(context) {
     },
     set qualitySnapshot(snapshot) {
       qualitySnapshot = snapshot;
+    },
+    get docsSnapshot() {
+      return docsSnapshot;
     },
     get accountIdentity() {
       return getAccountIdentityState();
@@ -215,6 +222,12 @@ export function createWorkspaceState(context) {
     },
     set assistantSnapshot(snapshot) {
       assistantSnapshot = snapshot;
+    },
+    get docsSnapshot() {
+      return docsSnapshot;
+    },
+    set docsSnapshot(snapshot) {
+      docsSnapshot = snapshot;
     },
     get intake() {
       return intake;

@@ -5,12 +5,14 @@ export function createProcessDocsSurface(context, services) {
     buildProcessQualityModel,
     clearSelectionButton,
     documentList,
+    getDocsAvailability,
     getOperationsQualitySnapshot,
     getOperationsRecurringSnapshot,
     getOperationsWorkSnapshot,
     libraryTitle,
     listDraftPaths,
     qualityFiltersState,
+    renderDocsAvailabilityState,
     renderHonestState,
     renderOperationsReference,
     renderQualityFindingRow,
@@ -57,6 +59,13 @@ export function createProcessDocsSurface(context, services) {
       "Use internal Process Docs from Task or Card context first. Findings below focus on runnable Template/Card risk and maintainer gaps.",
     );
     section.append(note);
+
+    // Docs is the surface where an unreachable corpus is most easily mistaken
+    // for an empty one, so the availability state sits above Quality Findings.
+    const docsState = renderDocsAvailabilityState(getDocsAvailability(), {
+      includeEmpty: true,
+    });
+    if (docsState) section.append(docsState);
 
     section.append(renderProcessQualityDrilldown(quality));
 

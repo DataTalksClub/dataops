@@ -69,6 +69,78 @@ export function emptyOperationsQualitySnapshot() {
   };
 }
 
+// ---------- Process document availability ----------
+//
+// One snapshot, derived from the single `GET /docs` bootstrap request, tells
+// every surface whether the process-document corpus is still loading, was
+// answered by the docs service, or is unreachable. An unreachable corpus must
+// never be rendered as an empty one, so the three states stay distinguishable
+// and no surface probes `/docs` again to find out.
+
+const DOCS_UNAVAILABLE_TITLE = "Process documents are unavailable";
+const DOCS_EMPTY_TITLE = "No process documents yet";
+const DOCS_UNAVAILABLE_FALLBACK_MESSAGE =
+  "Process documents could not be loaded and the server gave no reason.";
+const DOCS_UNAVAILABLE_GUIDANCE =
+  "Work, Cards, and Tasks are unaffected. Reload this page once the docs service is restored.";
+const DOCS_EMPTY_BODY =
+  "The docs service answered and the process-document corpus contains no documents.";
+const DOCS_EMPTY_GUIDANCE =
+  "Publish a process document to fill this surface. Nothing is being hidden by an error.";
+
+export function emptyOperationsDocsSnapshot() {
+  return { state: "loading", documentCount: 0, error: "", status: 0 };
+}
+
+export function loadedOperationsDocsSnapshot(documents) {
+  return {
+    state: "loaded",
+    documentCount: Array.isArray(documents) ? documents.length : 0,
+    error: "",
+    status: 0,
+  };
+}
+
+export function unavailableOperationsDocsSnapshot(error) {
+  const message = String(error?.message || "").trim();
+  return {
+    state: "unavailable",
+    documentCount: 0,
+    error: message || DOCS_UNAVAILABLE_FALLBACK_MESSAGE,
+    status: Number(error?.status) || 0,
+  };
+}
+
+/**
+ * Describe what a surface should render for a docs snapshot, or `null` when it
+ * should render nothing. Loading never looks like an outage, and the empty
+ * state only appears where a surface asks for it.
+ */
+export function docsAvailabilityView(snapshot, options = {}) {
+  const state = snapshot?.state;
+  if (state === "unavailable") {
+    return {
+      docsState: "unavailable",
+      title: DOCS_UNAVAILABLE_TITLE,
+      body: String(snapshot.error || "").trim() || DOCS_UNAVAILABLE_FALLBACK_MESSAGE,
+      detail: DOCS_UNAVAILABLE_GUIDANCE,
+    };
+  }
+  if (
+    state === "loaded" &&
+    Number(snapshot.documentCount || 0) === 0 &&
+    options.includeEmpty === true
+  ) {
+    return {
+      docsState: "empty",
+      title: DOCS_EMPTY_TITLE,
+      body: DOCS_EMPTY_BODY,
+      detail: DOCS_EMPTY_GUIDANCE,
+    };
+  }
+  return null;
+}
+
 export function settledPayload(result) {
   return result && result.status === "fulfilled" ? result.value : {};
 }

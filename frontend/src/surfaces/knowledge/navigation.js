@@ -1,3 +1,5 @@
+import { unavailableOperationsDocsSnapshot } from "../../core/operations-model.js";
+
 export function createKnowledgeNavigation(context, services) {
   const {
     apiUrl,
@@ -10,6 +12,7 @@ export function createKnowledgeNavigation(context, services) {
     cleanPath,
     docContextReturn,
     docMenuButton,
+    docState,
     documentPath,
     documentState,
     documentTitle,
@@ -19,6 +22,7 @@ export function createKnowledgeNavigation(context, services) {
     enterRenderedMode,
     getActiveTasksSection,
     getActiveWorkspaceView,
+    getDocsAvailability,
     historyAdapter,
     knowledgeState,
     locationAdapter,
@@ -30,9 +34,11 @@ export function createKnowledgeNavigation(context, services) {
     quickNavInput,
     quickNavResults,
     refreshChangesPanel,
+    renderDocsAvailabilityState,
     request,
     scheduleAnimationFrame,
     searchInput,
+    setDocsAvailability,
     setPageTitle,
     setSaveState,
     setStatus,
@@ -44,6 +50,7 @@ export function createKnowledgeNavigation(context, services) {
     updateSaveState,
     updateViewToggleAvailability,
   } = context;
+  const DOCS_UNAVAILABLE_STATUS = 503;
   const {
     captureScrollPosition,
     filterDocuments,
@@ -60,10 +67,48 @@ export function createKnowledgeNavigation(context, services) {
   let _quickNavIndex = 0;
   let _quickNavMatches = [];
 
+  /** Remove any docs-availability notice from the editor view. */
+  function clearDocumentStateNotice() {
+    if (!docState) return;
+    docState.replaceChildren();
+    docState.hidden = true;
+  }
+
+  /**
+   * Render the shared docs outage state inside the editor view.
+   *
+   * The corpus is unreachable, so there is no document to show: say so with
+   * the server's message instead of leaving a blank editor behind.
+   */
+  function showDocumentUnavailable(snapshot) {
+    setDocsAvailability(snapshot);
+    const node = renderDocsAvailabilityState(snapshot);
+    if (!docState || !node) return;
+    docState.replaceChildren(node);
+    docState.hidden = false;
+  }
+
+  /**
+   * Decide whether a failed document read is the docs outage.
+   *
+   * The single document route answers 404 when the whole content root is
+   * missing, so the shared snapshot from the bootstrap catalog request — not
+   * this response — is what tells an outage from a genuinely missing document.
+   * A direct 503 still counts, and it carries the fresher message.
+   */
+  function docsOutageSnapshotFor(error) {
+    if (Number(error?.status) === DOCS_UNAVAILABLE_STATUS) {
+      return unavailableOperationsDocsSnapshot(error);
+    }
+    const snapshot = getDocsAvailability();
+    return snapshot?.state === "unavailable" ? snapshot : null;
+  }
+
   async function openDocument(path, options = {}) {
     if (!(await canLeaveCurrentDocument())) return;
     beginDocumentNavigation();
     captureScrollPosition();
+    clearDocumentStateNotice();
     knowledgeState.docReturnContext = options.returnContext || null;
     renderDocReturnContext();
 
@@ -123,10 +168,18 @@ export function createKnowledgeNavigation(context, services) {
         });
       }
     } catch (error) {
-      setStatus(error.message);
-      setSaveState("");
+      // An unreachable corpus is reported through the shared availability
+      // state instead of the permanently hidden status line. Other failures,
+      // such as one missing document, keep their existing behavior.
+      const outage = docsOutageSnapshotFor(error);
+      if (outage) {
+        showDocumentUnavailable(outage);
+      } else {
+        setStatus(error.message);
+      }
       documentTitle.disabled = !documentState.currentDoc;
       editor.disabled = !documentState.currentDoc;
+      updateSaveState();
     }
   }
 
