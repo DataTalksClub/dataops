@@ -32,14 +32,19 @@ if (!fs.existsSync(AUTH_STATE_PATH)) {
   fs.writeFileSync(AUTH_STATE_PATH, JSON.stringify(DEFAULT_AUTH_STATE, null, 2));
 }
 
+const reporters = process.env.CI
+  ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
+  : [['list']];
+if (process.env.DATAOPS_CAPABILITY_COVERAGE === '1') {
+  reporters.push(['./e2e/capability-evidence-reporter.js']);
+}
+
 module.exports = defineConfig({
   testDir: './e2e',
   outputDir: './test-results',
   timeout: 30000,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI
-    ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
-    : [['list']],
+  reporter: reporters,
   workers: 1,
   globalSetup: './e2e/global-setup.js',
   globalTeardown: './e2e/global-teardown.js',

@@ -1,7 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 
 test.describe('Git-authored runtime templates', () => {
-  test('keeps Git-authored templates read-only and creates cards from their deployed projections', async ({ page, request }) => {
+  test('keeps Git-authored templates read-only and creates cards from their deployed projections', async ({ page, request }, testInfo) => {
     const list = await request.get('/api/templates');
     expect(list.status()).toBe(200);
     const templates = (await list.json()).templates;
@@ -37,9 +38,14 @@ test.describe('Git-authored runtime templates', () => {
     ));
     await form.getByRole('button', { name: 'Create card' }).click();
     expect((await createdResponse).status()).toBe(201);
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/templates?templateId=<id>',
+      roleId: 'admin',
+      stateIds: ['templates.read-only', 'templates.source-revision', 'templates.create-card', 'templates.method-not-allowed'],
+    }]);
   });
 
-  test('keeps template failures and stale deep links honest', async ({ page, request }) => {
+  test('keeps template failures and stale deep links honest', async ({ page, request }, testInfo) => {
     await request.post('/__e2e__/route-faults', {
       data: { faults: [{ method: 'GET', path: '/api/templates', status: 503 }] },
     });
@@ -50,5 +56,10 @@ test.describe('Git-authored runtime templates', () => {
 
     await page.goto('/#/templates?templateId=missing-git-template');
     await expect(page.getByText(/template not found/i)).toBeVisible();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/templates?templateId=<id>',
+      roleId: 'admin',
+      stateIds: ['templates.failure'],
+    }]);
   });
 });

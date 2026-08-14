@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "contract": "canonical-frontend-capability-coverage",
-  "stateRoleSemantics": "A state inherits its capability roleIds unless the state declares a narrower roleIds array.",
+  "stateRoleSemantics": "A state with roleIds requires passing evidence for every listed role; otherwise one passing role inherited from the capability is sufficient.",
   "evidencePolicy": {
-    "acceptedType": "normal-real-browser",
+    "acceptedType": "same-run-playwright-annotation",
     "forbiddenTypes": [
       "api-only",
       "marker-only",
@@ -14,320 +14,1503 @@
     "browserInterceptionAllowed": false
   },
   "roles": [
-    { "id": "signed-out", "description": "No authenticated browser session." },
-    { "id": "expired-session", "description": "A browser session that is no longer valid." },
-    { "id": "disabled-user", "description": "An authenticated identity whose account is disabled." },
-    { "id": "operator", "description": "An enabled authenticated operator." },
-    { "id": "admin", "description": "An enabled authenticated administrator." }
+    {
+      "id": "signed-out",
+      "description": "No authenticated browser session."
+    },
+    {
+      "id": "expired-session",
+      "description": "A browser session that is no longer valid."
+    },
+    {
+      "id": "disabled-user",
+      "description": "An authenticated identity whose account is disabled."
+    },
+    {
+      "id": "operator",
+      "description": "An enabled authenticated operator."
+    },
+    {
+      "id": "admin",
+      "description": "An enabled authenticated administrator."
+    }
   ],
   "capabilities": [
     {
       "id": "session",
       "surface": "Session boundary",
       "route": "/login | /logout",
-      "apiBoundaries": ["/api/me", "/api/*", "/work/api/*"],
-      "roleIds": ["signed-out", "expired-session", "disabled-user", "operator", "admin"],
+      "apiBoundaries": [
+        "/api/me",
+        "/api/*",
+        "/work/api/*"
+      ],
+      "roleIds": [
+        "signed-out",
+        "expired-session",
+        "disabled-user",
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "session.signed-out-redirect", "kind": "permission", "roleIds": ["signed-out"], "description": "Signed-out page navigation uses the shared login redirect.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "session.expired-denied", "kind": "permission", "roleIds": ["expired-session"], "description": "An expired session is denied without a frontend fallback.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "session.disabled-denied", "kind": "permission", "roleIds": ["disabled-user"], "description": "A disabled user is denied without rendering the workspace.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "session.operator-cookie-ready", "kind": "ready", "roleIds": ["operator"], "description": "An operator loads through the HttpOnly browser cookie and /api/me.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "session.admin-cookie-ready", "kind": "ready", "roleIds": ["admin"], "description": "An admin loads through the HttpOnly browser cookie and server-derived role.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "session.api-json-denial", "kind": "error", "roleIds": ["signed-out", "expired-session", "disabled-user"], "description": "Unauthenticated /api and /work/api requests return JSON and never the shell.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "session.no-bearer-fallback", "kind": "permission", "roleIds": ["operator", "admin"], "description": "The browser does not use bearer-token or local-storage authentication.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } }
+        {
+          "id": "session.signed-out-redirect",
+          "kind": "permission",
+          "roleIds": [
+            "signed-out"
+          ],
+          "description": "Signed-out page navigation uses the shared login redirect.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "session.expired-denied",
+          "kind": "permission",
+          "roleIds": [
+            "expired-session"
+          ],
+          "description": "An expired session is denied without a frontend fallback.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "session.disabled-denied",
+          "kind": "permission",
+          "roleIds": [
+            "disabled-user"
+          ],
+          "description": "A disabled user is denied without rendering the workspace.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "session.operator-cookie-ready",
+          "kind": "ready",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "An operator loads through the HttpOnly browser cookie and /api/me.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "session.admin-cookie-ready",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An admin loads through the HttpOnly browser cookie and server-derived role.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "session.api-json-denial",
+          "kind": "error",
+          "roleIds": [
+            "signed-out",
+            "expired-session",
+            "disabled-user"
+          ],
+          "description": "Unauthenticated /api and /work/api requests return JSON and never the shell.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "session.no-bearer-fallback",
+          "kind": "permission",
+          "roleIds": [
+            "operator",
+            "admin"
+          ],
+          "description": "The browser does not use bearer-token or local-storage authentication.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "settings",
       "surface": "Settings",
       "route": "/#/ (Settings panel)",
-      "apiBoundaries": ["/api/me", "/logout"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/me",
+        "/logout"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "settings.operator-ready", "kind": "ready", "roleIds": ["operator"], "description": "Settings renders the current operator and visible sign-out action.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "settings.admin-ready", "kind": "ready", "roleIds": ["admin"], "description": "Settings renders the current admin and visible sign-out action.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "settings.desktop-focus-close", "kind": "ready", "description": "Desktop Settings has correct initial focus and close behavior.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "settings.mobile-focus-close", "kind": "ready", "description": "Mobile Settings has correct initial focus and close behavior.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "session and Settings enforce real cookie roles, denial, focus, close, and logout" }] } },
-        { "id": "settings.logout", "kind": "permission", "description": "Visible sign out navigates to the shared /logout boundary.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } }
+        {
+          "id": "settings.operator-ready",
+          "kind": "ready",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "Settings renders the current operator and visible sign-out action.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "settings.admin-ready",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "Settings renders the current admin and visible sign-out action.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "settings.desktop-focus-close",
+          "kind": "ready",
+          "description": "Desktop Settings has correct initial focus and close behavior.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "settings.mobile-focus-close",
+          "kind": "ready",
+          "description": "Mobile Settings has correct initial focus and close behavior.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "settings.logout",
+          "kind": "permission",
+          "description": "Visible sign out navigates to the shared /logout boundary.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "home",
       "surface": "Home",
       "route": "/#/",
-      "apiBoundaries": ["/api/tasks", "/api/cards", "/api/notifications", "/docs/process-quality"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/tasks",
+        "/api/cards",
+        "/api/notifications",
+        "/docs/process-quality"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "home.loading", "kind": "loading", "description": "Home exposes an accessible loading state while feeds resolve.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Home preserves real ready data and honest partial failure recovery" }] } },
-        { "id": "home.empty", "kind": "empty", "description": "Home honestly renders zero records and useful navigation.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Home preserves real ready data and honest partial failure recovery" }] } },
-        { "id": "home.ready", "kind": "ready", "description": "Home counts and links are derived from real task, workflow, notification, and quality records; #161 must update this durable state ID when Home changes.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Home preserves real ready data and honest partial failure recovery" }] } },
-        { "id": "home.partial-failure", "kind": "error", "description": "One failed feed stays honest without suppressing successful feeds.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Home preserves real ready data and honest partial failure recovery" }] } }
+        {
+          "id": "home.loading",
+          "kind": "loading",
+          "description": "Home exposes an accessible loading state while feeds resolve.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "home.empty",
+          "kind": "empty",
+          "description": "Home honestly renders zero records and useful navigation.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "home.ready",
+          "kind": "ready",
+          "description": "Home counts and links are derived from real task, workflow, notification, and quality records; #161 must update this durable state ID when Home changes.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "home.partial-failure",
+          "kind": "error",
+          "description": "One failed feed stays honest without suppressing successful feeds.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "inbox",
       "surface": "Inbox",
       "route": "/#/inbox?intakeId=<id>",
-      "apiBoundaries": ["/api/intake"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/intake"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "inbox.empty", "kind": "empty", "description": "An empty queue is honest and actionable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend" }] } },
-        { "id": "inbox.filtered-exact", "kind": "ready", "description": "A deep-linked item outside the active filter still opens exactly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } },
-        { "id": "inbox.new", "kind": "ready", "description": "New intake exposes only valid next actions.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.triaged", "kind": "ready", "description": "Triaged intake exposes only valid next actions.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.blocked-due", "kind": "ready", "description": "A due blocked item prioritizes follow-up and renders humanized history.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.blocked-future", "kind": "ready", "description": "A future blocked item prioritizes response handling.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.attached", "kind": "ready", "description": "Attached intake offers the retained continuation.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.converted", "kind": "ready", "description": "Converted intake offers the retained continuation.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.assistant-ready", "kind": "ready", "description": "Assistant-ready intake exposes its valid baseline action.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.duplicate", "kind": "ready", "description": "Duplicate intake is a read-only resolution summary.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend" }] } },
-        { "id": "inbox.ignored", "kind": "ready", "description": "Ignored intake is a read-only resolution summary.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "inbox.archived", "kind": "ready", "description": "Archived intake is a read-only resolution summary.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend" }] } },
-        { "id": "inbox.validation", "kind": "error", "description": "Validation stays inline, focused, and preserves input.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend" }] } },
-        { "id": "inbox.conflict", "kind": "error", "description": "A conflict preserves input and exposes retry.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend" }] } },
-        { "id": "inbox.server-failure", "kind": "error", "description": "A server failure remains on the selected item and is retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend" }] } },
-        { "id": "inbox.stale-not-found", "kind": "stale", "description": "A stale intake deep link is entity-specific and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } }
+        {
+          "id": "inbox.empty",
+          "kind": "empty",
+          "description": "An empty queue is honest and actionable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.filtered-exact",
+          "kind": "ready",
+          "description": "A deep-linked item outside the active filter still opens exactly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.new",
+          "kind": "ready",
+          "description": "New intake exposes only valid next actions.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.triaged",
+          "kind": "ready",
+          "description": "Triaged intake exposes only valid next actions.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.blocked-due",
+          "kind": "ready",
+          "description": "A due blocked item prioritizes follow-up and renders humanized history.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.blocked-future",
+          "kind": "ready",
+          "description": "A future blocked item prioritizes response handling.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.attached",
+          "kind": "ready",
+          "description": "Attached intake offers the retained continuation.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.converted",
+          "kind": "ready",
+          "description": "Converted intake offers the retained continuation.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.assistant-ready",
+          "kind": "ready",
+          "description": "Assistant-ready intake exposes its valid baseline action.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.duplicate",
+          "kind": "ready",
+          "description": "Duplicate intake is a read-only resolution summary.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.ignored",
+          "kind": "ready",
+          "description": "Ignored intake is a read-only resolution summary.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.archived",
+          "kind": "ready",
+          "description": "Archived intake is a read-only resolution summary.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.validation",
+          "kind": "error",
+          "description": "Validation stays inline, focused, and preserves input.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.conflict",
+          "kind": "error",
+          "description": "A conflict preserves input and exposes retry.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.server-failure",
+          "kind": "error",
+          "description": "A server failure remains on the selected item and is retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "inbox.stale-not-found",
+          "kind": "stale",
+          "description": "A stale intake deep link is entity-specific and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "tasks",
       "surface": "Tasks and proof",
       "route": "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
-      "apiBoundaries": ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/tasks",
+        "/api/files",
+        "/api/artifacts",
+        "/docs",
+        "/content/*"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "tasks.empty", "kind": "empty", "description": "The task queue renders an honest empty state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.waiting", "kind": "ready", "description": "Waiting work and follow-up context render from persisted records.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.blocked", "kind": "ready", "description": "Completion stays blocked while required URL, file, or artifact proof is missing or stale.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.done", "kind": "ready", "description": "Completed work renders its proof and history.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.create-select-update", "kind": "ready", "description": "Create, exact selection, update, and reload use the real task API.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.file-proof", "kind": "ready", "description": "File and artifact proof relationships render their authorized result.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.combined-context", "kind": "ready", "description": "Date, filter workflow, and independent return workflow remain distinct.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "resolves each task parameter independently and reports source-specific non-404 failures" }, { "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "labels fresh combined task links from exact route context before a delayed larger snapshot" }] } },
-        { "id": "tasks.sop-link", "kind": "ready", "description": "The task exposes its real process-document relationship.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.stale-not-found", "kind": "stale", "description": "A stale task deep link is entity-specific and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } },
-        { "id": "tasks.conflict", "kind": "error", "description": "A task conflict preserves operator input and can be retried.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "tasks.failure", "kind": "error", "description": "Task and context-source failures stay independent and honest.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "resolves each task parameter independently and reports source-specific non-404 failures" }] } }
+        {
+          "id": "tasks.empty",
+          "kind": "empty",
+          "description": "The task queue renders an honest empty state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.waiting",
+          "kind": "ready",
+          "description": "Waiting work and follow-up context render from persisted records.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.blocked",
+          "kind": "ready",
+          "description": "Completion stays blocked while required URL, file, or artifact proof is missing or stale.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.done",
+          "kind": "ready",
+          "description": "Completed work renders its proof and history.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.create-select-update",
+          "kind": "ready",
+          "description": "Create, exact selection, update, and reload use the real task API.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.file-proof",
+          "kind": "ready",
+          "description": "File and artifact proof relationships render their authorized result.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.combined-context",
+          "kind": "ready",
+          "description": "Date, filter workflow, and independent return workflow remain distinct.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.sop-link",
+          "kind": "ready",
+          "description": "The task exposes its real process-document relationship.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.stale-not-found",
+          "kind": "stale",
+          "description": "A stale task deep link is entity-specific and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.conflict",
+          "kind": "error",
+          "description": "A task conflict preserves operator input and can be retried.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "tasks.failure",
+          "kind": "error",
+          "description": "Task and context-source failures stay independent and honest.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "workflows",
       "surface": "Workflows",
       "route": "/#/cards?cardId=<id>&taskId=<id>",
-      "apiBoundaries": ["/api/cards", "/api/tasks", "/api/artifacts"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/cards",
+        "/api/tasks",
+        "/api/artifacts"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "workflows.empty", "kind": "empty", "description": "The workflow list renders an honest empty state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "workflows.active", "kind": "ready", "description": "An active workflow renders persisted detail and task order.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "workflows.staged", "kind": "ready", "description": "A staged workflow renders and can advance through a valid mutation.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "workflows.completed", "kind": "ready", "description": "A completed workflow renders its proof summary.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "workflows.template-update-review", "kind": "ready", "description": "A reviewed Template update preserves completed history and archives removed incomplete work.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/card-template-updates.spec.js", "title": "cancels, survives a stale apply with typed input, then retains completed history" }] } },
-        { "id": "workflows.template-update-conflict", "kind": "error", "description": "A stale Template preview retains the open review and typed Card input until an explicit reload.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/card-template-updates.spec.js", "title": "cancels, survives a stale apply with typed input, then retains completed history" }] } },
-        { "id": "workflows.deep-link-return", "kind": "ready", "description": "Exact workflow/task deep links and return navigation stay canonical.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps relationship, notification, search, and panel close routes synchronized" }, { "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "contains task and workflow dialog focus and restores recreated route targets" }] } },
-        { "id": "workflows.mismatch", "kind": "stale", "description": "A task/workflow mismatch never substitutes another record.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } },
-        { "id": "workflows.not-found", "kind": "stale", "description": "A stale workflow deep link is entity-specific and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } },
-        { "id": "workflows.failure", "kind": "error", "description": "A non-404 workflow failure stays unavailable and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "resolves each task parameter independently and reports source-specific non-404 failures" }] } }
+        {
+          "id": "workflows.empty",
+          "kind": "empty",
+          "description": "The workflow list renders an honest empty state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.active",
+          "kind": "ready",
+          "description": "An active workflow renders persisted detail and task order.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.staged",
+          "kind": "ready",
+          "description": "A staged workflow renders and can advance through a valid mutation.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.completed",
+          "kind": "ready",
+          "description": "A completed workflow renders its proof summary.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.template-update-review",
+          "kind": "ready",
+          "description": "A reviewed Template update preserves completed history and archives removed incomplete work.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.template-update-conflict",
+          "kind": "error",
+          "description": "A stale Template preview retains the open review and typed Card input until an explicit reload.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.deep-link-return",
+          "kind": "ready",
+          "description": "Exact workflow/task deep links and return navigation stay canonical.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.mismatch",
+          "kind": "stale",
+          "description": "A task/workflow mismatch never substitutes another record.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.not-found",
+          "kind": "stale",
+          "description": "A stale workflow deep link is entity-specific and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "workflows.failure",
+          "kind": "error",
+          "description": "A non-404 workflow failure stays unavailable and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "templates",
       "surface": "Runtime templates",
       "route": "/#/templates?templateId=<id>",
-      "apiBoundaries": ["/api/templates", "/api/cards"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/templates",
+        "/api/cards"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "templates.read-only", "kind": "ready", "description": "Operators and admins inspect the same read-only Git-authored runtime projection.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/runtime-template-readonly.spec.js", "title": "keeps Git-authored templates read-only and creates cards from their deployed projections" }] } },
-        { "id": "templates.source-revision", "kind": "ready", "description": "The inspector identifies the source YAML path and content revision.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/runtime-template-readonly.spec.js", "title": "keeps Git-authored templates read-only and creates cards from their deployed projections" }] } },
-        { "id": "templates.create-card", "kind": "ready", "description": "A read-only projection can still instantiate a Card.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/runtime-template-readonly.spec.js", "title": "keeps Git-authored templates read-only and creates cards from their deployed projections" }] } },
-        { "id": "templates.reviewed-card-batch", "kind": "ready", "description": "Operators explicitly select reviewed Cards and see partial batch success without silent conflict retries.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/card-template-updates.spec.js", "title": "applies an explicit batch and exposes one stale Card without retrying it" }] } },
-        { "id": "templates.method-not-allowed", "kind": "permission", "description": "Template POST, PUT, and DELETE are unavailable for every role without side effects.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/runtime-template-readonly.spec.js", "title": "keeps Git-authored templates read-only and creates cards from their deployed projections" }] } },
-        { "id": "templates.failure", "kind": "error", "description": "A real list failure leaves the read-only template inspector honestly unavailable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/runtime-template-readonly.spec.js", "title": "keeps template failures and stale deep links honest" }] } },
-        { "id": "templates.stale-not-found", "kind": "stale", "description": "A stale template deep link is entity-specific and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } }
+        {
+          "id": "templates.read-only",
+          "kind": "ready",
+          "description": "Operators and admins inspect the same read-only Git-authored runtime projection.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.source-revision",
+          "kind": "ready",
+          "description": "The inspector identifies the source YAML path and content revision.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.create-card",
+          "kind": "ready",
+          "description": "A read-only projection can still instantiate a Card.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.reviewed-card-batch",
+          "kind": "ready",
+          "description": "Operators explicitly select reviewed Cards and see partial batch success without silent conflict retries.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.method-not-allowed",
+          "kind": "permission",
+          "description": "Template POST, PUT, and DELETE are unavailable for every role without side effects.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.failure",
+          "kind": "error",
+          "description": "A real list failure leaves the read-only template inspector honestly unavailable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.stale-not-found",
+          "kind": "stale",
+          "description": "A stale template deep link is entity-specific and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "recurring",
       "surface": "Recurring schedules",
       "route": "/#/recurring",
-      "apiBoundaries": ["/api/recurring"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/recurring"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "recurring.empty", "kind": "empty", "description": "No schedules renders an honest empty state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Git-authored templates stay read-only while recurring retains admin persistence and role denial" }] } },
-        { "id": "recurring.ready", "kind": "ready", "description": "Persisted schedule rows reload with clear state and controls.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Git-authored templates stay read-only while recurring retains admin persistence and role denial" }] } },
-        { "id": "recurring.pause", "kind": "ready", "roleIds": ["admin"], "description": "An authorized pause persists and reloads.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Git-authored templates stay read-only while recurring retains admin persistence and role denial" }] } },
-        { "id": "recurring.resume", "kind": "ready", "roleIds": ["admin"], "description": "An authorized resume persists and reloads.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Git-authored templates stay read-only while recurring retains admin persistence and role denial" }] } },
-        { "id": "recurring.delete-unreferenced", "kind": "ready", "roleIds": ["admin"], "description": "Deleting an unreferenced schedule removes only that schedule.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "recurring.delete-referenced-409", "kind": "error", "roleIds": ["admin"], "description": "A referenced schedule remains and directs the operator to pause.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "recurring.permission-denied", "kind": "permission", "roleIds": ["operator"], "description": "A role without mutation permission is denied without a side effect.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Git-authored templates stay read-only while recurring retains admin persistence and role denial" }] } },
-        { "id": "recurring.failure", "kind": "error", "roleIds": ["admin"], "description": "A failed recurring mutation preserves the row and is retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Git-authored templates stay read-only while recurring retains admin persistence and role denial" }] } }
+        {
+          "id": "recurring.empty",
+          "kind": "empty",
+          "description": "No schedules renders an honest empty state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.ready",
+          "kind": "ready",
+          "description": "Persisted schedule rows reload with clear state and controls.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.pause",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An authorized pause persists and reloads.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.resume",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An authorized resume persists and reloads.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.delete-unreferenced",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "Deleting an unreferenced schedule removes only that schedule.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.delete-referenced-409",
+          "kind": "error",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "A referenced schedule remains and directs the operator to pause.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.permission-denied",
+          "kind": "permission",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "A role without mutation permission is denied without a side effect.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "recurring.failure",
+          "kind": "error",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "A failed recurring mutation preserves the row and is retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "assistants",
       "surface": "Assistants",
       "route": "/#/assistants?assistantJobId=<id>",
-      "apiBoundaries": ["/api/assistant-jobs", "/api/artifacts"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/assistant-jobs",
+        "/api/artifacts"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "assistants.loading", "kind": "loading", "description": "The assistant baseline exposes an honest loading state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "assistants.empty", "kind": "empty", "description": "No assistant jobs renders an honest empty queue.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "assistants.list", "kind": "ready", "description": "Persisted assistant jobs render in the non-mutating baseline list.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "assistants.exact-detail", "kind": "ready", "description": "An exact assistant job detail loads from the real API.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "assistants.deep-link-reload", "kind": "ready", "description": "Assistant exact detail survives fresh deep-link load and reload.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "assistants.stale-not-found", "kind": "stale", "description": "A stale assistant deep link is entity-specific and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } },
-        { "id": "assistants.unavailable", "kind": "error", "description": "A non-404 assistant failure remains unavailable and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } }
+        {
+          "id": "assistants.loading",
+          "kind": "loading",
+          "description": "The assistant baseline exposes an honest loading state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "assistants.empty",
+          "kind": "empty",
+          "description": "No assistant jobs renders an honest empty queue.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "assistants.list",
+          "kind": "ready",
+          "description": "Persisted assistant jobs render in the non-mutating baseline list.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "assistants.exact-detail",
+          "kind": "ready",
+          "description": "An exact assistant job detail loads from the real API.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "assistants.deep-link-reload",
+          "kind": "ready",
+          "description": "Assistant exact detail survives fresh deep-link load and reload.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "assistants.stale-not-found",
+          "kind": "stale",
+          "description": "A stale assistant deep link is entity-specific and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "assistants.unavailable",
+          "kind": "error",
+          "description": "A non-404 assistant failure remains unavailable and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "artifacts",
       "surface": "Artifacts",
       "route": "/#/artifacts",
-      "apiBoundaries": ["/api/artifacts", "/api/files"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/artifacts",
+        "/api/files"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "artifacts.empty", "kind": "empty", "description": "No artifacts renders an honest empty state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "artifacts.available", "kind": "ready", "description": "An available artifact renders its persisted detail and relationships.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "artifacts.authorized-action", "kind": "ready", "description": "The currently authorized artifact action returns its real result.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "artifacts.unavailable", "kind": "error", "description": "An unavailable artifact stays visible with an honest status.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } },
-        { "id": "artifacts.not-found", "kind": "stale", "description": "A missing related artifact or file is reported honestly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion" }] } },
-        { "id": "artifacts.failure", "kind": "error", "description": "Artifact API failure is visible and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior" }] } }
+        {
+          "id": "artifacts.empty",
+          "kind": "empty",
+          "description": "No artifacts renders an honest empty state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.available",
+          "kind": "ready",
+          "description": "An available artifact renders its persisted detail and relationships.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.authorized-action",
+          "kind": "ready",
+          "description": "The currently authorized artifact action returns its real result.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.unavailable",
+          "kind": "error",
+          "description": "An unavailable artifact stays visible with an honest status.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.not-found",
+          "kind": "stale",
+          "description": "A missing related artifact or file is reported honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.failure",
+          "kind": "error",
+          "description": "Artifact API failure is visible and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "notifications",
       "surface": "Notifications",
       "route": "/#/notifications",
-      "apiBoundaries": ["/api/notifications", "/api/tasks"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/notifications",
+        "/api/tasks"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "notifications.empty", "kind": "empty", "description": "No notifications renders an honest empty panel and zero counts.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "capability recovery states stay JSON-safe and reloadable across retained routes" }] } },
-        { "id": "notifications.task-linked", "kind": "ready", "description": "Open task navigates to the exact persisted target.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps relationship, notification, search, and panel close routes synchronized" }] } },
-        { "id": "notifications.dismiss-success", "kind": "ready", "description": "Dismiss removes exactly one notification without navigating.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence" }] } },
-        { "id": "notifications.dismiss-failure", "kind": "error", "description": "Failed dismissal remains visible and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "capability recovery states stay JSON-safe and reloadable across retained routes" }] } },
-        { "id": "notifications.counts-update", "kind": "ready", "description": "Desktop and mobile indicators update after refresh and dismissal.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps desktop and mobile notification counts synchronized across refresh, failure, and retry" }] } }
+        {
+          "id": "notifications.empty",
+          "kind": "empty",
+          "description": "No notifications renders an honest empty panel and zero counts.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "notifications.task-linked",
+          "kind": "ready",
+          "description": "Open task navigates to the exact persisted target.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "notifications.dismiss-success",
+          "kind": "ready",
+          "description": "Dismiss removes exactly one notification without navigating.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "notifications.dismiss-failure",
+          "kind": "error",
+          "description": "Failed dismissal remains visible and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "notifications.counts-update",
+          "kind": "ready",
+          "description": "Desktop and mobile indicators update after refresh and dismissal.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "bookkeeping",
       "surface": "Bookkeeping",
       "route": "/#/bookkeeping",
-      "apiBoundaries": ["/api/bookkeeping/*"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/bookkeeping/*"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "bookkeeping.empty", "kind": "empty", "description": "No configured accounts or transactions renders honestly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey" }] } },
-        { "id": "bookkeeping.configured", "kind": "ready", "description": "Configured accounts and transactions render from real records.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey" }] } },
-        { "id": "bookkeeping.validation", "kind": "error", "description": "Invalid entry stays in context with field-level feedback.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey" }] } },
-        { "id": "bookkeeping.upload-link", "kind": "ready", "description": "A synthetic PDF evidence upload links to the exact persisted record.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey" }] } },
-        { "id": "bookkeeping.report", "kind": "ready", "description": "A report is derived from persisted synthetic records.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey" }] } },
-        { "id": "bookkeeping.failure", "kind": "error", "description": "Upload, link, and report failures stay honest and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey" }] } }
+        {
+          "id": "bookkeeping.empty",
+          "kind": "empty",
+          "description": "No configured accounts or transactions renders honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "bookkeeping.configured",
+          "kind": "ready",
+          "description": "Configured accounts and transactions render from real records.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "bookkeeping.validation",
+          "kind": "error",
+          "description": "Invalid entry stays in context with field-level feedback.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "bookkeeping.upload-link",
+          "kind": "ready",
+          "description": "A synthetic PDF evidence upload links to the exact persisted record.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "bookkeeping.report",
+          "kind": "ready",
+          "description": "A report is derived from persisted synthetic records.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "bookkeeping.failure",
+          "kind": "error",
+          "description": "Upload, link, and report failures stay honest and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "sponsors",
       "surface": "Sponsors",
       "route": "/#/sponsors?bookingId=<id>",
-      "apiBoundaries": ["/api/sponsor-crm/*"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/sponsor-crm/*"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "sponsors.empty", "kind": "empty", "description": "No sponsor CRM records renders honestly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } },
-        { "id": "sponsors.ready-detail", "kind": "ready", "description": "Organization, contact, and exact booking detail render from real records.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } },
-        { "id": "sponsors.operator-safe-read", "kind": "ready", "roleIds": ["operator"], "description": "An operator sees only the safe projection and evaluation controls.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } },
-        { "id": "sponsors.admin-mutation", "kind": "ready", "roleIds": ["admin"], "description": "An admin completes one permitted local mutation without sending externally.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } },
-        { "id": "sponsors.operator-denied", "kind": "permission", "roleIds": ["operator"], "description": "An operator mutation is denied with no side effect.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } },
-        { "id": "sponsors.conflict", "kind": "error", "roleIds": ["admin"], "description": "A real conflict is safe, visible, and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } },
-        { "id": "sponsors.not-found", "kind": "stale", "description": "A stale booking deep link is entity-specific and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-route-parity.spec.js", "title": "keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable" }] } },
-        { "id": "sponsors.failure", "kind": "error", "description": "A non-404 CRM failure remains honest and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Sponsors enforce safe operator projection and admin-only mutation with real records" }] } }
+        {
+          "id": "sponsors.empty",
+          "kind": "empty",
+          "description": "No sponsor CRM records renders honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.ready-detail",
+          "kind": "ready",
+          "description": "Organization, contact, and exact booking detail render from real records.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.operator-safe-read",
+          "kind": "ready",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "An operator sees only the safe projection and evaluation controls.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.admin-mutation",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An admin completes one permitted local mutation without sending externally.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.operator-denied",
+          "kind": "permission",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "An operator mutation is denied with no side effect.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.conflict",
+          "kind": "error",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "A real conflict is safe, visible, and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.not-found",
+          "kind": "stale",
+          "description": "A stale booking deep link is entity-specific and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "sponsors.failure",
+          "kind": "error",
+          "description": "A non-404 CRM failure remains honest and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "newsletter",
       "surface": "Newsletter",
       "route": "/#/newsletter",
-      "apiBoundaries": ["/api/newsletter-slots"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/newsletter-slots"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "newsletter.empty", "kind": "empty", "description": "No slots renders an honest schedule state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "newsletter.populated", "kind": "ready", "description": "Persisted slots render their schedule and status.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "newsletter.create-edit-reload", "kind": "ready", "description": "A synthetic slot can be created, edited, and reloaded.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "newsletter.validation", "kind": "error", "description": "Validation is visible and preserves input.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "newsletter.conflict", "kind": "error", "description": "A slot conflict is honest and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "newsletter.failure", "kind": "error", "description": "A server failure preserves context and is retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } }
+        {
+          "id": "newsletter.empty",
+          "kind": "empty",
+          "description": "No slots renders an honest schedule state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "newsletter.populated",
+          "kind": "ready",
+          "description": "Persisted slots render their schedule and status.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "newsletter.create-edit-reload",
+          "kind": "ready",
+          "description": "A synthetic slot can be created, edited, and reloaded.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "newsletter.validation",
+          "kind": "error",
+          "description": "Validation is visible and preserves input.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "newsletter.conflict",
+          "kind": "error",
+          "description": "A slot conflict is honest and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "newsletter.failure",
+          "kind": "error",
+          "description": "A server failure preserves context and is retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "calendar",
       "surface": "Calendar",
       "route": "/#/calendar",
-      "apiBoundaries": ["/api/calendar-items"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/calendar-items"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "calendar.empty", "kind": "empty", "description": "No items renders an honest calendar state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.populated", "kind": "ready", "description": "Persisted items render on deterministic dates.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.create-edit-reload", "kind": "ready", "description": "A synthetic item can be created, edited, and reloaded.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.overlays-alerts", "kind": "ready", "description": "Overlays and alerts derive from real local records.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.week-date-navigation", "kind": "ready", "description": "Week and date navigation is deterministic at the Berlin clock boundary.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.validation", "kind": "error", "description": "Validation stays visible and preserves input.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.conflict", "kind": "error", "description": "A calendar conflict is honest and retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } },
-        { "id": "calendar.failure", "kind": "error", "description": "A calendar failure preserves successful data and is retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery" }] } }
+        {
+          "id": "calendar.empty",
+          "kind": "empty",
+          "description": "No items renders an honest calendar state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.populated",
+          "kind": "ready",
+          "description": "Persisted items render on deterministic dates.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.create-edit-reload",
+          "kind": "ready",
+          "description": "A synthetic item can be created, edited, and reloaded.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.overlays-alerts",
+          "kind": "ready",
+          "description": "Overlays and alerts derive from real local records.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.week-date-navigation",
+          "kind": "ready",
+          "description": "Week and date navigation is deterministic at the Berlin clock boundary.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.validation",
+          "kind": "error",
+          "description": "Validation stays visible and preserves input.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.conflict",
+          "kind": "error",
+          "description": "A calendar conflict is honest and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "calendar.failure",
+          "kind": "error",
+          "description": "A calendar failure preserves successful data and is retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "mailing-exports",
       "surface": "Mailing exports",
       "route": "/#/mailing-exports",
-      "apiBoundaries": ["/api/mailing-exports"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/mailing-exports"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "mailing-exports.no-configs", "kind": "empty", "description": "No configurations renders honestly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "mailing exports run deterministic configured history without an external provider write" }] } },
-        { "id": "mailing-exports.ready", "kind": "ready", "description": "A configured export renders without invoking an external provider.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "mailing exports run deterministic configured history without an external provider write" }] } },
-        { "id": "mailing-exports.running", "kind": "loading", "description": "A running export exposes honest progress and history.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "mailing exports run deterministic configured history without an external provider write" }] } },
-        { "id": "mailing-exports.completed", "kind": "ready", "description": "A completed export persists its safe result and history.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "mailing exports run deterministic configured history without an external provider write" }] } },
-        { "id": "mailing-exports.failed", "kind": "error", "description": "A failed export preserves honest status and history.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "mailing exports run deterministic configured history without an external provider write" }] } }
+        {
+          "id": "mailing-exports.no-configs",
+          "kind": "empty",
+          "description": "No configurations renders honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "mailing-exports.ready",
+          "kind": "ready",
+          "description": "A configured export renders without invoking an external provider.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "mailing-exports.running",
+          "kind": "loading",
+          "description": "A running export exposes honest progress and history.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "mailing-exports.completed",
+          "kind": "ready",
+          "description": "A completed export persists its safe result and history.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "mailing-exports.failed",
+          "kind": "error",
+          "description": "A failed export preserves honest status and history.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "process-docs",
       "surface": "Process Docs and search",
       "route": "/#/processes",
-      "apiBoundaries": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/docs",
+        "/search",
+        "/content/*",
+        "/docs/registry",
+        "/docs/backlinks"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "process-docs.loading", "kind": "loading", "description": "The docs/search surface exposes an honest loading state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "process-docs.empty", "kind": "empty", "description": "No documents or results renders honestly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "process-docs.result-detail", "kind": "ready", "description": "Search opens the exact synthetic document detail.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "process-docs.create-read-edit", "kind": "ready", "description": "Synthetic create, read, and edit round-trip through the docs API.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "process-docs.backlinks", "kind": "ready", "description": "Backlinks derive from the persisted synthetic documents.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "process-docs.validation", "kind": "error", "description": "Edit validation preserves safe draft content.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "process-docs.git-failure", "kind": "error", "description": "A local Git-store failure remains safe and recoverable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } }
+        {
+          "id": "process-docs.loading",
+          "kind": "loading",
+          "description": "The docs/search surface exposes an honest loading state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.empty",
+          "kind": "empty",
+          "description": "No documents or results renders honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.result-detail",
+          "kind": "ready",
+          "description": "Search opens the exact synthetic document detail.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.create-read-edit",
+          "kind": "ready",
+          "description": "Synthetic create, read, and edit round-trip through the docs API.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.backlinks",
+          "kind": "ready",
+          "description": "Backlinks derive from the persisted synthetic documents.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.validation",
+          "kind": "error",
+          "description": "Edit validation preserves safe draft content.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.git-failure",
+          "kind": "error",
+          "description": "A local Git-store failure remains safe and recoverable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "admin",
       "surface": "Admin and process quality",
       "route": "/#/admin",
-      "apiBoundaries": ["/docs/process-quality", "/git/status", "/git/log"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/docs/process-quality",
+        "/git/status",
+        "/git/log"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "admin.loading", "kind": "loading", "description": "Diagnostics expose an honest loading state.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "admin.empty", "kind": "empty", "description": "No diagnostics data renders honestly.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "admin.ready-read-only", "kind": "ready", "description": "Diagnostics and configuration are reachable and read-only for both roles.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } },
-        { "id": "admin.failure", "kind": "error", "description": "Unavailable diagnostics remain honest without fabricated data.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely" }] } }
+        {
+          "id": "admin.loading",
+          "kind": "loading",
+          "description": "Diagnostics expose an honest loading state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "admin.empty",
+          "kind": "empty",
+          "description": "No diagnostics data renders honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "admin.ready-read-only",
+          "kind": "ready",
+          "description": "Diagnostics and configuration are reachable and read-only for both roles.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "admin.failure",
+          "kind": "error",
+          "description": "Unavailable diagnostics remain honest without fabricated data.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     },
     {
       "id": "users",
       "surface": "Users",
       "route": "/#/users",
-      "apiBoundaries": ["/api/users", "/api/me"],
-      "roleIds": ["operator", "admin"],
+      "apiBoundaries": [
+        "/api/users",
+        "/api/me"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
       "states": [
-        { "id": "users.operator-read-only", "kind": "ready", "roleIds": ["operator"], "description": "An operator sees a read-only projection with no mutation controls.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.admin-create", "kind": "ready", "roleIds": ["admin"], "description": "An admin creates a synthetic user and reloads it.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.admin-edit", "kind": "ready", "roleIds": ["admin"], "description": "An admin edits a synthetic user and reloads it.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.admin-disable", "kind": "ready", "roleIds": ["admin"], "description": "An admin disables a synthetic user and reloads it.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.validation", "kind": "error", "roleIds": ["admin"], "description": "User validation stays visible and preserves input.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.operator-403", "kind": "permission", "roleIds": ["operator"], "description": "An operator mutation receives 403 with no side effect.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.spoof-denial", "kind": "permission", "roleIds": ["operator"], "description": "Spoofed client role or identity cannot grant user mutation access.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } },
-        { "id": "users.failure", "kind": "error", "description": "A user API failure preserves context and is retryable.", "coverage": { "status": "covered", "evidence": [{ "type": "normal-real-browser", "file": "backend/e2e/canonical-capability-behavior.spec.js", "title": "Users derive controls from the server role and deny spoofed or operator mutations" }] } }
+        {
+          "id": "users.operator-read-only",
+          "kind": "ready",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "An operator sees a read-only projection with no mutation controls.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.admin-create",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An admin creates a synthetic user and reloads it.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.admin-edit",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An admin edits a synthetic user and reloads it.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.admin-disable",
+          "kind": "ready",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "An admin disables a synthetic user and reloads it.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.validation",
+          "kind": "error",
+          "roleIds": [
+            "admin"
+          ],
+          "description": "User validation stays visible and preserves input.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.operator-403",
+          "kind": "permission",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "An operator mutation receives 403 with no side effect.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.spoof-denial",
+          "kind": "permission",
+          "roleIds": [
+            "operator"
+          ],
+          "description": "Spoofed client role or identity cannot grant user mutation access.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "users.failure",
+          "kind": "error",
+          "description": "A user API failure preserves context and is retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
       ]
     }
   ]

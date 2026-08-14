@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const AxeBuilder = require('@axe-core/playwright').default;
 const path = require('path');
 
@@ -164,7 +165,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.intake-detail .ops-honest-state')).toBeVisible();
   });
 
-  test('keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable', async ({ page, request }) => {
+  test('keeps exact entities honest, filtered intake exact, and task/workflow mismatch recoverable', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
     await page.goto(`/#/inbox?intakeId=${fixture.filteredOut.id}`);
     await expect(page.locator('.intake-detail h3')).toHaveText(fixture.filteredOut.title);
@@ -172,9 +173,13 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.contextCard.id);
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/inbox?intakeId=<id>', roleId: 'admin', stateIds: ['inbox.filtered-exact'] },
+      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.mismatch'] },
+    ]);
   });
 
-  test('keeps every stale entity route recoverable', async ({ page }) => {
+  test('keeps every stale entity route recoverable', async ({ page }, testInfo) => {
     await page.goto('/#/inbox?intakeId=stale-intake');
     await expect(page.locator('.entity-route-not-found:visible')).toContainText('stale-intake');
     await expect(page.locator('.entity-route-not-found:visible')).toBeFocused();
@@ -190,9 +195,17 @@ test.describe('issue 156 canonical route and operator parity', () => {
       await expect(page.locator('.entity-route-not-found:visible')).toContainText(id);
       await expect(page.locator('button:visible', { hasText: 'Retry' }).first()).toBeVisible();
     }
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/inbox?intakeId=<id>', roleId: 'admin', stateIds: ['inbox.stale-not-found'] },
+      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.stale-not-found'] },
+      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.not-found'] },
+      { route: '/#/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.stale-not-found'] },
+      { route: '/#/templates?templateId=<id>', roleId: 'admin', stateIds: ['templates.stale-not-found'] },
+      { route: '/#/sponsors?bookingId=<id>', roleId: 'admin', stateIds: ['sponsors.not-found'] },
+    ]);
   });
 
-  test('resolves each task parameter independently and opens the exact return Card', async ({ page, request }) => {
+  test('resolves each task parameter independently and opens the exact return Card', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
     const encodedCard = encodeURIComponent(fixture.card.id);
     const encodedContext = encodeURIComponent(fixture.contextCard.id);
@@ -212,9 +225,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#card-panel-title')).toHaveText(fixture.contextCard.title);
     await page.goto(`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}`);
     await expect(page.locator('#task-panel-title')).toHaveText(fixture.task.description);
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
+      roleId: 'admin',
+      stateIds: ['tasks.combined-context'],
+    }]);
   });
 
-  test('resolves each task parameter independently and reports source-specific non-404 failures', async ({ page, request }) => {
+  test('resolves each task parameter independently and reports source-specific non-404 failures', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
     const encodedCard = encodeURIComponent(fixture.card.id);
     const encodedContext = encodeURIComponent(fixture.contextCard.id);
@@ -259,9 +277,13 @@ test.describe('issue 156 canonical route and operator parity', () => {
     for (const control of await recoveryControls.all()) await expect(control).toBeEnabled();
     await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
     await clearRouteFaults(request);
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.failure'] },
+      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.failure'] },
+    ]);
   });
 
-  test('keeps relationship, notification, search, and panel close routes synchronized', async ({ page, request }) => {
+  test('keeps relationship, notification, search, and panel close routes synchronized', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
     const linked = (await (await request.post('/api/intake', {
       data: { source: 'manual', title: `Linked intake ${fixture.id}`, note: 'Cross-surface relationship evidence', dataClass: 'internal' },
@@ -292,9 +314,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.locator('#task-panel-close').click();
     await expect(page).toHaveURL(new RegExp(`/#/cards\\?cardId=${fixture.card.id}$`));
     await expect(page.locator('#card-panel')).toBeVisible();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/cards?cardId=<id>&taskId=<id>',
+      roleId: 'admin',
+      stateIds: ['workflows.deep-link-return'],
+    }]);
   });
 
-  test('keeps notification and search navigation synchronized', async ({ page, request }) => {
+  test('keeps notification and search navigation synchronized', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
 
     const dueResponse = await request.post('/api/tasks', {
@@ -320,9 +347,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await assistantResult.click();
     await expect(page).toHaveURL(new RegExp(`/#/assistants\\?assistantJobId=${fixture.assistant.id}$`));
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/notifications',
+      roleId: 'admin',
+      stateIds: ['notifications.task-linked'],
+    }]);
   });
 
-  test('keeps desktop and mobile notification counts synchronized across refresh, failure, and retry', async ({ page, request }) => {
+  test('keeps desktop and mobile notification counts synchronized across refresh, failure, and retry', async ({ page, request }, testInfo) => {
     const id = suffix();
     const createDueTask = async (label) => {
       const response = await request.post('/api/tasks', {
@@ -385,6 +417,11 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(mobileCount).toHaveText(String(afterSuccess.length));
     await expect(page).toHaveURL(/\/#\/notifications$/);
     await expect(page.locator('#work-bell-panel')).toBeVisible();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/notifications',
+      roleId: 'admin',
+      stateIds: ['notifications.counts-update'],
+    }]);
   });
 
   test('labels fresh combined task links from exact route context before a delayed larger snapshot', async ({ page, request }) => {
@@ -588,7 +625,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await clearRouteFaults(request);
   });
 
-  test('provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence', async ({ page, request }) => {
+  test('provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence', async ({ page, request }, testInfo) => {
     const fixture = await createFixtures(request);
     const createStateIntake = async (label) => (await (await request.post('/api/intake', {
       data: { source: 'manual', title: `${label} ${fixture.id}`, note: `Synthetic ${label.toLowerCase()} context`, dataClass: 'internal' },
@@ -647,6 +684,11 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '.ops-inbox');
     await page.screenshot({ path: path.join(SHOTS, 'mobile-inbox-blocked-follow-up-history-390x844.png') });
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/inbox?intakeId=<id>',
+      roleId: 'admin',
+      stateIds: ['inbox.new', 'inbox.triaged', 'inbox.blocked-due', 'inbox.blocked-future', 'inbox.attached', 'inbox.converted', 'inbox.assistant-ready', 'inbox.ignored'],
+    }]);
   });
 
   test('captures deterministic Task and stale-entity diagnostics at desktop and mobile sizes', async ({ page, request }) => {
@@ -670,7 +712,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.screenshot({ path: path.join(SHOTS, 'mobile-entity-not-found-390x844.png') });
   });
 
-  test('dismisses one notification without leaving its canonical route', async ({ page, request }) => {
+  test('dismisses one notification without leaving its canonical route', async ({ page, request }, testInfo) => {
     const id = suffix();
     const dueResponse = await request.post('/api/tasks', {
       data: { description: `Dismiss notification ${id}`, date: '2026-08-11', status: 'waiting', waitingFor: 'Synthetic reply', followUpAt: '2026-08-01T09:00:00.000Z', comment: 'Synthetic notification evidence' },
@@ -697,9 +739,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page).toHaveURL(/\/#\/notifications$/);
     const apiAfterDismiss = await (await request.get('/api/notifications')).json();
     expect(apiAfterDismiss.notifications.some((item) => item.id === notification.id)).toBe(false);
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/notifications',
+      roleId: 'admin',
+      stateIds: ['notifications.dismiss-success'],
+    }]);
   });
 
-  test('isolates referenced and removable recurring deletion outcomes', async ({ page, request }) => {
+  test('isolates referenced and removable recurring deletion outcomes', async ({ page, request }, testInfo) => {
     const id = suffix();
     const recurring = (await (await request.post('/api/recurring', {
       data: { description: `Referenced recurring ${id}`, cronExpression: '0 9 * * *' },
@@ -729,9 +776,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.screenshot({ path: path.join(SHOTS, 'mobile-recurring-delete-guidance-390x844.png') });
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousA11y(page, '.ops-recurring-section');
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/recurring',
+      roleId: 'admin',
+      stateIds: ['recurring.delete-unreferenced', 'recurring.delete-referenced-409'],
+    }]);
   });
 
-  test('uses the shared visible sign-out boundary on desktop and mobile', async ({ page }) => {
+  test('uses the shared visible sign-out boundary on desktop and mobile', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/#/');
     await page.locator('#settings-button').click();
@@ -748,5 +800,10 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.getByRole('button', { name: /^Sign out/ }).click();
     await page.waitForURL(/\/logout$/);
     expect(logoutSeen).toBe(true);
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/ (Settings panel)',
+      roleId: 'admin',
+      stateIds: ['settings.logout'],
+    }]);
   });
 });
