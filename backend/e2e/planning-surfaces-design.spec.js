@@ -4,6 +4,7 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 
 const screenshots = path.resolve(__dirname, "..", "..", ".tmp", "screenshots", "planning-surfaces");
 const PORT = 3197;
@@ -102,6 +103,7 @@ test.beforeAll(async () => {
       SKIP_AUTH: "true",
       DATAOPS_DOCS_DOMAIN: "1",
       DTC_OFFLINE: "1",
+      DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/planning-surfaces-design"),
       CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
       CONVERSATIONAL_EXECUTION_ENABLED: "false",
       CONVERSATIONAL_ENABLED_PLUGINS: "none",

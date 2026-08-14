@@ -1,8 +1,8 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { ContentsApiGithubStore } from '../src/docs/githubStore';
 import {
@@ -329,5 +329,98 @@ describe('contentApi - mutations commit to GitHub + refresh search', () => {
     assert.strictEqual(res.status, 201);
     assert.strictEqual(res.body.absolute_path, 'content/images/reset-password/diagram.png');
     assert.ok(github.commitCalls().some((c) => c.method === 'PUT' && c.path.includes('images')));
+  });
+});
+
+// A collection listing must never answer "Document not found". Offline (local
+// dev, e2e, `DTC_OFFLINE=1`) nothing hydrates the cache, so the content root is
+// exactly as configured: populated, empty, or absent. Each state has its own
+// honest answer (#190).
+describe('contentApi - docs listing content-root contract (offline)', () => {
+  const SCRATCH = resolve(__dirname, '..', '..', '.tmp', 'docs-content-api-tests');
+  let scratch: string;
+  let offlineBefore: string | undefined;
+
+  const COLLECTION_ROUTES = ['/docs', '/docs/registry', '/docs/process-quality'];
+
+  function runtimeFor(cacheDir: string): void {
+    configureDocsRuntime(
+      new ContentsApiGithubStore({
+        owner: 'DataTalksClub',
+        repo: 'dataops',
+        branch: 'main',
+        token: 'test-token',
+        cacheDir,
+        fetchImpl: (async () => {
+          throw new Error('offline docs runtime must not call GitHub');
+        }) as unknown as typeof fetch,
+      }),
+    );
+  }
+
+  function populatedRoot(name: string): string {
+    const cacheDir = join(scratch, name);
+    const file = join(cacheDir, 'content', 'accounts', 'sops', 'reset-password.md');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, SOP);
+    return cacheDir;
+  }
+
+  beforeEach(() => {
+    mkdirSync(SCRATCH, { recursive: true });
+    scratch = mkdtempSync(join(SCRATCH, 'root-'));
+    offlineBefore = process.env.DTC_OFFLINE;
+    process.env.DTC_OFFLINE = '1';
+  });
+
+  afterEach(() => {
+    resetDocsRuntime();
+    if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
+    else process.env.DTC_OFFLINE = offlineBefore;
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it('lists the documents under a populated content root', async () => {
+    runtimeFor(populatedRoot('populated'));
+    const { status, body } = await call(ev('GET', '/docs'));
+    assert.strictEqual(status, 200);
+    assert.deepStrictEqual(
+      body.documents.map((doc: any) => doc.path),
+      ['content/accounts/sops/reset-password.md'],
+    );
+  });
+
+  it('returns an empty list for a present but empty content root', async () => {
+    const cacheDir = join(scratch, 'empty');
+    mkdirSync(join(cacheDir, 'content'), { recursive: true });
+    runtimeFor(cacheDir);
+
+    const { status, body } = await call(ev('GET', '/docs'));
+    assert.strictEqual(status, 200);
+    assert.deepStrictEqual(body, { documents: [] });
+  });
+
+  it('fails loudly and names the path when the content root is missing', async () => {
+    const cacheDir = join(scratch, 'missing');
+    const contentRoot = join(cacheDir, 'content');
+    runtimeFor(cacheDir);
+
+    for (const path of COLLECTION_ROUTES) {
+      const { status, body } = await call(ev('GET', path));
+      assert.ok(status >= 500 && status < 600, `${path}: expected a 5xx, got ${status}`);
+      assert.notStrictEqual(status, 404, `${path}: a missing content root is not a missing document`);
+      assert.ok(
+        String(body.error).includes(contentRoot),
+        `${path}: error must name the configured content root, got ${body.error}`,
+      );
+    }
+    assert.strictEqual(existsSync(contentRoot), false, 'the content root must not be created as a side effect');
+  });
+
+  it('still returns 404 for a missing document under a populated content root', async () => {
+    runtimeFor(populatedRoot('populated-404'));
+    const { status, body } = await call(ev('GET', '/docs', { query: { path: 'does-not-exist.md' } }));
+    assert.strictEqual(status, 404);
+    assert.strictEqual(body.error, 'Document not found');
   });
 });

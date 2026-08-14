@@ -2,6 +2,7 @@ const { test, expect } = require("@playwright/test"),
   { spawn } = require("child_process"),
   http = require("http"),
   path = require("path");
+const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 const PORT = 3017,
   BASE = `http://127.0.0.1:${PORT}`;
 let child;
@@ -29,6 +30,7 @@ test.describe("production newsletter planner", () => {
         SKIP_AUTH: "true",
         DATAOPS_DOCS_DOMAIN: "1",
         DTC_OFFLINE: "1",
+        DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/newsletter-production-portal"),
         FRONTEND_ROOT: path.resolve(__dirname, "..", "..", "frontend"),
         PORT: String(PORT),
       },
