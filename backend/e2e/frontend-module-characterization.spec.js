@@ -1,9 +1,32 @@
 const { test, expect } = require("@playwright/test");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
+const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 
 const ROOT = path.resolve(__dirname, "..", "..");
+const SCREENSHOT_DIR = path.join(ROOT, ".tmp", "screenshots", "issue-190");
+const FIXTURE_DOC_PATH = "content/overview/reference/schedule.md";
+const FIXTURE_DOC_TITLE = "Synthetic Characterization Schedule";
+const FIXTURE_DOC_SUMMARY = "Synthetic reference used only by browser characterization tests.";
+// `buildOperationsReferenceLinks` indexes this exact path, so the docs surface
+// only lists this document when `GET /docs` really returned the spec's corpus.
+const FIXTURE_DOC = [
+  "---",
+  "id: ref.synthetic.characterization-schedule",
+  `title: ${FIXTURE_DOC_TITLE}`,
+  `summary: ${FIXTURE_DOC_SUMMARY}`,
+  "doc_type: reference",
+  "tags: [synthetic]",
+  "systems: [dataops]",
+  "---",
+  "",
+  `# ${FIXTURE_DOC_TITLE}`,
+  "",
+  "Synthetic public-safe content for the characterization corpus.",
+  "",
+].join("\n");
 let server;
 let baseURL;
 
@@ -111,6 +134,10 @@ test.describe("pre-refactor frontend module characterization", () => {
   test.beforeAll(async () => {
     const port = await freePort();
     baseURL = `http://127.0.0.1:${port}`;
+    const cacheRoot = createDocsCacheRoot("issue-190-frontend-characterization", {
+      [FIXTURE_DOC_PATH]: FIXTURE_DOC,
+    });
+    fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
     server = spawn(path.join(ROOT, "node_modules", ".bin", "tsx"), ["scripts/test-server.ts"], {
       cwd: path.join(ROOT, "backend"),
       detached: true,
@@ -122,6 +149,7 @@ test.describe("pre-refactor frontend module characterization", () => {
         SKIP_AUTH: "true",
         DATAOPS_DOCS_DOMAIN: "1",
         DTC_OFFLINE: "1",
+        DTC_CACHE_ROOT: cacheRoot,
         FRONTEND_ROOT: path.join(ROOT, "frontend"),
         E2E_TEMPLATE_ACTOR_ID: "00000000-0000-0000-0000-000000000001",
         CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
@@ -226,6 +254,15 @@ test.describe("pre-refactor frontend module characterization", () => {
       await expect(page).toHaveURL(`${baseURL}/#${route}`);
       await expect(page.locator("#library-title")).toHaveText(title);
       await expect(page.locator(marker)).toBeVisible();
+      if (route === "/processes") {
+        // The docs surface must list the spec's own corpus. Without this the
+        // suite would pass just as happily against an empty or wrongly pointed
+        // content root.
+        await expect(
+          page.locator(".ops-surface-docs .ops-reference-link", { hasText: FIXTURE_DOC_TITLE }),
+        ).toBeVisible();
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, "processes.png"), fullPage: true });
+      }
       await expectNoHorizontalOverflow(page, route);
     }
     await page.goto(`${baseURL}/#/templates`);

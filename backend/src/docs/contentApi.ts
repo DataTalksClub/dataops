@@ -111,6 +111,22 @@ class NotFound extends HttpError {
   }
 }
 
+/**
+ * The configured content root is absent. Every docs endpoint that reads the
+ * corpus depends on it, so this is a configuration/hydration fault, not a
+ * missing document: report it loudly and name the path instead of letting a
+ * `readdirSync` ENOENT degrade a collection listing into "Document not found".
+ */
+class ContentRootUnavailable extends HttpError {
+  constructor(contentRoot: string) {
+    super(
+      503,
+      `Docs content root is unavailable: ${contentRoot}`
+      + ' (set DTC_CACHE_ROOT to a hydrated content cache, or let GitHub hydration run)',
+    );
+  }
+}
+
 // ── Runtime (store + search index) ────────────────────────────────────────────
 
 /** Holds the per-process docs store and search index. */
@@ -128,8 +144,21 @@ export class DocsRuntime {
     return this.store.root;
   }
 
+  /**
+   * Sync the content cache and assert the corpus is readable.
+   *
+   * Online, `sync()` hydrates the cache and creates the root. Offline (local
+   * dev, e2e) nothing creates it, so an unconfigured or wrongly pointed
+   * `DTC_CACHE_ROOT` would otherwise surface as an ENOENT from the first
+   * directory walk. The root is never created here — the app does not
+   * provision storage it does not manage.
+   */
   async ensureSynced(): Promise<void> {
     await this.store.sync();
+    const root = this.contentRoot;
+    if (!existsSync(root) || !statSync(root).isDirectory()) {
+      throw new ContentRootUnavailable(root);
+    }
   }
 
   async ensureSearch(): Promise<void> {
@@ -221,9 +250,6 @@ export async function handleDocsRoutes(event: LambdaEvent): Promise<LambdaRespon
     if (err instanceof GitHubError) {
       return jsonResponse(502, { error: 'GitHub request failed', detail: err.message });
     }
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
-      return jsonResponse(404, { error: 'Document not found' });
-    }
     console.error('Docs content API error:', err);
     return jsonResponse(500, { error: 'Internal server error' });
   }
@@ -298,7 +324,15 @@ async function resolveDoc(rt: DocsRuntime, ref: string | null): Promise<LambdaRe
 async function getDoc(rt: DocsRuntime, rawPath: string): Promise<LambdaResponse> {
   const repoPath = normalizeDocPath(rawPath);
   validateDocPath(repoPath);
-  const content = await rt.store.readFile(repoPath); // hydrates from GitHub if needed
+  // Only a single-document read maps a filesystem miss to 404: `?path=` names one
+  // document, so "not found" is the honest answer when it is absent.
+  let content: string;
+  try {
+    content = await rt.store.readFile(repoPath); // hydrates from GitHub if needed
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new NotFound('Document not found');
+    throw err;
+  }
   const body: Record<string, unknown> = {
     path: repoPath,
     content,

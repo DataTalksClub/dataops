@@ -4,6 +4,7 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 
 const PORT = 3318;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -203,6 +204,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
         SKIP_AUTH: "true",
         DATAOPS_DOCS_DOMAIN: "1",
         DTC_OFFLINE: "1",
+        DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/bookkeeping-sponsors-design-production-portal"),
         CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
         CONVERSATIONAL_EXECUTION_ENABLED: "false",
         CONVERSATIONAL_ENABLED_PLUGINS: "none",

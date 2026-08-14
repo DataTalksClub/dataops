@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 
 const PORT = 3017;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -34,6 +35,7 @@ test.describe('production portal authentication error', () => {
         DATAOPS_DOCS_DOMAIN: '1',
         WORK_ENGINE_AUTH_MODE: 'portal',
         DTC_OFFLINE: '1',
+        DTC_CACHE_ROOT: createDocsCacheRoot('issue-190-docs-cache/auth-error-production-portal'),
         FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
         AUTH_BASE_URL: 'https://auth.example.test',
         AUTH_ISSUER: 'https://issuer.example.test/pool',

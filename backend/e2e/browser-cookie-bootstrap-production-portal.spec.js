@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
+const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 
 const PORT = 3018;
 const BASE_URL = `http://localhost:${PORT}`;
@@ -35,6 +36,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
         DATAOPS_DOCS_DOMAIN: '1',
         WORK_ENGINE_AUTH_MODE: 'portal',
         DTC_OFFLINE: '1',
+        DTC_CACHE_ROOT: createDocsCacheRoot('issue-190-docs-cache/browser-cookie-bootstrap-production-portal'),
         // The built artifact packages this same canonical source at
         // dist/frontend; source-mode E2E points to it explicitly.
         FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
