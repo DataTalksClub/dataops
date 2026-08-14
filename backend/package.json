@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "IS_LOCAL=true tsx watch scripts/dev-server.ts",
-    "test": "NODE_ENV=test FRONTEND_ROOT=../frontend SKIP_AUTH=true CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED=false CONVERSATIONAL_EXECUTION_ENABLED=false CONVERSATIONAL_ENABLED_PLUGINS=none CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED=false CONVERSATIONAL_TELEGRAM_VOICE_ENABLED=false CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED=false node --import tsx --test --test-force-exit tests/*.test.ts scripts/frontend-capabilities.test.mjs scripts/one-off-test-boundary.test.mjs scripts/sam-build-artifact.test.mjs",
+    "test": "NODE_ENV=test FRONTEND_ROOT=../frontend SKIP_AUTH=true CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED=false CONVERSATIONAL_EXECUTION_ENABLED=false CONVERSATIONAL_ENABLED_PLUGINS=none CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED=false CONVERSATIONAL_TELEGRAM_VOICE_ENABLED=false CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED=false node --import tsx --test --test-force-exit tests/*.test.ts scripts/frontend-capabilities.test.mjs scripts/frontend-capability-evidence.test.mjs scripts/one-off-test-boundary.test.mjs scripts/sam-build-artifact.test.mjs",
     "test:one-off:dry-run-import": "NODE_ENV=test node --import tsx --test --test-force-exit tests/one-off/dry-run-import.test.ts",
     "test:execution-transaction": "bash scripts/test-conversational-execution-transaction.sh",
     "test:telegram-transaction": "bash scripts/test-telegram-transaction.sh",
@@ -17,7 +17,7 @@
     "test:task-card-transaction": "bash scripts/test-task-card-transaction.sh",
     "test:todo-transaction": "bash scripts/test-todo-transaction.sh",
     "test:typefully-transaction": "bash scripts/test-typefully-transaction.sh",
-    "test:e2e": "npx playwright test",
+    "test:e2e": "DATAOPS_CAPABILITY_COVERAGE=1 npx playwright test",
     "test:frontend-artifact": "make -C .. sam-build && node --test scripts/frontend-artifact.test.mjs",
     "test:e2e:frontend-parity": "node scripts/frontend-parity.mjs",
     "test:integration": "bash scripts/integration-test.sh",

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -218,7 +219,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await Promise.all(Object.values(servers).map(stopServer));
   });
 
-  test('session and Settings enforce real cookie roles, denial, focus, close, and logout', async ({ browser }) => {
+  test('session and Settings enforce real cookie roles, denial, focus, close, and logout', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser, servers.session);
     const me = await context.request.get('/work/api/me');
     expect(me.status()).toBe(200);
@@ -296,9 +297,18 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect(expiredRoot.status()).toBe(302);
     expect(expiredRoot.headers().location).toBe('/login');
     await expired.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/login | /logout', roleId: 'signed-out', stateIds: ['session.signed-out-redirect', 'session.api-json-denial'] },
+      { route: '/login | /logout', roleId: 'expired-session', stateIds: ['session.expired-denied', 'session.api-json-denial'] },
+      { route: '/login | /logout', roleId: 'disabled-user', stateIds: ['session.disabled-denied', 'session.api-json-denial'] },
+      { route: '/login | /logout', roleId: 'operator', stateIds: ['session.operator-cookie-ready', 'session.no-bearer-fallback'] },
+      { route: '/login | /logout', roleId: 'admin', stateIds: ['session.admin-cookie-ready', 'session.no-bearer-fallback'] },
+      { route: '/#/ (Settings panel)', roleId: 'operator', stateIds: ['settings.operator-ready'] },
+      { route: '/#/ (Settings panel)', roleId: 'admin', stateIds: ['settings.admin-ready', 'settings.desktop-focus-close', 'settings.mobile-focus-close'] },
+    ]);
   });
 
-  test('Home preserves real ready data and honest partial failure recovery', async ({ browser }) => {
+  test('Home preserves real ready data and honest partial failure recovery', async ({ browser }, testInfo) => {
     const context = await portalContext(browser, servers.admin);
     await setFaults(context.request, [
       { method: 'GET', path: '/api/tasks', delayMs: 800 },
@@ -392,9 +402,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Needs your attention' }).locator('.home-attention-row', { hasText: title })).toBeVisible();
     await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/',
+      roleId: 'admin',
+      stateIds: ['home.loading', 'home.empty', 'home.ready', 'home.partial-failure'],
+    }]);
   });
 
-  test('assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior', async ({ browser }) => {
+  test('assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser);
     await page.goto('/#/assistants');
     await expect(page.getByText('No matching assistant jobs')).toBeVisible();
@@ -458,9 +473,13 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await page.goto('/#/assistants?assistantJobId=stale-synthetic-assistant');
     await expect(page.locator('.entity-route-not-found')).toContainText('stale-synthetic-assistant');
     await context.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/assistants?assistantJobId=<id>', roleId: 'admin', stateIds: ['assistants.loading', 'assistants.empty', 'assistants.list', 'assistants.exact-detail', 'assistants.deep-link-reload', 'assistants.unavailable'] },
+      { route: '/#/artifacts', roleId: 'admin', stateIds: ['artifacts.empty', 'artifacts.available', 'artifacts.authorized-action', 'artifacts.unavailable', 'artifacts.failure'] },
+    ]);
   });
 
-  test('Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey', async ({ browser }) => {
+  test('Bookkeeping completes a real synthetic account, transaction, PDF evidence, link, and report journey', async ({ browser }, testInfo) => {
     test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/#/bookkeeping');
@@ -530,9 +549,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('.bookkeeping-documents article')).toHaveCount(4);
     await expect(page.locator('.bookkeeping-documents')).toContainText('datatalksclub-2026-08.zip');
     await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/bookkeeping',
+      roleId: 'admin',
+      stateIds: ['bookkeeping.empty', 'bookkeeping.configured', 'bookkeeping.validation', 'bookkeeping.upload-link', 'bookkeeping.report', 'bookkeeping.failure'],
+    }]);
   });
 
-  test('Sponsors enforce safe operator projection and admin-only mutation with real records', async ({ browser }) => {
+  test('Sponsors enforce safe operator projection and admin-only mutation with real records', async ({ browser }, testInfo) => {
     const admin = await portalContext(browser, servers.admin);
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
@@ -611,9 +635,13 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(operatorPage.locator('[data-crm-detail]')).not.toContainText('Operator-private synthetic note');
     await admin.close();
     await operator.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/sponsors?bookingId=<id>', roleId: 'admin', stateIds: ['sponsors.empty', 'sponsors.ready-detail', 'sponsors.admin-mutation', 'sponsors.conflict', 'sponsors.failure'] },
+      { route: '/#/sponsors?bookingId=<id>', roleId: 'operator', stateIds: ['sponsors.operator-safe-read', 'sponsors.operator-denied'] },
+    ]);
   });
 
-  test('Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery', async ({ browser }) => {
+  test('Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser);
     await page.goto('/#/newsletter');
     await expect(page.getByText('No newsletter slots')).toBeVisible();
@@ -716,9 +744,13 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await page.locator('[data-today]').click();
     await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
     await context.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/newsletter', roleId: 'admin', stateIds: ['newsletter.empty', 'newsletter.populated', 'newsletter.create-edit-reload', 'newsletter.validation', 'newsletter.conflict', 'newsletter.failure'] },
+      { route: '/#/calendar', roleId: 'admin', stateIds: ['calendar.empty', 'calendar.populated', 'calendar.create-edit-reload', 'calendar.overlays-alerts', 'calendar.week-date-navigation', 'calendar.validation', 'calendar.conflict', 'calendar.failure'] },
+    ]);
   });
 
-  test('mailing exports run deterministic configured history without an external provider write', async ({ browser }) => {
+  test('mailing exports run deterministic configured history without an external provider write', async ({ browser }, testInfo) => {
     const noConfig = await portalContext(browser, servers.noMailingConfig);
     const noConfigPage = await noConfig.newPage();
     await noConfigPage.goto('/#/mailing-exports');
@@ -752,9 +784,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('.mailing-export-card[data-export-state="completed"]')).toBeVisible();
     await expect(page.locator('.mailing-export-history')).toContainText('Synthetic audience account · completed');
     await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/mailing-exports',
+      roleId: 'admin',
+      stateIds: ['mailing-exports.no-configs', 'mailing-exports.ready', 'mailing-exports.running', 'mailing-exports.completed', 'mailing-exports.failed'],
+    }]);
   });
 
-  test('Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely', async ({ browser }) => {
+  test('Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely', async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
     const empty = await portalContext(browser, servers.emptyDocs);
     await setFaults(empty.request, [{ method: 'GET', path: '/docs', delayMs: 1200 }]);
@@ -898,9 +935,13 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await page.reload();
     await expect(page.locator('[data-diagnostic="quality"]')).toContainText(/finding\(s\); \d+ validation error\(s\)/);
     await context.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.git-failure'] },
+      { route: '/#/admin', roleId: 'admin', stateIds: ['admin.loading', 'admin.empty', 'admin.ready-read-only', 'admin.failure'] },
+    ]);
   });
 
-  test('Users derive controls from the server role and deny spoofed or operator mutations', async ({ browser }) => {
+  test('Users derive controls from the server role and deny spoofed or operator mutations', async ({ browser }, testInfo) => {
     const admin = await portalContext(browser, servers.admin);
     const operator = await portalContext(browser, servers.operator);
     const adminPage = await admin.newPage();
@@ -952,9 +993,13 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect(after.users.some((user) => user.name === 'Denied User')).toBe(false);
     await admin.close();
     await operator.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/users', roleId: 'operator', stateIds: ['users.operator-read-only', 'users.operator-403', 'users.spoof-denial'] },
+      { route: '/#/users', roleId: 'admin', stateIds: ['users.admin-create', 'users.admin-edit', 'users.admin-disable', 'users.validation', 'users.failure'] },
+    ]);
   });
 
-  test('Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend', async ({ browser }) => {
+  test('Inbox persists empty, validation, duplicate, archive, conflict, and failure behavior on the real backend', async ({ browser }, testInfo) => {
     test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/#/inbox');
@@ -1024,9 +1069,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await capture.getByRole('button', { name: 'Capture intake' }).click();
     await expect(page.locator('.intake-row', { hasText: failedTitle })).toBeVisible();
     await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/inbox?intakeId=<id>',
+      roleId: 'admin',
+      stateIds: ['inbox.empty', 'inbox.duplicate', 'inbox.archived', 'inbox.validation', 'inbox.conflict', 'inbox.server-failure'],
+    }]);
   });
 
-  test('Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion', async ({ browser }) => {
+  test('Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion', async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
     const { context, page } = await portalPage(browser, servers.noMailingConfig);
     await page.goto('/#/tasks');
@@ -1198,9 +1248,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
     await context.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.empty', 'tasks.waiting', 'tasks.blocked', 'tasks.done', 'tasks.create-select-update', 'tasks.file-proof', 'tasks.sop-link', 'tasks.conflict'] },
+      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
+      { route: '/#/artifacts', roleId: 'admin', stateIds: ['artifacts.not-found'] },
+    ]);
   });
 
-  test('capability recovery states stay JSON-safe and reloadable across retained routes', async ({ browser }) => {
+  test('capability recovery states stay JSON-safe and reloadable across retained routes', async ({ browser }, testInfo) => {
     const { context, page } = await portalPage(browser, servers.noMailingConfig);
     await page.goto('/#/notifications');
     await expect(page.locator('.work-bell-empty')).toHaveText('No active notifications.');
@@ -1252,9 +1307,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page.getByText('Artifact review index not connected')).toHaveCount(0);
     await expect(page.locator('#library-title')).toHaveText('Tasks - Artifacts');
     await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/notifications',
+      roleId: 'admin',
+      stateIds: ['notifications.empty', 'notifications.dismiss-failure'],
+    }]);
   });
 
-  test('Git-authored templates stay read-only while recurring retains admin persistence and role denial', async ({ browser }) => {
+  test('Git-authored templates stay read-only while recurring retains admin persistence and role denial', async ({ browser }, testInfo) => {
     const admin = await portalContext(browser, servers.admin);
     const operator = await portalContext(browser, servers.operator);
     const page = await admin.newPage();
@@ -1325,5 +1385,9 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(operatorPage.getByRole('button', { name: 'New runtime template' })).toHaveCount(0);
     await admin.close();
     await operator.close();
+    recordCapabilityEvidence(testInfo, [
+      { route: '/#/recurring', roleId: 'admin', stateIds: ['recurring.empty', 'recurring.ready', 'recurring.pause', 'recurring.resume', 'recurring.failure'] },
+      { route: '/#/recurring', roleId: 'operator', stateIds: ['recurring.permission-denied'] },
+    ]);
   });
 });

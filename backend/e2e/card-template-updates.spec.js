@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 
 async function json(response) {
   expect(response.ok()).toBeTruthy();
@@ -44,7 +45,7 @@ async function updateTemplate(request, template, taskDefinitions) {
 }
 
 test.describe('reviewed Card Template updates', () => {
-  test('cancels, survives a stale apply with typed input, then retains completed history', async ({ page, request }) => {
+  test('cancels, survives a stale apply with typed input, then retains completed history', async ({ page, request }, testInfo) => {
     const template = await createTemplate(request, 'Synthetic single update', [
       { refId: 'completed', description: 'Original completed step', offsetDays: -2 },
       { refId: 'removed', description: 'Remove this incomplete step', offsetDays: -1 },
@@ -120,9 +121,14 @@ test.describe('reviewed Card Template updates', () => {
       description: 'New reviewed step',
       status: 'todo',
     });
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/cards?cardId=<id>&taskId=<id>',
+      roleId: 'admin',
+      stateIds: ['workflows.template-update-review', 'workflows.template-update-conflict'],
+    }]);
   });
 
-  test('applies an explicit batch and exposes one stale Card without retrying it', async ({ page, request }) => {
+  test('applies an explicit batch and exposes one stale Card without retrying it', async ({ page, request }, testInfo) => {
     const template = await createTemplate(request, 'Synthetic batch update', [
       { refId: 'prepare', description: 'Prepare original', offsetDays: -1 },
     ]);
@@ -162,5 +168,10 @@ test.describe('reviewed Card Template updates', () => {
     const secondPreview = await json(await request.get(`/api/cards/${second.card.id}/template-update`));
     expect(firstPreview.preview.state).toBe('current');
     expect(secondPreview.preview.state).toBe('update-available');
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/templates?templateId=<id>',
+      roleId: 'admin',
+      stateIds: ['templates.reviewed-card-batch'],
+    }]);
   });
 });

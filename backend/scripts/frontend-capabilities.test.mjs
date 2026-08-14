@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const yaml = require("js-yaml");
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..", "..");
@@ -163,48 +167,11 @@ function assertUnique(values, label) {
   assert.equal(new Set(values).size, values.length, `${label} must be unique`);
 }
 
-function literalTestDeclarations(source) {
-  const declarations = [];
-  const pattern = /\btest\s*\(\s*(["'`])([^\n]*?)\1\s*,/g;
-  for (const match of source.matchAll(pattern)) {
-    declarations.push({ title: match[2], index: match.index, declaration: match[0] });
-  }
-  return declarations;
-}
-
-function validatePointer(pointer, stateId) {
-  assert.equal(pointer.type, matrix.evidencePolicy.acceptedType, `${stateId} has non-normal evidence type`);
-  assert.ok(!FORBIDDEN_EVIDENCE_TYPES.has(pointer.type), `${stateId} uses forbidden evidence type ${pointer.type}`);
-  assert.match(pointer.file, /^backend\/e2e\/[a-z0-9-]+\.spec\.js$/, `${stateId} must point into the normal E2E suite`);
-  assert.doesNotMatch(pointer.file, /(?:^|\/)(?:api-|.*artifact|.*convergence|frontend-parity)/, `${stateId} points to a non-behavior spec class`);
-  assert.ok(pointer.title && pointer.title.trim() === pointer.title, `${stateId} needs an exact non-empty test title`);
-  assert.doesNotMatch(pointer.title, /(?:marker|source[- ]string|screenshot[- ]only|parity[- ]only|asset hash)/i, `${stateId} points to forbidden evidence by title`);
-
-  const absolute = resolve(repoRoot, pointer.file);
-  assert.ok(absolute.startsWith(`${repoRoot}${sep}`), `${stateId} pointer escapes the repository`);
-  assert.ok(existsSync(absolute), `${stateId} evidence file does not exist: ${pointer.file}`);
-  const source = readFileSync(absolute, "utf8");
-  const declarations = literalTestDeclarations(source);
-  const matches = declarations.filter((entry) => entry.title === pointer.title);
-  assert.equal(matches.length, 1, `${stateId} title must resolve exactly once in ${pointer.file}: ${pointer.title}`);
-
-  const current = matches[0];
-  const next = declarations.find((entry) => entry.index > current.index);
-  const testBody = source.slice(current.index, next?.index ?? source.length);
-  assert.match(current.declaration + testBody.slice(current.declaration.length, current.declaration.length + 180), /async\s*\(\s*\{[^}]*\b(?:page|browser)\b/, `${stateId} is API-only rather than browser behavior`);
-  assert.match(testBody, /\b(?:page\.(?:goto|locator|getByRole|getByText|reload)|newPage|portalPage)\s*\(/, `${stateId} does not drive browser behavior`);
-  assert.match(testBody, /\bexpect\s*\(/, `${stateId} has no behavior assertion`);
-  assert.doesNotMatch(testBody, /\b(?:page|context)\.route\s*\(|\broute\.(?:fulfill|abort)\s*\(/, `${stateId} uses forbidden browser request interception`);
-  if (stateId.startsWith("assistants.")) {
-    assert.doesNotMatch(testBody, /data-assistant-(?:save|lifecycle)|\/api\/assistant-jobs\/[^\s"'`]+\/(?:submit|run|approve|reject|retry|cancel)/, `${stateId} incorrectly counts assistant lifecycle mutation evidence owned by issue 158`);
-  }
-}
-
 test("frontend capability matrix has the canonical schema, routes, APIs, roles, and states", () => {
-  assert.equal(matrix.schemaVersion, 1);
+  assert.equal(matrix.schemaVersion, 2);
   assert.equal(matrix.contract, "canonical-frontend-capability-coverage");
-  assert.equal(matrix.stateRoleSemantics, "A state inherits its capability roleIds unless the state declares a narrower roleIds array.");
-  assert.equal(matrix.evidencePolicy.acceptedType, "normal-real-browser");
+  assert.equal(matrix.stateRoleSemantics, "A state with roleIds requires passing evidence for every listed role; otherwise one passing role inherited from the capability is sufficient.");
+  assert.equal(matrix.evidencePolicy.acceptedType, "same-run-playwright-annotation");
   assert.equal(matrix.evidencePolicy.browserInterceptionAllowed, false);
   assert.deepEqual(sorted(matrix.evidencePolicy.forbiddenTypes), sorted(FORBIDDEN_EVIDENCE_TYPES));
 
@@ -244,14 +211,7 @@ test("frontend capability matrix has the canonical schema, routes, APIs, roles, 
       for (const roleId of effectiveStateRoles) assert.ok(capability.roleIds.includes(roleId), `${state.id} role ${roleId} is outside its capability`);
       assert.deepEqual(sorted(effectiveStateRoles), sorted(expectedStateRoles), `${state.id} role-state coverage drifted`);
       if (!REQUIRED_STATE_ROLE_OVERRIDES[state.id]) assert.equal(state.roleIds, undefined, `${state.id} has a redundant or uncontracted role override`);
-      assert.ok(state.coverage && ["covered", "gap"].includes(state.coverage.status), `${state.id} needs explicit coverage status`);
-      if (state.coverage.status === "covered") {
-        assert.ok(Array.isArray(state.coverage.evidence) && state.coverage.evidence.length > 0, `${state.id} needs evidence`);
-        assert.equal(state.coverage.requiredBehavior, undefined, `${state.id} cannot be both covered and a gap`);
-      } else {
-        assert.equal(state.coverage.evidence, undefined, `${state.id} gap cannot claim evidence`);
-        assert.ok(state.coverage.requiredBehavior?.length >= 20, `${state.id} gap needs an exact required behavior`);
-      }
+      assert.deepEqual(state.coverage, { status: "runtime" }, `${state.id} must be completed by same-run browser evidence`);
     }
   }
 
@@ -262,18 +222,23 @@ test("frontend capability matrix has the canonical schema, routes, APIs, roles, 
   assert.ok(matrix.capabilities.find((capability) => capability.id === "home").states.some((state) => state.id === "home.ready"), "home.ready is the durable #161 evidence slot");
 });
 
-test("covered cells resolve to exact unique normal real-browser behavior tests", () => {
-  const pointerKeys = [];
+test("catalog coverage carries no file, title, selector, or source identity", () => {
+  const forbiddenIdentityKeys = new Set(["file", "fileName", "line", "selector", "source", "sourcePath", "spec", "testTitle", "title"]);
   for (const capability of matrix.capabilities) {
     for (const state of capability.states) {
-      if (state.coverage.status !== "covered") continue;
-      for (const pointer of state.coverage.evidence) {
-        validatePointer(pointer, state.id);
-        pointerKeys.push(`${state.id}\u0000${pointer.file}\u0000${pointer.title}`);
-      }
+      assert.deepEqual(Object.keys(state.coverage), ["status"], `${state.id} coverage must contain no test identity`);
+      assert.deepEqual(state.coverage, { status: "runtime" });
     }
   }
-  assertUnique(pointerKeys, "state evidence pointers");
+  const visit = (value) => {
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (!value || typeof value !== "object") return;
+    for (const [key, nested] of Object.entries(value)) {
+      assert.ok(!forbiddenIdentityKeys.has(key), `catalog contains forbidden evidence identity key ${key}`);
+      visit(nested);
+    }
+  };
+  visit(matrix);
 });
 
 test("matrix content is public-safe", () => {
@@ -365,9 +330,24 @@ test("local CI and the deployment workflow gate the exact SAM frontend artifact 
   assert.ok(deployAt > isolationAt, "deploy job must finish every artifact gate before sam deploy");
 });
 
-test("every required state has accepted behavior evidence", () => {
-  const gaps = matrix.capabilities.flatMap((capability) => capability.states)
-    .filter((state) => state.coverage.status === "gap")
-    .map((state) => `${state.id}: ${state.coverage.requiredBehavior}`);
-  assert.deepEqual(gaps, [], `uncovered frontend capability states:\n${gaps.join("\n")}`);
+test("runtime completeness stays in the one independent Playwright run", () => {
+  const e2eWorkflow = yaml.load(readFileSync(resolve(repoRoot, ".github", "workflows", "validate-backend-e2e.yml"), "utf8"));
+  const deployWorkflow = yaml.load(readFileSync(resolve(repoRoot, ".github", "workflows", "deploy-dataops-v1.yml"), "utf8"));
+  const backendPackage = JSON.parse(readFileSync(resolve(repoRoot, "backend", "package.json"), "utf8"));
+  const commands = (workflow) => Object.values(workflow.jobs || {})
+    .flatMap((job) => job.steps || [])
+    .flatMap((step) => typeof step.run === "string" ? [step.run.trim()] : []);
+
+  const e2eCommands = commands(e2eWorkflow);
+  assert.equal(e2eCommands.filter((command) => command === "npm --prefix backend run test:e2e").length, 1, "independent E2E must invoke the full backend browser command once");
+  assert.equal(e2eCommands.filter((command) => /playwright\s+test/.test(command)).length, 0, "workflow must not add a second direct Playwright invocation");
+  assert.equal(backendPackage.scripts["test:e2e"], "DATAOPS_CAPABILITY_COVERAGE=1 npx playwright test");
+  assert.doesNotMatch(backendPackage.scripts["test:e2e"], /--list|\.spec\.|&&\s*(?:npx|npm).*playwright/);
+
+  const deployCommands = commands(deployWorkflow).join("\n");
+  assert.doesNotMatch(deployCommands, /playwright|test:e2e|DATAOPS_CAPABILITY_COVERAGE/i, "deploy must stay independent of browser coverage");
+  const uploads = Object.values(e2eWorkflow.jobs || {})
+    .flatMap((job) => job.steps || [])
+    .filter((step) => step.uses === "actions/upload-artifact@v4");
+  assert.ok(uploads.some((step) => /backend\/playwright-report\/[\s\S]*backend\/test-results\//.test(step.with?.path || "")), "independent E2E failure upload must retain both reports and result evidence");
 });
