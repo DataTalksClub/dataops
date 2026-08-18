@@ -4,21 +4,26 @@ set -euo pipefail
 umask 077
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-replica_root="${DATAOPS_REPLICA_ROOT:-$repo_root/.local/prod-shaped-replica}"
+replica_root="${DATAOPS_REPLICA_ROOT:-$repo_root/.local/current-replica}"
 database_path="$replica_root/dynalite"
 dynamo_port="${DATAOPS_REPLICA_PORT:-8001}"
 dynamo_endpoint="http://127.0.0.1:$dynamo_port"
+docs_cache_root="${DTC_CACHE_ROOT:-}"
 
-# Keep actor identity outside Git without importing unrelated `.env` secrets.
+# Keep local configuration outside Git without importing unrelated `.env` secrets.
 for env_file in "$repo_root/.env" "$repo_root/.env.local"; do
   if test -f "$env_file"; then
     while IFS='=' read -r env_key env_value; do
       if test "$env_key" = DATAOPS_DEV_ACTOR_EMAIL; then
         export DATAOPS_DEV_ACTOR_EMAIL="$env_value"
+      elif test "$env_key" = DTC_CACHE_ROOT && test -z "$docs_cache_root"; then
+        docs_cache_root="$env_value"
       fi
     done <"$env_file"
   fi
 done
+
+export DTC_CACHE_ROOT="${docs_cache_root:-$repo_root/.local/dev-portal}"
 
 test -d "$database_path"
 test -f "$replica_root/manifest.json"
@@ -86,7 +91,6 @@ export DATAOPS_CALENDAR_TABLE=dataops-v1-calendar
 export DATAOPS_CONVERSATIONAL_STATE_TABLE=dataops-v1-conversational-state
 export DATAOPS_DOCS_DOMAIN=1
 export DTC_OFFLINE=1
-export DTC_CACHE_ROOT="$repo_root/.local/dev-portal"
 export FRONTEND_ROOT="$repo_root/frontend"
 export UPLOAD_DIR="$repo_root/.local/dev-portal/uploads"
 export DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR="$repo_root/.local/dev-portal/exports"

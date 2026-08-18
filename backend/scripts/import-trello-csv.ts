@@ -469,10 +469,14 @@ function slugify(str: string): string {
 }
 
 function stableMigrationId(prefix: string, sourceId: string): string {
-  const clean = sourceId.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72);
-  if (clean.length > 0) return `${prefix}-${clean}`;
+  const normalized = sourceId.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
   const hash = crypto.createHash('sha256').update(sourceId).digest('hex').slice(0, 16);
-  return `${prefix}-${hash}`;
+  if (normalized.length === 0) return `${prefix}-${hash}`;
+  if (normalized.length <= 72) return `${prefix}-${normalized}`;
+  // Trello check-item IDs share a long card/checklist prefix. Keep the ID
+  // readable, but include a digest whenever normalization truncates it so
+  // distinct source records cannot collapse onto one DynamoDB key.
+  return `${prefix}-${normalized.slice(0, 55)}-${hash}`;
 }
 
 function trelloCardSourceKey(card: TrelloCard): string {
