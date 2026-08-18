@@ -47,14 +47,10 @@ dev-compose:
 	docker compose up --build
 
 # Consolidated dev: one origin (port 3000) serves the frontend + docs API + work
-# API from the TypeScript backend, with backend hot-reload (tsx watch). Reads docs
-# live from ./content (offline mode, no GitHub/token); auth runs open. For full
-# GitHub-backed mode (commit-on-save), drop DTC_OFFLINE and set
-# GITHUB_TOKEN=$$(gh auth token).
+# APIs through the same supervisor used by `npm run dev`. Local configuration is
+# read from the ignored root `.env`; explicit shell values still take precedence.
 dev:
-	@mkdir -p .tmp/dev-portal
-	@ln -sfn $(CURDIR)/content .tmp/dev-portal/content
-	DTC_OFFLINE=1 DATAOPS_DOCS_DOMAIN=1 DTC_CACHE_ROOT=$(CURDIR)/.tmp/dev-portal FRONTEND_ROOT=$(CURDIR)/frontend SKIP_AUTH=true npm --prefix backend run dev
+	npm run dev
 
 .tmp:
 	mkdir -p .tmp
