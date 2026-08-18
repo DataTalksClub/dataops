@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -39,6 +40,50 @@ export class DevPortalConfigError extends Error {
     super(message);
     this.name = 'DevPortalConfigError';
   }
+}
+
+const LOCAL_DEV_ENV_KEYS = Object.freeze(['DTC_CACHE_ROOT']);
+
+function parseLocalEnvValue(rawValue) {
+  const value = rawValue.trim();
+  if (value.length >= 2) {
+    const first = value[0];
+    const last = value[value.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+}
+
+/**
+ * Load the small, non-secret local-dev configuration surface from `.env`.
+ *
+ * The repository's ignored `.env` also contains credentials used by other
+ * tooling. Do not import that file wholesale into the development children;
+ * only explicitly approved local-dev keys may cross this boundary. Explicit
+ * process environment values remain authoritative.
+ */
+export function loadLocalDevEnvironment(env = process.env, cwd = process.cwd()) {
+  const configured = {};
+  let source;
+  try {
+    source = readFileSync(path.join(cwd, '.env'), 'utf8');
+  } catch {
+    return env;
+  }
+
+  for (const line of source.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || !LOCAL_DEV_ENV_KEYS.includes(match[1])) continue;
+    configured[match[1]] = parseLocalEnvValue(match[2]);
+  }
+
+  const merged = { ...configured, ...env };
+  for (const key of LOCAL_DEV_ENV_KEYS) {
+    if (!env[key] && configured[key]) merged[key] = configured[key];
+  }
+  return merged;
 }
 
 export function parsePort(value, name, fallback) {

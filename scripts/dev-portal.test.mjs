@@ -11,6 +11,7 @@ import {
   classifyBrowserPath,
   FORBIDDEN_BROWSER_NAMESPACES,
   isProxyPath,
+  loadLocalDevEnvironment,
   parsePort,
   probePort,
   PROXY_FAMILIES,
@@ -189,6 +190,28 @@ test('validates default and override port configuration', () => {
   assert.throws(
     () => readDevConfig({ DATAOPS_DEV_FRONTEND_PORT: '41000', DATAOPS_DEV_BACKEND_PORT: '41000' }, ROOT),
     /must be distinct/,
+  );
+});
+
+test('loads only the local docs cache setting from the ignored env file', () => {
+  const envRoot = path.join(scratchRoot, 'local-env');
+  mkdirSync(envRoot, { recursive: true });
+  writeFileSync(
+    path.join(envRoot, '.env'),
+    [
+      'DTC_CACHE_ROOT=/home/alexey/git/dataops-knowledge',
+      'GITHUB_TOKEN=must-stay-out-of-child-environment',
+      '',
+    ].join('\n'),
+  );
+
+  const loaded = loadLocalDevEnvironment({ PARENT_SETTING: 'kept' }, envRoot);
+  assert.equal(loaded.DTC_CACHE_ROOT, '/home/alexey/git/dataops-knowledge');
+  assert.equal(loaded.PARENT_SETTING, 'kept');
+  assert.equal(loaded.GITHUB_TOKEN, undefined);
+  assert.equal(
+    loadLocalDevEnvironment({ DTC_CACHE_ROOT: '/explicit/cache' }, envRoot).DTC_CACHE_ROOT,
+    '/explicit/cache',
   );
 });
 

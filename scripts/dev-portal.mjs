@@ -10,6 +10,7 @@ import {
   assertPortsAvailable,
   buildChildEnvironment,
   DevPortalConfigError,
+  loadLocalDevEnvironment,
   readDevConfig,
 } from './dev-portal-lib.mjs';
 
@@ -193,8 +194,8 @@ async function waitForStack(config, children, timeoutMs) {
 }
 
 export async function runDevPortal(options = {}) {
-  const env = options.env || process.env;
   const cwd = options.cwd || process.cwd();
+  const env = loadLocalDevEnvironment(options.env || process.env, cwd);
   const testReadinessTimeout = env.NODE_ENV === 'test'
     ? Number(env.DATAOPS_DEV_TEST_READINESS_TIMEOUT_MS || '')
     : Number.NaN;

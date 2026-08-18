@@ -101,6 +101,10 @@ make setup
 make dev
 ```
 
+For a workstation-local GitHub content cache, put `DTC_CACHE_ROOT` in the
+ignored root `.env`; `npm run dev` reads that setting automatically. Explicit
+shell values still take precedence.
+
 ## Development commands
 
 `make help` lists the current setup, dev, test, SOP lint, SAM
