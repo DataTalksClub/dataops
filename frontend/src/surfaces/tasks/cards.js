@@ -63,19 +63,24 @@ export function createCardsSurface(context) {
     section.append(header);
 
     if (displayedCards.length === 0) {
-      section.append(
-        archiveVisible
-          ? renderHonestState(
-              "Archive is empty",
-              "Cards appear here after all of their Tasks are complete.",
-            )
-          : renderHonestState(
-              "No active cards",
-              state.workSnapshot.cardsLoaded
-                ? "Create a card from a Template when new work arrives."
-                : "Live card data is unavailable.",
-            ),
-      );
+      if (archiveVisible) {
+        section.append(
+          renderHonestState(
+            "Archive is empty",
+            "Cards appear here after all of their Tasks are complete.",
+          ),
+        );
+      } else {
+        section.append(
+          renderHonestState(
+            "No active cards",
+            state.workSnapshot.cardsLoaded
+              ? "Create a card from a Template when new work arrives."
+              : "Live card data is unavailable.",
+          ),
+          renderWorkflowBoard([]),
+        );
+      }
       return section;
     }
 
@@ -109,13 +114,18 @@ export function createCardsSurface(context) {
       return section;
     }
 
-    const board = document.createElement("div");
-    board.className = "ops-workflows-grid";
-    board.setAttribute("aria-label", "Active card board");
-    const items = cards.map((card) => {
+    const boardItems = cards.map((card) => {
       const tasks = state.workSnapshot.cardTasks[card.id] || [];
       return operationItemFromCard(card, tasks, { today });
     });
+    section.append(renderWorkflowBoard(boardItems));
+    return section;
+  }
+
+  function renderWorkflowBoard(items) {
+    const board = document.createElement("div");
+    board.className = "ops-workflows-grid";
+    board.setAttribute("aria-label", "Active card board");
     for (const { stage, label, items: stageItems } of groupCardItemsByStage(
       items,
     )) {
@@ -149,8 +159,7 @@ export function createCardsSurface(context) {
       column.append(columnHeader, list);
       board.append(column);
     }
-    section.append(board);
-    return section;
+    return board;
   }
 
   function cardTaskCountLabel(progress) {

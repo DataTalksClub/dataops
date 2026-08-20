@@ -14,7 +14,12 @@ export function createMailingExportsSurface(context) {
             export at a time and one completed export per 24 hours.
           </p>
         </div>
-        <button type="button" data-refresh>Refresh</button>
+        <button
+          type="button"
+          class="quiet-button"
+          aria-label="Refresh mailing export data"
+          data-refresh
+        >Refresh</button>
       </header>
       <p role="status" aria-live="polite">Loading export configurations…</p>
       <div data-configs></div>
@@ -107,12 +112,21 @@ export function createMailingExportsSurface(context) {
             data-run-key="${escapeHtml(actionRunKey(run))}"
           >
             ${run && run.status !== "completed" ? "Advance / retry" : "Start daily export"}</button
-          >${run?.status === "completed" && run.artifactId ? html`<button type="button" data-download="${escapeHtml(run.artifactId)}">Download ZIP</button>` : ""}
+          >${run?.status === "completed" && run.artifactId
+            ? html`<button
+                type="button"
+                class="quiet-button"
+                data-download="${escapeHtml(run.artifactId)}"
+              >Download ZIP</button>`
+            : ""}
         </div>
       </article>`;
     }
 
     async function load() {
+      const refreshButton = surface.querySelector("[data-refresh]");
+      refreshButton.disabled = true;
+      refreshButton.setAttribute("aria-busy", "true");
       status.textContent = "Loading export configurations…";
       try {
         const result = await api();
@@ -173,6 +187,9 @@ export function createMailingExportsSurface(context) {
           </p>
         </div>`;
         historyRoot.replaceChildren();
+      } finally {
+        refreshButton.disabled = false;
+        refreshButton.removeAttribute("aria-busy");
       }
     }
 

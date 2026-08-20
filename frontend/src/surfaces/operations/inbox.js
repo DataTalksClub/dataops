@@ -339,6 +339,7 @@ export function createInboxSurface(context) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `ops-subnav-tab ${state.intake.filter === id ? "is-active" : ""}`;
+      button.setAttribute("aria-pressed", String(state.intake.filter === id));
       button.textContent = label;
       button.addEventListener("click", () => {
         state.intake.filter = id;

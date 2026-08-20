@@ -63,6 +63,10 @@ export function createAssistantsSurface(context) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `ops-subnav-tab ${state.assistantQueue.filter === id ? "is-active" : ""}`;
+      button.setAttribute(
+        "aria-pressed",
+        String(state.assistantQueue.filter === id),
+      );
       button.textContent = label;
       button.addEventListener("click", () => {
         state.assistantQueue.filter = id;
@@ -116,6 +120,12 @@ export function createAssistantsSurface(context) {
   function renderAssistantJobRow(job) {
     const row = document.createElement("article");
     row.className = `assistant-job-row ${job.id === state.assistantQueue.selectedJobId ? "is-selected" : ""}`;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute(
+      "aria-label",
+      `Open assistant job ${job.title || job.assistantType || job.id || "job"}`,
+    );
     const context = assistantContextLabel(job);
     row.innerHTML = `
       <div>
@@ -132,8 +142,14 @@ export function createAssistantsSurface(context) {
       </div>
       <em>${escapeHtml(String(job.status || "draft").replace(/_/g, " "))}</em>
     `;
-    row.addEventListener("click", () => {
+    const openJob = () => {
       navigateCanonicalWorkspace("/assistants", { assistantJobId: job.id });
+    };
+    row.addEventListener("click", openJob);
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openJob();
     });
     return row;
   }
