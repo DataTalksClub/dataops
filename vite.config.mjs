@@ -85,9 +85,12 @@ export default defineConfig(() => {
         clientPort: config.frontendPort,
       },
       proxy: {
-        '^/(?:api|work)(?:/|$)': proxyOptions(config),
-        '^/(?:docs|images|folders|lint|parse|health|search|git|content)(?:/|$)': proxyOptions(config),
-        '^/(?:login|logout|auth)(?:/|$)': proxyOptions(config),
+        // Vite matches the complete request target, including its query
+        // string. Keep query-bearing API calls (for example /docs?path=…)
+        // on the backend instead of falling through to the app shell.
+        '^/(?:api|work)(?:/|\\?|$)': proxyOptions(config),
+        '^/(?:docs|images|folders|lint|parse|health|search|git|content)(?:/|\\?|$)': proxyOptions(config),
+        '^/(?:login|logout|auth)(?:/|\\?|$)': proxyOptions(config),
       },
     },
   };
