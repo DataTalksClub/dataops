@@ -397,18 +397,22 @@
 
     <div id="diff-modal" class="diff-modal" hidden>
       <div class="diff-backdrop" id="diff-backdrop"></div>
-      <div class="diff-panel">
+      <div class="diff-panel" role="dialog" aria-modal="true" aria-labelledby="diff-title">
         <header class="diff-header">
           <strong id="diff-title"></strong>
-          <button id="diff-close" class="quiet-button" type="button">Close</button>
+          <button id="diff-close" class="quiet-button" type="button" data-diff-close>Close</button>
         </header>
         <pre id="diff-body" class="diff-body"></pre>
       </div>
     </div>
 
-    <div id="lightbox" class="lightbox" hidden>
+    <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-labelledby="lightbox-title">
       <div class="lightbox-backdrop"></div>
       <figure class="lightbox-frame">
+        <header class="lightbox-header">
+          <strong id="lightbox-title">Image preview</strong>
+          <button class="quiet-button lightbox-close" type="button" data-lightbox-close aria-label="Close image preview">Close</button>
+        </header>
         <img id="lightbox-img" alt="">
         <figcaption id="lightbox-caption"></figcaption>
       </figure>
@@ -416,8 +420,12 @@
 
     <div id="quick-nav" class="quick-nav" hidden>
       <div class="quick-nav-backdrop" id="quick-nav-backdrop"></div>
-      <div class="quick-nav-panel" role="dialog" aria-label="Quick navigation">
-        <input id="quick-nav-input" type="text" placeholder="Search docs by title or path…" autocomplete="off">
+      <div class="quick-nav-panel" role="dialog" aria-modal="true" aria-labelledby="quick-nav-title">
+        <header class="quick-nav-header">
+          <strong id="quick-nav-title">Quick navigation</strong>
+          <button class="quiet-button quick-nav-close" type="button" data-quick-nav-close aria-label="Close quick navigation">Close</button>
+        </header>
+        <input id="quick-nav-input" type="text" aria-label="Search documents by title or path" placeholder="Search docs by title or path…" autocomplete="off">
         <div id="quick-nav-results" class="quick-nav-results"></div>
       </div>
     </div>

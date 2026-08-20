@@ -9,6 +9,8 @@ export function createEditorReviewMedia(context, services, editorState) {
   let lightboxReturnFocus = null;
   const diffClose = diffModal?.querySelector?.("[data-diff-close]");
   const lightboxClose = lightbox?.querySelector?.("[data-lightbox-close]");
+  const overlayFocusableSelector =
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
   function activeFocusTarget() {
     if (typeof document === "undefined") return null;
@@ -32,6 +34,30 @@ export function createEditorReviewMedia(context, services, editorState) {
 
   diffClose?.addEventListener("click", closeDiff);
   lightboxClose?.addEventListener("click", closeLightbox);
+  diffModal?.addEventListener("keydown", trapOverlayFocus);
+  lightbox?.addEventListener("keydown", trapOverlayFocus);
+
+  function trapOverlayFocus(event) {
+    if (event.defaultPrevented || event.key !== "Tab") return;
+    const overlay = event.currentTarget;
+    const focusables = [...overlay.querySelectorAll(overlayFocusableSelector)].filter(
+      (element) =>
+        !element.hidden &&
+        (typeof element.offsetParent === "undefined" || element.offsetParent !== null),
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables.at(-1);
+    const active = document.activeElement;
+    const activeInside = overlay.contains?.(active) || false;
+    if (event.shiftKey && (active === first || !activeInside)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !activeInside)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   async function openLintReport() {
     lintModal.hidden = false;

@@ -126,6 +126,10 @@ export function createCardsSurface(context) {
     const board = document.createElement("div");
     board.className = "ops-workflows-grid";
     board.setAttribute("aria-label", "Active card board");
+    const scrollHint = document.createElement("p");
+    scrollHint.className = "workflow-board-scroll-hint";
+    scrollHint.textContent = "Swipe horizontally to view each stage.";
+    board.append(scrollHint);
     for (const { stage, label, items: stageItems } of groupCardItemsByStage(
       items,
     )) {

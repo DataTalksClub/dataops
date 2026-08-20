@@ -178,6 +178,7 @@ export function createPlanningSurface(context) {
           </div>
           <span>${visibleItems.length} ${visibleItems.length === 1 ? "activity" : "activities"}</span>
         </div>
+        <p class="calendar-mobile-hint">Swipe each week horizontally to see all seven days.</p>
       `;
       if (!visibleItems.length) {
         html += `
@@ -187,10 +188,8 @@ export function createPlanningSurface(context) {
           </div>
         `;
       }
-      html += `
-        <div class="calendar-grid">
-          <div class="calendar-weekdays">${weekdayHeadings}</div>
-      `;
+      let weekMarkup = "";
+      let dayIndex = 0;
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
@@ -237,7 +236,8 @@ export function createPlanningSurface(context) {
               <span>${escapeHtml(overlay.label)}</span>
             </a>
           `).join("");
-        html += `
+        if (dayIndex % 7 === 0) weekMarkup += `<div class="calendar-week">`;
+        weekMarkup += `
           <section
             class="calendar-day${isOutside ? " is-outside" : ""}${isToday ? " is-today" : ""}"
             aria-label="${fullDate}"
@@ -255,9 +255,14 @@ export function createPlanningSurface(context) {
             </div>
           </section>
         `;
+        if (dayIndex % 7 === 6) weekMarkup += `</div>`;
+        dayIndex += 1;
       }
       grid.innerHTML = `
         ${html}
+        <div class="calendar-grid">
+          <div class="calendar-weekdays">${weekdayHeadings}</div>
+          <div class="calendar-weeks">${weekMarkup}</div>
         </div>
       `;
     }

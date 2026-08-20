@@ -311,11 +311,41 @@ export function createKnowledgeNavigation(context, services) {
   }
 
   const quickNavClose = quickNav?.querySelector?.("[data-quick-nav-close]");
+  const quickNavPanel = quickNav?.querySelector?.(".quick-nav-panel");
   quickNavClose?.addEventListener("click", closeQuickNav);
   quickNavClose?.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
       closeQuickNav();
+    }
+  });
+  quickNav?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeQuickNav();
+      return;
+    }
+    if (event.defaultPrevented || event.key !== "Tab") return;
+    const focusables = [
+      ...quickNav.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter(
+      (element) =>
+        !element.hidden &&
+        (typeof element.offsetParent === "undefined" || element.offsetParent !== null),
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables.at(-1);
+    const active = document.activeElement;
+    const activeInside = quickNavPanel?.contains?.(active) || false;
+    if (event.shiftKey && (active === first || !activeInside)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !activeInside)) {
+      event.preventDefault();
+      first.focus();
     }
   });
 
