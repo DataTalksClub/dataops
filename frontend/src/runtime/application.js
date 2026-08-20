@@ -110,7 +110,7 @@ const {
   docState,
   taskPanel, taskPanelTitle, taskPanelBody, taskPanelClose, taskModalBackdrop,
   cardPanel, cardPanelTitle, cardPanelBody, cardPanelClose,
-  cardModalBackdrop, diffModal, diffTitle, diffBody, lightbox,
+  cardModalBackdrop, diffModal, diffTitle, diffBody, diffClose, lightbox,
   lightboxImg, lightboxCaption, quickNav, quickNavInput, quickNavResults,
 } = dom;
 const {
@@ -647,6 +647,7 @@ knowledgeSurface = createKnowledgeSurface({
   confirmDialog,
   customSelects,
   diffBody,
+  diffClose,
   diffModal,
   diffTitle,
   docContextReturn,
