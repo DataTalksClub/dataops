@@ -173,6 +173,7 @@ export function createCardsSurface(context) {
     card.type = "button";
     card.className = `ops-workflow-card workflow-board-card ops-risk-${item.risk || "low"}`;
     card.dataset.cardId = item.cardId;
+    card.setAttribute("aria-label", `Open card ${item.title}`);
     if (item.meta) card.title = item.meta;
     card.addEventListener("click", () => openCardPanel(item.cardId));
 
@@ -210,6 +211,11 @@ export function createCardsSurface(context) {
       const percent = Number(item.progress.percent) || 0;
       const progress = document.createElement("div");
       progress.className = `ops-progress${percent >= 100 ? " is-complete" : ""}`;
+      progress.setAttribute("role", "progressbar");
+      progress.setAttribute("aria-label", `${item.title} progress`);
+      progress.setAttribute("aria-valuemin", "0");
+      progress.setAttribute("aria-valuemax", "100");
+      progress.setAttribute("aria-valuenow", String(percent));
       const fill = document.createElement("i");
       fill.style.width = `${percent}%`;
       progress.append(fill);

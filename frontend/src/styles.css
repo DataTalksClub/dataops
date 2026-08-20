@@ -4908,3 +4908,3973 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Finance and Operations surface refinement.
+   These additions stay at the end of the sheet so the route-specific visual
+   language can evolve without changing shared shell primitives. */
+
+body[data-workspace-view="admin"] .document-list,
+body[data-workspace-view="users"] .document-list,
+body[data-workspace-view="device"] .document-list {
+  width: 100%;
+  max-width: 1040px;
+}
+
+body[data-workspace-view="bookkeeping"] .document-list,
+body[data-workspace-view="sponsors"] .document-list,
+body[data-workspace-view="mailing-exports"] .document-list {
+  width: 100%;
+  max-width: 1180px;
+}
+
+body[data-workspace-view="newsletter"] .document-list {
+  max-width: 980px;
+}
+
+body[data-workspace-view="calendar"] .document-list {
+  max-width: 1240px;
+}
+
+.bookkeeping-surface,
+.sponsor-crm-surface,
+.mailing-exports-surface,
+.newsletter-surface,
+.calendar-surface {
+  gap: 20px;
+}
+
+.bookkeeping-header,
+.crm-header,
+.mailing-exports-surface > header,
+.planner-header,
+.ops-surface-admin .ops-surface-header,
+.ops-surface-users .ops-surface-header,
+.ops-surface-device .ops-surface-header {
+  min-width: 0;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 4px 0 20px;
+}
+
+.bookkeeping-header h2,
+.crm-header h2,
+.mailing-exports-surface > header h2,
+.planner-heading h2,
+.ops-surface-admin .ops-surface-header h3,
+.ops-surface-users .ops-surface-header h3,
+.ops-surface-device .ops-surface-header h3 {
+  color: var(--text-heading);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.bookkeeping-header > div,
+.crm-header > div,
+.mailing-exports-surface > header > div,
+.planner-heading,
+.ops-surface-admin .ops-surface-header,
+.ops-surface-users .ops-surface-header,
+.ops-surface-device .ops-surface-header {
+  min-width: 0;
+}
+
+.bookkeeping-header > div > p:last-child,
+.crm-header > div > p:last-child,
+.mailing-exports-surface > header p,
+.planner-heading > p:last-child,
+.ops-surface-admin .ops-surface-header p,
+.ops-surface-users .ops-surface-header p,
+.ops-surface-device .ops-surface-header p {
+  max-width: 720px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.surface-actions,
+.bookkeeping-header > button,
+.mailing-exports-surface > header > button,
+.planner-header > .primary-button {
+  flex: 0 0 auto;
+}
+
+.surface-actions button,
+.bookkeeping-header > button,
+.mailing-exports-surface > header > button,
+.planner-header > .primary-button {
+  white-space: nowrap;
+}
+
+.bookkeeping-surface .surface-status,
+.sponsor-crm-surface > .surface-status,
+.mailing-exports-surface > [role="status"] {
+  margin: -8px 0 0;
+}
+
+.bookkeeping-surface .surface-status[role="status"],
+.sponsor-crm-surface > .surface-status,
+.mailing-exports-surface > [role="status"] {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.bookkeeping-job-nav {
+  border-radius: 8px;
+}
+
+.bookkeeping-job-nav a {
+  min-height: 72px;
+  align-content: center;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.bookkeeping-job-nav a:focus-visible,
+.bookkeeping-job-nav a:hover {
+  background: var(--accent-soft);
+}
+
+.bookkeeping-job-nav span {
+  border-color: var(--info-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.bookkeeping-section,
+.crm-master,
+.crm-detail-pane,
+.crm-directory,
+.crm-alerts {
+  border-radius: 8px;
+}
+
+.section-header {
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+.section-header > div {
+  min-width: 0;
+}
+
+.section-header h3 {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.section-header p:last-child {
+  max-width: 640px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.section-count,
+.status-label,
+.finance-status,
+.evidence-state,
+.mailing-export-status,
+.ops-user-badge {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.bookkeeping-filters,
+.crm-filters,
+.bookkeeping-upload {
+  background: var(--surface-muted);
+}
+
+.bookkeeping-filters input,
+.bookkeeping-filters select,
+.bookkeeping-upload input,
+.bookkeeping-upload select,
+.crm-filters input,
+.crm-filters select {
+  background: var(--surface-bg);
+}
+
+.bookkeeping-filters input[type="search"] {
+  min-width: 0;
+}
+
+.bookkeeping-table-wrap tbody tr {
+  transition: background-color 120ms ease;
+}
+
+.bookkeeping-table-wrap tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.bookkeeping-table-wrap th:first-child,
+.bookkeeping-table-wrap td:first-child {
+  padding-left: 18px;
+}
+
+.bookkeeping-table-wrap th:last-child,
+.bookkeeping-table-wrap td:last-child {
+  padding-right: 18px;
+}
+
+.bookkeeping-table-wrap td:first-child,
+.bookkeeping-table-wrap td:nth-child(2) {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bookkeeping-table-wrap td strong {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+.bookkeeping-table-wrap .row-actions {
+  justify-content: flex-end;
+}
+
+.bookkeeping-upload {
+  grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(140px, 0.8fr));
+  padding: 18px;
+}
+
+.bookkeeping-upload .bookkeeping-file {
+  min-height: 72px;
+  align-content: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  padding: 10px 12px;
+}
+
+.bookkeeping-upload .bookkeeping-file input[type="file"] {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+}
+
+.bookkeeping-document-row,
+.crm-directory-row,
+.crm-booking-row,
+.crm-alerts .crm-card,
+.booking-detail-section .crm-card {
+  padding: 14px 18px;
+  transition: background-color 120ms ease;
+}
+
+.bookkeeping-document-row:hover,
+.crm-directory-row:hover,
+.crm-booking-row:hover,
+.crm-alerts .crm-card:hover,
+.booking-detail-section .crm-card:hover {
+  background: var(--surface-hover);
+}
+
+.bookkeeping-document-row > div:first-child,
+.crm-directory-row > div:first-child,
+.crm-booking-row > div:first-child {
+  min-width: 0;
+}
+
+.bookkeeping-document-row strong,
+.crm-directory-row strong,
+.crm-booking-row strong {
+  color: var(--text-heading);
+}
+
+.bookkeeping-document-row p,
+.crm-directory-row p,
+.crm-booking-row p {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.bookkeeping-private-statements {
+  margin: 18px;
+  background: var(--surface-muted);
+}
+
+.bookkeeping-private-statements [data-private-statements] {
+  color: var(--text-primary);
+}
+
+.bookkeeping-package {
+  align-items: end;
+  background: var(--surface-muted);
+  padding: 18px;
+}
+
+.bookkeeping-package label {
+  width: min(260px, 100%);
+}
+
+.bookkeeping-entry-dialog,
+.bookkeeping-delete-dialog,
+.sponsor-crm-surface .surface-dialog,
+.mailing-exports-surface .surface-dialog {
+  border-radius: 10px;
+}
+
+.dialog-fields label input,
+.dialog-fields label select,
+.dialog-fields label textarea {
+  background: var(--surface-bg);
+}
+
+.bookkeeping-actions,
+.sponsor-crm-surface .surface-dialog form > footer {
+  justify-content: flex-start;
+}
+
+/* Sponsor CRM: a clear booking queue beside one inspectable record. */
+.sponsor-crm-surface .crm-layout {
+  grid-template-columns: minmax(320px, 0.72fr) minmax(0, 1.55fr);
+  gap: 20px;
+}
+
+.crm-master .section-header,
+.crm-directory .section-header,
+.crm-alerts .section-header {
+  padding: 16px 18px;
+}
+
+.crm-filters {
+  padding: 14px 18px;
+}
+
+.crm-booking-list {
+  display: grid;
+}
+
+.crm-booking-row {
+  min-height: 84px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.crm-booking-row[aria-current="true"] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.crm-booking-row .status-label {
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.crm-booking-row .row-actions {
+  margin-top: 0;
+}
+
+.crm-booking-row .row-actions button:first-child {
+  border-color: var(--info-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.crm-support-grid {
+  gap: 20px;
+}
+
+.crm-directory-row .row-actions,
+.crm-alerts .crm-card .row-actions {
+  flex: 0 0 auto;
+}
+
+.crm-alerts .crm-card {
+  display: grid;
+  align-items: start;
+  gap: 6px;
+}
+
+.crm-alerts .crm-card strong {
+  color: var(--text-heading);
+  line-height: 1.4;
+}
+
+.crm-alerts .crm-card button {
+  justify-self: start;
+}
+
+.booking-detail-header {
+  padding: 20px 22px;
+  background: var(--surface-muted);
+}
+
+.booking-detail-header > div {
+  min-width: 0;
+}
+
+.booking-detail-header h2 {
+  font-size: 28px;
+}
+
+.booking-detail-header > div > p:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.booking-back {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--link-color) !important;
+  padding-left: 0 !important;
+}
+
+.booking-back:hover {
+  color: var(--link-hover) !important;
+  text-decoration: underline;
+}
+
+.booking-section-nav {
+  background: var(--surface-bg);
+  padding: 8px;
+}
+
+.booking-section-nav button {
+  min-height: 38px;
+  font-size: 13px;
+}
+
+.booking-detail-section {
+  padding: 22px;
+}
+
+.booking-detail-section > header {
+  margin-bottom: 16px;
+}
+
+.booking-overview-list,
+.finance-panel dl {
+  border-radius: 8px;
+}
+
+.booking-overview-list > div,
+.finance-panel dl > div {
+  min-height: 64px;
+  padding: 13px 14px;
+}
+
+.booking-overview-list dd,
+.finance-panel dd {
+  line-height: 1.35;
+}
+
+.booking-notes,
+.finance-recovery {
+  line-height: 1.5;
+}
+
+.finance-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  padding: 18px;
+}
+
+.finance-panel > header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.finance-panel > header > div {
+  min-width: 0;
+}
+
+.finance-panel > header h3 {
+  font-size: 18px;
+}
+
+.finance-panel dl {
+  margin: 0;
+}
+
+.finance-panel > p,
+.finance-payments,
+.finance-actions {
+  margin-top: 0;
+}
+
+.finance-payments {
+  border-top: 1px solid var(--border-muted);
+  padding-top: 12px;
+}
+
+.finance-payments p {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.finance-actions {
+  padding-top: 4px;
+}
+
+.booking-detail-section [data-crm-communications] {
+  display: grid;
+  gap: 10px;
+}
+
+.booking-detail-section [data-crm-communications] .honest-state {
+  margin: 0;
+}
+
+.crm-card {
+  border-radius: 8px;
+}
+
+.crm-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.crm-card header span:not([hidden]) {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.crm-card[data-communication-state="outcome_unknown"],
+.crm-card[data-communication-state="rejected"] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.crm-card[data-communication-state="delivered"],
+.crm-card[data-communication-state="accepted"] {
+  border-color: var(--success-border);
+}
+
+.crm-card[data-communication-state="disabled"],
+.crm-card[data-communication-state="awaiting_review"] {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.crm-history {
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 14px 16px;
+}
+
+/* Mailing exports: configuration cards and durable history share one reading
+   order, with the next safe action always at the bottom of each card. */
+.mailing-exports-surface {
+  display: grid;
+  min-width: 0;
+}
+
+.mailing-exports-surface > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.mailing-exports-surface > header h2 {
+  margin: 0 0 5px;
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+.mailing-exports-surface > header p {
+  margin: 0;
+  max-width: 700px;
+}
+
+.mailing-exports-surface [data-configs] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.mailing-export-card {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  padding: 18px;
+}
+
+.mailing-export-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 14px;
+}
+
+.mailing-export-card > header > div {
+  min-width: 0;
+}
+
+.mailing-export-card h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 17px;
+}
+
+.mailing-export-card > header p,
+.mailing-export-card > p,
+.mailing-export-history span {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mailing-export-status {
+  flex: 0 0 auto;
+  border-color: var(--border-muted);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.mailing-export-card[data-export-state="completed"] .mailing-export-status {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.mailing-export-card[data-export-state="failed"] .mailing-export-status {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.mailing-export-card[data-export-state="pending"] .mailing-export-status,
+.mailing-export-card[data-export-state="requested"] .mailing-export-status {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.mailing-export-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--border-muted);
+}
+
+.mailing-export-card dl > div {
+  min-width: 0;
+  background: var(--surface-bg);
+  padding: 10px 12px;
+}
+
+.mailing-export-card dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.mailing-export-card dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-heading);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mailing-export-error {
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger-text) !important;
+  padding: 10px 12px;
+}
+
+.mailing-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 14px;
+}
+
+.mailing-exports-surface > section {
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+}
+
+.mailing-exports-surface > section h3 {
+  margin: 0;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  color: var(--text-heading);
+  padding: 14px 18px;
+  font-size: 16px;
+}
+
+.mailing-export-history {
+  display: grid;
+  gap: 2px;
+  padding: 12px 18px;
+}
+
+.mailing-export-history + .mailing-export-history {
+  border-top: 1px solid var(--border-muted);
+}
+
+.mailing-export-history strong {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+/* Newsletter and Calendar: the planner controls should feel like one
+   instrument panel, while the content remains a calm list/grid below it. */
+.planner-header {
+  padding-bottom: 22px;
+}
+
+.planner-heading h2 {
+  font-size: 34px;
+}
+
+.newsletter-filters,
+.calendar-controls {
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 16px;
+}
+
+.newsletter-filters .planner-filter-fields,
+.calendar-controls .planner-filter-fields {
+  min-width: 0;
+}
+
+.planner-filter-fields label,
+.calendar-layers legend {
+  letter-spacing: 0.01em;
+}
+
+.planner-filter-fields input,
+.planner-filter-fields select {
+  background: var(--surface-bg);
+}
+
+.calendar-period-actions {
+  min-height: 36px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  padding: 2px;
+}
+
+.calendar-period-actions button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.calendar-period-actions button:hover {
+  border-color: var(--control-border);
+  background: var(--surface-hover);
+}
+
+.calendar-layers {
+  align-content: center;
+  border-left: 1px solid var(--border-muted);
+  padding-left: 16px;
+}
+
+.calendar-grid {
+  border-radius: 8px;
+}
+
+.calendar-weekdays strong {
+  padding: 9px 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.calendar-day {
+  min-height: 132px;
+  padding: 9px;
+  transition: background-color 120ms ease;
+}
+
+.calendar-day.is-today {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.calendar-day-heading time {
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-day-items {
+  gap: 5px;
+}
+
+.calendar-activity,
+.calendar-overlay,
+.calendar-holiday {
+  min-height: 30px;
+  border-radius: var(--radius);
+  padding: 5px 7px;
+}
+
+.calendar-activity:hover,
+.calendar-overlay:hover {
+  transform: translateY(-1px);
+}
+
+.calendar-content-header {
+  margin-bottom: 12px;
+}
+
+.calendar-content-header h3 {
+  font-size: 20px;
+  letter-spacing: -0.015em;
+}
+
+.newsletter-schedule {
+  gap: 16px;
+}
+
+.newsletter-period {
+  border-radius: 8px;
+}
+
+.newsletter-period > header {
+  min-height: 48px;
+  padding: 10px 16px;
+}
+
+.newsletter-period h3 {
+  font-size: 15px;
+}
+
+.newsletter-slot-row {
+  min-height: 82px;
+  padding: 16px;
+  transition: background-color 120ms ease;
+}
+
+.newsletter-slot-row:hover {
+  background: var(--surface-hover);
+}
+
+.newsletter-slot-date time {
+  font-variant-numeric: tabular-nums;
+}
+
+.newsletter-slot-title h4 {
+  min-width: 0;
+}
+
+.newsletter-slot-actions a,
+.newsletter-slot-actions button {
+  min-height: 34px;
+}
+
+.planner-alert {
+  border-radius: 8px;
+}
+
+.planner-alert.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.planner-alert.is-info {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.planner-dialog {
+  border-radius: 10px;
+}
+
+/* Admin, Users, and Device use the same low-chrome operations frame as the
+   overview, with controls grouped by decision rather than by implementation. */
+.ops-surface-admin,
+.ops-surface-users,
+.ops-surface-device {
+  width: min(100%, 62rem);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.ops-surface-device {
+  width: min(100%, 42rem);
+}
+
+.ops-surface-admin > *,
+.ops-surface-users > *,
+.ops-surface-device > * {
+  width: 100%;
+}
+
+.ops-surface-admin .ops-surface-header,
+.ops-surface-users .ops-surface-header,
+.ops-surface-device .ops-surface-header {
+  display: grid;
+  gap: 5px;
+  background: transparent;
+  text-align: left;
+}
+
+.ops-surface-admin .ops-surface-header h3,
+.ops-surface-users .ops-surface-header h3,
+.ops-surface-device .ops-surface-header h3 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.ops-surface-admin .ops-surface-header p,
+.ops-surface-users .ops-surface-header p,
+.ops-surface-device .ops-surface-header p {
+  margin: 0;
+}
+
+.ops-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ops-admin-card {
+  display: grid;
+  position: relative;
+  min-width: 0;
+  min-height: 132px;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 16px;
+  text-align: left;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.ops-admin-card::after {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  color: var(--accent);
+  content: "→";
+  font-size: 18px;
+}
+
+.ops-admin-card:hover,
+.ops-admin-card:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ops-admin-card strong {
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+.ops-admin-card span {
+  max-width: 30ch;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ops-admin-diagnostics {
+  display: grid;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ops-admin-diagnostics > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 14px 16px;
+}
+
+.ops-admin-diagnostics h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+.ops-admin-diagnostics > header span {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.ops-admin-diagnostics article {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.4fr) minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 13px 16px;
+}
+
+.ops-admin-diagnostics article:last-child {
+  border-bottom: 0;
+}
+
+.ops-admin-diagnostics article strong {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+.ops-admin-diagnostics article span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ops-users-surface {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.ops-users-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ops-users-table-wrap {
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+}
+
+.ops-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ops-users-table th,
+.ops-users-table td {
+  border-bottom: 1px solid var(--border-muted);
+  padding: 13px 16px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ops-users-table th {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ops-users-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ops-users-table tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+.ops-user-name strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.ops-user-email,
+.ops-user-created {
+  color: var(--text-muted);
+}
+
+.ops-user-role {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.ops-user-badge {
+  display: inline-flex;
+  margin-left: 6px;
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.ops-user-actions {
+  white-space: nowrap;
+}
+
+.ops-user-form-panel {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  padding: 20px;
+}
+
+.ops-user-form-panel h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 20px;
+}
+
+.ops-user-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ops-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--text-heading);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ops-field input,
+.ops-field select {
+  width: 100%;
+  min-height: 40px;
+  font-weight: 400;
+}
+
+.ops-user-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  gap: 8px;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 14px;
+}
+
+.ops-user-form-result {
+  min-height: 20px;
+  margin: 0;
+  color: var(--success-text);
+  font-size: 13px;
+}
+
+.ops-user-form-result.ops-error {
+  color: var(--danger-text);
+}
+
+.device-panel {
+  gap: 18px;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.device-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.device-form .quick-form-label {
+  gap: 6px;
+}
+
+.device-code-input {
+  min-height: 48px;
+  border-color: var(--info-border);
+  background: var(--accent-soft);
+  color: var(--text-heading);
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.device-confirm {
+  border-top: 1px solid var(--border-muted);
+  padding-top: 18px;
+}
+
+.device-confirm h3,
+.device-outcome h3 {
+  font-size: 18px;
+}
+
+.device-facts {
+  gap: 8px 18px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.device-facts dd {
+  overflow-wrap: anywhere;
+}
+
+.device-warning {
+  line-height: 1.5;
+}
+
+.device-actions {
+  justify-content: flex-start;
+  border-top: 1px solid var(--border-muted);
+  padding-top: 14px;
+}
+
+.device-outcome {
+  border: 1px solid var(--success-border);
+  border-radius: 8px;
+  background: var(--success-bg);
+  padding: 16px;
+}
+
+.device-outcome h3 {
+  color: var(--success-text);
+}
+
+.device-outcome p {
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+
+/* Operational overview building blocks. They are also used by the queue and
+   quality drill-downs, so the same row language survives outside Today. */
+.ops-surface-header {
+  min-width: 0;
+}
+
+.ops-section-header {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 13px 16px;
+}
+
+.ops-section-header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+.ops-section-header > span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ops-future-section,
+.ops-process-quality {
+  overflow: hidden;
+  padding: 0;
+}
+
+.ops-future-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border-muted);
+}
+
+.ops-future-card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 5px;
+  background: var(--surface-bg);
+  padding: 15px 16px;
+}
+
+.ops-future-card strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.ops-future-card small {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ops-future-card span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ops-quality-list {
+  display: grid;
+}
+
+.ops-quality-row {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.ops-quality-row:last-child {
+  border-bottom: 0;
+}
+
+.ops-quality-row:hover,
+.ops-quality-row:focus-visible {
+  background: var(--surface-hover);
+}
+
+.ops-quality-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ops-quality-row-head strong {
+  min-width: 0;
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.ops-quality-row-head span {
+  flex: 0 0 auto;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ops-quality-blocking .ops-quality-row-head span {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.ops-quality-info .ops-quality-row-head span {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.ops-quality-row > small {
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.ops-queue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ops-queue-meta span {
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.ops-lane {
+  overflow: hidden;
+  padding: 0;
+}
+
+.ops-lane > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 13px 16px;
+}
+
+.ops-lane > header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+.ops-lane > header span {
+  display: grid;
+  min-width: 24px;
+  min-height: 24px;
+  place-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ops-lane-list {
+  display: grid;
+}
+
+.ops-lane-item {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 13px 16px;
+  text-align: left;
+}
+
+.ops-lane-item:last-child {
+  border-bottom: 0;
+}
+
+.ops-lane-item:hover,
+.ops-lane-item:focus-visible {
+  background: var(--surface-hover);
+}
+
+.ops-lane-item strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.ops-lane-item > span,
+.ops-lane-item > small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-lane-item .ops-next-action {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ops-reference-link {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--text-primary);
+  padding: 12px 16px;
+  text-decoration: none;
+}
+
+.ops-reference-link:last-child {
+  border-bottom: 0;
+}
+
+.ops-reference-link:hover {
+  background: var(--surface-hover);
+}
+
+.ops-reference-link strong {
+  color: var(--link-color);
+  font-size: 13px;
+}
+
+.ops-reference-link span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Today remains the scan-first operational overview. */
+body[data-workspace-view="home"] .operations-home-daily {
+  gap: 20px;
+}
+
+body[data-workspace-view="home"] .home-daily-header {
+  padding-bottom: 22px;
+}
+
+body[data-workspace-view="home"] .home-status-strip,
+body[data-workspace-view="home"] .home-attention {
+  border-radius: 8px;
+}
+
+body[data-workspace-view="home"] .home-status-item {
+  min-height: 64px;
+}
+
+body[data-workspace-view="home"] .home-attention > header {
+  min-height: 52px;
+}
+
+body[data-workspace-view="home"] .home-attention-row {
+  min-height: 70px;
+}
+
+body[data-workspace-view="home"] .home-attention-row:hover {
+  background: var(--surface-hover);
+}
+
+/* Inbox and assistant/artifact lists share the same route framing when they
+   are opened from the Operations group. */
+.ops-inbox,
+.assistant-workspace {
+  min-width: 0;
+}
+
+.ops-inbox {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.ops-surface-intro {
+  max-width: 760px;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.intake-filter-bar,
+.assistant-filter-bar {
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 8px;
+}
+
+.ops-subnav-tab[aria-pressed="true"],
+.ops-subnav-tab.is-active {
+  border-color: var(--info-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.intake-panel,
+.assistant-panel {
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+}
+
+.ops-data-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 13px 16px;
+}
+
+.ops-data-row:last-child {
+  border-bottom: 0;
+}
+
+.ops-data-row strong {
+  color: var(--text-heading);
+}
+
+.ops-data-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 820px) {
+  body[data-workspace-view="admin"] .document-list,
+  body[data-workspace-view="users"] .document-list,
+  body[data-workspace-view="device"] .document-list,
+  body[data-workspace-view="bookkeeping"] .document-list,
+  body[data-workspace-view="sponsors"] .document-list,
+  body[data-workspace-view="mailing-exports"] .document-list,
+  body[data-workspace-view="newsletter"] .document-list,
+  body[data-workspace-view="calendar"] .document-list {
+    max-width: none;
+  }
+
+  .bookkeeping-header,
+  .crm-header,
+  .mailing-exports-surface > header,
+  .planner-header {
+    display: grid;
+    gap: 14px;
+    padding-bottom: 16px;
+  }
+
+  .bookkeeping-header h2,
+  .crm-header h2,
+  .mailing-exports-surface > header h2,
+  .planner-heading h2 {
+    font-size: 24px;
+  }
+
+  .surface-actions,
+  .bookkeeping-header > button,
+  .mailing-exports-surface > header > button,
+  .planner-header > .primary-button {
+    justify-self: start;
+  }
+
+  .surface-actions {
+    align-items: stretch;
+  }
+
+  .bookkeeping-job-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .bookkeeping-job-nav a + a {
+    border-top: 1px solid var(--border-muted);
+    border-left: 0;
+  }
+
+  .section-header {
+    padding: 14px;
+  }
+
+  .bookkeeping-filters,
+  .crm-filters {
+    grid-template-columns: 1fr;
+    padding: 12px 14px;
+  }
+
+  .bookkeeping-filter-more {
+    width: 100%;
+  }
+
+  .bookkeeping-upload {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .bookkeeping-upload .bookkeeping-file {
+    min-height: 64px;
+  }
+
+  .bookkeeping-package {
+    padding: 14px;
+  }
+
+  .bookkeeping-package label {
+    width: 100%;
+  }
+
+  .bookkeeping-table-wrap {
+    overflow: visible;
+  }
+
+  .bookkeeping-table-wrap tr {
+    padding: 12px 14px;
+  }
+
+  .bookkeeping-table-wrap td:first-child,
+  .bookkeeping-table-wrap td:nth-child(2),
+  .bookkeeping-table-wrap td:last-child {
+    white-space: normal;
+  }
+
+  .bookkeeping-table-wrap th:first-child,
+  .bookkeeping-table-wrap td:first-child,
+  .bookkeeping-table-wrap th:last-child,
+  .bookkeeping-table-wrap td:last-child {
+    padding-inline: 0;
+  }
+
+  .sponsor-crm-surface .crm-layout,
+  .sponsor-crm-surface .crm-support-grid {
+    display: block;
+  }
+
+  .sponsor-crm-surface .crm-layout {
+    margin-inline: 0;
+  }
+
+  .crm-master,
+  .crm-detail-pane,
+  .crm-directory,
+  .crm-alerts {
+    border-radius: 8px;
+  }
+
+  .crm-booking-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .crm-booking-row .row-actions {
+    justify-content: flex-start;
+  }
+
+  .crm-support-grid > section + section {
+    margin-top: 16px;
+  }
+
+  .booking-detail-header,
+  .booking-detail-section {
+    padding: 16px 14px;
+  }
+
+  .booking-detail-header h2 {
+    font-size: 23px;
+  }
+
+  .booking-detail-section {
+    margin-inline: 0;
+  }
+
+  .finance-panel {
+    padding: 14px;
+  }
+
+  .mailing-exports-surface [data-configs] {
+    grid-template-columns: 1fr;
+  }
+
+  .mailing-export-card {
+    padding: 14px;
+  }
+
+  .mailing-export-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .newsletter-filters .planner-filter-fields,
+  .calendar-controls .planner-filter-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-layers {
+    border-top: 1px solid var(--border-muted);
+    border-left: 0;
+    padding-top: 12px;
+    padding-left: 0;
+  }
+
+  .calendar-period-actions {
+    justify-content: stretch;
+  }
+
+  .calendar-period-actions button {
+    flex: 1 1 auto;
+    min-height: 40px;
+  }
+
+  .newsletter-slot-row {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .ops-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-admin-card {
+    min-height: 104px;
+  }
+
+  .ops-admin-diagnostics > header {
+    display: grid;
+  }
+
+  .ops-admin-diagnostics > header span {
+    text-align: left;
+  }
+
+  .ops-user-form {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-user-form-actions {
+    grid-column: auto;
+  }
+
+  .ops-users-table-wrap {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .ops-users-table,
+  .ops-users-table tbody,
+  .ops-users-table tr,
+  .ops-users-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .ops-users-table thead {
+    display: none;
+  }
+
+  .ops-users-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .ops-users-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 14px;
+    border: 1px solid var(--border-muted);
+    border-radius: 8px;
+    background: var(--surface-bg);
+    padding: 14px;
+  }
+
+  .ops-users-table td {
+    border: 0;
+    padding: 0;
+  }
+
+  .ops-users-table td::before {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-muted);
+    content: "";
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .ops-users-table .ops-user-name {
+    grid-column: 1 / -1;
+  }
+
+  .ops-users-table .ops-user-name::before {
+    content: "Name";
+  }
+
+  .ops-users-table .ops-user-email::before {
+    content: "Email";
+  }
+
+  .ops-users-table .ops-user-role::before {
+    content: "Role";
+  }
+
+  .ops-users-table .ops-user-created::before {
+    content: "Created";
+  }
+
+  .ops-users-table .ops-user-actions {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border-muted);
+    margin-top: 4px;
+    padding-top: 10px;
+  }
+
+  .ops-users-table .ops-user-actions::before {
+    content: "Actions";
+  }
+
+  .ops-users-table .ops-user-actions .quiet-button {
+    min-height: 40px;
+  }
+
+  .device-panel {
+    padding: 16px;
+  }
+
+  .device-form {
+    grid-template-columns: 1fr;
+  }
+
+  .device-form .primary-button {
+    justify-self: start;
+    min-height: 44px;
+  }
+
+  .ops-future-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ops-quality-row,
+  .ops-lane-item,
+  .ops-reference-link {
+    padding-inline: 14px;
+  }
+}
+
+@media (max-width: 560px) {
+  .newsletter-filters .planner-filter-fields,
+  .calendar-controls .planner-filter-fields,
+  .mailing-export-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .newsletter-slot-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .newsletter-slot-actions {
+    grid-column: 1;
+    justify-content: flex-start;
+  }
+
+  .calendar-layers {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-layers legend {
+    grid-column: 1;
+  }
+
+  .ops-future-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-quality-row-head,
+  .mailing-export-card > header {
+    align-items: flex-start;
+  }
+
+  .ops-quality-row-head {
+    display: grid;
+    gap: 7px;
+  }
+
+  .ops-quality-row-head span {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bookkeeping-job-nav a,
+  .bookkeeping-table-wrap tbody tr,
+  .bookkeeping-document-row,
+  .crm-directory-row,
+  .crm-booking-row,
+  .crm-alerts .crm-card,
+  .booking-detail-section .crm-card,
+  .calendar-activity,
+  .calendar-overlay,
+  .newsletter-slot-row,
+  .ops-admin-card,
+  .ops-lane-item,
+  .ops-quality-row {
+    transition: none;
+  }
+
+  .calendar-activity:hover,
+  .calendar-overlay:hover {
+    transform: none;
+  }
+}
+
+/* Task workspace visual system ------------------------------------------------
+   Queue, Cards, Templates, Recurring, Assistants, and Artifacts share the same
+   operator rhythm: a quiet page header, raised work panels, compact metadata,
+   and an explicit next action. Keep this block at the end so the task surfaces
+   can evolve without disturbing the shared shell or other routes. */
+
+body[data-workspace-view="tasks"] .operations-home:not(.operations-home-daily) {
+  --task-content-width: 72rem;
+  --task-panel-radius: 12px;
+  --task-panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  display: grid;
+  width: min(100%, var(--task-content-width));
+  max-width: none;
+  margin-inline: auto;
+  gap: 20px;
+  justify-items: stretch;
+}
+
+body[data-workspace-view="tasks"] .operations-home:not(.operations-home-daily) > * {
+  min-width: 0;
+  width: 100%;
+}
+
+body[data-workspace-view="tasks"] .operations-home.ops-surface-queue,
+body[data-workspace-view="tasks"] .operations-home.ops-surface-templates,
+body[data-workspace-view="tasks"] .operations-home.ops-surface-assistants,
+body[data-workspace-view="tasks"] .operations-home.ops-surface-artifacts {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-surface-header {
+  display: grid;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  text-align: left;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-surface-header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-surface-header p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-runtime-state {
+  width: 100%;
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-runtime-state strong {
+  color: var(--warning-text);
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-honest-state,
+body[data-workspace-view="tasks"] .operations-home .ops-empty {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  overflow-wrap: anywhere;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--task-panel-radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 20px;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-honest-state strong {
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-honest-state span {
+  min-width: 0;
+  line-height: 1.55;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-empty {
+  min-height: 74px;
+  align-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 18px 16px;
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .operations-home .ops-empty[data-state="unavailable"] {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+/* Queue --------------------------------------------------------------------- */
+
+body[data-workspace-view="tasks"] .ops-work-queue {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-route-context {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
+  border: 1px solid var(--info-border);
+  border-radius: var(--task-panel-radius);
+  background: var(--info-bg);
+  color: var(--info-text);
+  padding: 14px 16px;
+}
+
+body[data-workspace-view="tasks"] .task-route-context h3,
+body[data-workspace-view="tasks"] .task-route-context p {
+  min-width: 0;
+  margin: 0;
+}
+
+body[data-workspace-view="tasks"] .task-route-context h3 {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .task-route-context p {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  color: var(--info-text);
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .task-route-context button,
+body[data-workspace-view="tasks"] .task-context-state button {
+  min-height: 36px;
+  border: 1px solid var(--info-border);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  color: var(--info-text);
+  padding: 6px 11px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .task-route-context button:hover,
+body[data-workspace-view="tasks"] .task-context-state button:hover {
+  border-color: var(--info-text);
+  background: var(--surface-hover);
+}
+
+body[data-workspace-view="tasks"] .task-context-state {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--danger-border);
+  border-radius: 9px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  padding: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-context-state strong,
+body[data-workspace-view="tasks"] .task-context-state p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="tasks"] .task-context-state strong {
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .task-context-state p {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-context-state button {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-top: 3px solid var(--border-strong);
+  border-radius: var(--task-panel-radius);
+  background: var(--surface-bg);
+  box-shadow: var(--task-panel-shadow);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="overdue"] {
+  border-top-color: var(--danger-text);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="follow-ups-due"] {
+  border-top-color: var(--warning-text);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="missing-proof"] {
+  border-top-color: var(--info-text);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="waiting"] {
+  border-top-color: var(--warning-text);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="today"] {
+  border-top-color: var(--accent);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="done-history"] {
+  border-top-color: var(--success-text);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 10px 14px;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group > header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group > header > span {
+  display: grid;
+  min-width: 26px;
+  min-height: 26px;
+  place-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-rows {
+  display: grid;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 92px;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 13px 14px;
+  text-align: left;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-row:first-child {
+  border-top: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-row:hover {
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-row strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-heading);
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-meta span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 2px 7px;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-row small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cards --------------------------------------------------------------------- */
+
+body[data-workspace-view="tasks"] .ops-surface-workflows {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-workflows-board {
+  --cards-board-width: var(--task-content-width);
+  gap: 16px;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-header {
+  align-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--task-panel-radius);
+  background: var(--surface-bg);
+  box-shadow: var(--task-panel-shadow);
+  padding: 16px 18px;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-header h2 {
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -0.025em;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-header p {
+  max-width: 620px;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-actions {
+  align-items: center;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-actions > button,
+body[data-workspace-view="tasks"] .recurring-toolbar button {
+  min-height: 40px;
+}
+
+body[data-workspace-view="tasks"] .ops-workflows-grid {
+  width: min(100%, var(--cards-board-width));
+  gap: 14px;
+  padding: 2px 0 20px;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-column {
+  gap: 10px;
+  min-width: 0;
+  border-color: var(--border-muted);
+  border-radius: var(--task-panel-radius);
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+body[data-workspace-view="tasks"] .workflow-column-header {
+  min-height: 36px;
+  padding-inline: 4px;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-list {
+  gap: 10px;
+}
+
+body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card {
+  min-height: 128px;
+  gap: 9px;
+  border-color: var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-bg);
+  padding: 13px 14px 14px;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:focus-visible,
+body[data-workspace-view="tasks"] .runtime-template-row:focus-visible,
+body[data-workspace-view="tasks"] .ops-queue-row:focus-visible,
+body[data-workspace-view="tasks"] .assistant-job-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+body[data-workspace-view="tasks"] .workflow-card-header {
+  min-height: 22px;
+}
+
+body[data-workspace-view="tasks"] .workflow-card-anchor {
+  border-color: var(--border-strong);
+  padding-inline: 8px;
+}
+
+body[data-workspace-view="tasks"] .workflow-card-count {
+  font-weight: 600;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-card .ops-progress {
+  height: 5px;
+  margin: auto 0 0;
+}
+
+body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
+  transition: width 240ms ease;
+}
+
+body[data-workspace-view="tasks"] .cards-archive-month-title {
+  padding-inline: 4px;
+}
+
+/* Templates ---------------------------------------------------------------- */
+
+body[data-workspace-view="tasks"] .ops-split-surface {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-inspector,
+body[data-workspace-view="tasks"] .runtime-template-support > .ops-section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--task-panel-radius);
+  background: var(--surface-bg);
+  box-shadow: var(--task-panel-shadow);
+  padding: 0;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-inspector > .ops-section-header,
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 14px 16px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header > div,
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header h3,
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-inspector .ops-section-header span,
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header span,
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header > span {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-search {
+  display: block;
+  width: calc(100% - 32px);
+  min-height: 42px;
+  margin: 16px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  min-width: 0;
+  border-top: 1px solid var(--border-muted);
+}
+
+body[data-workspace-view="tasks"] .runtime-template-list {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  max-height: 620px;
+  overflow: auto;
+  border-right: 1px solid var(--border-muted);
+}
+
+body[data-workspace-view="tasks"] .runtime-template-row {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  min-height: 72px;
+  border: 0;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 13px 14px;
+  text-align: left;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-row:hover,
+body[data-workspace-view="tasks"] .runtime-template-row.is-selected {
+  background: var(--accent-soft);
+}
+
+body[data-workspace-view="tasks"] .runtime-template-row.is-selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+body[data-workspace-view="tasks"] .runtime-template-row strong,
+body[data-workspace-view="tasks"] .runtime-template-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-row strong {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 16px;
+  background: var(--surface-bg);
+  padding: 18px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection h4,
+body[data-workspace-view="tasks"] .runtime-template-projection p {
+  min-width: 0;
+  margin: 0;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection h4 {
+  overflow-wrap: anywhere;
+  color: var(--text-heading);
+  font-size: 18px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-projection p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-definition {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.35fr) minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-definition dt,
+body[data-workspace-view="tasks"] .runtime-template-definition dd {
+  min-width: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--border-muted);
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-definition dt {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-definition dd {
+  color: var(--text-primary);
+}
+
+body[data-workspace-view="tasks"] .runtime-template-definition dt:nth-last-of-type(1),
+body[data-workspace-view="tasks"] .runtime-template-definition dd:nth-last-of-type(1) {
+  border-bottom: 0;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style-position: inside;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 9px 10px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li span {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .runtime-mobile-back {
+  width: fit-content;
+  min-height: 34px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .runtime-mobile-back:hover {
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
+}
+
+body[data-workspace-view="tasks"] .runtime-template-support {
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header {
+  border-bottom: 1px solid var(--border-muted);
+}
+
+body[data-workspace-view="tasks"] .ops-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+
+body[data-workspace-view="tasks"] .ops-template-card {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-bg);
+  padding: 14px;
+  box-shadow: var(--task-panel-shadow);
+}
+
+body[data-workspace-view="tasks"] .ops-template-card > strong {
+  overflow-wrap: anywhere;
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+body[data-workspace-view="tasks"] .ops-template-card > span {
+  min-height: 38px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body[data-workspace-view="tasks"] .ops-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-card-chips small {
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .ops-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* Recurring ---------------------------------------------------------------- */
+
+body[data-workspace-view="tasks"] .ops-surface-recurring {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-recurring-surface {
+  gap: 16px;
+}
+
+body[data-workspace-view="tasks"] .recurring-summary,
+body[data-workspace-view="tasks"] .ops-recurring-section {
+  border-radius: var(--task-panel-radius);
+  box-shadow: var(--task-panel-shadow);
+}
+
+body[data-workspace-view="tasks"] .recurring-summary-item {
+  min-height: 76px;
+  justify-content: space-between;
+  padding-inline: 18px;
+}
+
+body[data-workspace-view="tasks"] .recurring-summary-item strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+body[data-workspace-view="tasks"] .ops-recurring-item {
+  min-height: 82px;
+  padding: 14px 16px;
+}
+
+body[data-workspace-view="tasks"] .ops-recurring-item:hover {
+  background: var(--surface-hover);
+}
+
+body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn {
+  min-height: 36px;
+}
+
+body[data-workspace-view="tasks"] .ops-inline-error,
+body[data-workspace-view="tasks"] .recurring-delete-guidance {
+  border: 1px solid var(--danger-border);
+  border-radius: 9px;
+  background: var(--danger-bg);
+  padding: 10px 12px;
+}
+
+/* Assistants and Artifacts -------------------------------------------------- */
+
+body[data-workspace-view="tasks"] .assistant-workspace,
+body[data-workspace-view="tasks"] .ops-state-list {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+body[data-workspace-view="tasks"] .assistant-panel,
+body[data-workspace-view="tasks"] .ops-state-list {
+  border: 1px solid var(--border-muted);
+  border-radius: var(--task-panel-radius);
+  background: var(--surface-bg);
+  box-shadow: var(--task-panel-shadow);
+  padding: 16px;
+}
+
+body[data-workspace-view="tasks"] .assistant-filter-bar {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  gap: 4px;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 4px;
+  scrollbar-width: thin;
+}
+
+body[data-workspace-view="tasks"] .assistant-filter-bar button {
+  min-height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .assistant-filter-bar button:hover,
+body[data-workspace-view="tasks"] .assistant-filter-bar button.is-active {
+  border-color: var(--border-muted);
+  background: var(--surface-bg);
+  color: var(--text-heading);
+}
+
+body[data-workspace-view="tasks"] .assistant-filter-bar button.is-active {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+body[data-workspace-view="tasks"] .assistant-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .assistant-panel {
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .assistant-panel h3,
+body[data-workspace-view="tasks"] .assistant-panel h4 {
+  margin: 0;
+  color: var(--text-heading);
+}
+
+body[data-workspace-view="tasks"] .assistant-panel h3 {
+  font-size: 15px;
+}
+
+body[data-workspace-view="tasks"] .assistant-panel h4 {
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .assistant-create-grid,
+body[data-workspace-view="tasks"] .assistant-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+body[data-workspace-view="tasks"] .assistant-create-grid label,
+body[data-workspace-view="tasks"] .assistant-editor label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--text-heading);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .assistant-create-grid input,
+body[data-workspace-view="tasks"] .assistant-create-grid select,
+body[data-workspace-view="tasks"] .assistant-editor input,
+body[data-workspace-view="tasks"] .assistant-editor select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  font-weight: 400;
+}
+
+body[data-workspace-view="tasks"] .assistant-create-grid button,
+body[data-workspace-view="tasks"] .assistant-editor button {
+  align-self: end;
+  min-height: 40px;
+}
+
+body[data-workspace-view="tasks"] .assistant-queue {
+  padding: 0;
+}
+
+body[data-workspace-view="tasks"] .assistant-queue > h3 {
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 14px 16px;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  min-width: 0;
+  border-top: 1px solid var(--border-muted);
+  background: var(--surface-bg);
+  padding: 13px 16px;
+  cursor: pointer;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row:hover,
+body[data-workspace-view="tasks"] .assistant-job-row.is-selected {
+  background: var(--accent-soft);
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row strong,
+body[data-workspace-view="tasks"] .assistant-job-row span,
+body[data-workspace-view="tasks"] .assistant-job-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row strong {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row span,
+body[data-workspace-view="tasks"] .assistant-job-row small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row em,
+body[data-workspace-view="tasks"] .assistant-status {
+  align-self: start;
+  border: 1px solid var(--info-border);
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info-text);
+  padding: 3px 8px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.35;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 12px;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail > header h3,
+body[data-workspace-view="tasks"] .assistant-detail > header small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail > header h3 {
+  font-size: 18px;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail > header small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .assistant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+body[data-workspace-view="tasks"] .assistant-actions button,
+body[data-workspace-view="tasks"] .assistant-editor button {
+  min-height: 38px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .assistant-actions button:hover,
+body[data-workspace-view="tasks"] .assistant-editor button:hover {
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
+}
+
+body[data-workspace-view="tasks"] .assistant-actions span {
+  color: var(--warning-text);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .assistant-detail > section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .assistant-ref-list,
+body[data-workspace-view="tasks"] .assistant-artifacts {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .assistant-ref-list code {
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border-muted);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .assistant-artifacts a {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  padding: 9px 10px;
+  text-decoration: none;
+}
+
+body[data-workspace-view="tasks"] .assistant-artifacts a:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+body[data-workspace-view="tasks"] .assistant-artifacts strong {
+  overflow-wrap: anywhere;
+  color: var(--link-color);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .assistant-artifacts span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .assistant-timeline {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+body[data-workspace-view="tasks"] .assistant-timeline li {
+  display: grid;
+  gap: 2px;
+  border-left: 2px solid var(--border-strong);
+  background: var(--surface-muted);
+  padding: 8px 10px;
+}
+
+body[data-workspace-view="tasks"] .assistant-timeline strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+body[data-workspace-view="tasks"] .assistant-timeline span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .ops-state-list {
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  border-top: 1px solid var(--border-muted);
+  padding: 14px 16px;
+}
+
+body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row:first-child {
+  border-top: 0;
+}
+
+body[data-workspace-view="tasks"] .ops-data-row:hover {
+  background: var(--surface-hover);
+}
+
+body[data-workspace-view="tasks"] .ops-data-row strong,
+body[data-workspace-view="tasks"] .ops-data-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="tasks"] .ops-data-row strong {
+  color: var(--text-heading);
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .ops-data-row > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+body[data-workspace-view="tasks"] .ops-data-row a {
+  min-height: 34px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+body[data-workspace-view="tasks"] .ops-data-row a:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Task and Card detail ------------------------------------------------------ */
+
+body[data-workspace-view="tasks"] .task-modal-panel,
+body[data-workspace-view="tasks"] .workflow-modal-panel {
+  border-color: var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-bg);
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.24);
+}
+
+body[data-workspace-view="tasks"] .task-modal-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(760px, calc(100vw - 40px));
+  height: min(820px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+body[data-workspace-view="tasks"] .task-panel-header {
+  min-height: 72px;
+  background: var(--surface-muted);
+  padding: 16px 20px;
+}
+
+body[data-workspace-view="tasks"] .task-panel-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-heading);
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+body[data-workspace-view="tasks"] .task-panel-body,
+body[data-workspace-view="tasks"] .workflow-modal-panel .task-panel-body {
+  min-width: 0;
+  overflow-y: auto;
+  align-content: start;
+  gap: 14px;
+  padding: 18px 20px 24px;
+  scrollbar-gutter: stable;
+}
+
+body[data-workspace-view="tasks"] .task-panel-body > *,
+body[data-workspace-view="tasks"] .workflow-modal-main > * {
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-detail-meta:not(.workflow-detail-summary),
+body[data-workspace-view="tasks"] .task-panel-route-context,
+body[data-workspace-view="tasks"] .task-delegation-notice,
+body[data-workspace-view="tasks"] .task-quality-notice {
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+}
+
+body[data-workspace-view="tasks"] .task-detail-meta:not(.workflow-detail-summary) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 16px;
+  border-top: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-detail-meta:not(.workflow-detail-summary) > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="tasks"] .task-detail-meta:not(.workflow-detail-summary) strong {
+  color: var(--text-primary);
+}
+
+body[data-workspace-view="tasks"] .task-status-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+body[data-workspace-view="tasks"] .task-status-badge.done,
+body[data-workspace-view="tasks"] .task-status-badge.approved {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+body[data-workspace-view="tasks"] .task-status-badge.waiting,
+body[data-workspace-view="tasks"] .task-status-badge.needs-review {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+body[data-workspace-view="tasks"] .task-status-badge.archived {
+  border-color: var(--border-muted);
+  background: var(--surface-muted);
+  color: var(--text-faint);
+}
+
+body[data-workspace-view="tasks"] .task-panel-route-context {
+  display: grid;
+  gap: 4px;
+  border-color: var(--info-border);
+  background: var(--info-bg);
+}
+
+body[data-workspace-view="tasks"] .task-panel-route-context strong {
+  color: var(--text-heading);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-panel-route-context p,
+body[data-workspace-view="tasks"] .task-delegation-notice p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-required-link,
+body[data-workspace-view="tasks"] .task-instruction-doc {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-bg);
+  padding: 12px 14px;
+}
+
+body[data-workspace-view="tasks"] .task-required-link label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-heading);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .task-required-link input[type="url"],
+body[data-workspace-view="tasks"] .task-required-link input[type="file"] {
+  width: 100%;
+  min-height: 40px;
+}
+
+body[data-workspace-view="tasks"] .task-file-list {
+  display: grid;
+  gap: 6px;
+}
+
+body[data-workspace-view="tasks"] .task-file-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+body[data-workspace-view="tasks"] .task-file-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-action-group,
+body[data-workspace-view="tasks"] .task-conflict-controls,
+body[data-workspace-view="tasks"] .task-follow-up-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+body[data-workspace-view="tasks"] .task-action-group {
+  align-items: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+}
+
+body[data-workspace-view="tasks"] .task-action-group > p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-action-btn,
+body[data-workspace-view="tasks"] .task-action-group button {
+  min-height: 40px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .task-action-btn:hover,
+body[data-workspace-view="tasks"] .task-action-group button:hover {
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
+}
+
+body[data-workspace-view="tasks"] .task-action-btn.is-primary,
+body[data-workspace-view="tasks"] .task-action-group button.is-primary {
+  border-color: var(--primary-bg);
+  background: var(--primary-bg);
+  color: #fff;
+}
+
+body[data-workspace-view="tasks"] .task-action-btn.is-primary:hover,
+body[data-workspace-view="tasks"] .task-action-group button.is-primary:hover {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+body[data-workspace-view="tasks"] .task-follow-up-row {
+  align-items: end;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-follow-up-row > label {
+  display: grid;
+  flex: 1 1 150px;
+  gap: 5px;
+  color: var(--text-heading);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .task-follow-up-row > input,
+body[data-workspace-view="tasks"] .task-follow-up-row > label > input {
+  min-height: 40px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-history,
+body[data-workspace-view="tasks"] .task-quality-notice {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-history-label {
+  color: var(--text-heading);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body[data-workspace-view="tasks"] .task-history-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-history-event {
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-history-event code {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+body[data-workspace-view="tasks"] .task-instruction-doc-link {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  color: var(--link-color);
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .task-quality-notice {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+body[data-workspace-view="tasks"] .task-quality-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  padding: 9px 10px;
+  text-align: left;
+}
+
+body[data-workspace-view="tasks"] .task-quality-row:hover {
+  background: var(--surface-hover);
+}
+
+body[data-workspace-view="tasks"] .task-quality-row strong {
+  color: var(--text-heading);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .task-quality-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+body[data-workspace-view="tasks"] .task-version-conflict {
+  border-radius: 10px;
+  padding: 14px;
+}
+
+body[data-workspace-view="tasks"] .entity-route-state {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  min-height: 140px;
+  align-content: center;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 18px;
+}
+
+body[data-workspace-view="tasks"] .entity-route-state h3,
+body[data-workspace-view="tasks"] .entity-route-state p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="tasks"] .entity-route-state h3 {
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+body[data-workspace-view="tasks"] .entity-route-state p,
+body[data-workspace-view="tasks"] .entity-route-loading {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .entity-route-loading {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--surface-muted), var(--surface-hover), var(--surface-muted));
+  background-size: 220% 100%;
+  animation: task-state-shimmer 1.5s ease-in-out infinite;
+}
+
+body[data-workspace-view="tasks"] .entity-route-error,
+body[data-workspace-view="tasks"] .entity-route-not-found,
+body[data-workspace-view="tasks"] .entity-route-mismatch {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+body[data-workspace-view="tasks"] .entity-route-error h3,
+body[data-workspace-view="tasks"] .entity-route-not-found h3,
+body[data-workspace-view="tasks"] .entity-route-mismatch h3 {
+  color: var(--danger-text);
+}
+
+body[data-workspace-view="tasks"] .entity-route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+body[data-workspace-view="tasks"] .entity-route-actions button {
+  min-height: 40px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body[data-workspace-view="tasks"] .entity-route-actions button:hover {
+  border-color: var(--control-hover-border);
+  background: var(--control-hover-bg);
+}
+
+body[data-workspace-view="tasks"] .workflow-modal-panel {
+  width: min(900px, calc(100vw - 40px));
+  height: min(860px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header {
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--surface-muted);
+  padding: 16px 20px;
+}
+
+body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header strong {
+  font-size: 19px;
+}
+
+body[data-workspace-view="tasks"] .workflow-modal-layout {
+  gap: 16px;
+}
+
+body[data-workspace-view="tasks"] .workflow-modal-main {
+  gap: 14px;
+}
+
+body[data-workspace-view="tasks"] .workflow-detail-summary {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 14px;
+}
+
+body[data-workspace-view="tasks"] .workflow-summary-top {
+  gap: 8px;
+}
+
+body[data-workspace-view="tasks"] .workflow-summary-top .workflow-stage-field {
+  margin-left: auto;
+}
+
+body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-select,
+body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
+  min-height: 40px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+}
+
+body[data-workspace-view="tasks"] .workflow-detail-section {
+  gap: 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: 10px;
+  background: var(--surface-bg);
+  padding: 14px;
+}
+
+body[data-workspace-view="tasks"] .workflow-detail-section > .task-history-label {
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .card-template-update {
+  border-color: var(--info-border);
+  background: var(--info-bg);
+}
+
+body[data-workspace-view="tasks"] .card-checklist-item {
+  min-height: 50px;
+  border-radius: 8px;
+  padding-block: 10px;
+}
+
+body[data-workspace-view="tasks"] .card-checklist-item > input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+body[data-workspace-view="tasks"] .card-checklist-label {
+  font-size: 13px;
+}
+
+body[data-workspace-view="tasks"] .card-link-row {
+  min-width: 0;
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+body[data-workspace-view="tasks"] .workflow-references-section .task-history-event {
+  background: var(--surface-muted);
+}
+
+body[data-workspace-view="tasks"] .workflow-assistant-note {
+  border-left: 2px solid var(--info-text);
+  background: var(--info-bg);
+  padding: 8px 10px;
+}
+
+body[data-workspace-view="tasks"] .quick-form-panel {
+  width: min(640px, calc(100vw - 40px));
+  max-height: min(820px, calc(100vh - 32px));
+  border-color: var(--border-strong);
+  border-radius: 14px;
+}
+
+body[data-workspace-view="tasks"] .quick-form-panel .diff-header,
+body[data-workspace-view="tasks"] .quick-form-panel > header {
+  min-height: 64px;
+  background: var(--surface-muted);
+  padding: 14px 18px;
+}
+
+body[data-workspace-view="tasks"] .quick-form-panel .quick-form-body {
+  gap: 14px;
+  padding: 18px;
+}
+
+body[data-workspace-view="tasks"] .quick-form-label input,
+body[data-workspace-view="tasks"] .quick-form-label select {
+  min-height: 42px;
+}
+
+body[data-workspace-view="tasks"] .quick-form > .task-action-btn,
+body[data-workspace-view="tasks"] .recurring-form-footer button {
+  min-height: 42px;
+}
+
+@keyframes task-state-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (max-width: 920px) {
+  body[data-workspace-view="tasks"] .assistant-layout,
+  body[data-workspace-view="tasks"] .runtime-template-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-list {
+    max-height: 320px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-muted);
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-layout.is-detail .runtime-template-list {
+    display: none;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-layout.is-detail .runtime-template-projection {
+    display: grid;
+  }
+
+  body[data-workspace-view="tasks"] .ops-template-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  body[data-workspace-view="tasks"] .operations-home:not(.operations-home-daily) {
+    gap: 16px;
+  }
+
+  body[data-workspace-view="tasks"] .ops-work-queue {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .task-route-context {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .task-route-context p,
+  body[data-workspace-view="tasks"] .task-context-state {
+    grid-column: auto;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-board-header {
+    display: grid;
+    align-items: start;
+    gap: 12px;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-board-actions {
+    width: 100%;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-board-actions > button {
+    flex: 1 1 auto;
+  }
+
+  body[data-workspace-view="tasks"] .ops-workflows-grid {
+    grid-template-columns: repeat(3, minmax(270px, 80vw));
+    scroll-snap-type: x proximity;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-board-column {
+    scroll-snap-align: start;
+  }
+
+  body[data-workspace-view="tasks"] .ops-template-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .assistant-create-grid,
+  body[data-workspace-view="tasks"] .assistant-editor {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .assistant-create-grid button,
+  body[data-workspace-view="tasks"] .assistant-editor button {
+    width: 100%;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row > span {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  body[data-workspace-view="tasks"] .task-modal-panel,
+  body[data-workspace-view="tasks"] .workflow-modal-panel,
+  body[data-workspace-view="tasks"] .quick-form-panel {
+    width: 100%;
+    max-width: none;
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  body[data-workspace-view="tasks"] .task-panel-header,
+  body[data-workspace-view="tasks"] .workflow-modal-panel > .task-panel-header {
+    min-height: 64px;
+    padding: 12px 14px;
+  }
+
+  body[data-workspace-view="tasks"] .task-panel-body,
+  body[data-workspace-view="tasks"] .workflow-modal-panel .task-panel-body {
+    padding: 14px 14px 24px;
+  }
+
+  body[data-workspace-view="tasks"] .task-detail-meta:not(.workflow-detail-summary) {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-summary-top .workflow-stage-field {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-select,
+  body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-static {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  body[data-workspace-view="tasks"] .card-checklist-item {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  body[data-workspace-view="tasks"] .card-checklist-date {
+    grid-column: 2;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-references-section .task-follow-up-row,
+  body[data-workspace-view="tasks"] .workflow-references-section .task-history .task-follow-up-row {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-references-section .task-follow-up-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-projection > header {
+    display: grid;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-projection > header .primary-button {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 480px) {
+  body[data-workspace-view="tasks"] .operations-home .ops-surface-header h3,
+  body[data-workspace-view="tasks"] .workflow-board-header h2 {
+    font-size: 23px;
+  }
+
+  body[data-workspace-view="tasks"] .ops-queue-row {
+    min-height: 100px;
+    padding-inline: 12px;
+  }
+
+  body[data-workspace-view="tasks"] .assistant-job-row {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  body[data-workspace-view="tasks"] .assistant-job-row em,
+  body[data-workspace-view="tasks"] .assistant-status {
+    width: fit-content;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row > span {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list > .ops-data-row a {
+    width: fit-content;
+  }
+
+  body[data-workspace-view="tasks"] .recurring-row-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn {
+    width: 100%;
+    padding-inline: 6px;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-definition {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-definition dt,
+  body[data-workspace-view="tasks"] .runtime-template-definition dd {
+    border-bottom: 0;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-definition dt {
+    padding-bottom: 2px;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-definition dd {
+    padding-top: 2px;
+  }
+
+  body[data-workspace-view="tasks"] .runtime-template-definition dt:not(:first-child) {
+    border-top: 1px solid var(--border-muted);
+    padding-top: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-workspace-view="tasks"] .entity-route-loading {
+    animation: none;
+  }
+
+  body[data-workspace-view="tasks"] .ops-queue-row,
+  body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card,
+  body[data-workspace-view="tasks"] .workflow-board-card .ops-progress i {
+    transition: none;
+  }
+}

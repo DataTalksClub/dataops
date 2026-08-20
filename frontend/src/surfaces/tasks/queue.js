@@ -115,21 +115,27 @@ export function createTaskQueue(context) {
       }
       section.append(routeContext);
     }
-    for (const [label, list] of groups) {
+    for (const [groupIndex, [label, list]] of groups.entries()) {
       const group = document.createElement("article");
       group.className = "ops-queue-group";
+      group.dataset.queueGroup = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const header = document.createElement("header");
       const title = document.createElement("h3");
+      title.id = `queue-group-${groupIndex}`;
       title.textContent = label;
       const count = document.createElement("span");
       count.textContent = String(list.length);
+      count.setAttribute("aria-label", `${list.length} ${label.toLowerCase()} tasks`);
       header.append(title, count);
+      group.setAttribute("aria-labelledby", title.id);
       group.append(header);
       const rows = document.createElement("div");
       rows.className = "ops-queue-rows";
+      rows.dataset.loadState = groupLoaded[label] ? "ready" : "unavailable";
       if (list.length === 0) {
         const empty = document.createElement("p");
         empty.className = "ops-empty";
+        empty.dataset.state = groupLoaded[label] ? "empty" : "unavailable";
         empty.textContent = groupLoaded[label]
           ? `No ${label.toLowerCase()} work.`
           : "Live work data unavailable.";
@@ -211,6 +217,7 @@ export function createTaskQueue(context) {
     button.type = "button";
     button.className = "ops-queue-row";
     button.dataset.taskId = task.id;
+    button.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
     button.addEventListener("click", () => openTaskPanel(task.id));
     const title = document.createElement("strong");
     title.textContent = workTaskTitle(task);

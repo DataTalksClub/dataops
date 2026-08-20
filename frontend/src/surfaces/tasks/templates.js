@@ -135,6 +135,7 @@ export function createTemplatesSurface(context) {
     const search = document.createElement("input");
     search.type = "search";
     search.className = "runtime-template-search";
+    search.setAttribute("aria-label", "Search Git-authored templates");
     search.placeholder = "Search Git-authored templates";
     search.value = runtimeState.search;
     search.addEventListener("input", debounce(() => {
@@ -171,6 +172,7 @@ export function createTemplatesSurface(context) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `runtime-template-row ${template.id === runtimeState.selectedId ? "is-selected" : ""}`;
+    button.setAttribute("aria-pressed", String(template.id === runtimeState.selectedId));
     const name = document.createElement("strong");
     name.textContent = template.emoji
       ? `${template.emoji} ${template.name}`
