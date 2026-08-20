@@ -933,6 +933,93 @@ describe("Tasks surface boundary", () => {
     });
   });
 
+  test("manages focus and dialog semantics for recurring create and edit forms", async () => {
+    const config = {
+      id: "recurring-focus",
+      description: "Focus-safe schedule",
+      cronExpression: "0 9 * * 1",
+      enabled: true,
+    };
+    const harness = createHarness({
+      model: baseModel({ recurring: recurringSnapshot([config]) }),
+    });
+    harness.api.renderTasksSurface([], "recurring");
+
+    const createOpener = findByText(harness.documentList, "New schedule", "button");
+    harness.document.activeElement = createOpener;
+    await createOpener.dispatch("click");
+    const createOverlay = findAllByClass(
+      harness.shellBody,
+      "quick-form-overlay",
+    )[0];
+    const createPanel = createOverlay.querySelector('[role="dialog"]');
+    const createTitle = createOverlay.querySelector("strong");
+    assert.ok(createTitle.getAttribute("id"));
+    assert.equal(
+      createPanel.getAttribute("aria-labelledby"),
+      createTitle.getAttribute("id"),
+    );
+    const createDescription = createOverlay.querySelector('input[type="text"]');
+    assert.equal(createDescription.focused, true);
+
+    const first = createOverlay.querySelector("button");
+    const last = findByText(createOverlay, "Create schedule", "button");
+    let prevented = false;
+    harness.document.activeElement = last;
+    await createOverlay.dispatch("keydown", {
+      key: "Tab",
+      shiftKey: false,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+    assert.equal(first.focused, true);
+
+    prevented = false;
+    harness.document.activeElement = first;
+    await createOverlay.dispatch("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    assert.equal(prevented, true);
+    assert.equal(last.focused, true);
+
+    harness.document.activeElement = createDescription;
+    await createOverlay.dispatch("keydown", {
+      key: "Escape",
+      preventDefault() {},
+    });
+    assert.equal(createOverlay.removed, true);
+    assert.equal(createOpener.focused, true);
+
+    harness.api.renderTasksSurface([], "recurring");
+    const editOpener = findByText(harness.documentList, "Edit", "button");
+    harness.document.activeElement = editOpener;
+    await editOpener.dispatch("click");
+    const editOverlay = findAllByClass(
+      harness.shellBody,
+      "quick-form-overlay",
+    ).at(-1);
+    const editPanel = editOverlay.querySelector('[role="dialog"]');
+    const editTitle = editOverlay.querySelector("strong");
+    assert.equal(
+      editPanel.getAttribute("aria-labelledby"),
+      editTitle.getAttribute("id"),
+    );
+    assert.equal(editOverlay.querySelector('input[type="text"]').focused, true);
+
+    await editOverlay.dispatch("keydown", {
+      key: "Escape",
+      preventDefault() {},
+    });
+    assert.equal(editOverlay.removed, true);
+    assert.equal(editOpener.focused, true);
+  });
+
   test("validates and creates quick Tasks with the canonical mutation shape", async () => {
     const { api, errors, openedTasks, requests, shellBody } = createHarness({
       request: async (url) =>

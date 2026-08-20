@@ -129,7 +129,8 @@ export function createCardPanel(context) {
     const card = data?.card;
     const tasks = data?.tasks || [];
     const artifacts = data?.artifacts || [];
-    cardPanelTitle.textContent = card ? workCardTitle(card) : "Card";
+    cardPanelTitle.replaceChildren();
+    appendBreakableText(cardPanelTitle, card ? workCardTitle(card) : "Card");
     cardPanelBody.replaceChildren();
     if (!card) return;
 
@@ -157,7 +158,10 @@ export function createCardPanel(context) {
       latestState.textContent = `Latest server state: version ${latest.version}, ${labelizeWorkValue(latest.stage)}.`;
       const retained = document.createElement("p");
       retained.className = "task-conflict-draft";
-      retained.textContent = `Your retained change: ${detail.activeCardPanelDraft.label}`;
+      appendBreakableText(
+        retained,
+        `Your retained change: ${detail.activeCardPanelDraft.label}`,
+      );
       const controls = document.createElement("div");
       controls.className = "task-conflict-controls";
       const review = createTaskActionButton("Review latest", reviewLatestCard);
@@ -265,9 +269,10 @@ export function createCardPanel(context) {
       nextLabel.textContent = "Next up";
       const nextValue = document.createElement("strong");
       const nextDate = String(progress.nextDueTask.date || "").slice(0, 10);
-      nextValue.textContent = nextDate
+      const nextText = nextDate
         ? `${workTaskTitle(progress.nextDueTask)} · ${formatCardAnchorLabel(nextDate, today)}`
         : workTaskTitle(progress.nextDueTask);
+      appendBreakableText(nextValue, nextText);
       nextRow.append(nextLabel, nextValue);
       meta.append(nextRow);
     }
@@ -275,7 +280,7 @@ export function createCardPanel(context) {
     if (card.description) {
       const descRow = document.createElement("div");
       descRow.className = "workflow-description";
-      descRow.textContent = card.description;
+      appendBreakableText(descRow, card.description);
       meta.append(descRow);
     }
     main.append(meta);
@@ -300,7 +305,7 @@ export function createCardPanel(context) {
         label.className = "card-link-label";
         const name = document.createElement("span");
         name.className = "card-link-name";
-        name.textContent = linkName;
+        appendBreakableText(name, linkName);
         const input = document.createElement("input");
         input.type = "url";
         input.className = "card-link-input";
@@ -398,7 +403,7 @@ export function createCardPanel(context) {
         const link = document.createElement("button");
         link.type = "button";
         link.className = "task-instruction-doc-link";
-        link.textContent = String(refName);
+        appendBreakableText(link, refName);
         link.addEventListener("click", () =>
           openDocument(docPath, {
             returnContext: {
@@ -414,7 +419,7 @@ export function createCardPanel(context) {
         link.href = String(refUrl);
         link.target = "_blank";
         link.rel = "noopener";
-        link.textContent = String(refName);
+        appendBreakableText(link, refName);
         item.append(link);
       }
       refsList.append(item);
@@ -534,7 +539,7 @@ export function createCardPanel(context) {
     label.type = "button";
     label.className = `card-checklist-label ${isDone ? "is-done" : ""}`;
     label.dataset.taskId = task.id;
-    label.textContent = workTaskTitle(task);
+    appendBreakableText(label, workTaskTitle(task));
     label.addEventListener("click", () =>
       openTaskPanel(task.id, {
         preserveCard: true,
@@ -947,6 +952,26 @@ export function createCardPanel(context) {
       }),
       errorPrefix: "Could not save link",
     }, detail.activeCardPanelData?.card?.version);
+  }
+
+  // Keep long operator-provided values breakable in the narrow Card modal
+  // without changing the value that is saved or the accessible text.
+  function appendBreakableText(element, value) {
+    const text = String(value ?? "");
+    if (text.length <= 40) {
+      element.textContent = text;
+      return;
+    }
+    let chunk = "";
+    for (const character of text) {
+      chunk += character;
+      if (/[/?#&=._:-]/.test(character) || chunk.length >= 24) {
+        element.append(document.createTextNode(chunk));
+        element.append(document.createElement("wbr"));
+        chunk = "";
+      }
+    }
+    if (chunk) element.append(document.createTextNode(chunk));
   }
 
   // ---------- Notification bell ----------

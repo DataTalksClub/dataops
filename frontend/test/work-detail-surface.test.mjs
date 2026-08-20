@@ -981,6 +981,72 @@ describe("Work Detail surface boundary", () => {
     });
   });
 
+  test("keeps long Card detail values breakable without changing their text or URL values", async () => {
+    const card = {
+      id: "card-narrow",
+      title: "Narrow Card",
+      description:
+        "Review the long Card description and keep every operator-provided detail readable on a phone.",
+      stage: "preparation",
+      cardLinks: [
+        {
+          name: "Long external publication destination",
+          url: "https://example.test/publication/destination/with/a/long/path",
+        },
+      ],
+      references: [
+        {
+          name: "External reference with a long operator-provided label",
+          url: "https://example.test/process/reference",
+        },
+      ],
+    };
+    const task = {
+      id: "task-narrow",
+      version: 1,
+      taskHistory: [],
+      cardId: card.id,
+      description:
+        "Review the long checklist item title without forcing the Card detail panel wider than the viewport.",
+      status: "todo",
+    };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url) => {
+        if (url === `/api/cards/${card.id}`) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+
+    assert.equal(harness.cardPanelTitle.textContent, card.title);
+    assert.equal(
+      harness.cardPanelBody.querySelector(".workflow-description").textContent,
+      card.description,
+    );
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-link-name").textContent,
+      card.cardLinks[0].name,
+    );
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-link-input").value,
+      card.cardLinks[0].url,
+    );
+    assert.equal(
+      harness.cardPanelBody.querySelector(".card-checklist-label").textContent,
+      task.description,
+    );
+    assert.equal(
+      harness.cardPanelBody.querySelector(".workflow-references-section a").textContent,
+      card.references[0].name,
+    );
+    assert.ok(harness.cardPanelBody.querySelector("wbr"));
+  });
+
   test("retains Card drafts through review, repeated conflict, retry, and discard", async () => {
     const card = {
       id: "card-conflict",

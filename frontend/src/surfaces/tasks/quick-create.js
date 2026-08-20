@@ -1,3 +1,8 @@
+const QUICK_FORM_FOCUSABLE_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+let quickFormTitleSequence = 0;
+
 export function createQuickTaskActions(context) {
   const {
     describeRecurringRun,
@@ -43,7 +48,7 @@ export function createQuickTaskActions(context) {
           method: "POST",
           body: JSON.stringify({ description, date }),
         });
-        overlay.remove();
+        overlay.close();
         const task = created?.task || created;
         if (task?.id) openTaskPanel(task.id);
         refreshOperationsWorkSnapshot({ rerender: true });
@@ -151,7 +156,7 @@ export function createQuickTaskActions(context) {
           body: JSON.stringify(body),
         });
         const card = result?.card || result;
-        overlay.remove();
+        overlay.close();
         if (card?.id) openCardPanel(card.id);
         await refreshOperationsWorkSnapshot({ rerender: true });
       } catch (err) {
@@ -345,7 +350,7 @@ export function createQuickTaskActions(context) {
     cancelBtn.type = "button";
     cancelBtn.className = "quiet-button";
     cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", () => overlay.remove());
+    cancelBtn.addEventListener("click", () => overlay.close());
     const footer = document.createElement("div");
     footer.className = "recurring-form-footer";
     footer.append(cancelBtn, submitBtn);
@@ -384,7 +389,7 @@ export function createQuickTaskActions(context) {
             body: JSON.stringify(body),
           },
         );
-        overlay.remove();
+        overlay.close();
         await refreshOperationsRecurringSnapshot({ rerender: true });
       } catch (err) {
         failForm(
@@ -523,28 +528,45 @@ export function createQuickTaskActions(context) {
   }
 
   function createQuickFormOverlay(titleText) {
+    const opener = document.activeElement;
     const overlay = document.createElement("div");
     overlay.className = "quick-form-overlay confirm-modal";
     overlay.hidden = false;
+    let closed = false;
+    overlay.close = () => {
+      if (closed) return;
+      closed = true;
+      overlay.remove();
+      if (
+        opener &&
+        opener.isConnected !== false &&
+        typeof opener.focus === "function"
+      ) {
+        opener.focus();
+      }
+    };
 
     const backdrop = document.createElement("div");
     backdrop.className = "confirm-backdrop";
-    backdrop.addEventListener("click", () => overlay.remove());
+    backdrop.addEventListener("click", () => overlay.close());
 
     const panel = document.createElement("div");
     panel.className = "confirm-panel quick-form-panel";
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "true");
+    const titleId = `quick-form-title-${++quickFormTitleSequence}`;
+    panel.setAttribute("aria-labelledby", titleId);
 
     const header = document.createElement("div");
     header.className = "diff-header";
     const title = document.createElement("strong");
+    title.setAttribute("id", titleId);
     title.textContent = titleText;
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "quiet-button";
     closeBtn.textContent = "Close";
-    closeBtn.addEventListener("click", () => overlay.remove());
+    closeBtn.addEventListener("click", () => overlay.close());
     header.append(title, closeBtn);
 
     const body = document.createElement("div");
@@ -552,8 +574,58 @@ export function createQuickTaskActions(context) {
 
     panel.append(header, body);
     overlay.append(backdrop, panel);
+    overlay.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        overlay.close();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusables = [...panel.querySelectorAll(QUICK_FORM_FOCUSABLE_SELECTOR)]
+        .filter(isQuickFormFocusable);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables.at(-1);
+      const active = document.activeElement;
+      const activeInside = isQuickFormDescendant(panel, active);
+      if (event.shiftKey && (active === first || !activeInside)) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        (active === last || !activeInside)
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
     shellBody.append(overlay);
     return overlay;
+  }
+
+  function isQuickFormFocusable(element) {
+    if (element.disabled || element.hidden) return false;
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      if (ancestor.hidden || ancestor.getAttribute("aria-hidden") === "true")
+        return false;
+      ancestor = ancestor.parentElement;
+    }
+    return (
+      typeof element.offsetParent === "undefined" ||
+      element.offsetParent !== null
+    );
+  }
+
+  function isQuickFormDescendant(root, element) {
+    let current = element;
+    while (current) {
+      if (current === root) return true;
+      current = current.parentElement;
+    }
+    return false;
   }
 
   return {
