@@ -297,6 +297,11 @@ export function createNavigationShell(context) {
     return Promise.allSettled(jobs);
   }
 
+  function activateDocumentWorkspace() {
+    setActiveWorkspaceView("docs");
+    renderWorkspaceNav();
+  }
+
   function navigateCanonicalWorkspace(path, params = {}, options = {}) {
     const route = options.route || workspaceRouteFor(path, params);
     if (!route || route.invalid) {
@@ -382,6 +387,7 @@ export function createNavigationShell(context) {
       // outage there instead of silently dropping the operator on Home.
       const docsUnavailable = getDocsAvailability().state === "unavailable";
       if (exists || docsUnavailable) {
+        activateDocumentWorkspace();
         await openDocument(docPath, {
           updateUrl: false,
           revealInTree: true,
@@ -419,6 +425,7 @@ export function createNavigationShell(context) {
     }
     const docPath = context.docPathFromLocation();
     if (docPath) {
+      activateDocumentWorkspace();
       openDocument(docPath, { updateUrl: false });
       return;
     }

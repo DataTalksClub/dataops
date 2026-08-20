@@ -66,6 +66,7 @@ export function createKnowledgeNavigation(context, services) {
 
   let _quickNavIndex = 0;
   let _quickNavMatches = [];
+  let _quickNavReturnFocus = null;
 
   /** Remove any docs-availability notice from the editor view. */
   function clearDocumentStateNotice() {
@@ -279,6 +280,15 @@ export function createKnowledgeNavigation(context, services) {
   }
 
   function openQuickNav() {
+    if (quickNav.hidden === false) {
+      quickNavInput.focus();
+      return;
+    }
+    const active = document.activeElement;
+    _quickNavReturnFocus =
+      active && active !== quickNav && typeof active.focus === "function"
+        ? active
+        : null;
     quickNav.hidden = false;
     quickNavInput.value = "";
     _quickNavIndex = 0;
@@ -287,8 +297,27 @@ export function createKnowledgeNavigation(context, services) {
   }
 
   function closeQuickNav() {
+    if (quickNav.hidden) return;
     quickNav.hidden = true;
+    const returnFocus = _quickNavReturnFocus;
+    _quickNavReturnFocus = null;
+    if (
+      returnFocus &&
+      returnFocus.isConnected !== false &&
+      typeof returnFocus.focus === "function"
+    ) {
+      returnFocus.focus();
+    }
   }
+
+  const quickNavClose = quickNav?.querySelector?.("[data-quick-nav-close]");
+  quickNavClose?.addEventListener("click", closeQuickNav);
+  quickNavClose?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeQuickNav();
+    }
+  });
 
   function updateQuickNavMatches(query) {
     const q = query.trim().toLowerCase();

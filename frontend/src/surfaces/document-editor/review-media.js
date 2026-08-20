@@ -5,6 +5,33 @@ export function createEditorReviewMedia(context, services, editorState) {
     lintOpenButton, lintSummary, openDocument, request, storage,
   } = context;
   const { addScreenshot, draftKey, emptyNote } = services;
+  let diffReturnFocus = null;
+  let lightboxReturnFocus = null;
+  const diffClose = diffModal?.querySelector?.("[data-diff-close]");
+  const lightboxClose = lightbox?.querySelector?.("[data-lightbox-close]");
+
+  function activeFocusTarget() {
+    if (typeof document === "undefined") return null;
+    const active = document.activeElement;
+    return active && typeof active.focus === "function" ? active : null;
+  }
+
+  function restoreFocus(target) {
+    if (
+      target &&
+      target.isConnected !== false &&
+      typeof target.focus === "function"
+    ) {
+      target.focus();
+    }
+  }
+
+  function focusOverlayControl(control, fallback) {
+    restoreFocus(control || fallback);
+  }
+
+  diffClose?.addEventListener("click", closeDiff);
+  lightboxClose?.addEventListener("click", closeLightbox);
 
   async function openLintReport() {
     lintModal.hidden = false;
@@ -53,6 +80,7 @@ export function createEditorReviewMedia(context, services, editorState) {
   }
 
   async function showDiffForDraft(path) {
+    diffReturnFocus = activeFocusTarget();
     const draft = storage.getItem(draftKey(path)) ?? "";
     let saved = "";
     try {
@@ -66,10 +94,14 @@ export function createEditorReviewMedia(context, services, editorState) {
     diffTitle.textContent = path;
     diffBody.replaceChildren(...renderUnifiedDiff(saved, draft));
     diffModal.hidden = false;
+    focusOverlayControl(diffClose, diffModal);
   }
 
   function closeDiff() {
     diffModal.hidden = true;
+    const returnFocus = diffReturnFocus;
+    diffReturnFocus = null;
+    restoreFocus(returnFocus);
   }
 
   function renderUnifiedDiff(a, b) {
@@ -136,14 +168,20 @@ export function createEditorReviewMedia(context, services, editorState) {
   }
 
   function openLightbox(src, caption) {
+    lightboxReturnFocus = activeFocusTarget();
     lightboxImg.src = src;
+    lightboxImg.alt = caption || "Document image";
     lightboxCaption.textContent = caption || "";
     lightboxCaption.hidden = !caption;
     lightbox.hidden = false;
+    focusOverlayControl(lightboxClose, lightboxImg);
   }
 
   function closeLightbox() {
     lightbox.hidden = true;
+    const returnFocus = lightboxReturnFocus;
+    lightboxReturnFocus = null;
+    restoreFocus(returnFocus);
   }
 
   function handleClipboardPaste(event) {

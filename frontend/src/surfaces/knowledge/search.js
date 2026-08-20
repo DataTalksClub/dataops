@@ -36,6 +36,7 @@ export function createKnowledgeSearch(context, services) {
     setHighlightedText,
     syncLibraryPageTitle,
   } = services;
+  const searchRanks = new Map();
 
   async function refreshDocuments() {
     const query = searchInput.value.trim();
@@ -97,10 +98,10 @@ export function createKnowledgeSearch(context, services) {
                   },
                 ],
               };
-        const results = [
+        const results = rankSearchResults([
           ...(Array.isArray(payload.results) ? payload.results : []),
           ...workSearch.results,
-        ].slice(0, 80);
+        ], query).slice(0, 80);
         knowledgeState.activeSearchSources = [
           ...(Array.isArray(payload.sources) ? payload.sources : []),
           ...workSearch.sources,
@@ -410,6 +411,15 @@ export function createKnowledgeSearch(context, services) {
     }
     return [...groups.entries()]
       .sort((a, b) => {
+        const aRank = Math.max(
+          ...a[1].map((result) => searchRanks.get(result) || 0),
+          0,
+        );
+        const bRank = Math.max(
+          ...b[1].map((result) => searchRanks.get(result) || 0),
+          0,
+        );
+        if (aRank !== bRank) return bRank - aRank;
         const ai = order.indexOf(a[0]);
         const bi = order.indexOf(b[0]);
         return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
@@ -417,8 +427,74 @@ export function createKnowledgeSearch(context, services) {
       .map(([type, items]) => ({
         type,
         label: labels[type] || labelizeWorkValue(type),
-        items,
+        items: items.slice().sort(
+          (a, b) =>
+            (searchRanks.get(b) || 0) - (searchRanks.get(a) || 0),
+        ),
       }));
+  }
+
+  function normalizeSearchValue(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  }
+
+  function searchResultRank(result, query) {
+    const wanted = normalizeSearchValue(query);
+    if (!wanted || !result) return 0;
+    const title = normalizeSearchValue(
+      result.title || result.name || result.id || "",
+    );
+    const path = normalizeSearchValue(result.path || "");
+    const basename = normalizeSearchValue(
+      String(result.path || "").split("/").at(-1) || "",
+    );
+    const context = normalizeSearchValue(
+      result.context || result.description || result.summary || "",
+    );
+    const tokens = wanted.split(" ").filter(Boolean);
+    let score = 0;
+
+    if (title === wanted) score += 10000;
+    else if (title.startsWith(wanted)) score += 5000;
+    else if (title.includes(wanted)) score += 3500;
+    if (basename === wanted) score += 3000;
+    else if (path.includes(wanted)) score += 900;
+    if (tokens.length && tokens.every((token) => title.includes(token))) {
+      score += 1800;
+    }
+    if (context.includes(wanted)) score += 500;
+    if (tokens.length) {
+      score += tokens.reduce(
+        (total, token) => total + (title.includes(token) ? 120 : 0),
+        0,
+      );
+    }
+    return score;
+  }
+
+  function rankSearchResults(results, query) {
+    return results
+      .map((result, index) => ({
+        result,
+        index,
+        score: searchResultRank(result, query),
+      }))
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          String(a.result?.title || a.result?.path || a.result?.id || "").localeCompare(
+            String(b.result?.title || b.result?.path || b.result?.id || ""),
+          ) ||
+          a.index - b.index,
+      )
+      .map(({ result, score }) => {
+        searchRanks.set(result, score);
+        return result;
+      });
   }
 
   function renderUnifiedSearchRow(result, query) {
@@ -456,6 +532,7 @@ export function createKnowledgeSearch(context, services) {
     ].filter(Boolean);
     for (const chipText of chips.slice(0, 6)) {
       const chip = document.createElement("span");
+      chip.className = "unified-search-meta-item";
       chip.textContent = chipText;
       meta.append(chip);
     }
