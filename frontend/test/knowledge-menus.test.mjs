@@ -75,6 +75,9 @@ function createHarness(options = {}) {
   const diffBody = new FakeElement("div");
   const diffModal = new FakeElement("div");
   diffModal.hidden = true;
+  const diffClose = new FakeElement("button");
+  diffClose.dataset.diffClose = "";
+  diffModal.append(diffClose);
   const diffTitle = new FakeElement("h2");
   const documentState = {
     currentDoc:
@@ -112,6 +115,7 @@ function createHarness(options = {}) {
       },
       deleteCurrentDoc: () => calls.push(["delete-current-doc"]),
       diffBody,
+      diffClose,
       diffModal,
       diffTitle,
       docMenuButton,
@@ -174,6 +178,7 @@ function createHarness(options = {}) {
     body,
     calls,
     diffBody,
+    diffClose,
     diffModal,
     diffTitle,
     docMenuButton,
@@ -345,6 +350,7 @@ describe("Knowledge menu behavior", () => {
       "History · content/old/process.md",
     );
     assert.equal(harness.diffModal.hidden, false);
+    assert.equal(harness.diffClose.focused, true);
     assert.equal(
       harness.diffBody.textContent,
       "abc123  2026-08-13  Alexey  Update process",

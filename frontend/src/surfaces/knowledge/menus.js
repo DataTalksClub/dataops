@@ -4,6 +4,7 @@ export function createKnowledgeMenus(context, services) {
     confirmDialog,
     deleteCurrentDoc,
     diffBody,
+    diffClose,
     diffModal,
     diffTitle,
     docMenuButton,
@@ -227,6 +228,7 @@ export function createKnowledgeMenus(context, services) {
     diffBody.replaceChildren();
     diffBody.append(emptyNote("Loading…"));
     diffModal.hidden = false;
+    diffClose?.focus?.();
     try {
       const url = apiUrl("/git/log");
       url.searchParams.set("path", path);
