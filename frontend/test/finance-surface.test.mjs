@@ -291,6 +291,85 @@ describe("Finance surface boundary", () => {
     ]);
   });
 
+  test("focuses the first usable control when bookkeeping and sponsor dialogs open", async () => {
+    const bookkeepingControl = new FakeElement("input");
+    const { document, finance } = createHarness({
+      setupSurface: (surface) => {
+        const dialog = new FakeElement("dialog");
+        const form = new FakeElement("form");
+        const heading = new FakeElement("h3");
+        const originalQuery = dialog.querySelector.bind(dialog);
+        dialog.querySelector = (selector) => {
+          if (selector === "form") return form;
+          if (selector === "h3") return heading;
+          if (selector.includes("input:not")) return bookkeepingControl;
+          return originalQuery(selector);
+        };
+        surface.setQuery(".bookkeeping-entry-dialog", dialog);
+      },
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path.endsWith("/transactions")) return { items: [] };
+        if (path.endsWith("/documents") || path.endsWith("/links"))
+          return { items: [] };
+        if (path.endsWith("/accounts")) return { items: [] };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    await document.surface.querySelector("[data-bookkeeping-add]").dispatch("click");
+    assert.equal(bookkeepingControl.focused, true);
+
+    const sponsorControl = new FakeElement("select");
+    const sponsorForm = new FakeElement("form");
+    const sponsorDialog = new FakeElement("dialog");
+    const originalSponsorQuery = sponsorDialog.querySelector.bind(sponsorDialog);
+    sponsorDialog.querySelector = (selector) => {
+      if (selector === "form") return sponsorForm;
+      if (selector.includes("input:not") || selector.includes("select:not"))
+        return sponsorControl;
+      return originalSponsorQuery(selector);
+    };
+
+    const sponsorHarness = createHarness({
+      setupSurface: (surface) =>
+        surface.setQuery("[data-booking-dialog]", sponsorDialog),
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path.endsWith("/organizations"))
+          return { items: [{ id: "org-1", displayName: "Sponsor" }] };
+        if (path.endsWith("/contacts")) return { items: [] };
+        if (path.endsWith("/bookings"))
+          return {
+            items: [
+              {
+                id: "booking-1",
+                organizationId: "org-1",
+                status: "confirmed",
+              },
+            ],
+          };
+        if (path.endsWith("/notifications")) return { notifications: [] };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+    await sponsorHarness.finance.renderSponsorCrmSurface();
+    const bookings = sponsorHarness.document.surface.querySelector(
+      "[data-crm-bookings]",
+    );
+    await bookings.dispatch("click", {
+      target: {
+        closest(selector) {
+          return selector === "[data-edit-booking]"
+            ? { dataset: { editBooking: "booking-1" } }
+            : null;
+        },
+      },
+    });
+    assert.equal(sponsorControl.focused, true);
+  });
+
   test("renders only safe sponsor communication projections and preserves the operator action hierarchy", async () => {
     const booking = {
       id: "booking-1",

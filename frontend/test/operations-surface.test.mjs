@@ -304,6 +304,11 @@ function createOperationsHarness(options = {}) {
       container.replaceChildren(marker);
     },
     renderHonestState: honestState,
+    renderSurfaceHeader: (title, description) => {
+      const header = new FakeElement("header");
+      header.textContent = `${title}: ${description}`;
+      return header;
+    },
     reportError: (message) => errors.push(message),
     request: async (url, requestOptions = {}) => {
       const entry = { url, options: requestOptions };
@@ -460,14 +465,53 @@ describe("Operations surface boundary", () => {
         title: "Missing storage",
         status: "draft",
       },
+      {
+        id: "artifact-3",
+        title: "Malformed link",
+        status: "approved",
+        storageUri: "https://example.test/edit%20%22%E2%80%8C%22",
+      },
     ];
     const list = harness.api.renderArtifactsSurface();
-    const open = findByText(list, "Open", "a");
+    const open = findByText(list, "Open artifact", "a");
     assert.equal(open.href, "https://example.test/issue");
     assert.equal(open.target, "_blank");
     assert.equal(open.rel, "noopener");
-    assert.equal(findAllByClass(list, "ops-data-row").length, 2);
-    assert.equal(list.querySelectorAll("a").length, 1);
+    assert.equal(
+      open.getAttribute("aria-label"),
+      "Open Approved issue for task task-1",
+    );
+    assert.equal(findAllByClass(list, "ops-data-row").length, 3);
+    assert.equal(list.querySelectorAll("a").length, 2);
+    assert.equal(
+      list.querySelectorAll("a")[1].href,
+      "https://example.test/edit",
+    );
+  });
+
+  test("restores Device code focus after validation rerenders", async () => {
+    const harness = createOperationsHarness({
+      route: { path: "/device", params: new URLSearchParams() },
+    });
+    harness.api.renderDeviceSurfaceView();
+    const initialInput = findAllByClass(
+      harness.documentList,
+      "device-code-input",
+    )[0];
+    const continueButton = findByText(
+      harness.documentList,
+      "Continue",
+      "button",
+    );
+
+    await continueButton.dispatch("click");
+
+    const refreshedInput = findAllByClass(
+      harness.documentList,
+      "device-code-input",
+    )[0];
+    assert.notEqual(refreshedInput, initialInput);
+    assert.equal(refreshedInput.focused, true);
   });
 
   test("refreshes Artifact and Assistant snapshots honestly on list, invalid payload, and failure", async () => {

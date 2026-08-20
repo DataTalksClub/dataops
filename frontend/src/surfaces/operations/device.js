@@ -36,6 +36,8 @@ export function createDeviceAuthSurface(context) {
       renderDevicePanel(),
     );
     documentList.replaceChildren(wrap);
+    if (state.error && !state.grant)
+      wrap.querySelector(".device-code-input")?.focus();
   }
 
   function renderDevicePanel() {

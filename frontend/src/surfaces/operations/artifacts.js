@@ -33,6 +33,16 @@ export function createArtifactsSurface(context) {
     workTaskTitle,
   } = context;
 
+  function normalizeArtifactUrl(value) {
+    if (typeof value !== "string") return "";
+    return value
+      .trim()
+      .replace(
+        /(?:%20|\s)(?:%22|")(?:%E2%80%8C|\u200c)(?:%22|")$/iu,
+        "",
+      );
+  }
+
   function renderArtifactsSurface() {
     const section = document.createElement("section");
     section.className = "ops-state-list";
@@ -63,9 +73,11 @@ export function createArtifactsSurface(context) {
   function renderArtifactSurfaceRow(artifact) {
     const row = document.createElement("article");
     row.className = "ops-data-row";
+    const storageUri = normalizeArtifactUrl(artifact.storageUri);
+    const artifactLabel =
+      artifact.title || storageUri || artifact.id || "Artifact";
     const title = document.createElement("strong");
-    title.textContent =
-      artifact.title || artifact.storageUri || artifact.id || "Artifact";
+    title.textContent = artifactLabel;
     const meta = document.createElement("span");
     meta.textContent = [
       artifact.status || "draft",
@@ -77,12 +89,24 @@ export function createArtifactsSurface(context) {
       .filter(Boolean)
       .join(" · ");
     row.append(title, meta);
-    if (artifact.storageUri) {
+    if (storageUri) {
       const link = document.createElement("a");
-      link.href = artifact.storageUri;
+      link.href = storageUri;
       link.target = "_blank";
       link.rel = "noopener";
-      link.textContent = "Open";
+      link.textContent = "Open artifact";
+      const linkContext = [
+        artifact.cardId ? `card ${artifact.cardId}` : "",
+        artifact.taskId ? `task ${artifact.taskId}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+      link.setAttribute(
+        "aria-label",
+        `Open ${artifactLabel}${
+          linkContext ? ` for ${linkContext}` : ""
+        }`,
+      );
       row.append(link);
     }
     return row;

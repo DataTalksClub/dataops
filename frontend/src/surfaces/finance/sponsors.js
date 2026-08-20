@@ -3,6 +3,24 @@ import { createSponsorFinance } from "./sponsor-finance.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
 import { html } from "./shared.js";
 
+function focusFirstUsableControl(dialog) {
+  const control = dialog.querySelector(
+    [
+      'input:not([type="hidden"]):not([disabled]):not([hidden])',
+      'select:not([disabled]):not([hidden])',
+      'textarea:not([disabled]):not([hidden])',
+      'button:not([disabled]):not([hidden])',
+      'a[href]:not([hidden])',
+    ].join(","),
+  );
+  control?.focus();
+}
+
+function openDialog(dialog) {
+  dialog.showModal();
+  focusFirstUsableControl(dialog);
+}
+
 export function createSponsorCrmSurface(context) {
   const {
     documentList,
@@ -94,6 +112,12 @@ export function createSponsorCrmSurface(context) {
       revokeCurrentReview,
       showExactReview,
     } = sponsorCommunications;
+    const showExactReviewAndFocus = async (...args) => {
+      await showExactReview(...args);
+      focusFirstUsableControl(
+        surface.querySelector("[data-communication-review-dialog]"),
+      );
+    };
     const safe = async (action, label) => {
       try {
         await action();
@@ -454,13 +478,13 @@ export function createSponsorCrmSurface(context) {
           .join("")}`;
       if (item?.primaryContactId)
         form.elements.primaryContactId.value = item.primaryContactId;
-      dialog.showModal();
+      openDialog(dialog);
     }
     surface
       .querySelectorAll("[data-crm-search],[data-crm-active],[data-crm-status]")
       .forEach((input) => input.addEventListener("input", draw));
     surface.querySelector("[data-add-org]").onclick = () =>
-      surface.querySelector("[data-org-dialog]").showModal();
+      openDialog(surface.querySelector("[data-org-dialog]"));
     surface.querySelector("[data-add-booking]").onclick = () =>
       openBooking(null);
     surface.querySelector("[data-crm-orgs]").onclick = (event) => {
@@ -472,7 +496,7 @@ export function createSponsorCrmSurface(context) {
         const form = surface.querySelector("[data-contact-dialog] form");
         form.reset();
         form.elements.organizationId.value = contact;
-        surface.querySelector("[data-contact-dialog]").showModal();
+        openDialog(surface.querySelector("[data-contact-dialog]"));
       }
       if (archive)
         safe(async () => {
@@ -555,7 +579,7 @@ export function createSponsorCrmSurface(context) {
               </option>`,
           )
           .join("");
-        dialog.showModal();
+        openDialog(dialog);
         return;
       }
       const cancelAttempt = event.target.closest("[data-cancel-attempt]")
@@ -590,7 +614,7 @@ export function createSponsorCrmSurface(context) {
       if (reviewDraft) {
         safe(
           async () =>
-            showExactReview(
+            showExactReviewAndFocus(
               reviewDraft.dataset.reviewDraft,
               Number(reviewDraft.dataset.draftVersion),
             ),
@@ -646,7 +670,7 @@ export function createSponsorCrmSurface(context) {
         sponsorCommunications.communicationPermissions.canApprove
           ? "Save and review exact message"
           : "Save draft for admin review";
-      dialog.showModal();
+      openDialog(dialog);
     });
     for (const dialog of surface.querySelectorAll("dialog"))
       dialog
@@ -767,7 +791,7 @@ export function createSponsorCrmSurface(context) {
         draftDialog.close();
         await loadCommunications(sponsorCommunications.selectedBookingId);
         if (sponsorCommunications.communicationPermissions.canApprove) {
-          await showExactReview(draft.communicationId, draft.version);
+          await showExactReviewAndFocus(draft.communicationId, draft.version);
         } else {
           message.textContent = `Draft version ${draft.version} saved. Awaiting administrator review; no message was approved or sent.`;
         }

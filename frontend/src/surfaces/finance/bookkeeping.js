@@ -1,5 +1,23 @@
 import { html } from "./shared.js";
 
+function focusFirstUsableControl(dialog) {
+  const control = dialog.querySelector(
+    [
+      'input:not([type="hidden"]):not([disabled]):not([hidden])',
+      'select:not([disabled]):not([hidden])',
+      'textarea:not([disabled]):not([hidden])',
+      'button:not([disabled]):not([hidden])',
+      'a[href]:not([hidden])',
+    ].join(","),
+  );
+  control?.focus();
+}
+
+function openDialog(dialog) {
+  dialog.showModal();
+  focusFirstUsableControl(dialog);
+}
+
 export function createBookkeepingSurface(context) {
   const {
     documentList,
@@ -463,7 +481,7 @@ export function createBookkeepingSurface(context) {
         form.reset();
         form.elements.currency.value = "EUR";
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
-        entryDialog.showModal();
+        openDialog(entryDialog);
       });
     form.addEventListener("input", (event) => {
       event.target.removeAttribute("aria-invalid");
@@ -478,7 +496,7 @@ export function createBookkeepingSurface(context) {
           if (form.elements[k]) form.elements[k].value = item[k] || "";
         });
         entryDialog.querySelector("h3").textContent = "Edit ledger entry";
-        entryDialog.showModal();
+        openDialog(entryDialog);
       }
       if (del) {
         const dialog = surface.querySelector(".bookkeeping-delete-dialog"),
@@ -486,7 +504,7 @@ export function createBookkeepingSurface(context) {
         dialog.dataset.id = del;
         dialog.querySelector("[data-delete-entry-name]").textContent =
           item?.counterparty || "This ledger entry";
-        dialog.showModal();
+        openDialog(dialog);
       }
     });
     surface.querySelector("[data-save]").addEventListener("click", (event) => {
