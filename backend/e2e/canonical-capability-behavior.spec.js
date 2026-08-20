@@ -422,7 +422,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await setFaults(context.request, [{ method: 'GET', path: '/api/artifacts', status: 503, remaining: 10 }]);
     await page.reload();
     await expect(page.getByText('Artifact review index not connected')).toBeVisible();
-    await expect(page.locator('.ops-artifacts-grid a')).toHaveCount(0);
+    await expect(page.locator('.ops-state-list a')).toHaveCount(0);
     await clearFaults(context.request);
 
     const unavailableArtifactResponse = await context.request.post('/api/artifacts', { data: {
@@ -432,9 +432,9 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     } });
     expect(unavailableArtifactResponse.status()).toBe(201);
     await page.reload();
-    const unavailableArtifact = page.locator('.ops-data-row', { hasText: 'Unavailable proof artifact' });
+    const unavailableArtifact = page.locator('.ops-state-list .ops-data-row', { hasText: 'Unavailable proof artifact' });
     await expect(unavailableArtifact).toContainText('needs-review · report · storage missing');
-    await expect(unavailableArtifact.getByRole('link', { name: 'Open' })).toHaveCount(0);
+    await expect(unavailableArtifact.getByRole('link')).toHaveCount(0);
 
     const id = unique('assistant-baseline');
     const cardResponse = await context.request.post('/api/cards', { data: { title: `Synthetic workflow ${id}`, anchorDate: '2026-08-12' } });
@@ -465,11 +465,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect(after.events).toEqual(before.events);
 
     await page.goto('/#/artifacts');
-    const artifactRow = page.getByRole('article').filter({ hasText: `Synthetic artifact ${id}` });
+    const artifactSurface = page.locator('.ops-state-list');
+    await expect(artifactSurface).toBeVisible();
+    const artifactRow = artifactSurface.locator('.ops-data-row', { hasText: `Synthetic artifact ${id}` });
     await expect(artifactRow).toBeVisible();
-    await expect(page.getByRole('article').filter({ hasText: card.id })).toBeVisible();
-    await expect(artifactRow.getByRole('link', { name: 'Open' })).toHaveAttribute('href', 'https://example.invalid/synthetic-output');
-    await expect(artifactRow.getByRole('link', { name: 'Open' })).toHaveAttribute('rel', 'noopener');
+    await expect(artifactSurface.locator('.ops-data-row', { hasText: card.id })).toBeVisible();
+    const artifactLink = artifactRow.getByRole('link', { name: `Open Synthetic artifact ${id} for card ${card.id}` });
+    await expect(artifactLink).toHaveAttribute('href', 'https://example.invalid/synthetic-output');
+    await expect(artifactLink).toHaveAttribute('rel', 'noopener');
     await page.goto('/#/assistants?assistantJobId=stale-synthetic-assistant');
     await expect(page.locator('.entity-route-not-found')).toContainText('stale-synthetic-assistant');
     await context.close();
