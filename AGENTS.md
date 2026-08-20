@@ -41,6 +41,10 @@ When launching subagents for this workflow, use high-capability/high-reasoning
 settings by default unless the user explicitly asks for a cheaper or lower
 reasoning run.
 
+Subagents should inherit the model and reasoning settings from the main session
+by default. Omit model and reasoning overrides when spawning them unless the
+user explicitly requests a different configuration.
+
 Treat "continue where we stopped" as a prompt to check `docs/PROCESS.md`,
 inspect the current issue/worktree/process state, and resume the next pipeline
 step.
