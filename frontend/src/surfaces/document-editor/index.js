@@ -10,6 +10,14 @@ import { createStructuredEditor } from "./structured-editor.js";
 
 export function createDocumentEditor(context) {
   const api = {};
+  const editorChrome = createEditorChrome(context);
+  const editorContext = {
+    ...context,
+    setStatus: (message) => {
+      context.setStatus(message);
+      editorChrome.setStatus(message);
+    },
+  };
   const editorState = {
     githubBase: "",
     gitBranch: "main",
@@ -84,15 +92,15 @@ export function createDocumentEditor(context) {
     updateViewToggleAvailability: invoke("updateViewToggleAvailability"),
   };
 
-  Object.assign(api, createEditorLifecycle(context, services));
-  Object.assign(api, createEditorChanges(context, services));
-  Object.assign(api, createEditorGit(context, services, editorState));
-  Object.assign(api, createDocumentRenderer(context, services, editorState));
-  Object.assign(api, createProcedureRenderer(context, services, editorState));
-  Object.assign(api, createEditorReviewMedia(context, services, editorState));
-  Object.assign(api, createStructuredEditor(context, services, editorState));
-  Object.assign(api, createProcedureMarkdown(context, services, editorState));
-  Object.assign(api, createEditorMarkdown(context, services));
+  Object.assign(api, createEditorLifecycle(editorContext, services));
+  Object.assign(api, createEditorChanges(editorContext, services));
+  Object.assign(api, createEditorGit(editorContext, services, editorState));
+  Object.assign(api, createDocumentRenderer(editorContext, services, editorState));
+  Object.assign(api, createProcedureRenderer(editorContext, services, editorState));
+  Object.assign(api, createEditorReviewMedia(editorContext, services, editorState));
+  Object.assign(api, createStructuredEditor(editorContext, services, editorState));
+  Object.assign(api, createProcedureMarkdown(editorContext, services, editorState));
+  Object.assign(api, createEditorMarkdown(editorContext, services));
 
   return {
     canLeaveDocumentEditor: api.canLeaveDocumentEditor,
@@ -128,5 +136,47 @@ export function createDocumentEditor(context) {
     updateGithubLink: api.updateGithubLink,
     updateSaveState: api.updateSaveState,
     updateViewToggleAvailability: api.updateViewToggleAvailability,
+  };
+}
+
+function createEditorChrome(context) {
+  const { discardButton, editorView, saveButton, saveState } = context;
+  let status = null;
+
+  if (editorView?.append && saveButton && discardButton && saveState) {
+    const footer = document.createElement("footer");
+    footer.className = "document-editor-footer";
+
+    status = document.createElement("div");
+    status.className = "editor-inline-status";
+    status.hidden = true;
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+
+    const state = document.createElement("div");
+    state.className = "document-editor-save-state";
+    state.append(saveState);
+
+    const actions = document.createElement("div");
+    actions.className = "document-editor-actions";
+    actions.append(discardButton, saveButton);
+
+    footer.append(status, state, actions);
+    editorView.append(footer);
+  }
+
+  return {
+    setStatus(message) {
+      if (!status) return;
+      const text = String(message || "").trim();
+      status.textContent = text;
+      status.hidden = !text;
+      status.classList.toggle(
+        "is-error",
+        /(?:failed|error|unavailable|required|denied|conflict|could not|cannot|not found)/i.test(
+          text,
+        ),
+      );
+    },
   };
 }

@@ -84,6 +84,7 @@ export function createEditorLifecycle(context, services) {
       document.querySelector('input[name="scaffold"]:checked')?.value || "full";
 
     if (!path) {
+      setCreateStatus("Path is required.", "error");
       setStatus("Path is required.");
       return;
     }
@@ -109,10 +110,12 @@ export function createEditorLifecycle(context, services) {
       });
 
       newDocForm.reset();
+      setCreateStatus("");
       await loadDocuments();
       await openDocument(payload.path);
       setStatus(`Created ${payload.path}.`);
     } catch (error) {
+      setCreateStatus(error.message, "error");
       setStatus(error.message);
     }
   }
@@ -226,7 +229,19 @@ export function createEditorLifecycle(context, services) {
     setPageTitle("New page", "Create");
     setView("create");
     closeSidebar();
+    setCreateStatus("");
     newDocPath.focus();
+  }
+
+  function setCreateStatus(message, kind = "") {
+    const status = newDocForm.querySelector?.(".status-text");
+    if (!status) return;
+    status.classList.add("create-status");
+    status.classList.toggle("is-error", kind === "error");
+    status.textContent = message || "Create a Markdown document in this repository.";
+    status.hidden = false;
+    if (message) status.setAttribute("role", kind === "error" ? "alert" : "status");
+    else status.removeAttribute("role");
   }
 
   function setSaveState(message) {

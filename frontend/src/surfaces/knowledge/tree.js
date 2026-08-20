@@ -33,6 +33,7 @@ export function createKnowledgeTree(context, services) {
   function renderDocuments(documents, title) {
     documentList.classList.remove("is-operations-home");
     documentList.classList.remove("is-unified-search");
+    setLibraryHeadingVisibility(true);
     libraryTitle.textContent = title;
     const hasFilter = !!(knowledgeState.selectedFolder || searchInput.value.trim());
     clearSelectionButton.hidden = !hasFilter;
@@ -57,6 +58,13 @@ export function createKnowledgeTree(context, services) {
       rows.push(more);
     }
     documentList.replaceChildren(...rows);
+  }
+
+  function setLibraryHeadingVisibility(visible) {
+    const heading = libraryTitle.parentElement?.parentElement;
+    if (!heading) return;
+    heading.hidden = !visible;
+    heading.classList.toggle("is-visible", visible);
   }
 
   function renderDocumentRow(doc) {

@@ -297,6 +297,7 @@ export function createKnowledgeSearch(context, services) {
   function renderUnifiedSearchResults(results, sources, query) {
     documentList.classList.remove("is-operations-home");
     documentList.classList.add("is-unified-search");
+    setLibraryHeadingVisibility(true);
     libraryTitle.textContent = "Search results";
     clearSelectionButton.hidden = false;
 
@@ -333,6 +334,13 @@ export function createKnowledgeSearch(context, services) {
       wrap.append(section);
     }
     documentList.replaceChildren(wrap);
+  }
+
+  function setLibraryHeadingVisibility(visible) {
+    const heading = libraryTitle.parentElement?.parentElement;
+    if (!heading) return;
+    heading.hidden = !visible;
+    heading.classList.toggle("is-visible", visible);
   }
 
   function renderSearchSourceState(sources) {

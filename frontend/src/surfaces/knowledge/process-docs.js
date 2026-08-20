@@ -19,6 +19,7 @@ export function createProcessDocsSurface(context, services) {
     renderSurfaceHeader,
     setPageTitle,
     setStatus,
+    showCreate,
     surfaceDescription,
     surfaceStatusText,
   } = context;
@@ -33,6 +34,7 @@ export function createProcessDocsSurface(context, services) {
     });
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
+    setLibraryHeadingVisibility(false);
     libraryTitle.textContent = "Docs";
     setPageTitle("Docs", "Docs");
     clearSelectionButton.hidden = true;
@@ -40,9 +42,26 @@ export function createProcessDocsSurface(context, services) {
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    wrap.append(renderSurfaceHeader("Docs", surfaceDescription("processes")));
+    const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
+    const createButton = document.createElement("button");
+    createButton.type = "button";
+    createButton.className = "primary-button ops-docs-create";
+    createButton.textContent = "New process doc";
+    createButton.addEventListener("click", () => {
+      if (typeof showCreate === "function") showCreate();
+      else document.querySelector("#new-document-button")?.click();
+    });
+    header.append(createButton);
+    wrap.append(header);
     wrap.append(renderProcessesSurface(documents, model));
     documentList.replaceChildren(wrap);
+  }
+
+  function setLibraryHeadingVisibility(visible) {
+    const heading = libraryTitle.parentElement?.parentElement;
+    if (!heading) return;
+    heading.hidden = !visible;
+    heading.classList.toggle("is-visible", visible);
   }
 
   function renderProcessesSurface(documents, model) {
@@ -81,14 +100,16 @@ export function createProcessDocsSurface(context, services) {
     const wrap = document.createElement("section");
     wrap.className = "ops-section ops-quality-drilldown";
     wrap.setAttribute("aria-label", "Process quality drill-down");
+    wrap.dataset.qualityState = quality.loaded ? "loaded" : "unavailable";
 
     const header = document.createElement("div");
     header.className = "ops-section-header";
     const title = document.createElement("h3");
     title.textContent = "Quality Findings";
     const meta = document.createElement("span");
+    meta.className = "ops-section-meta";
     meta.textContent = quality.loaded
-      ? `${quality.totalFindings} findings - ${quality.summary?.blocking || 0} blocking in template/report data`
+      ? `${quality.totalFindings} findings · ${quality.summary?.blocking || 0} blocking in template/report data`
       : "Report unavailable";
     header.append(title, meta);
     wrap.append(header);
@@ -113,6 +134,7 @@ export function createProcessDocsSurface(context, services) {
 
     const filters = document.createElement("div");
     filters.className = "ops-quality-filters";
+    filters.setAttribute("aria-label", "Filter quality findings");
     const findings = quality.maintainerFindings;
     const filterDefs = [
       [
@@ -158,6 +180,7 @@ export function createProcessDocsSurface(context, services) {
       label.className = "ops-quality-filter";
       label.textContent = labelText;
       const select = document.createElement("select");
+      select.setAttribute("aria-label", labelText);
       for (const value of values) {
         const option = document.createElement("option");
         option.value = value;
