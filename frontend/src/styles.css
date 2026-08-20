@@ -11249,6 +11249,17 @@ body[data-workspace-view="tasks"] .ops-queue-row strong {
 }
 
 @media (max-width: 820px) {
+  body[data-view="editor"] .page-toolbar .work-bell-button,
+  body[data-view="editor"] .page-toolbar .home-help-button,
+  body[data-view="editor"] .page-toolbar .desktop-account-button {
+    display: none;
+  }
+
+  body[data-view="editor"] .page-toolbar .toolbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .task-modal,
   .diff-modal,
   .quick-form-overlay {
