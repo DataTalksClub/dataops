@@ -351,3 +351,38 @@ test("runtime completeness stays in the one independent Playwright run", () => {
     .filter((step) => step.uses === "actions/upload-artifact@v4");
   assert.ok(uploads.some((step) => /backend\/playwright-report\/[\s\S]*backend\/test-results\//.test(step.with?.path || "")), "independent E2E failure upload must retain both reports and result evidence");
 });
+
+test("canonical Task/Card transactions gate deployment", () => {
+  const workflow = yaml.load(readFileSync(resolve(repoRoot, ".github", "workflows", "deploy-dataops-v1.yml"), "utf8"));
+  const transactionCommand = "npm --prefix backend run test:task-card-transaction";
+  const commandsFor = ({ steps = [] } = {}) => steps
+    .flatMap((step) => typeof step.run === "string" ? [step.run.trim()] : []);
+
+  const checks = workflow.jobs.checks;
+  const deploy = workflow.jobs.deploy;
+  const checkCommands = commandsFor(checks);
+  const workflowCommands = Object.values(workflow.jobs || {}).flatMap((job) => commandsFor(job));
+  assert.equal(
+    workflowCommands.filter((command) => command === transactionCommand).length,
+    1,
+    "the canonical transaction gate must run exactly once",
+  );
+  assert.equal(
+    checkCommands.filter((command) => command === transactionCommand).length,
+    1,
+    "checks must own the canonical transaction gate exactly once",
+  );
+  assert.ok(
+    checkCommands.indexOf(transactionCommand) < checkCommands.indexOf("npm --prefix backend run build"),
+    "checks must reject transaction regressions before building the backend",
+  );
+  assert.equal(deploy.needs, "checks", "deploy must wait for the canonical transaction gate");
+  assert.equal(commandsFor(deploy).filter((command) => command === "make sam-build").length, 1,
+    "deploy must contain the single packaged build path");
+  assert.ok(!commandsFor(checks).includes("make sam-build"), "checks must not duplicate the packaged build");
+
+  assert.ok(!checks.steps.some((step) => String(step.uses || "").startsWith("aws-actions/configure-aws-credentials")),
+    "the transaction check must not configure AWS credentials");
+  assert.doesNotMatch(JSON.stringify(workflow), /AWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)/,
+    "the deploy workflow must use OIDC rather than static AWS credentials");
+});

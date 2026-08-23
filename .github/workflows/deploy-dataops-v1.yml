@@ -58,6 +58,8 @@ jobs:
       - name: Run backend tests
         run: npm --prefix backend test
 
+      - name: Gate canonical Task/Card transactions
+        run: npm --prefix backend run test:task-card-transaction
 
       - name: Typecheck backend
         run: npm --prefix backend run typecheck
