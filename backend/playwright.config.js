@@ -1,6 +1,7 @@
 const { defineConfig } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
+const { BERLIN_TIME_ZONE } = require('./e2e/helpers/business-date');
 
 const AUTH_STATE_PATH = path.join(__dirname, 'e2e', '.auth-state.json');
 const DEFAULT_AUTH_STATE = {
@@ -50,6 +51,7 @@ module.exports = defineConfig({
   globalTeardown: './e2e/global-teardown.js',
   use: {
     baseURL: 'http://localhost:3001',
+    timezoneId: BERLIN_TIME_ZONE,
     headless: true,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',

@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  addDaysIso,
   buildHomeAttentionItems,
   compareIsoDate,
   deriveHomeWorkState,
+  formatCardMonthLabel,
+  formatHomeCalendarDate,
+  formatHomeShortDate,
   formatHomeTaskTiming,
   groupCardItemsByStage,
   isActiveWorkCard,
@@ -15,10 +19,14 @@ import {
   isTaskDueToday,
   isTaskOverdue,
   isWaitingOrFollowUpTask,
+  isoDayDistance,
+  nextRecurringRunDate,
+  parseIsoDateValue,
   partitionCardsByArchive,
   summarizeCardProgress,
   taskProofState,
   tasksFromWorkPayload,
+  todayIsoDate,
   workflowTaskGroups,
 } from "../src/core/workspace.js";
 
@@ -38,6 +46,42 @@ describe("frontend work model", () => {
     assert.equal(formatHomeTaskTiming({ priority: "today", dueDate: TODAY }, TODAY), "Due today");
     assert.equal(formatHomeTaskTiming({ priority: "follow-up", followUpDate: "2026-08-10" }, TODAY), "Follow-up 2 days overdue");
     assert.equal(formatHomeTaskTiming({ priority: "missing-proof" }, TODAY), "Proof required");
+  });
+
+  test("keeps civil-date operations independent of the runtime zone", () => {
+    assert.equal(parseIsoDateValue("2026-03-01").toISOString(), "2026-03-01T00:00:00.000Z");
+    assert.equal(parseIsoDateValue("2025-02-29"), null);
+    assert.equal(addDaysIso("2026-02-28", 1), "2026-03-01");
+    assert.equal(addDaysIso("2026-12-31", 1), "2027-01-01");
+    assert.equal(isoDayDistance("2026-03-01", "2026-02-28"), 1);
+    assert.equal(formatHomeCalendarDate("2026-03-01"), "Sunday 1 March");
+    assert.equal(formatHomeShortDate("2026-08-05"), "5 Aug");
+    assert.equal(formatCardMonthLabel("2026-07-31T18:00:00.000Z"), "July 2026");
+    assert.equal(nextRecurringRunDate("0 9 * * 1", "2026-02-28"), "2026-03-02");
+    assert.equal(nextRecurringRunDate("0 9 * * 1", "2026-12-31"), "2027-01-04");
+    assert.equal(formatHomeShortDate("2027-01-04"), "4 Jan");
+  });
+
+  test("converts the live instant through Europe/Berlin", () => {
+    const RealDate = globalThis.Date;
+    const fixedInstant = "2026-07-30T22:30:00.000Z";
+
+    class FixedDate extends RealDate {
+      constructor(...args) {
+        super(...(args.length ? args : [fixedInstant]));
+      }
+
+      static now() {
+        return RealDate.parse(fixedInstant);
+      }
+    }
+
+    globalThis.Date = FixedDate;
+    try {
+      assert.equal(todayIsoDate(), "2026-07-31");
+    } finally {
+      globalThis.Date = RealDate;
+    }
   });
 
   test("classifies open, done, due, overdue, waiting, and follow-up tasks", () => {

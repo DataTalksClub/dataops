@@ -1,7 +1,8 @@
 import { html } from "./shared.js";
 
 export function createMailingExportsSurface(context) {
-  const { documentList, escapeHtml, request, workApiUrl } = context;
+  const { documentList, escapeHtml, request, todayIsoDate, workApiUrl } =
+    context;
 
   async function renderMailingExportsSurface() {
     const surface = document.createElement("section");
@@ -60,7 +61,7 @@ export function createMailingExportsSurface(context) {
       ["requested", "pending", "failed"].includes(run.status) &&
       run.runKey
         ? run.runKey
-        : new Date().toISOString().slice(0, 10);
+        : todayIsoDate();
 
     function runCard(config, run) {
       const state = run?.status || "empty";

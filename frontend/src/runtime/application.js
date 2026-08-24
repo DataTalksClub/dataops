@@ -208,7 +208,7 @@ const {
   navigateCanonicalWorkspace,
   request,
   renderEntityLoadState,
-  setPageTitle,
+  setPageTitle, todayIsoDate,
   workApiUrl,
 });
 const { renderCalendarSurface, renderNewsletterSurface } =
@@ -217,6 +217,7 @@ const { renderCalendarSurface, renderNewsletterSurface } =
     escapeHtml,
     request,
     setPageTitle,
+    todayIsoDate,
     workApiUrl,
   });
 const {

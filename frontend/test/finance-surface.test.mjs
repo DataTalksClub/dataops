@@ -266,6 +266,7 @@ function createHarness({ request, route = null, setupSurface } = {}) {
     },
     renderEntityLoadState() {},
     setPageTitle: (...title) => pageTitles.push(title),
+    todayIsoDate: () => "2026-08-13",
     workApiUrl: (path) => path,
   });
   return { document, documentList, finance, pageTitles, requests };
@@ -814,13 +815,14 @@ describe("Finance surface boundary", () => {
     );
   });
 
-  test("maps pending, failed, and completed mailing runs to stable next actions", async () => {
+  test("maps mailing runs and an absent run to stable next actions", async () => {
     const requestedAt = "2026-08-12T08:00:00.000Z";
     const completedAt = "2026-08-12T09:00:00.000Z";
     const configs = [
       ["pending", "Account pending"],
       ["failed", "Account failed"],
       ["completed", "Account completed"],
+      ["empty", "Account empty"],
     ].map(([id, account]) => ({
       id,
       account,
@@ -879,6 +881,8 @@ describe("Finance surface boundary", () => {
     assert.match(cards, /data-export-state="completed"/);
     assert.match(cards, /Archive ready for a private five-minute download/);
     assert.match(cards, /data-download="artifact-1"/);
+    assert.match(cards, /data-export-state="empty"/);
+    assert.match(cards, /data-run-key="2026-08-13"/);
     assert.match(cards, /Start daily export/);
     assert.match(cards, /Requested/);
     assert.match(cards, /Completed/);

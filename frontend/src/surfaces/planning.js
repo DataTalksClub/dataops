@@ -1,9 +1,12 @@
+import { parseIsoDateValue } from "../core/workspace.js";
+
 export function createPlanningSurface(context) {
   const {
     documentList,
     escapeHtml,
     request,
     setPageTitle,
+    todayIsoDate,
     workApiUrl,
   } = context;
 
@@ -125,7 +128,10 @@ export function createPlanningSurface(context) {
       alertsBox = surface.querySelector("[data-alerts]"),
       dialog = surface.querySelector("dialog"),
       form = dialog.querySelector("form");
-    let cursor = new Date(), items = [], holidays = [], overlays = [];
+    let cursor = parseIsoDateValue(todayIsoDate()),
+      items = [],
+      holidays = [],
+      overlays = [];
     const api = (path, options = {}) => request(workApiUrl(`/api/calendar-items${path}`), {
         headers: { "content-type": "application/json", ...(options.headers || {}) },
         ...options,
@@ -193,7 +199,7 @@ export function createPlanningSurface(context) {
       for (let dateValue = new Date(`${from}T00:00:00Z`); dateValue <= new Date(`${to}T00:00:00Z`); dateValue.setUTCDate(dateValue.getUTCDate() + 1)) {
         const date = iso(dateValue),
           isOutside = !isWeek && dateValue.getUTCMonth() !== cursor.getUTCMonth(),
-          isToday = date === iso(new Date()),
+          isToday = date === todayIsoDate(),
           week = dateValue.getUTCDay() === 1 ? `<small class="iso-week">ISO ${weekNumber(dateValue)}</small>` : "",
           dayItems = visibleItems.filter((item) => item.startKey.slice(0, 10) <= date && item.endKey.slice(0, 10) >= date),
           dayHolidays = holidays.filter((holiday) => (
@@ -323,7 +329,10 @@ export function createPlanningSurface(context) {
       surface.querySelector("[data-view]").value === "week" ? cursor.setUTCDate(cursor.getUTCDate() + 7) : cursor.setUTCMonth(cursor.getUTCMonth() + 1);
       load();
     };
-    surface.querySelector("[data-today]").onclick = () => { cursor = new Date(); load(); };
+    surface.querySelector("[data-today]").onclick = () => {
+      cursor = parseIsoDateValue(todayIsoDate());
+      load();
+    };
     surface.querySelector("[data-view]").onchange = load;
     surface.querySelector("[data-type]").onchange = render;
     surface.querySelectorAll("[data-layer]").forEach((control) => { control.onchange = render; });
@@ -456,7 +465,7 @@ export function createPlanningSurface(context) {
           ...options,
         });
     let items = [];
-    const now = new Date().toISOString().slice(0, 10);
+    const now = todayIsoDate();
     surface.querySelector("[data-from]").value = now.slice(0, 8) + "01";
     surface.querySelector("[data-to]").value =
       `${Number(now.slice(0, 4)) + 1}-12-31`;

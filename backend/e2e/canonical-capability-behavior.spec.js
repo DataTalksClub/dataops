@@ -1,5 +1,11 @@
 const { test, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
+const {
+  BERLIN_MIDNIGHT_BOUNDARY_INSTANT,
+  BERLIN_TIME_ZONE,
+  berlinBusinessDate,
+  installBerlinBoundaryClock,
+} = require('./helpers/business-date');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -8,6 +14,8 @@ const path = require('path');
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-159-capability-behavior');
+const ISSUE_196_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-196');
+const BOUNDARY_OPERATOR_DATE = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 const ADMIN_ID = '15900000-0000-4000-8000-000000000011';
 const OPERATOR_ID = '15900000-0000-4000-8000-000000000012';
 const servers = {
@@ -161,8 +169,12 @@ async function stopServer(server) {
   server.process = null;
 }
 
-async function portalContext(browser, server) {
-  const context = await browser.newContext({ baseURL: baseUrl(server) });
+async function portalContext(browser, server, options = {}) {
+  const context = await browser.newContext({
+    baseURL: baseUrl(server),
+    timezoneId: BERLIN_TIME_ZONE,
+    ...options,
+  });
   const response = await context.request.get('/__e2e__/browser-session');
   expect(response.status()).toBe(200);
   return context;
@@ -324,6 +336,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
       return url.pathname === '/work/api/cards' && !url.search;
     });
     await page.goto('/#/');
+    expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Europe/Berlin');
     await expect(page.locator('.operations-home[data-operations-work-loaded="false"]')).toBeVisible();
     await Promise.all([initialToday, initialCards]);
     await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toBeVisible();
@@ -407,6 +420,73 @@ test.describe('issue 159 retained canonical capability behavior', () => {
       roleId: 'admin',
       stateIds: ['home.loading', 'home.empty', 'home.ready', 'home.partial-failure'],
     }]);
+  });
+
+  test('Home resolves a New York browser at the Berlin operator-day seam', async ({ browser }) => {
+    fs.mkdirSync(ISSUE_196_SCREENSHOTS, { recursive: true });
+    const context = await portalContext(browser, servers.admin, {
+      timezoneId: 'America/New_York',
+      viewport: { width: 1440, height: 900 },
+    });
+    const page = await context.newPage();
+    const observedTodayQueries = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (request.method() !== 'GET' || url.pathname !== '/work/api/tasks') return;
+      const date = url.searchParams.get('date');
+      if (date) observedTodayQueries.push(date);
+    });
+
+    const initialToday = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/work/api/tasks'
+        && url.searchParams.get('date') === BOUNDARY_OPERATOR_DATE;
+    });
+    await installBerlinBoundaryClock(page);
+    await page.goto('/#/');
+    const initialResponse = await initialToday;
+    expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('America/New_York');
+    expect(await page.evaluate(() => new Date().toISOString())).toBe(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
+    expect(new URL(initialResponse.url()).searchParams.get('date')).toBe(BOUNDARY_OPERATOR_DATE);
+
+    const title = unique('Synthetic New York boundary task');
+    expect((await context.request.post('/api/tasks', { data: {
+      description: title,
+      date: BOUNDARY_OPERATOR_DATE,
+      assigneeId: ADMIN_ID,
+      instructionDocId: 'sop.synthetic.capability',
+    } })).status()).toBe(201);
+
+    const refreshedToday = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/work/api/tasks'
+        && url.searchParams.get('date') === BOUNDARY_OPERATOR_DATE;
+    });
+    const refreshedRender = page.evaluate(() => window.__dataopsRefreshWork());
+    const refreshedResponse = await refreshedToday;
+    await refreshedRender;
+    expect(new URL(refreshedResponse.url()).searchParams.get('date')).toBe(BOUNDARY_OPERATOR_DATE);
+    expect((await json(refreshedResponse)).tasks.some((task) => task.description === title)).toBe(true);
+
+    const attentionRow = page.getByRole('region', { name: 'Needs your attention' })
+      .locator('.home-attention-row', { hasText: title });
+    await expect(attentionRow).toBeVisible();
+    await expect(attentionRow).toContainText('Due today');
+    expect([...new Set(observedTodayQueries)]).toEqual([BOUNDARY_OPERATOR_DATE]);
+    await page.screenshot({
+      path: path.join(ISSUE_196_SCREENSHOTS, 'operator-day-new-york-desktop.png'),
+      fullPage: true,
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(attentionRow).toBeVisible();
+    await page.screenshot({
+      path: path.join(ISSUE_196_SCREENSHOTS, 'operator-day-new-york-mobile.png'),
+      fullPage: true,
+    });
+    await context.close();
   });
 
   test('assistants and artifacts provide non-mutating real list, detail, stale, and relationship behavior', async ({ browser }, testInfo) => {
