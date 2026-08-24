@@ -112,18 +112,61 @@ describe("frontend work model", () => {
   });
 
   test("orders and deduplicates Home attention by operator priority, date, and title", () => {
-    const duplicate = { taskId: "same", title: "Shared", dueDate: "2026-08-11" };
+    const duplicate = {
+      dueDate: "2026-08-11",
+      nextAction: "Mark done",
+      taskId: "same",
+      title: "Shared",
+    };
     const model = {
       lanes: [
-        { id: "today", items: [{ taskId: "today", title: "Today", dueDate: TODAY }, duplicate] },
-        { id: "missing-proof", items: [{ taskId: "proof", title: "Proof" }, duplicate] },
-        { id: "followups", items: [{ taskId: "follow", title: "Follow", followUpDate: "2026-08-10" }] },
-        { id: "overdue", items: [{ taskId: "later", title: "Zeta", dueDate: "2026-08-10" }, duplicate] },
+        {
+          id: "today",
+          items: [
+            { dueDate: TODAY, nextAction: "Mark done", taskId: "today", title: "Today" },
+            duplicate,
+          ],
+        },
+        {
+          id: "missing-proof",
+          items: [{ nextAction: "Add URL", taskId: "proof", title: "Proof" }],
+        },
+        {
+          id: "followups",
+          items: [{
+            followUpDate: "2026-08-10",
+            nextAction: "Follow up",
+            taskId: "follow",
+            title: "Follow",
+          }],
+        },
+        {
+          id: "overdue",
+          items: [
+            { dueDate: "2026-08-10", nextAction: "Mark done", taskId: "later", title: "Zeta" },
+            duplicate,
+          ],
+        },
       ],
     };
     const items = buildHomeAttentionItems(model);
-    assert.deepEqual(items.map((item) => item.taskId), ["later", "same", "follow", "today", "proof"]);
-    assert.deepEqual(items.map((item) => item.exception), ["Overdue", "Overdue", "Follow-up due", "Due today", "Missing proof"]);
+    assert.deepEqual(
+      items.map(({ taskId, priority, dueDate, followUpDate, nextAction }) => ({
+        taskId,
+        priority,
+        dueDate,
+        followUpDate,
+        nextAction,
+      })),
+      [
+        { taskId: "later", priority: "overdue", dueDate: "2026-08-10", followUpDate: undefined, nextAction: "Mark done" },
+        { taskId: "same", priority: "overdue", dueDate: "2026-08-11", followUpDate: undefined, nextAction: "Mark done" },
+        { taskId: "follow", priority: "follow-up", dueDate: undefined, followUpDate: "2026-08-10", nextAction: "Follow up" },
+        { taskId: "today", priority: "today", dueDate: TODAY, followUpDate: undefined, nextAction: "Mark done" },
+        { taskId: "proof", priority: "missing-proof", dueDate: undefined, followUpDate: undefined, nextAction: "Add URL" },
+      ],
+    );
+    assert.equal(items.some((item) => Object.hasOwn(item, "exception")), false);
   });
 
   test("derives loaded Home lanes and counts from raw task snapshot data", () => {

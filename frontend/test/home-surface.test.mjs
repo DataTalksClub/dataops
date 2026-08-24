@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
+import {
+  buildHomeAttentionItems,
+  formatHomeTaskTiming,
+  taskProofState,
+} from "../src/core/workspace.js";
 import { createHomeSurface } from "../src/surfaces/home.js";
 import { createOperationsOverview } from "../src/surfaces/operations-overview.js";
 import {
@@ -82,8 +87,11 @@ function deriveWork(work, options) {
   const overdue = work.overdueTasks.filter(belongs);
   const waiting = work.waitingTasks.filter(belongs);
   const all = [...today, ...overdue, ...waiting];
+  const knownTasks = [...all, ...Object.values(work.cardTasks || {}).flat()];
   const followUps = waiting.filter((task) => task.followUpDate);
-  const missingProof = all.filter((task) => task.missingProof);
+  const missingProof = knownTasks.filter(
+    (task) => task.status !== "done" && !taskProofState(task).ok,
+  );
   return {
     counts: {
       followUps: followUps.length,
@@ -101,23 +109,15 @@ function operationItem(task, options = {}) {
     ? "overdue"
     : options.followUp
       ? "follow-up"
-      : task.missingProof
-        ? "proof"
-        : "today";
+        : !taskProofState(task).ok
+          ? "missing-proof"
+          : "today";
   return {
     cardId: task.cardId || "",
     dueDate: task.dueDate || "",
-    exception:
-      priority === "overdue"
-        ? "Overdue"
-        : priority === "follow-up"
-          ? "Follow-up"
-          : priority === "proof"
-            ? "Proof missing"
-            : "Due today",
+    priority,
     followUpDate: task.followUpDate || "",
     nextAction: task.nextAction || "Open",
-    priority,
     taskId: task.id,
     title: task.title,
   };
@@ -202,14 +202,7 @@ function createHomeHarness(options = {}) {
       ...work.waitingTasks,
       ...Object.values(work.cardTasks || {}).flat(),
     ],
-    buildHomeAttentionItems: (model) =>
-      ["overdue", "followups", "today", "missing-proof"]
-        .flatMap((id) => model.lanes.find((lane) => lane.id === id)?.items || [])
-        .filter(
-          (item, index, items) =>
-            items.findIndex((candidate) => candidate.taskId === item.taskId) ===
-            index,
-        ),
+    buildHomeAttentionItems,
     buildOperationsFutureSections: () => [],
     buildOperationsReferenceLinks: () => [],
     cardsFromWorkPayload: (payload) => payload?.items || payload?.cards || [],
@@ -227,12 +220,7 @@ function createHomeHarness(options = {}) {
     emptyOperationsQualitySnapshot: emptyQualitySnapshot,
     emptyOperationsWorkSnapshot: emptyWorkSnapshot,
     formatHomeCalendarDate: (date) => `Thursday, ${date}`,
-    formatHomeTaskTiming: (item) =>
-      item.priority === "overdue"
-        ? "Overdue"
-        : item.followUpDate
-          ? `Follow up ${item.followUpDate}`
-          : `Due ${item.dueDate}`,
+    formatHomeTaskTiming,
     isActiveWorkCard: (card) => card.status !== "done",
     isOpenWorkTask: (task) => task.status !== "done",
     isOperationsHomeVisible: () => options.homeVisible !== false,
@@ -383,6 +371,11 @@ describe("Home surface production behavior", () => {
     );
     const rows = findAllByClass(root, "home-attention-row");
     assert.equal(rows.length, 3);
+    assert.deepEqual(
+      rows.map((row) => row.querySelector(".home-task-state time").textContent),
+      ["Due yesterday", "Follow up today", "Due today"],
+    );
+    assert.equal(root.querySelectorAll(".home-exception").length, 0);
     assert.equal(rows[0].textContent.includes("Review preparation"), true);
     const addProof = rows.find((row) => row.textContent.includes("Approve draft"));
     assert.equal(findByText(addProof, "Add proof", "button").textContent, "Add proof");
@@ -396,6 +389,113 @@ describe("Home surface production behavior", () => {
     assert.equal(harness.calls.quickCards, 1);
     await findByText(root, "View all tasks", "button").click();
     assert.deepEqual(harness.calls.navigations, ["/tasks"]);
+  });
+
+  test("renders attention urgency with retained cues and no hidden badges", async () => {
+    const harness = createHomeHarness({
+      workSnapshot: {
+        cards: [{ id: "card-proof", status: "preparation", title: "Proof workflow" }],
+        cardsLoaded: true,
+        cardTasks: {
+          "card-proof": [{
+            date: "2026-08-14",
+            id: "task-proof",
+            nextAction: "Add Evidence URL",
+            requiredLinkName: "Evidence URL",
+            title: "Collect evidence",
+          }],
+        },
+        currentOperatorId: "alexey",
+        loaded: true,
+        overdueLoaded: true,
+        overdueTasks: [
+          {
+            dueDate: "2026-08-12",
+            id: "task-overdue",
+            nextAction: "Mark done",
+            title: "Overdue work",
+          },
+        ],
+        todayLoaded: true,
+        todayTasks: [
+          {
+            dueDate: "2026-08-13",
+            id: "task-today",
+            nextAction: "Mark done",
+            title: "Today work",
+          },
+        ],
+        usersLoaded: true,
+        waitingLoaded: true,
+        waitingTasks: [
+          {
+            followUpDate: "2026-08-11",
+            id: "task-follow-up",
+            nextAction: "Follow up",
+            title: "Follow-up work",
+          },
+        ],
+      },
+    });
+
+    harness.surface.renderOperationsHome([]);
+    const root = harness.documentList.children[0];
+    const rows = findAllByClass(root, "home-attention-row");
+    const expected = [
+      {
+        action: "Open",
+        className: "home-attention-overdue",
+        date: "2026-08-12",
+        taskId: "task-overdue",
+        text: "Due yesterday",
+        title: "Overdue work",
+      },
+      {
+        action: "Follow up",
+        className: "home-attention-follow-up",
+        date: "2026-08-11",
+        taskId: "task-follow-up",
+        text: "Follow-up 2 days overdue",
+        title: "Follow-up work",
+      },
+      {
+        action: "Open",
+        className: "home-attention-today",
+        date: "2026-08-13",
+        taskId: "task-today",
+        text: "Due today",
+        title: "Today work",
+      },
+      {
+        action: "Add proof",
+        className: "home-attention-missing-proof",
+        date: "",
+        taskId: "task-proof",
+        text: "Proof required",
+        title: "Collect evidence",
+      },
+    ];
+
+    assert.equal(rows.length, expected.length);
+    for (const [index, item] of expected.entries()) {
+      const row = rows[index];
+      assert.match(row.className, new RegExp(`\\b${item.className}\\b`));
+      assert.equal(row.querySelector("strong").textContent, item.title);
+      const timing = row.querySelector(".home-task-state time");
+      assert.equal(timing.textContent, item.text);
+      assert.equal(timing.dateTime || "", item.date);
+      const marker = row.querySelector(".home-task-marker");
+      assert.equal(marker.getAttribute("aria-hidden"), "true");
+      const button = findByText(row, item.action, "button");
+      assert.equal(button.getAttribute("aria-label"), `${item.action}: ${item.title}`);
+      await button.click();
+    }
+    assert.deepEqual(harness.calls.openedTasks, expected.map((item) => item.taskId));
+    assert.equal(root.querySelectorAll(".home-exception").length, 0);
+    assert.equal(
+      root.querySelectorAll("[class*='home-exception']").length,
+      0,
+    );
   });
 
   test("shows unavailable values and an honest empty action queue without false zeroes", () => {

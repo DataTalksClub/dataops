@@ -404,13 +404,14 @@ export function describeRecurringRun(cronExpression, today = todayIsoDate()) {
 }
 
 export function formatHomeTaskTiming(item, today) {
+  if (item.priority === "missing-proof") return "Proof required";
   const value = String(
     item.priority === "follow-up"
       ? item.followUpDate
       : item.dueDate || item.followUpDate || "",
   ).slice(0, 10);
   if (!value)
-    return item.priority === "missing-proof" ? "Proof required" : "Open task";
+    return "Open task";
   const days = isoDayDistance(value, today);
   if (item.priority === "follow-up") {
     if (days === 0) return "Follow up today";
@@ -454,14 +455,14 @@ export function cardAnchorTone(value, today = todayIsoDate()) {
 export function buildHomeAttentionItems(model) {
   const byId = (id) => model.lanes.find((lane) => lane.id === id)?.items || [];
   const groups = [
-    ["overdue", "Overdue", byId("overdue")],
-    ["follow-up", "Follow-up due", byId("followups")],
-    ["today", "Due today", byId("today")],
-    ["missing-proof", "Missing proof", byId("missing-proof")],
+    ["overdue", byId("overdue")],
+    ["follow-up", byId("followups")],
+    ["today", byId("today")],
+    ["missing-proof", byId("missing-proof")],
   ];
   const seen = new Set();
   const items = [];
-  for (const [priority, exception, group] of groups) {
+  for (const [priority, group] of groups) {
     const prioritized = [...group].sort((left, right) => {
       const leftDate =
         priority === "follow-up"
@@ -482,7 +483,7 @@ export function buildHomeAttentionItems(model) {
         `${item.title}:${item.dueDate || item.followUpDate || ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({ ...item, priority, exception });
+      items.push({ ...item, priority });
     }
   }
   return items;
