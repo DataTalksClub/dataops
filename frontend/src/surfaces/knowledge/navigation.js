@@ -52,17 +52,25 @@ export function createKnowledgeNavigation(context, services) {
   } = context;
   const DOCS_UNAVAILABLE_STATUS = 503;
   const {
-    captureScrollPosition,
-    filterDocuments,
     pushRecentlyViewed,
     refreshDocuments,
     renderPinned,
     renderRecentlyViewed,
-    renderTree,
     scrollPositions,
-    updateCurrentTreeSelection,
     updatePinButton,
   } = services;
+
+  function captureScrollPosition() {
+    if (!documentState.currentDoc) return;
+    const scrollEl =
+      editorView.dataset.mode === "rendered" ? editorView : editor;
+    if (scrollEl) {
+      scrollPositions.set(
+        documentState.currentDoc.path,
+        scrollEl.scrollTop || 0,
+      );
+    }
+  }
 
   let _quickNavIndex = 0;
   let _quickNavMatches = [];
@@ -126,7 +134,6 @@ export function createKnowledgeNavigation(context, services) {
       const payload = await request(url);
 
       documentState.currentDoc = { path: payload.path, updated: payload.updated };
-      knowledgeState.currentTreePath = payload.path;
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
       documentState.currentParsed = payload.parsed || null;
       documentState.currentWarnings = [];
@@ -136,12 +143,6 @@ export function createKnowledgeNavigation(context, services) {
       updatePinButton();
       pushRecentlyViewed(payload.path);
       renderRecentlyViewed();
-      if (options.revealInTree) {
-        renderTree(filterDocuments(knowledgeState.allDocuments), { revealCurrent: true });
-      } else {
-        updateCurrentTreeSelection();
-      }
-
       const draft = storage.getItem(draftKey(payload.path));
       documentState.hasDraft = draft !== null;
       refreshChangesPanel();

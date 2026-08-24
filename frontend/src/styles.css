@@ -934,8 +934,7 @@ body.sidebar-collapsed .sidebar {
 }
 
 .new-page-button,
-.sidebar-details,
-.tree-section {
+.sidebar-details {
   margin-top: 10px;
 }
 
@@ -9839,108 +9838,6 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
 .search-source-state {
   width: min(100%, 900px);
   margin: 0 auto;
-}
-
-.tree-folder {
-  min-width: 0;
-}
-
-.tree-folder summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  list-style: none;
-}
-
-.tree-folder summary::-webkit-details-marker {
-  display: none;
-}
-
-.tree-folder summary:hover,
-.tree-folder summary.is-selected {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.tree-folder > .tree-children,
-.tree-folder > .tree-children-slot {
-  margin-left: 14px;
-  border-left: 1px solid var(--border-muted);
-  padding-left: 8px;
-}
-
-.chevron {
-  width: 12px;
-  height: 12px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg) translate(-1px, 1px);
-  transition: transform 120ms ease;
-}
-
-.tree-folder[open] > summary .chevron {
-  transform: rotate(45deg) translate(-1px, -1px);
-}
-
-.tree-folder-menu {
-  display: inline-grid;
-  width: 24px;
-  min-height: 24px;
-  margin-left: auto;
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-faint);
-  padding: 0;
-}
-
-.tree-folder-menu:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.tree-file {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  min-height: 30px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-muted);
-  padding: 4px 6px;
-  text-align: left;
-  font-size: 12px;
-}
-
-.tree-file:hover,
-.tree-file.is-current {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.tree-file-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-file-dot {
-  flex: 0 0 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--warning-text);
 }
 
 .recent-list {

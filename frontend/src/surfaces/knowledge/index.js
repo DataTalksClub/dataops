@@ -1,11 +1,11 @@
 import { createKnowledgeCatalog } from "./catalog.js";
 import { createKnowledgeFilters } from "./filters.js";
+import { createKnowledgeList } from "./list.js";
 import { createKnowledgeMenus } from "./menus.js";
 import { createKnowledgeNavigation } from "./navigation.js";
 import { createProcessDocsSurface } from "./process-docs.js";
 import { createKnowledgeReferences } from "./references.js";
 import { createKnowledgeSearch } from "./search.js";
-import { createKnowledgeTree } from "./tree.js";
 
 export function createKnowledgeSurface(context) {
   const api = {};
@@ -20,14 +20,9 @@ export function createKnowledgeSurface(context) {
   );
   Object.assign(
     api,
-    createKnowledgeTree(context, {
+    createKnowledgeList(context, {
       openDocument: invoke("openDocument"),
-      openFolderMenu: invoke("openFolderMenu"),
-      refreshDocuments: invoke("refreshDocuments"),
-      scrollPositions,
-      setFolderUrl: invoke("setFolderUrl"),
       setHighlightedText: invoke("setHighlightedText"),
-      syncLibraryPageTitle: invoke("syncLibraryPageTitle"),
     }),
   );
   Object.assign(
@@ -35,9 +30,7 @@ export function createKnowledgeSurface(context) {
     createKnowledgeCatalog(context, {
       openDocument: invoke("openDocument"),
       populateFilterOptions: invoke("populateFilterOptions"),
-      rebuildDocumentIdMap: invoke("rebuildDocumentIdMap"),
       refreshDocuments: invoke("refreshDocuments"),
-      relativeTime: invoke("relativeTime"),
     }),
   );
   Object.assign(
@@ -52,30 +45,19 @@ export function createKnowledgeSurface(context) {
       filterDocuments: invoke("filterDocuments"),
       openDocument: invoke("openDocument"),
       renderDocuments: invoke("renderDocuments"),
-      renderTree: invoke("renderTree"),
       setHighlightedText: invoke("setHighlightedText"),
       syncLibraryPageTitle: invoke("syncLibraryPageTitle"),
     }),
   );
-  Object.assign(
-    api,
-    createKnowledgeMenus(context, {
-      loadDocuments: invoke("loadDocuments"),
-      showLibrary: invoke("showLibrary"),
-    }),
-  );
+  Object.assign(api, createKnowledgeMenus(context));
   Object.assign(
     api,
     createKnowledgeNavigation(context, {
-      captureScrollPosition: invoke("captureScrollPosition"),
-      filterDocuments: invoke("filterDocuments"),
       pushRecentlyViewed: invoke("pushRecentlyViewed"),
       refreshDocuments: invoke("refreshDocuments"),
       renderPinned: invoke("renderPinned"),
       renderRecentlyViewed: invoke("renderRecentlyViewed"),
-      renderTree: invoke("renderTree"),
       scrollPositions,
-      updateCurrentTreeSelection: invoke("updateCurrentTreeSelection"),
       updatePinButton: invoke("updatePinButton"),
     }),
   );

@@ -96,7 +96,6 @@ function createEditorHarness(options = {}) {
     "diffTitle",
     "discardButton",
     "docMenuButton",
-    "docTree",
     "documentPath",
     "documentTitle",
     "domainFilter",

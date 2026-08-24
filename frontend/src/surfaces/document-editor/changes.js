@@ -1,7 +1,7 @@
 export function createEditorChanges(context, services) {
   const {
     apiUrl, basename, changesCount, changesDiscardAll, changesList,
-    changesSaveAll, changesSection, confirmDialog, docMenuButton, docTree,
+    changesSaveAll, changesSection, confirmDialog, docMenuButton,
     documentPath, documentState, documentTitle, editor, editorView,
     labelForPath, loadDocuments, openDocument, promptUser,
     refreshGitStatus: refreshGitStatusContext, reportError, request,
@@ -15,23 +15,6 @@ export function createEditorChanges(context, services) {
   function refreshChangesPanel() {
     const paths = listDraftPaths();
     const draftSet = new Set(paths);
-    // Sync the per-file dot in the doc tree.
-    for (const btn of docTree.querySelectorAll(".tree-file")) {
-      const path = btn.dataset.path;
-      const has = draftSet.has(path);
-      if (has !== btn.classList.contains("has-draft")) {
-        btn.classList.toggle("has-draft", has);
-        const existing = btn.querySelector(".tree-file-dot");
-        if (has && !existing) {
-          const dot = document.createElement("span");
-          dot.className = "tree-file-dot";
-          dot.title = "Unsaved local draft";
-          btn.append(dot);
-        } else if (!has && existing) {
-          existing.remove();
-        }
-      }
-    }
     changesCount.textContent = String(paths.length);
     if (paths.length === 0) {
       changesSection.hidden = true;

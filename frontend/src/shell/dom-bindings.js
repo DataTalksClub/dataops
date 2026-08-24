@@ -45,7 +45,6 @@ const SELECTORS = Object.freeze({
   filtersSection: "#filters-section",
   filterCount: "#filter-count",
   filterRow: "#filter-row",
-  docTree: "#doc-tree",
   recentList: "#recent-list",
   recentlyViewedSection: "#recently-viewed-section",
   recentlyViewedList: "#recently-viewed-list",

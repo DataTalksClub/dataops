@@ -390,7 +390,6 @@ export function createNavigationShell(context) {
         activateDocumentWorkspace();
         await openDocument(docPath, {
           updateUrl: false,
-          revealInTree: true,
         });
       }
       return;
