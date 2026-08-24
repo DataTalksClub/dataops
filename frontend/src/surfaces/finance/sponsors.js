@@ -31,7 +31,7 @@ export function createSponsorCrmSurface(context) {
     navigateCanonicalWorkspace,
     request,
     renderEntityLoadState,
-    setRouteTitle,
+    setPageTitle,
     workApiUrl,
   } = context;
 
@@ -75,7 +75,7 @@ export function createSponsorCrmSurface(context) {
     surface.className = "sponsor-crm-surface";
     surface.innerHTML = sponsorSurfaceMarkup(bookingStatusOptions);
     documentList.append(surface);
-    setRouteTitle("Sponsors");
+    setPageTitle("Sponsors", "Sponsors");
     const api = (path, options = {}) =>
         request(workApiUrl(`/api/sponsor-crm${path}`), {
           headers: {

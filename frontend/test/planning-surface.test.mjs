@@ -221,7 +221,7 @@ function createPlanningHarness({
   };
   globalThis.FormData = TestFormData;
   const requests = [];
-  const routeTitles = [];
+  const pageTitles = [];
   const surface = createPlanningSurface({
     documentList,
     escapeHtml,
@@ -230,11 +230,11 @@ function createPlanningHarness({
       requests.push(entry);
       return request(url, options, entry);
     },
-    setRouteTitle: (title) => routeTitles.push(title),
+    setPageTitle: (...args) => pageTitles.push(args),
     todayIsoDate: () => today,
     workApiUrl: (path) => new URL(path, "http://portal.test"),
   });
-  return { documentList, requests, routeTitles, surface };
+  return { documentList, pageTitles, requests, surface };
 }
 
 describe("Planning surface production behavior", () => {
@@ -288,7 +288,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderCalendarSurface();
     await nextTicks();
-    assert.deepEqual(harness.routeTitles, ["Calendar"]);
+    assert.deepEqual(harness.pageTitles, [["Calendar", "Operations calendar"]]);
     assert.match(dom.status.textContent, /Holiday information may be out of date/);
     assert.match(dom.status.textContent, /outside the verified holiday window/);
     assert.match(dom.grid.innerHTML, /Community podcast/);
@@ -512,7 +512,7 @@ describe("Planning surface production behavior", () => {
       }),
     });
     await harness.surface.renderNewsletterSurface();
-    assert.deepEqual(harness.routeTitles, ["Newsletter"]);
+    assert.deepEqual(harness.pageTitles, [["Newsletter", "Newsletter planner"]]);
     assert.equal(dom.status.textContent, "Newsletter schedule ready.");
     assert.match(dom.alerts.innerHTML, /An open slot needs booking soon/);
     assert.match(dom.slots.innerHTML, /Community Newsletter/);

@@ -24,7 +24,7 @@ export function createBookkeepingSurface(context) {
     escapeHtml,
     humanizeOptionLabel,
     request,
-    setRouteTitle,
+    setPageTitle,
     workApiUrl,
   } = context;
 
@@ -238,7 +238,7 @@ export function createBookkeepingSurface(context) {
         </form>
       </dialog>`;
     documentList.append(surface);
-    setRouteTitle("Bookkeeping");
+    setPageTitle("Bookkeeping", "Bookkeeping");
     let entries = [],
       documents = [],
       links = [];

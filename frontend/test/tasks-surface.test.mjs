@@ -231,7 +231,7 @@ function createHarness(options = {}) {
     },
     resolveAssigneeLabel: (id) => id,
     scheduleAnimationFrame: (callback) => callback(),
-    setRouteTitle() {},
+    setPageTitle() {},
     setStatus: (message) => status.push(message),
     setWorkspaceEntityState: (entity) => entityStates.push(entity),
     shellBody,

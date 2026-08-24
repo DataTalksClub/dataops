@@ -5,7 +5,7 @@ export function createEditorChanges(context, services) {
     documentPath, documentState, documentTitle, editor, editorView,
     labelForPath, loadDocuments, openDocument, promptUser,
     refreshGitStatus: refreshGitStatusContext, reportError, request,
-    setRouteTitle, setStatus, showLibrary, storage,
+    setPageTitle, setStatus, showLibrary, storage,
   } = context;
   const {
     draftKey, listDraftPaths, refreshGitStatus, refreshParsedFromApi, renderParsedDocument,
@@ -173,7 +173,7 @@ export function createEditorChanges(context, services) {
       }
       documentState.currentDoc.path = payload.new_path;
       documentPath.textContent = payload.new_path;
-      setRouteTitle(documentTitle.value);
+      setPageTitle(documentTitle.value, payload.new_path);
       setStatus(`Renamed to ${payload.new_path}.`);
       refreshChangesPanel();
       refreshGitStatus();

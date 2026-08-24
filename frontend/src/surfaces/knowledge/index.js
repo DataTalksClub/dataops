@@ -46,7 +46,7 @@ export function createKnowledgeSurface(context) {
       openDocument: invoke("openDocument"),
       renderDocuments: invoke("renderDocuments"),
       setHighlightedText: invoke("setHighlightedText"),
-      syncLibraryRouteTitle: invoke("syncLibraryRouteTitle"),
+      syncLibraryPageTitle: invoke("syncLibraryPageTitle"),
     }),
   );
   Object.assign(api, createKnowledgeMenus(context));
@@ -120,7 +120,7 @@ export function createKnowledgeSurface(context) {
     setFolderUrl: api.setFolderUrl,
     setSelectedFolder: api.setSelectedFolder,
     showLibrary: api.showLibrary,
-    syncLibraryRouteTitle: api.syncLibraryRouteTitle,
+    syncLibraryPageTitle: api.syncLibraryPageTitle,
     toggleCurrentDocPin: api.toggleCurrentDocPin,
     updateFilterSummary: api.updateFilterSummary,
     updateQuickNavMatches: api.updateQuickNavMatches,

@@ -23,7 +23,7 @@ export function createInboxSurface(context) {
     reportError,
     request,
     scheduleAnimationFrame,
-    setRouteTitle,
+    setPageTitle,
     setStatus,
     showCreate,
     state,
@@ -311,7 +311,7 @@ export function createInboxSurface(context) {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     libraryTitle.textContent = "Inbox";
-    setRouteTitle("Inbox");
+    setPageTitle("Inbox", "Inbox");
     clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");

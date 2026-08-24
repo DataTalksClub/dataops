@@ -23,7 +23,7 @@ export function createInboxActions(context) {
     reportError,
     request,
     scheduleAnimationFrame,
-    setRouteTitle,
+    setPageTitle,
     setStatus,
     showCreate,
     state,

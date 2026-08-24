@@ -1,12 +1,11 @@
 export function createEditorLifecycle(context, services) {
   const {
     apiUrl, basename, beginDocumentNavigation, canLeaveCurrentDocument,
-    closeSidebar, confirmDialog, documentState,
-    documentTitle, editor, editorDiscardButton, editorSaveButton,
-    editorSaveState, editorView, knowledgeState, loadDocuments,
+    closeSidebar, confirmDialog, discardButton, documentState,
+    documentTitle, editor, editorView, knowledgeState, loadDocuments,
     newDocForm, newDocPath, newDocSummary, newDocTitle, newDocType,
     openDocument,
-    request, setRouteTitle, setStatus, setView,
+    request, saveButton, saveState, setPageTitle, setStatus, setView,
     storage,
   } = context;
   const {
@@ -21,7 +20,7 @@ export function createEditorLifecycle(context, services) {
 
     const url = apiUrl("/docs");
     url.searchParams.set("path", documentState.currentDoc.path);
-    editorSaveButton.disabled = true;
+    saveButton.disabled = true;
     setSaveState("Saving...");
 
     try {
@@ -59,23 +58,14 @@ export function createEditorLifecycle(context, services) {
       refreshChangesPanel();
       refreshGitStatus();
       await loadDocuments();
-      restoreMutationFocus();
     } catch (error) {
       setStatus(error.message);
       updateSaveState();
-      restoreMutationFocus();
     }
   }
 
-  async function discardDraft() {
+  function discardDraft() {
     if (!documentState.currentDoc) return;
-
-    const confirmed = await confirmDialog(
-      `Discard the local draft for ${documentState.currentDoc.path}?`,
-      { okText: "Discard", danger: true },
-    );
-    if (!confirmed) return;
-
     storage.removeItem(draftKey(documentState.currentDoc.path));
     documentState.hasDraft = false;
     editor.value = documentState.lastSavedContent;
@@ -83,7 +73,6 @@ export function createEditorLifecycle(context, services) {
       titleFromMarkdown(editor.value) || basename(documentState.currentDoc.path);
     updateSaveState();
     refreshChangesPanel();
-    restoreMutationFocus();
   }
 
   async function createDocument() {
@@ -139,7 +128,7 @@ export function createEditorLifecycle(context, services) {
     editor.value = setMarkdownTitle(editor.value, title);
     storeDraft();
     updateSaveState();
-    setRouteTitle(title);
+    setPageTitle(title, documentState.currentDoc.path);
   }
 
   function normalizedDocumentTitle() {
@@ -194,26 +183,30 @@ export function createEditorLifecycle(context, services) {
 
   function updateSaveState() {
     if (!documentState.currentDoc) {
-      editorSaveButton.disabled = true;
-      editorDiscardButton.disabled = true;
+      saveButton.disabled = true;
+      discardButton.disabled = true;
       setSaveState("");
+      saveState.classList.remove("has-changes");
       return;
     }
 
     const hasChanges = editor.value !== documentState.lastSavedContent;
-    editorSaveButton.disabled = !hasChanges;
-    editorDiscardButton.disabled = !documentState.hasDraft;
+    saveButton.disabled = !hasChanges;
+    discardButton.disabled = !documentState.hasDraft;
     if (hasChanges) {
       setSaveState("Unsaved changes");
     } else {
       setSaveState("");
     }
+    saveState.classList.toggle("has-changes", hasChanges);
   }
 
   function flashSaveState(message, duration = 1800) {
     setSaveState(message);
+    saveState.classList.add("flash");
     if (flashSaveState._timer) clearTimeout(flashSaveState._timer);
     flashSaveState._timer = setTimeout(() => {
+      saveState.classList.remove("flash");
       updateSaveState();
     }, duration);
   }
@@ -233,7 +226,7 @@ export function createEditorLifecycle(context, services) {
       const base = knowledgeState.selectedFolder ? `content/${knowledgeState.selectedFolder}` : "content";
       newDocPath.value = `${base}/new-document.md`;
     }
-    setRouteTitle("New page");
+    setPageTitle("New page", "Create");
     setView("create");
     closeSidebar();
     setCreateStatus("");
@@ -252,11 +245,7 @@ export function createEditorLifecycle(context, services) {
   }
 
   function setSaveState(message) {
-    editorSaveState.textContent = message;
-  }
-
-  function restoreMutationFocus() {
-    editorSaveState.focus();
+    saveState.textContent = message;
   }
 
   function titleFromMarkdown(markdown) {

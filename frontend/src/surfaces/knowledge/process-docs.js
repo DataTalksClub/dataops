@@ -17,7 +17,7 @@ export function createProcessDocsSurface(context, services) {
     renderOperationsReference,
     renderQualityFindingRow,
     renderSurfaceHeader,
-    setRouteTitle,
+    setPageTitle,
     setStatus,
     showCreate,
     surfaceDescription,
@@ -36,7 +36,7 @@ export function createProcessDocsSurface(context, services) {
     documentList.classList.remove("is-unified-search");
     setLibraryHeadingVisibility(false);
     libraryTitle.textContent = "Docs";
-    setRouteTitle("Docs");
+    setPageTitle("Docs", "Docs");
     clearSelectionButton.hidden = true;
     setStatus(surfaceStatusText("processes", model));
 

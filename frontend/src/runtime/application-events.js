@@ -16,13 +16,13 @@ export function bindApplicationEvents(context) {
     changesToggle,
     diffModal,
     editor,
-    editorSaveButton,
     filtersSection,
     filterRow,
     helpClose,
     helpModal,
     lightbox,
     quickNavInput,
+    saveButton,
     searchInput,
     tasksNavButton,
   } = dom;
@@ -117,7 +117,7 @@ export function bindApplicationEvents(context) {
           if (event.shiftKey) callbacks.saveAllDrafts();
           else if (
             workspaceState.documentState.currentDoc &&
-            !editorSaveButton.disabled
+            !saveButton.disabled
           ) {
             callbacks.saveCurrentDocument();
           }

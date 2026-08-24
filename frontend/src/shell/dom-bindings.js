@@ -55,14 +55,16 @@ const SELECTORS = Object.freeze({
   documentList: "#document-list",
   pageShell: ".page-shell",
   documentRowTemplate: "#document-row-template",
+  breadcrumb: "#breadcrumb",
+  toolbarTitle: "#toolbar-title",
   mobileTitle: "#mobile-title",
   statusText: "#status-text",
   libraryTitle: "#library-title",
   clearSelectionButton: "#clear-selection-button",
-  editorInlineStatus: "#editor-inline-status",
-  editorSaveState: "#editor-save-state",
-  editorDiscardButton: "#editor-discard-button",
-  editorSaveButton: "#editor-save-button",
+  backButton: "#back-button",
+  saveState: "#save-state",
+  discardButton: "#discard-button",
+  saveButton: "#save-button",
   documentTitle: "#document-title",
   documentPath: "#document-path",
   editor: "#editor",
@@ -189,9 +191,10 @@ export function bindAppDomEvents(context) {
   );
   dom.newDocumentButton.addEventListener("click", handlers.showCreate);
   dom.mobileNewButton.addEventListener("click", handlers.showCreate);
+  dom.backButton.addEventListener("click", handlers.showLibrary);
   dom.clearSelectionButton.addEventListener("click", handlers.clearSelection);
-  dom.editorSaveButton.addEventListener("click", handlers.saveCurrentDocument);
-  dom.editorDiscardButton.addEventListener("click", handlers.discardDraft);
+  dom.saveButton.addEventListener("click", handlers.saveCurrentDocument);
+  dom.discardButton.addEventListener("click", handlers.discardDraft);
   dom.viewToggleButton.addEventListener("click", handlers.toggleViewMode);
   dom.docMenuButton.addEventListener("click", handlers.openDocMenu);
   dom.documentTitle.addEventListener("input", handlers.syncTitleToMarkdown);

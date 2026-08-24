@@ -27,6 +27,15 @@ export function createOperationsOverview(context) {
     return "Home";
   }
 
+  function operationsViewPath(view) {
+    if (view === "home") return "Home";
+    if (view === "inbox") return "Inbox";
+    if (view === "tasks") return "Tasks";
+    if (view === "docs") return "Docs";
+    if (view === "users") return "Users";
+    return "Workspace";
+  }
+
   function surfaceDescription(view) {
     const descriptions = {
       queue:
@@ -535,6 +544,7 @@ export function createOperationsOverview(context) {
   return {
     countLabel,
     openQualityFinding,
+    operationsViewPath,
     operationsViewTitle,
     referenceCountLabel,
     renderDocsAvailabilityState,

@@ -177,7 +177,7 @@ function createKnowledgeHarness(options = {}) {
   const requests = [];
   const documentNavigationEvents = [];
   const statuses = [];
-  const routeTitles = [];
+  const pageTitles = [];
   const views = [];
   const history = [];
   const refreshes = [];
@@ -265,6 +265,7 @@ function createKnowledgeHarness(options = {}) {
     openCardPanel: (id) => openedCards.push(id),
     openQuickWorkflowForm() {},
     openTaskPanel: (id) => openedTasks.push(id),
+    operationsViewPath: (view) => `/${view}`,
     operationsViewTitle: (view) => view,
     promptUser: () => "",
     qualityFiltersState,
@@ -298,7 +299,7 @@ function createKnowledgeHarness(options = {}) {
     setDocsAvailability: (snapshot) => {
       docsAvailability = snapshot;
     },
-    setRouteTitle: (title) => routeTitles.push(title),
+    setPageTitle: (...args) => pageTitles.push(args),
     setSaveState: (value) => statuses.push(`save:${value}`),
     setStatus: (value) => statuses.push(value),
     setView: (value) => {
@@ -342,7 +343,7 @@ function createKnowledgeHarness(options = {}) {
     openedCards,
     openedTasks,
     operationsHomeReturns: () => operationsHomeReturns,
-    routeTitles,
+    pageTitles,
     refreshes,
     renderedWorkspace: () => renderedWorkspace,
     renderedWorkspaceDocuments: () => renderedWorkspaceDocuments,
@@ -394,7 +395,7 @@ describe("Knowledge surface boundary", () => {
       "setFolderUrl",
       "setSelectedFolder",
       "showLibrary",
-      "syncLibraryRouteTitle",
+      "syncLibraryPageTitle",
       "toggleCurrentDocPin",
       "updateFilterSummary",
       "updateQuickNavMatches",
@@ -689,7 +690,7 @@ describe("Knowledge surface boundary", () => {
       harness.elements.documentList.classList.contains("is-operations-home"),
       true,
     );
-    assert.equal(harness.routeTitles.at(-1), "Docs");
+    assert.deepEqual(harness.pageTitles.at(-1), ["Docs", "Docs"]);
     assert.ok(
       findByText(
         harness.elements.documentList,

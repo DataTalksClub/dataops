@@ -5,7 +5,7 @@ export function createPlanningSurface(context) {
     documentList,
     escapeHtml,
     request,
-    setRouteTitle,
+    setPageTitle,
     todayIsoDate,
     workApiUrl,
   } = context;
@@ -121,7 +121,7 @@ export function createPlanningSurface(context) {
         </form>
       </dialog>`;
     documentList.append(surface);
-    setRouteTitle("Calendar");
+    setPageTitle("Calendar", "Operations calendar");
 
     const status = surface.querySelector('[role="status"]'),
       grid = surface.querySelector("[data-calendar]"),
@@ -455,7 +455,7 @@ export function createPlanningSurface(context) {
         </form>
       </dialog>`;
     documentList.append(surface);
-    setRouteTitle("Newsletter");
+    setPageTitle("Newsletter", "Newsletter planner");
     const status = surface.querySelector('[role="status"]'),
       dialog = surface.querySelector("dialog"),
       form = dialog.querySelector("form"),
