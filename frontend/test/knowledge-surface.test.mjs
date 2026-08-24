@@ -72,17 +72,6 @@ function apiUrl(path) {
   return new URL(path, "http://portal.test");
 }
 
-function honestState(title, detail) {
-  const state = new FakeElement("div");
-  state.className = "honest-state";
-  const heading = new FakeElement("strong");
-  heading.textContent = title;
-  const description = new FakeElement("p");
-  description.textContent = detail;
-  state.append(heading, description);
-  return state;
-}
-
 function surfaceHeader(title, description) {
   const header = new FakeElement("header");
   header.textContent = `${title}: ${description}`;
@@ -180,7 +169,8 @@ function createKnowledgeHarness(options = {}) {
   };
   // The production docs-availability renderer, so surfaces are checked against
   // the shared component instead of a test double.
-  const { renderDocsAvailabilityState } = createOperationsOverview({ document });
+  const { renderDocsAvailabilityState, renderHonestState } =
+    createOperationsOverview({ document });
   let docsAvailability =
     options.docsAvailability || emptyOperationsDocsSnapshot();
   const storageValues = new Map(Object.entries(options.storage || {}));
@@ -206,6 +196,9 @@ function createKnowledgeHarness(options = {}) {
     if (options.request) return options.request(url, requestOptions, entry);
     return {};
   };
+  const qualityFiltersState = options.qualityFiltersState || {
+    value: { severity: "", category: "", workflow: "", document: "" },
+  };
   const refresh = (name) => (refreshOptions) => {
     refreshes.push({ name, options: refreshOptions });
     return Promise.resolve();
@@ -215,7 +208,7 @@ function createKnowledgeHarness(options = {}) {
     assistantJobsFromPayload: (payload) => payload?.jobs || [],
     basename: (path) => String(path || "").split("/").at(-1) || "",
     buildOperationsHomeModel: () => ({
-      quality: {
+      quality: options.operationsQualityModel || {
         loaded: true,
         activeWorkLoaded: true,
         totalFindings: 0,
@@ -275,9 +268,7 @@ function createKnowledgeHarness(options = {}) {
     operationsViewPath: (view) => `/${view}`,
     operationsViewTitle: (view) => view,
     promptUser: () => "",
-    qualityFiltersState: {
-      value: { severity: "", category: "", workflow: "", document: "" },
-    },
+    qualityFiltersState,
     refreshChangesPanel() {},
     refreshGitStatus() {},
     refreshOperationsArtifactSnapshot: refresh("artifacts"),
@@ -288,7 +279,7 @@ function createKnowledgeHarness(options = {}) {
     renameCurrentDoc() {},
     deleteCurrentDoc() {},
     renderDocsAvailabilityState,
-    renderHonestState: honestState,
+    renderHonestState,
     renderOperationsReference: (reference) => {
       const node = new FakeElement("a");
       node.textContent = reference.title;
@@ -580,7 +571,7 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(
       surface.children.map((child) => child.className),
       [
-        "honest-state",
+        "ops-honest-state",
         "ops-honest-state ops-docs-state",
         "ops-section ops-quality-drilldown",
         "ops-reference-grid",
@@ -711,6 +702,52 @@ describe("Knowledge surface boundary", () => {
       findByText(harness.elements.documentList, "Process catalog", "a"),
     );
     assert.equal(harness.statuses.at(-1), "Process Docs ready");
+  });
+
+  test("separates filtered Process Docs empty-state guidance semantically", () => {
+    const harness = createKnowledgeHarness({
+      operationsQualityModel: {
+        loaded: true,
+        activeWorkLoaded: true,
+        totalFindings: 2,
+        summary: { blocking: 1 },
+        maintainerFindings: [
+          { id: "missing-proof", severity: "blocking", category: "proof" },
+          {
+            id: "stale-owner",
+            severity: "warning",
+            category: "maintenance",
+          },
+        ],
+        errors: [],
+      },
+      qualityFiltersState: {
+        value: {
+          severity: "warning",
+          category: "proof",
+          workflow: "",
+          document: "",
+        },
+      },
+    });
+
+    harness.api.renderDocsSurface([]);
+    const list = harness.elements.documentList.querySelector(".ops-quality-list");
+    const state = list.querySelector(".ops-honest-state");
+
+    assert.equal(list.children.length, 1);
+    assert.equal(state.children.length, 2);
+    assert.equal(state.children[0].tagName, "STRONG");
+    assert.equal(state.children[0].textContent, "No findings match filters");
+    assert.equal(state.children[1].tagName, "SPAN");
+    assert.equal(
+      state.children[1].textContent,
+      "Change filters to inspect other process quality findings.",
+    );
+    assert.equal(
+      state.textContent,
+      `${state.children[0].textContent}${state.children[1].textContent}`,
+    );
   });
 
   test("renders an honest folder list state and preserves a canonical mobile return URL", async () => {
