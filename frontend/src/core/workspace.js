@@ -221,28 +221,40 @@ export function parseIsoDateValue(value) {
   if (!value) return null;
   const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
   const date = new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
+    Date.UTC(year, month - 1, day),
   );
-  return Number.isNaN(date.getTime()) ? null : date;
+  const validCalendarDate =
+    !Number.isNaN(date.getTime()) &&
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
+  return validCalendarDate ? date : null;
 }
 
 export function toIsoDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
+const BERLIN_TODAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Berlin",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 export function todayIsoDate() {
-  return toIsoDate(new Date());
+  return BERLIN_TODAY_FORMATTER.format(new Date());
 }
 
 export function addDaysIso(isoDate, days) {
-  const date = parseIsoDateValue(isoDate) || new Date();
-  date.setDate(date.getDate() + days);
+  const date = parseIsoDateValue(isoDate);
+  if (!date) return "";
+  date.setUTCDate(date.getUTCDate() + days);
   return toIsoDate(date);
 }
 
@@ -271,6 +283,7 @@ export function formatHomeCalendarDate(value) {
   const date = parseIsoDateValue(value);
   if (!date) return value || "";
   return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -281,6 +294,7 @@ export function formatHomeShortDate(value) {
   const date = parseIsoDateValue(value);
   if (!date) return value || "";
   return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
     day: "numeric",
     month: "short",
   }).format(date);
@@ -331,9 +345,9 @@ export function cronMatchesIsoDate(cronExpression, isoDate) {
   const date = parseIsoDateValue(isoDate);
   if (!cron || !date) return false;
   return (
-    cronFieldMatches(cron.dayOfMonth, date.getDate()) &&
-    cronFieldMatches(cron.month, date.getMonth() + 1) &&
-    cronFieldMatches(cron.dayOfWeek, date.getDay())
+    cronFieldMatches(cron.dayOfMonth, date.getUTCDate()) &&
+    cronFieldMatches(cron.month, date.getUTCMonth() + 1) &&
+    cronFieldMatches(cron.dayOfWeek, date.getUTCDay())
   );
 }
 
@@ -361,7 +375,7 @@ export function nextRecurringRunDate(cronExpression, today = todayIsoDate()) {
   if (!start) return "";
   for (let offset = 0; offset < 366; offset += 1) {
     const candidate = new Date(start);
-    candidate.setDate(candidate.getDate() + offset);
+    candidate.setUTCDate(candidate.getUTCDate() + offset);
     const isoDate = toIsoDate(candidate);
     if (cronMatchesIsoDate(cronExpression, isoDate)) return isoDate;
   }
@@ -373,9 +387,10 @@ export function formatRecurringRunLabel(isoDate, today = todayIsoDate()) {
   if (isoDate === today) return "Today";
   const date = parseIsoDateValue(isoDate);
   if (!date) return isoDate;
-  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short" }).format(
-    date,
-  );
+  const weekday = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    weekday: "short",
+  }).format(date);
   return `${weekday} ${formatHomeShortDate(isoDate)}`;
 }
 
@@ -709,6 +724,7 @@ export function formatCardMonthLabel(value) {
   const date = parseIsoDateValue(value);
   if (!date) return "No date";
   return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
     month: "long",
     year: "numeric",
   }).format(date);

@@ -203,7 +203,12 @@ function createNewsletterDom() {
   };
 }
 
-function createPlanningHarness({ calendar, newsletter, request } = {}) {
+function createPlanningHarness({
+  calendar,
+  newsletter,
+  request,
+  today = "2026-08-13",
+} = {}) {
   const documentList = new TestElement("main");
   const created = [];
   globalThis.document = {
@@ -226,6 +231,7 @@ function createPlanningHarness({ calendar, newsletter, request } = {}) {
       return request(url, options, entry);
     },
     setPageTitle: (...args) => pageTitles.push(args),
+    todayIsoDate: () => today,
     workApiUrl: (path) => new URL(path, "http://portal.test"),
   });
   return { documentList, pageTitles, requests, surface };
@@ -290,6 +296,7 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.grid.innerHTML, /Newsletter 42/);
     assert.match(dom.alerts.innerHTML, /Activity overlaps a public holiday/);
     assert.match(dom.grid.innerHTML, /ISO week numbers/);
+    expectCalendarRange(harness.requests[0], "2026-07-27", "2026-09-06");
   });
 
   test("keeps Calendar usable when overlays fail and exposes filter and period controls", async () => {
@@ -322,11 +329,22 @@ describe("Planning surface production behavior", () => {
     await nextTicks();
     await dom.surface.querySelector("[data-prev]").onclick();
     await nextTicks();
+    await dom.surface.querySelector("[data-next]").onclick();
+    await nextTicks();
+    await dom.surface.querySelector("[data-next]").onclick();
+    await nextTicks();
     await dom.surface.querySelector("[data-today]").onclick();
     await nextTicks();
     assert.equal(
       harness.requests.filter((entry) => entry.url.includes("calendar-items?")).length >= 4,
       true,
+    );
+    expectCalendarRange(
+      harness.requests.filter(
+        (entry) => new URL(entry.url).pathname === "/api/calendar-items",
+      ).at(-1),
+      "2026-08-10",
+      "2026-08-16",
     );
   });
 
@@ -502,8 +520,9 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.slots.innerHTML, /Campaign 42/);
     assert.match(dom.slots.innerHTML, /Open campaign/);
     assert.match(dom.slots.innerHTML, /Team member/);
-    assert.equal(harness.requests[0].url.includes("from="), true);
-    assert.equal(harness.requests[0].url.includes("to="), true);
+    const range = new URL(harness.requests[0].url).searchParams;
+    assert.equal(range.get("from"), "2026-08-01");
+    assert.equal(range.get("to"), "2027-12-31");
   });
 
   test("supports Newsletter week grouping, filtering, create/edit, and numeric mutation fields", async () => {
@@ -608,3 +627,9 @@ describe("Planning surface production behavior", () => {
     );
   });
 });
+
+function expectCalendarRange(request, from, to) {
+  const range = new URL(request.url).searchParams;
+  assert.equal(range.get("from"), from);
+  assert.equal(range.get("to"), to);
+}
