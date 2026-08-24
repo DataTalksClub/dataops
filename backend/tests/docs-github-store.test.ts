@@ -1,11 +1,12 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import {
   ContentsApiGithubStore,
+  ContentRootUnavailableError,
   GitHubError,
   normalizeRepoPath,
   quotePath,
@@ -219,6 +220,95 @@ describe('githubStore - read/list/commit (GitHub mocked)', () => {
   it('raises GitHubError without a token', async () => {
     const noToken = new ContentsApiGithubStore({ owner: 'o', repo: 'r', cacheDir: dir, fetchImpl: github.fetch as unknown as typeof fetch });
     await assert.rejects(() => noToken.tree(), GitHubError);
+  });
+});
+
+describe('githubStore - single-file content-root precondition', () => {
+  const SCRATCH = resolve(__dirname, '..', '..', '.tmp', 'docs-github-store-tests');
+  let scratch: string;
+  let offlineBefore: string | undefined;
+
+  function makeTestStore(cacheDir: string): { store: ContentsApiGithubStore; github: FakeGitHub } {
+    const github = new FakeGitHub({
+      'content/a.md': '# A',
+      'content/b.md': '# B',
+      'content/images/a/picture.png': 'PNGDATA',
+    });
+    return { github, store: makeStore(github, cacheDir) };
+  }
+
+  beforeEach(() => {
+    mkdirSync(SCRATCH, { recursive: true });
+    scratch = mkdtempSync(join(SCRATCH, 'precondition-'));
+    offlineBefore = process.env.DTC_OFFLINE;
+    process.env.DTC_OFFLINE = '1';
+  });
+
+  afterEach(() => {
+    if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
+    else process.env.DTC_OFFLINE = offlineBefore;
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it('rejects an offline missing root as a store fault without contacting GitHub', async () => {
+    const cacheDir = join(scratch, 'missing');
+    const { github, store } = makeTestStore(cacheDir);
+
+    await assert.rejects(() => store.readFile('content/absent.md'), (err: unknown) => {
+      assert.ok(err instanceof ContentRootUnavailableError);
+      assert.strictEqual(err.contentRoot, join(cacheDir, 'content'));
+      return true;
+    });
+    assert.strictEqual(github.calls.length, 0);
+    assert.strictEqual(existsSync(store.contentRoot), false);
+  });
+
+  it('treats a non-directory content root as unavailable', async () => {
+    const cacheDir = join(scratch, 'file-root');
+    writeFileSync(cacheDir, 'not a directory');
+    const { store } = makeTestStore(cacheDir);
+
+    await assert.rejects(() => store.readFile('content/absent.md'), ContentRootUnavailableError);
+  });
+
+  it('preserves ENOENT for a miss under a present offline root', async () => {
+    const cacheDir = join(scratch, 'empty');
+    mkdirSync(join(cacheDir, 'content'), { recursive: true });
+    const { github, store } = makeTestStore(cacheDir);
+
+    await assert.rejects(() => store.readFile('content/absent.md'), (err: unknown) => {
+      assert.ok(!(err instanceof ContentRootUnavailableError));
+      assert.strictEqual((err as NodeJS.ErrnoException).code, 'ENOENT');
+      return true;
+    });
+    assert.strictEqual(github.calls.length, 0);
+  });
+
+  it('stays lazy online and hydrates only the requested bytes', async () => {
+    delete process.env.DTC_OFFLINE;
+    const cacheDir = join(scratch, 'lazy');
+    const { github, store } = makeTestStore(cacheDir);
+
+    assert.strictEqual(await store.readFile('content/a.md'), '# A');
+    assert.strictEqual(github.calls.filter((call) => call.path.includes('/git/trees/')).length, 1);
+    assert.strictEqual(github.calls.filter((call) => call.path.includes('/git/blobs/')).length, 1);
+    assert.ok(existsSync(store.localPath('content/a.md')));
+    assert.strictEqual(existsSync(store.localPath('content/b.md')), false);
+    assert.strictEqual(existsSync(store.localPath('content/images/a/picture.png')), false);
+  });
+
+  it('does not create a cache root while reporting an online absent path', async () => {
+    delete process.env.DTC_OFFLINE;
+    const cacheDir = join(scratch, 'online-absent');
+    const { github, store } = makeTestStore(cacheDir);
+
+    await assert.rejects(() => store.readFile('content/absent.md'), (err: unknown) => {
+      assert.strictEqual((err as NodeJS.ErrnoException).code, 'ENOENT');
+      return true;
+    });
+    assert.strictEqual(github.calls.filter((call) => call.path.includes('/git/trees/')).length, 1);
+    assert.strictEqual(github.calls.filter((call) => call.path.includes('/git/blobs/')).length, 0);
+    assert.strictEqual(existsSync(store.root), false);
   });
 });
 

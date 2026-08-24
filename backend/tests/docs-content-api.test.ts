@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { ContentsApiGithubStore } from '../src/docs/githubStore';
+import { ContentsApiGithubStore, contentRootUnavailableMessage } from '../src/docs/githubStore';
 import {
   handleDocsRoutes,
   configureDocsRuntime,
@@ -422,5 +422,151 @@ describe('contentApi - docs listing content-root contract (offline)', () => {
     const { status, body } = await call(ev('GET', '/docs', { query: { path: 'does-not-exist.md' } }));
     assert.strictEqual(status, 404);
     assert.strictEqual(body.error, 'Document not found');
+  });
+});
+
+// A single-file read has a different prerequisite from a stateless parse or
+// health check, but shares the corpus precondition with collection reads. These
+// cases keep the outage distinct from a genuinely absent document (#191).
+describe('contentApi - single-document content-root contract', () => {
+  const SCRATCH = resolve(__dirname, '..', '..', '.tmp', 'docs-content-api-single-doc-tests');
+  let scratch: string;
+  let offlineBefore: string | undefined;
+
+  function githubStore(cacheDir: string): { store: ContentsApiGithubStore; github: FakeGitHub } {
+    const github = new FakeGitHub({
+      'content/one.md': '# One',
+      'content/two.md': '# Two',
+      'content/images/one/picture.png': 'PNGDATA',
+    });
+    return {
+      github,
+      store: new ContentsApiGithubStore({
+        owner: 'DataTalksClub',
+        repo: 'dataops',
+        branch: 'main',
+        token: 'test-token',
+        cacheDir,
+        fetchImpl: github.fetch as unknown as typeof fetch,
+      }),
+    };
+  }
+
+  function unavailableRuntime(cacheDir: string): FakeGitHub {
+    const { github, store } = githubStore(cacheDir);
+    configureDocsRuntime(store);
+    return github;
+  }
+
+  beforeEach(() => {
+    mkdirSync(SCRATCH, { recursive: true });
+    scratch = mkdtempSync(join(SCRATCH, 'single-doc-'));
+    offlineBefore = process.env.DTC_OFFLINE;
+    process.env.DTC_OFFLINE = '1';
+  });
+
+  afterEach(() => {
+    resetDocsRuntime();
+    if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
+    else process.env.DTC_OFFLINE = offlineBefore;
+    rmSync(scratch, { recursive: true, force: true });
+  });
+
+  it('returns the named corpus outage instead of a missing-document 404', async () => {
+    const cacheDir = join(scratch, 'missing-root');
+    const contentRoot = join(cacheDir, 'content');
+    const github = unavailableRuntime(cacheDir);
+
+    const { status, body } = await call(ev('GET', '/docs', { query: { path: 'content/example.md' } }));
+
+    assert.strictEqual(status, 503);
+    assert.deepStrictEqual(body, { error: contentRootUnavailableMessage(contentRoot) });
+    assert.strictEqual(github.calls.length, 0);
+    assert.strictEqual(existsSync(contentRoot), false);
+  });
+
+  it('validates a document path before evaluating content-root availability', async () => {
+    const cacheDir = join(scratch, 'validation-first');
+    const contentRoot = join(cacheDir, 'content');
+    const github = unavailableRuntime(cacheDir);
+
+    const { status, body } = await call(
+      ev('GET', '/docs', { query: { path: '../../etc/passwd' } }),
+    );
+
+    assert.strictEqual(status, 400);
+    assert.match(body.error, /Document path may only contain/);
+    assert.strictEqual(github.calls.length, 0);
+    assert.strictEqual(existsSync(contentRoot), false);
+  });
+
+  it('keeps populated-root and empty-root misses at document 404', async () => {
+    const populatedCache = join(scratch, 'populated');
+    mkdirSync(dirname(join(populatedCache, 'content', 'present.md')), { recursive: true });
+    writeFileSync(join(populatedCache, 'content', 'present.md'), '# Present');
+    unavailableRuntime(populatedCache);
+
+    const populated = await call(ev('GET', '/docs', { query: { path: 'does-not-exist.md' } }));
+    assert.deepStrictEqual(populated, { status: 404, body: { error: 'Document not found' } });
+
+    const emptyCache = join(scratch, 'empty');
+    mkdirSync(join(emptyCache, 'content'), { recursive: true });
+    unavailableRuntime(emptyCache);
+    const empty = await call(ev('GET', '/docs', { query: { path: 'does-not-exist.md' } }));
+    assert.deepStrictEqual(empty, { status: 404, body: { error: 'Document not found' } });
+  });
+
+  it('hydrates one requested blob online and leaves unrelated files alone', async () => {
+    delete process.env.DTC_OFFLINE;
+    const cacheDir = join(scratch, 'online-lazy');
+    const { github, store } = githubStore(cacheDir);
+    configureDocsRuntime(store);
+
+    const { status, body } = await call(ev('GET', '/docs', { query: { path: 'content/one.md' } }));
+
+    assert.strictEqual(status, 200);
+    assert.strictEqual(body.path, 'content/one.md');
+    assert.strictEqual(body.content, '# One');
+    assert.strictEqual(github.calls.filter((entry) => entry.path.includes('/git/trees/')).length, 1);
+    assert.strictEqual(github.calls.filter((entry) => entry.path.includes('/git/blobs/sha-content/one.md')).length, 1);
+    assert.ok(existsSync(store.localPath('content/one.md')));
+    assert.strictEqual(existsSync(store.localPath('content/two.md')), false);
+    assert.strictEqual(existsSync(store.localPath('content/images/one/picture.png')), false);
+  });
+
+  it('returns document 404 online without creating an absent cache root', async () => {
+    delete process.env.DTC_OFFLINE;
+    const cacheDir = join(scratch, 'online-missing-path');
+    const { github, store } = githubStore(cacheDir);
+    configureDocsRuntime(store);
+
+    const { status, body } = await call(ev('GET', '/docs', { query: { path: 'content/absent.md' } }));
+
+    assert.strictEqual(status, 404);
+    assert.deepStrictEqual(body, { error: 'Document not found' });
+    assert.strictEqual(github.calls.filter((entry) => entry.path.includes('/git/trees/')).length, 1);
+    assert.strictEqual(github.calls.filter((entry) => entry.path.includes('/git/blobs/')).length, 0);
+    assert.strictEqual(existsSync(store.root), false);
+    assert.strictEqual(existsSync(store.contentRoot), false);
+  });
+
+  it('reports image uploads against an unavailable corpus before filesystem or GitHub mutations', async () => {
+    const cacheDir = join(scratch, 'image-upload-outage');
+    const contentRoot = join(cacheDir, 'content');
+    unavailableRuntime(cacheDir);
+
+    const { status, body } = await call(
+      ev('POST', '/images', {
+        body: {
+          doc_path: 'content/example.md',
+          filename: 'Diagram.PNG',
+          data: Buffer.from('PNGDATA').toString('base64'),
+        },
+      }),
+    );
+
+    assert.strictEqual(status, 503);
+    assert.deepStrictEqual(body, { error: contentRootUnavailableMessage(contentRoot) });
+    assert.strictEqual(existsSync(cacheDir), false);
   });
 });
