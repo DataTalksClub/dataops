@@ -54,6 +54,7 @@ class KnowledgeDocument extends FakeDocument {
 
 function createDocumentRow() {
   const row = new FakeElement("article");
+  row.className = "document-card";
   const title = new FakeElement("h3");
   const summary = new FakeElement("p");
   const path = new FakeElement("span");
@@ -99,7 +100,6 @@ function createKnowledgeHarness(options = {}) {
       "docMenuButton",
       "docPinButton",
       "docState",
-      "docTree",
       "documentList",
       "documentPath",
       "documentTitle",
@@ -142,12 +142,10 @@ function createKnowledgeHarness(options = {}) {
   elements.editorView.dataset.mode = "rendered";
   elements.filtersSection.open = false;
 
-  const skeleton = new FakeElement("div");
-  skeleton.id = "tree-skeleton";
   const body = new FakeElement("body");
   body.dataset.view = "library";
   const document = new KnowledgeDocument(
-    skeleton,
+    undefined,
     body,
     ...Object.values(elements),
   );
@@ -159,7 +157,6 @@ function createKnowledgeHarness(options = {}) {
     allDocuments: [],
     visibleDocuments: [],
     selectedFolder: "",
-    currentTreePath: "",
     documentIdMap: new Map(),
     searchController: null,
     activeSearchSources: [],
@@ -198,6 +195,7 @@ function createKnowledgeHarness(options = {}) {
   const openedCards = [];
   const navigations = [];
   let renderedWorkspace = 0;
+  let renderedWorkspaceDocuments;
   let sidebarCloses = 0;
   let operationsHomeReturns = 0;
 
@@ -296,8 +294,9 @@ function createKnowledgeHarness(options = {}) {
       node.textContent = reference.title;
       return node;
     },
-    renderOperationsWorkspace() {
+    renderOperationsWorkspace(documents) {
       renderedWorkspace += 1;
+      renderedWorkspaceDocuments = documents;
     },
     renderQualityFindingRow: () => new FakeElement("div"),
     renderSurfaceHeader: surfaceHeader,
@@ -356,9 +355,9 @@ function createKnowledgeHarness(options = {}) {
     pageTitles,
     refreshes,
     renderedWorkspace: () => renderedWorkspace,
+    renderedWorkspaceDocuments: () => renderedWorkspaceDocuments,
     requests,
     sidebarCloses: () => sidebarCloses,
-    skeleton,
     statuses,
     storageValues,
     views,
@@ -438,7 +437,6 @@ describe("Knowledge surface boundary", () => {
     });
 
     const loading = harness.api.loadDocuments();
-    assert.equal(harness.skeleton.hidden, false);
     assert.deepEqual(
       harness.refreshes.map((entry) => entry.name),
       ["work", "recurring", "artifacts", "assistants", "quality"],
@@ -450,7 +448,6 @@ describe("Knowledge surface boundary", () => {
 
     releaseDocs({ documents });
     await loading;
-    assert.equal(harness.skeleton.hidden, true);
     assert.deepEqual(harness.api.getAllDocuments(), documents);
     assert.equal(harness.api.resolveDocReference("onboarding"), documents[0]);
     assert.equal(
@@ -459,6 +456,7 @@ describe("Knowledge surface boundary", () => {
     );
     assert.equal(harness.api.folderExists("content/operations"), true);
     assert.equal(harness.renderedWorkspace(), 1);
+    assert.deepEqual(harness.renderedWorkspaceDocuments(), documents);
   });
 
   test("keeps empty and failed catalog truth explicit without blocking work refreshes", async () => {
@@ -474,7 +472,7 @@ describe("Knowledge surface boundary", () => {
       status: 0,
     });
     assert.equal(empty.renderedWorkspace(), 1);
-    assert.equal(empty.skeleton.hidden, true);
+    assert.deepEqual(empty.renderedWorkspaceDocuments(), []);
 
     const failed = createKnowledgeHarness({
       request: async () => {
@@ -505,7 +503,6 @@ describe("Knowledge surface boundary", () => {
     );
     // A failed load repaints the surface the operator is already looking at.
     assert.equal(failed.renderedWorkspace(), 1);
-    assert.equal(failed.skeleton.hidden, true);
   });
 
   test("marks docs as loading before the bootstrap catalog request settles", async () => {
@@ -749,7 +746,7 @@ describe("Knowledge surface boundary", () => {
     });
   });
 
-  test("keeps the Process Docs tree and filtered list aligned", async () => {
+  test("opens a filtered Process Docs document", async () => {
     const document = {
       path: "content/operations/onboarding.md",
       title: "Onboarding",
@@ -777,9 +774,10 @@ describe("Knowledge surface boundary", () => {
       harness.elements.documentList.querySelector(".doc-domain").textContent,
       "operations",
     );
-    const treeFile = harness.elements.docTree.querySelector(".tree-file");
-    assert.equal(treeFile.dataset.path, document.path);
-    await treeFile.click();
+    const documentRow = harness.elements.documentList.querySelector(
+      ".document-card",
+    );
+    await documentRow.click();
     assert.equal(harness.documentState.currentDoc.path, document.path);
     assert.equal(harness.body.dataset.view, "editor");
   });

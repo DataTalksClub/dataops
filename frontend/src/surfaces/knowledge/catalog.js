@@ -8,6 +8,7 @@ export function createKnowledgeCatalog(context, services) {
   const {
     apiUrl,
     basename,
+    cleanPath,
     docPinButton,
     documentState,
     knowledgeState,
@@ -29,9 +30,7 @@ export function createKnowledgeCatalog(context, services) {
   const {
     openDocument,
     populateFilterOptions,
-    rebuildDocumentIdMap,
     refreshDocuments,
-    relativeTime,
   } = services;
 
   const PIN_KEY = "dtc-pinned";
@@ -41,8 +40,6 @@ export function createKnowledgeCatalog(context, services) {
   async function loadDocuments() {
     setStatus("Loading documents...");
     setDocsAvailability(emptyOperationsDocsSnapshot());
-    const skeleton = document.querySelector("#tree-skeleton");
-    if (skeleton) skeleton.hidden = false;
 
     // Work APIs are independent of the Git-backed docs API. Start their
     // bootstrap requests before awaiting docs so Home, Inbox, assistants,
@@ -71,9 +68,42 @@ export function createKnowledgeCatalog(context, services) {
       knowledgeState.allDocuments = [];
       setDocsAvailability(unavailableOperationsDocsSnapshot(error));
       refreshDocuments();
-    } finally {
-      if (skeleton) skeleton.hidden = true;
     }
+  }
+
+  function rebuildDocumentIdMap() {
+    knowledgeState.documentIdMap = new Map();
+    for (const doc of knowledgeState.allDocuments) {
+      if (doc.id) knowledgeState.documentIdMap.set(String(doc.id), doc);
+      if (Array.isArray(doc.aliases)) {
+        for (const alias of doc.aliases) {
+          if (alias) knowledgeState.documentIdMap.set(String(alias), doc);
+        }
+      }
+      knowledgeState.documentIdMap.set(doc.path, doc);
+      knowledgeState.documentIdMap.set(cleanPath(doc.path), doc);
+    }
+  }
+
+  function resolveDocReference(ref) {
+    const key = String(ref || "").trim();
+    if (!key) return null;
+    return (
+      knowledgeState.documentIdMap.get(key) ||
+      knowledgeState.documentIdMap.get(key.replace(/^\/+/, "")) ||
+      null
+    );
+  }
+
+  function relativeTime(epoch) {
+    const now = Date.now() / 1000;
+    const diff = Math.max(0, now - epoch);
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+    if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} d ago`;
+    const date = new Date(epoch * 1000);
+    return date.toLocaleDateString();
   }
 
   function readPins() {
@@ -218,6 +248,9 @@ export function createKnowledgeCatalog(context, services) {
   return {
     loadDocuments,
     pushRecentlyViewed,
+    rebuildDocumentIdMap,
+    relativeTime,
+    resolveDocReference,
     renderPinned,
     renderRecentDocs,
     renderRecentlyViewed,

@@ -799,9 +799,14 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     const empty = await portalContext(browser, servers.emptyDocs);
     await setFaults(empty.request, [{ method: 'GET', path: '/docs', delayMs: 1200 }]);
     const emptyPage = await empty.newPage();
+    const emptyDocsReady = emptyPage.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET' && url.pathname === '/docs';
+    });
     await emptyPage.goto('/#/processes', { waitUntil: 'domcontentloaded' });
-    await expect(emptyPage.locator('#tree-skeleton')).toBeHidden();
-    expect((await json(await empty.request.get('/docs'))).documents).toEqual([]);
+    const emptyDocsResponse = await emptyDocsReady;
+    expect(emptyDocsResponse.status()).toBe(200);
+    expect((await json(emptyDocsResponse)).documents).toEqual([]);
     await emptyPage.locator('#search-input').fill('no synthetic process exists');
     await expect(emptyPage.locator('#document-list.is-unified-search')).toBeVisible();
     await expect(emptyPage.getByText('No work or process context matches this search.')).toBeVisible();
@@ -833,7 +838,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
 
     await page.goto('/#/processes');
     await expect(page.locator('#library-title')).toHaveText('Docs');
-    await expect(page.locator('#tree-skeleton')).toBeHidden();
+    await expect(page.locator('.ops-surface-docs')).toBeVisible();
     await page.locator('#search-input').fill('synthetic capability');
     const docResult = page.locator('.unified-search-row.result-doc', { hasText: 'Synthetic Capability Procedure' });
     await expect(docResult).toBeVisible();
@@ -1153,7 +1158,6 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(complete).toHaveAttribute('title', /Fill in Evidence URL.*Upload required file/);
     const documentsPayload = await json(await context.request.get('/docs'));
     expect(documentsPayload.documents.some((document) => document.path === 'content/synthetic/capability.md')).toBe(true);
-    await expect(page.locator('#tree-skeleton')).toBeHidden();
     const instructionReady = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'

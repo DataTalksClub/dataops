@@ -32,7 +32,6 @@ export function createKnowledgeSearch(context, services) {
     filterDocuments,
     openDocument,
     renderDocuments,
-    renderTree,
     setHighlightedText,
     syncLibraryPageTitle,
   } = services;
@@ -40,8 +39,6 @@ export function createKnowledgeSearch(context, services) {
 
   async function refreshDocuments() {
     const query = searchInput.value.trim();
-    const localFiltered = filterDocuments(knowledgeState.allDocuments);
-
     if (knowledgeState.searchController) {
       knowledgeState.searchController.abort();
       knowledgeState.searchController = null;
@@ -108,7 +105,6 @@ export function createKnowledgeSearch(context, services) {
         ];
         knowledgeState.visibleDocuments = results;
         knowledgeState.selectedFolder = "";
-        renderTree(localFiltered);
         renderUnifiedSearchResults(results, knowledgeState.activeSearchSources, query);
         const unavailable = knowledgeState.activeSearchSources.filter(
           (source) => source.status === "unavailable",
@@ -120,16 +116,16 @@ export function createKnowledgeSearch(context, services) {
         return;
       }
 
-      renderTree(localFiltered);
-
       if (!knowledgeState.selectedFolder) {
         // No folder or search: show the daily operations workspace and skip
         // rendering the (potentially huge) document list.
         knowledgeState.visibleDocuments = [];
-        renderOperationsWorkspace(localFiltered);
+        renderOperationsWorkspace(filterDocuments(knowledgeState.allDocuments));
         syncLibraryPageTitle();
         return;
       }
+
+      const localFiltered = filterDocuments(knowledgeState.allDocuments);
 
       knowledgeState.visibleDocuments = localFiltered.filter((doc) =>
         cleanPath(doc.path).startsWith(`${knowledgeState.selectedFolder}/`),

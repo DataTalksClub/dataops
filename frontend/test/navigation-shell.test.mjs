@@ -394,7 +394,7 @@ describe("canonical navigation shell behavior", () => {
     assert.deepEqual(doc.calls.find(([name]) => name === "open-doc"), [
       "open-doc",
       "process/example.md",
-      { revealInTree: true, updateUrl: false },
+      { updateUrl: false },
     ]);
 
     // A healthy corpus that simply does not contain the document keeps today's
@@ -427,7 +427,7 @@ describe("canonical navigation shell behavior", () => {
     assert.deepEqual(outageDoc.calls.find(([name]) => name === "open-doc"), [
       "open-doc",
       "process/example.md",
-      { revealInTree: true, updateUrl: false },
+      { updateUrl: false },
     ]);
 
     const folder = createNavigationHarness({

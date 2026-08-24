@@ -15,7 +15,6 @@ export function createWorkspaceState(context) {
     allDocuments: [],
     visibleDocuments: [],
     selectedFolder: "",
-    currentTreePath: "",
     documentIdMap: new Map(),
     searchController: null,
     activeSearchSources: [],

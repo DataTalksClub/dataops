@@ -307,21 +307,23 @@ Current mapping:
 
 ### Navigation And Library
 
-Canonical primitives: `do-sidebar`, `do-drawer`, `do-tree`, `do-nav-row`,
+Canonical primitives: `do-sidebar`, `do-drawer`, `do-nav-row`,
 `do-recent-list`.
 
 Usage rules:
 
-- The tree is the navigation object for docs and process context.
 - Search and filters live inside the sidebar or drawer, not above every content
   screen on mobile.
-- Folder rows need explicit expand/collapse buttons and selected state.
+- Process Docs uses one filtered document list; do not add a second sidebar
+  hierarchy for the same destination.
+- Navigation rows need explicit selected state where the row represents the
+  current route or selection.
 - GitHub links and low-level repo actions remain secondary tools.
 
 Current mapping:
 
-- Portal: `#doc-tree`, `.doc-tree`, `.tree-section`, `.tree-file`,
-  `.tree-folder`, `.recent-list`, `.changes-section`.
+- Portal: `.sidebar`, `.mobile-topbar`, `.document-list`, `.recent-list`,
+  `.changes-section`.
 - Work-engine: route links only. Future work-engine shell migration should
   move route navigation into DataOps workspace navigation or a compact page tab
   set where the full shell is not yet available.
@@ -603,7 +605,7 @@ Current mapping:
 
 | Surface | Current source | Shared components |
 | --- | --- | --- |
-| Workspace sidebar and drawer | `frontend/index.html`, `.sidebar`, `.mobile-topbar`, `.doc-tree` | `do-shell`, `do-sidebar`, `do-drawer`, `do-tree`, `do-nav-row`. |
+| Workspace sidebar and drawer | `frontend/index.html`, `.sidebar`, `.mobile-topbar` | `do-shell`, `do-sidebar`, `do-drawer`, `do-nav-row`. |
 | Library | `#library-view`, `.library-heading`, `.document-list` | `do-page-header`, `do-doc-row`, `do-empty-state`, `do-filter-group`. |
 | Editor | `#editor-view`, `.document-title`, `.markdown-editor`, `.rendered-view` | `do-editor-canvas`, `do-process-block`, `do-save-state`. |
 | Create flow | `#create-view`, `.create-form`, `.scaffold-fieldset` | `do-field-group`, `do-radio-group`, `do-save-bar`. |
