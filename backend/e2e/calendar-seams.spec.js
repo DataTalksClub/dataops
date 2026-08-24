@@ -172,7 +172,8 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
     path: path.join(shots, "production-month-populated.png"),
   });
   await surface.locator("select[data-view]").selectOption("week");
-  await expect(surface.locator(".calendar-grid section.calendar-day")).toHaveCount(7);
+  await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
+  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(7);
   await surface.screenshot({ path: path.join(shots, "production-week.png") });
   await surface.locator('[data-layer="school"]').uncheck();
   await expect(surface.getByText("Summer holidays")).toHaveCount(0);
@@ -258,7 +259,8 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await surface.locator("select[data-view]").selectOption("week");
   await expect(surface.getByText("Cross-year activity").first()).toBeVisible();
   await expect(surface.locator('time[datetime="2027-01-01"]')).toBeVisible();
-  await expect(surface.locator(".calendar-grid section.calendar-day")).toHaveCount(7);
+  await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
+  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(7);
   await expect(surface.locator(".iso-week")).toContainText(["ISO 53"]);
   await surface.screenshot({
     path: path.join(shots, "production-year-boundary.png"),

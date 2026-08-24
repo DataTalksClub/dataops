@@ -7,7 +7,7 @@ const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 
-const screenshots = path.resolve(__dirname, "..", "..", ".tmp", "screenshots", "planning-surfaces");
+const screenshots = path.resolve(__dirname, "..", "..", ".tmp", "screenshots", "issue-198");
 const PORT = 3197;
 const BASE = `http://localhost:${PORT}`;
 let server;
@@ -135,6 +135,7 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
   await expect(surface.getByText("An open slot needs booking soon")).toBeVisible();
   await expect(surface.getByText("near-term-open-unbooked")).toHaveCount(0);
   await expectNoPageOverflow(page, 1440);
+  await expect(surface).toHaveCSS("gap", "20px");
   await expectExactPalette(page, false);
   const accessibility = await new AxeBuilder({ page }).include(".newsletter-surface").analyze();
   expect(accessibility.violations.filter((violation) => ["critical", "serious"].includes(violation.impact))).toEqual([]);
@@ -151,9 +152,14 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
   await page.setViewportSize({ width: 820, height: 900 });
   await expect(surface).toHaveCSS("gap", "16px");
   await expectNoPageOverflow(page, 820);
+  await page.screenshot({ path: path.join(screenshots, "newsletter-820-dark.png"), animations: "disabled" });
   await page.setViewportSize({ width: 620, height: 844 });
   expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
   await expectNoPageOverflow(page, 620);
+  await page.setViewportSize({ width: 420, height: 844 });
+  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await expectNoPageOverflow(page, 420);
+  await page.screenshot({ path: path.join(screenshots, "newsletter-420-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
@@ -174,8 +180,10 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await expect(surface.getByText("Community webinar").first()).toBeVisible();
   await expect(surface.getByText("Activity overlaps a school holiday")).toBeVisible();
   await expect(surface.getByText("school-holiday-overlap")).toHaveCount(0);
-  await expect(surface.locator(".calendar-grid .calendar-day")).toHaveCount(42);
+  await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(6);
+  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(42);
   await expectNoPageOverflow(page, 1440);
+  await expect(surface).toHaveCSS("gap", "20px");
   await expectExactPalette(page, false);
   const accessibility = await new AxeBuilder({ page }).include(".calendar-surface").analyze();
   expect(accessibility.violations.filter((violation) => ["critical", "serious"].includes(violation.impact))).toEqual([]);
@@ -188,20 +196,45 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await page.screenshot({ path: path.join(screenshots, "calendar-1440-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 820, height: 900 });
+  await expect(surface).toHaveCSS("gap", "16px");
   expect(await surface.locator(".calendar-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await expectNoPageOverflow(page, 820);
+  await page.screenshot({ path: path.join(screenshots, "calendar-820-dark.png"), animations: "disabled" });
   await page.setViewportSize({ width: 620, height: 844 });
   expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
   await expectNoPageOverflow(page, 620);
+  await page.setViewportSize({ width: 420, height: 844 });
+  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await expectNoPageOverflow(page, 420);
+  await page.screenshot({ path: path.join(screenshots, "calendar-420-dark.png"), animations: "disabled" });
 
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await surface.locator("select[data-view]").selectOption("week");
-  await expect(surface.locator(".calendar-grid .calendar-day")).toHaveCount(7);
+  await expect(surface.locator(".calendar-weeks > .calendar-week")).toHaveCount(1);
+  await expect(surface.locator(".calendar-weeks > .calendar-week > section.calendar-day")).toHaveCount(7);
+  const swipeHint = surface.locator(".calendar-mobile-hint");
+  await expect(swipeHint).toBeVisible();
+  await expect(swipeHint).toContainText("Swipe each week horizontally");
+  const weekScroll = await surface.locator(".calendar-week").first().evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    overflowX: getComputedStyle(element).overflowX,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(weekScroll.overflowX).toBe("auto");
+  expect(weekScroll.scrollWidth).toBeGreaterThan(weekScroll.clientWidth);
   await page.evaluate(() => window.scrollTo(0, 0));
   await useTheme(page, false);
   await expectNoPageOverflow(page, 390);
-  await page.screenshot({ path: path.join(screenshots, "calendar-390-light.png"), animations: "disabled" });
+  await page.screenshot({
+    path: path.join(screenshots, "calendar-390-light.png"),
+    animations: "disabled",
+    fullPage: true,
+  });
   await useTheme(page, true);
-  await page.screenshot({ path: path.join(screenshots, "calendar-390-dark.png"), animations: "disabled" });
+  await page.screenshot({
+    path: path.join(screenshots, "calendar-390-dark.png"),
+    animations: "disabled",
+    fullPage: true,
+  });
 });

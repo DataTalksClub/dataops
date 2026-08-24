@@ -6,8 +6,14 @@ module.exports = async function globalTeardown() {
     return;
   }
 
+  if (child.exitCode !== null || child.signalCode !== null) {
+    console.log('[global-teardown] Test server already stopped.');
+    return;
+  }
+
   await new Promise((resolve) => {
     let settled = false;
+    let forceKillTimer;
 
     function done() {
       if (settled) return;
@@ -29,7 +35,7 @@ module.exports = async function globalTeardown() {
     }
 
     // Force-kill after 5 seconds if SIGTERM is not enough
-    const forceKillTimer = setTimeout(() => {
+    forceKillTimer = setTimeout(() => {
       if (!settled) {
         console.warn('[global-teardown] Force-killing test server process group after timeout.');
         try {

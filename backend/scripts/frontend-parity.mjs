@@ -181,7 +181,7 @@ async function reset(baseURL) {
 async function settle(page) {
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(250);
-  await page.locator('#library-title').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => document.body.dataset.view === 'library');
 }
 
 async function navigateState(page, baseURL, state) {
@@ -193,7 +193,9 @@ async function navigateState(page, baseURL, state) {
   if (state === 'home-ready') {
     await page.goto(`${baseURL}/#/`);
     await settle(page);
-    await page.getByText('Verify synthetic publication proof').first().waitFor();
+    const home = page.locator('.operations-home-daily');
+    await home.waitFor({ state: 'visible' });
+    await page.locator('.operations-home-daily[data-operations-work-loaded="true"]').waitFor();
   } else if (state === 'inbox-blocked-detail') {
     await page.goto(`${baseURL}/#/inbox?intakeId=parity-intake`);
     await settle(page);
@@ -220,23 +222,28 @@ async function navigateState(page, baseURL, state) {
   } else if (state === 'notifications-dismissed') {
     await page.goto(`${baseURL}/#/notifications`);
     await settle(page);
-    const notification = page.locator('.work-bell-item', { hasText: 'Synthetic task follow-up is due' });
-    await notification.getByRole('button', { name: /Dismiss notification/ }).click();
-    await notification.waitFor({ state: 'detached' });
+    const items = page.locator('.work-bell-item');
+    await items.first().waitFor();
+    for (let guard = 0; guard < 20; guard += 1) {
+      const remaining = await items.count();
+      if (remaining === 0) break;
+      await items.first().getByRole('button', { name: /Dismiss notification/ }).click();
+      await items.nth(remaining - 1).waitFor({ state: 'detached' });
+    }
     await page.getByText('No active notifications.').waitFor();
     result.mutation = 'notification-dismissed';
   } else if (state === 'sponsor-booking-role-safe') {
     await page.goto(`${baseURL}/#/sponsors?bookingId=parity-booking`);
     await settle(page);
-    await page.getByText('Synthetic Learning Co').first().waitFor();
-    const sponsorDetail = page.locator("[data-crm-detail] .crm-card");
+    const sponsorDetail = page.locator("[data-crm-detail] .crm-booking-detail");
     await sponsorDetail.filter({ hasText: "Synthetic Learning Co" }).waitFor();
     await sponsorDetail.filter({ hasText: "confirmed" }).waitFor();
     result.mutation = 'operator-read-only';
   } else if (state === 'docs-search-detail') {
     await page.goto(`${baseURL}/#/processes`);
     await settle(page);
-    await page.locator('#library-title').filter({ hasText: 'Docs' }).waitFor();
+    await page.locator('#library-view').waitFor({ state: 'visible' });
+    await page.locator('#library-title').filter({ hasText: 'Docs' }).waitFor({ state: 'attached' });
     if (page.viewportSize().width < 700) await page.locator('#mobile-menu-button').click();
     const search = page.locator('#search-input');
     await search.fill('Synthetic parity process');
@@ -254,7 +261,7 @@ async function navigateState(page, baseURL, state) {
   } else if (state === 'settings-users-role') {
     await page.goto(`${baseURL}/#/users`);
     await settle(page);
-    await page.getByText('Synthetic parity operator').waitFor();
+    await page.locator('.ops-user-row .ops-user-name').filter({ hasText: 'Synthetic parity operator' }).waitFor();
     const opener = page.viewportSize().width < 700 ? page.locator('#mobile-settings-button') : page.locator('#settings-button');
     await opener.click();
     await page.locator('#settings-menu').waitFor({ state: 'visible' });

@@ -7,7 +7,7 @@ const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const SCREENSHOT_DIR = path.join(ROOT, ".tmp", "screenshots", "issue-190");
+const SCREENSHOT_DIR = path.join(ROOT, ".tmp", "screenshots", "issue-198");
 const FIXTURE_DOC_PATH = "content/overview/reference/schedule.md";
 const FIXTURE_DOC_TITLE = "Synthetic Characterization Schedule";
 const FIXTURE_DOC_SUMMARY = "Synthetic reference used only by browser characterization tests.";
@@ -335,11 +335,29 @@ test.describe("pre-refactor frontend module characterization", () => {
       await expect(page.locator("body")).toBeVisible();
       await expectNoHorizontalOverflow(page, route);
       if (route === "/users") {
-        const tableOverflow = await page.locator(".ops-users-table-wrap").evaluate((wrapper) => ({
-          clientWidth: wrapper.clientWidth,
-          scrollWidth: wrapper.scrollWidth,
-        }));
-        expect(tableOverflow.scrollWidth).toBeLessThanOrEqual(tableOverflow.clientWidth);
+        const userRow = page.locator(".ops-user-row").first();
+        await expect(userRow).toBeVisible();
+        const stackedRow = await userRow.evaluate((row) => {
+          const rect = row.getBoundingClientRect();
+          return {
+            display: getComputedStyle(row).display,
+            height: rect.height,
+            viewportWidth: document.documentElement.clientWidth,
+            width: rect.width,
+          };
+        });
+        expect(stackedRow.display).toBe("grid");
+        expect(stackedRow.height).toBeGreaterThan(48);
+        expect(stackedRow.width).toBeLessThanOrEqual(stackedRow.viewportWidth);
+        await expect(userRow.locator(".ops-user-name")).toBeVisible();
+        await expect(userRow.locator(".ops-user-email")).toBeVisible();
+        await expect(userRow.locator(".ops-user-role")).toBeVisible();
+        await expect(userRow.locator(".ops-user-created")).toBeVisible();
+        await expect(userRow.locator(".ops-user-actions .quiet-button").first()).toBeVisible();
+        await page.screenshot({
+          path: path.join(SCREENSHOT_DIR, "users-mobile-stacked.png"),
+          fullPage: true,
+        });
       }
     }
     expect(errors).toEqual([]);

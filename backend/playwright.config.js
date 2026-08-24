@@ -2,13 +2,14 @@ const { defineConfig } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
 const { BERLIN_TIME_ZONE } = require('./e2e/helpers/business-date');
+const { TEST_SERVER_PORT } = require('./e2e/test-server-port');
 
 const AUTH_STATE_PATH = path.join(__dirname, 'e2e', '.auth-state.json');
 const DEFAULT_AUTH_STATE = {
   cookies: [],
   origins: [
     {
-      origin: 'http://localhost:3001',
+      origin: `http://localhost:${TEST_SERVER_PORT}`,
       localStorage: [
         {
           name: 'dataops_token',
@@ -50,7 +51,7 @@ module.exports = defineConfig({
   globalSetup: './e2e/global-setup.js',
   globalTeardown: './e2e/global-teardown.js',
   use: {
-    baseURL: 'http://localhost:3001',
+    baseURL: `http://localhost:${TEST_SERVER_PORT}`,
     timezoneId: BERLIN_TIME_ZONE,
     headless: true,
     screenshot: 'only-on-failure',
