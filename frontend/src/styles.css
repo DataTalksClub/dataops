@@ -1488,10 +1488,6 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   color: var(--warning-text);
 }
 
-.home-exception {
-  display: none;
-}
-
 .home-task-action {
   min-width: 96px;
   background: var(--control-bg);

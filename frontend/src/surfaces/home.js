@@ -255,15 +255,14 @@ export function createHomeSurface(context) {
     state.className = "home-task-state";
     const timing = document.createElement("time");
     const timingDate =
-      item.priority === "follow-up"
+      item.priority === "missing-proof"
+        ? ""
+        : item.priority === "follow-up"
         ? item.followUpDate
         : item.dueDate || item.followUpDate;
     if (timingDate) timing.dateTime = timingDate;
     timing.textContent = formatHomeTaskTiming(item, today);
-    const badge = document.createElement("span");
-    badge.className = `home-exception home-exception-${item.priority}`;
-    badge.textContent = item.exception;
-    state.append(timing, badge);
+    state.append(timing);
 
     const action = document.createElement("button");
     action.type = "button";
