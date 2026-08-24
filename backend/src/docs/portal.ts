@@ -22,7 +22,13 @@ import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { handleDocsRoutes, isDocsRoute } from './contentApi';
 import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
-import { createGithubStore, githubStoreConfigFromEnv, type ContentsApiGithubStore } from './githubStore';
+import {
+  ContentRootUnavailableError,
+  contentRootUnavailableMessage,
+  createGithubStore,
+  githubStoreConfigFromEnv,
+  type ContentsApiGithubStore,
+} from './githubStore';
 
 /** Result of the portal pre-processing pass. */
 export interface PortalOutcome {
@@ -186,6 +192,13 @@ async function serveContent(path: string): Promise<LambdaResponse> {
     const bytes = await store().readBytes(repoPath);
     return fileResponse(Buffer.from(bytes), guessType(repoPath));
   } catch (err) {
+    if (err instanceof ContentRootUnavailableError) {
+      return {
+        statusCode: 503,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ error: contentRootUnavailableMessage(err.contentRoot) }),
+      };
+    }
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
       return { statusCode: 404, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ error: 'Not found' }) };
     }

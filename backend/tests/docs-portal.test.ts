@@ -1,11 +1,11 @@
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { route } from '../src/router';
-import { ContentsApiGithubStore } from '../src/docs/githubStore';
+import { ContentsApiGithubStore, contentRootUnavailableMessage } from '../src/docs/githubStore';
 import { configureDocsRuntime, resetDocsRuntime } from '../src/docs/contentApi';
 import { configurePortalStore } from '../src/docs/portal';
 import { getClient } from '../src/db/client';
@@ -17,14 +17,21 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent } from '../src/types';
 
 // Minimal in-memory GitHub for the docs store.
+interface RecordedCall {
+  method: string;
+  path: string;
+}
+
 class FakeGitHub {
   blobs = new Map<string, string>();
+  calls: RecordedCall[] = [];
   constructor(seed: Record<string, string> = {}) {
     for (const [p, c] of Object.entries(seed)) this.blobs.set(p, c);
   }
   fetch = async (url: string, init?: RequestInit): Promise<Response> => {
     const u = new URL(url);
     const method = (init?.method || 'GET').toUpperCase();
+    this.calls.push({ method, path: u.pathname });
     if (method === 'GET' && u.pathname.includes('/git/trees/')) {
       const tree = [...this.blobs.entries()].map(([p, c]) => ({ path: p, sha: `sha-${p}`, type: 'blob', size: Buffer.byteLength(c) }));
       return json(200, { tree });
@@ -51,6 +58,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   let cacheDir: string;
   let client: DynamoDBDocumentClient;
   let browserCookie: string;
+  let portalGithub: FakeGitHub;
   const saved: Record<string, string | undefined> = {};
 
   before(async () => {
@@ -87,15 +95,16 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
 
   beforeEach(() => {
     cacheDir = mkdtempSync(join(tmpdir(), 'portal-cache-'));
+    portalGithub = new FakeGitHub({
+      'content/a/reference/guide.md': '---\nid: ref.guide\ntitle: Guide\ndoc_type: reference\n---\n\n# Guide\nbody',
+    });
     const store = new ContentsApiGithubStore({
       owner: 'o',
       repo: 'r',
       branch: 'main',
       token: 't',
       cacheDir,
-      fetchImpl: new FakeGitHub({
-        'content/a/reference/guide.md': '---\nid: ref.guide\ntitle: Guide\ndoc_type: reference\n---\n\n# Guide\nbody',
-      }).fetch as unknown as typeof fetch,
+      fetchImpl: portalGithub.fetch as unknown as typeof fetch,
     });
     configureDocsRuntime(store);
     configurePortalStore(store);
@@ -167,6 +176,38 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
     const res = await route(ev('GET', '/content/a/reference/guide.md', { headers: { cookie: browserCookie } }), client);
     assert.strictEqual(res.statusCode, 200);
     assert.match(res.body, /# Guide/);
+  });
+
+  it('distinguishes an offline corpus outage from a missing content file', async () => {
+    const offlineBefore = process.env.DTC_OFFLINE;
+    process.env.DTC_OFFLINE = '1';
+    try {
+      const outage = await route(
+        ev('GET', '/content/a/reference/guide.md', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      const contentRoot = join(cacheDir, 'content');
+      assert.strictEqual(outage.statusCode, 503);
+      assert.deepStrictEqual(
+        JSON.parse(outage.body),
+        { error: contentRootUnavailableMessage(contentRoot) },
+      );
+      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(existsSync(contentRoot), false);
+
+      mkdirSync(contentRoot, { recursive: true });
+      portalGithub.calls.length = 0;
+      const miss = await route(
+        ev('GET', '/content/images/missing.png', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(miss.statusCode, 404);
+      assert.deepStrictEqual(JSON.parse(miss.body), { error: 'Not found' });
+      assert.strictEqual(portalGithub.calls.length, 0);
+    } finally {
+      if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
+      else process.env.DTC_OFFLINE = offlineBefore;
+    }
   });
 
   it('rewrites the old /work/api proxy path to /api in-process', async () => {

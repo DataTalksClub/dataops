@@ -31,6 +31,26 @@ export class GitHubError extends Error {
   }
 }
 
+/**
+ * The offline content corpus is unusable. This is a store-level precondition,
+ * not an HTTP result: callers decide whether a route represents one item or a
+ * collection before translating it for the client.
+ */
+export class ContentRootUnavailableError extends Error {
+  constructor(readonly contentRoot: string) {
+    super(`Docs content root is unavailable: ${contentRoot}`);
+    this.name = 'ContentRootUnavailableError';
+  }
+}
+
+/** The operator-facing wording shared by both content-serving HTTP boundaries. */
+export function contentRootUnavailableMessage(contentRoot: string): string {
+  return (
+    `Docs content root is unavailable: ${contentRoot}`
+    + ' (set DTC_CACHE_ROOT to a hydrated content cache, or let GitHub hydration run)'
+  );
+}
+
 /** Configuration for a {@link GithubStore}. */
 export interface GithubStoreConfig {
   /** Repository owner / org, e.g. `DataTalksClub`. */
@@ -240,6 +260,9 @@ export class ContentsApiGithubStore implements GithubStore {
     if (existsSync(local)) return local;
     // Offline/local dev: never reach for GitHub — a missing file is just ENOENT.
     if (process.env.DTC_OFFLINE === '1') {
+      if (!existsSync(this.contentRoot) || !statSync(this.contentRoot).isDirectory()) {
+        throw new ContentRootUnavailableError(this.contentRoot);
+      }
       const err = new Error(clean) as NodeJS.ErrnoException;
       err.code = 'ENOENT';
       throw err;

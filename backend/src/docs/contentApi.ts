@@ -28,7 +28,9 @@ import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import {
   ContentsApiGithubStore,
+  ContentRootUnavailableError,
   createGithubStore,
+  contentRootUnavailableMessage,
   githubStoreConfigFromEnv,
   GitHubError,
 } from './githubStore';
@@ -119,11 +121,7 @@ class NotFound extends HttpError {
  */
 class ContentRootUnavailable extends HttpError {
   constructor(contentRoot: string) {
-    super(
-      503,
-      `Docs content root is unavailable: ${contentRoot}`
-      + ' (set DTC_CACHE_ROOT to a hydrated content cache, or let GitHub hydration run)',
-    );
+    super(503, contentRootUnavailableMessage(contentRoot));
   }
 }
 
@@ -246,6 +244,9 @@ export async function handleDocsRoutes(event: LambdaEvent): Promise<LambdaRespon
     return await dispatch(event, path);
   } catch (err) {
     if (err instanceof HttpError) return jsonResponse(err.status, { error: err.message });
+    if (err instanceof ContentRootUnavailableError) {
+      return jsonResponse(503, { error: contentRootUnavailableMessage(err.contentRoot) });
+    }
     if (err instanceof DocumentRegistryError) return jsonResponse(400, { error: err.message });
     if (err instanceof GitHubError) {
       return jsonResponse(502, { error: 'GitHub request failed', detail: err.message });
