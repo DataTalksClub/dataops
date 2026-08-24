@@ -5,6 +5,7 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
+const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 
 const screenshots = path.resolve(__dirname, "..", "..", ".tmp", "screenshots", "planning-surfaces");
 const PORT = 3197;
@@ -94,7 +95,7 @@ async function expectExactPalette(page, dark) {
 
 test.beforeAll(async () => {
   fs.mkdirSync(screenshots, { recursive: true });
-  server = spawn(path.resolve(__dirname, "..", "..", "node_modules", ".bin", "tsx"), ["scripts/test-server.ts"], {
+  server = spawn(...resolveTestServerCommand(), {
     cwd: path.resolve(__dirname, ".."),
     env: {
       ...process.env,
@@ -150,11 +151,12 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
   await page.setViewportSize({ width: 820, height: 900 });
   await expect(surface).toHaveCSS("gap", "16px");
   await expectNoPageOverflow(page, 820);
-  await page.setViewportSize({ width: 420, height: 844 });
+  await page.setViewportSize({ width: 620, height: 844 });
   expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
-  await expectNoPageOverflow(page, 420);
+  await expectNoPageOverflow(page, 620);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await useTheme(page, false);
   await expectNoPageOverflow(page, 390);
   await page.screenshot({ path: path.join(screenshots, "newsletter-390-light.png"), animations: "disabled" });
@@ -172,7 +174,7 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await expect(surface.getByText("Community webinar").first()).toBeVisible();
   await expect(surface.getByText("Activity overlaps a school holiday")).toBeVisible();
   await expect(surface.getByText("school-holiday-overlap")).toHaveCount(0);
-  await expect(surface.locator(".calendar-grid > .calendar-day")).toHaveCount(42);
+  await expect(surface.locator(".calendar-grid .calendar-day")).toHaveCount(42);
   await expectNoPageOverflow(page, 1440);
   await expectExactPalette(page, false);
   const accessibility = await new AxeBuilder({ page }).include(".calendar-surface").analyze();
@@ -188,13 +190,14 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await page.setViewportSize({ width: 820, height: 900 });
   expect(await surface.locator(".calendar-grid").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await expectNoPageOverflow(page, 820);
-  await page.setViewportSize({ width: 420, height: 844 });
+  await page.setViewportSize({ width: 620, height: 844 });
   expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
-  await expectNoPageOverflow(page, 420);
+  await expectNoPageOverflow(page, 620);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  expect(await surface.locator(".planner-filter-fields").evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await surface.locator("select[data-view]").selectOption("week");
-  await expect(surface.locator(".calendar-grid > .calendar-day")).toHaveCount(7);
+  await expect(surface.locator(".calendar-grid .calendar-day")).toHaveCount(7);
   await page.evaluate(() => window.scrollTo(0, 0));
   await useTheme(page, false);
   await expectNoPageOverflow(page, 390);

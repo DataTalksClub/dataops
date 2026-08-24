@@ -5381,9 +5381,7 @@ body[data-workspace-view="calendar"] .document-list {
 
 .bookkeeping-surface,
 .sponsor-crm-surface,
-.mailing-exports-surface,
-.newsletter-surface,
-.calendar-surface {
+.mailing-exports-surface {
   gap: 20px;
 }
 

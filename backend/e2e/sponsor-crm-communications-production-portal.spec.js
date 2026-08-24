@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
+const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 
 const PORT = 3016;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -25,7 +26,7 @@ const waitForPortal = () => new Promise((resolve, reject) => {
 
 test.describe('production sponsor CRM communications portal', () => {
   test.beforeAll(async () => {
-    child = spawn('npx', ['tsx', 'scripts/test-server.ts'], {
+    child = spawn(...resolveTestServerCommand(), {
       cwd: path.resolve(__dirname, '..'),
       env: {
         ...process.env,
@@ -351,6 +352,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await operatorPage.setViewportSize({ width: 1280, height: 900 });
     await operatorPage.reload();
     await operatorPage.getByRole('button', { name: 'Sponsors' }).click();
+    await expect(operatorPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await operatorPage.getByRole('button', { name: 'Open booking' }).first().click();
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
     await expect(operatorPage.getByRole('button', { name: 'Review exact draft' })).toHaveCount(0);
@@ -424,6 +426,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await expect(adminPage.getByRole('button', { name: 'Sponsors' })).toBeVisible();
 
     await adminPage.getByRole('button', { name: 'Sponsors' }).click();
+    await expect(adminPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await adminPage.getByRole('button', { name: 'Open booking' }).first().click();
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
     failNextApprove = true;
@@ -492,6 +495,7 @@ test.describe('production sponsor CRM communications portal', () => {
     });
     await disabledPage.goto('/');
     await disabledPage.getByRole('button', { name: 'Sponsors' }).click();
+    await expect(disabledPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await disabledPage.getByRole('button', { name: 'Open booking' }).click();
     await expect(disabledPage.getByText('Reviewed sending is disabled')).toBeVisible();
     await captureCommunications(

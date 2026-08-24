@@ -20,6 +20,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const { createDocsCacheRoot, missingDocsCacheRoot } = require('./helpers/docs-content-root');
+const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
@@ -108,7 +109,7 @@ async function startServer(server, port) {
   server.port = port;
   server.baseURL = `http://127.0.0.1:${port}`;
   server.stderr = '';
-  server.process = spawn('npx', ['tsx', 'scripts/test-server.ts'], {
+  server.process = spawn(...resolveTestServerCommand(), {
     cwd: BACKEND_ROOT,
     detached: true,
     env: {

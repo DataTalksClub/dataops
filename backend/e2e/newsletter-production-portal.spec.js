@@ -3,6 +3,7 @@ const { test, expect } = require("@playwright/test"),
   http = require("http"),
   path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
+const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 const PORT = 3017,
   BASE = `http://127.0.0.1:${PORT}`;
 let child;
@@ -21,7 +22,7 @@ const wait = () =>
   });
 test.describe("production newsletter planner", () => {
   test.beforeAll(async () => {
-    child = spawn("npx", ["tsx", "scripts/test-server.ts"], {
+    child = spawn(...resolveTestServerCommand(), {
       cwd: path.resolve(__dirname, ".."),
       env: {
         ...process.env,

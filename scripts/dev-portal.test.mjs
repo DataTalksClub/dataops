@@ -193,6 +193,21 @@ test('validates default and override port configuration', () => {
   );
 });
 
+test('resolves development child CLIs through installed package manifests', () => {
+  const [backend, vite] = supervisorTesting.productionChildSpecs(ROOT);
+
+  assert.equal(backend.command, process.execPath);
+  assert.equal(backend.args[1], 'watch');
+  assert.equal(backend.args[2], 'backend/scripts/dev-server.ts');
+  assert.match(backend.args[0], /node_modules[\\/]tsx[\\/]dist[\\/]cli\.mjs$/);
+  assert.doesNotMatch(backend.args[0], /[\\/]\.bin[\\/]/);
+
+  assert.equal(vite.command, process.execPath);
+  assert.equal(vite.args[0].endsWith(path.join('vite', 'bin', 'vite.js')), true);
+  assert.equal(vite.args[1], '--config');
+  assert.equal(vite.args[2], path.join(ROOT, 'vite.config.mjs'));
+});
+
 test('loads only the local docs cache setting from the ignored env file', () => {
   const envRoot = path.join(scratchRoot, 'local-env');
   mkdirSync(envRoot, { recursive: true });

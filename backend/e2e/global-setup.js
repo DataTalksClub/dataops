@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 
 const TEST_SERVER_PORT = 3001;
 const READY_TIMEOUT_MS = 30000;
@@ -146,8 +147,6 @@ function waitForServer(port, timeoutMs, options = {}) {
 }
 
 async function globalSetup() {
-  const serverScript = path.join(__dirname, '..', 'scripts', 'test-server.ts');
-
   // Playwright specs also launch isolated test-server children. Keep every
   // process in this test-only tree on the same explicit dark rollout state.
   Object.assign(process.env, DARK_ROLLOUT_ENVIRONMENT);
@@ -155,8 +154,7 @@ async function globalSetup() {
   // Use detached: true so the child runs in its own process group.
   // This lets us kill the entire group (parent tsx + child node) cleanly.
   const child = spawn(
-    'npx',
-    ['tsx', serverScript],
+    ...resolveTestServerCommand(),
     {
       env: buildTestServerEnvironment(),
       stdio: ['ignore', 'pipe', 'pipe'],
