@@ -16,14 +16,12 @@ function createSurfaceHarness(options = {}) {
   const calls = [];
   const body = element("body");
   body.dataset.view = options.bodyView || "library";
-  const breadcrumb = element();
   const mobileTitle = element();
   const searchInput = element("input");
   searchInput.value = options.searchValue || "";
   const statusText = element();
   const tasksNavButton = element("button");
   const tasksNavSubmenu = element();
-  const toolbarTitle = element();
   const workspaceNavButtons = ["home", "inbox", "docs"].map((view) => {
     const button = element("button");
     button.dataset.workspaceView = view;
@@ -75,7 +73,6 @@ function createSurfaceHarness(options = {}) {
   const context = {
     apiUrl: (path) => new URL(path, "https://portal.test"),
     body,
-    breadcrumb,
     clearTimeoutImpl: (token) => cleared.push(token),
     dedupeWorkTasks: (tasks) => [
       ...new Map(tasks.map((task) => [task.id, task])).values(),
@@ -106,7 +103,6 @@ function createSurfaceHarness(options = {}) {
     getRenderSponsorCrmSurface: () => renders.sponsors,
     getRenderTasksSurface: () => renders.tasks,
     getRenderUsersSurfaceView: () => renders.users,
-    getResizeDocumentTitle: () => () => calls.push(["resize-title"]),
     getSearchValue: () => searchInput.value,
     isOpenWorkTask: (task) => task.status !== "done",
     mobileTitle,
@@ -132,7 +128,6 @@ function createSurfaceHarness(options = {}) {
     tasksNavButton,
     tasksNavSectionButtons,
     tasksNavSubmenu,
-    toolbarTitle,
     windowConsole: {
       warn: (message) => calls.push(["warn", message]),
     },
@@ -144,7 +139,6 @@ function createSurfaceHarness(options = {}) {
   const composition = createSurfaceComposition(context);
   return {
     body,
-    breadcrumb,
     calls,
     cleared,
     composition,
@@ -162,7 +156,6 @@ function createSurfaceHarness(options = {}) {
     tasksNavButton,
     tasksNavSectionButtons,
     tasksNavSubmenu,
-    toolbarTitle,
     workspaceNavButtons,
     workspaceState,
   };
@@ -359,13 +352,12 @@ describe("runtime surface composition", () => {
   test("updates shell copy and keeps shared path and HTML helpers deterministic", () => {
     const harness = createSurfaceHarness();
     harness.composition.setView("editor");
-    harness.composition.setPageTitle("Process", "Docs / Process");
+    harness.composition.setRouteTitle("Process");
     harness.composition.setStatus("Saved");
     assert.equal(harness.body.dataset.view, "editor");
-    assert.equal(harness.toolbarTitle.textContent, "Process");
     assert.equal(harness.mobileTitle.textContent, "Process");
-    assert.equal(harness.breadcrumb.textContent, "Docs / Process");
     assert.equal(harness.statusText.textContent, "Saved");
+    assert.equal(harness.composition.setRouteTitle.length, 1);
     assert.equal(harness.composition.cleanPath("content/ops/start.md"), "ops/start.md");
     assert.equal(harness.composition.basename("content/ops/start-here.md"), "start here");
     assert.equal(harness.composition.cleanPath("external/path.md"), "external/path.md");

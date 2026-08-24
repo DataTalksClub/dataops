@@ -46,7 +46,7 @@ export function createHomeSurface(context) {
     request,
     resolveCardLabel,
     resolveDocReference,
-    setPageTitle,
+    setRouteTitle,
     setStatus,
     settledPayload,
     state,
@@ -70,7 +70,7 @@ export function createHomeSurface(context) {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     libraryTitle.textContent = "Home";
-    setPageTitle("Today", "Today");
+    setRouteTitle("Today");
     clearSelectionButton.hidden = true;
     if (model.stats.liveLoaded) {
       setStatus(

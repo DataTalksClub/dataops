@@ -6,7 +6,7 @@ export function createDeviceAuthSurface(context) {
     libraryTitle,
     renderSurfaceHeader,
     request,
-    setPageTitle,
+    setRouteTitle,
     setStatus,
     workApiUrl,
   } = context;
@@ -22,7 +22,7 @@ export function createDeviceAuthSurface(context) {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     libraryTitle.textContent = "Authorize device";
-    setPageTitle("Authorize device", "Authorize device");
+    setRouteTitle("Authorize device");
     clearSelectionButton.hidden = true;
     setStatus("Confirm a code shown by the DataOps CLI.");
 

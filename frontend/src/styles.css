@@ -996,13 +996,6 @@ body.sidebar-collapsed .sidebar {
   min-width: 0;
 }
 
-.page-context > :not(#sidebar-expand-button),
-#discard-button,
-#save-button,
-.save-state {
-  display: none !important;
-}
-
 body:not(.sidebar-collapsed) #sidebar-expand-button {
   display: none !important;
 }
@@ -10540,15 +10533,6 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
   margin-left: auto;
 }
 
-.editor-view #discard-button,
-.editor-view #save-button {
-  display: inline-flex !important;
-}
-
-.editor-view .save-state {
-  display: inline !important;
-}
-
 .create-view {
   width: min(100%, 720px);
   margin: 0 auto;
@@ -11130,7 +11114,7 @@ body[data-workspace-view="tasks"] .ops-queue-row strong {
   z-index: 4;
   margin-inline: -8px;
   border-top-color: var(--border-strong);
-  background: color-mix(in srgb, var(--surface-bg) 94%, transparent);
+  background: var(--surface-bg);
   box-shadow: 0 -5px 16px rgba(15, 23, 42, 0.08);
   padding-inline: 8px;
   padding-bottom: max(14px, env(safe-area-inset-bottom));

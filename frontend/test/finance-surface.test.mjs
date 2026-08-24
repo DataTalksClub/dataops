@@ -249,7 +249,7 @@ function createHarness({ request, route = null, setupSurface } = {}) {
   const documentList = new FakeElement("main");
   const document = new FakeDocument(setupSurface);
   const requests = [];
-  const pageTitles = [];
+  const routeTitles = [];
   globalThis.document = document;
   globalThis.FormData = FakeFormData;
   const finance = createFinanceSurface({
@@ -265,11 +265,11 @@ function createHarness({ request, route = null, setupSurface } = {}) {
       return {};
     },
     renderEntityLoadState() {},
-    setPageTitle: (...title) => pageTitles.push(title),
+    setRouteTitle: (title) => routeTitles.push(title),
     todayIsoDate: () => "2026-08-13",
     workApiUrl: (path) => path,
   });
-  return { document, documentList, finance, pageTitles, requests };
+  return { document, documentList, finance, requests, routeTitles };
 }
 
 function requestPath(url) {

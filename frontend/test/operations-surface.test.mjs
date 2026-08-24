@@ -316,7 +316,7 @@ function createOperationsHarness(options = {}) {
       return options.request ? options.request(url, requestOptions, entry) : {};
     },
     scheduleAnimationFrame: (callback) => callback(),
-    setPageTitle() {},
+    setRouteTitle() {},
     setStatus: (message) => statuses.push(message),
     showCreate() {},
     state,
@@ -380,7 +380,7 @@ function createAdminHarness(options = {}) {
       requests.push(entry);
       return options.request ? options.request(url, requestOptions, entry) : {};
     },
-    setPageTitle() {},
+    setRouteTitle() {},
     setStatus: (message) => statuses.push(message),
     settledPayload: (result) =>
       result.status === "fulfilled" ? result.value : null,
