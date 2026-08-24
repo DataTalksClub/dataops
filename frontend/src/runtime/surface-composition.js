@@ -54,7 +54,7 @@ export function createSurfaceBridge() {
     "folderExists",
     "setFolderUrl",
     "showLibrary",
-    "syncLibraryPageTitle",
+    "syncLibraryRouteTitle",
     "clearSelection",
     "clearDocumentFilters",
     "enhanceSelect",
@@ -120,7 +120,6 @@ export function createSurfaceComposition(context) {
   const {
     apiUrl,
     body,
-    breadcrumb,
     clearTimeoutImpl,
     dedupeWorkTasks,
     getCanLeaveDocumentEditor,
@@ -136,7 +135,6 @@ export function createSurfaceComposition(context) {
     getRenderOperationsHome,
     getRenderSponsorCrmSurface,
     getRenderTasksSurface,
-    getResizeDocumentTitle,
     getSearchValue,
     isOpenWorkTask,
     mobileTitle,
@@ -151,7 +149,6 @@ export function createSurfaceComposition(context) {
     tasksNavSectionButtons,
     tasksNavSubmenu,
     tasksFromWorkPayload,
-    toolbarTitle,
     windowConsole,
     workspaceHashPath,
     workspaceNavButtons,
@@ -325,11 +322,8 @@ export function createSurfaceComposition(context) {
     body.dataset.view = view;
   }
 
-  function setPageTitle(title, pagePath) {
-    toolbarTitle.textContent = title;
+  function setRouteTitle(title) {
     mobileTitle.textContent = title;
-    breadcrumb.textContent = pagePath;
-    getResizeDocumentTitle()();
   }
 
   function setStatus(message) {
@@ -379,7 +373,7 @@ export function createSurfaceComposition(context) {
     legacyViewToTasksSection,
     refreshOperationsRecurringSnapshot,
     renderOperationsWorkspace,
-    setPageTitle,
+    setRouteTitle,
     setStatus,
     setTasksNavExpanded,
     setView,

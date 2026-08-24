@@ -3,7 +3,7 @@ export function createDocumentRenderer(context, services, editorState) {
     apiUrl, basename, documentState, documentTitle, editor, editorView,
     fetchBacklinksForCurrentDoc, renderGithubRawFooter, renderLoomBlock,
     renderRelatedDocsBlock, renderWarningsBlock, renderedView, request,
-    setPageTitle, setStatus, viewToggleButton,
+    setRouteTitle, setStatus, viewToggleButton,
   } = context;
   const {
     appendProcedureChildren, attachInlineEditor, escapeRegex, makeAttrRow,
@@ -197,7 +197,8 @@ export function createDocumentRenderer(context, services, editorState) {
     editor.value = next;
     if (documentState.currentDoc) {
       documentTitle.value = title;
-      setPageTitle(title, documentState.currentDoc.path);
+      resizeDocumentTitle();
+      setRouteTitle(title);
     }
     storeDraft();
     updateSaveState();

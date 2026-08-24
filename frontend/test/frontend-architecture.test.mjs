@@ -46,3 +46,170 @@ describe("frontend architecture contract", () => {
     assert.deepEqual(longLines, []);
   });
 });
+
+function frontendAssetFiles() {
+  const manifest = JSON.parse(read("backend/src/docs/frontend-assets.json"));
+  return manifest.files;
+}
+
+/**
+ * Count the arguments of every call to `functionName` in `source`.
+ *
+ * Nested calls and trailing commas are tolerated so the scan reports the real
+ * call shape instead of raw comma counts.
+ */
+function callArgumentCounts(source, functionName) {
+  const counts = [];
+  const pattern = new RegExp(`\\b${functionName}\\(`, "g");
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    let depth = 0;
+    let segment = "";
+    const segments = [];
+    for (let index = match.index + match[0].length - 1; index < source.length; index += 1) {
+      const character = source[index];
+      if ("([{".includes(character)) {
+        depth += 1;
+        if (depth === 1) continue;
+      } else if (")]}".includes(character)) {
+        depth -= 1;
+        if (depth === 0) break;
+      } else if (character === "," && depth === 1) {
+        segments.push(segment);
+        segment = "";
+        continue;
+      }
+      segment += character;
+    }
+    segments.push(segment);
+    counts.push(segments.filter((value) => value.trim() !== "").length);
+  }
+  return counts;
+}
+
+describe("shell ownership contract", () => {
+  test("keeps removed shell toolbar and borrowed save controls out of production source", () => {
+    const removed = [
+      ["#back-button selector", /(?<![\w-])#back-button\b/],
+      ["#breadcrumb selector", /(?<![\w-])#breadcrumb\b/],
+      ["#toolbar-title selector", /(?<![\w-])#toolbar-title\b/],
+      ["global #save-state selector", /(?<![\w-])#save-state\b/],
+      ["global .save-state class", /(?<![\w-])\.save-state\b/],
+      ["global #discard-button selector", /(?<![\w-])#discard-button\b/],
+      ["global #save-button selector", /(?<![\w-])#save-button\b/],
+      ["back-button element", /id="back-button"/],
+      ["breadcrumb element", /id="breadcrumb"/],
+      ["toolbar-title element", /id="toolbar-title"/],
+      ["save-state element", /id="save-state"/],
+      ["discard-button element", /id="discard-button"/],
+      ["save-button element", /id="save-button"/],
+      ["backButton binding", /(?<![A-Za-z])backButton\b/],
+      ["breadcrumb binding", /(?<![A-Za-z])breadcrumb\b/],
+      ["toolbarTitle binding", /(?<![A-Za-z])toolbarTitle\b/],
+      ["saveState binding", /(?<![A-Za-z])saveState\b/],
+      ["saveButton binding", /(?<![A-Za-z])saveButton\b/],
+      ["discardButton binding", /(?<![A-Za-z])discardButton\b/],
+      ["setPageTitle writer", /\bsetPageTitle\b/],
+      ["runtime editor chrome relocation", /\bcreateEditorChrome\b/],
+      ["page-title coupled title resize", /\bgetResizeDocumentTitle\b/],
+    ];
+
+    const ghosts = [];
+    for (const file of frontendAssetFiles()) {
+      const source = read(`frontend/${file}`);
+      for (const [name, pattern] of removed) {
+        if (pattern.test(source)) ghosts.push(`${file}: ${name}`);
+      }
+    }
+    assert.deepEqual(ghosts, []);
+  });
+
+  test("writes route titles through a single-argument contract", () => {
+    const composition = read("frontend/src/runtime/surface-composition.js");
+    assert.match(composition, /function setRouteTitle\(title\) \{/);
+    assert.doesNotMatch(composition, /function setRouteTitle\([^)]*,/);
+    // The removed second argument had a single producer: the breadcrumb path.
+    assert.deepEqual(
+      frontendAssetFiles().filter((file) =>
+        /\boperationsViewPath\b/.test(read(`frontend/${file}`)),
+      ),
+      [],
+    );
+
+    const overloaded = [];
+    for (const file of frontendAssetFiles().filter((name) => name.endsWith(".js"))) {
+      const source = read(`frontend/${file}`);
+      callArgumentCounts(source, "setRouteTitle").forEach((count, index) => {
+        if (count > 1) overloaded.push(`${file}: call ${index + 1} passes ${count} arguments`);
+      });
+    }
+    assert.deepEqual(overloaded, []);
+  });
+
+  test("gives the editor surface ownership of its save controls", () => {
+    const markup = read("frontend/index.html");
+    const editorView = markup.slice(
+      markup.indexOf('<section id="editor-view"'),
+      markup.indexOf('<section id="create-view"'),
+    );
+    for (const id of [
+      "editor-inline-status",
+      "editor-save-state",
+      "editor-discard-button",
+      "editor-save-button",
+    ]) {
+      assert.ok(editorView.includes(`id="${id}"`), `${id} belongs to the editor view`);
+    }
+    assert.match(
+      editorView,
+      /id="editor-save-state"[^>]*tabindex="-1"/,
+      "save state receives completed mutation focus",
+    );
+
+    const toolbar = markup.slice(
+      markup.indexOf('<header class="page-toolbar">'),
+      markup.indexOf('<section id="library-view"'),
+    );
+    assert.doesNotMatch(toolbar, /save|discard|breadcrumb|toolbar-title|back-button/i);
+
+    const bindings = read("frontend/src/shell/dom-bindings.js");
+    assert.match(bindings, /editorInlineStatus: "#editor-inline-status"/);
+    assert.match(bindings, /editorSaveState: "#editor-save-state"/);
+    assert.match(bindings, /editorDiscardButton: "#editor-discard-button"/);
+    assert.match(bindings, /editorSaveButton: "#editor-save-button"/);
+    assert.equal(
+      bindings.match(/dom\.editorSaveButton\.addEventListener\("click", handlers\.saveCurrentDocument\)/g)
+        ?.length,
+      1,
+    );
+    assert.equal(
+      bindings.match(/dom\.editorDiscardButton\.addEventListener\("click", handlers\.discardDraft\)/g)
+        ?.length,
+      1,
+    );
+
+    const editorIndex = read("frontend/src/surfaces/document-editor/index.js");
+    assert.doesNotMatch(editorIndex, /createElement\("footer"\)/);
+    assert.match(editorIndex, /writeEditorInlineStatus\(context\.editorInlineStatus, message\)/);
+
+    const lifecycle = read("frontend/src/surfaces/document-editor/lifecycle.js");
+    assert.match(lifecycle, /editorSaveButton\.disabled = !hasChanges;/);
+    assert.match(lifecycle, /editorDiscardButton\.disabled = !documentState\.hasDraft;/);
+    assert.match(lifecycle, /editorSaveState\.textContent = message;/);
+    assert.match(lifecycle, /restoreMutationFocus\(\);/);
+    assert.doesNotMatch(lifecycle, /has-changes|classList\.(?:add|remove|toggle)\("flash"\)/);
+
+    const events = read("frontend/src/runtime/application-events.js");
+    assert.match(events, /!editorSaveButton\.disabled/);
+  });
+
+  test("shows editor mutation controls only on the editor route", () => {
+    const styles = read("frontend/src/styles.css");
+    assert.match(
+      styles,
+      /body\[data-view="library"\] \.editor-view,[\s\S]*?body\[data-view="create"\] \.editor-view \{\n  display: none;\n\}/,
+    );
+    assert.doesNotMatch(styles, /\.editor-view #(?:save|discard)-button/);
+    assert.doesNotMatch(styles, /display: none !important;\n\}\n\n\.editor-view \.save-state/);
+  });
+});

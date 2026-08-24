@@ -33,7 +33,7 @@ export function createKnowledgeSearch(context, services) {
     openDocument,
     renderDocuments,
     setHighlightedText,
-    syncLibraryPageTitle,
+    syncLibraryRouteTitle,
   } = services;
   const searchRanks = new Map();
 
@@ -112,7 +112,7 @@ export function createKnowledgeSearch(context, services) {
         setStatus(
           `${results.length} search results${unavailable ? ` · ${unavailable} source issues` : ""}.`,
         );
-        syncLibraryPageTitle();
+        syncLibraryRouteTitle();
         return;
       }
 
@@ -121,7 +121,7 @@ export function createKnowledgeSearch(context, services) {
         // rendering the (potentially huge) document list.
         knowledgeState.visibleDocuments = [];
         renderOperationsWorkspace(filterDocuments(knowledgeState.allDocuments));
-        syncLibraryPageTitle();
+        syncLibraryRouteTitle();
         return;
       }
 
@@ -132,7 +132,7 @@ export function createKnowledgeSearch(context, services) {
       );
       renderDocuments(knowledgeState.visibleDocuments, knowledgeState.selectedFolder);
       setStatus(`${knowledgeState.visibleDocuments.length} documents shown.`);
-      syncLibraryPageTitle();
+      syncLibraryRouteTitle();
     } catch (error) {
       if (error.name === "AbortError") return;
       setStatus(error.message);
