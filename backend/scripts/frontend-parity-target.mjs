@@ -1,8 +1,12 @@
 import http from 'node:http';
-import { PutCommand } from '@aws-sdk/lib-dynamodb';
-import Module, { builtinModules } from 'node:module';
-import { resolve, sep } from 'node:path';
+import { BatchWriteCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+import {
+  installSamResolutionGuard,
+  resolveParityModulePaths,
+} from './frontend-parity-runtime.mjs';
 
 function argumentsFrom(argv) {
   const values = {};
@@ -16,7 +20,8 @@ function argumentsFrom(argv) {
 const args = argumentsFrom(process.argv.slice(2));
 const mode = args['--mode'];
 const moduleRoot = resolve(args['--root']);
-const port = Number(args['--port']);
+const requestedPort = Number(args['--port']);
+let listeningPort = Number.isInteger(requestedPort) && requestedPort >= 0 ? requestedPort : NaN;
 const fixedNow = '2026-08-12T10:15:00.000Z';
 const adminId = '15900000-0000-4000-8000-000000000001';
 const operatorId = '15900000-0000-4000-8000-000000000002';
@@ -51,58 +56,78 @@ Object.assign(process.env, {
 });
 if (mode === 'sam') delete process.env.FRONTEND_ROOT;
 
-if (mode === 'sam') {
-  const builtins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
-  const originalResolve = Module._resolveFilename;
-  Module._resolveFilename = function guardedResolve(request, parent, isMain, options) {
-    const result = originalResolve.call(this, request, parent, isMain, options);
-    if (typeof result === 'string' && !builtins.has(result) && result !== request) {
-      const absolute = resolve(result);
-      if (absolute !== moduleRoot && !absolute.startsWith(moduleRoot + sep)) {
-        throw new Error(`Isolated SAM parity target attempted outside module resolution: ${absolute}`);
-      }
-    }
-    return result;
-  };
-}
+const { handler: handlerPath, fixtureSupport: fixtureSupportPath } =
+  resolveParityModulePaths({ mode, moduleRoot });
+if (mode === 'sam') installSamResolutionGuard(moduleRoot);
 
-const modulePath = (sourcePath, samPath) => pathToFileURL(resolve(moduleRoot, mode === 'source' ? sourcePath : samPath)).href;
-const [handlerModule, clientModule, tablesModule, users, sessions] = await Promise.all([
-  import(modulePath('src/handler.ts', 'dist/handler.js')),
-  import(modulePath('src/db/client.ts', 'dist/db/client.js')),
-  import(modulePath('src/db/tableNames.ts', 'dist/db/tableNames.js')),
-  import(modulePath('src/db/users.ts', 'dist/db/users.js')),
-  import(modulePath('src/db/sessions.ts', 'dist/db/sessions.js')),
+const [handlerModule, fixtureSupport] = await Promise.all([
+  import(pathToFileURL(handlerPath).href),
+  import(pathToFileURL(fixtureSupportPath).href),
 ]);
-const client = await clientModule.getClient();
-await users.createUserWithId(client, adminId, { name: 'Synthetic parity admin', email: 'parity-admin@example.test', role: 'admin' });
-await users.createUserWithId(client, operatorId, { name: 'Synthetic parity operator', email: 'parity-operator@example.test', role: 'operator' });
-const adminSession = await sessions.createBrowserSession(client, adminId, { lifetimeSeconds: 3600 });
-const operatorSession = await sessions.createBrowserSession(client, operatorId, { lifetimeSeconds: 3600 });
+const client = await fixtureSupport.getClient();
+await fixtureSupport.createUserWithId(client, adminId, {
+  name: 'Synthetic parity admin',
+  email: 'parity-admin@example.test',
+  role: 'admin',
+});
+await fixtureSupport.createUserWithId(client, operatorId, {
+  name: 'Synthetic parity operator',
+  email: 'parity-operator@example.test',
+  role: 'operator',
+});
+const adminSession = await fixtureSupport.createBrowserSession(client, adminId, { lifetimeSeconds: 3600 });
+const operatorSession = await fixtureSupport.createBrowserSession(client, operatorId, { lifetimeSeconds: 3600 });
 
 const tables = {
-  tasks: tablesModule.TABLE_TASKS,
-  cards: tablesModule.TABLE_CARDS,
-  templates: tablesModule.TABLE_TEMPLATES,
-  artifacts: tablesModule.TABLE_ARTIFACTS,
-  assistants: tablesModule.TABLE_ASSISTANT_JOBS,
-  intake: tablesModule.TABLE_INTAKE,
-  notifications: tablesModule.TABLE_NOTIFICATIONS,
-  sponsor: tablesModule.TABLE_SPONSOR_CRM,
+  tasks: fixtureSupport.TABLE_TASKS,
+  cards: fixtureSupport.TABLE_CARDS,
+  templates: fixtureSupport.TABLE_TEMPLATES,
+  artifacts: fixtureSupport.TABLE_ARTIFACTS,
+  assistants: fixtureSupport.TABLE_ASSISTANT_JOBS,
+  intake: fixtureSupport.TABLE_INTAKE,
+  notifications: fixtureSupport.TABLE_NOTIFICATIONS,
+  sponsor: fixtureSupport.TABLE_SPONSOR_CRM,
 };
 
 async function put(tableName, item) {
   await client.send(new PutCommand({ TableName: tableName, Item: item }));
 }
 
+async function deleteAllItems(tableName) {
+  let exclusiveStartKey;
+  let deleted = 0;
+  do {
+    const scanned = await client.send(new ScanCommand({
+      TableName: tableName,
+      ExclusiveStartKey: exclusiveStartKey,
+    }));
+    const items = scanned.Items || [];
+    for (let index = 0; index < items.length; index += 25) {
+      await client.send(new BatchWriteCommand({
+        RequestItems: {
+          [tableName]: items.slice(index, index + 25).map((Item) => ({ DeleteRequest: { Key: {
+            PK: Item.PK,
+            SK: Item.SK,
+          } } })),
+        },
+      }));
+    }
+    deleted += items.length;
+    exclusiveStartKey = scanned.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+  return deleted;
+}
+
 async function resetFixtures() {
   const card = {
     PK: 'CARD#parity-workflow', SK: 'CARD#parity-workflow', id: 'parity-workflow', title: 'Synthetic publication workflow',
-    description: 'Public-safe parity workflow', anchorDate: '2026-08-12', stage: 'preparation', createdAt: fixedNow, updatedAt: fixedNow,
+    description: 'Public-safe parity workflow', anchorDate: '2026-08-12', stage: 'preparation', status: 'active',
+    version: 1, taskCount: 1, openTaskCount: 1, createdAt: fixedNow, updatedAt: fixedNow,
   };
   const returnCard = {
     PK: 'CARD#parity-return', SK: 'CARD#parity-return', id: 'parity-return', title: 'Synthetic return workflow',
-    anchorDate: '2026-08-13', stage: 'preparation', createdAt: fixedNow, updatedAt: fixedNow,
+    anchorDate: '2026-08-13', stage: 'preparation', status: 'active',
+    version: 1, taskCount: 0, openTaskCount: 0, createdAt: fixedNow, updatedAt: fixedNow,
   };
   const task = {
     PK: 'TASK#parity-task', SK: 'TASK#parity-task', id: 'parity-task', description: 'Verify synthetic publication proof',
@@ -148,6 +173,7 @@ async function resetFixtures() {
     slotType: 'main', status: 'confirmed', plannedPublicationDate: '2026-08-20', materialDeadline: '2026-08-16',
     notes: 'Synthetic role-safe booking', version: 1, createdAt: fixedNow, updatedAt: fixedNow,
   };
+  await Promise.all(Object.values(tables).map((tableName) => deleteAllItems(tableName)));
   await Promise.all([
     put(tables.cards, card), put(tables.cards, returnCard), put(tables.tasks, task), put(tables.intake, intake),
     put(tables.assistants, assistant), put(tables.artifacts, artifact), put(tables.templates, template),
@@ -161,10 +187,10 @@ function sessionFor(url) {
 }
 
 const server = http.createServer(async (request, response) => {
-  const url = new URL(request.url || '/', `http://127.0.0.1:${port}`);
+  const url = new URL(request.url || '/', `http://127.0.0.1:${listeningPort}`);
   if (url.pathname === '/__parity__/health') {
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ target: mode }));
+    response.end(JSON.stringify({ ready: true, target: mode }));
     return;
   }
   if (url.pathname === '/__parity__/session') {
@@ -176,7 +202,7 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname === '/__parity__/reset' && request.method === 'POST') {
     await resetFixtures();
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ reset: true }));
+    response.end(JSON.stringify({ reset: true, count: 10 }));
     return;
   }
   const chunks = [];
@@ -194,5 +220,8 @@ const server = http.createServer(async (request, response) => {
   response.end(result.isBase64Encoded ? Buffer.from(result.body || '', 'base64') : result.body || '');
 });
 
-server.listen(port, '127.0.0.1', () => process.stdout.write(`${JSON.stringify({ ready: true, mode, port })}\n`));
+server.listen(requestedPort, '127.0.0.1', () => {
+  listeningPort = server.address().port;
+  process.stdout.write(`${JSON.stringify({ ready: true, mode, port: listeningPort })}\n`);
+});
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));

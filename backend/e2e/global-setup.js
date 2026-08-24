@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 
-const TEST_SERVER_PORT = 3001;
+const { TEST_SERVER_PORT } = require('./test-server-port');
 const READY_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 300;
 const READY_PATH = '/api/health';
@@ -26,14 +26,14 @@ const GRACE_USER = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
-function writeDefaultAuthState() {
+function writeDefaultAuthState(port = TEST_SERVER_PORT) {
   fs.writeFileSync(
     AUTH_STATE_PATH,
     JSON.stringify({
       cookies: [],
       origins: [
         {
-          origin: `http://localhost:${TEST_SERVER_PORT}`,
+          origin: `http://localhost:${port}`,
           localStorage: [
             { name: 'dataops_token', value: 'e2e-bypass-token' },
             { name: 'dataops_user', value: JSON.stringify(GRACE_USER) },
@@ -44,13 +44,13 @@ function writeDefaultAuthState() {
   );
 }
 
-function buildTestServerEnvironment(parentEnvironment = process.env) {
+function buildTestServerEnvironment(parentEnvironment = process.env, port = TEST_SERVER_PORT) {
   return {
     ...parentEnvironment,
     NODE_ENV: 'test',
     IS_LOCAL: 'true',
     SKIP_AUTH: 'true',
-    PORT: String(TEST_SERVER_PORT),
+    PORT: String(port),
     FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
     // Server-owned actor for template-admin tests only. Other route permission
     // tests retain their existing explicit actor/no-actor behavior.
@@ -146,7 +146,139 @@ function waitForServer(port, timeoutMs, options = {}) {
   });
 }
 
-async function globalSetup() {
+/**
+ * A health response proves that *a* server owns the fixed port, not that the
+ * child just spawned owns it. Require that child's successful listen log before
+ * probing health so a foreign listener cannot satisfy bootstrap.
+ */
+function waitForOwnedServer(child, port, timeoutMs) {
+  const readyMarker = `Test server listening at http://localhost:${port}`;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let retryTimer;
+    let activeRequest;
+    const deadline = Date.now() + timeoutMs;
+
+    function cleanup() {
+      clearTimeout(retryTimer);
+      if (activeRequest) activeRequest.destroy();
+      child.stdout?.off('data', onOutput);
+      child.stderr?.off('data', onErrorOutput);
+      child.off('error', onError);
+      child.off('exit', onExit);
+    }
+
+    function settle(operation) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      operation();
+    }
+
+    function fail(message) {
+      settle(() => reject(new Error(message)));
+    }
+
+    function succeeded() {
+      settle(resolve);
+    }
+
+    function childStatus() {
+      return `code=${child.exitCode ?? 'none'}, signal=${child.signalCode ?? 'none'}`;
+    }
+
+    function scheduleProbe(delayMs) {
+      if (settled) return;
+      if (child.exitCode !== null || child.signalCode !== null) {
+        fail(`Test server child exited before readiness (${childStatus()}).`);
+        return;
+      }
+
+      const waitMs = Math.min(delayMs, Math.max(0, deadline - Date.now()));
+      if (waitMs <= 0 && retryTimer === undefined) {
+        fail(
+          `The spawned test server announced ${readyMarker}, but /api/health `
+          + `did not return HTTP 200 within ${timeoutMs}ms.`
+        );
+        return;
+      }
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        probe();
+      }, waitMs);
+    }
+
+    function probe() {
+      if (settled) return;
+      let completed = false;
+      const request = http.get(`http://localhost:${port}${READY_PATH}`, (response) => {
+        if (completed || settled) {
+          response.resume();
+          return;
+        }
+        completed = true;
+        activeRequest = undefined;
+        response.resume();
+        if (response.statusCode === 200) {
+          succeeded();
+          return;
+        }
+        scheduleProbe(POLL_INTERVAL_MS);
+      });
+      request.on('error', () => {
+        if (completed || settled) return;
+        completed = true;
+        activeRequest = undefined;
+        scheduleProbe(POLL_INTERVAL_MS);
+      });
+      request.setTimeout(Math.min(1000, Math.max(1, deadline - Date.now())), () => {
+        if (completed || settled) return;
+        completed = true;
+        activeRequest = undefined;
+        request.destroy();
+        scheduleProbe(POLL_INTERVAL_MS);
+      });
+      activeRequest = request;
+    }
+
+    function onOutput(chunk) {
+      if (settled) return;
+      if (String(chunk).includes(readyMarker)) probe();
+    }
+
+    function onErrorOutput() {}
+
+    function onError(error) {
+      fail(`Test server child failed before readiness: ${error.message}`);
+    }
+
+    function onExit() {
+      fail(`Test server child exited before readiness (${childStatus()}).`);
+    }
+
+    if (child.exitCode !== null || child.signalCode !== null) {
+      fail(`Test server child had already exited (${childStatus()}).`);
+      return;
+    }
+
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', onOutput);
+    child.stderr?.on('data', onErrorOutput);
+    child.once('error', onError);
+    child.once('exit', onExit);
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      fail(
+        `Test server child did not announce ${readyMarker} within ${timeoutMs}ms; `
+        + 'refusing to use another listener.'
+      );
+    }, timeoutMs);
+  });
+}
+
+async function globalSetup({ port = TEST_SERVER_PORT } = {}) {
   // Playwright specs also launch isolated test-server children. Keep every
   // process in this test-only tree on the same explicit dark rollout state.
   Object.assign(process.env, DARK_ROLLOUT_ENVIRONMENT);
@@ -156,7 +288,7 @@ async function globalSetup() {
   const child = spawn(
     ...resolveTestServerCommand(),
     {
-      env: buildTestServerEnvironment(),
+      env: buildTestServerEnvironment(undefined, port),
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
     }
@@ -178,18 +310,20 @@ async function globalSetup() {
   // Store the child process so teardown can kill it
   globalThis.__testServerProcess = child;
 
-  // Wait for the server to be ready before returning control to Playwright
-  await waitForServer(TEST_SERVER_PORT, READY_TIMEOUT_MS);
+  // Wait for this spawned process to own the port before returning control to
+  // Playwright. A foreign HTTP 200 must never satisfy global setup.
+  await waitForOwnedServer(child, port, READY_TIMEOUT_MS);
 
-  console.log(`[global-setup] Test server is ready on port ${TEST_SERVER_PORT}`);
+  console.log(`[global-setup] Test server is ready on port ${port}`);
 
   // UI tests do not need a server-side session while SKIP_AUTH=true. Use a
   // deterministic localStorage session so auth/logout tests cannot invalidate
   // the shared browser storage state for unrelated UI tests.
-  writeDefaultAuthState();
+  writeDefaultAuthState(port);
   console.log('[global-setup] Auth state saved with test bypass token for Grace');
 }
 
 module.exports = globalSetup;
 module.exports.buildTestServerEnvironment = buildTestServerEnvironment;
 module.exports.waitForServer = waitForServer;
+module.exports.waitForOwnedServer = waitForOwnedServer;
