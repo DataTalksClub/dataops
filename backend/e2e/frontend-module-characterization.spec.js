@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
+const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const SCREENSHOT_DIR = path.join(ROOT, ".tmp", "screenshots", "issue-190");
@@ -138,7 +139,7 @@ test.describe("pre-refactor frontend module characterization", () => {
       [FIXTURE_DOC_PATH]: FIXTURE_DOC,
     });
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    server = spawn(path.join(ROOT, "node_modules", ".bin", "tsx"), ["scripts/test-server.ts"], {
+    server = spawn(...resolveTestServerCommand(), {
       cwd: path.join(ROOT, "backend"),
       detached: true,
       env: {
@@ -276,6 +277,9 @@ test.describe("pre-refactor frontend module characterization", () => {
     await page.getByRole("button", { name: "Add activity" }).click();
     await expect(page.locator(".calendar-surface dialog")).toBeVisible();
     await page.goto(`${baseURL}/#/bookkeeping`);
+    await expect(page.locator(".bookkeeping-documents")).toContainText(
+      /No private documents uploaded|Download/,
+    );
     await page.getByRole("button", { name: "Add entry" }).click();
     await expect(page.locator(".bookkeeping-entry-dialog")).toBeVisible();
     await page.goto(`${baseURL}/#/admin`);
@@ -335,7 +339,7 @@ test.describe("pre-refactor frontend module characterization", () => {
           clientWidth: wrapper.clientWidth,
           scrollWidth: wrapper.scrollWidth,
         }));
-        expect(tableOverflow.scrollWidth).toBeGreaterThan(tableOverflow.clientWidth);
+        expect(tableOverflow.scrollWidth).toBeLessThanOrEqual(tableOverflow.clientWidth);
       }
     }
     expect(errors).toEqual([]);

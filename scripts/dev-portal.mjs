@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -58,17 +59,45 @@ function ensureLocalPaths(config, cwd) {
   }
 }
 
+function resolveDependencyCli(cwd, packageName) {
+  try {
+    const requireFromRepository = createRequire(path.join(cwd, 'package.json'));
+    const packageJsonPath = requireFromRepository.resolve(`${packageName}/package.json`);
+    const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    const cliPath = typeof manifest.bin === 'string'
+      ? manifest.bin
+      : manifest.bin?.[packageName];
+    if (!cliPath) {
+      throw new Error(`${packageName} does not declare a CLI entry`);
+    }
+    return path.resolve(path.dirname(packageJsonPath), cliPath);
+  } catch (error) {
+    throw new Error(
+      `Unable to resolve the installed ${packageName} CLI from ${cwd}: ${error.message}`,
+      { cause: error },
+    );
+  }
+}
+
 function productionChildSpecs(cwd) {
   return [
     {
       name: 'backend',
-      command: path.join(cwd, 'node_modules', '.bin', 'tsx'),
-      args: ['watch', 'backend/scripts/dev-server.ts'],
+      command: process.execPath,
+      args: [
+        resolveDependencyCli(cwd, 'tsx'),
+        'watch',
+        'backend/scripts/dev-server.ts',
+      ],
     },
     {
       name: 'vite',
-      command: path.join(cwd, 'node_modules', '.bin', 'vite'),
-      args: ['--config', path.join(cwd, 'vite.config.mjs')],
+      command: process.execPath,
+      args: [
+        resolveDependencyCli(cwd, 'vite'),
+        '--config',
+        path.join(cwd, 'vite.config.mjs'),
+      ],
     },
   ];
 }
@@ -290,6 +319,7 @@ export const __testing = Object.freeze({
   appendOutputTail,
   childDiagnostics,
   ensureLocalPaths,
+  productionChildSpecs,
   portAcceptsConnections,
   stopChildren,
   waitForStack,

@@ -5,6 +5,7 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
+const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 
 const PORT = 3318;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -195,7 +196,7 @@ async function routeSponsors(page) {
 test.describe("Bookkeeping and Sponsors design prototype", () => {
   test.beforeAll(async () => {
     fs.mkdirSync(SCREENSHOTS, { recursive: true });
-    server = spawn("npx", ["tsx", "scripts/test-server.ts"], {
+    server = spawn(...resolveTestServerCommand(), {
       cwd: path.resolve(__dirname, ".."),
       env: {
         ...process.env,

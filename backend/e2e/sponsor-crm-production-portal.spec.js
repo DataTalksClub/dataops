@@ -3,6 +3,7 @@ const { spawn } = require("child_process");
 const http = require("http");
 const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
+const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
 const PORT = 3116,
   BASE_URL = `http://127.0.0.1:${PORT}`;
 let child;
@@ -23,7 +24,7 @@ const wait = () =>
   });
 test.describe("production sponsor CRM portal", () => {
   test.beforeAll(async () => {
-    child = spawn("npx", ["tsx", "scripts/test-server.ts"], {
+    child = spawn(...resolveTestServerCommand(), {
       cwd: path.resolve(__dirname, ".."),
       env: {
         ...process.env,

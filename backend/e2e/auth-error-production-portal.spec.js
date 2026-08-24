@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
+const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 
 const PORT = 3017;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -25,7 +26,7 @@ function waitForServer() {
 
 test.describe('production portal authentication error', () => {
   test.beforeAll(async () => {
-    processHandle = spawn('npx', ['tsx', 'scripts/test-server.ts'], {
+    processHandle = spawn(...resolveTestServerCommand(), {
       cwd: path.resolve(__dirname, '..'),
       env: {
         ...process.env,

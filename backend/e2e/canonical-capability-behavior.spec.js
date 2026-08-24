@@ -6,6 +6,7 @@ const {
   berlinBusinessDate,
   installBerlinBoundaryClock,
 } = require('./helpers/business-date');
+const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -103,7 +104,7 @@ async function startServer(server) {
   const cache = path.join(TMP_ROOT, String(server.port), 'cache');
   fs.mkdirSync(path.join(cache, 'content', 'synthetic'), { recursive: true });
   if (!server.noSyntheticDocs) fs.writeFileSync(path.join(cache, 'content', 'synthetic', 'capability.md'), syntheticSop);
-  server.process = spawn('npx', ['tsx', 'scripts/test-server.ts'], {
+  server.process = spawn(...resolveTestServerCommand(), {
     cwd: BACKEND_ROOT,
     env: {
       ...process.env,
