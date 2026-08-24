@@ -16,6 +16,7 @@ const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-159-capability-behavior');
 const ISSUE_196_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-196');
+const ISSUE_193_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-193');
 const BOUNDARY_OPERATOR_DATE = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 const ADMIN_ID = '15900000-0000-4000-8000-000000000011';
 const OPERATOR_ID = '15900000-0000-4000-8000-000000000012';
@@ -27,6 +28,12 @@ const servers = {
   expired: { port: 3223, userId: '15900000-0000-4000-8000-000000000015', role: 'admin', sessionLifetimeSeconds: '-1' },
   noMailingConfig: { port: 3224, userId: '15900000-0000-4000-8000-000000000016', role: 'admin', noMailingConfig: true },
   emptyDocs: { port: 3226, userId: '15900000-0000-4000-8000-000000000018', role: 'admin', noSyntheticDocs: true },
+  qualityAdmin: {
+    port: 3227,
+    userId: '15900000-0000-4000-8000-000000000019',
+    role: 'admin',
+    qualityFindings: true,
+  },
 };
 
 const syntheticSop = `---
@@ -77,6 +84,27 @@ None.
 <!-- sop-section-end -->
 `;
 
+function syntheticQualitySop(label) {
+  return syntheticSop
+    .replace(
+      'id: sop.synthetic.capability',
+      `id: sop.synthetic.quality.${label}`,
+    )
+    .replace(
+      'title: Synthetic Capability Procedure',
+      `title: Synthetic Quality Procedure ${label}`,
+    )
+    .replace(
+      '<!-- sop-step-start id=1 systems="dataops" -->',
+      '<!-- sop-step-start id=1 systems="dataops" action="frobnicate" -->',
+    );
+}
+
+const syntheticQualityDocuments = [
+  ['quality-alpha.md', syntheticQualitySop('alpha')],
+  ['quality-beta.md', syntheticQualitySop('beta')],
+];
+
 function baseUrl(server) {
   return `http://127.0.0.1:${server.port}`;
 }
@@ -103,7 +131,17 @@ function waitForServer(server) {
 async function startServer(server) {
   const cache = path.join(TMP_ROOT, String(server.port), 'cache');
   fs.mkdirSync(path.join(cache, 'content', 'synthetic'), { recursive: true });
-  if (!server.noSyntheticDocs) fs.writeFileSync(path.join(cache, 'content', 'synthetic', 'capability.md'), syntheticSop);
+  if (!server.noSyntheticDocs) {
+    fs.writeFileSync(
+      path.join(cache, 'content', 'synthetic', 'capability.md'),
+      syntheticSop,
+    );
+  }
+  if (server.qualityFindings) {
+    for (const [filename, content] of syntheticQualityDocuments) {
+      fs.writeFileSync(path.join(cache, 'content', 'synthetic', filename), content);
+    }
+  }
   server.process = spawn(...resolveTestServerCommand(), {
     cwd: BACKEND_ROOT,
     env: {
@@ -125,6 +163,9 @@ async function startServer(server) {
       E2E_BROWSER_SESSION_USER_ROLE: server.role,
       ...(server.disabled ? { E2E_BROWSER_SESSION_USER_DISABLED: 'true' } : {}),
       ...(server.sessionLifetimeSeconds ? { E2E_BROWSER_SESSION_LIFETIME_SECONDS: server.sessionLifetimeSeconds } : {}),
+      ...(server.qualityFindings
+        ? { DTC_CONTENT_TOKEN_DAYS_REMAINING_FOR_TESTS: '30' }
+        : {}),
       SPONSOR_FINANCE_ENABLED: 'true',
       DATAOPS_MAILING_EXPORTS_CONFIG: server.noMailingConfig ? '[]' : JSON.stringify([{
         id: 'synthetic-disabled-provider',
@@ -202,6 +243,61 @@ async function setFaults(request, faults) {
 async function clearFaults(request) {
   const response = await request.delete('/__e2e__/route-faults');
   expect(response.ok()).toBe(true);
+}
+
+async function expectStackedQualityEmptyState(page) {
+  const state = page.locator('.ops-quality-list > .ops-honest-state');
+  fs.mkdirSync(ISSUE_193_SCREENSHOTS, { recursive: true });
+  await expect(state).toHaveCount(1);
+  await expect(state.locator('> strong')).toHaveText('No findings match filters');
+  await expect(state.locator('> span')).toHaveText(
+    'Change filters to inspect other process quality findings.',
+  );
+
+  const layout = await state.evaluate((element) => {
+    const label = element.querySelector(':scope > strong');
+    const guidance = element.querySelector(':scope > span');
+    const panel = element.closest('.ops-quality-drilldown');
+    const labelRect = label.getBoundingClientRect();
+    const guidanceRect = guidance.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      display: style.display,
+      rowGap: Number.parseFloat(style.rowGap),
+      visualGap: guidanceRect.top - labelRect.bottom,
+      labelOverlapsGuidance: guidanceRect.top < labelRect.bottom,
+      pageOverflow: Math.max(
+        document.documentElement.scrollWidth,
+        document.body.scrollWidth,
+      ) - window.innerWidth,
+      stateOverflow: element.scrollWidth - element.clientWidth,
+      panelOverflow: panel.scrollWidth - panel.clientWidth,
+      fitsPanelHorizontally:
+        labelRect.left >= panelRect.left - 0.5
+        && guidanceRect.left >= panelRect.left - 0.5
+        && labelRect.right <= panelRect.right + 0.5
+        && guidanceRect.right <= panelRect.right + 0.5,
+    };
+  });
+
+  expect(layout.display).toBe('grid');
+  expect(layout.rowGap).toBeGreaterThanOrEqual(4);
+  expect(layout.visualGap).toBeGreaterThanOrEqual(4);
+  expect(layout.labelOverlapsGuidance).toBe(false);
+  expect(layout.pageOverflow).toBeLessThanOrEqual(0);
+  expect(layout.stateOverflow).toBeLessThanOrEqual(0);
+  expect(layout.panelOverflow).toBeLessThanOrEqual(0);
+  expect(layout.fitsPanelHorizontally).toBe(true);
+
+  await page.screenshot({
+    path: path.join(
+      ISSUE_193_SCREENSHOTS,
+      page.viewportSize()?.width === 390 ? 'mobile.png' : 'desktop.png',
+    ),
+    animations: 'disabled',
+    ...(page.viewportSize()?.width === 390 ? { fullPage: true } : {}),
+  });
 }
 
 function unique(prefix) {
@@ -907,7 +1003,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await clearFaults(empty.request);
     await empty.close();
 
-    const { context, page } = await portalPage(browser);
+    const { context, page } = await portalPage(browser, servers.qualityAdmin);
     const docs = await context.request.get('/docs');
     expect(docs.status()).toBe(200);
     expect((await json(docs)).documents.some((item) => item.path === 'content/synthetic/capability.md')).toBe(true);
@@ -995,7 +1091,19 @@ test.describe('issue 159 retained canonical capability behavior', () => {
 
     const quality = await context.request.get('/docs/process-quality');
     expect(quality.status()).toBe(200);
-    expect(await json(quality)).toMatchObject({ summary: { total: expect.any(Number) }, validationErrors: expect.any(Array) });
+    const qualityPayload = await json(quality);
+    expect(qualityPayload.summary.total).toBeGreaterThan(0);
+    expect(qualityPayload.findings.length).toBeGreaterThan(0);
+    // Access has no document while the local SOP finding has a different
+    // category, so these populated dropdown values intersect at zero rows.
+    const emptyQualityFilters = {
+      category: 'access',
+      document: 'content/synthetic/quality-alpha.md',
+    };
+    expect(new Set(qualityPayload.findings.map((finding) => finding.category)))
+      .toEqual(new Set(['access', 'process-doc']));
+    expect(qualityPayload.findings.some((finding) => finding.docPath === emptyQualityFilters.document))
+      .toBe(true);
     const gitStatus = await context.request.get('/git/status');
     expect(gitStatus.status()).toBe(200);
     expect(await json(gitStatus)).toMatchObject({ available: false, readOnly: true, files: [] });
@@ -1004,6 +1112,22 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect(await json(gitHistory)).toMatchObject({ available: false, readOnly: true, commits: [] });
     const deniedGitMutation = await context.request.post('/git/pull');
     expect(deniedGitMutation.status()).toBe(405);
+    await page.goto('/#/processes');
+    await expect(page.locator('.ops-surface-docs')).toBeVisible();
+    await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
+    const qualityFilters = page.locator('.ops-quality-filters');
+    const filterLabels = {
+      category: 'Category',
+      document: 'Document',
+    };
+    for (const [field, value] of Object.entries(emptyQualityFilters)) {
+      await qualityFilters.getByLabel(filterLabels[field], { exact: true }).selectOption(value);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expectStackedQualityEmptyState(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectStackedQualityEmptyState(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/#/admin');
     await expect(page.locator('.ops-admin-card', { hasText: 'New process doc' })).toBeVisible();
     await expect(page.locator('.ops-admin-card', { hasText: 'Diagnostics' })).toBeVisible();

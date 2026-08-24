@@ -120,6 +120,20 @@ setMailingExportDependenciesForTests({
 function configureOfflineDocsStore(): void {
   if (process.env.DTC_OFFLINE !== '1') return;
   const store = new ContentsApiGithubStore(githubStoreConfigFromEnv());
+  // Offline mode skips authenticated GitHub responses, so tests that need the
+  // observed token-age finding must inject it explicitly.
+  const contentTokenDaysRemaining =
+    process.env.DTC_CONTENT_TOKEN_DAYS_REMAINING_FOR_TESTS;
+  const parsedTokenDaysRemaining = Number(contentTokenDaysRemaining);
+  if (
+    contentTokenDaysRemaining !== undefined
+    && Number.isFinite(parsedTokenDaysRemaining)
+  ) {
+    Object.defineProperty(store, 'contentTokenDaysRemaining', {
+      value: parsedTokenDaysRemaining,
+      configurable: true,
+    });
+  }
   store.writeFile = async (repoPath, content) => {
     const target = store.localPath(repoPath);
     mkdirSync(dirname(target), { recursive: true });

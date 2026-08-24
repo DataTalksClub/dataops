@@ -1318,7 +1318,7 @@
         {
           "id": "process-docs.empty",
           "kind": "empty",
-          "description": "No documents or results renders honestly.",
+          "description": "No documents, search results, or filtered quality findings render honestly.",
           "coverage": {
             "status": "runtime"
           }
