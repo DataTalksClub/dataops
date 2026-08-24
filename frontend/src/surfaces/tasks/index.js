@@ -55,7 +55,7 @@ export function createTasksSurface(context) {
     resolveAssigneeLabel,
     request,
     scheduleAnimationFrame,
-    setPageTitle,
+    setRouteTitle,
     setStatus,
     setWorkspaceEntityState,
     shellBody,
@@ -117,7 +117,7 @@ export function createTasksSurface(context) {
     documentList.classList.remove("is-unified-search");
     const title = tasksSectionTitle(activeSection);
     libraryTitle.textContent = title;
-    setPageTitle(title, "Tasks");
+    setRouteTitle(title);
     clearSelectionButton.hidden = true;
     setStatus(tasksSurfaceStatusText(activeSection, model));
 

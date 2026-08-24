@@ -28,7 +28,6 @@ export function createKnowledgeNavigation(context, services) {
     locationAdapter,
     openCardPanel,
     openTaskPanel,
-    operationsViewPath,
     operationsViewTitle,
     quickNav,
     quickNavInput,
@@ -36,10 +35,11 @@ export function createKnowledgeNavigation(context, services) {
     refreshChangesPanel,
     renderDocsAvailabilityState,
     request,
+    resizeDocumentTitle,
     scheduleAnimationFrame,
     searchInput,
     setDocsAvailability,
-    setPageTitle,
+    setRouteTitle,
     setSaveState,
     setStatus,
     setView,
@@ -125,7 +125,7 @@ export function createKnowledgeNavigation(context, services) {
     editor.disabled = true;
     setSaveState("Loading...");
     setView("editor");
-    setPageTitle(basename(path), path);
+    setRouteTitle(basename(path));
     documentPath.textContent = path;
 
     try {
@@ -151,10 +151,13 @@ export function createKnowledgeNavigation(context, services) {
       documentTitle.disabled = false;
       documentTitle.value =
         titleFromMarkdown(editor.value) || basename(payload.path);
+      // The editor owns document-title sizing now that route-title writing no
+      // longer resizes it.
+      resizeDocumentTitle();
       documentPath.textContent = payload.path;
 
       updateSaveState();
-      setPageTitle(documentTitle.value, payload.path);
+      setRouteTitle(documentTitle.value);
       renderDocReturnContext();
       updateViewToggleAvailability();
       // Default to the block view when the doc has parseable sections, so
@@ -433,23 +436,20 @@ export function createKnowledgeNavigation(context, services) {
   function showLibrary(options = {}) {
     setView("library");
     if (options.updateUrl !== false) setFolderUrl(knowledgeState.selectedFolder);
-    syncLibraryPageTitle();
+    syncLibraryRouteTitle();
     closeWorkBellPanel();
     closeSidebar();
   }
 
-  function syncLibraryPageTitle() {
+  function syncLibraryRouteTitle() {
     if (body.dataset.view !== "library") return;
     if (!knowledgeState.selectedFolder && !searchInput.value.trim()) {
-      setPageTitle(
+      setRouteTitle(
         operationsViewTitle(getActiveWorkspaceView(), getActiveTasksSection()),
-        getActiveWorkspaceView() === "home"
-          ? "Home"
-          : operationsViewPath(getActiveWorkspaceView()),
       );
       return;
     }
-    setPageTitle("", "");
+    setRouteTitle("");
   }
 
   function clearSelection() {
@@ -471,7 +471,7 @@ export function createKnowledgeNavigation(context, services) {
     openQuickNav,
     setFolderUrl,
     showLibrary,
-    syncLibraryPageTitle,
+    syncLibraryRouteTitle,
     updateQuickNavMatches,
   };
 }

@@ -354,7 +354,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     // The operator is looking at the document view, not silently at Home.
     await expect(page.locator('.operations-home-daily')).toBeHidden();
     await expect(page.locator('#editor')).toBeDisabled();
-    await expect(page.locator('#save-button')).toBeDisabled();
+    await expect(page.locator('#editor-save-button')).toBeDisabled();
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'editor-outage.png'), fullPage: true });
 
     // The single-document route still answers 404 while the whole content root

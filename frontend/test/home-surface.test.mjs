@@ -153,7 +153,7 @@ function createHomeHarness(options = {}) {
     accountRefreshes: [],
     navigations: [],
     openedTasks: [],
-    pageTitles: [],
+    routeTitles: [],
     quickCards: 0,
     quickTasks: 0,
     refreshDocuments: 0,
@@ -282,7 +282,7 @@ function createHomeHarness(options = {}) {
     request,
     resolveCardLabel: (id) => `Card ${id}`,
     resolveDocReference: (id) => docRegistry.get(id) || null,
-    setPageTitle: (...args) => calls.pageTitles.push(args),
+    setRouteTitle: (title) => calls.routeTitles.push(title),
     setStatus: (message) => calls.status.push(message),
     settledPayload: (result) =>
       result.status === "fulfilled" ? result.value : {},
@@ -361,7 +361,7 @@ describe("Home surface production behavior", () => {
     const root = harness.documentList.children[0];
     assert.equal(root.dataset.operationsWorkLoaded, "true");
     assert.equal(harness.libraryTitle.textContent, "Home");
-    assert.deepEqual(harness.calls.pageTitles, [["Today", "Today"]]);
+    assert.deepEqual(harness.calls.routeTitles, ["Today"]);
     assert.match(harness.calls.status.at(-1), /1 today · 1 overdue · 1 waiting/);
 
     const summary = root.querySelector(".home-status-strip");

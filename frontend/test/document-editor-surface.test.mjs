@@ -94,12 +94,15 @@ function createEditorHarness(options = {}) {
     "diffBody",
     "diffModal",
     "diffTitle",
-    "discardButton",
     "docMenuButton",
     "documentPath",
     "documentTitle",
     "domainFilter",
     "editor",
+    "editorDiscardButton",
+    "editorInlineStatus",
+    "editorSaveButton",
+    "editorSaveState",
     "editorView",
     "gitCommitButton",
     "gitCommitCancel",
@@ -123,8 +126,6 @@ function createEditorHarness(options = {}) {
     "newDocTitle",
     "newDocType",
     "renderedView",
-    "saveButton",
-    "saveState",
     "searchInput",
     "systemFilter",
     "tagFilter",
@@ -200,7 +201,7 @@ function createEditorHarness(options = {}) {
 
   const requests = [];
   const statuses = [];
-  const pageTitles = [];
+  const routeTitles = [];
   const views = [];
   const errors = [];
   const openedDocuments = [];
@@ -257,7 +258,6 @@ function createEditorHarness(options = {}) {
     openDocument: async (path) => {
       openedDocuments.push(path);
     },
-    operationsViewPath: (view) => `/${view}`,
     operationsViewTitle: (view) => view,
     promptUser: options.promptUser || (() => "content/processes/renamed.md"),
     refreshDocuments() {},
@@ -285,7 +285,7 @@ function createEditorHarness(options = {}) {
         : null,
     scheduleAnimationFrame: (callback) => callback(),
     setFolderUrl() {},
-    setPageTitle: (...values) => pageTitles.push(values),
+    setRouteTitle: (title) => routeTitles.push(title),
     setStatus: (message) => statuses.push(message),
     setView: (view) => {
       body.dataset.view = view;
@@ -316,7 +316,7 @@ function createEditorHarness(options = {}) {
     libraryCount: () => libraryCount,
     loadCount: () => loadCount,
     openedDocuments,
-    pageTitles,
+    routeTitles,
     requests,
     sidebarCloses: () => sidebarCloses,
     statuses,
@@ -423,10 +423,10 @@ describe("Document Editor surface boundary", () => {
     assert.equal(allowed.elements.newDocPath.focused, true);
     assert.equal(allowed.document.activeElement, allowed.elements.newDocPath);
     assert.equal(allowed.sidebarCloses(), 1);
-    assert.deepEqual(allowed.pageTitles.at(-1), ["New page", "Create"]);
+    assert.equal(allowed.routeTitles.at(-1), "New page");
   });
 
-  test("tracks sorted local drafts, dirty state, and restores saved content on discard", () => {
+  test("tracks sorted local drafts, dirty state, and confirms draft discard", async () => {
     const harness = createEditorHarness({
       content: "# Saved\n",
       editorValue: "# Local draft\n",
@@ -439,9 +439,9 @@ describe("Document Editor surface boundary", () => {
     });
 
     harness.api.updateSaveState();
-    assert.equal(harness.elements.saveState.textContent, "Unsaved changes");
-    assert.equal(harness.elements.saveButton.disabled, false);
-    assert.equal(harness.elements.discardButton.disabled, false);
+    assert.equal(harness.elements.editorSaveState.textContent, "Unsaved changes");
+    assert.equal(harness.elements.editorSaveButton.disabled, false);
+    assert.equal(harness.elements.editorDiscardButton.disabled, false);
     assert.deepEqual(harness.api.listDraftPaths(), [
       "content/processes/existing.md",
       "content/z.md",
@@ -455,7 +455,11 @@ describe("Document Editor surface boundary", () => {
       2,
     );
 
-    harness.api.discardDraft();
+    await harness.api.discardDraft();
+    assert.deepEqual(harness.confirmations, [{
+      message: "Discard the local draft for content/processes/existing.md?",
+      options: { okText: "Discard", danger: true },
+    }]);
     assert.equal(harness.elements.editor.value, "# Saved\n");
     assert.equal(harness.documentState.hasDraft, false);
     assert.equal(
@@ -465,6 +469,24 @@ describe("Document Editor surface boundary", () => {
       false,
     );
     assert.equal(harness.storageValues.get("unrelated-setting"), "keep");
+    assert.equal(harness.document.activeElement, harness.elements.editorSaveState);
+  });
+
+  test("keeps a local draft when discard confirmation is cancelled", async () => {
+    const draftKey = "dtc-doc-draft:content/processes/existing.md";
+    const harness = createEditorHarness({
+      content: "# Saved\n",
+      editorValue: "# Local draft\n",
+      confirm: false,
+      hasDraft: true,
+      storage: { [draftKey]: "# Local draft\n" },
+    });
+
+    await harness.api.discardDraft();
+    assert.equal(harness.confirmations.length, 1);
+    assert.equal(harness.elements.editor.value, "# Local draft\n");
+    assert.equal(harness.documentState.hasDraft, true);
+    assert.equal(harness.storageValues.get(draftKey), "# Local draft\n");
   });
 
   test("edits the document title in frontmatter and Markdown while retaining a local draft", () => {
@@ -491,11 +513,8 @@ describe("Document Editor surface boundary", () => {
       ),
       harness.elements.editor.value,
     );
-    assert.equal(harness.elements.saveState.textContent, "Unsaved changes");
-    assert.deepEqual(harness.pageTitles.at(-1), [
-      "Updated process",
-      "content/processes/existing.md",
-    ]);
+    assert.equal(harness.elements.editorSaveState.textContent, "Unsaved changes");
+    assert.equal(harness.routeTitles.at(-1), "Updated process");
   });
 
   test("saves successfully, clears only its draft, and reports lint warnings", async () => {
@@ -545,6 +564,7 @@ describe("Document Editor surface boundary", () => {
     );
     assert.match(harness.statuses.at(-1), /^Saved · summary is missing/);
     assert.equal(harness.loadCount(), 1);
+    assert.equal(harness.document.activeElement, harness.elements.editorSaveState);
   });
 
   test("retains the local draft across validation, conflict, network, and permission save failures", async () => {
@@ -571,7 +591,11 @@ describe("Document Editor surface boundary", () => {
       assert.equal(harness.storageValues.get(draftKey), "# Unsaved\n");
       assert.equal(harness.documentState.hasDraft, true);
       assert.equal(harness.documentState.lastSavedContent, "# Saved\n");
-      assert.equal(harness.elements.saveButton.disabled, false);
+      assert.equal(harness.elements.editorSaveButton.disabled, false);
+      assert.equal(
+        harness.document.activeElement,
+        harness.elements.editorSaveState,
+      );
     }
   });
 

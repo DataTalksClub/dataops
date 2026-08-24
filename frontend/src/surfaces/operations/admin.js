@@ -15,7 +15,7 @@ export function createAdminSurface(context) {
     renderHonestState,
     renderSurfaceHeader,
     request,
-    setPageTitle,
+    setRouteTitle,
     setStatus,
     settledPayload,
     showCreate,
@@ -46,7 +46,7 @@ export function createAdminSurface(context) {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     libraryTitle.textContent = "Admin";
-    setPageTitle("Admin", "Admin");
+    setRouteTitle("Admin");
     clearSelectionButton.hidden = true;
     setStatus(surfaceStatusText("admin", model));
 
@@ -91,7 +91,7 @@ export function createAdminSurface(context) {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     libraryTitle.textContent = "Users";
-    setPageTitle("Users", "Users");
+    setRouteTitle("Users");
     clearSelectionButton.hidden = true;
     const count = usersSnapshot.users.length;
     setStatus(

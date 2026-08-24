@@ -23,7 +23,7 @@ export function createArtifactsSurface(context) {
     reportError,
     request,
     scheduleAnimationFrame,
-    setPageTitle,
+    setRouteTitle,
     setStatus,
     showCreate,
     state,

@@ -134,12 +134,8 @@
         <header class="page-toolbar">
           <div class="page-context">
             <button id="sidebar-expand-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Show sidebar" title="Show sidebar" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg></button>
-            <button id="back-button" class="quiet-button" type="button">← All docs</button>
-            <span id="breadcrumb">All documents</span>
-            <strong id="toolbar-title">Operations Home</strong>
           </div>
           <div class="toolbar-actions">
-            <span id="save-state" class="save-state"></span>
             <button id="work-bell-button" class="quiet-button work-bell-button" type="button" title="Notifications" aria-label="Notifications">
               <span class="work-bell-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></span>
               <span class="work-bell-count" aria-hidden="true">0</span>
@@ -149,8 +145,6 @@
             <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
             <button id="doc-pin-button" class="quiet-button" type="button" hidden title="Pin to sidebar" aria-label="Pin to sidebar">Pin</button>
             <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions">⋯</button>
-            <button id="discard-button" class="quiet-button" type="button" disabled>Discard</button>
-            <button id="save-button" class="primary-button" type="button" disabled>Save</button>
           </div>
         </header>
 
@@ -192,6 +186,14 @@
           <div id="document-path" class="document-path">No document selected</div>
           <textarea id="editor" class="markdown-editor" spellcheck="true" disabled placeholder="Open a document from the sidebar or create a new page."></textarea>
           <div id="rendered-view" class="rendered-view" aria-live="polite"></div>
+          <footer class="document-editor-footer">
+            <div id="editor-inline-status" class="editor-inline-status" role="status" aria-live="polite" hidden></div>
+            <div id="editor-save-state" class="document-editor-save-state" tabindex="-1"></div>
+            <div class="document-editor-actions">
+              <button id="editor-discard-button" class="quiet-button" type="button" disabled>Discard</button>
+              <button id="editor-save-button" class="primary-button" type="button" disabled>Save</button>
+            </div>
+          </footer>
         </section>
 
         <section id="create-view" class="view create-view">
