@@ -2,6 +2,7 @@ const { test: baseTest, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const { BERLIN_TIME_ZONE } = require('./helpers/business-date');
 const {
+  assertOwnedServerResponse,
   installServerExitDiagnostics,
   startIsolatedCapabilityServer,
   stopIsolatedCapabilityServer,
@@ -115,11 +116,12 @@ const test = baseTest.extend({
       });
       const sessionResponse = await context.request.get('/__e2e__/browser-session');
       expect(sessionResponse.status()).toBe(200);
+      assertOwnedServerResponse(server, sessionResponse, 'canonical task workflow session');
       page = await context.newPage();
       installServerExitDiagnostics(context, server, testInfo);
       await page.goto('/#/');
       await expect(page.locator('#library-title')).toHaveText('Home');
-      await use({ context, page });
+      await use({ context, page, server });
     } finally {
       if (context && !context.isClosed()) {
         try { await clearFaults(context.request); }
@@ -190,7 +192,7 @@ async function openProofTask(page, taskId, cardId, title, options = {}) {
 
 test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Tasks queue persists create, waiting recovery, and selected update', async ({ taskWorkflowPortal }, testInfo) => {
-    const { context, page } = taskWorkflowPortal;
+    const { context, page, server: ownedServer } = taskWorkflowPortal;
     await page.goto('/#/tasks');
     for (const [heading, empty] of [
       ['Overdue', 'No overdue work.'],
@@ -254,7 +256,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
 
   test('Required proof saves one versioned link, file, conflict, and durable completion', async ({ taskWorkflowPortal }, testInfo) => {
     test.setTimeout(60_000);
-    const { context, page } = taskWorkflowPortal;
+    const { context, page, server: ownedServer } = taskWorkflowPortal;
     const cardTitle = unique('Synthetic staged workflow');
     const cardResponse = await context.request.post('/api/cards', { data: {
       title: cardTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
@@ -314,6 +316,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     page.off('request', onRequest);
     expect(savedLinkRequests).toHaveLength(1);
     expect(savedLinkResponse.status()).toBe(200);
+    assertOwnedServerResponse(ownedServer, savedLinkResponse, 'required-link PUT');
     expect(savedLinkRequests[0].postDataJSON()).toEqual({ expectedVersion: proofTask.version, link: proofUrl });
     const savedTask = await json(savedLinkResponse);
     expect(savedTask.version).toBe(proofTask.version + 1);
@@ -349,6 +352,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     });
     await complete.click();
     const completionResponse = await successfulCompletion;
+    assertOwnedServerResponse(ownedServer, completionResponse, 'Task completion PUT');
     const completedTask = await json(completionResponse);
     expect(completionResponse.request().postDataJSON()).toEqual({
       expectedVersion: savedTask.version,

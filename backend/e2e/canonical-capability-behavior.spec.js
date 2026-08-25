@@ -7,6 +7,7 @@ const {
   installBerlinBoundaryClock,
 } = require('./helpers/business-date');
 const {
+  assertOwnedServerResponse,
   startIsolatedCapabilityServer,
   stopIsolatedCapabilityServer,
 } = require('./helpers/isolated-capability-server');
@@ -131,6 +132,7 @@ async function portalContext(browser, server, options = {}) {
   });
   const response = await context.request.get('/__e2e__/browser-session');
   expect(response.status()).toBe(200);
+  assertOwnedServerResponse(server, response, 'capability browser session');
   return context;
 }
 

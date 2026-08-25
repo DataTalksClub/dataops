@@ -9,7 +9,7 @@ const DEFAULT_AUTH_STATE = {
   cookies: [],
   origins: [
     {
-      origin: `http://localhost:${TEST_SERVER_PORT}`,
+      origin: `http://127.0.0.1:${TEST_SERVER_PORT}`,
       localStorage: [
         {
           name: 'dataops_token',
@@ -51,7 +51,7 @@ module.exports = defineConfig({
   globalSetup: './e2e/global-setup.js',
   globalTeardown: './e2e/global-teardown.js',
   use: {
-    baseURL: `http://localhost:${TEST_SERVER_PORT}`,
+    baseURL: `http://127.0.0.1:${TEST_SERVER_PORT}`,
     timezoneId: BERLIN_TIME_ZONE,
     headless: true,
     screenshot: 'only-on-failure',

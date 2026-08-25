@@ -1,10 +1,12 @@
 const { test, expect } = require("@playwright/test");
-const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const net = require("node:net");
 const path = require("node:path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
-const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require("./helpers/isolated-capability-server");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const SCREENSHOT_DIR = path.join(ROOT, ".tmp", "screenshots", "issue-198");
@@ -30,32 +32,6 @@ const FIXTURE_DOC = [
 ].join("\n");
 let server;
 let baseURL;
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const listener = net.createServer();
-    listener.once("error", reject);
-    listener.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
-      const { port } = listener.address();
-      listener.close((error) => error ? reject(error) : resolve(port));
-    });
-  });
-}
-
-function waitForServer(url) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30_000;
-    const poll = async () => {
-      try {
-        const response = await fetch(`${url}/api/health`);
-        if (response.ok) return resolve();
-      } catch {}
-      if (Date.now() >= deadline) return reject(new Error("Characterization server timed out"));
-      setTimeout(poll, 100);
-    };
-    poll();
-  });
-}
 
 function observeErrors(page) {
   const errors = [];
@@ -123,55 +99,44 @@ async function createCardWithTask(request) {
     data: { title: `Characterization card ${suffix}`, anchorDate: "2026-08-12", stage: "preparation" },
   });
   expect(cardResponse.ok()).toBe(true);
+  assertOwnedServerResponse(server, cardResponse, "characterization Card fixture");
   const card = (await cardResponse.json()).card;
   const taskResponse = await request.post(`${baseURL}/api/tasks`, {
     data: { description: `Characterization task ${suffix}`, date: "2026-08-12", cardId: card.id },
   });
   expect(taskResponse.ok()).toBe(true);
+  assertOwnedServerResponse(server, taskResponse, "characterization Task fixture");
   return { card, task: await taskResponse.json() };
+}
+
+async function ownedContext(browser, viewport) {
+  const context = await browser.newContext({ baseURL, viewport });
+  const health = await context.request.get('/api/health');
+  assertOwnedServerResponse(server, health, 'frontend characterization health');
+  return context;
 }
 
 test.describe("pre-refactor frontend module characterization", () => {
   test.beforeAll(async () => {
-    const port = await freePort();
-    baseURL = `http://127.0.0.1:${port}`;
     const cacheRoot = createDocsCacheRoot("issue-190-frontend-characterization", {
       [FIXTURE_DOC_PATH]: FIXTURE_DOC,
     });
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    server = spawn(...resolveTestServerCommand(), {
-      cwd: path.join(ROOT, "backend"),
-      detached: true,
-      env: {
-        ...process.env,
-        PORT: String(port),
-        NODE_ENV: "test",
-        IS_LOCAL: "true",
-        SKIP_AUTH: "true",
-        DATAOPS_DOCS_DOMAIN: "1",
-        DTC_OFFLINE: "1",
+    server = await startOwnedTestServer({
+      environment: {
         DTC_CACHE_ROOT: cacheRoot,
-        FRONTEND_ROOT: path.join(ROOT, "frontend"),
         E2E_TEMPLATE_ACTOR_ID: "00000000-0000-0000-0000-000000000001",
-        CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
-        CONVERSATIONAL_EXECUTION_ENABLED: "false",
-        CONVERSATIONAL_ENABLED_PLUGINS: "none",
-        CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: "false",
-        CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: "false",
-        CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: "false",
       },
-      stdio: ["ignore", "pipe", "pipe"],
     });
-    await waitForServer(baseURL);
+    baseURL = server.baseURL;
   });
 
-  test.afterAll(() => {
-    if (!server) return;
-    try { process.kill(-server.pid, "SIGTERM"); } catch {}
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test("shell, Home, and account scope retain their primary DOM and interactions; keeps fixed-width sidebar and accessible drawer flows", async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
     await page.goto(`${baseURL}/#/`);
@@ -196,7 +161,7 @@ test.describe("pre-refactor frontend module characterization", () => {
 
   test("Cards, archive, card detail, and nested Task restore their canonical URLs", async ({ browser, request }) => {
     const { card, task } = await createCardWithTask(request);
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
 
@@ -232,7 +197,7 @@ test.describe("pre-refactor frontend module characterization", () => {
   });
 
   test("retained top-level surfaces keep canonical route, title, marker, and primary interaction", async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
     const routes = [
@@ -291,7 +256,7 @@ test.describe("pre-refactor frontend module characterization", () => {
   });
 
   test("invalid hashes recover to Home and unknown programmatic navigation is a no-op", async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
     const errors = observeErrors(page);
     for (const hash of ["#/unknown", "#/cards?taskId=orphan", "#/tasks?date=2026-02-30", "#/tasks?taskId=%E0%A4%A"]) {
@@ -309,7 +274,7 @@ test.describe("pre-refactor frontend module characterization", () => {
   });
 
   test("all retained routes avoid page overflow and runtime errors at mobile width", async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const context = await ownedContext(browser, { width: 390, height: 844 });
     const page = await context.newPage();
     const errors = observeErrors(page);
     const routes = [

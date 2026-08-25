@@ -3,16 +3,18 @@
 // Every wait here targets a visible owning-surface node or an armed response.
 // Nothing in this file waits on the hidden shell status cluster.
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const net = require('node:net');
 const path = require('node:path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { setupPageWithAuth } = require('./helpers/auth');
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require('./helpers/isolated-capability-server');
 
-const ROOT = path.resolve(__dirname, '..', '..');
 const SCREENSHOT_DIR = path.resolve(
-  ROOT, '.tmp', 'screenshots', 'issue-204', 'slice-01',
+  __dirname, '..', '..', '.tmp', 'screenshots', 'issue-204', 'slice-01',
 );
 const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
@@ -20,32 +22,11 @@ const MOBILE = { width: 390, height: 844 };
 let server;
 let baseURL;
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const listener = net.createServer();
-    listener.once('error', reject);
-    listener.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => {
-      const { port } = listener.address();
-      listener.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
-}
-
-function waitForServer(url) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30_000;
-    const poll = async () => {
-      try {
-        const response = await fetch(`${url}/api/health`);
-        if (response.ok) return resolve();
-      } catch {}
-      if (Date.now() >= deadline) {
-        return reject(new Error('Issue 204 test server timed out'));
-      }
-      setTimeout(poll, 100);
-    };
-    poll();
-  });
+async function ownedContext(browser, options = {}) {
+  const context = await browser.newContext({ baseURL, ...options });
+  const health = await context.request.get('/api/health');
+  assertOwnedServerResponse(server, health, 'surface feedback health');
+  return context;
 }
 
 async function setFaults(request, faults) {
@@ -76,42 +57,23 @@ async function expectNoHorizontalOverflow(page) {
 
 test.describe('issue 204 owning-surface feedback', () => {
   test.beforeAll(async () => {
-    const port = await freePort();
-    baseURL = `http://127.0.0.1:${port}`;
     const cacheRoot = createDocsCacheRoot('issue-204-surface-feedback');
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    server = spawn(path.join(ROOT, 'node_modules', '.bin', 'tsx'), ['scripts/test-server.ts'], {
-      cwd: path.join(ROOT, 'backend'),
-      detached: true,
-      env: {
-        ...process.env,
-        PORT: String(port),
-        NODE_ENV: 'test',
-        IS_LOCAL: 'true',
-        SKIP_AUTH: 'true',
-        DATAOPS_DOCS_DOMAIN: '1',
-        DTC_OFFLINE: '1',
+    server = await startOwnedTestServer({
+      environment: {
         DTC_CACHE_ROOT: cacheRoot,
-        FRONTEND_ROOT: path.join(ROOT, 'frontend'),
         E2E_TEMPLATE_ACTOR_ID: '00000000-0000-0000-0000-000000000001',
-        CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-        CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-        CONVERSATIONAL_ENABLED_PLUGINS: 'none',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    server.stdout.on('data', () => {});
-    server.stderr.on('data', () => {});
-    await waitForServer(baseURL);
+    baseURL = server.baseURL;
   });
 
-  test.afterAll(() => {
-    if (!server) return;
-    try { process.kill(-server.pid, 'SIGTERM'); } catch {}
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test('Home and Tasks report loading, ready, and unavailable work in their own summaries', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL, viewport: DESKTOP });
+    const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
 
@@ -191,7 +153,7 @@ test.describe('issue 204 owning-surface feedback', () => {
   });
 
   test('a failed quick Task keeps its error, its input, and its retry inside the form', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL, viewport: DESKTOP });
+    const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
     await page.goto(`${baseURL}/#/`);
@@ -226,7 +188,7 @@ test.describe('issue 204 owning-surface feedback', () => {
   });
 
   test('Users and Device carry their own load, pending, and outcome states', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL, viewport: DESKTOP });
+    const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
 
@@ -266,7 +228,7 @@ test.describe('issue 204 owning-surface feedback', () => {
   });
 
   test('quick Task and Card 409 recovery stays in the owning form', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL, viewport: DESKTOP });
+    const context = await ownedContext(browser, { viewport: DESKTOP });
     const page = await context.newPage();
     await setupPageWithAuth(page);
     await page.goto(`${baseURL}/#/`);
@@ -318,7 +280,7 @@ test.describe('issue 204 owning-surface feedback', () => {
   });
 
   test('Users save success confirms the refreshed list', async ({ browser }) => {
-    const context = await browser.newContext({
+    const context = await ownedContext(browser, {
       baseURL,
       viewport: DESKTOP,
       extraHTTPHeaders: { 'x-user-id': '00000000-0000-0000-0000-000000000001' },

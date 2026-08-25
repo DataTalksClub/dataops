@@ -1,31 +1,16 @@
 const { test, expect } = require("@playwright/test");
 const AxeBuilder = require("@axe-core/playwright").default;
-const { spawn } = require("child_process");
 const fs = require("fs");
-const http = require("http");
 const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
-const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require("./helpers/isolated-capability-server");
 
 const screenshots = path.resolve(__dirname, "..", "..", ".tmp", "screenshots", "issue-198");
-const PORT = 3197;
-const BASE = `http://localhost:${PORT}`;
 let server;
-
-function waitForServer() {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30000;
-    (function poll() {
-      const request = http.get(`${BASE}/api/health`, (response) => {
-        response.resume();
-        if (response.statusCode === 200) resolve();
-        else if (Date.now() > deadline) reject(new Error("Planning surface test server timed out"));
-        else setTimeout(poll, 200);
-      });
-      request.on("error", () => Date.now() > deadline ? reject(new Error("Planning surface test server timed out")) : setTimeout(poll, 200));
-    })();
-  });
-}
 
 const calendarPayload = {
   items: [
@@ -95,40 +80,25 @@ async function expectExactPalette(page, dark) {
 
 test.beforeAll(async () => {
   fs.mkdirSync(screenshots, { recursive: true });
-  server = spawn(...resolveTestServerCommand(), {
-    cwd: path.resolve(__dirname, ".."),
-    env: {
-      ...process.env,
-      NODE_ENV: "test",
-      IS_LOCAL: "true",
-      SKIP_AUTH: "true",
-      DATAOPS_DOCS_DOMAIN: "1",
-      DTC_OFFLINE: "1",
-      DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/planning-surfaces-design"),
-      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
-      CONVERSATIONAL_EXECUTION_ENABLED: "false",
-      CONVERSATIONAL_ENABLED_PLUGINS: "none",
-      CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: "false",
-      CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: "false",
-      CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: "false",
-      FRONTEND_ROOT: path.resolve(__dirname, "..", "..", "frontend"),
-      PORT: String(PORT),
+  server = await startOwnedTestServer({
+    environment: {
+      DTC_CACHE_ROOT: createDocsCacheRoot(
+        "issue-190-docs-cache/planning-surfaces-design",
+      ),
     },
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: true,
   });
-  await waitForServer();
 });
 
-test.afterAll(() => {
-  try { process.kill(-server.pid, "SIGTERM"); } catch {}
+test.afterAll(async () => {
+  await stopOwnedTestServer(server);
 });
 
 test("Newsletter is a readable, responsive planning queue in light and dark themes", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-08-12T10:00:00Z"));
   await mockPlanningApis(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${BASE}/#/newsletter`);
+  const root = await page.goto(`${server.baseURL}/#/newsletter`);
+  assertOwnedServerResponse(server, root, "planning newsletter root");
   const surface = page.locator(".newsletter-surface");
   await expect(surface.getByRole("heading", { name: "Newsletter planner" })).toBeVisible();
   await expect(surface.getByText("Community highlights")).toBeVisible();
@@ -174,7 +144,8 @@ test("Calendar keeps planner hierarchy and becomes a one-column agenda on mobile
   await page.clock.setFixedTime(new Date("2026-08-12T10:00:00Z"));
   await mockPlanningApis(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${BASE}/#/calendar`);
+  const root = await page.goto(`${server.baseURL}/#/calendar`);
+  assertOwnedServerResponse(server, root, "planning calendar root");
   const surface = page.locator(".calendar-surface");
   await expect(surface.getByRole("heading", { name: "Operations calendar" })).toBeVisible();
   await expect(surface.getByText("Community webinar").first()).toBeVisible();

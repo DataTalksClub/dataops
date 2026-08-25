@@ -1,14 +1,14 @@
 const { test, expect } = require("@playwright/test");
 const AxeBuilder = require("@axe-core/playwright").default;
-const { spawn } = require("child_process");
 const fs = require("fs");
-const http = require("http");
 const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
-const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require("./helpers/isolated-capability-server");
 
-const PORT = 3318;
-const BASE_URL = `http://127.0.0.1:${PORT}`;
 const SCREENSHOTS = path.resolve(
   __dirname,
   "..",
@@ -18,25 +18,6 @@ const SCREENSHOTS = path.resolve(
   "bookkeeping-sponsors",
 );
 let server;
-
-function waitForServer() {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30_000;
-    const poll = () => {
-      const request = http.get(`${BASE_URL}/api/health`, (response) => {
-        response.resume();
-        if (response.statusCode === 200) resolve();
-        else if (Date.now() >= deadline) reject(new Error("portal server timeout"));
-        else setTimeout(poll, 200);
-      });
-      request.on("error", () => {
-        if (Date.now() >= deadline) reject(new Error("portal server timeout"));
-        else setTimeout(poll, 200);
-      });
-    };
-    poll();
-  });
-}
 
 async function setTheme(page, dark) {
   await page.evaluate((enabled) => {
@@ -196,41 +177,25 @@ async function routeSponsors(page) {
 test.describe("Bookkeeping and Sponsors design prototype", () => {
   test.beforeAll(async () => {
     fs.mkdirSync(SCREENSHOTS, { recursive: true });
-    server = spawn(...resolveTestServerCommand(), {
-      cwd: path.resolve(__dirname, ".."),
-      env: {
-        ...process.env,
-        NODE_ENV: "test",
-        IS_LOCAL: "true",
-        SKIP_AUTH: "true",
-        DATAOPS_DOCS_DOMAIN: "1",
-        DTC_OFFLINE: "1",
-        DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/bookkeeping-sponsors-design-production-portal"),
-        CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: "false",
-        CONVERSATIONAL_EXECUTION_ENABLED: "false",
-        CONVERSATIONAL_ENABLED_PLUGINS: "none",
-        CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: "false",
-        CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: "false",
-        CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: "false",
-        FRONTEND_ROOT: path.resolve(__dirname, "..", "..", "frontend"),
-        PORT: String(PORT),
+    server = await startOwnedTestServer({
+      environment: {
+        DTC_CACHE_ROOT: createDocsCacheRoot(
+          "issue-190-docs-cache/bookkeeping-sponsors-design-production-portal",
+        ),
       },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
     });
-    await waitForServer();
   });
 
-  test.afterAll(() => {
-    if (!server) return;
-    try { process.kill(-server.pid, "SIGTERM"); } catch {}
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test("Bookkeeping reflows jobs and ledger in exact light and dark palettes", async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1440, height: 900 } });
+    const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     await routeBookkeeping(page);
-    await page.goto("/#/bookkeeping");
+    const root = await page.goto("/#/bookkeeping");
+    assertOwnedServerResponse(server, root, "bookkeeping design root");
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Bookkeeping jobs" })).toContainText("Record ledger");
     await expect(page.getByRole("row").filter({ hasText: "Example Studio" })).toContainText("Missing");
@@ -268,10 +233,11 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
   });
 
   test("Sponsors uses booking master/detail sections and preserves exact review safety", async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1440, height: 900 } });
+    const context = await browser.newContext({ baseURL: server.baseURL, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const sponsorRouteState = await routeSponsors(page);
-    await page.goto("/#/sponsors");
+    const root = await page.goto("/#/sponsors");
+    assertOwnedServerResponse(server, root, "sponsor design root");
     await expect(page.getByRole("heading", { name: "Sponsors" })).toBeVisible();
     await page.getByLabel("Bookings").getByRole("button", { name: "Open booking" }).click();
     await expect(page.getByRole("heading", { name: "Booking detail" })).toBeVisible();

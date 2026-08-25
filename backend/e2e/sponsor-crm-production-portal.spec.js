@@ -1,57 +1,38 @@
 const { test, expect } = require("@playwright/test");
-const { spawn } = require("child_process");
-const http = require("http");
-const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
-const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
-const PORT = 3116,
-  BASE_URL = `http://127.0.0.1:${PORT}`;
-let child;
-const wait = () =>
-  new Promise((resolve, reject) => {
-    const end = Date.now() + 30000;
-    (function poll() {
-      const req = http.get(`${BASE_URL}/api/health`, (res) => {
-        res.resume();
-        resolve();
-      });
-      req.on("error", () =>
-        Date.now() > end
-          ? reject(new Error("portal timeout"))
-          : setTimeout(poll, 200),
-      );
-    })();
-  });
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require("./helpers/isolated-capability-server");
+
+let server;
+
+async function gotoOwnedSponsorPage(page) {
+  const response = await page.goto("/");
+  assertOwnedServerResponse(server, response, "sponsor CRM browser session");
+  return response;
+}
+
 test.describe("production sponsor CRM portal", () => {
   test.beforeAll(async () => {
-    child = spawn(...resolveTestServerCommand(), {
-      cwd: path.resolve(__dirname, ".."),
-      env: {
-        ...process.env,
-        NODE_ENV: "test",
-        IS_LOCAL: "true",
-        SKIP_AUTH: "true",
-        DATAOPS_DOCS_DOMAIN: "1",
-        DTC_OFFLINE: "1",
-        DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/sponsor-crm-production-portal"),
-        FRONTEND_ROOT: path.resolve(__dirname, "..", "..", "frontend"),
-        PORT: String(PORT),
+    server = await startOwnedTestServer({
+      environment: {
+        DTC_CACHE_ROOT: createDocsCacheRoot(
+          "issue-190-docs-cache/sponsor-crm-production-portal",
+        ),
       },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
     });
-    await wait();
   });
-  test.afterAll(() => {
-    try {
-      process.kill(-child.pid, "SIGTERM");
-    } catch {}
+
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
   test("renders clean loading, populated, history, alerts, error and mobile states", async ({
     browser,
   }) => {
     test.setTimeout(60_000);
-    const context = await browser.newContext({ baseURL: BASE_URL }),
+    const context = await browser.newContext({ baseURL: server.baseURL }),
       page = await context.newPage();
     let release;
     const gate = new Promise((resolve) => (release = resolve));
@@ -435,7 +416,7 @@ test.describe("production sponsor CRM portal", () => {
         downloadRequests++;
         return route.fulfill({
           json: {
-            downloadUrl: `${BASE_URL}/synthetic-private-invoice`,
+            downloadUrl: `${server.baseURL}/synthetic-private-invoice`,
             expiresIn: 300,
           },
         });
@@ -458,12 +439,12 @@ test.describe("production sponsor CRM portal", () => {
         },
       });
     });
-    await page.goto("/");
+    await gotoOwnedSponsorPage(page);
     await page.getByRole("button", { name: "Sponsors" }).click();
     await expect(page.getByText("Loading sponsor CRM…")).toBeVisible();
-    await page
-      .locator(".sponsor-crm-surface")
-      .screenshot({ path: ".tmp/sponsor-crm-production-loading.png" });
+    await page.screenshot({
+      path: ".tmp/sponsor-crm-production-loading.png",
+    });
     release();
     await expect(page.locator("[data-crm-orgs]")).toContainText(
       "Synthetic Sponsor",
@@ -762,7 +743,7 @@ test.describe("production sponsor CRM portal", () => {
       fullPage: true,
     });
     await context.close();
-    const errorContext = await browser.newContext({ baseURL: BASE_URL }),
+    const errorContext = await browser.newContext({ baseURL: server.baseURL }),
       errorPage = await errorContext.newPage();
     await errorPage.route("**/work/api/sponsor-crm/**", (route) =>
       route.fulfill({
@@ -773,7 +754,7 @@ test.describe("production sponsor CRM portal", () => {
     await errorPage.route("**/work/api/notifications", (route) =>
       route.fulfill({ json: { notifications: [] } }),
     );
-    await errorPage.goto("/");
+    await gotoOwnedSponsorPage(errorPage);
     await errorPage.getByRole("button", { name: "Sponsors" }).click();
     await expect(errorPage.getByRole("status")).toContainText(
       "Permission or API error",

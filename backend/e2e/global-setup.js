@@ -1,8 +1,11 @@
 const { spawn } = require('child_process');
+const { randomBytes } = require('node:crypto');
 const http = require('http');
+const net = require('node:net');
 const path = require('path');
 const fs = require('fs');
 const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
+const { trackTestServerProcessGroup } = require('./helpers/test-server-process-groups');
 
 const { TEST_SERVER_PORT } = require('./test-server-port');
 const READY_TIMEOUT_MS = 30000;
@@ -33,7 +36,7 @@ function writeDefaultAuthState(port = TEST_SERVER_PORT) {
       cookies: [],
       origins: [
         {
-          origin: `http://localhost:${port}`,
+          origin: `http://127.0.0.1:${port}`,
           localStorage: [
             { name: 'dataops_token', value: 'e2e-bypass-token' },
             { name: 'dataops_user', value: JSON.stringify(GRACE_USER) },
@@ -44,13 +47,18 @@ function writeDefaultAuthState(port = TEST_SERVER_PORT) {
   );
 }
 
-function buildTestServerEnvironment(parentEnvironment = process.env, port = TEST_SERVER_PORT) {
+function buildTestServerEnvironment(
+  parentEnvironment = process.env,
+  port = TEST_SERVER_PORT,
+  ownerToken = randomBytes(24).toString('hex'),
+) {
   return {
     ...parentEnvironment,
     NODE_ENV: 'test',
     IS_LOCAL: 'true',
     SKIP_AUTH: 'true',
     PORT: String(port),
+    DATAOPS_E2E_SERVER_TOKEN: ownerToken,
     FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
     // Server-owned actor for template-admin tests only. Other route permission
     // tests retain their existing explicit actor/no-actor behavior.
@@ -151,13 +159,32 @@ function waitForServer(port, timeoutMs, options = {}) {
  * child just spawned owns it. Require that child's successful listen log before
  * probing health so a foreign listener cannot satisfy bootstrap.
  */
-function waitForOwnedServer(child, port, timeoutMs) {
-  const readyMarker = `Test server listening at http://localhost:${port}`;
+function waitForOwnedServer(
+  child,
+  requestedPort,
+  timeoutMs,
+  expectedOwner,
+) {
+  if (
+    !expectedOwner
+    || !/^[0-9a-f]{48}$/.test(expectedOwner.token || '')
+    || typeof expectedOwner.checkout !== 'string'
+    || expectedOwner.checkout.length === 0
+  ) {
+    throw new Error(
+      'Test-server readiness requires a 48-character hexadecimal run token '
+      + 'and owning checkout path.',
+    );
+  }
+
+  const ownerToken = expectedOwner.token;
 
   return new Promise((resolve, reject) => {
     let settled = false;
     let retryTimer;
     let activeRequest;
+    let announcedPort;
+    let outputBuffer = '';
     const deadline = Date.now() + timeoutMs;
 
     function cleanup() {
@@ -180,8 +207,17 @@ function waitForOwnedServer(child, port, timeoutMs) {
       settle(() => reject(new Error(message)));
     }
 
-    function succeeded() {
-      settle(resolve);
+    function succeededWithOwnership(reportedOwner) {
+      settle(() => resolve({
+        owner: reportedOwner,
+        port: announcedPort,
+      }));
+    }
+
+    function maskToken(token) {
+      return typeof token === 'string' && token.length >= 8
+        ? `${token.slice(0, 4)}...${token.slice(-4)}`
+        : '<missing>';
     }
 
     function childStatus() {
@@ -198,8 +234,8 @@ function waitForOwnedServer(child, port, timeoutMs) {
       const waitMs = Math.min(delayMs, Math.max(0, deadline - Date.now()));
       if (waitMs <= 0 && retryTimer === undefined) {
         fail(
-          `The spawned test server announced ${readyMarker}, but /api/health `
-          + `did not return HTTP 200 within ${timeoutMs}ms.`
+          `The spawned test server did not return HTTP 200 from /api/health `
+          + `within ${timeoutMs}ms after announcing port ${announcedPort}.`
         );
         return;
       }
@@ -212,7 +248,7 @@ function waitForOwnedServer(child, port, timeoutMs) {
     function probe() {
       if (settled) return;
       let completed = false;
-      const request = http.get(`http://localhost:${port}${READY_PATH}`, (response) => {
+      const request = http.get(`http://127.0.0.1:${announcedPort}${READY_PATH}`, (response) => {
         if (completed || settled) {
           response.resume();
           return;
@@ -221,7 +257,7 @@ function waitForOwnedServer(child, port, timeoutMs) {
         activeRequest = undefined;
         response.resume();
         if (response.statusCode === 200) {
-          succeeded();
+          probeOwnership();
           return;
         }
         scheduleProbe(POLL_INTERVAL_MS);
@@ -242,9 +278,105 @@ function waitForOwnedServer(child, port, timeoutMs) {
       activeRequest = request;
     }
 
+    function probeOwnership() {
+      if (settled) return;
+      let completed = false;
+      const request = http.get(
+        `http://127.0.0.1:${announcedPort}/__e2e__/server-owner`,
+        (response) => {
+          if (completed || settled) {
+            response.resume();
+            return;
+          }
+          completed = true;
+          activeRequest = undefined;
+          const chunks = [];
+          response.on('data', (chunk) => chunks.push(chunk));
+          response.on('end', () => {
+            if (settled) return;
+            if (response.statusCode !== 200) {
+              scheduleProbe(POLL_INTERVAL_MS);
+              return;
+            }
+
+            let reportedOwner;
+            try {
+              reportedOwner = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            } catch {
+              scheduleProbe(POLL_INTERVAL_MS);
+              return;
+            }
+
+            if (reportedOwner.token !== ownerToken) {
+              fail(
+                'The listener on the announced test-server port has a different '
+                + `run token (expected=${maskToken(ownerToken)}, `
+                + `found=${maskToken(reportedOwner.token)}); refusing to reuse it.`,
+              );
+              return;
+            }
+            if (
+              expectedOwner.checkout
+              && reportedOwner.checkout !== expectedOwner.checkout
+            ) {
+              fail(
+                'The listener on the announced test-server port belongs to another '
+                + `checkout (expected=${expectedOwner.checkout}, `
+                + `found=${reportedOwner.checkout}).`,
+              );
+              return;
+            }
+            if (Number(reportedOwner.listeningPort) !== announcedPort) {
+              fail(
+                `The spawned test server reported port ${reportedOwner.listeningPort}, `
+                + `but its owned listen marker announced ${announcedPort}.`,
+              );
+              return;
+            }
+            succeededWithOwnership(reportedOwner);
+          });
+        },
+      );
+      request.on('error', () => {
+        if (completed || settled) return;
+        completed = true;
+        activeRequest = undefined;
+        scheduleProbe(POLL_INTERVAL_MS);
+      });
+      request.setTimeout(Math.min(1000, Math.max(1, deadline - Date.now())), () => {
+        if (completed || settled) return;
+        completed = true;
+        activeRequest = undefined;
+        request.destroy();
+        scheduleProbe(POLL_INTERVAL_MS);
+      });
+      activeRequest = request;
+    }
+
     function onOutput(chunk) {
       if (settled) return;
-      if (String(chunk).includes(readyMarker)) probe();
+      outputBuffer = `${outputBuffer}${String(chunk)}`.slice(-20_000);
+      for (const match of outputBuffer.matchAll(
+        /Test server listening at http:\/\/127\.0\.0\.1:(\d+) \(owner ([0-9a-f]{48}), checkout ([^\r\n]+)\)/g,
+      )) {
+        const [, parsedPort, parsedToken] = match;
+        if (parsedToken !== ownerToken) continue;
+
+        announcedPort = Number(parsedPort);
+        if (!Number.isInteger(announcedPort) || announcedPort < 1 || announcedPort > 65535) {
+          fail(`The spawned test server announced an invalid loopback port: ${parsedPort}.`);
+          return;
+        }
+        if (requestedPort > 0 && announcedPort !== requestedPort) {
+          fail(
+            `The spawned test server bound port ${announcedPort} instead of `
+            + `requested port ${requestedPort}.`,
+          );
+          return;
+        }
+        probe();
+        return;
+      }
     }
 
     function onErrorOutput() {}
@@ -271,10 +403,59 @@ function waitForOwnedServer(child, port, timeoutMs) {
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
       fail(
-        `Test server child did not announce ${readyMarker} within ${timeoutMs}ms; `
+        'Test server child did not announce an owned loopback listener '
+        + `within ${timeoutMs}ms; `
         + 'refusing to use another listener.'
       );
     }, timeoutMs);
+  });
+}
+
+async function readListenerOwnership(port, timeoutMs = 500) {
+  return new Promise((resolve, reject) => {
+    const request = http.get(
+      `http://127.0.0.1:${port}/__e2e__/server-owner`,
+      (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`HTTP ${response.statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    request.setTimeout(timeoutMs, () => request.destroy(new Error('ownership request timed out')));
+    request.once('error', reject);
+  });
+}
+
+async function assertExplicitPortAvailable(port, timeoutMs = 1000) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Requested test-server port is invalid: ${String(port)}`);
+  }
+
+  await new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen({ host: '127.0.0.1', port, exclusive: true }, () => {
+      probe.close(() => resolve());
+    });
+  }).catch(async (error) => {
+    const currentOwner = await readListenerOwnership(port, timeoutMs).catch(() => null);
+    const details = currentOwner
+      ? `current owner checkout=${currentOwner.checkout ?? 'unknown'}, pid=${currentOwner.pid ?? 'unknown'}`
+      : 'the existing listener did not expose a DataOps ownership endpoint';
+    throw new Error(
+      `Requested test-server port ${port} is unavailable (${error.code || error.message}); ${details}.`,
+      { cause: error },
+    );
   });
 }
 
@@ -283,12 +464,15 @@ async function globalSetup({ port = TEST_SERVER_PORT } = {}) {
   // process in this test-only tree on the same explicit dark rollout state.
   Object.assign(process.env, DARK_ROLLOUT_ENVIRONMENT);
 
+  const ownerToken = randomBytes(24).toString('hex');
+  if (port > 0) await assertExplicitPortAvailable(port);
+
   // Use detached: true so the child runs in its own process group.
   // This lets us kill the entire group (parent tsx + child node) cleanly.
   const child = spawn(
     ...resolveTestServerCommand(),
     {
-      env: buildTestServerEnvironment(undefined, port),
+      env: buildTestServerEnvironment(undefined, port, ownerToken),
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
     }
@@ -309,21 +493,36 @@ async function globalSetup({ port = TEST_SERVER_PORT } = {}) {
 
   // Store the child process so teardown can kill it
   globalThis.__testServerProcess = child;
+  trackTestServerProcessGroup(child);
 
   // Wait for this spawned process to own the port before returning control to
   // Playwright. A foreign HTTP 200 must never satisfy global setup.
-  await waitForOwnedServer(child, port, READY_TIMEOUT_MS);
+  let ready;
+  try {
+    ready = await waitForOwnedServer(child, port, READY_TIMEOUT_MS, {
+      checkout: path.resolve(__dirname, '..', '..'),
+      token: ownerToken,
+    });
+  } catch (error) {
+    await globalTeardown();
+    throw error;
+  }
 
-  console.log(`[global-setup] Test server is ready on port ${port}`);
+  console.log(
+    `[global-setup] Test server is ready on port ${ready.port}; `
+    + `run token and checkout verified for server pid ${ready.owner.pid}.`,
+  );
 
   // UI tests do not need a server-side session while SKIP_AUTH=true. Use a
   // deterministic localStorage session so auth/logout tests cannot invalidate
   // the shared browser storage state for unrelated UI tests.
-  writeDefaultAuthState(port);
+  writeDefaultAuthState(ready.port);
   console.log('[global-setup] Auth state saved with test bypass token for Grace');
 }
 
 module.exports = globalSetup;
+module.exports.assertExplicitPortAvailable = assertExplicitPortAvailable;
 module.exports.buildTestServerEnvironment = buildTestServerEnvironment;
+module.exports.readListenerOwnership = readListenerOwnership;
 module.exports.waitForServer = waitForServer;
 module.exports.waitForOwnedServer = waitForOwnedServer;
