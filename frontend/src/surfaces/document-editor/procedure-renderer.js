@@ -417,7 +417,7 @@ export function createProcedureRenderer(context, services, editorState) {
         }),
       });
       step.screenshots = step.screenshots || [];
-      step.screenshots.push({ src: payload.path, alt: "", caption: "" });
+      step.screenshots.push({ src: payload.absolute_path, alt: "", caption: "" });
       applyProcedureRewrite(procedure, null);
       setStatus(`Uploaded ${payload.absolute_path}`);
     } catch (err) {

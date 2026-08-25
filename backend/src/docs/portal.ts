@@ -27,6 +27,7 @@ import {
   contentRootUnavailableMessage,
   createGithubStore,
   githubStoreConfigFromEnv,
+  isCanonicalContentAsset,
   type ContentsApiGithubStore,
 } from './githubStore';
 
@@ -188,6 +189,13 @@ export function serveCanonicalFrontend(event: LambdaEvent): LambdaResponse | nul
 
 async function serveContent(path: string): Promise<LambdaResponse> {
   const repoPath = path.replace(/^\/+/, '');
+  if (!isCanonicalContentAsset(repoPath)) {
+    return {
+      statusCode: 400,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ error: 'Unsupported content asset' }),
+    };
+  }
   try {
     const bytes = await store().readBytes(repoPath);
     return fileResponse(Buffer.from(bytes), guessType(repoPath));

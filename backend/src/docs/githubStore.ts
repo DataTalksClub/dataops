@@ -23,6 +23,8 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 /** Image extensions hydrated from `content/images/` into the cache. */
 export const CONTENT_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 
+const CONTENT_IMAGE_PREFIX = 'content/images/';
+
 /** Raised when a GitHub API request fails. */
 export class GitHubError extends Error {
   constructor(message: string) {
@@ -148,20 +150,37 @@ export function quotePath(path: string): string {
     .join('/');
 }
 
-/** True when a tree/tarball path should be hydrated into the cache. */
-export function shouldHydratePath(path: string): boolean {
+/** Return the case-sensitive final extension, or an empty string when absent. */
+function contentExtension(path: string): string {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot) : '';
+}
+
+/**
+ * The repository's canonical public-safe knowledge assets: markdown anywhere
+ * under content/ and supported images under content/images/. Hidden files,
+ * empty segments, traversal, and uppercase extensions are not canonical.
+ */
+export function isCanonicalContentAsset(path: string): boolean {
   let repoPath: string;
   try {
     repoPath = normalizeRepoPath(path);
   } catch {
     return false;
   }
-  if (!repoPath.startsWith('content/')) return false;
-  if (repoPath.endsWith('.md')) return true;
-  if (!repoPath.startsWith('content/images/')) return false;
-  const dot = repoPath.lastIndexOf('.');
-  const ext = dot >= 0 ? repoPath.slice(dot).toLowerCase() : '';
-  return CONTENT_IMAGE_EXTENSIONS.has(ext);
+  const segments = repoPath.split('/');
+  if (segments[0] !== 'content' || segments.length < 2) return false;
+  if (segments.some((segment) => !segment || segment.startsWith('.'))) return false;
+
+  const extension = contentExtension(repoPath);
+  if (extension === '.md') return true;
+  return repoPath.startsWith(CONTENT_IMAGE_PREFIX) && CONTENT_IMAGE_EXTENSIONS.has(extension);
+}
+
+/** True when a tree/tarball path should be hydrated into the cache. */
+export function shouldHydratePath(path: string): boolean {
+  return isCanonicalContentAsset(path);
 }
 
 /**

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { createDocumentEditor } from "../src/surfaces/document-editor/index.js";
+import { createProcedureRenderer } from "../src/surfaces/document-editor/procedure-renderer.js";
 import {
   FakeDocument,
   FakeElement,
@@ -776,6 +777,7 @@ describe("Document Editor surface boundary", () => {
       "[[related-process|Review guide]]",
       "[Relative process](./related.md)",
       "![Screenshot](../images/shot.png)",
+      "![Uploaded](content/images/processes/uploaded-shot.webp)",
       "[Unsafe](javascript:alert(1))",
       "[External](https://example.com)",
     ].join("\n");
@@ -795,6 +797,10 @@ describe("Document Editor surface boundary", () => {
       renderedMarkdown.innerHTML,
       /src="\/content\/images\/shot\.png"/,
     );
+    assert.match(
+      renderedMarkdown.innerHTML,
+      /src="\/content\/images\/processes\/uploaded-shot\.webp"/,
+    );
     assert.match(renderedMarkdown.innerHTML, /<a href="#">Unsafe<\/a>/);
     assert.match(
       renderedMarkdown.innerHTML,
@@ -807,6 +813,40 @@ describe("Document Editor surface boundary", () => {
     assert.deepEqual(harness.openedDocuments, [
       "content/processes/related.md",
     ]);
+  });
+
+  test("stores uploaded screenshots at their repository-absolute path", async () => {
+    const renderedView = new FakeElement("section");
+    const rewrites = [];
+    const statuses = [];
+    const step = { id: 1, screenshots: [] };
+    const procedure = { flat_steps: [step] };
+    const renderer = createProcedureRenderer(
+      {
+        apiUrl: (path) => new URL(path, "https://portal.test"),
+        documentState: { currentDoc: { path: "content/processes/existing.md" } },
+        renderedView,
+        request: async () => ({
+          path: "../images/existing/uploaded-shot.webp",
+          absolute_path: "content/images/existing/uploaded-shot.webp",
+        }),
+        setStatus: (message) => statuses.push(message),
+        reportError: (message) => {
+          throw new Error(message);
+        },
+      },
+      {
+        applyProcedureRewrite: (rewrittenProcedure, focusStepId) =>
+          rewrites.push([rewrittenProcedure, focusStepId]),
+        fileToBase64: async () => "YWJj",
+      },
+      {},
+    );
+
+    await renderer.addScreenshot(step, procedure, { name: "uploaded-shot.webp" });
+    assert.equal(step.screenshots[0].src, "content/images/existing/uploaded-shot.webp");
+    assert.deepEqual(rewrites, [[procedure, null]]);
+    assert.match(statuses.at(-1), /Uploaded content\/images\/existing\/uploaded-shot\.webp/);
   });
 
   test("keeps dirty-leave and parse or Git failures recoverable", async () => {

@@ -10,6 +10,7 @@ import {
   GitHubError,
   normalizeRepoPath,
   quotePath,
+  isCanonicalContentAsset,
   shouldHydratePath,
 } from '../src/docs/githubStore';
 
@@ -114,12 +115,34 @@ describe('githubStore - path helpers', () => {
     assert.strictEqual(quotePath('content/a b/c.md'), 'content/a%20b/c.md');
   });
 
-  it('hydrates markdown and content images only', () => {
+  it('accepts the canonical markdown and image asset contract', () => {
     assert.ok(shouldHydratePath('content/x/a.md'));
     assert.ok(shouldHydratePath('content/images/x/pic.png'));
-    assert.ok(!shouldHydratePath('content/images/x/pic.txt'));
-    assert.ok(!shouldHydratePath('README.md'));
-    assert.ok(!shouldHydratePath('content/x/data.json'));
+    for (const extension of ['.jpg', '.jpeg', '.gif', '.webp', '.svg']) {
+      assert.ok(isCanonicalContentAsset(`content/images/x/pic${extension}`), extension);
+    }
+  });
+
+  it('rejects non-canonical content assets without hydrating them', () => {
+    const rejected = [
+      '',
+      'README.md',
+      'content',
+      'content/',
+      'content/.hidden.md',
+      'content/.hidden/guide.md',
+      'content/guide.MD',
+      'content/guide.TXT',
+      'content/guide',
+      'content/x/data.json',
+      'content/assets/pic.png',
+      'content/images/pic.PNG',
+      '../README.md',
+    ];
+    for (const path of rejected) {
+      assert.equal(isCanonicalContentAsset(path), false, path);
+      assert.equal(shouldHydratePath(path), false, path);
+    }
   });
 });
 

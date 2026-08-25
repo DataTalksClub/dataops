@@ -97,6 +97,12 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
     cacheDir = mkdtempSync(join(tmpdir(), 'portal-cache-'));
     portalGithub = new FakeGitHub({
       'content/a/reference/guide.md': '---\nid: ref.guide\ntitle: Guide\ndoc_type: reference\n---\n\n# Guide\nbody',
+      'content/images/a/png.png': 'PNG',
+      'content/images/a/jpg.jpg': 'JPG',
+      'content/images/a/jpeg.jpeg': 'JPEG',
+      'content/images/a/gif.gif': 'GIF',
+      'content/images/a/webp.webp': 'WEBP',
+      'content/images/a/svg.svg': 'SVG',
     });
     const store = new ContentsApiGithubStore({
       owner: 'o',
@@ -123,7 +129,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   });
 
   it('returns JSON 401 for unauthenticated API/data requests without a Basic challenge', async () => {
-    for (const path of ['/api/tasks', '/work/api/tasks', '/work/api/me', '/work/health']) {
+    for (const path of ['/api/tasks', '/work/api/tasks', '/work/api/me', '/work/health', '/content/a/reference/guide.md']) {
       const res = await route(ev('GET', path), client);
       assert.strictEqual(res.statusCode, 401, path);
       assert.deepStrictEqual(JSON.parse(res.body), { error: 'Unauthorized' }, path);
@@ -175,7 +181,83 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   it('serves /content/* from the GitHub store cache', async () => {
     const res = await route(ev('GET', '/content/a/reference/guide.md', { headers: { cookie: browserCookie } }), client);
     assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.headers?.['Content-Type'], 'text/markdown; charset=utf-8');
+    assert.notStrictEqual(res.isBase64Encoded, true);
     assert.match(res.body, /# Guide/);
+
+    const images: Array<[string, string]> = [
+      ['png', 'image/png'],
+      ['jpg', 'image/jpeg'],
+      ['jpeg', 'image/jpeg'],
+      ['gif', 'image/gif'],
+      ['webp', 'image/webp'],
+      ['svg', 'image/svg+xml'],
+    ];
+    for (const [extension, contentType] of images) {
+      const image = await route(
+        ev('GET', `/content/images/a/${extension}.${extension}`, { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(image.statusCode, 200, extension);
+      assert.strictEqual(image.headers?.['Content-Type'], contentType, extension);
+      assert.strictEqual(image.isBase64Encoded, true, extension);
+      assert.strictEqual(image.body, Buffer.from(extension.toUpperCase()).toString('base64'), extension);
+    }
+  });
+
+  it('rejects invalid content before missing roots, GitHub, cache, and filesystem reads', async () => {
+    const offlineBefore = process.env.DTC_OFFLINE;
+    process.env.DTC_OFFLINE = '1';
+    const contentRoot = join(cacheDir, 'content');
+    try {
+      const unsupported = await route(
+        ev('GET', '/content/a/reference/data.json', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(unsupported.statusCode, 400);
+      assert.match(unsupported.headers?.['content-type'] || '', /application\/json/);
+      assert.deepStrictEqual(JSON.parse(unsupported.body), { error: 'Unsupported content asset' });
+      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(existsSync(contentRoot), false);
+
+      const traversal = await route(
+        ev('GET', '/content/../README.md', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(traversal.statusCode, 400);
+      assert.deepStrictEqual(JSON.parse(traversal.body), { error: 'Unsupported content asset' });
+      assert.strictEqual(portalGithub.calls.length, 0);
+
+      const outage = await route(
+        ev('GET', '/content/a/reference/guide.md', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(outage.statusCode, 503);
+      assert.deepStrictEqual(
+        JSON.parse(outage.body),
+        { error: contentRootUnavailableMessage(contentRoot) },
+      );
+
+      mkdirSync(contentRoot, { recursive: true });
+      portalGithub.calls.length = 0;
+      const markdownMiss = await route(
+        ev('GET', '/content/a/reference/missing.md', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(markdownMiss.statusCode, 404);
+      assert.deepStrictEqual(JSON.parse(markdownMiss.body), { error: 'Not found' });
+
+      const imageMiss = await route(
+        ev('GET', '/content/images/missing.png', { headers: { cookie: browserCookie } }),
+        client,
+      );
+      assert.strictEqual(imageMiss.statusCode, 404);
+      assert.deepStrictEqual(JSON.parse(imageMiss.body), { error: 'Not found' });
+      assert.strictEqual(portalGithub.calls.length, 0);
+    } finally {
+      if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
+      else process.env.DTC_OFFLINE = offlineBefore;
+    }
   });
 
   it('distinguishes an offline corpus outage from a missing content file', async () => {

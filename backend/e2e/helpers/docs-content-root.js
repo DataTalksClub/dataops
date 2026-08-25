@@ -24,7 +24,7 @@ const TMP_ROOT = path.join(REPO_ROOT, '.tmp');
  * corpus instead of a missing configured content root.
  *
  * @param {string} name spec-unique directory name, relative to `<repo>/.tmp/`
- * @param {Record<string, string>} documents repo-relative `content/...` path -> markdown
+ * @param {Record<string, string | Uint8Array>} documents repo-relative `content/...` path -> markdown or binary asset
  * @returns {string} absolute cache root for `DTC_CACHE_ROOT`
  */
 function createDocsCacheRoot(name, documents = {}) {
@@ -32,11 +32,11 @@ function createDocsCacheRoot(name, documents = {}) {
   fs.rmSync(cacheRoot, { recursive: true, force: true });
   const contentRoot = path.join(cacheRoot, 'content');
   fs.mkdirSync(contentRoot, { recursive: true });
-  for (const [repoPath, markdown] of Object.entries(documents)) {
+  for (const [repoPath, contents] of Object.entries(documents)) {
     const relative = repoPath.replace(/^content\//, '');
     const target = path.join(contentRoot, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, markdown);
+    fs.writeFileSync(target, contents);
   }
   return cacheRoot;
 }

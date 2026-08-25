@@ -330,6 +330,8 @@ const server = http.createServer(async (req, res) => {
     const hasDownload = result.headers?.['Content-Disposition'];
     if (hasDownload && result.body) {
       res.end(Buffer.from(result.body, 'binary'));
+    } else if (result.isBase64Encoded && result.body) {
+      res.end(Buffer.from(result.body, 'base64'));
     } else {
       res.end(result.body || '');
     }
