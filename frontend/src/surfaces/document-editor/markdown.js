@@ -9,6 +9,8 @@ export function createEditorMarkdown(context, services) {
     if (!src) return "";
     if (/^https?:\/\//i.test(src)) return src;
     if (src.startsWith("/")) return src;
+    // Image uploads also return a repository-absolute content/ path.
+    if (src.startsWith("content/")) return `/${src}`;
     if (!documentState.currentDoc) return src;
     // Resolve relative path against the current doc's directory; both live
     // under content/, which the frontend container serves at /content/.
