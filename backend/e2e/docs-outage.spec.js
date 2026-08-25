@@ -21,6 +21,7 @@ const path = require('node:path');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const { createDocsCacheRoot, missingDocsCacheRoot } = require('./helpers/docs-content-root');
 const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
+const { waitForOwnedServer } = require('./global-setup');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
@@ -88,27 +89,12 @@ async function reserveFreePorts(count) {
   return ports;
 }
 
-function waitForServer(server) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 60_000;
-    const poll = async () => {
-      try {
-        const response = await fetch(`${server.baseURL}/api/health`);
-        if (response.ok) return resolve();
-      } catch {}
-      if (Date.now() >= deadline) {
-        return reject(new Error(`docs-outage server did not start\n${server.stderr}`));
-      }
-      setTimeout(poll, 200);
-    };
-    poll();
-  });
-}
-
 async function startServer(server, port) {
   server.port = port;
   server.baseURL = `http://127.0.0.1:${port}`;
+  server.stopRequested = false;
   server.stderr = '';
+  server.stdout = '';
   server.process = spawn(...resolveTestServerCommand(), {
     cwd: BACKEND_ROOT,
     detached: true,
@@ -145,12 +131,33 @@ async function startServer(server, port) {
   server.process.stderr.on('data', (data) => {
     server.stderr += data.toString();
   });
-  await waitForServer(server);
+  server.process.stdout.setEncoding('utf8');
+  server.process.stderr.setEncoding('utf8');
+  server.process.stdout.on('data', (data) => {
+    server.stdout += data.toString();
+  });
+  server.process.once('exit', (code, signal) => {
+    if (!server.stopRequested) {
+      console.error(
+        [
+          'docs-outage test server exited unexpectedly.',
+          `port=${server.port} baseURL=${server.baseURL}`,
+          `pid=${server.process.pid ?? 'unknown'} code=${code ?? 'none'} signal=${signal ?? 'none'}`,
+          'stdout:',
+          server.stdout || '<empty>',
+          'stderr:',
+          server.stderr || '<empty>',
+        ].join('\n'),
+      );
+    }
+  });
+  await waitForOwnedServer(server.process, port, 60_000);
 }
 
 async function stopServer(server) {
   if (!server.process) return;
   const child = server.process;
+  server.stopRequested = true;
   const exited = new Promise((resolve) => child.once('exit', resolve));
   try { process.kill(-child.pid, 'SIGTERM'); } catch {}
   const stopped = await Promise.race([
