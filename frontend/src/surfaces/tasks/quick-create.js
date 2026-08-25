@@ -1,3 +1,9 @@
+import {
+  createFormFeedback,
+  reportFieldValidation,
+  setControlPending,
+} from "../operations-overview.js";
+
 const QUICK_FORM_FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -6,11 +12,13 @@ let quickFormTitleSequence = 0;
 export function createQuickTaskActions(context) {
   const {
     describeRecurringRun,
+    getActiveWorkspaceRouteToken,
+    isWorkspaceRouteFresh,
     openCardPanel,
     openTaskPanel,
+    refreshDocuments,
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
-    reportError,
     request,
     shellBody,
     state,
@@ -18,31 +26,53 @@ export function createQuickTaskActions(context) {
     workApiUrl,
   } = context;
 
+  function addConflictReviewAction(feedback, label, onReview) {
+    for (const stale of feedback.node.querySelectorAll(".quick-form-retry"))
+      stale.remove();
+    const review = document.createElement("button");
+    review.type = "button";
+    review.className = "quiet-button quick-form-retry";
+    review.textContent = label;
+    review.addEventListener("click", onReview);
+    feedback.node.append(review);
+  }
+
   function openQuickTaskForm() {
     const overlay = createQuickFormOverlay("New task");
-    const form = document.createElement("div");
+    const form = document.createElement("form");
     form.className = "quick-form";
+    form.addEventListener("submit", (event) => event.preventDefault());
 
     const descInput = createQuickInput("What needs doing?", "text", "");
     const dateInput = createQuickInput("Due date", "date", todayIsoDate());
+    const feedback = createFormFeedback();
 
     const createBtn = document.createElement("button");
-    createBtn.type = "button";
+    createBtn.type = "submit";
     createBtn.className = "task-action-btn is-primary";
     createBtn.textContent = "Create task";
-    createBtn.addEventListener("click", async () => {
+    let taskSubmitInFlight = false;
+    const submitTask = async () => {
+      // Implicit form submission can still occur while the visual submit
+      // button is disabled, so the operation owns its own duplicate guard.
+      if (taskSubmitInFlight) return;
       const description = descInput.input.value.trim();
       const date = dateInput.input.value;
-      if (!description) {
-        reportError("Task description is required.");
+      const invalid = reportFieldValidation([
+        [descInput, description ? "" : "Task description is required."],
+        [dateInput, date ? "" : "Due date is required."],
+      ]);
+      if (invalid) {
+        feedback.clear();
         return;
       }
-      if (!date) {
-        reportError("Due date is required.");
-        return;
-      }
-      createBtn.disabled = true;
-      createBtn.textContent = "Creating...";
+      taskSubmitInFlight = true;
+      setControlPending(createBtn, {
+        pending: true,
+        pendingLabel: "Creating task…",
+      });
+      feedback.pending("Creating task…");
+      const routeToken = getActiveWorkspaceRouteToken();
       try {
         const created = await request(workApiUrl("/api/tasks"), {
           method: "POST",
@@ -50,26 +80,59 @@ export function createQuickTaskActions(context) {
         });
         overlay.close();
         const task = created?.task || created;
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          await refreshOperationsWorkSnapshot({ rerender: false });
+          return;
+        }
         if (task?.id) openTaskPanel(task.id);
-        refreshOperationsWorkSnapshot({ rerender: true });
+        await refreshOperationsWorkSnapshot({ rerender: true });
       } catch (err) {
-        reportError(
-          `Could not create task: ${err.message || "request failed"}`,
-        );
-        createBtn.disabled = false;
-        createBtn.textContent = "Create task";
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          overlay.close();
+          return;
+        }
+        if (err.status === 409) {
+          feedback
+            .conflict(
+              `The work API reported a conflict while creating this Task: ${err.message || "conflict"}` +
+                ` The entries in this draft are retained. Select Create task to retry,` +
+                ` Close to discard this draft, or Review current work to reload the queue.`,
+            )
+            .focus();
+          addConflictReviewAction(
+            feedback,
+            "Review current work",
+            async () => {
+              overlay.close();
+              await refreshOperationsWorkSnapshot({ rerender: true });
+            },
+          );
+        } else {
+          feedback
+            .failure(
+              `Could not create task: ${err.message || "request failed"} Select Create task to retry.`,
+            )
+            .focus();
+        }
+        setControlPending(createBtn, { pending: false, label: "Create task" });
+      } finally {
+        taskSubmitInFlight = false;
       }
-    });
+    };
+    form.addEventListener("submit", submitTask);
 
-    form.append(descInput.label, dateInput.label, createBtn);
+    form.append(descInput.label, dateInput.label, feedback.node, createBtn);
     overlay.querySelector(".quick-form-body").append(form);
+    descInput.input.focus();
+    descInput.input.focus();
   }
 
   async function openQuickWorkflowForm(options = {}) {
     const requestedTemplate = options.template || null;
     const overlay = createQuickFormOverlay("Create card");
-    const form = document.createElement("div");
+    const form = document.createElement("form");
     form.className = "quick-form";
+    form.addEventListener("submit", (event) => event.preventDefault());
 
     const selectLabel = document.createElement("label");
     selectLabel.className = "quick-form-label";
@@ -83,17 +146,42 @@ export function createQuickTaskActions(context) {
     templateSelect.disabled = true;
     selectLabel.append(templateSelect);
 
-    const anchorInput = createQuickInput("Anchor date", "date", todayIsoDate());
-    const titleInput = createQuickInput("Card title (optional)", "text", "");
+    const anchorInput = createQuickInput(
+      "Anchor date",
+      "date",
+      options.anchorDate || todayIsoDate(),
+    );
+    const titleInput = createQuickInput(
+      "Card title (optional)",
+      "text",
+      options.title || "",
+    );
+    const templateControl = { label: selectLabel, input: templateSelect };
+    const templateState = document.createElement("p");
+    templateState.className = "quick-form-state";
+    templateState.setAttribute("role", "status");
+    templateState.setAttribute("aria-live", "polite");
+    templateState.textContent = "Loading templates…";
+    const feedback = createFormFeedback();
 
     const createBtn = document.createElement("button");
-    createBtn.type = "button";
+    createBtn.type = "submit";
     createBtn.className = "task-action-btn is-primary";
     createBtn.textContent = "Create card";
     createBtn.disabled = true;
+    let cardSubmitInFlight = false;
 
-    form.append(selectLabel, titleInput.label, anchorInput.label, createBtn);
+    form.append(
+      selectLabel,
+      templateState,
+      titleInput.label,
+      anchorInput.label,
+      feedback.node,
+      createBtn,
+    );
     overlay.querySelector(".quick-form-body").append(form);
+    titleInput.input.focus();
+    titleInput.input.focus();
 
     // Fetch live templates from the backend API (UUIDs, not doc slugs)
     let liveTemplates = [];
@@ -102,8 +190,32 @@ export function createQuickTaskActions(context) {
       liveTemplates = Array.isArray(payload)
         ? payload
         : payload.templates || [];
-    } catch {
-      liveTemplates = [];
+    } catch (error) {
+      templateSelect.replaceChildren();
+      const unavailable = document.createElement("option");
+      unavailable.value = "";
+      unavailable.textContent = "Templates unavailable";
+      templateSelect.append(unavailable);
+      templateSelect.disabled = true;
+      createBtn.disabled = true;
+      // The form stays open and offers its own recovery: a card cannot be
+      // created without templates, but the operator does not lose the dialog.
+      feedback
+        .failure(
+          `Templates could not be loaded: ${error.message || "request failed"}`,
+        )
+        .focus();
+      templateState.textContent = "No templates are available to select.";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "quiet-button quick-form-retry";
+      retry.textContent = "Retry loading templates";
+      retry.addEventListener("click", () => {
+        overlay.close();
+        openQuickWorkflowForm(options);
+      });
+      feedback.node.append(retry);
+      return;
     }
 
     templateSelect.replaceChildren();
@@ -127,26 +239,37 @@ export function createQuickTaskActions(context) {
         titleInput.input.value = requestedTemplate.title;
     }
     templateSelect.disabled = false;
+    templateState.textContent =
+      liveTemplates.length > 0
+        ? `${liveTemplates.length} ${liveTemplates.length === 1 ? "template" : "templates"} available.`
+        : "No templates are deployed, so no card can be created yet.";
     if (liveTemplates.length > 0) createBtn.disabled = false;
     else {
       const emptyOpt = document.createElement("option");
       emptyOpt.textContent = "No templates available";
       templateSelect.append(emptyOpt);
+      templateSelect.disabled = true;
     }
 
-    createBtn.addEventListener("click", async () => {
+    const submitCard = async () => {
+      if (cardSubmitInFlight) return;
       const templateId = templateSelect.value;
       const anchorDate = anchorInput.input.value;
-      if (!templateId) {
-        reportError("Select a template.");
+      const invalid = reportFieldValidation([
+        [templateControl, templateId ? "" : "Select a template."],
+        [anchorInput, anchorDate ? "" : "Anchor date is required."],
+      ]);
+      if (invalid) {
+        feedback.clear();
         return;
       }
-      if (!anchorDate) {
-        reportError("Anchor date is required.");
-        return;
-      }
-      createBtn.disabled = true;
-      createBtn.textContent = "Starting...";
+      cardSubmitInFlight = true;
+      setControlPending(createBtn, {
+        pending: true,
+        pendingLabel: "Creating card…",
+      });
+      feedback.pending("Creating card…");
+      const routeToken = getActiveWorkspaceRouteToken();
       try {
         const body = { templateId, anchorDate };
         const title = titleInput.input.value.trim();
@@ -157,16 +280,52 @@ export function createQuickTaskActions(context) {
         });
         const card = result?.card || result;
         overlay.close();
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          await refreshOperationsWorkSnapshot({ rerender: false });
+          return;
+        }
         if (card?.id) openCardPanel(card.id);
         await refreshOperationsWorkSnapshot({ rerender: true });
       } catch (err) {
-        reportError(
-          `Could not create card: ${err.message || "request failed"}`,
-        );
-        createBtn.disabled = false;
-        createBtn.textContent = "Create card";
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          overlay.close();
+          return;
+        }
+        if (err.status === 409 || err.code === "template_version_conflict") {
+          feedback
+            .conflict(
+              `The Template changed since this form was opened: ${err.message || "version conflict"}` +
+                ` The entries in this draft are retained. Select Create card to retry,` +
+                ` Close to discard this draft, or Review latest Templates to load the current list.`,
+            )
+            .focus();
+          addConflictReviewAction(
+            feedback,
+            "Review latest Templates",
+            () => {
+              const selectedTemplate =
+                liveTemplates.find((template) => template.id === templateId) ||
+                requestedTemplate;
+              options.template = selectedTemplate;
+              options.title = titleInput.input.value;
+              options.anchorDate = anchorDate;
+              overlay.close();
+              openQuickWorkflowForm(options);
+            },
+          );
+        } else {
+          feedback
+            .failure(
+              `Could not create card: ${err.message || "request failed"} Select Create card to retry.`,
+            )
+            .focus();
+        }
+        setControlPending(createBtn, { pending: false, label: "Create card" });
+      } finally {
+        cardSubmitInFlight = false;
       }
-    });
+    };
+    form.addEventListener("submit", submitCard);
   }
 
   function findLiveWorkflowTemplate(liveTemplates, requestedTemplate) {
@@ -213,8 +372,9 @@ export function createQuickTaskActions(context) {
     const overlay = createQuickFormOverlay(
       editing ? "Edit recurring schedule" : "New recurring schedule",
     );
-    const form = document.createElement("div");
+    const form = document.createElement("form");
     form.className = "quick-form recurring-form";
+    form.addEventListener("submit", (event) => event.preventDefault());
 
     const intro = document.createElement("p");
     intro.className = "recurring-form-intro";
@@ -331,41 +491,50 @@ export function createQuickTaskActions(context) {
     }
     syncForm();
 
-    const errorText = document.createElement("p");
-    errorText.className = "recurring-form-error";
-    errorText.setAttribute("role", "alert");
-    errorText.hidden = true;
+    const feedback = createFormFeedback();
+    feedback.node.classList.add("recurring-form-feedback");
     const failForm = (message) => {
-      errorText.textContent = message;
-      errorText.hidden = false;
-      reportError(message);
+      feedback.failure(message).focus();
     };
 
     const submitLabel = editing ? "Save schedule" : "Create schedule";
     const submitBtn = document.createElement("button");
-    submitBtn.type = "button";
+    submitBtn.type = "submit";
     submitBtn.className = "primary-button";
     submitBtn.textContent = submitLabel;
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "quiet-button";
     cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", () => overlay.close());
+    let reloadScheduleOnCancel = false;
+    cancelBtn.addEventListener("click", async () => {
+      if (!reloadScheduleOnCancel) {
+        overlay.close();
+        return;
+      }
+      const routeToken = getActiveWorkspaceRouteToken();
+      overlay.close();
+      await refreshOperationsRecurringSnapshot({ rerender: false });
+      if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
+    });
     const footer = document.createElement("div");
     footer.className = "recurring-form-footer";
     footer.append(cancelBtn, submitBtn);
 
-    submitBtn.addEventListener("click", async () => {
-      errorText.hidden = true;
+    let scheduleSubmitInFlight = false;
+    const submitSchedule = async () => {
+      if (scheduleSubmitInFlight) return;
       const descriptionValue = description.input.value.trim();
-      if (!descriptionValue) {
-        failForm("Recurring description is required.");
-        description.input.focus();
-        return;
-      }
       const cronExpression = currentCron();
-      if (!cronExpression || cronExpression.split(" ").length !== 5) {
-        failForm("Cron expression needs five fields.");
+      const cronComplete =
+        Boolean(cronExpression) && cronExpression.split(" ").length === 5;
+      const cronField = repeat.input.value === "custom" ? cronInput : repeat;
+      const invalid = reportFieldValidation([
+        [description, descriptionValue ? "" : "Recurring description is required."],
+        [cronField, cronComplete ? "" : "Cron expression needs five fields."],
+      ]);
+      if (invalid) {
+        feedback.clear();
         return;
       }
       const body = {
@@ -375,8 +544,13 @@ export function createQuickTaskActions(context) {
       };
       const assigneeId = assignee.input.value;
       if (assigneeId || preset.assigneeId) body.assigneeId = assigneeId;
-      submitBtn.disabled = true;
-      submitBtn.textContent = editing ? "Saving..." : "Creating...";
+      scheduleSubmitInFlight = true;
+      setControlPending(submitBtn, {
+        pending: true,
+        pendingLabel: editing ? "Saving schedule…" : "Creating schedule…",
+      });
+      feedback.pending(editing ? "Saving schedule…" : "Creating schedule…");
+      const routeToken = getActiveWorkspaceRouteToken();
       try {
         await request(
           workApiUrl(
@@ -390,15 +564,37 @@ export function createQuickTaskActions(context) {
           },
         );
         overlay.close();
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          await refreshOperationsRecurringSnapshot({ rerender: false });
+          return;
+        }
         await refreshOperationsRecurringSnapshot({ rerender: true });
       } catch (err) {
-        failForm(
-          `Could not ${editing ? "save" : "create"} recurring schedule: ${err.message || "request failed"}`,
-        );
-        submitBtn.disabled = false;
-        submitBtn.textContent = submitLabel;
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          overlay.close();
+          return;
+        }
+        // A conflict keeps the entered schedule and says what changed under it;
+        // any other failure is retryable with the same values.
+        const conflict =
+          `This schedule changed since the form was opened: ${err.message || "version conflict"}` +
+          ` Your values are kept. Select Cancel to discard this draft and reload schedules,` +
+          ` or ${submitLabel} to apply them anyway.`;
+        const failure =
+          `Could not ${editing ? "save" : "create"} recurring schedule:` +
+          ` ${err.message || "request failed"} Select ${submitLabel} to retry.`;
+        reloadScheduleOnCancel = err.status === 409;
+        if (err.status === 409) {
+          feedback.conflict(conflict).focus();
+        } else {
+          failForm(failure);
+        }
+        setControlPending(submitBtn, { pending: false, label: submitLabel });
+      } finally {
+        scheduleSubmitInFlight = false;
       }
-    });
+    };
+    form.addEventListener("submit", submitSchedule);
 
     form.append(
       intro,
@@ -407,7 +603,7 @@ export function createQuickTaskActions(context) {
       preview,
       assignee.label,
       enabled.label,
-      errorText,
+      feedback.node,
       footer,
     );
     overlay.querySelector(".quick-form-body").append(form);

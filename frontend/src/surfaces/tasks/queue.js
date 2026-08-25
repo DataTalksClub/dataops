@@ -124,8 +124,18 @@ export function createTaskQueue(context) {
       title.id = `queue-group-${groupIndex}`;
       title.textContent = label;
       const count = document.createElement("span");
-      count.textContent = String(list.length);
-      count.setAttribute("aria-label", `${list.length} ${label.toLowerCase()} tasks`);
+      const loaded = Boolean(groupLoaded[label]);
+      count.dataset.queueCount = loaded ? "known" : "unknown";
+      if (loaded) {
+        count.textContent = String(list.length);
+        count.setAttribute(
+          "aria-label",
+          `${list.length} ${label.toLowerCase()} tasks`,
+        );
+      } else {
+        count.textContent = "—";
+        count.setAttribute("aria-label", `${label} unavailable`);
+      }
       header.append(title, count);
       group.setAttribute("aria-labelledby", title.id);
       group.append(header);

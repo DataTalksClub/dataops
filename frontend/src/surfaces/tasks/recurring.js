@@ -1,3 +1,5 @@
+import { setControlPending } from "../operations-overview.js";
+
 const RECURRING_ICONS = Object.freeze({
   add: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
   cadence:
@@ -25,18 +27,22 @@ export function createRecurringTasks(context) {
   const {
     confirmDialog,
     countLabel,
+    getActiveWorkspaceRouteToken,
+    isWorkspaceRouteFresh,
     openDocument,
     openQuickWorkflowForm,
     openRecurringForm,
     refreshOperationsRecurringSnapshot,
-    reportError,
     request,
     resolveAssigneeLabel,
     scheduleAnimationFrame,
     todayIsoDate,
     workApiUrl,
   } = context;
-  const recurringDeleteErrors = new Map();
+  // Row-owned recovery text. A schedule that fails to delete, pause or resume
+  // says so in its own row, next to the control that was used, instead of in a
+  // toast that disappears before it can be acted on.
+  const recurringRowErrors = new Map();
 
   function textSpan(value) {
     const span = document.createElement("span");
@@ -240,10 +246,10 @@ export function createRecurringTasks(context) {
     actions.className = "recurring-row-actions";
     actions.append(edit, toggle, remove);
     item.append(status, text, actions);
-    const error = recurringDeleteErrors.get(config.id);
+    const error = recurringRowErrors.get(config.id);
     if (error) {
       const guidance = document.createElement("p");
-      guidance.className = "recurring-delete-guidance";
+      guidance.className = "recurring-row-error recurring-delete-guidance";
       guidance.setAttribute("role", "alert");
       guidance.tabIndex = -1;
       guidance.textContent = error;
@@ -258,25 +264,33 @@ export function createRecurringTasks(context) {
       { okText: "Delete schedule", danger: true },
     );
     if (!confirmed) return;
-    button.disabled = true;
-    button.textContent = "Deleting…";
+    const routeToken = getActiveWorkspaceRouteToken();
+    setControlPending(button, { pending: true, pendingLabel: "Deleting…" });
     try {
       await request(
         workApiUrl(`/api/recurring/${encodeURIComponent(config.id)}`),
         { method: "DELETE" },
       );
-      recurringDeleteErrors.delete(config.id);
+      recurringRowErrors.delete(config.id);
+      if (!isWorkspaceRouteFresh(routeToken)) {
+        await refreshOperationsRecurringSnapshot({ rerender: false });
+        return;
+      }
       await refreshOperationsRecurringSnapshot({ rerender: true });
     } catch (error) {
+      if (!isWorkspaceRouteFresh(routeToken)) {
+        await refreshOperationsRecurringSnapshot({ rerender: false });
+        return;
+      }
       const message =
         error.status === 409
           ? "This schedule has generated history and cannot be deleted. Pause it instead; generated tasks and notifications are preserved."
           : `${error.message || "Could not delete this schedule"} Select Delete schedule to retry.`;
-      recurringDeleteErrors.set(config.id, message);
+      recurringRowErrors.set(config.id, message);
       await refreshOperationsRecurringSnapshot({ rerender: true });
       scheduleAnimationFrame(() =>
         document
-          .querySelector(".recurring-delete-guidance[role='alert']")
+          .querySelector(".recurring-row-error[role='alert']")
           ?.focus(),
       );
     }
@@ -323,10 +337,11 @@ export function createRecurringTasks(context) {
 
   async function toggleRecurringConfig(configId, enabled, button) {
     const originalText = button?.textContent || (enabled ? "Resume" : "Pause");
-    if (button) {
-      button.disabled = true;
-      button.textContent = enabled ? "Resuming..." : "Pausing...";
-    }
+    const routeToken = getActiveWorkspaceRouteToken();
+    setControlPending(button, {
+      pending: true,
+      pendingLabel: enabled ? "Resuming…" : "Pausing…",
+    });
     try {
       await request(
         workApiUrl(`/api/recurring/${encodeURIComponent(configId)}`),
@@ -335,15 +350,30 @@ export function createRecurringTasks(context) {
           body: JSON.stringify({ enabled }),
         },
       );
+      recurringRowErrors.delete(configId);
+      if (!isWorkspaceRouteFresh(routeToken)) {
+        await refreshOperationsRecurringSnapshot({ rerender: false });
+        return;
+      }
       await refreshOperationsRecurringSnapshot({ rerender: true });
     } catch (err) {
-      reportError(
-        `Could not update recurring operation: ${err.message || "request failed"}`,
-      );
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalText;
+      if (!isWorkspaceRouteFresh(routeToken)) {
+        await refreshOperationsRecurringSnapshot({ rerender: false });
+        return;
       }
+      // The refreshed snapshot is authoritative: the row is re-rendered from
+      // the server state and carries the failure with its own retry control.
+      recurringRowErrors.set(
+        configId,
+        `Could not ${enabled ? "resume" : "pause"} this schedule: ${err.message || "request failed"} Select ${originalText} to retry.`,
+      );
+      setControlPending(button, { pending: false, label: originalText });
+      await refreshOperationsRecurringSnapshot({ rerender: true });
+      scheduleAnimationFrame(() =>
+        document
+          .querySelector(".recurring-row-error[role='alert']")
+          ?.focus(),
+      );
     }
   }
 

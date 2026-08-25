@@ -82,6 +82,9 @@ function baseModel(overrides = {}) {
       followUpTasks: 0,
       missingProofTasks: 0,
       activeCards: 0,
+      cardsLoaded: true,
+      liveLoaded: true,
+      workErrors: [],
     },
     runtime: null,
     templates: [],
@@ -110,7 +113,7 @@ function createHarness(options = {}) {
   const openedTasks = [];
   const openedCards = [];
   const entityStates = [];
-  const status = [];
+  const documentRefreshes = [];
   let route = options.route || {
     path: "/tasks",
     params: new URLSearchParams(),
@@ -125,6 +128,7 @@ function createHarness(options = {}) {
     failures: [],
   };
   let model = options.model || baseModel();
+  let activeRouteToken = 1;
   const state = {
     workSnapshot: {
       tasks: [],
@@ -142,7 +146,9 @@ function createHarness(options = {}) {
   };
   let api;
   const refreshRecurring = async ({ rerender } = {}) => {
-    if (options.refreshRecurring) await options.refreshRecurring();
+    if (options.refreshRecurring) {
+      await options.refreshRecurring({ rerender });
+    }
     if (rerender && api) api.renderTasksSurface([], "recurring");
   };
   api = createTasksSurface({
@@ -161,7 +167,7 @@ function createHarness(options = {}) {
     formatTaskDateMeta,
     getActiveTasksSection: () => "templates",
     getActiveWorkspaceRoute: () => route,
-    getActiveWorkspaceRouteToken: () => 1,
+    getActiveWorkspaceRouteToken: () => activeRouteToken,
     getAllDocuments: () => [],
     getPendingLegacyRoute: () => null,
     getTaskRouteContext: () => taskRouteContext,
@@ -175,7 +181,7 @@ function createHarness(options = {}) {
     isTaskDueToday,
     isTaskOverdue,
     isWaitingOrFollowUpTask,
-    isWorkspaceRouteFresh: () => true,
+    isWorkspaceRouteFresh: (token) => token === activeRouteToken,
     libraryTitle,
     listDraftPaths: () => [],
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
@@ -201,7 +207,7 @@ function createHarness(options = {}) {
       };
     },
     referenceCountLabel: (name, count) => `${count} ${name}`,
-    refreshDocuments: async () => {},
+    refreshDocuments: async () => documentRefreshes.push("tasks"),
     refreshOperationsRecurringSnapshot: refreshRecurring,
     refreshOperationsWorkSnapshot: async (refreshOptions = {}) => {
       if (options.refreshWork) await options.refreshWork(refreshOptions);
@@ -224,7 +230,6 @@ function createHarness(options = {}) {
       header.append(heading, detail);
       return header;
     },
-    reportError: (message) => errors.push(message),
     request: async (url, requestOptions = {}) => {
       requests.push({ url, options: requestOptions });
       return options.request ? options.request(url, requestOptions) : {};
@@ -232,10 +237,8 @@ function createHarness(options = {}) {
     resolveAssigneeLabel: (id) => id,
     scheduleAnimationFrame: (callback) => callback(),
     setRouteTitle() {},
-    setStatus: (message) => status.push(message),
     setWorkspaceEntityState: (entity) => entityStates.push(entity),
     shellBody,
-    showErrorToast: (message) => errors.push(message),
     sortWorkTasks: (tasks) => tasks,
     state,
     surfaceDescription: (section) => `${section} surface`,
@@ -261,9 +264,12 @@ function createHarness(options = {}) {
     navigations,
     openedCards,
     openedTasks,
+    documentRefreshes,
     requests,
     shellBody,
-    status,
+    setActiveRouteToken: (value) => {
+      activeRouteToken = value;
+    },
     setModel: (value) => {
       model = value;
     },
@@ -275,6 +281,12 @@ function createHarness(options = {}) {
     },
     state,
   };
+}
+
+function submitQuickForm(overlay) {
+  // Quick forms submit natively, so keyboard Enter and the primary button take
+  // the same path. Tests exercise that path instead of a synthetic click.
+  return findAllByClass(overlay, "quick-form")[0].dispatch("submit");
 }
 
 function groupByHeading(root, heading) {
@@ -894,9 +906,7 @@ describe("Tasks surface boundary", () => {
       ["Unassigned", "Grace", "Sam"],
     );
     assigneeSelect.value = "user-sam";
-    await findByText(createOverlay, "Create schedule", "button").dispatch(
-      "click",
-    );
+    await submitQuickForm(createOverlay);
     await nextTicks();
     assert.equal(harness.requests.at(-1).url, "/api/recurring");
     assert.equal(harness.requests.at(-1).options.method, "POST");
@@ -921,7 +931,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(editSelects.at(-1).value, "user-grace");
     assert.match(editOverlay.textContent, /Every Monday at 09:00/);
     editInputs[0].value = "Weekly newsletter prep";
-    await findByText(editOverlay, "Save schedule", "button").dispatch("click");
+    await submitQuickForm(editOverlay);
     await nextTicks();
     assert.equal(harness.requests.at(-1).url, "/api/recurring/recurring-1");
     assert.equal(harness.requests.at(-1).options.method, "PUT");
@@ -1020,6 +1030,592 @@ describe("Tasks surface boundary", () => {
     assert.equal(editOpener.focused, true);
   });
 
+  test("reports Queue load state in the Tasks surface instead of a hidden status line", async () => {
+    const loading = createHarness({
+      model: baseModel({ stats: { activeCards: 0, followUpTasks: 0, liveLoaded: false, missingProofTasks: 0 } }),
+    });
+    loading.api.renderTasksSurface([], "queue");
+    const loadingSummary = loading.documentList.querySelector(".surface-summary");
+    assert.equal(loadingSummary.dataset.summaryState, "loading");
+    assert.equal(loadingSummary.dataset.summaryId, "tasks-queue");
+    assert.match(loadingSummary.textContent, /Loading tasks from the work API/);
+
+    const refreshes = [];
+    const failed = createHarness({
+      model: baseModel({
+        runtime: { connected: false, errors: ["Synthetic route failure (503)"] },
+        stats: {
+          activeCards: 0,
+          followUpTasks: 0,
+          liveLoaded: false,
+          missingProofTasks: 0,
+          workErrors: ["Synthetic route failure (503)"],
+        },
+      }),
+      refreshWork: async (options) => refreshes.push(options),
+    });
+    failed.api.renderTasksSurface([], "queue");
+    const outage = failed.documentList.querySelector(".surface-summary");
+    assert.equal(outage.dataset.summaryState, "unavailable");
+    assert.equal(
+      outage.querySelector(".surface-summary-line").getAttribute("role"),
+      "alert",
+    );
+    assert.equal(
+      outage.querySelector(".surface-summary-detail").textContent,
+      "Synthetic route failure (503)",
+    );
+    await outage.querySelector(".surface-summary-retry").dispatch("click");
+    await nextTicks();
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(
+      failed.documentRefreshes,
+      ["tasks"],
+      "the retry re-renders only through the owning-route callback",
+    );
+
+    const partial = createHarness({
+      model: baseModel({
+        runtime: { connected: true, errors: ["Waiting source unavailable"] },
+        stats: {
+          activeCards: 1,
+          followUpTasks: 1,
+          liveLoaded: true,
+          missingProofTasks: 0,
+          workErrors: ["Waiting source unavailable"],
+        },
+      }),
+      workSnapshot: { tasks: [canonicalTask({ id: "task-1", description: "Ship" })] },
+    });
+    partial.api.renderTasksSurface([], "queue");
+    const partialSummary = partial.documentList.querySelector(".surface-summary");
+    assert.equal(partialSummary.dataset.summaryState, "partial");
+    assert.match(partialSummary.textContent, /1 known work item/);
+    assert.match(
+      partialSummary.textContent,
+      /follow-ups unknown/,
+      "a source that did not answer has no count, not a zero",
+    );
+    assert.match(partialSummary.textContent, /Some task sources are unavailable/);
+
+    const empty = createHarness();
+    empty.api.renderTasksSurface([], "queue");
+    const emptySummary = empty.documentList.querySelector(".surface-summary");
+    assert.equal(emptySummary.dataset.summaryState, "empty");
+    assert.match(emptySummary.textContent, /No tasks are open in this queue/);
+    assert.equal(emptySummary.querySelector(".surface-summary-retry"), null);
+  });
+
+  test("failed queue lanes show unknown counts instead of zero", () => {
+    const failed = createHarness({
+      model: baseModel({
+        runtime: { connected: false, errors: ["Synthetic route failure (503)"] },
+        stats: {
+          activeCards: 0,
+          followUpTasks: 0,
+          liveLoaded: false,
+          missingProofTasks: 0,
+          todayLoaded: false,
+          overdueLoaded: false,
+          waitingLoaded: false,
+          workErrors: ["Synthetic route failure (503)"],
+        },
+      }),
+      workSnapshot: {
+        tasks: [],
+        todayLoaded: false,
+        overdueLoaded: false,
+        waitingLoaded: false,
+      },
+    });
+    failed.api.renderTasksSurface([], "queue");
+    const failedSummary = failed.documentList.querySelector(".surface-summary");
+    assert.equal(failedSummary.dataset.summaryState, "unavailable");
+    assert.equal(
+      failedSummary.textContent.includes("0 known"),
+      false,
+      "unavailable work is not summarized as zero items",
+    );
+    const groups = findAllByClass(failed.documentList, "ops-queue-group");
+    assert.equal(groups.length, 6);
+    for (const group of groups) {
+      const count = group.querySelector("header span");
+      assert.equal(count.dataset.queueCount, "unknown");
+      assert.equal(count.textContent, "—");
+      assert.notEqual(count.textContent, "0");
+      assert.match(count.getAttribute("aria-label"), /unavailable$/);
+      assert.equal(
+        group.querySelector(".ops-empty").dataset.state,
+        "unavailable",
+      );
+    }
+    assert.equal(
+      failed.documentList.textContent.includes(" 0 "),
+      false,
+      "failed lanes are not interpreted as zero work",
+    );
+
+    const partialOutage = createHarness({
+      model: baseModel({
+        runtime: { connected: true, errors: ["Synthetic route failure (503)"] },
+        stats: {
+          activeCards: 0,
+          followUpTasks: 0,
+          liveLoaded: true,
+          missingProofTasks: 0,
+          todayLoaded: false,
+          overdueLoaded: false,
+          waitingLoaded: false,
+          workErrors: ["Synthetic route failure (503)"],
+        },
+      }),
+      workSnapshot: {
+        tasks: [],
+        todayLoaded: false,
+        overdueLoaded: false,
+        waitingLoaded: false,
+      },
+    });
+    partialOutage.api.renderTasksSurface([], "queue");
+    const partialSummary = partialOutage.documentList.querySelector(".surface-summary");
+    assert.equal(partialSummary.dataset.summaryState, "partial");
+    assert.match(partialSummary.textContent, /known work items unknown/);
+    assert.equal(
+      partialSummary.textContent.includes("0 known"),
+      false,
+      "a silent task source has no count, not a zero",
+    );
+  });
+
+  test("reports Recurring and Templates load state in their own sections", async () => {
+    const refreshes = [];
+    const unavailable = createHarness({
+      model: baseModel({
+        recurring: {
+          configs: [],
+          disabled: [],
+          enabled: [],
+          errors: ["Recurring API request failed"],
+          loaded: false,
+        },
+      }),
+      refreshRecurring: async () => refreshes.push("recurring"),
+    });
+    unavailable.api.renderTasksSurface([], "recurring");
+    const summary = unavailable.documentList.querySelector(".surface-summary");
+    assert.equal(summary.dataset.summaryState, "unavailable");
+    assert.equal(summary.dataset.summaryId, "tasks-recurring");
+    assert.match(summary.textContent, /Recurring schedules could not be loaded/);
+    await summary.querySelector(".surface-summary-retry").dispatch("click");
+    await nextTicks();
+    assert.deepEqual(refreshes, ["recurring"]);
+
+    const ready = createHarness({
+      model: baseModel({
+        recurring: recurringSnapshot([
+          {
+            id: "recurring-1",
+            description: "Weekly newsletter",
+            cronExpression: "0 9 * * 1",
+            enabled: true,
+          },
+        ]),
+      }),
+    });
+    ready.api.renderTasksSurface([], "recurring");
+    const readySummary = ready.documentList.querySelector(".surface-summary");
+    assert.equal(readySummary.dataset.summaryState, "ready");
+    assert.match(readySummary.textContent, /1 recurring schedule · 1 enabled · 0 paused/);
+
+    const templates = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") throw new Error("Templates unavailable");
+        return {};
+      },
+    });
+    await templates.api.refreshRuntimeTemplates();
+    templates.api.renderTasksSurface([], "templates");
+    const templateSummary = templates.documentList.querySelector(".surface-summary");
+    assert.equal(templateSummary.dataset.summaryState, "partial");
+    assert.equal(
+      templateSummary.querySelector(".surface-summary-detail").textContent,
+      "Templates unavailable",
+    );
+  });
+
+  test("refreshes a stale Recurring row mutation without replacing the current view", async () => {
+    const config = {
+      id: "recurring-stale",
+      description: "Weekly newsletter",
+      cronExpression: "0 9 * * 1",
+      enabled: true,
+    };
+    let releaseRequest;
+    let completeMutation;
+    const refreshes = [];
+    const harness = createHarness({
+      model: baseModel({
+        recurring: recurringSnapshot([config]),
+      }),
+      refreshRecurring: async ({ rerender }) => {
+        refreshes.push({ rerender });
+        await new Promise((resolve) => {
+          completeMutation = resolve;
+        });
+      },
+      request: async () =>
+        new Promise((resolve) => {
+          releaseRequest = resolve;
+        }),
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    const pause = findByText(harness.documentList, "Pause", "button");
+
+    const mutation = pause.click();
+    harness.setActiveRouteToken(2);
+    await nextTicks();
+    releaseRequest();
+    await nextTicks();
+    completeMutation();
+    await mutation;
+    await nextTicks();
+
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(harness.documentRefreshes, []);
+    assert.equal(
+      pause.isConnected,
+      true,
+      "the stale mutation must not replace the newer view",
+    );
+  });
+
+  test("keeps a stale Recurring summary retry from re-rendering the newer route", async () => {
+    let finishRefresh;
+    const refreshes = [];
+    const harness = createHarness({
+      model: baseModel({
+        recurring: {
+          configs: [],
+          enabled: [],
+          disabled: [],
+          errors: ["Synthetic route failure (503)"],
+          loaded: false,
+        },
+      }),
+      refreshRecurring: async ({ rerender }) => {
+        refreshes.push({ rerender });
+        await new Promise((resolve) => {
+          finishRefresh = resolve;
+        });
+      },
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    const retry = harness.documentList.querySelector(
+      ".surface-summary-retry",
+    );
+
+    const retryClick = retry.click();
+    harness.setActiveRouteToken(2);
+    finishRefresh();
+    await retryClick;
+    await nextTicks();
+
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(harness.documentRefreshes, []);
+    assert.equal(retry.isConnected, true);
+  });
+
+  test("refreshes a stale successful quick Task without replacing the newer view", async () => {
+    let releaseMutation;
+    const refreshes = [];
+    const harness = createHarness({
+      request: (url) =>
+        url === "/api/tasks"
+          ? new Promise((resolve) => {
+              releaseMutation = () => resolve({ task: { id: "task-created" } });
+            })
+          : {},
+      refreshWork: async ({ rerender }) => {
+        refreshes.push({ rerender });
+      },
+    });
+    harness.api.openQuickTaskForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const inputs = overlay.querySelectorAll("input");
+    inputs.find((input) => input.type === "text").value = "Prepare release";
+    inputs.find((input) => input.type === "date").value = "2026-08-15";
+
+    const mutation = submitQuickForm(overlay);
+    await nextTicks();
+    harness.setActiveRouteToken(2);
+    releaseMutation();
+    await mutation;
+    await nextTicks();
+
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(harness.openedTasks, []);
+    assert.deepEqual(harness.documentRefreshes, []);
+    assert.equal(overlay.removed, true);
+  });
+
+  test("refreshes a stale successful quick Card without replacing the newer view", async () => {
+    let releaseMutation;
+    const refreshes = [];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates")
+          return { templates: [{ id: "template-uuid", name: "Newsletter" }] };
+        if (url === "/api/cards") {
+          return new Promise((resolve) => {
+            releaseMutation = () => resolve({ card: { id: "card-created" } });
+          });
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+      refreshWork: async ({ rerender }) => {
+        refreshes.push({ rerender });
+      },
+    });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    overlay.querySelector("select").value = "template-uuid";
+    const inputs = overlay.querySelectorAll("input");
+    inputs[0].value = "August newsletter";
+    inputs[1].value = "2026-08-20";
+
+    const mutation = submitQuickForm(overlay);
+    await nextTicks();
+    harness.setActiveRouteToken(2);
+    releaseMutation();
+    await mutation;
+    await nextTicks();
+
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(harness.openedCards, []);
+    assert.deepEqual(harness.documentRefreshes, []);
+    assert.equal(overlay.removed, true);
+  });
+
+  test("refreshes a stale successful recurring form without replacing the newer view", async () => {
+    let releaseMutation;
+    let finishRefresh;
+    const refreshes = [];
+    const harness = createHarness({
+      model: baseModel({
+        recurring: recurringSnapshot([]),
+      }),
+      refreshRecurring: async ({ rerender }) => {
+        refreshes.push({ rerender });
+        await new Promise((resolve) => {
+          finishRefresh = resolve;
+        });
+      },
+      request: () =>
+        new Promise((resolve) => {
+          releaseMutation = resolve;
+        }),
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    await findByText(harness.documentList, "New schedule", "button").dispatch(
+      "click",
+    );
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    overlay.querySelector('input[type="text"]').value = "Daily standup";
+
+    const mutation = submitQuickForm(overlay);
+    await nextTicks();
+    harness.setActiveRouteToken(2);
+    releaseMutation();
+    await nextTicks();
+    finishRefresh();
+    await mutation;
+    await nextTicks();
+
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(harness.documentRefreshes, []);
+    assert.equal(overlay.removed, true);
+  });
+
+  test("keeps a failed quick Task in its own form with retained input and no toast", async () => {
+    const harness = createHarness({
+      request: async () => {
+        const error = new Error("Synthetic route failure (503)");
+        error.status = 503;
+        throw error;
+      },
+    });
+    harness.api.openQuickTaskForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const create = findByText(overlay, "Create task", "button");
+    const description = overlay
+      .querySelectorAll("input")
+      .find((input) => input.type === "text");
+    description.value = "Prepare release";
+    await submitQuickForm(overlay);
+    await nextTicks();
+
+    const feedback = overlay.querySelector(".form-feedback");
+    assert.equal(feedback.dataset.feedbackState, "error");
+    const alertNode = feedback.querySelector(".form-feedback-error");
+    assert.equal(alertNode.getAttribute("role"), "alert");
+    assert.match(alertNode.textContent, /Synthetic route failure \(503\)/);
+    assert.match(alertNode.textContent, /Select Create task to retry/);
+    assert.equal(alertNode.focused, true);
+    assert.equal(description.value, "Prepare release", "input is retained");
+    assert.equal(create.disabled, false);
+    assert.equal(create.getAttribute("aria-busy"), null);
+    assert.equal(overlay.removed, false);
+    assert.deepEqual(harness.errors, [], "no global toast for a form failure");
+  });
+
+  test("gives a conflicting quick Task explicit reload, retry, and discard paths", async () => {
+    const refreshes = [];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url !== "/api/tasks") throw new Error(`Unexpected request ${url}`);
+        const error = new Error("Work queue moved");
+        error.status = 409;
+        throw error;
+      },
+      refreshWork: async ({ rerender }) => {
+        refreshes.push({ rerender });
+      },
+    });
+    harness.api.openQuickTaskForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const inputs = overlay.querySelectorAll("input");
+    inputs[0].value = "Prepare release";
+    inputs[1].value = "2026-08-15";
+    await submitQuickForm(overlay);
+    await nextTicks();
+
+    const feedback = overlay.querySelector(".form-feedback");
+    assert.equal(feedback.dataset.feedbackState, "conflict");
+    assert.match(feedback.textContent, /conflict while creating this Task/);
+    assert.match(feedback.textContent, /Create task to retry/);
+    assert.match(feedback.textContent, /Close to discard this draft/);
+    assert.equal(inputs[0].value, "Prepare release");
+
+    await submitQuickForm(overlay);
+    await nextTicks();
+    const recoveryActions = overlay.querySelectorAll(".quick-form-retry");
+    assert.equal(
+      recoveryActions.length,
+      1,
+      "a repeated conflict replaces the previous recovery action",
+    );
+
+    await findByText(overlay, "Review current work", "button").click();
+    await nextTicks();
+    assert.deepEqual(refreshes, [{ rerender: true }]);
+    assert.equal(overlay.removed, true);
+  });
+
+  test("moves initial focus into quick Task and Card dialogs", async () => {
+    const taskHarness = createHarness();
+    taskHarness.api.openQuickTaskForm();
+    const taskOverlay = findAllByClass(
+      taskHarness.shellBody,
+      "quick-form-overlay",
+    )[0];
+    const description = taskOverlay
+      .querySelectorAll("input")
+      .find((input) => input.type === "text");
+    assert.equal(description.focused, true);
+
+    const cardHarness = createHarness({
+      request: async (url) =>
+        url === "/api/templates"
+          ? { templates: [{ id: "template-uuid", name: "Newsletter" }] }
+          : {},
+    });
+    await cardHarness.api.openQuickWorkflowForm();
+    const cardOverlay = findAllByClass(
+      cardHarness.shellBody,
+      "quick-form-overlay",
+    )[0];
+    const title = cardOverlay
+      .querySelectorAll("input")
+      .find((input) => input.type === "text");
+    assert.equal(title.focused, true);
+  });
+
+  test("returns a failed pause to the schedule row that started it", async () => {
+    const recurring = recurringSnapshot([
+      {
+        id: "recurring-1",
+        description: "Weekly newsletter",
+        cronExpression: "0 9 * * 1",
+        enabled: true,
+      },
+    ]);
+    const harness = createHarness({
+      model: baseModel({ recurring }),
+      request: async () => {
+        throw new Error("Synthetic route failure (503)");
+      },
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    const pause = findByText(harness.documentList, "Pause", "button");
+    await pause.dispatch("click");
+    await nextTicks();
+
+    const rowError = harness.documentList.querySelector(".recurring-row-error");
+    assert.equal(rowError.getAttribute("role"), "alert");
+    assert.match(rowError.textContent, /Could not pause this schedule/);
+    assert.match(rowError.textContent, /Select Pause to retry/);
+    assert.equal(rowError.focused, true);
+    assert.deepEqual(harness.errors, [], "no global toast for a row failure");
+    assert.equal(
+      findByText(harness.documentList, "Pause", "button").disabled,
+      false,
+      "the retry control stays usable",
+    );
+  });
+
+  test("authoritatively reloads a conflicting recurring schedule when Cancel is used", async () => {
+    const config = {
+      id: "recurring-conflict",
+      description: "Weekly newsletter",
+      cronExpression: "0 9 * * 1",
+      enabled: true,
+    };
+    const refreshes = [];
+    const harness = createHarness({
+      model: baseModel({ recurring: recurringSnapshot([config]) }),
+      request: async (url, options = {}) => {
+        if (url !== "/api/recurring/recurring-conflict")
+          throw new Error(`Unexpected request ${url}`);
+        if (options.method !== "PUT") return {};
+        const error = new Error("Schedule changed elsewhere");
+        error.status = 409;
+        throw error;
+      },
+      refreshRecurring: async ({ rerender }) => {
+        refreshes.push({ rerender });
+      },
+    });
+    harness.api.renderTasksSurface([], "recurring");
+    await findByText(harness.documentList, "Edit", "button").dispatch("click");
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    overlay.querySelector('input[type="text"]').value = "Weekly newsletter prep";
+    await submitQuickForm(overlay);
+    await nextTicks();
+
+    const feedback = overlay.querySelector(".form-feedback");
+    assert.equal(feedback.dataset.feedbackState, "conflict");
+    assert.match(
+      feedback.textContent,
+      /Cancel to discard this draft and reload schedules/,
+    );
+
+    await findByText(overlay, "Cancel", "button").click();
+    await nextTicks(3);
+    assert.deepEqual(refreshes, [{ rerender: false }]);
+    assert.deepEqual(harness.documentRefreshes, ["tasks"]);
+    assert.equal(overlay.removed, true);
+  });
+
   test("validates and creates quick Tasks with the canonical mutation shape", async () => {
     const { api, errors, openedTasks, requests, shellBody } = createHarness({
       request: async (url) =>
@@ -1028,14 +1624,30 @@ describe("Tasks surface boundary", () => {
     api.openQuickTaskForm();
     const overlay = findAllByClass(shellBody, "quick-form-overlay")[0];
     const create = findByText(overlay, "Create task", "button");
-    await create.dispatch("click");
-    assert.deepEqual(errors, ["Task description is required."]);
+    await submitQuickForm(overlay);
+    const validation = findAllByClass(overlay, "field-error").filter(
+      (node) => !node.hidden,
+    );
+    assert.deepEqual(
+      validation.map((node) => node.textContent),
+      ["Task description is required."],
+    );
+    const description = overlay
+      .querySelectorAll("input")
+      .find((input) => input.type === "text");
+    assert.equal(description.getAttribute("aria-invalid"), "true");
+    assert.equal(
+      description.getAttribute("aria-describedby"),
+      validation[0].getAttribute("id"),
+    );
+    assert.equal(description.focused, true);
+    assert.deepEqual(errors, [], "validation stays in the form, not in a toast");
     assert.equal(requests.length, 0);
 
     const inputs = overlay.querySelectorAll("input");
     inputs.find((input) => input.type === "text").value = "Prepare release";
     inputs.find((input) => input.type === "date").value = "2026-08-15";
-    await create.dispatch("click");
+    await submitQuickForm(overlay);
     await nextTicks();
     assert.equal(requests[0].url, "/api/tasks");
     assert.equal(requests[0].options.method, "POST");
@@ -1061,8 +1673,23 @@ describe("Tasks surface boundary", () => {
     await harness.api.openQuickWorkflowForm();
     const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
     const create = findByText(overlay, "Create card", "button");
-    await create.dispatch("click");
-    assert.deepEqual(harness.errors, ["Select a template."]);
+    await submitQuickForm(overlay);
+    const validation = findAllByClass(overlay, "field-error").filter(
+      (node) => !node.hidden,
+    );
+    assert.deepEqual(
+      validation.map((node) => node.textContent),
+      ["Select a template."],
+    );
+    assert.equal(
+      overlay.querySelector("select").getAttribute("aria-invalid"),
+      "true",
+    );
+    assert.deepEqual(
+      harness.errors,
+      [],
+      "validation stays in the form, not in a toast",
+    );
     assert.equal(calls.filter(({ url }) => url === "/api/cards").length, 0);
 
     const select = overlay.querySelector("select");
@@ -1070,7 +1697,7 @@ describe("Tasks surface boundary", () => {
     const inputs = overlay.querySelectorAll("input");
     inputs.find((input) => input.type === "text").value = "August newsletter";
     inputs.find((input) => input.type === "date").value = "2026-08-20";
-    await create.dispatch("click");
+    await submitQuickForm(overlay);
     await nextTicks();
     const mutation = calls.find(({ url }) => url === "/api/cards");
     assert.equal(mutation.options.method, "POST");
@@ -1081,5 +1708,71 @@ describe("Tasks surface boundary", () => {
     });
     assert.deepEqual(harness.openedCards, ["card-created"]);
     assert.equal(overlay.removed, true);
+  });
+
+  test("reloads quick Card conflicts into a fresh Template list while retaining intent", async () => {
+    let cardsSubmitted = 0;
+    const harness = createHarness({
+      request: async (url, options = {}) => {
+        if (url === "/api/templates") {
+          return cardsSubmitted
+            ? { templates: [{ id: "template-current", name: "Current newsletter" }] }
+            : { templates: [{ id: "template-old", name: "Old newsletter" }] };
+        }
+        if (url === "/api/cards" && options.method === "POST") {
+          cardsSubmitted += 1;
+          if (cardsSubmitted <= 2) {
+            const error = new Error(
+              "Template changed while the Card was being created.",
+            );
+            error.status = 409;
+            error.code = "template_version_conflict";
+            throw error;
+          }
+          return { card: { id: "card-created" } };
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.openQuickWorkflowForm();
+    const firstOverlay = findAllByClass(
+      harness.shellBody,
+      "quick-form-overlay",
+    )[0];
+    firstOverlay.querySelector("select").value = "template-old";
+    const inputs = firstOverlay.querySelectorAll("input");
+    inputs[0].value = "August newsletter";
+    inputs[1].value = "2026-08-20";
+    await submitQuickForm(firstOverlay);
+    await nextTicks();
+
+    const feedback = firstOverlay.querySelector(".form-feedback");
+    assert.equal(feedback.dataset.feedbackState, "conflict");
+    assert.match(feedback.textContent, /Template changed since this form was opened/);
+    assert.equal(inputs[0].value, "August newsletter");
+
+    await submitQuickForm(firstOverlay);
+    await nextTicks();
+    assert.equal(
+      firstOverlay.querySelectorAll(".quick-form-retry").length,
+      1,
+      "a repeated Card conflict replaces the previous recovery action",
+    );
+
+    await findByText(firstOverlay, "Review latest Templates", "button").click();
+    await nextTicks(3);
+    assert.equal(firstOverlay.removed, true);
+    const secondOverlay = findAllByClass(
+      harness.shellBody,
+      "quick-form-overlay",
+    ).at(-1);
+    assert.notEqual(secondOverlay, firstOverlay);
+    assert.equal(secondOverlay.querySelector("select").value, "");
+    assert.match(secondOverlay.textContent, /Current newsletter/);
+
+    secondOverlay.querySelector("select").value = "template-current";
+    const retainedInputs = secondOverlay.querySelectorAll("input");
+    assert.equal(retainedInputs[0].value, "August newsletter");
+    assert.equal(retainedInputs[1].value, "2026-08-20");
   });
 });

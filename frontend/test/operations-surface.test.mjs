@@ -355,7 +355,8 @@ function createAdminHarness(options = {}) {
   globalThis.document = document;
   const requests = [];
   const errors = [];
-  const statuses = [];
+  const documentRefreshes = [];
+  let activeRouteToken = options.routeToken ?? 1;
   const api = createAdminSurface({
     apiUrl,
     buildOperationsHomeModel: () => ({ recurring: { configs: [] } }),
@@ -363,12 +364,15 @@ function createAdminHarness(options = {}) {
     currentOperatorIdFromPayload: (payload) => payload?.id || "",
     documentList,
     getActiveWorkspaceView: () => options.view || "users",
+    getActiveWorkspaceRouteToken: () => activeRouteToken,
+    isWorkspaceRouteFresh: (token) =>
+      options.isRouteFresh ? options.isRouteFresh(token) : token === activeRouteToken,
     getOperationsQualitySnapshot: () => ({}),
     getOperationsRecurringSnapshot: () => ({}),
     getOperationsWorkSnapshot: () => ({}),
     libraryTitle,
     listDraftPaths: () => [],
-    refreshDocuments: async () => {},
+    refreshDocuments: async () => documentRefreshes.push("users"),
     renderHonestState: honestState,
     renderSurfaceHeader: (title, description) => {
       const header = new FakeElement("header");
@@ -381,14 +385,11 @@ function createAdminHarness(options = {}) {
       return options.request ? options.request(url, requestOptions, entry) : {};
     },
     setRouteTitle() {},
-    setStatus: (message) => statuses.push(message),
     settledPayload: (result) =>
       result.status === "fulfilled" ? result.value : null,
     showCreate() {},
-    showErrorToast: (message) => errors.push(message),
     showWorkspaceSurface() {},
     surfaceDescription: (surface) => `${surface} surface`,
-    surfaceStatusText: () => "Admin diagnostics",
     usersFromWorkPayload: (payload) =>
       Array.isArray(payload) ? payload : payload?.users || [],
     workApiUrl: apiUrl,
@@ -399,8 +400,25 @@ function createAdminHarness(options = {}) {
     documentList,
     errors,
     requests,
-    statuses,
+    documentRefreshes,
+    setActiveRouteToken: (value) => {
+      activeRouteToken = value;
+    },
   };
+}
+
+function submitUserForm(root) {
+  // The user form submits natively so Enter and the primary button share one
+  // path; the test exercises that path rather than a synthetic click.
+  const form = findAllByClass(root, "ops-user-form")[0];
+  if (!form) throw new Error("User form is not rendered");
+  return form.dispatch("submit");
+}
+
+function submitDeviceForm(root) {
+  const form = findAllByClass(root, "device-form")[0];
+  if (!form) throw new Error("Device form is not rendered");
+  return form.dispatch("submit");
 }
 
 describe("Operations surface boundary", () => {
@@ -498,13 +516,7 @@ describe("Operations surface boundary", () => {
       harness.documentList,
       "device-code-input",
     )[0];
-    const continueButton = findByText(
-      harness.documentList,
-      "Continue",
-      "button",
-    );
-
-    await continueButton.dispatch("click");
+    await submitDeviceForm(harness.documentList);
 
     const refreshedInput = findAllByClass(
       harness.documentList,
@@ -512,6 +524,218 @@ describe("Operations surface boundary", () => {
     )[0];
     assert.notEqual(refreshedInput, initialInput);
     assert.equal(refreshedInput.focused, true);
+  });
+
+  test("shows Device lookup pending, failure, and decision state in the page itself", async () => {
+    let resolveLookup;
+    let resolveDecision;
+    let lookupCalls = 0;
+    const grant = {
+      label: "test-machine",
+      requestIp: "10.0.0.3",
+      createdAt: "2026-08-12T09:10:00.000Z",
+    };
+    const harness = createOperationsHarness({
+      request: async (url) => {
+        if (String(url).includes("/api/auth/device/pending")) {
+          lookupCalls += 1;
+          if (lookupCalls > 1) return grant;
+          return new Promise((resolve, reject) => {
+            resolveLookup = { resolve, reject };
+          });
+        }
+        if (String(url).includes("/api/auth/device/approve")) {
+          return new Promise((resolve) => {
+            resolveDecision = resolve;
+          });
+        }
+        return { status: "approved" };
+      },
+      route: { path: "/device", params: new URLSearchParams() },
+    });
+    harness.api.renderDeviceSurfaceView();
+    const summary = harness.documentList.querySelector(".surface-summary");
+    assert.equal(summary.dataset.summaryId, "device");
+    assert.match(summary.textContent, /Enter the code shown by the DataOps CLI/);
+    assert.deepEqual(harness.statuses, [], "no hidden status writer is used");
+
+    const input = findAllByClass(harness.documentList, "device-code-input")[0];
+    input.value = "ABCD-1234";
+    harness.document.activeElement = findByText(
+      harness.documentList,
+      "Continue",
+      "button",
+    );
+    submitDeviceForm(harness.documentList);
+    await nextTicks();
+    const pending = harness.documentList.querySelector(".surface-summary");
+    assert.equal(pending.dataset.summaryState, "loading");
+    assert.match(pending.textContent, /Checking that code with the work API/);
+    const pendingButton = findByText(
+      harness.documentList,
+      "Checking code…",
+      "button",
+    );
+    assert.equal(pendingButton.disabled, true);
+    assert.equal(pendingButton.getAttribute("aria-busy"), "true");
+    assert.equal(
+      pending.querySelector(".surface-summary-line").focused,
+      true,
+      "replacing the submitted control moves focus to the pending owner",
+    );
+
+    const notFound = new Error("Unknown code");
+    notFound.status = 404;
+    resolveLookup.reject(notFound);
+    await nextTicks(4);
+    const failure = findAllByClass(harness.documentList, "device-error")[0];
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.match(failure.textContent, /not waiting for confirmation/);
+    assert.equal(
+      findByText(harness.documentList, "Continue", "button").disabled,
+      false,
+    );
+    const retriedInput = findAllByClass(
+      harness.documentList,
+      "device-code-input",
+    )[0];
+    assert.equal(
+      retriedInput.focused,
+      true,
+      "a lookup failure returns keyboard ownership to the code field",
+    );
+    assert.deepEqual(harness.errors, [], "no global toast for a device failure");
+
+    input.value = "ABCD-1234";
+    await submitDeviceForm(harness.documentList);
+    await nextTicks(4);
+    const authorize = findByText(harness.documentList, "Authorize", "button");
+    const deny = findByText(harness.documentList, "Deny", "button");
+    assert.equal(authorize.disabled, false);
+    assert.equal(deny.disabled, false);
+    harness.document.activeElement = authorize;
+    const decision = authorize.click();
+    const pendingDecision = harness.documentList.querySelector(
+      ".surface-summary-line",
+    );
+    assert.match(
+      pendingDecision.textContent,
+      /Sending your decision to the work API/,
+    );
+    assert.equal(pendingDecision.focused, true);
+    assert.equal(
+      findByText(harness.documentList, "Authorize", "button").disabled,
+      true,
+    );
+    assert.equal(
+      findByText(harness.documentList, "Deny", "button").disabled,
+      true,
+    );
+    resolveDecision({ status: "approved" });
+    await decision;
+    await nextTicks(2);
+    const approved = findAllByClass(harness.documentList, "device-outcome")[0];
+    assert.equal(approved.getAttribute("role"), "status");
+    assert.match(approved.textContent, /Device authorized/);
+    assert.equal(approved.focused, true);
+  });
+
+  test("does not tell a signed-in operator to sign in when a device code is unknown", async () => {
+    const harness = createOperationsHarness({
+      request: async (url) => {
+        if (String(url).includes("/api/auth/device/pending")) {
+          const error = new Error("Unauthorized");
+          error.status = 401;
+          throw error;
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+      route: { path: "/device", params: new URLSearchParams() },
+    });
+    harness.api.renderDeviceSurfaceView();
+    const input = findAllByClass(harness.documentList, "device-code-input")[0];
+    input.value = "ZZZZ-9999";
+    await submitDeviceForm(harness.documentList);
+    await nextTicks(4);
+
+    const failure = findAllByClass(harness.documentList, "device-error")[0];
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.match(failure.textContent, /not waiting for confirmation/);
+    assert.match(failure.textContent, /retry device registration/);
+    assert.equal(
+      failure.textContent.includes("Sign in to the portal"),
+      false,
+      "a signed-in operator is not told to sign in",
+    );
+    const retriedInput = findAllByClass(
+      harness.documentList,
+      "device-code-input",
+    )[0];
+    assert.equal(retriedInput.value, "ZZZZ-9999");
+    assert.equal(
+      findByText(harness.documentList, "Continue", "button").disabled,
+      false,
+    );
+  });
+
+  test("drops a stale Device lookup when the route moves to another code", async () => {
+    const pending = [];
+    const harness = createOperationsHarness({
+      request: async (url) =>
+        new Promise((resolve, reject) => {
+          pending.push({ resolve, reject, url: String(url) });
+        }),
+      route: {
+        path: "/device",
+        params: new URLSearchParams({ userCode: "AAAA-1111" }),
+      },
+    });
+    harness.api.renderDeviceSurfaceView();
+    await nextTicks();
+    assert.equal(pending.length, 1);
+    assert.match(pending[0].url, /userCode=AAAA-1111/);
+
+    harness.setRoute({
+      path: "/device",
+      params: new URLSearchParams({ userCode: "BBBB-2222" }),
+    });
+    harness.api.renderDeviceSurfaceView();
+    await nextTicks();
+    assert.equal(pending.length, 2);
+
+    pending[0].resolve({
+      label: "stale-machine",
+      requestIp: "10.0.0.1",
+      createdAt: "2026-08-12T09:00:00.000Z",
+    });
+    await nextTicks(4);
+    assert.equal(
+      harness.documentList.textContent.includes("stale-machine"),
+      false,
+      "an older lookup cannot overwrite the newer route",
+    );
+    assert.equal(
+      harness.documentList.querySelector(".surface-summary").dataset
+        .summaryState,
+      "loading",
+      "the newer lookup still owns the surface",
+    );
+
+    pending[1].resolve({
+      label: "current-machine",
+      requestIp: "10.0.0.2",
+      createdAt: "2026-08-12T09:05:00.000Z",
+    });
+    await nextTicks(4);
+    assert.equal(
+      harness.documentList.textContent.includes("current-machine"),
+      true,
+    );
+    assert.equal(
+      harness.documentList.querySelector(".surface-summary").dataset
+        .summaryState,
+      "ready",
+    );
   });
 
   test("refreshes Artifact and Assistant snapshots honestly on list, invalid payload, and failure", async () => {
@@ -599,6 +823,63 @@ describe("Operations surface boundary", () => {
         .textContent,
       "Unavailable: History offline",
     );
+  });
+
+  test("retries partial Admin diagnostics from its owning surface", async () => {
+    let runs = 0;
+    const releases = [];
+    const harness = createAdminHarness({
+      view: "admin",
+      request: async () =>
+        new Promise((resolve, reject) => {
+          runs += 1;
+          releases.push({ resolve, reject });
+        }),
+    });
+    harness.api.renderAdminSurfaceView([]);
+    const diagnostics = harness.documentList.querySelector(
+      ".ops-admin-diagnostics",
+    );
+    const summary = diagnostics.querySelector(
+      ".ops-admin-diagnostics-summary",
+    );
+    const retry = diagnostics.querySelector(".surface-summary-retry");
+
+    assert.equal(runs, 3);
+    assert.equal(retry.hidden, true);
+    assert.equal(retry.disabled, true);
+    for (const { reject } of releases.splice(0))
+      reject(new Error("Synthetic diagnostics outage"));
+    await nextTicks(3);
+
+    assert.equal(summary.dataset.summaryState, "unavailable");
+    assert.equal(summary.getAttribute("role"), "alert");
+    assert.equal(summary.getAttribute("aria-live"), "assertive");
+    assert.match(summary.textContent, /0 of 3 read-only diagnostics answered/);
+    assert.equal(retry.hidden, false);
+    assert.equal(retry.disabled, false);
+    assert.equal(retry.getAttribute("aria-busy"), null);
+
+    const retrying = retry.click();
+    assert.equal(runs, 6);
+    assert.equal(retry.disabled, true);
+    assert.equal(retry.getAttribute("aria-busy"), "true");
+    assert.match(retry.textContent, /Retrying diagnostics/);
+    for (const [index, release] of releases.entries()) {
+      if (index === 0)
+        release.resolve({ summary: { total: 0 }, validationErrors: [] });
+      else if (index === 1)
+        release.resolve({ ok: true, count: 0, branch: "main" });
+      else release.resolve({ commits: [{ hash: "abc" }] });
+    }
+    await nextTicks(4);
+
+    assert.equal(summary.dataset.summaryState, "ready");
+    assert.equal(summary.getAttribute("role"), "status");
+    assert.equal(summary.getAttribute("aria-live"), "polite");
+    assert.match(summary.textContent, /3 of 3 read-only diagnostics answered/);
+    assert.equal(retry.hidden, true);
+    assert.equal(retry.disabled, true);
   });
 
   test("filters Inbox new, blocked, and resolved items while preserving canonical detail navigation", async () => {
@@ -1019,6 +1300,288 @@ describe("Operations surface boundary", () => {
     assert.equal(harness.navigations.at(-1).path, "/assistants");
   });
 
+  test("reports Users load state, durable success, and row failure in the Users surface", async () => {
+    let mode = "ok";
+    const users = [
+      {
+        id: "alexey",
+        name: "Alexey",
+        email: "alexey@datatalks.club",
+        role: "admin",
+      },
+      {
+        id: "grace",
+        name: "Grace",
+        email: "grace@datatalks.club",
+        role: "operator",
+      },
+    ];
+    const harness = createAdminHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/users" && !requestOptions.method) {
+          if (mode === "down") throw new Error("Synthetic route failure (503)");
+          return { users };
+        }
+        if (url === "/api/me") return { id: "alexey" };
+        if (url === "/api/users/grace" && requestOptions.method === "PATCH") {
+          if (mode === "patch-fails") {
+            throw new Error("Synthetic route failure (503)");
+          }
+          return {};
+        }
+        return {};
+      },
+    });
+
+    harness.api.renderUsersSurfaceView();
+    const loading = harness.documentList.querySelector(".surface-summary");
+    assert.equal(loading.dataset.summaryState, "loading");
+    assert.equal(loading.dataset.summaryId, "users");
+
+    mode = "down";
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+    const outage = harness.documentList.querySelector(".surface-summary");
+    assert.equal(outage.dataset.summaryState, "unavailable");
+    assert.equal(
+      outage.querySelector(".surface-summary-line").getAttribute("role"),
+      "alert",
+    );
+    assert.equal(
+      outage.querySelector(".surface-summary-detail").textContent,
+      "Synthetic route failure (503)",
+    );
+
+    mode = "ok";
+    await outage.querySelector(".surface-summary-retry").dispatch("click");
+    await nextTicks();
+    harness.api.renderUsersSurfaceView();
+    const ready = harness.documentList.querySelector(".surface-summary");
+    assert.equal(ready.dataset.summaryState, "ready");
+    assert.match(ready.textContent, /2 users\./);
+
+    const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
+      (row) => row.textContent.includes("Grace"),
+    );
+    const disable = findByText(graceRow, "Disable", "button");
+    await disable.click();
+    await nextTicks();
+    harness.api.renderUsersSurfaceView();
+    const outcome = harness.documentList.querySelector(".ops-users-outcome");
+    assert.equal(outcome.getAttribute("role"), "status");
+    assert.match(outcome.textContent, /Grace is now disabled\./);
+    assert.equal(outcome.focused, true);
+
+    harness.api.renderUsersSurfaceView();
+    assert.equal(
+      harness.documentList.querySelector(".ops-users-outcome"),
+      null,
+      "the confirmation is shown once against the refreshed list",
+    );
+
+    mode = "patch-fails";
+    const retryRow = findAllByClass(harness.documentList, "ops-user-row").find(
+      (row) => row.textContent.includes("Grace"),
+    );
+    await findByText(retryRow, "Disable", "button").click();
+    await nextTicks(3);
+    harness.api.renderUsersSurfaceView();
+    const rowError = harness.documentList.querySelector(".ops-user-row-error");
+    assert.equal(rowError.getAttribute("role"), "alert");
+    assert.match(rowError.textContent, /Could not disable this account/);
+    assert.match(rowError.textContent, /Select Disable to retry/);
+    assert.deepEqual(harness.errors, [], "no global toast for a row failure");
+  });
+
+  test("confirms a saved user against the refreshed list", async () => {
+    const users = [
+      {
+        id: "alexey",
+        name: "Alexey",
+        email: "alexey@datatalks.club",
+        role: "admin",
+      },
+    ];
+    const harness = createAdminHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/users" && requestOptions.method === "POST") {
+          users.push({
+            id: "synthetic-user",
+            name: "Synthetic User",
+            email: "synthetic-user@datatalks.club",
+            role: "operator",
+          });
+          return { user: users.at(-1) };
+        }
+        if (url === "/api/users" && !requestOptions.method) return { users };
+        if (url === "/api/me") return { id: "alexey" };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+    await findByText(harness.documentList, "Add user", "button").click();
+    const inputs = harness.documentList.querySelectorAll("input");
+    inputs[0].value = "Synthetic User";
+    inputs[1].value = "synthetic-user@datatalks.club";
+    inputs[2].value = "1111";
+    await submitUserForm(harness.documentList);
+    await nextTicks(3);
+    harness.api.renderUsersSurfaceView();
+
+    const outcome = harness.documentList.querySelector(".ops-users-outcome");
+    assert.equal(outcome.getAttribute("role"), "status");
+    assert.match(outcome.textContent, /Synthetic User added\./);
+    assert.equal(outcome.focused, true);
+    assert.match(
+      harness.documentList.textContent,
+      /synthetic-user@datatalks.club/,
+    );
+  });
+
+  test("refreshes a stale successful User mutation without replacing the current view", async () => {
+    const users = [
+      {
+        id: "alexey",
+        name: "Alexey",
+        email: "alexey@datatalks.club",
+        role: "admin",
+      },
+      {
+        id: "grace",
+        name: "Grace",
+        email: "grace@datatalks.club",
+        role: "operator",
+      },
+    ];
+    let releasePatch;
+    const harness = createAdminHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/users" && !requestOptions.method)
+          return { users };
+        if (url === "/api/me") return { id: "alexey" };
+        if (url === "/api/users/grace" && requestOptions.method === "PATCH") {
+          return new Promise((resolve) => {
+            releasePatch = () => {
+              users[1] = { ...users[1], disabled: true };
+              resolve({});
+            };
+          });
+        }
+        return {};
+      },
+    });
+
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+    const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
+      (row) => row.textContent.includes("Grace"),
+    );
+    const disable = findByText(graceRow, "Disable", "button");
+
+    const mutation = disable.click();
+    assert.equal(disable.disabled, true);
+    harness.setActiveRouteToken(2);
+    releasePatch();
+    await mutation;
+    await nextTicks(3);
+
+    const mutationIndex = harness.requests.findIndex(
+      (entry) =>
+        entry.url === "/api/users/grace" &&
+        entry.options.method === "PATCH",
+    );
+    assert.equal(mutationIndex, 2);
+    assert.deepEqual(
+      harness.requests.slice(mutationIndex + 1).map((entry) => entry.url),
+      ["/api/users", "/api/me"],
+      "a stale success refreshes the authoritative Users snapshot",
+    );
+    assert.deepEqual(harness.documentRefreshes, []);
+    assert.equal(disable.isConnected, true);
+    assert.equal(disable.disabled, true);
+
+    harness.api.renderUsersSurfaceView();
+    assert.equal(
+      findAllByClass(harness.documentList, "ops-user-row")
+        .find((row) => row.textContent.includes("Grace"))
+        ?.textContent.includes("disabled"),
+      true,
+    );
+    assert.equal(
+      harness.documentList.querySelector(".ops-users-outcome"),
+      null,
+      "a stale route does not inherit this mutation's confirmation",
+    );
+  });
+
+  test("refreshes authoritative User data before rendering a conflict Cancel", async () => {
+    let users = [
+      {
+        id: "alexey",
+        name: "Alexey",
+        email: "alexey@datatalks.club",
+        role: "admin",
+      },
+      {
+        id: "grace",
+        name: "Grace",
+        email: "grace@datatalks.club",
+        role: "operator",
+      },
+    ];
+    const harness = createAdminHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/users" && !requestOptions.method)
+          return { users };
+        if (url === "/api/me") return { id: "alexey" };
+        if (
+          url === "/api/users/grace" &&
+          requestOptions.method === "PATCH"
+        ) {
+          users[1] = { ...users[1], role: "admin" };
+          const error = new Error("Account changed elsewhere");
+          error.status = 409;
+          throw error;
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshUsersSurface();
+    harness.api.renderUsersSurfaceView();
+    const graceRow = findAllByClass(harness.documentList, "ops-user-row").find(
+      (row) => row.textContent.includes("Grace"),
+    );
+    await findByText(graceRow, "Edit", "button").click();
+    const roleSelect = harness.document.created
+      .filter((element) => element.tagName === "SELECT")
+      .at(-1);
+    roleSelect.value = "admin";
+    await submitUserForm(harness.documentList);
+    await nextTicks();
+
+    const feedback = harness.documentList.querySelector(".form-feedback");
+    assert.equal(feedback.dataset.feedbackState, "conflict");
+    assert.match(
+      feedback.textContent,
+      /Cancel to discard these changes and reload users/,
+    );
+
+    const mutationIndex = harness.requests.length - 1;
+    await findByText(harness.documentList, "Cancel", "button").click();
+    await nextTicks(3);
+    assert.deepEqual(
+      harness.requests.slice(mutationIndex + 1).map(({ url }) => url),
+      ["/api/users", "/api/me"],
+      "Cancel reads the account again instead of trusting stale form state",
+    );
+    assert.equal(findByText(harness.documentList, "Save changes", "button"), undefined);
+    assert.match(
+      findAllByClass(harness.documentList, "surface-summary")[0].textContent,
+      /2 users\./,
+    );
+  });
+
   test("enforces Users admin denial, then validates create/edit/disable role controls", async () => {
     let users = [
       {
@@ -1059,18 +1622,24 @@ describe("Operations surface boundary", () => {
     harness.api.renderUsersSurfaceView();
     await findByText(harness.documentList, "Add user", "button").click();
     let create = findByText(harness.documentList, "Create user", "button");
-    await create.click();
-    assert.ok(
-      findByText(harness.documentList, "Name and email are required.", "p"),
+    await submitUserForm(harness.documentList);
+    const validation = findAllByClass(harness.documentList, "field-error").filter(
+      (node) => !node.hidden,
+    );
+    assert.deepEqual(
+      validation.map((node) => node.textContent),
+      ["Name is required.", "Email is required.", "Password is required."],
     );
     const inputs = harness.document.created.filter(
       (element) => element.tagName === "INPUT",
     );
     const [name, email, password] = inputs.slice(-3);
+    assert.equal(name.getAttribute("aria-invalid"), "true");
+    assert.equal(name.focused, true, "focus moves to the first invalid field");
     name.value = "Valeriia";
     email.value = "valeriia@datatalks.club";
     password.value = "temporary-password";
-    await create.click();
+    await submitUserForm(harness.documentList);
     const created = harness.requests.find(
       (entry) => entry.url === "/api/users" && entry.options.method === "POST",
     );
@@ -1090,7 +1659,7 @@ describe("Operations surface boundary", () => {
       .filter((element) => element.tagName === "SELECT")
       .at(-1);
     roleSelect.value = "admin";
-    await findByText(harness.documentList, "Save changes", "button").click();
+    await submitUserForm(harness.documentList);
     const edited = harness.requests.find(
       (entry) =>
         entry.url === "/api/users/grace" &&

@@ -1515,6 +1515,12 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   padding: 14px 16px;
 }
 
+.home-attention-empty {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
 .ops-runtime-state {
   display: grid;
   gap: 4px;
@@ -1529,6 +1535,147 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 .ops-honest-state {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Owning-surface feedback (#204): each surface states its own load, pending,
+   validation and failure outcomes where the operator is already looking. */
+.surface-summary {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  width: min(var(--content-width), 100%);
+  min-width: 0;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 10px 14px;
+}
+
+.surface-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.surface-summary-state {
+  border: 1px solid var(--border-muted);
+  border-radius: 999px;
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.surface-summary[data-summary-state="unavailable"] {
+  border-color: var(--danger-border);
+}
+
+.surface-summary[data-summary-state="partial"] {
+  border-color: var(--warning-border);
+}
+
+.surface-summary-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.surface-summary-retry,
+.quick-form-retry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.surface-summary-retry[disabled],
+.quick-form-retry[disabled] {
+  opacity: 0.7;
+}
+
+/* The Home strip lays its counts out in three columns; the summary explains
+   all three, so it spans them instead of taking one count's place. */
+.home-status-strip > .surface-summary {
+  grid-column: 1 / -1;
+  border: 0;
+  border-bottom: 1px solid var(--border-muted);
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+}
+
+.form-feedback {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.form-feedback-status,
+.form-feedback-error,
+.field-error {
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.form-feedback-status {
+  color: var(--text-muted);
+}
+
+.form-feedback-error,
+.field-error,
+.ops-user-row-error,
+.recurring-row-error {
+  color: var(--danger-text);
+}
+
+.field-error {
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.ops-users-outcome {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ops-user-row-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.ops-admin-diagnostics-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .surface-summary-retry,
+  .quick-form-retry {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
 }
 
 /* Process document availability: one shared outage/empty state. */
@@ -3361,7 +3508,7 @@ body.dark .danger-button {
 /* Recurring create/edit dialog. */
 .recurring-form-intro,
 .recurring-form-preview,
-.recurring-form-error {
+.recurring-form-feedback {
   margin: 0;
   font-size: 13px;
 }
@@ -3379,7 +3526,7 @@ body.dark .danger-button {
   font-weight: 600;
 }
 
-.recurring-form-error {
+.recurring-form-feedback .form-feedback-error {
   color: var(--danger-text);
   font-weight: 600;
 }
@@ -6516,13 +6663,13 @@ body[data-workspace-view="calendar"] .document-list {
 
 .ops-user-form-result {
   min-height: 20px;
-  margin: 0;
-  color: var(--success-text);
-  font-size: 13px;
+  grid-column: 1 / -1;
 }
 
-.ops-user-form-result.ops-error {
-  color: var(--danger-text);
+.ops-user-form-result
+  .form-feedback[data-feedback-state="success"]
+  .form-feedback-status {
+  color: var(--success-text);
 }
 
 .device-panel {
@@ -9068,6 +9215,34 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
   min-height: 42px;
 }
 
+/* Slice 1 controls must remain operable at phone widths without enlarging
+   desktop density or unrelated surfaces. */
+@media (max-width: 768px) {
+  .ops-surface-recurring .recurring-action,
+  .ops-surface-users .primary-button,
+  .ops-users-table .ops-user-actions .quiet-button,
+  .ops-user-form input:not([type="checkbox"]),
+  .ops-user-form select,
+  .ops-user-form-actions button,
+  .quick-form-overlay .quiet-button,
+  .quick-form-label input:not([type="checkbox"]),
+  .quick-form-label select,
+  .quick-form > .task-action-btn,
+  .recurring-form-footer button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .quick-form-label.quick-form-checkbox input {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+  }
+}
+
 @keyframes task-state-shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
@@ -11263,5 +11438,38 @@ body[data-workspace-view="tasks"] .ops-queue-row strong {
   body[data-workspace-view="calendar"] .calendar-day-items {
     max-height: 92px;
     overflow-y: auto;
+  }
+}
+
+/* Slice 1 controls must remain operable at phone widths without enlarging
+   desktop density or unrelated surfaces. Keep this override after the denser
+   Tasks-view rules so equal-specificity mobile declarations cannot lose. */
+@media (max-width: 768px) {
+  body[data-workspace-view="tasks"] .ops-surface-recurring .recurring-action,
+  body[data-workspace-view="tasks"] .recurring-row-actions .task-action-btn,
+  .ops-surface-users .primary-button,
+  .ops-users-table .ops-user-actions .quiet-button,
+  .ops-user-form input:not([type="checkbox"]),
+  .ops-user-form select,
+  .ops-user-form-actions button,
+  body[data-workspace-view="tasks"] .quick-form-overlay .quiet-button,
+  body[data-workspace-view="tasks"] .quick-form-label input:not([type="checkbox"]),
+  body[data-workspace-view="tasks"] .quick-form-label select,
+  body[data-workspace-view="tasks"] .quick-form > .task-action-btn,
+  body[data-workspace-view="tasks"] .recurring-form-footer button,
+  .home-quick-action,
+  .home-task-action,
+  .home-view-all {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  body[data-workspace-view="tasks"] .quick-form-label.quick-form-checkbox input {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
   }
 }

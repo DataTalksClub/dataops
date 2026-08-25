@@ -1,3 +1,10 @@
+import {
+  createFormFeedback,
+  renderDataSummary,
+  reportFieldValidation,
+  setControlPending,
+} from "../operations-overview.js";
+
 export function createAdminSurface(context) {
   const {
     apiUrl,
@@ -6,6 +13,8 @@ export function createAdminSurface(context) {
     currentOperatorIdFromPayload,
     documentList,
     getActiveWorkspaceView,
+    getActiveWorkspaceRouteToken,
+    isWorkspaceRouteFresh,
     getOperationsQualitySnapshot,
     getOperationsRecurringSnapshot,
     getOperationsWorkSnapshot,
@@ -16,13 +25,10 @@ export function createAdminSurface(context) {
     renderSurfaceHeader,
     request,
     setRouteTitle,
-    setStatus,
     settledPayload,
     showCreate,
-    showErrorToast,
     showWorkspaceSurface,
     surfaceDescription,
-    surfaceStatusText,
     usersFromWorkPayload,
     workApiUrl,
   } = context;
@@ -35,6 +41,11 @@ export function createAdminSurface(context) {
     isAdmin: false,
     errors: [],
   };
+  // Durable confirmation of the last completed mutation, shown once against the
+  // refreshed server state and then forgotten, and per-row recovery text for a
+  // mutation that failed where it was started.
+  let usersOutcome = "";
+  const userRowErrors = new Map();
 
   function renderAdminSurfaceView(documents) {
     const model = buildOperationsHomeModel(documents, {
@@ -48,7 +59,6 @@ export function createAdminSurface(context) {
     libraryTitle.textContent = "Admin";
     setRouteTitle("Admin");
     clearSelectionButton.hidden = true;
-    setStatus(surfaceStatusText("admin", model));
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-admin";
@@ -93,12 +103,6 @@ export function createAdminSurface(context) {
     libraryTitle.textContent = "Users";
     setRouteTitle("Users");
     clearSelectionButton.hidden = true;
-    const count = usersSnapshot.users.length;
-    setStatus(
-      usersSnapshot.loaded
-        ? `${count} ${count === 1 ? "user" : "users"}.`
-        : "Loading users…",
-    );
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-users";
@@ -107,9 +111,45 @@ export function createAdminSurface(context) {
         "Users",
         "People who can access this workspace. Admins can add, edit, and disable accounts.",
       ),
+      renderUsersSummary(),
     );
+    if (usersOutcome) {
+      const outcome = document.createElement("p");
+      outcome.className = "ops-users-outcome";
+      outcome.setAttribute("role", "status");
+      outcome.tabIndex = -1;
+      outcome.textContent = usersOutcome;
+      usersOutcome = "";
+      wrap.append(outcome);
+      wrap.append(renderUsersSurface());
+      documentList.replaceChildren(wrap);
+      outcome.focus();
+      return;
+    }
     wrap.append(renderUsersSurface());
     documentList.replaceChildren(wrap);
+  }
+
+  // Users reports its own load state: still fetching, unreachable, empty, or a
+  // real count. Recovery is a retry of the same fetch, in the surface itself.
+  function renderUsersSummary() {
+    const count = usersSnapshot.users.length;
+    return renderDataSummary({
+      id: "users",
+      label: "Users",
+      loaded: usersSnapshot.loaded,
+      errors: usersSnapshot.errors,
+      empty: count === 0,
+      messages: {
+        loading: "Loading users from the work API…",
+        unavailable: "Users could not be loaded, so no accounts are listed.",
+        empty: "No users have access to this workspace yet.",
+        partial: `${count} ${count === 1 ? "user" : "users"}. Some account data is unavailable.`,
+        ready: `${count} ${count === 1 ? "user" : "users"}.`,
+      },
+      retryLabel: "Retry loading users",
+      onRetry: () => refreshUsersSurface({ rerender: true }),
+    });
   }
 
   function renderUsersSurface() {
@@ -117,15 +157,9 @@ export function createAdminSurface(context) {
     section.className = "ops-state-list ops-users-surface";
     section.setAttribute("aria-label", "Users");
 
-    if (!usersSnapshot.loaded) {
-      section.append(
-        renderHonestState(
-          "Users unavailable",
-          usersSnapshot.errors[0] || "Could not reach the work API.",
-        ),
-      );
-      return section;
-    }
+    // The summary above already names the outage and owns the retry; repeating
+    // it here would be a second voice for the same fact.
+    if (!usersSnapshot.loaded) return section;
 
     const toolbar = document.createElement("div");
     toolbar.className = "ops-users-toolbar";
@@ -222,9 +256,20 @@ export function createAdminSurface(context) {
         toggleButton.type = "button";
         toggleButton.className = "quiet-button";
         toggleButton.textContent = user.disabled ? "Enable" : "Disable";
-        toggleButton.addEventListener("click", () => toggleUserDisabled(user));
+        toggleButton.addEventListener("click", () =>
+          toggleUserDisabled(user, toggleButton),
+        );
         actionsCell.append(toggleButton);
       }
+    }
+    const rowError = userRowErrors.get(user.id);
+    if (rowError) {
+      const guidance = document.createElement("p");
+      guidance.className = "ops-user-row-error";
+      guidance.setAttribute("role", "alert");
+      guidance.tabIndex = -1;
+      guidance.textContent = rowError;
+      actionsCell.append(guidance);
     }
     row.append(actionsCell);
     return row;
@@ -253,6 +298,9 @@ export function createAdminSurface(context) {
 
     const form = document.createElement("form");
     form.className = "ops-user-form";
+    // This form reports its own validation beside each control, so the native
+    // transient bubble must not pre-empt it.
+    form.noValidate = true;
     form.addEventListener("submit", (event) => event.preventDefault());
 
     const nameInput = labeledInput("Name", {
@@ -293,21 +341,31 @@ export function createAdminSurface(context) {
     cancel.type = "button";
     cancel.className = "quiet-button";
     cancel.textContent = "Cancel";
-    cancel.addEventListener("click", () => renderUsersSurfaceView());
+    let reloadUserOnCancel = false;
+    cancel.addEventListener("click", async () => {
+      if (!reloadUserOnCancel) {
+        renderUsersSurfaceView();
+        return;
+      }
+      const routeToken = getActiveWorkspaceRouteToken();
+      await refreshUsersSurface({ rerender: false });
+      if (isWorkspaceRouteFresh(routeToken)) renderUsersSurfaceView();
+    });
+    const submitLabel = isEdit ? "Save changes" : "Create user";
     const submit = document.createElement("button");
     submit.type = "submit";
     submit.className = "primary-button";
-    submit.textContent = isEdit ? "Save changes" : "Create user";
+    submit.textContent = submitLabel;
     actions.append(cancel, submit);
     form.append(actions);
 
-    const result = document.createElement("p");
-    result.className = "ops-user-form-result";
-    result.setAttribute("role", "status");
+    const feedback = createFormFeedback();
+    feedback.node.classList.add("ops-user-form-result");
+    let userSubmitInFlight = false;
 
-    submit.addEventListener("click", async () => {
-      result.textContent = "";
-      result.classList.remove("ops-error");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (userSubmitInFlight) return;
       const payload = {
         name: nameInput.input.value.trim(),
         email: emailInput.input.value.trim(),
@@ -315,12 +373,25 @@ export function createAdminSurface(context) {
       };
       if (passwordInput.input.value)
         payload.password = passwordInput.input.value;
-      if (!payload.name || !payload.email) {
-        result.textContent = "Name and email are required.";
-        result.classList.add("ops-error");
+      const invalid = reportFieldValidation([
+        [nameInput, payload.name ? "" : "Name is required."],
+        [emailInput, payload.email ? "" : "Email is required."],
+        [
+          passwordInput,
+          isEdit || passwordInput.input.value ? "" : "Password is required.",
+        ],
+      ]);
+      if (invalid) {
+        feedback.clear();
         return;
       }
-      submit.disabled = true;
+      userSubmitInFlight = true;
+      setControlPending(submit, {
+        pending: true,
+        pendingLabel: isEdit ? "Saving user…" : "Creating user…",
+      });
+      feedback.pending(isEdit ? "Saving user…" : "Creating user…");
+      const routeToken = getActiveWorkspaceRouteToken();
       try {
         if (isEdit) {
           await request(workApiUrl(`/api/users/${user.id}`), {
@@ -333,15 +404,33 @@ export function createAdminSurface(context) {
             body: JSON.stringify(payload),
           });
         }
+        // Success is confirmed against the refreshed list, not against the
+        // request that has just been sent.
+        if (!isWorkspaceRouteFresh(routeToken)) {
+          await refreshUsersSurface({ rerender: false });
+          return;
+        }
+        usersOutcome = `${payload.name} ${isEdit ? "saved" : "added"}.`;
         await refreshUsersSurface({ rerender: true });
       } catch (err) {
-        submit.disabled = false;
-        result.textContent = err?.message || "Could not save user.";
-        result.classList.add("ops-error");
+        if (!isWorkspaceRouteFresh(routeToken)) return;
+        const conflict =
+          `This account changed since the form was opened: ${err?.message || "version conflict"}` +
+          ` Your entries are kept. Select Cancel to discard these changes and reload users,` +
+          ` or ${submitLabel} to apply them anyway.`;
+        const failure =
+          `Could not save user: ${err?.message || "request failed"}` +
+          ` Select ${submitLabel} to retry.`;
+        reloadUserOnCancel = err?.status === 409;
+        if (err?.status === 409) feedback.conflict(conflict).focus();
+        else feedback.failure(failure).focus();
+        setControlPending(submit, { pending: false, label: submitLabel });
+      } finally {
+        userSubmitInFlight = false;
       }
     });
 
-    panel.append(form, result);
+    panel.append(form, feedback.node);
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-users";
     wrap.append(panel);
@@ -349,16 +438,40 @@ export function createAdminSurface(context) {
     nameInput.input.focus();
   }
 
-  async function toggleUserDisabled(user) {
+  async function toggleUserDisabled(user, button) {
     const next = !user.disabled;
+    const label = next ? "Disable" : "Enable";
+    const routeToken = getActiveWorkspaceRouteToken();
+    setControlPending(button, {
+      pending: true,
+      pendingLabel: next ? "Disabling…" : "Enabling…",
+    });
     try {
       await request(workApiUrl(`/api/users/${user.id}`), {
         method: "PATCH",
         body: JSON.stringify({ disabled: next }),
       });
+      if (!isWorkspaceRouteFresh(routeToken)) {
+        await refreshUsersSurface({ rerender: false });
+        return;
+      }
+      userRowErrors.delete(user.id);
+      usersOutcome = `${user.name || user.email || user.id} is now ${next ? "disabled" : "enabled"}.`;
       await refreshUsersSurface({ rerender: true });
     } catch (err) {
-      showErrorToast(err?.message || "Could not update user.");
+      if (!isWorkspaceRouteFresh(routeToken)) return;
+      // The failure belongs to the row whose control was used, and the row is
+      // re-rendered from the refreshed server state so nothing is guessed.
+      userRowErrors.set(
+        user.id,
+        err?.status === 409
+          ? `This account changed since the list was loaded: ${err.message || "version conflict"} Select Retry loading users, then ${label} again.`
+          : `Could not ${label.toLowerCase()} this account: ${err?.message || "request failed"} Select ${label} to retry.`,
+      );
+      setControlPending(button, { pending: false, label });
+      await refreshUsersSurface({ rerender: true });
+      if (isWorkspaceRouteFresh(routeToken))
+        documentList.querySelector(".ops-user-row-error")?.focus();
     }
   }
 
@@ -429,18 +542,81 @@ export function createAdminSurface(context) {
       </article>
     `;
     diagnostics.querySelector("h3").tabIndex = -1;
+    // Admin owns the state of its own read-only checks: while they are in
+    // flight the summary says so, and when they answer it says how many
+    // answered rather than implying all three succeeded.
+    const diagnosticsSummary = document.createElement("p");
+    diagnosticsSummary.className = "ops-admin-diagnostics-summary";
+    diagnosticsSummary.dataset.summaryState = "loading";
+    diagnosticsSummary.setAttribute("role", "status");
+    diagnosticsSummary.setAttribute("aria-live", "polite");
+    diagnosticsSummary.setAttribute("aria-atomic", "true");
+    diagnosticsSummary.textContent = "Loading 3 read-only diagnostics…";
+    const retryDiagnostics = document.createElement("button");
+    retryDiagnostics.type = "button";
+    retryDiagnostics.className = "quiet-button surface-summary-retry";
+    retryDiagnostics.textContent = "Retry diagnostics";
+    retryDiagnostics.setAttribute("aria-label", "Retry read-only diagnostics");
+    retryDiagnostics.hidden = true;
+    diagnostics.append(diagnosticsSummary);
+    diagnostics.append(retryDiagnostics);
     section.append(diagnostics);
+
+    let diagnosticsRunId = 0;
     const diagnosticText = (name, value) => {
       const target = diagnostics.querySelector(
         `[data-diagnostic="${name}"] span`,
       );
       if (target && diagnostics.isConnected) target.textContent = value;
     };
-    Promise.allSettled([
-      request(apiUrl("/docs/process-quality")),
-      request(apiUrl("/git/status")),
-      request(apiUrl("/git/log")),
-    ]).then(([quality, gitStatus, gitHistory]) => {
+
+    async function runDiagnostics() {
+      const runId = ++diagnosticsRunId;
+      retryDiagnostics.disabled = true;
+      retryDiagnostics.setAttribute("aria-busy", "true");
+      retryDiagnostics.textContent = "Retrying diagnostics…";
+      diagnosticsSummary.dataset.summaryState = "loading";
+      diagnosticsSummary.setAttribute("role", "status");
+      diagnosticsSummary.setAttribute("aria-live", "polite");
+      diagnosticsSummary.textContent =
+        "Loading 3 read-only diagnostics…";
+      for (const name of ["quality", "git-status", "git-history"])
+        diagnosticText(name, "Loading availability…");
+      diagnosticText("quality", "Loading local validation…");
+
+      const [quality, gitStatus, gitHistory] = await Promise.allSettled([
+        request(apiUrl("/docs/process-quality")),
+        request(apiUrl("/git/status")),
+        request(apiUrl("/git/log")),
+      ]);
+      // A retry that finishes after another retry or after leaving Admin must
+      // not overwrite the newer run or a surface it no longer owns.
+      if (runId !== diagnosticsRunId || !diagnostics.isConnected) return;
+
+      const results = [quality, gitStatus, gitHistory];
+      const answered = results.filter(
+        (result) => result.status === "fulfilled",
+      ).length;
+      diagnosticsSummary.dataset.summaryState =
+        answered === 3 ? "ready" : answered === 0 ? "unavailable" : "partial";
+      diagnosticsSummary.setAttribute(
+        "role",
+        answered === 3 ? "status" : "alert",
+      );
+      diagnosticsSummary.setAttribute(
+        "aria-live",
+        answered === 3 ? "polite" : "assertive",
+      );
+      diagnosticsSummary.textContent =
+        answered === 3
+          ? "3 of 3 read-only diagnostics answered."
+          : `${answered} of 3 read-only diagnostics answered; the rest are unavailable.`;
+      retryDiagnostics.hidden = answered === 3;
+      if (answered < 3) {
+        retryDiagnostics.disabled = false;
+        retryDiagnostics.removeAttribute("aria-busy");
+        retryDiagnostics.textContent = "Retry diagnostics";
+      }
       diagnosticText(
         "quality",
         quality.status === "fulfilled"
@@ -463,7 +639,12 @@ export function createAdminSurface(context) {
             : `${gitHistory.value.commits?.length || 0} commit(s) returned.`
           : `Unavailable: ${gitHistory.reason?.message || "request failed"}`,
       );
+    }
+
+    retryDiagnostics.addEventListener("click", () => {
+      void runDiagnostics();
     });
+    void runDiagnostics();
     return section;
   }
 
