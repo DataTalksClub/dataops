@@ -264,7 +264,7 @@ export function createRouteState(context) {
     )
       renderTasksSurface(getAllDocuments(), "queue");
     if (detail.activeTaskPanelTask && isWorkspaceRouteFresh(token))
-      renderTaskPanel();
+      renderTaskPanel({ preserveDrafts: true });
   }
 
   return {

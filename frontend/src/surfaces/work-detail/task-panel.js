@@ -109,7 +109,7 @@ export function createTaskPanel(context) {
       if (fetched) {
         detail.activeTaskPanelTask = fetched;
         detail.activeTaskPanelArtifacts = [];
-        renderTaskPanel();
+        renderTaskPanel({ preserveDrafts: true });
       }
       const artifacts = fetched ? await loadArtifactsForTask(fetched) : [];
       if (
@@ -119,7 +119,7 @@ export function createTaskPanel(context) {
       )
         return;
       detail.activeTaskPanelArtifacts = artifacts;
-      renderTaskPanel();
+      renderTaskPanel({ preserveDrafts: true });
     } catch (err) {
       if (isWorkspaceRouteFresh(token) && detail.activeTaskPanelId === taskId) {
         taskPanelTitle.textContent =
@@ -141,11 +141,96 @@ export function createTaskPanel(context) {
     }
   }
 
-  function renderTaskPanel() {
+  // Asynchronous rerenders (artifact and file hydration, snapshot refreshes)
+  // rebuild this panel while an operator may be mid-edit. Rebuilding blindly
+  // throws away pending drafts. Preserve all tagged field values, keep
+  // detach-driven blur/change from committing a half-typed edit, then return
+  // focus and selection only to the field the operator was actually using.
+  // Explicit renders keep their existing ownership semantics: a successful
+  // mutation or an operator's Discard must be allowed to replace drafts.
+  let taskPanelRebuilding = false;
+
+  function isInsideTaskPanelBody(node) {
+    let current = node;
+    while (current) {
+      if (current === taskPanelBody) return true;
+      current = current.parentElement || null;
+    }
+    return false;
+  }
+
+  function readFieldSelection(field) {
+    try {
+      if (typeof field.selectionStart !== "number") return null;
+      return {
+        start: field.selectionStart,
+        end: field.selectionEnd,
+        direction: field.selectionDirection || "none",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function captureTaskPanelFields() {
+    const fields = new Map();
+    for (const field of taskPanelBody.querySelectorAll("[data-panel-field]")) {
+      const key = field.dataset?.panelField;
+      if (!key || fields.has(key)) continue;
+      fields.set(key, {
+        value: typeof field.value === "string" ? field.value : "",
+        selection: readFieldSelection(field),
+      });
+    }
+    return fields;
+  }
+
+  function getFocusedPanelFieldKey() {
+    const active = document.activeElement;
+    return active && isInsideTaskPanelBody(active)
+      ? active.dataset?.panelField || null
+      : null;
+  }
+
+  function restoreTaskPanelFields(capturedFields, focusedFieldKey) {
+    let focusedField = null;
+    for (const [key, capture] of capturedFields) {
+      const field = taskPanelBody.querySelector(
+        `[data-panel-field="${key}"]`,
+      );
+      if (!field || field.disabled) continue;
+      if (field.value !== capture.value) field.value = capture.value;
+      if (key !== focusedFieldKey) continue;
+      focusedField = field;
+      if (capture.selection && typeof field.setSelectionRange === "function") {
+        try {
+          field.setSelectionRange(
+            capture.selection.start,
+            capture.selection.end,
+            capture.selection.direction,
+          );
+        } catch {
+          // Field types without a text selection keep the restored value only.
+        }
+      }
+    }
+    if (focusedField) focusedField.focus();
+  }
+
+  function renderTaskPanel(options = {}) {
     const task = detail.activeTaskPanelTask;
+    const preserveDrafts = options.preserveDrafts === true;
+    const capturedFields = preserveDrafts ? captureTaskPanelFields() : new Map();
+    const focusedFieldKey = getFocusedPanelFieldKey();
     taskPanelTitle.textContent = task ? workTaskTitle(task) : "Task";
-    taskPanelBody.replaceChildren();
+    taskPanelRebuilding = true;
+    try {
+      taskPanelBody.replaceChildren();
+    } finally {
+      taskPanelRebuilding = false;
+    }
     if (!task) return;
+    let conflictClaimedFocus = false;
 
     if (!isCanonicalWorkTask(task)) {
       throw new Error("Task payload is not in the canonical versioned shape");
@@ -189,6 +274,7 @@ export function createTaskPanel(context) {
       recovery.append(heading, latestState, retained, controls);
       taskPanelBody.append(recovery);
       recovery.focus();
+      conflictClaimedFocus = true;
     }
 
     const routeContextParts = [
@@ -278,15 +364,28 @@ export function createTaskPanel(context) {
       label.textContent = `${task.requiredLinkName}`;
       const input = document.createElement("input");
       input.type = "url";
+      input.dataset.panelField = "required-link";
+      const savedLink = task.link || "";
       input.value =
         detail.activeTaskPanelDraft?.kind === "link"
           ? detail.activeTaskPanelDraft.payload.link
-          : task.link || "";
+          : savedLink;
       input.placeholder = "https://...";
       input.disabled = detail.activeTaskMutationBusy;
-      input.addEventListener("change", () =>
-        saveTaskLink(task.id, input.value, task.version),
-      );
+      // `change` is the normal browser commit. `blur` also covers a draft that
+      // was restored after a background rerender, where the browser no longer
+      // treats the restored text as a user edit. `committedLink` tracks the
+      // last value sent so neither path submits the same link twice.
+      let committedLink = savedLink;
+      const commitLink = () => {
+        if (taskPanelRebuilding) return undefined;
+        const next = input.value;
+        if (next === committedLink) return undefined;
+        committedLink = next;
+        return saveTaskLink(task.id, next, task.version);
+      };
+      input.addEventListener("change", commitLink);
+      input.addEventListener("blur", commitLink);
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -347,6 +446,7 @@ export function createTaskPanel(context) {
       nextLabel.textContent = "Next";
       const nextInput = document.createElement("input");
       nextInput.type = "date";
+      nextInput.dataset.panelField = "follow-up-next";
       nextInput.value =
         detail.activeTaskPanelDraft?.kind === "follow-up-sent"
           ? detail.activeTaskPanelDraft.payload.nextFollowUpAt
@@ -460,6 +560,10 @@ export function createTaskPanel(context) {
       link.textContent = "Open instructions";
       instructions.append(link);
       taskPanelBody.append(instructions);
+    }
+
+    if (!conflictClaimedFocus && preserveDrafts) {
+      restoreTaskPanelFields(capturedFields, focusedFieldKey);
     }
   }
 

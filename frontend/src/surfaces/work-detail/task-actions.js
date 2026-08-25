@@ -84,7 +84,7 @@ export function createTaskActions(context) {
         }
         detail.activeTaskPanelConflict = err.payload;
         detail.activeTaskMutationBusy = false;
-        renderTaskPanel();
+        renderTaskPanel({ preserveDrafts: true });
         return null;
       }
       if (isActiveTask) {

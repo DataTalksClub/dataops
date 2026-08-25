@@ -560,6 +560,184 @@ describe("Work Detail surface boundary", () => {
     assert.match(harness.taskPanelBody.textContent, /Task retired by Template update/);
   });
 
+  test("keeps a focused Evidence URL draft through a background artifact rerender", async () => {
+    const task = {
+      id: "task-evidence-draft",
+      version: 3,
+      taskHistory: [],
+      description: "Attach the published evidence",
+      status: "todo",
+      requiredLinkName: "Evidence URL",
+      link: "",
+    };
+    const draft = "https://example.invalid/synthetic-evidence";
+    let releaseArtifacts;
+    const artifactsHeld = new Promise((resolve) => {
+      releaseArtifacts = resolve;
+    });
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) {
+          await artifactsHeld;
+          return { artifacts: [] };
+        }
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          return {
+            ...task,
+            ...jsonBody({ options: requestOptions }),
+            version: task.version + 1,
+          };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareTaskPanel(task.id);
+    const hydrated = harness.api.hydrateTaskPanel(task.id, 1);
+    await nextTicks();
+
+    // The operator types an Evidence URL and has not left the field yet.
+    const typedInput = harness.taskPanelBody.querySelector(
+      '[data-panel-field="required-link"]',
+    );
+    assert.ok(typedInput);
+    typedInput.focus();
+    typedInput.value = draft;
+    typedInput.setSelectionRange(draft.length, draft.length);
+    assert.equal(harness.document.activeElement, typedInput);
+
+    // Delayed artifact hydration rebuilds the panel underneath that draft.
+    releaseArtifacts();
+    await hydrated;
+    await nextTicks();
+
+    const rerenderedInput = harness.taskPanelBody.querySelector(
+      '[data-panel-field="required-link"]',
+    );
+    assert.ok(rerenderedInput);
+    assert.notEqual(
+      rerenderedInput,
+      typedInput,
+      "the background rerender must really rebuild the Task form",
+    );
+    assert.equal(rerenderedInput.value, draft);
+    assert.equal(rerenderedInput.selectionStart, draft.length);
+    assert.equal(rerenderedInput.selectionEnd, draft.length);
+    assert.equal(rerenderedInput.focused, true);
+    assert.equal(harness.document.activeElement, rerenderedInput);
+    assert.deepEqual(
+      harness.requests.filter((entry) => entry.options.method === "PUT"),
+      [],
+      "a background rerender must not submit a half-typed draft",
+    );
+
+    // The operator's own blur still saves exactly what they typed.
+    await rerenderedInput.dispatch("blur");
+    await nextTicks();
+
+    const writes = harness.requests.filter(
+      (entry) =>
+        entry.url === `/api/tasks/${task.id}` && entry.options.method === "PUT",
+    );
+    assert.deepEqual(writes.map(jsonBody), [
+      { link: draft, expectedVersion: 3 },
+    ]);
+    assert.deepEqual(harness.errors, []);
+    assert.equal(
+      harness.taskPanelBody.querySelector('[data-panel-field="required-link"]')
+        .value,
+      draft,
+    );
+  });
+
+  test("keeps sibling Task-panel drafts through a background artifact rerender", async () => {
+    const task = {
+      id: "task-sibling-draft",
+      version: 2,
+      taskHistory: [],
+      description: "Register external evidence",
+      status: "todo",
+    };
+    const titleDraft = "Synthetic launch recording";
+    const urlDraft = "https://example.invalid/synthetic-recording";
+    let releaseArtifacts;
+    const artifactsHeld = new Promise((resolve) => {
+      releaseArtifacts = resolve;
+    });
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}` && !url.includes("?")) return task;
+        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/artifacts")) {
+          await artifactsHeld;
+          return { artifacts: [] };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareTaskPanel(task.id);
+    const hydrated = harness.api.hydrateTaskPanel(task.id, 1);
+    await nextTicks();
+
+    const typedTitle = harness.taskPanelBody.querySelector(
+      '[data-panel-field="artifact-title"]',
+    );
+    const typedUrl = harness.taskPanelBody.querySelector(
+      '[data-panel-field="artifact-url"]',
+    );
+    assert.ok(typedTitle && typedUrl);
+    typedTitle.value = titleDraft;
+    typedUrl.focus();
+    typedUrl.value = urlDraft;
+    typedUrl.setSelectionRange(urlDraft.length, urlDraft.length);
+
+    releaseArtifacts();
+    await hydrated;
+    await nextTicks();
+
+    const rerenderedTitle = harness.taskPanelBody.querySelector(
+      '[data-panel-field="artifact-title"]',
+    );
+    const rerenderedUrl = harness.taskPanelBody.querySelector(
+      '[data-panel-field="artifact-url"]',
+    );
+    assert.ok(rerenderedTitle && rerenderedUrl);
+    assert.notEqual(rerenderedTitle, typedTitle);
+    assert.notEqual(rerenderedUrl, typedUrl);
+    assert.equal(rerenderedTitle.value, titleDraft);
+    assert.equal(rerenderedUrl.value, urlDraft);
+    assert.equal(rerenderedUrl.focused, true);
+    assert.equal(harness.document.activeElement, rerenderedUrl);
+    assert.deepEqual(
+      harness.requests.filter((entry) => entry.options.method === "POST"),
+      [],
+      "a background rerender must not register a half-typed artifact",
+    );
+
+    await rerenderedUrl.dispatch("blur");
+    await findByText(harness.taskPanelBody, "Register", "button").click();
+    await nextTicks();
+
+    const writes = harness.requests.filter(
+      (entry) =>
+        entry.url === "/api/artifacts" && entry.options.method === "POST",
+    );
+    assert.deepEqual(writes.map(jsonBody), [{
+      type: "external-link",
+      title: titleDraft,
+      storageUri: urlDraft,
+      storageProvider: "external-url",
+      dataClass: "internal",
+      sourceType: "manual-link",
+      status: "needs-review",
+      taskId: task.id,
+    }]);
+    assert.deepEqual(harness.errors, []);
+  });
+
   test("retains an exact Task link draft across review and repeated conflicts", async () => {
     const task = {
       id: "task-conflict",

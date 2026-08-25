@@ -90,7 +90,7 @@ export function createCardPanel(context) {
         };
         renderCardPanel();
         if (detail.activeTaskPanelTask?.cardId === cardId)
-          renderTaskPanel();
+          renderTaskPanel({ preserveDrafts: true });
       }
     } catch (err) {
       if (

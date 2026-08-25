@@ -114,6 +114,10 @@ export class FakeElement {
     this.isConnected = true;
     this.removed = false;
     this.focused = false;
+    this.ownerDocument = null;
+    this.selectionStart = null;
+    this.selectionEnd = null;
+    this.selectionDirection = "none";
   }
 
   get textContent() {
@@ -243,6 +247,22 @@ export class FakeElement {
 
   focus() {
     this.focused = true;
+    const owner = this.ownerDocument || globalThis.document;
+    if (owner instanceof FakeDocument) owner.activeElement = this;
+  }
+
+  blur() {
+    this.focused = false;
+    const owner = this.ownerDocument || globalThis.document;
+    if (owner instanceof FakeDocument && owner.activeElement === this) {
+      owner.activeElement = null;
+    }
+  }
+
+  setSelectionRange(start, end, direction = "none") {
+    this.selectionStart = start;
+    this.selectionEnd = end;
+    this.selectionDirection = direction;
   }
 
   click() {
@@ -263,20 +283,26 @@ export class FakeDocument {
   constructor(...roots) {
     this.roots = roots;
     this.created = [];
+    this.activeElement = null;
+    for (const root of roots) adoptDocument(root, this);
   }
 
   addRoot(root) {
     this.roots.push(root);
+    adoptDocument(root, this);
   }
 
   createElement(tagName) {
     const element = new FakeElement(tagName);
+    element.ownerDocument = this;
     this.created.push(element);
     return element;
   }
 
   createTextNode(value) {
-    return new FakeTextNode(value);
+    const node = new FakeTextNode(value);
+    node.ownerDocument = this;
+    return node;
   }
 
   querySelectorAll(selector) {
@@ -288,6 +314,12 @@ export class FakeDocument {
   querySelector(selector) {
     return this.querySelectorAll(selector)[0] || null;
   }
+}
+
+function adoptDocument(root, ownerDocument) {
+  if (!(root instanceof FakeElement)) return;
+  root.ownerDocument = ownerDocument;
+  for (const child of root.children) adoptDocument(child, ownerDocument);
 }
 
 export function findByText(root, text, selector = "*") {

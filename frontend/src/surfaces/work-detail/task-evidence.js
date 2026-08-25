@@ -52,7 +52,7 @@ export function createTaskEvidence(context) {
       if (files.length === 0) {
         if (hasActiveTask) detail.activeTaskPanelTask._hasFiles = false;
         if (hadFiles && detail.activeTaskPanelId === taskId) {
-          renderTaskPanel();
+          renderTaskPanel({ preserveDrafts: true });
           return;
         }
         const empty = document.createElement("small");
@@ -64,7 +64,7 @@ export function createTaskEvidence(context) {
       if (hasActiveTask) {
         detail.activeTaskPanelTask._hasFiles = true;
         if (!hadFiles && detail.activeTaskPanelId === taskId) {
-          renderTaskPanel();
+          renderTaskPanel({ preserveDrafts: true });
           return;
         }
       }
@@ -149,7 +149,7 @@ export function createTaskEvidence(context) {
       await response.json();
       if (detail.activeTaskPanelTask)
         detail.activeTaskPanelTask._hasFiles = true;
-      renderTaskPanel();
+      renderTaskPanel({ preserveDrafts: true });
     } catch (err) {
       reportError(`Upload failed: ${err.message || "request failed"}`);
     }
@@ -228,9 +228,13 @@ export function createTaskEvidence(context) {
     const titleInput = document.createElement("input");
     titleInput.type = "text";
     titleInput.placeholder = "Artifact title";
+    // Marked so a panel rerender can hand a half-typed registration back to the
+    // operator instead of clearing it.
+    titleInput.dataset.panelField = "artifact-title";
     const urlInput = document.createElement("input");
     urlInput.type = "url";
     urlInput.placeholder = "https://...";
+    urlInput.dataset.panelField = "artifact-url";
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "task-action-btn";
