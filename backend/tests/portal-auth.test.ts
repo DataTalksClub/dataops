@@ -219,7 +219,7 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(response.statusCode, 401);
   });
 
-  it('accepts portal broker headers without a bearer session', async () => {
+  it('accepts portal broker headers for a real workspace user without a bearer session', async () => {
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';
     process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
@@ -232,7 +232,7 @@ describe('Portal broker authentication', () => {
         headers: {
           'x-portal-auth': 'true',
           'x-portal-secret': 'test-portal-secret',
-          'x-user-id': 'portal-admin',
+          'x-user-id': 'ops-manager',
         },
       },
       {},
@@ -242,6 +242,35 @@ describe('Portal broker authentication', () => {
     const body = JSON.parse(response.body);
     assert.strictEqual(body.description, 'Brokered task');
     assert.strictEqual(body.date, '2028-10-04');
+    // The broker seam resolves the same active user every other interactive
+    // path resolves; it is not a second, weaker identity.
+    assert.strictEqual(body.createdBy, 'ops-manager');
+    assert.strictEqual(body.assigneeId, 'ops-manager');
+  });
+
+  it('refuses a brokered interactive write that names no real user', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    const response = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Unattributable task', date: '2028-10-05' }),
+        headers: {
+          'x-portal-auth': 'true',
+          'x-portal-secret': 'test-portal-secret',
+          'x-user-id': 'portal-admin',
+        },
+      },
+      {},
+    );
+
+    // `portal-admin` is a broker placeholder, not a user. An interactive Task
+    // write is never attributed to it.
+    assert.strictEqual(response.statusCode, 401);
+    assert.deepStrictEqual(JSON.parse(response.body), { error: 'Unauthorized' });
   });
 
   it('returns a portal actor for /api/me in portal mode', async () => {

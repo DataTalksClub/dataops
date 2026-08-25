@@ -401,6 +401,13 @@ export interface Card {
   cardLinks?: CardLink[];
   emoji?: string;
   tags?: string[];
+  /**
+   * Administrative owner of the Card. Optional: existing and system-created
+   * Cards without an explicit owner are honestly unassigned and are never
+   * backfilled from Task assignees or historical text. Outside the Task
+   * aggregate: an authorized Task action retains it unchanged.
+   */
+  ownerId?: string;
   /** System-owned Task aggregate. Archived Tasks remain part of taskCount. */
   taskCount: number;
   /** Number of attached Tasks in todo or waiting state. */

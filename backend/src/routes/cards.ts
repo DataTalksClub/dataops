@@ -14,17 +14,29 @@ import {
   getTemplate,
   TemplateVersionConflictError,
 } from '../db/templates';
-import { listTasksByCard } from '../db/tasks';
+import { listAllTasks, listTasksByCard } from '../db/tasks';
 import {
   applyCardTemplateUpdate,
   CardTemplateUpdateConflictError,
 } from '../db/cardTemplateUpdates';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import {
+  resolveInteractiveActor,
+  workAdminForbidden,
+  type VerifiedActor,
+} from '../identity/actor';
+import { TeamDirectory } from '../identity/directory';
+import { projectCard, projectCards, projectTasks } from '../identity/projections';
+import {
+  matchesOwnerFilter,
+  ownerFilterUserId,
+  parseOwnerFilter,
+} from '../identity/ownerFilter';
+import {
   buildCardTemplateUpdatePlan,
   CardTemplateUpdateInvalidStateError,
 } from '../templates/cardTemplateUpdates';
-import type { LambdaEvent, LambdaResponse } from '../types';
+import type { Card, LambdaEvent, LambdaResponse, Task } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -39,12 +51,6 @@ function json(statusCode: number, body: unknown): LambdaResponse {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
 }
 
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match && typeof match[1] === 'string' ? match[1].trim() : '';
-}
-
 function parseObject(rawBody: string | null): Record<string, unknown> {
   let parsed: unknown;
   try {
@@ -56,6 +62,48 @@ function parseObject(rawBody: string | null): Record<string, unknown> {
     throw new CardTemplateUpdateRequestError(400, 'invalid-body', 'Request body must be an object');
   }
   return parsed as Record<string, unknown>;
+}
+
+/**
+ * The Card administration boundary.
+ *
+ * An operator administers only a Card they own. Unassigned Cards, and Cards
+ * owned by somebody else, are admin-managed. This is deliberately separate
+ * from Task execution: completing a teammate's Task may still update this
+ * Card's counters, lifecycle, and audit through the accepted Task/Card
+ * transaction, and that never becomes permission to edit the Card itself.
+ */
+function mayAdministerCard(actor: VerifiedActor, card: Card | null): boolean {
+  if (actor.testBypass || actor.isAdmin) return true;
+  return Boolean(card && actor.id && card.ownerId === actor.id);
+}
+
+/**
+ * Validate an administrative owner reference: an active team member, or an
+ * explicit `null` meaning unassigned. A stale or disabled reference is never
+ * a valid new owner, and ownership is never inferred.
+ */
+async function ownerAssignmentError(
+  client: DynamoDBDocumentClient,
+  ownerId: string | null,
+): Promise<string | null> {
+  if (ownerId === null) return null;
+  const target = await new TeamDirectory(client).project(ownerId);
+  return target.active ? null : 'ownerId must reference an active team member';
+}
+
+type RequestedOwner =
+  | { supplied: false }
+  | { supplied: true; ownerId: string | null }
+  | { supplied: true; invalid: true };
+
+function requestedOwner(body: Record<string, unknown>): RequestedOwner {
+  if (!Object.hasOwn(body, 'ownerId')) return { supplied: false };
+  const value = body.ownerId;
+  if (value === null) return { supplied: true, ownerId: null };
+  if (typeof value !== 'string') return { supplied: true, invalid: true };
+  const trimmed = value.trim();
+  return { supplied: true, ownerId: trimmed.length > 0 ? trimmed : null };
 }
 
 async function loadTemplateUpdate(cardId: string, client: DynamoDBDocumentClient) {
@@ -98,16 +146,26 @@ async function handleSingleTemplateUpdate(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse> {
+  const resolution = await resolveInteractiveActor(
+    client, event, method === 'GET' ? 'work-read' : 'work-write',
+  );
+  if (!resolution.ok) return resolution.response;
+  const actor = resolution.actor;
+
   try {
     const loaded = await loadTemplateUpdate(cardId, client);
     if (method === 'GET') return json(200, { preview: loaded.plan.preview });
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    if (!mayAdministerCard(actor, loaded.card)) {
+      return workAdminForbidden('Applying a Template update requires the Card owner or an admin');
+    }
     const body = parseObject(rawBody);
     const previewToken = typeof body.previewToken === 'string' ? body.previewToken : '';
     if (!/^[a-f0-9]{64}$/.test(previewToken)) {
       return json(400, { error: 'previewToken must be a SHA-256 digest', code: 'invalid-preview-token' });
     }
-    const actorId = headerValue(event.headers, 'x-user-id') || 'system';
+    // Only the explicit test bypass can leave the verified actor id empty.
+    const actorId = actor.id || 'system';
     const result = await applyCardTemplateUpdate(
       client,
       loaded.card,
@@ -141,6 +199,12 @@ async function handleBatchTemplateUpdates(
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse> {
   if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+  const resolution = await resolveInteractiveActor(
+    client, event, action === 'preview' ? 'work-read' : 'work-write',
+  );
+  if (!resolution.ok) return resolution.response;
+  const actor = resolution.actor;
+
   try {
     const body = parseObject(rawBody);
     if (action === 'preview') {
@@ -179,12 +243,20 @@ async function handleBatchTemplateUpdates(
       throw new CardTemplateUpdateRequestError(400, 'invalid-update-selection', 'Each update needs a unique Card ID and preview token');
     }
 
-    const actorId = headerValue(event.headers, 'x-user-id') || 'system';
+    // Only the explicit test bypass can leave the verified actor id empty.
+    const actorId = actor.id || 'system';
     const results = [];
     for (const update of updates) {
       const cardId = String(update.cardId);
       try {
         const loaded = await loadTemplateUpdate(cardId, client);
+        if (!mayAdministerCard(actor, loaded.card)) {
+          throw new CardTemplateUpdateRequestError(
+            403,
+            'work_admin_forbidden',
+            'Applying a Template update requires the Card owner or an admin',
+          );
+        }
         const applied = await applyCardTemplateUpdate(
           client,
           loaded.card,
@@ -263,7 +335,7 @@ async function handleCardRoutes(
 
     // Route: /api/cards (collection)
     if (suffix === '' || suffix === '/') {
-      return await handleCollection(method, rawBody, client);
+      return await handleCollection(method, rawBody, client, event);
     }
 
     // Route: /api/cards/template-updates/:action
@@ -286,14 +358,14 @@ async function handleCardRoutes(
     const tasksMatch = suffix.match(/^\/([^/]+)\/tasks\/?$/);
     if (tasksMatch) {
       const id = tasksMatch[1];
-      return await handleCardTasks(method, id, client);
+      return await handleCardTasks(method, id, client, event);
     }
 
     // Route: /api/cards/:id
     const idMatch = suffix.match(/^\/([^/]+)\/?$/);
     if (idMatch) {
       const id = idMatch[1];
-      return await handleSingle(method, id, rawBody, client);
+      return await handleSingle(method, id, rawBody, client, event);
     }
 
     // No match within /api/cards
@@ -329,17 +401,49 @@ async function handleCardRoutes(
 /**
  * Handle /api/cards collection routes (GET list, POST create).
  */
-async function handleCollection(method: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleCollection(
+  method: string,
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
   if (method === 'GET') {
-    const cards = await listCards(client);
-    return {
-      statusCode: 200,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ cards }),
+    const listActor = await resolveInteractiveActor(client, event, 'work-read');
+    if (!listActor.ok) return listActor.response;
+
+    const ownerParse = parseOwnerFilter((event.queryStringParameters || {}).owner, listActor.actor);
+    if (!ownerParse.ok) return json(400, { error: ownerParse.error });
+    const ownerFilter = ownerParse.filter;
+
+    const directory = new TeamDirectory(client);
+    await directory.loadAll();
+    const activeMemberIds = await directory.activeMemberIds();
+    const [allCards, allTasks] = await Promise.all([
+      listCards(client),
+      listAllTasks(client),
+    ]);
+    const cards = allCards
+      .filter((card) => matchesOwnerFilter(card.ownerId, ownerFilter, activeMemberIds));
+    const tasksByCardId = new Map<string, Task[]>();
+    for (const task of allTasks) {
+      if (typeof task.cardId !== 'string' || task.cardId.length === 0) continue;
+      const tasks = tasksByCardId.get(task.cardId) || [];
+      tasks.push(task);
+      tasksByCardId.set(task.cardId, tasks);
+    }
+
+    const responseBody: Record<string, unknown> = {
+      cards: await projectCards(directory, cards, tasksByCardId),
     };
+    const ownerReference = ownerFilterUserId(ownerFilter);
+    if (ownerReference) responseBody.owner = await directory.project(ownerReference);
+    return json(200, responseBody);
   }
 
   if (method === 'POST') {
+    const createActor = await resolveInteractiveActor(client, event, 'work-write');
+    if (!createActor.ok) return createActor.response;
+    const actor = createActor.actor;
     // Parse body
     let body: Record<string, unknown>;
     try {
@@ -418,12 +522,33 @@ async function handleCollection(method: string, rawBody: string | null, client: 
       };
     }
 
+    // Ownership is administrative metadata. An operator-created Card is owned
+    // by that operator; only an admin may create a Card owned by somebody else
+    // or deliberately unassigned.
+    const owner = requestedOwner(body);
+    let ownerId: string | null = null;
+    if (owner.supplied && 'invalid' in owner) {
+      return json(400, { error: 'ownerId must be a user id or null' });
+    }
+    if (!actor.testBypass) {
+      const suppliedOwnerId = owner.supplied ? owner.ownerId : undefined;
+      if (suppliedOwnerId !== undefined && suppliedOwnerId !== actor.id && !actor.isAdmin) {
+        return workAdminForbidden('Setting a Card owner requires an admin');
+      }
+      ownerId = suppliedOwnerId === undefined ? actor.id : suppliedOwnerId;
+      const ownerError = await ownerAssignmentError(client, ownerId);
+      if (ownerError) return json(400, { error: ownerError });
+    } else if (owner.supplied && !('invalid' in owner)) {
+      ownerId = owner.ownerId;
+    }
+
     // Build card data
     const cardData: Record<string, unknown> = {
       title: body.title,
       anchorDate: body.anchorDate,
       stage: body.stage || 'preparation',
     };
+    if (ownerId) cardData.ownerId = ownerId;
     if (body.description !== undefined) {
       cardData.description = body.description;
     }
@@ -501,11 +626,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
           template,
           body.anchorDate as string,
         );
-        return {
-          statusCode: 201,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ card, tasks }),
-        };
+        return json(201, { card: await projectCard(new TeamDirectory(client), card, tasks), tasks });
       } catch (error) {
         if (error instanceof TemplateVersionConflictError) {
           return json(409, {
@@ -519,11 +640,7 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 
     const card = await createCard(client, cardData);
 
-    return {
-      statusCode: 201,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ card }),
-    };
+    return json(201, { card: await projectCard(new TeamDirectory(client), card) });
   }
 
   // Method not allowed
@@ -537,8 +654,16 @@ async function handleCollection(method: string, rawBody: string | null, client: 
 /**
  * Handle /api/cards/:id single resource routes (GET, PUT, DELETE).
  */
-async function handleSingle(method: string, id: string, rawBody: string | null, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleSingle(
+  method: string,
+  id: string,
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
   if (method === 'GET') {
+    const readActor = await resolveInteractiveActor(client, event, 'work-read');
+    if (!readActor.ok) return readActor.response;
     const card = await getCardConsistent(client, id);
     if (!card) {
       return {
@@ -547,14 +672,16 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         body: JSON.stringify({ error: 'Card not found' }),
       };
     }
-    return {
-      statusCode: 200,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ card }),
-    };
+    // Opening a teammate's Card exposes its Task execution actions; it does
+    // not grant direct Card administration.
+    const tasks = await listTasksByCard(client, card.id);
+    return json(200, { card: await projectCard(new TeamDirectory(client), card, tasks) });
   }
 
   if (method === 'PUT') {
+    const updateActor = await resolveInteractiveActor(client, event, 'work-write');
+    if (!updateActor.ok) return updateActor.response;
+    const actor = updateActor.actor;
     // Parse body
     let body: Record<string, unknown>;
     try {
@@ -599,6 +726,22 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         body: JSON.stringify({ error: 'Card not found' }),
       };
     }
+    if (!mayAdministerCard(actor, existing)) {
+      return workAdminForbidden('Administering this Card requires its owner or an admin');
+    }
+
+    const owner = requestedOwner(body);
+    if (owner.supplied && 'invalid' in owner) {
+      return json(400, { error: 'ownerId must be a user id or null' });
+    }
+    if (owner.supplied && !('invalid' in owner) && !actor.testBypass) {
+      const currentOwnerId = typeof existing.ownerId === 'string' ? existing.ownerId : null;
+      if (owner.ownerId !== currentOwnerId) {
+        if (!actor.isAdmin) return workAdminForbidden('Changing a Card owner requires an admin');
+        const ownerError = await ownerAssignmentError(client, owner.ownerId);
+        if (ownerError) return json(400, { error: ownerError });
+      }
+    }
 
     // Validate stage if provided
     const VALID_STAGES = ['preparation', 'announced', 'after-event'];
@@ -633,6 +776,9 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
         updates[field] = body[field];
       }
     }
+    if (owner.supplied && !('invalid' in owner)) {
+      updates.ownerId = owner.ownerId;
+    }
 
     if (Object.keys(updates).length === 0) {
       return {
@@ -646,11 +792,7 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
       expectedVersion: body.expectedVersion as number,
       patch: updates,
     });
-    return {
-      statusCode: 200,
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ card }),
-    };
+    return json(200, { card: await projectCard(new TeamDirectory(client), card) });
   }
 
   // Method not allowed
@@ -664,7 +806,12 @@ async function handleSingle(method: string, id: string, rawBody: string | null, 
 /**
  * Handle /api/cards/:id/tasks sub-route (GET only).
  */
-async function handleCardTasks(method: string, id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleCardTasks(
+  method: string,
+  id: string,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
   if (method !== 'GET') {
     return {
       statusCode: 405,
@@ -672,6 +819,9 @@ async function handleCardTasks(method: string, id: string, client: DynamoDBDocum
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
   }
+
+  const readActor = await resolveInteractiveActor(client, event, 'work-read');
+  if (!readActor.ok) return readActor.response;
 
   // Check card exists
   const card = await getCard(client, id);
@@ -684,11 +834,14 @@ async function handleCardTasks(method: string, id: string, client: DynamoDBDocum
   }
 
   const tasks = await listTasksByCard(client, id);
-  return {
-    statusCode: 200,
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ tasks }),
-  };
+  const directory = new TeamDirectory(client);
+  await directory.loadAll();
+  const projected = await projectCard(directory, card, tasks);
+  return json(200, {
+    tasks: await projectTasks(directory, tasks),
+    owner: projected.owner,
+    taskAssignees: projected.taskAssignees,
+  });
 }
 
 export { handleCardRoutes };

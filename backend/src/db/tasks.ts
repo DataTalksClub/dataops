@@ -420,6 +420,68 @@ async function listTasksByCard(client: DynamoDBDocumentClient, cardId: string): 
   return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Task);
 }
 
+const MAX_TASK_SCAN_PAGES = 200;
+
+async function scanTasks(
+  client: DynamoDBDocumentClient,
+  filterParts: string[],
+  values: Record<string, unknown>,
+): Promise<Task[]> {
+  const items: Record<string, unknown>[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  let pages = 0;
+  do {
+    const result = await client.send(new ScanCommand({
+      TableName: TABLE_TASKS,
+      FilterExpression: filterParts.join(' AND '),
+      ExpressionAttributeValues: values,
+      ExclusiveStartKey: exclusiveStartKey,
+    }));
+    items.push(...((result.Items || []) as Record<string, unknown>[]));
+    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    pages += 1;
+    if (pages >= MAX_TASK_SCAN_PAGES && exclusiveStartKey) {
+      throw new Error('Task listing exceeded its bounded page limit');
+    }
+  } while (exclusiveStartKey);
+
+  return items.map((item) => cleanItem(item) as Task);
+}
+
+/**
+ * List every canonical Task with bounded pagination. Collection projections
+ * use this one read instead of issuing a Task query for each Card.
+ */
+function listAllTasks(client: DynamoDBDocumentClient): Promise<Task[]> {
+  return scanTasks(client, ['begins_with(PK, :prefix)'], { ':prefix': 'TASK#' });
+}
+
+/**
+ * List Tasks by owner reference when `owner` is the only supplied filter.
+ *
+ * There is no assignee index, and this change may not add one: DynamoDB index
+ * changes are an offline infrastructure operation, not part of an application
+ * feature. Owner-only listings therefore share the bounded, filtered Scan;
+ * every other owner query is applied to the result of an existing indexed
+ * filter instead of scanning.
+ */
+async function listTasksByOwner(
+  client: DynamoDBDocumentClient,
+  owner: { kind: 'user'; userId: string } | { kind: 'unassigned' } | { kind: 'any' },
+): Promise<Task[]> {
+  const filterParts = ['begins_with(PK, :prefix)'];
+  const values: Record<string, unknown> = { ':prefix': 'TASK#' };
+  if (owner.kind === 'user') {
+    filterParts.push('assigneeId = :assigneeId');
+    values[':assigneeId'] = owner.userId;
+  } else if (owner.kind === 'unassigned') {
+    filterParts.push('(attribute_not_exists(assigneeId) OR assigneeId = :emptyAssignee)');
+    values[':emptyAssignee'] = '';
+  }
+
+  return scanTasks(client, filterParts, values);
+}
+
 /**
  * List tasks by status using GSI-Status.
  */
@@ -447,7 +509,9 @@ export {
   listTasksByDate,
   listTasksByDateRange,
   listTasksByCard,
+  listAllTasks,
   listTasksByStatus,
+  listTasksByOwner,
   TaskVersionConflictError,
   CardLifecycleConflictError,
 };

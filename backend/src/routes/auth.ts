@@ -1,6 +1,7 @@
 import { getClient } from '../db/client';
 import { getUserByEmail, getUser } from '../db/users';
 import { createSession, getSession, deleteSession } from '../db/sessions';
+import { identityProjection } from '../identity/projections';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -87,17 +88,17 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
         };
       }
 
-      // Disabled accounts cannot log in.
-      if (rawUser.disabled) {
+      const inputHash = await hashPassword(password);
+      if (inputHash !== rawUser.passwordHash) {
         return {
-          statusCode: 403,
+          statusCode: 401,
           headers: JSON_HEADERS,
-          body: JSON.stringify({ error: 'Account is disabled' }),
+          body: JSON.stringify({ error: 'Invalid email or password' }),
         };
       }
 
-      const inputHash = await hashPassword(password);
-      if (inputHash !== rawUser.passwordHash) {
+      // A disabled account fails closed on every seam, including this one.
+      if (rawUser.disabled) {
         return {
           statusCode: 401,
           headers: JSON_HEADERS,
@@ -108,13 +109,10 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       // Create session
       const session = await createSession(client, rawUser.id);
 
-      // Return user without passwordHash
-      const { passwordHash: _ph, ...user } = rawUser;
-
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ user, token: session.token }),
+        body: JSON.stringify({ user: identityProjection(rawUser), token: session.token }),
       };
     }
 
@@ -151,8 +149,10 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
         };
       }
 
+      // A deleted or disabled account fails closed here exactly as it does on
+      // the portal cookie seam: identity is one decision, not per-transport.
       const user = await getUser(client, session.userId);
-      if (!user) {
+      if (!user || user.disabled) {
         return {
           statusCode: 401,
           headers: JSON_HEADERS,
@@ -163,7 +163,7 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ user }),
+        body: JSON.stringify({ user: identityProjection(user) }),
       };
     }
 

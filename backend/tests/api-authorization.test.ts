@@ -56,6 +56,7 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'POST', path: '/api/templates', body: { name: 'x', type: 'workflow' } },
   { method: 'GET', path: '/api/recurring' },
   { method: 'POST', path: '/api/recurring', body: { description: 'x', cronExpression: '0 9 * * 1' } },
+  { method: 'GET', path: '/api/team-members' },
   { method: 'GET', path: '/api/users' },
   { method: 'POST', path: '/api/users', body: { name: 'x', email: 'x@example.test' } },
   { method: 'GET', path: '/api/tokens' },
