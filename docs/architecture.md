@@ -37,10 +37,10 @@ flowchart TB
   Backend -->|routes /search| Search[Search handler]
   Backend -->|routes /api/*| WorkApi[Work API: tasks, cards, templates, etc]
   DocsApi --> Cache[/Lambda /tmp GitHub content cache/]
-  Search --> Index[/Lambda /tmp zerosearch-node index/]
-  Backend -->|download tarball, read blobs, write contents| GitHub[(GitHub repo)]
+  Search --> Index[Lambda in-process zerosearch-node index]
+  Backend -->|read recursive Git Trees/Blobs, write Contents| GitHub[(GitHub repo)]
   Backend -->|GetSecretValue| Secrets[AWS Secrets Manager]
-  Actions[GitHub Actions] -->|AssumeRoleWithWebIdentity| DeployRole[AWS deploy role]
+  DeployWorkflow[Deploy DataOps V1 workflow] -->|AssumeRoleWithWebIdentity| DeployRole[AWS deploy role]
   DeployRole --> CloudFormation[CloudFormation and SAM]
   CloudFormation --> Backend
 ```
@@ -52,7 +52,9 @@ The deployed function is `BackendFunction`, a single TypeScript/Node Lambda
 - Docs CRUD and structured-SOP parsing/linting.
 - GitHub-backed persistence.
 - Search through a `zerosearch-node` index.
-- Compatibility `/git/*` endpoints used by the frontend.
+- Read-only `GET /git/status` and `GET /git/log` diagnostics; every request to
+  another `/git/*` route, and every method other than GET on those routes,
+  returns HTTP 405.
 - All work `/api/*` routes (tasks, cards, templates, recurring, files,
   artifacts, assistant jobs, notifications, intake, users) served in-process.
 
@@ -72,21 +74,20 @@ sequenceDiagram
   participant L as Backend Lambda
   participant T as Lambda /tmp cache
   participant G as GitHub Contents API
-  participant I as /tmp search index
+  participant I as In-process search index
 
   U->>L: PUT /docs?path=content/... with markdown
   L->>T: Write markdown into local cache
   L->>G: PUT /repos/.../contents/content/...
   G-->>L: Commit created on main
-  L->>L: Refresh GitHub tree cache
+  L->>L: Invalidate cached GitHub tree
   L->>I: Rebuild zerosearch-node index
   L-->>U: Save response with lint warnings, if any
 ```
 
 This means clicking `Save` in production already publishes the document to
-GitHub. The old local `Commit & push` workflow is still useful in local
-development, but in deployed Lambda `/git/commit` is compatibility behavior and
-returns that changes are committed automatically.
+GitHub through the Contents API. There is no separate deployed commit, push, or
+pull step.
 
 A content edit made through the UI creates a GitHub commit with a message like:
 
@@ -98,7 +99,7 @@ Images and folder operations follow the same principle: Lambda mutates its
 local cache first, then writes or deletes the corresponding files through the
 GitHub API.
 
-## Startup and Refresh Lifecycle
+## Content Hydration and Search Lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -107,21 +108,39 @@ sequenceDiagram
   participant T as Lambda /tmp cache
   participant I as Search index
 
-  L->>G: Download repository tarball for configured branch
-  G-->>L: Tarball
-  L->>T: Extract content/**/*.md
+  L->>G: GET recursive Git Trees API entry for configured branch
+  G-->>L: Markdown and image blob entries
+  L->>G: GET Blob API entries by tree SHA
+  L->>T: Write canonical content assets into the cache
+  Note over L,T: Collection reads stop here; docs search continues
   L->>I: Build zerosearch-node index
 ```
 
-On cold start, or after an explicit `/git/pull`, Lambda downloads markdown from
-GitHub and rebuilds the search index. On a warm instance, content edited by that
-same instance is immediately visible because it rebuilds the index after save.
+The docs runtime is created lazily. A collection read, corpus lint, registry,
+folder operation, save, or docs search calls `ensureSynced()`: the store fetches
+the configured branch's recursive Git tree once, then fetches a Blob for each
+canonical markdown file under `content/` and supported image under
+`content/images/` that is not already present in `/tmp`. After that one-shot
+synchronization succeeds, later collection reads reuse the hydrated cache. A
+single-document read can happen earlier and more narrowly: its `ensureFile`
+path consults the same recursive tree and fetches only the requested blob.
 
-For content commits made outside a warm Lambda instance, the content-validation
-workflow calls the deployed Lambda after validation succeeds. The workflow uses
-GitHub OIDC to assume the AWS deploy role and invokes Lambda directly with an
-internal `/admin/refresh` event. That avoids storing the app password in GitHub
-Actions and avoids redeploying code for content-only changes.
+A docs search first ensures the synchronized cache exists, then builds the
+`zerosearch-node` index from that cache. On a warm instance, content edited
+through that same instance remains immediately visible to search because every
+document/image/folder mutation updates the local cache, commits through the
+GitHub Contents API, invalidates the cached in-memory tree so its next lookup
+reloads it, and synchronously rebuilds the process-local search index before
+returning.
+
+For content commits made outside that warm instance, there is no automatic
+cross-instance refresh signal. The existing environment retains its hydrated
+files and last rebuilt index until Lambda recycles or resets it. A newly
+initialized environment performs the same lazy hydration on its next matching
+request. The deployed Git surface is otherwise read-only: `GET /git/status` and
+`GET /git/log` return unavailable diagnostics, while every other `/git/*`
+request returns HTTP 405. This runtime refresh lifecycle is separate from CI
+content validation.
 
 ## CI/CD Split
 
@@ -129,40 +148,65 @@ The repository has two different lifecycles.
 
 Content-only changes should be cheap and fast:
 
+Content validation stays on the GitHub Actions runner.
+Repository-local `content/` remains transitional public-sensitive migration
+debt; the workflow validates and indexes canonical private knowledge instead:
+
 ```mermaid
 flowchart LR
-  ContentPush[Push content/**] --> Validate[Validate Docs Content workflow]
-  Validate --> BuildIndex[Build zerosearch-node index]
-  BuildIndex --> Smoke[Smoke test search index]
-  Smoke --> OIDC[Assume AWS OIDC role]
-  OIDC --> Refresh[Invoke /admin/refresh directly]
-  Refresh --> Done[No Lambda deploy]
+  Trigger[Declared push, PR, or dispatch event] --> Validate[Validate Docs Content workflow]
+  Validate --> Checkouts[Checkout public app and private knowledge]
+  Checkouts --> ValidateLinks[Validate links and workflow doc IDs]
+  ValidateLinks --> BuildIndex[Build temporary zerosearch-node index]
+  BuildIndex --> Smoke[Smoke test generated index]
+  Smoke --> Stop[Stop locally with no AWS or Lambda refresh]
 ```
 
 App or infrastructure changes need the full deployment path:
 
 ```mermaid
 flowchart LR
-  CodePush[Push app/infra/test paths] --> Tests[Backend tests]
-  Tests --> IndexCheck[Build search index]
-  IndexCheck --> HandlerSmoke[Backend smoke test]
-  HandlerSmoke --> SamValidate[SAM validate/build]
-  SamValidate --> OIDC[Assume AWS OIDC deploy role]
-  OIDC --> Deploy[SAM deploy full Lambda stack]
+  CodePush[Push app/infra/test paths] --> Checks[checks job]
+  Checks --> UnitChecks[Frontend/backend tests and transaction gate]
+  UnitChecks --> TypeAndBuild[Typecheck and build backend]
+  TypeAndBuild --> SamValidate[Set up SAM and validate template]
+  SamValidate --> DeployJob[deploy job waits for checks]
+  DeployJob --> OIDC[Configure AWS credentials through OIDC]
+  OIDC --> Package[SAM build and packaged-boundary checks]
+  Package --> Deploy[SAM deploy full Lambda stack]
 ```
 
 Current workflows:
 
 - `.github/workflows/validate-dataops-content.yml`
-  - Runs for `content/**` changes.
-  - Builds the search index from `content/`.
-  - Smoke-tests search against the generated index.
-  - On pushes with changed content files, assumes the AWS OIDC deploy role and
-    directly invokes the deployed Lambda refresh endpoint.
-  - Does not deploy Lambda code.
+  - Runs on pushes to `main` for its declared paths, on pull requests for its
+    declared paths, and by manual dispatch. The push filter includes `docs/**`,
+    while the current pull-request filter does not.
+  - Checks out this public application repository and canonical
+    `DataTalksClub/dataops-knowledge` at `.knowledge`. The private checkout uses
+    the `DATAOPS_CONTENT_GITHUB_TOKEN` secret with contents-read access and does
+    not persist its credentials.
+  - Sets up Python with uv and installs Node workspace dependencies.
+  - Validates links and workflow document IDs with the backend TypeScript
+    `validate-docs-links` script against `.knowledge/content`.
+  - Builds a temporary `zerosearch-node` index from that canonical private
+    knowledge content into `.tmp` and smoke-tests the generated index.
+  - Performs no AWS credential assumption, Lambda invocation,
+    `/admin/refresh` request, deployment, or mutation of a deployed Lambda
+    cache or index.
+  - Declaring `tools/content_tools/**` as a trigger does not mean that the
+    workflow directly invokes the Python content tools; its executable
+    validation and indexing steps currently call backend TypeScript scripts.
 - `.github/workflows/deploy-dataops-v1.yml`
-  - Runs for backend, frontend, infra, package, and deploy script changes.
-  - Runs tests and deploys the single backend Lambda stack if checks pass.
+  - Runs for its declared application, infrastructure, packaging, content, and
+    deploy-script paths.
+  - Runs the dependent `checks` job first: frontend coverage, backend tests, the
+    Task/Card transaction gate, backend typecheck/build, and SAM template
+    validation.
+  - Then runs the dependent `deploy` job: check out and set up Node/SAM, assume
+    the AWS OIDC deploy role, build and verify the SAM artifact, deploy the
+    single backend Lambda stack, synchronize runtime seeds, and smoke-test the
+    deployed backend URL.
 
 ## Credentials and CloudFormation
 
@@ -201,27 +245,31 @@ For this app, EFS is not currently worth the operational weight:
 
 - GitHub already provides durable content storage and history.
 - The search index is small enough to rebuild quickly.
-- Lambda `/tmp` is enough for the markdown cache and generated index.
+- Lambda `/tmp` is enough for the markdown cache.
 - EFS adds VPC configuration, mount targets, security groups, and extra cost.
 
-The right trigger for reconsidering EFS is evidence that cold-start downloads or
-index rebuilds are too slow, or that we need a shared runtime cache independent
-from GitHub.
+The right trigger for reconsidering EFS is evidence that lazy hydration or index
+rebuilds are too slow, or that we need a shared runtime cache independent from
+GitHub.
 
 ## Recommended Upgrade Path
 
-1. Harden content refresh observability.
-   The content workflow now refreshes the deployed Lambda after validation. The
-   next improvement is to expose refresh duration, indexed document count, and
-   the source Git commit in workflow logs or Lambda logs.
+1. Harden runtime-refresh observability.
+   The deployed Lambda lazily hydrates from Git Trees/Blobs, builds its index
+   before the first docs search, rebuilds after warm saves made through that
+   same instance, and does not automatically observe external commits until
+   recycled. A useful next improvement is to expose synchronization duration,
+   indexed document count, and the source Git commit in Lambda logs.
 
 2. Add stricter content validation.
-   The content workflow can run SOP linting across changed files, check broken
-   internal links, and verify wiki-style links such as `[[slack-export-dump]]`.
+   The content workflow already validates links, wiki-style references, and
+   workflow document IDs. A later improvement can add SOP linting across changed
+   files without changing the CI-to-runtime boundary.
 
-3. Keep app deploys separate from content deploys.
+3. Keep content validation separate from app deployment.
    Code changes should run the full tests and SAM deploy. Content changes should
-   validate content and refresh runtime state.
+   validate canonical knowledge and smoke-test a locally generated search index;
+   content validation does not deploy or refresh runtime state.
 
 4. Move account-specific values to CloudFormation parameters.
    This makes migration from sandbox to the production AWS account reproducible:
@@ -255,11 +303,13 @@ from GitHub.
    - Search returns results.
    - Work `/api/*` routes return data.
    - Saving a test document creates a GitHub commit.
-   - Refresh pulls the latest GitHub content.
+   - A newly initialized runtime hydrates the latest GitHub content on its first
+     matching docs request.
 
 ## Open Design Decisions
 
-- Whether content-only CI should call a refresh endpoint automatically.
+- Whether a future cross-instance runtime-refresh signal is warranted; none
+  exists today.
 - Whether document saves should commit directly to `main` forever, or move to a
   branch and pull-request model.
 - How local DataOps user lifecycle should eventually integrate with the shared
