@@ -1,19 +1,23 @@
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const net = require('node:net');
 const path = require('node:path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { setupPageWithAuth } = require('./helpers/auth');
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require('./helpers/isolated-capability-server');
 const {
   berlinBusinessDate,
   offsetBusinessDate,
 } = require('./helpers/business-date');
 
-const ROOT = path.resolve(__dirname, '..', '..');
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
 const SCREENSHOT_DIR = path.resolve(
-  ROOT,
+  __dirname,
+  '..',
+  '..',
   '.tmp',
   'screenshots',
   'issue-201',
@@ -22,30 +26,11 @@ const SCREENSHOT_DIR = path.resolve(
 let server;
 let baseURL;
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const listener = net.createServer();
-    listener.once('error', reject);
-    listener.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => {
-      const { port } = listener.address();
-      listener.close((error) => error ? reject(error) : resolve(port));
-    });
-  });
-}
-
-function waitForServer(url) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30_000;
-    const poll = async () => {
-      try {
-        const response = await fetch(`${url}/api/health`);
-        if (response.ok) return resolve();
-      } catch {}
-      if (Date.now() >= deadline) return reject(new Error('Issue 201 test server timed out'));
-      setTimeout(poll, 100);
-    };
-    poll();
-  });
+async function ownedContext(browser, options = {}) {
+  const context = await browser.newContext({ baseURL, ...options });
+  const health = await context.request.get('/api/health');
+  assertOwnedServerResponse(server, health, 'home attention health');
+  return context;
 }
 
 function suffix() {
@@ -194,42 +179,23 @@ async function expectAttentionRowsDoNotOverlap(page) {
 
 test.describe('issue 201 Home attention urgency', () => {
   test.beforeAll(async () => {
-    const port = await freePort();
-    baseURL = `http://127.0.0.1:${port}`;
     const cacheRoot = createDocsCacheRoot('issue-201-home-attention');
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    server = spawn(path.join(ROOT, 'node_modules', '.bin', 'tsx'), ['scripts/test-server.ts'], {
-      cwd: path.join(ROOT, 'backend'),
-      detached: true,
-      env: {
-        ...process.env,
-        PORT: String(port),
-        NODE_ENV: 'test',
-        IS_LOCAL: 'true',
-        SKIP_AUTH: 'true',
-        DATAOPS_DOCS_DOMAIN: '1',
-        DTC_OFFLINE: '1',
+    server = await startOwnedTestServer({
+      environment: {
         DTC_CACHE_ROOT: cacheRoot,
-        FRONTEND_ROOT: path.join(ROOT, 'frontend'),
-        CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-        CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-        CONVERSATIONAL_ENABLED_PLUGINS: 'none',
+        E2E_TEMPLATE_ACTOR_ID: '00000000-0000-0000-0000-000000000001',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    await waitForServer(baseURL);
+    baseURL = server.baseURL;
   });
 
-  test.afterAll(() => {
-    if (!server) return;
-    try { process.kill(-server.pid, 'SIGTERM'); } catch {}
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test('retains urgency cues without hidden exception badges', async ({ browser }) => {
-    const context = await browser.newContext({
-      baseURL,
-      viewport: { width: 1440, height: 900 },
-    });
+    const context = await ownedContext(browser, { viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     await setupPageWithAuth(page);
     const fixtures = await createAttentionFixtures(context.request);

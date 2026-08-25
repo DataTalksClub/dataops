@@ -1,52 +1,32 @@
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('child_process');
-const http = require('http');
-const path = require('path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
-const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require('./helpers/isolated-capability-server');
 
-const PORT = 3016;
-const BASE_URL = `http://127.0.0.1:${PORT}`;
-let child;
+let server;
 
-const waitForPortal = () => new Promise((resolve, reject) => {
-  const deadline = Date.now() + 30_000;
-  (function poll() {
-    const request = http.get(`${BASE_URL}/api/health`, (response) => {
-      response.resume();
-      resolve();
-    });
-    request.on('error', () => (
-      Date.now() > deadline
-        ? reject(new Error('portal timeout'))
-        : setTimeout(poll, 200)
-    ));
-  }());
-});
+async function gotoOwnedCommunicationsPage(page) {
+  const response = await page.goto('/');
+  assertOwnedServerResponse(server, response, 'sponsor communications browser session');
+  return response;
+}
 
 test.describe('production sponsor CRM communications portal', () => {
   test.beforeAll(async () => {
-    child = spawn(...resolveTestServerCommand(), {
-      cwd: path.resolve(__dirname, '..'),
-      env: {
-        ...process.env,
-        NODE_ENV: 'test',
-        IS_LOCAL: 'true',
-        SKIP_AUTH: 'true',
-        DATAOPS_DOCS_DOMAIN: '1',
-        DTC_OFFLINE: '1',
-        DTC_CACHE_ROOT: createDocsCacheRoot('issue-190-docs-cache/sponsor-crm-communications-production-portal'),
-        FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
-        PORT: String(PORT),
+    server = await startOwnedTestServer({
+      environment: {
+        DTC_CACHE_ROOT: createDocsCacheRoot(
+          'issue-190-docs-cache/sponsor-crm-communications-production-portal',
+        ),
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
     });
-    await waitForPortal();
   });
 
-  test.afterAll(() => {
-    try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test('supports the two-role exact-review journey and safe review cleanup', async ({ browser }) => {
@@ -282,7 +262,7 @@ test.describe('production sponsor CRM communications portal', () => {
     };
 
     const openBooking = async (page) => {
-      await page.goto('/');
+      await gotoOwnedCommunicationsPage(page);
       await page.getByRole('button', { name: 'Sponsors' }).click();
       await expect(page.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
       await page.getByRole('button', { name: 'Open booking' }).first().click();
@@ -312,7 +292,7 @@ test.describe('production sponsor CRM communications portal', () => {
       await page.locator('[data-communications-evidence]').evaluate((node) => node.remove());
     };
 
-    const operatorContext = await browser.newContext({ baseURL: BASE_URL });
+    const operatorContext = await browser.newContext({ baseURL: server.baseURL });
     const operatorPage = await operatorContext.newPage();
     await routeRole(operatorPage, 'operator');
     await openBooking(operatorPage);
@@ -357,7 +337,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
     await expect(operatorPage.getByRole('button', { name: 'Review exact draft' })).toHaveCount(0);
 
-    const adminContext = await browser.newContext({ baseURL: BASE_URL });
+    const adminContext = await browser.newContext({ baseURL: server.baseURL });
     const adminPage = await adminContext.newPage();
     await routeRole(adminPage, 'admin');
     await openBooking(adminPage);
@@ -470,7 +450,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await operatorContext.close();
     await adminContext.close();
 
-    const disabledContext = await browser.newContext({ baseURL: BASE_URL });
+    const disabledContext = await browser.newContext({ baseURL: server.baseURL });
     const disabledPage = await disabledContext.newPage();
     await disabledPage.route('**/work/api/notifications', (route) =>
       route.fulfill({ json: { notifications: [] } }));

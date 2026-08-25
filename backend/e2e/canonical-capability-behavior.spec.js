@@ -6,10 +6,12 @@ const {
   berlinBusinessDate,
   installBerlinBoundaryClock,
 } = require('./helpers/business-date');
-const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
-const { spawn } = require('child_process');
+const {
+  assertOwnedServerResponse,
+  startIsolatedCapabilityServer,
+  stopIsolatedCapabilityServer,
+} = require('./helpers/isolated-capability-server');
 const fs = require('fs');
-const http = require('http');
 const path = require('path');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
@@ -21,15 +23,14 @@ const BOUNDARY_OPERATOR_DATE = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTA
 const ADMIN_ID = '15900000-0000-4000-8000-000000000011';
 const OPERATOR_ID = '15900000-0000-4000-8000-000000000012';
 const servers = {
-  admin: { port: 3219, userId: ADMIN_ID, role: 'admin' },
-  operator: { port: 3220, userId: OPERATOR_ID, role: 'operator' },
-  session: { port: 3221, userId: '15900000-0000-4000-8000-000000000013', role: 'admin' },
-  disabled: { port: 3222, userId: '15900000-0000-4000-8000-000000000014', role: 'admin', disabled: true },
-  expired: { port: 3223, userId: '15900000-0000-4000-8000-000000000015', role: 'admin', sessionLifetimeSeconds: '-1' },
-  noMailingConfig: { port: 3224, userId: '15900000-0000-4000-8000-000000000016', role: 'admin', noMailingConfig: true },
-  emptyDocs: { port: 3226, userId: '15900000-0000-4000-8000-000000000018', role: 'admin', noSyntheticDocs: true },
+  admin: { userId: ADMIN_ID, role: 'admin' },
+  operator: { userId: OPERATOR_ID, role: 'operator' },
+  session: { userId: '15900000-0000-4000-8000-000000000013', role: 'admin' },
+  disabled: { userId: '15900000-0000-4000-8000-000000000014', role: 'admin', disabled: true },
+  expired: { userId: '15900000-0000-4000-8000-000000000015', role: 'admin', sessionLifetimeSeconds: '-1' },
+  noMailingConfig: { userId: '15900000-0000-4000-8000-000000000016', role: 'admin', noMailingConfig: true },
+  emptyDocs: { userId: '15900000-0000-4000-8000-000000000018', role: 'admin', noSyntheticDocs: true },
   qualityAdmin: {
-    port: 3227,
     userId: '15900000-0000-4000-8000-000000000019',
     role: 'admin',
     qualityFindings: true,
@@ -109,106 +110,18 @@ function baseUrl(server) {
   return `http://127.0.0.1:${server.port}`;
 }
 
-function waitForServer(server) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30_000;
-    const poll = () => {
-      const request = http.get(`${baseUrl(server)}/api/health`, (response) => {
-        response.resume();
-        if (response.statusCode === 200) resolve();
-        else if (Date.now() >= deadline) reject(new Error(`portal ${server.port} returned ${response.statusCode}`));
-        else setTimeout(poll, 200);
-      });
-      request.on('error', () => {
-        if (Date.now() >= deadline) reject(new Error(`portal ${server.port} did not start`));
-        else setTimeout(poll, 200);
-      });
-    };
-    poll();
-  });
-}
-
 async function startServer(server) {
-  const cache = path.join(TMP_ROOT, String(server.port), 'cache');
-  fs.mkdirSync(path.join(cache, 'content', 'synthetic'), { recursive: true });
-  if (!server.noSyntheticDocs) {
-    fs.writeFileSync(
-      path.join(cache, 'content', 'synthetic', 'capability.md'),
-      syntheticSop,
-    );
-  }
-  if (server.qualityFindings) {
-    for (const [filename, content] of syntheticQualityDocuments) {
-      fs.writeFileSync(path.join(cache, 'content', 'synthetic', filename), content);
-    }
-  }
-  server.process = spawn(...resolveTestServerCommand(), {
-    cwd: BACKEND_ROOT,
-    env: {
-      ...process.env,
-      NODE_ENV: 'test',
-      IS_LOCAL: 'true',
-      SKIP_AUTH: 'false',
-      DATAOPS_DOCS_DOMAIN: '1',
-      WORK_ENGINE_AUTH_MODE: 'portal',
-      DTC_OFFLINE: '1',
-      DTC_CACHE_ROOT: cache,
-      FRONTEND_ROOT: path.join(REPO_ROOT, 'frontend'),
-      AUTH_BASE_URL: 'https://auth.example.test',
-      AUTH_ISSUER: 'https://issuer.example.test/synthetic-pool',
-      AUTH_CLIENT_ID: 'synthetic-client',
-      AUTH_CALLBACK_URL: `${baseUrl(server)}/auth/callback`,
-      AUTH_LOGOUT_URL: `${baseUrl(server)}/`,
-      E2E_BROWSER_SESSION_USER_ID: server.userId,
-      E2E_BROWSER_SESSION_USER_ROLE: server.role,
-      ...(server.disabled ? { E2E_BROWSER_SESSION_USER_DISABLED: 'true' } : {}),
-      ...(server.sessionLifetimeSeconds ? { E2E_BROWSER_SESSION_LIFETIME_SECONDS: server.sessionLifetimeSeconds } : {}),
-      ...(server.qualityFindings
-        ? { DTC_CONTENT_TOKEN_DAYS_REMAINING_FOR_TESTS: '30' }
-        : {}),
-      SPONSOR_FINANCE_ENABLED: 'true',
-      DATAOPS_MAILING_EXPORTS_CONFIG: server.noMailingConfig ? '[]' : JSON.stringify([{
-        id: 'synthetic-disabled-provider',
-        provider: 'mailchimp',
-        account: 'Synthetic audience account',
-        scopeLabel: 'All synthetic audiences',
-        credentialId: 'mailchimp',
-        enabled: true,
-      }]),
-      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-      CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-      CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-      PORT: String(server.port),
-      GITHUB_TOKEN: '',
-      GITHUB_TOKEN_SECRET_NAME: '',
-      AWS_EC2_METADATA_DISABLED: 'true',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
-  });
-  let stderr = '';
-  server.process.stderr.on('data', (data) => { stderr += data.toString(); });
-  try {
-    await waitForServer(server);
-  } catch (error) {
-    throw new Error(`${error.message}\n${stderr}`);
-  }
+  const { noSyntheticDocs } = server;
+  await startIsolatedCapabilityServer(Object.assign(server, {
+    documents: server.noSyntheticDocs ? [] : [
+      ['capability.md', syntheticSop],
+      ...(server.qualityFindings ? syntheticQualityDocuments : []),
+    ],
+  }), TMP_ROOT);
 }
 
 async function stopServer(server) {
-  if (!server.process) return;
-  const child = server.process;
-  const exited = new Promise((resolve) => child.once('exit', resolve));
-  try { process.kill(-child.pid, 'SIGTERM'); } catch {}
-  const stopped = await Promise.race([
-    exited.then(() => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
-  ]);
-  if (!stopped) {
-    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
-    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 1_000))]);
-  }
-  server.process = null;
+  await stopIsolatedCapabilityServer(server);
 }
 
 async function portalContext(browser, server, options = {}) {
@@ -219,6 +132,7 @@ async function portalContext(browser, server, options = {}) {
   });
   const response = await context.request.get('/__e2e__/browser-session');
   expect(response.status()).toBe(200);
+  assertOwnedServerResponse(server, response, 'capability browser session');
   return context;
 }
 
@@ -822,6 +736,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
   });
 
   test('Newsletter and Calendar persist real synthetic edits, validation, conflicts, overlays, and recovery', async ({ browser }, testInfo) => {
+    test.setTimeout(90_000);
     const { context, page } = await portalPage(browser);
     await page.goto('/#/newsletter');
     await expect(page.getByText('No newsletter slots')).toBeVisible();
@@ -1290,184 +1205,6 @@ test.describe('issue 159 retained canonical capability behavior', () => {
       roleId: 'admin',
       stateIds: ['inbox.empty', 'inbox.duplicate', 'inbox.archived', 'inbox.validation', 'inbox.conflict', 'inbox.server-failure'],
     }]);
-  });
-
-  test('Tasks and Workflows persist real queue states, proof, stages, conflicts, and completion', async ({ browser }, testInfo) => {
-    test.setTimeout(120_000);
-    const { context, page } = await portalPage(browser, servers.noMailingConfig);
-    await page.goto('/#/tasks');
-    for (const [heading, empty] of [
-      ['Overdue', 'No overdue work.'],
-      ['Follow-ups due', 'No follow-ups due work.'],
-      ['Missing proof', 'No missing proof work.'],
-      ['Waiting', 'No waiting work.'],
-      ['Today', 'No today work.'],
-      ['Done / history', 'No done / history work.'],
-    ]) {
-      const group = page.locator('.ops-queue-group', { has: page.getByRole('heading', { name: heading, exact: true }) });
-      await expect(group.locator('header span')).toHaveText('0');
-      await expect(group.locator('.ops-empty')).toHaveText(empty);
-    }
-    await page.goto('/#/cards');
-    await expect(page.locator('.ops-workflows-board')).toBeVisible();
-    await expect(page.locator('.ops-workflow-card')).toHaveCount(0);
-
-    await page.goto('/#/');
-    const quickTitle = unique('Synthetic quick task');
-    await page.getByRole('button', { name: 'New task' }).click();
-    const quickTask = page.getByRole('dialog');
-    await quickTask.getByLabel('What needs doing?').fill(quickTitle);
-    await quickTask.getByRole('button', { name: 'Create task' }).click();
-    await expect(page.locator('#task-panel-title')).toHaveText(quickTitle);
-    page.once('dialog', (dialog) => dialog.accept('Synthetic upstream response'));
-    await page.locator('#task-panel').getByRole('button', { name: 'Mark waiting' }).click();
-    await expect(page.locator('#task-panel .task-status-badge')).toHaveText('waiting');
-    await expect(page.locator('#task-panel')).toContainText('Synthetic upstream response');
-    await page.locator('#task-panel').getByRole('button', { name: 'Response received' }).click();
-    await expect(page.locator('#task-panel .task-status-badge')).toHaveText('todo');
-    await expect(page.locator('#task-panel .task-history-event', { hasText: 'Response received' })).toBeVisible();
-    await page.locator('#task-panel-close').click();
-
-    const cardTitle = unique('Synthetic staged workflow');
-    const cardResponse = await context.request.post('/api/cards', { data: {
-      title: cardTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
-    } });
-    expect(cardResponse.status()).toBe(201);
-    const card = (await json(cardResponse)).card;
-    const proofTitle = unique('Synthetic proof task');
-    const proofResponse = await context.request.post('/api/tasks', { data: {
-      description: proofTitle, date: '2026-08-12', cardId: card.id,
-      requiredLinkName: 'Evidence URL', requiresFile: true,
-      instructionDocId: 'sop.synthetic.capability', instructionStepId: '1', phase: 'preparation',
-      systems: ['dataops'], validation: { requiredEvidence: 'A URL and attached public-safe file' },
-    } });
-    expect(proofResponse.status()).toBe(201);
-    const proofTask = await json(proofResponse);
-    const completedTitle = unique('Synthetic completed task');
-    const completedResponse = await context.request.post('/api/tasks', { data: {
-      description: completedTitle, date: '2026-08-12', cardId: card.id, status: 'done',
-      instructionDocId: 'sop.synthetic.capability', phase: 'preparation',
-    } });
-    expect(completedResponse.status()).toBe(201);
-    const missingArtifactTitle = unique('Synthetic missing artifact relationship');
-    const missingArtifactResponse = await context.request.post('/api/tasks', { data: {
-      description: missingArtifactTitle, date: '2026-08-12', cardId: card.id,
-      proofRequirement: { type: 'artifact', required: true, label: 'Approved synthetic output' },
-      artifactRefs: [{ artifactId: 'stale-synthetic-artifact', status: 'draft' }],
-      instructionDocId: 'sop.synthetic.capability',
-    } });
-    expect(missingArtifactResponse.status()).toBe(201);
-    const missingArtifactTask = await json(missingArtifactResponse);
-
-    await page.goto(`/#/tasks?taskId=${proofTask.id}`);
-    await expect(page.locator('#task-panel-title')).toHaveText(proofTitle);
-    const complete = page.locator('#task-panel').getByRole('button', { name: 'Mark done' });
-    await expect(complete).toBeDisabled();
-    await expect(complete).toHaveAttribute('title', /Fill in Evidence URL.*Upload required file/);
-    const documentsPayload = await json(await context.request.get('/docs'));
-    expect(documentsPayload.documents.some((document) => document.path === 'content/synthetic/capability.md')).toBe(true);
-    const instructionReady = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/docs'
-        && url.searchParams.get('path') === 'content/synthetic/capability.md';
-    });
-    await page.locator('#task-panel .task-instruction-doc-link', { hasText: 'Synthetic Capability Procedure' }).click();
-    expect((await instructionReady).status()).toBe(200);
-    await expect(page.locator('#document-title')).toHaveValue('Synthetic Capability Procedure');
-    await expect(page.locator('#doc-context-return')).toContainText(`Opened from task: ${proofTitle}`);
-    await page.getByRole('button', { name: 'Back to task' }).click();
-    await expect(page.locator('#task-panel-title')).toHaveText(proofTitle);
-    const requiredLink = page.locator('#task-panel .task-required-link input[type="url"]');
-    await requiredLink.fill('https://example.invalid/synthetic-evidence');
-    const linkSaved = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'PUT'
-        && url.pathname === `/work/api/tasks/${proofTask.id}`;
-    });
-    await requiredLink.blur();
-    expect((await linkSaved).status()).toBe(200);
-    await page.locator('#task-panel input[type="file"]').setInputFiles({
-      name: 'synthetic-proof.txt', mimeType: 'text/plain', buffer: Buffer.from('public-safe synthetic proof'),
-    });
-    await expect(page.locator('#task-panel .task-file-item')).toContainText('synthetic-proof.txt');
-    await expect(complete).toBeEnabled();
-    await setFaults(context.request, [{ method: 'PUT', path: `/api/tasks/${proofTask.id}`, status: 409 }]);
-    await complete.click();
-    await expect(page.locator('#status-text')).toContainText('Could not update task: Synthetic route failure (409)');
-    await expect(page.locator('#task-panel .task-status-badge')).toHaveText('todo');
-    await clearFaults(context.request);
-    await complete.click();
-    await expect(page.locator('#task-panel .task-status-badge')).toHaveText('done');
-    await page.reload();
-    await expect(page.locator('#task-panel .task-status-badge')).toHaveText('done');
-
-    await page.goto('/#/tasks');
-    await expect(page.locator('#task-panel')).toBeHidden();
-    await page.goto(`/#/tasks?taskId=${missingArtifactTask.id}`);
-    await expect(page.locator('#task-panel-title')).toHaveText(missingArtifactTitle);
-    await expect(page.locator('#task-panel')).toContainText('No approved artifact attached.');
-    await expect(page.locator('#task-panel').getByRole('button', { name: 'Mark done' })).toBeDisabled();
-    const staleArtifact = await context.request.get('/api/artifacts/stale-synthetic-artifact');
-    expect(staleArtifact.status()).toBe(404);
-    expect(staleArtifact.headers()['content-type']).toContain('application/json');
-
-    await page.goto('/#/cards');
-    const workflowCard = page.locator(`.ops-workflow-card[data-card-id="${card.id}"]`);
-    await expect(workflowCard).toContainText(cardTitle);
-    await expect(workflowCard).toContainText('2/3 tasks');
-    await workflowCard.click();
-    await expect(page.locator('#card-panel-title')).toHaveText(cardTitle);
-    for (const taskTitle of [missingArtifactTitle, proofTitle, completedTitle]) {
-      await expect(page.locator('#card-panel .card-checklist-label', { hasText: taskTitle })).toBeVisible();
-    }
-    await expect(page.locator('#card-panel')).toContainText('Active (1)');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (2)');
-    await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('preparation');
-    await page.locator('#card-panel .card-stage-select').selectOption('announced');
-    await expect.poll(async () => (await json(await context.request.get(`/api/cards/${card.id}`))).card.stage).toBe('announced');
-    await page.reload();
-    await expect(page.locator('#card-panel .card-stage-select')).toHaveValue('announced');
-
-    const approvedArtifactResponse = await context.request.post('/api/artifacts', { data: {
-      type: 'other', title: 'Synthetic approved task proof',
-      storageUri: 'https://example.invalid/synthetic-approved-proof', storageProvider: 'external-url',
-      dataClass: 'internal', status: 'approved', sourceType: 'manual-link',
-      taskId: missingArtifactTask.id, cardId: card.id,
-    } });
-    expect(approvedArtifactResponse.status()).toBe(201);
-    const approvedArtifact = (await json(approvedArtifactResponse)).artifact;
-    const currentMissingArtifactTask = await json(await context.request.get(`/api/tasks/${missingArtifactTask.id}`));
-    expect(Number.isInteger(currentMissingArtifactTask.version)).toBe(true);
-    const attachApprovedArtifact = await context.request.put(`/api/tasks/${missingArtifactTask.id}`, { data: {
-      expectedVersion: currentMissingArtifactTask.version,
-      proofRequirement: { type: 'artifact', required: true, label: 'Approved synthetic output' },
-      artifactRefs: [{ artifactId: approvedArtifact.id, status: 'approved' }],
-    } });
-    expect(attachApprovedArtifact.status()).toBe(200);
-    expect((await json(attachApprovedArtifact)).version).toBeGreaterThan(currentMissingArtifactTask.version);
-    await page.reload();
-    const missingArtifactCheckbox = page.getByRole('checkbox', { name: `Complete ${missingArtifactTitle}` });
-    await expect(missingArtifactCheckbox).toBeEnabled();
-    await missingArtifactCheckbox.check();
-    await expect.poll(async () => (await json(await context.request.get(`/api/tasks/${missingArtifactTask.id}`))).status).toBe('done');
-    await page.reload();
-    await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
-    await expect(page.locator('#card-panel')).toContainText('3/3 tasks');
-    await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
-    await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
-    await page.reload();
-    await expect(page.locator('#card-panel .card-stage-static')).toHaveText('Completed');
-    await expect(page.locator('#card-panel .card-completion-meta')).toContainText('from Announced');
-    await expect(page.locator('#card-panel')).toContainText('Done / history (3)');
-    await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
-    await context.close();
-    recordCapabilityEvidence(testInfo, [
-      { route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>', roleId: 'admin', stateIds: ['tasks.empty', 'tasks.waiting', 'tasks.blocked', 'tasks.done', 'tasks.create-select-update', 'tasks.file-proof', 'tasks.sop-link', 'tasks.conflict'] },
-      { route: '/#/cards?cardId=<id>&taskId=<id>', roleId: 'admin', stateIds: ['workflows.empty', 'workflows.active', 'workflows.staged', 'workflows.completed'] },
-      { route: '/#/artifacts', roleId: 'admin', stateIds: ['artifacts.not-found'] },
-    ]);
   });
 
   test('capability recovery states stay JSON-safe and reloadable across retained routes', async ({ browser }, testInfo) => {

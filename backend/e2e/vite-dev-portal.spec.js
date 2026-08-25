@@ -13,6 +13,9 @@ const FRONTEND_ASSETS = JSON.parse(fs.readFileSync(
   'utf8',
 )).files;
 
+// This spec deliberately stays outside the single-process ordinary-server
+// contract. Its system under test is scripts/dev-portal.mjs's supervisor plus
+// Vite/backend lifecycle, HMR, proxying, and release of both listeners.
 const OWNED_STACKS = new Set();
 const SYNTHETIC_DOC = `---
 id: reference.synthetic-vite-development

@@ -7,7 +7,8 @@ import http from 'http';
 import { URL } from 'url';
 import { Readable } from 'stream';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, resolve } from 'path';
+import { randomBytes } from 'crypto';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createBrowserSession } from '../src/db/sessions';
@@ -27,6 +28,8 @@ import { setupLocalDynamo, stopLocal } from './local-dynamodb';
 import type { LambdaEvent } from '../src/types';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+const OWNER_TOKEN = process.env.DATAOPS_E2E_SERVER_TOKEN || randomBytes(24).toString('hex');
+const OWNER_CHECKOUT = resolve(__dirname, '..', '..');
 let e2eBrowserSessionToken = '';
 let localDatabaseReady = false;
 const e2eBookkeepingObjects = new Map<string, Buffer>();
@@ -40,6 +43,11 @@ type E2eRouteFault = {
 };
 let e2eRouteFaults: E2eRouteFault[] = [];
 let e2eMailingProviderMode: 'pending' | 'complete' | 'fail' = 'pending';
+
+function listeningPort(): number {
+  const address = server.address();
+  return address && typeof address !== 'string' ? address.port : PORT;
+}
 
 async function bufferBody(body: unknown): Promise<Buffer> {
   if (Buffer.isBuffer(body)) return body;
@@ -82,7 +90,7 @@ function configureBookkeepingStorage(): void {
   setBookkeepingStorageForTests(client as never, (async (_client: unknown, command: { constructor: { name: string }; input: { Key?: string } }) => {
     const key = encodeURIComponent(String(command.input.Key || ''));
     const mode = command.constructor.name === 'PutObjectCommand' ? 'upload' : 'download';
-    return `http://127.0.0.1:${PORT}/__e2e__/bookkeeping-object/${key}?mode=${mode}`;
+    return `http://127.0.0.1:${listeningPort()}/__e2e__/bookkeeping-object/${key}?mode=${mode}`;
   }) as never);
   setBookkeepingArchiveUploaderForTests(async (params) => {
     const key = String(params.Key || '');
@@ -158,6 +166,27 @@ function matchesRouteFault(fault: E2eRouteFault, method: string, parsed: URL): b
 
 const server = http.createServer(async (req, res) => {
   const parsed = new URL(req.url!, `http://localhost:${PORT}`);
+
+  // The spawning process generates this token so bootstrap can prove that the
+  // spawned local test process, not an older listener, owns the loopback port.
+  const listenAddress = server.address();
+  const listeningPort = listenAddress && typeof listenAddress !== 'string'
+    ? listenAddress.port
+    : PORT;
+  res.setHeader('x-dataops-e2e-owner-token', OWNER_TOKEN);
+  res.setHeader('x-dataops-e2e-owner-pid', String(process.pid));
+  res.setHeader('x-dataops-e2e-owner-port', String(listeningPort));
+
+  if (parsed.pathname === '/__e2e__/server-owner' && req.method === 'GET') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      checkout: OWNER_CHECKOUT,
+      listeningPort,
+      pid: process.pid,
+      token: OWNER_TOKEN,
+    }));
+    return;
+  }
 
   // Explicit opt-in seam for production-cookie browser E2E. This server is a
   // test-only executable and the opaque token is never exposed to the test.
@@ -390,8 +419,13 @@ async function runSeeds() {
 export async function start(): Promise<void> {
   await runSeeds();
   return new Promise((resolve) => {
-    server.listen(PORT, () => {
-      console.log(`Test server listening at http://localhost:${PORT}`);
+    server.listen(PORT, '127.0.0.1', () => {
+      const address = server.address();
+      const actualPort = address && typeof address !== 'string' ? address.port : PORT;
+      console.log(
+        `Test server listening at http://127.0.0.1:${actualPort} `
+        + `(owner ${OWNER_TOKEN}, checkout ${OWNER_CHECKOUT})`,
+      );
       resolve();
     });
   });
@@ -410,8 +444,13 @@ export async function stop(): Promise<void> {
 // Allow running directly (e.g. tsx scripts/test-server.ts)
 if (require.main === module) {
   runSeeds().then(() => {
-    server.listen(PORT, () => {
-      console.log(`Test server listening at http://localhost:${PORT}`);
+    server.listen(PORT, '127.0.0.1', () => {
+      const address = server.address();
+      const actualPort = address && typeof address !== 'string' ? address.port : PORT;
+      console.log(
+        `Test server listening at http://127.0.0.1:${actualPort} `
+        + `(owner ${OWNER_TOKEN}, checkout ${OWNER_CHECKOUT})`,
+      );
     });
   });
 

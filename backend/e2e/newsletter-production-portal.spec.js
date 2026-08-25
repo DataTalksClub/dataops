@@ -1,54 +1,37 @@
-const { test, expect } = require("@playwright/test"),
-  { spawn } = require("child_process"),
-  http = require("http"),
-  path = require("path");
+const { test, expect } = require("@playwright/test");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
-const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
-const PORT = 3017,
-  BASE = `http://127.0.0.1:${PORT}`;
-let child;
-const wait = () =>
-  new Promise((resolve, reject) => {
-    const end = Date.now() + 30000;
-    (function poll() {
-      const r = http.get(`${BASE}/api/health`, (x) => {
-        x.resume();
-        resolve();
-      });
-      r.on("error", () =>
-        Date.now() > end ? reject(Error("timeout")) : setTimeout(poll, 200),
-      );
-    })();
-  });
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require("./helpers/isolated-capability-server");
+
+let server;
+
+async function gotoOwnedNewsletterPage(page) {
+  const response = await page.goto("/");
+  assertOwnedServerResponse(server, response, "newsletter browser session");
+  return response;
+}
+
 test.describe("production newsletter planner", () => {
   test.beforeAll(async () => {
-    child = spawn(...resolveTestServerCommand(), {
-      cwd: path.resolve(__dirname, ".."),
-      env: {
-        ...process.env,
-        NODE_ENV: "test",
-        IS_LOCAL: "true",
-        SKIP_AUTH: "true",
-        DATAOPS_DOCS_DOMAIN: "1",
-        DTC_OFFLINE: "1",
-        DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/newsletter-production-portal"),
-        FRONTEND_ROOT: path.resolve(__dirname, "..", "..", "frontend"),
-        PORT: String(PORT),
+    server = await startOwnedTestServer({
+      environment: {
+        DTC_CACHE_ROOT: createDocsCacheRoot(
+          "issue-190-docs-cache/newsletter-production-portal",
+        ),
       },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
     });
-    await wait();
   });
-  test.afterAll(() => {
-    try {
-      process.kill(-child.pid, "SIGTERM");
-    } catch {}
+
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
   test("shows loading, booked/unbooked, alerts, editing, error and mobile states", async ({
     browser,
   }) => {
-    const context = await browser.newContext({ baseURL: BASE }),
+    const context = await browser.newContext({ baseURL: server.baseURL }),
       page = await context.newPage();
     let release;
     const gate = new Promise((r) => (release = r)),
@@ -109,12 +92,10 @@ test.describe("production newsletter planner", () => {
         },
       });
     });
-    await page.goto("/");
+    await gotoOwnedNewsletterPage(page);
     await page.getByRole("button", { name: "Newsletter" }).click();
     await expect(page.getByText("Loading newsletter slots…")).toBeVisible();
-    await page
-      .locator(".newsletter-surface")
-      .screenshot({ path: ".tmp/newsletter-production-loading.png" });
+    await page.screenshot({ path: ".tmp/newsletter-production-loading.png" });
     release();
     await expect(page.getByText("Synthetic Year End")).toBeVisible();
     await expect(page.locator("[data-slots]")).toContainText(
@@ -190,7 +171,7 @@ test.describe("production newsletter planner", () => {
       fullPage: true,
     });
     await context.close();
-    const errorContext = await browser.newContext({ baseURL: BASE }),
+    const errorContext = await browser.newContext({ baseURL: server.baseURL }),
       errorPage = await errorContext.newPage();
     await errorPage.route("**/work/api/newsletter-slots**", (route) =>
       route.fulfill({
@@ -198,12 +179,15 @@ test.describe("production newsletter planner", () => {
         json: { error: "Synthetic permission denied" },
       }),
     );
-    await errorPage.goto("/");
+    await gotoOwnedNewsletterPage(errorPage);
     await errorPage.getByRole("button", { name: "Newsletter" }).click();
-    await expect(errorPage.getByRole("status")).toContainText("Could not load");
-    await errorPage
-      .locator(".newsletter-surface")
-      .screenshot({ path: ".tmp/newsletter-production-error.png" });
+    await expect(
+      errorPage.locator(".newsletter-surface [role=\"status\"]"),
+    ).toContainText("Could not load");
+    await errorPage.screenshot({
+      path: ".tmp/newsletter-production-error.png",
+      animations: "disabled",
+    });
     await errorContext.close();
   });
 });

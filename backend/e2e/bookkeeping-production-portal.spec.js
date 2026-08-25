@@ -1,69 +1,41 @@
 const { test, expect } = require("@playwright/test");
-const { spawn } = require("child_process");
-const http = require("http");
-const path = require("path");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
-const { resolveTestServerCommand } = require("./helpers/tsx-launcher");
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require("./helpers/isolated-capability-server");
 
-const PORT = 3014;
-const BASE_URL = `http://127.0.0.1:${PORT}`;
-let processHandle;
+let server;
 
-function waitForServer() {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30_000;
-    const poll = () => {
-      const request = http.get(`${BASE_URL}/api/health`, (response) => {
-        response.resume();
-        if (response.statusCode === 200) resolve();
-        else if (Date.now() >= deadline) reject(new Error("portal server timeout"));
-        else setTimeout(poll, 250);
-      });
-      request.on("error", () => {
-        if (Date.now() >= deadline) reject(new Error("portal server timeout"));
-        else setTimeout(poll, 250);
-      });
-    };
-    poll();
-  });
+async function gotoOwnedBookkeepingPage(page) {
+  const response = await page.goto("/#/bookkeeping");
+  assertOwnedServerResponse(server, response, "bookkeeping browser session");
+  return response;
 }
 
 test.describe("production portal bookkeeping", () => {
   test.beforeAll(async () => {
-    processHandle = spawn(...resolveTestServerCommand(), {
-      cwd: path.resolve(__dirname, ".."),
-      env: {
-        ...process.env,
-        NODE_ENV: "test",
-        IS_LOCAL: "true",
-        SKIP_AUTH: "true",
-        DATAOPS_DOCS_DOMAIN: "1",
-        DTC_OFFLINE: "1",
-        DTC_CACHE_ROOT: createDocsCacheRoot("issue-190-docs-cache/bookkeeping-production-portal"),
-        FRONTEND_ROOT: path.resolve(__dirname, "..", "..", "frontend"),
-        PORT: String(PORT),
+    server = await startOwnedTestServer({
+      environment: {
+        DTC_CACHE_ROOT: createDocsCacheRoot(
+          "issue-190-docs-cache/bookkeeping-production-portal",
+        ),
       },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
     });
-    await waitForServer();
   });
 
-  test.afterAll(() => {
-    if (processHandle) {
-      try {
-        process.kill(-processHandle.pid, "SIGTERM");
-      } catch {}
-    }
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test("loads the real frontend Bookkeeping surface and operator states", async ({
     browser,
   }) => {
-    const context = await browser.newContext({ baseURL: BASE_URL });
+    const context = await browser.newContext({ baseURL: server.baseURL });
     const page = await context.newPage();
 
-    await page.goto("/#/bookkeeping");
+    await gotoOwnedBookkeepingPage(page);
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
     await expect(page.getByText("No bookkeeping entries")).toBeVisible();
     await expect(page.locator(".bookkeeping-documents")).toContainText(
@@ -126,15 +98,16 @@ test.describe("production portal bookkeeping", () => {
     );
     await expect(page.getByRole("button", { name: /Unlink/ })).toBeVisible();
     const linksResponse = await context.request.get(
-      `${BASE_URL}/work/api/bookkeeping/links`,
+      `${server.baseURL}/work/api/bookkeeping/links`,
     );
     expect(linksResponse.status()).toBe(200);
+    assertOwnedServerResponse(server, linksResponse, "bookkeeping links");
     const links = await linksResponse.json();
     expect(links.items).toHaveLength(1);
     expect(links.items[0].transactionId).toBe(transactionId);
 
     const faultResponse = await context.request.post(
-      `${BASE_URL}/__e2e__/route-faults`,
+      `${server.baseURL}/__e2e__/route-faults`,
       {
         data: {
           faults: [
@@ -157,7 +130,7 @@ test.describe("production portal bookkeeping", () => {
       "Retry by reopening Bookkeeping",
     );
     const clearFaults = await context.request.delete(
-      `${BASE_URL}/__e2e__/route-faults`,
+      `${server.baseURL}/__e2e__/route-faults`,
     );
     expect(clearFaults.ok()).toBe(true);
     await page.reload();

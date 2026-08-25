@@ -1,7 +1,10 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert';
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 
 import { parseConversationalRolloutSnapshot } from '../src/conversation/rollout';
@@ -24,12 +27,28 @@ interface OwnedTestServerChild {
   off(eventName: string, listener: (...args: unknown[]) => void): unknown;
 }
 
+interface ExpectedTestServerOwner {
+  checkout: string;
+  token: string;
+}
+
+interface ReportedTestServerOwner extends ExpectedTestServerOwner {
+  listeningPort: number;
+  pid: number;
+}
+
 const globalSetupModule = require('../e2e/global-setup.js') as {
   (options?: { port?: number }): Promise<void>;
   buildTestServerEnvironment(
     parent?: TestServerEnvironment,
     port?: number,
+    ownerToken?: string,
   ): TestServerEnvironment;
+  assertExplicitPortAvailable(port: number, timeoutMs?: number): Promise<void>;
+  readListenerOwnership(
+    port: number,
+    timeoutMs?: number,
+  ): Promise<ReportedTestServerOwner>;
   waitForServer(
     port: number,
     timeoutMs: number,
@@ -38,10 +57,24 @@ const globalSetupModule = require('../e2e/global-setup.js') as {
   waitForOwnedServer(
     child: OwnedTestServerChild,
     port: number,
-    timeoutMs: number
-  ): Promise<void>;
+    timeoutMs: number,
+    expectedOwner: ExpectedTestServerOwner,
+  ): Promise<{ owner: ReportedTestServerOwner; port: number }>;
 };
 const globalTeardown = require('../e2e/global-teardown.js') as () => Promise<void>;
+const processGroups = require('../e2e/helpers/test-server-process-groups.js') as {
+  stopTestServerProcessGroup(
+    pid: number,
+    options?: { termTimeoutMs?: number; killTimeoutMs?: number },
+  ): Promise<void>;
+};
+const ownedServerModule = require('../e2e/helpers/isolated-capability-server.js') as {
+  OWNED_SERVER_PATHS: {
+    backendRoot: string;
+    checkoutRoot: string;
+    frontendRoot: string;
+  };
+};
 const testServerPortModule = require('../e2e/test-server-port.js') as {
   DEFAULT_TEST_SERVER_PORT: number;
   TEST_SERVER_PORT: number;
@@ -90,6 +123,47 @@ function fakeOwnedChild(): OwnedTestServerChild & EventEmitter {
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   return child;
+}
+
+const OWNER_TOKEN = 'a'.repeat(48);
+const FOREIGN_TOKEN = 'b'.repeat(48);
+const OWNER_CHECKOUT = '/synthetic/current-checkout';
+const FOREIGN_CHECKOUT = '/synthetic/other-worktree';
+
+interface SyntheticOwnerOverrides {
+  checkout?: string;
+  pid?: string;
+  token?: string;
+}
+
+async function listenOwnedListener(overrides: SyntheticOwnerOverrides = {}): Promise<{
+  ownership: ReportedTestServerOwner;
+  port: number;
+  server: http.Server;
+}> {
+  const ownership: ReportedTestServerOwner = {
+    checkout: overrides.checkout ?? OWNER_CHECKOUT,
+    listeningPort: 0,
+    pid: Number(overrides.pid ?? 424242),
+    token: overrides.token ?? OWNER_TOKEN,
+  };
+  const server = http.createServer((_request, response) => {
+    const pathname = new URL(_request.url ?? '/', 'http://127.0.0.1').pathname;
+    if (pathname !== '/api/health' && pathname !== '/__e2e__/server-owner') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(pathname === '/api/health' ? '"healthy"' : JSON.stringify(ownership));
+  });
+  const port = await listen(server);
+  ownership.listeningPort = port;
+  return { ownership, port, server };
+}
+
+function ownedListenMarker(port: number, ownership: ExpectedTestServerOwner): string {
+  return `Test server listening at http://127.0.0.1:${port} `
+    + `(owner ${ownership.token}, checkout ${ownership.checkout})\n`;
 }
 
 function healthStatus(port: number): Promise<number | undefined> {
@@ -248,32 +322,125 @@ describe('Playwright E2E bootstrap', () => {
   });
 
   it('requires the spawned child listen announcement before accepting health', async () => {
-    const server = http.createServer((_request, response) => {
-      response.writeHead(200);
-      response.end('discarded');
-    });
-    const port = await listen(server);
+    const { ownership, port, server } = await listenOwnedListener();
     const child = fakeOwnedChild();
     try {
-      child.stdout?.write(`Test server listening at http://localhost:${port}\n`);
-      await globalSetupModule.waitForOwnedServer(child, port, 1000);
+      child.stdout?.write(ownedListenMarker(port, {
+        checkout: OWNER_CHECKOUT,
+        token: OWNER_TOKEN,
+      }));
+      const ready = await globalSetupModule.waitForOwnedServer(
+        child,
+        port,
+        1000,
+        { checkout: OWNER_CHECKOUT, token: OWNER_TOKEN },
+      );
+      assert.equal(ready.port, port);
+      assert.deepEqual(ready.owner, ownership);
+    } finally {
+      await close(server);
+    }
+  });
+
+  it('rejects an identity listener with another run token', async () => {
+    const { port, server } = await listenOwnedListener({ token: FOREIGN_TOKEN });
+    const child = fakeOwnedChild();
+    try {
+      child.stdout?.write(ownedListenMarker(port, {
+        checkout: OWNER_CHECKOUT,
+        token: OWNER_TOKEN,
+      }));
+      await assert.rejects(
+        globalSetupModule.waitForOwnedServer(child, port, 100, {
+          checkout: OWNER_CHECKOUT,
+          token: OWNER_TOKEN,
+        }),
+        /different run token/,
+      );
+    } finally {
+      await close(server);
+    }
+  });
+
+  it('rejects an identity listener from another checkout', async () => {
+    const { port, server } = await listenOwnedListener({ checkout: FOREIGN_CHECKOUT });
+    const child = fakeOwnedChild();
+    try {
+      child.stdout?.write(ownedListenMarker(port, {
+        checkout: OWNER_CHECKOUT,
+        token: OWNER_TOKEN,
+      }));
+      await assert.rejects(
+        globalSetupModule.waitForOwnedServer(child, port, 100, {
+          checkout: OWNER_CHECKOUT,
+          token: OWNER_TOKEN,
+        }),
+        /another checkout/,
+      );
+    } finally {
+      await close(server);
+    }
+  });
+
+  it('rejects an identity endpoint whose reported port does not match its marker', async () => {
+    const { ownership, port, server } = await listenOwnedListener({
+      pid: '515253',
+    });
+    ownership.listeningPort += 1;
+    const child = fakeOwnedChild();
+    try {
+      child.stdout?.write(ownedListenMarker(port, {
+        checkout: OWNER_CHECKOUT,
+        token: OWNER_TOKEN,
+      }));
+      await assert.rejects(
+        globalSetupModule.waitForOwnedServer(child, port, 100, {
+          checkout: OWNER_CHECKOUT,
+          token: OWNER_TOKEN,
+        }),
+        /reported port .* announced/,
+      );
     } finally {
       await close(server);
     }
   });
 
   it('rejects an exited child instead of trusting a foreign listener', async () => {
-    const server = http.createServer((_request, response) => {
-      response.writeHead(200);
-      response.end('discarded');
-    });
-    const port = await listen(server);
     const child = fakeOwnedChild();
     child.exitCode = 1;
+    await assert.rejects(
+      globalSetupModule.waitForOwnedServer(child, 3210, 100, {
+        checkout: OWNER_CHECKOUT,
+        token: OWNER_TOKEN,
+      }),
+      /already exited \(code=1/,
+    );
+  });
+
+  it('requires cryptographic ownership proof before readiness can start', () => {
+    const child = fakeOwnedChild();
+    assert.throws(
+      () => globalSetupModule.waitForOwnedServer(child, 0, 100, {
+        checkout: OWNER_CHECKOUT,
+        token: 'not-a-generated-run-token',
+      }),
+      /48-character hexadecimal run token/,
+    );
+  });
+
+  it('diagnoses an occupied explicit port and identifies the current owner', async () => {
+    const { port, server } = await listenOwnedListener({
+      checkout: FOREIGN_CHECKOUT,
+      pid: '515253',
+    });
     try {
       await assert.rejects(
-        globalSetupModule.waitForOwnedServer(child, port, 100),
-        /already exited \(code=1/
+        globalSetupModule.assertExplicitPortAvailable(port),
+        (error: Error) => {
+          assert.match(error.message, /unavailable \(EADDRINUSE\)/);
+          assert.match(error.message, new RegExp(`${FOREIGN_CHECKOUT.replace(/\//g, '\\/')}, pid=515253`));
+          return true;
+        },
       );
     } finally {
       await close(server);
@@ -285,6 +452,53 @@ describe('Playwright E2E bootstrap', () => {
     child.exitCode = 0;
     globalThis.__testServerProcess = child as unknown as import('node:child_process').ChildProcess;
     await globalTeardown();
+  });
+
+  it('verifies an exited controller has not left its detached group behind', async () => {
+    const child = spawn('sleep', ['30'], { detached: true });
+    child.exitCode = 0;
+    globalThis.__testServerProcess = child;
+    try {
+      await globalTeardown();
+      await assert.rejects(
+        Promise.resolve().then(() => process.kill(-child.pid!, 0)),
+        (error: NodeJS.ErrnoException) => error.code === 'ESRCH',
+      );
+    } finally {
+      delete globalThis.__testServerProcess;
+    }
+  });
+
+  it('stops a detached test-server group before forgetting its owner', async () => {
+    const child = spawn('sleep', ['30'], { detached: true });
+    const pid = child.pid!;
+    processGroups.trackTestServerProcessGroup(child);
+    await processGroups.stopTestServerProcessGroup(pid, {
+      termTimeoutMs: 1_000,
+      killTimeoutMs: 1_000,
+    });
+  });
+
+  it('derives isolated-server roots from the helper location', () => {
+    const paths = ownedServerModule.OWNED_SERVER_PATHS;
+
+    assert.equal(paths.backendRoot, path.resolve(__dirname, '..'));
+    assert.equal(paths.checkoutRoot, path.resolve(__dirname, '..', '..'));
+    assert.equal(paths.frontendRoot, path.resolve(__dirname, '..', '..', 'frontend'));
+    assert.equal(fs.existsSync(path.join(paths.frontendRoot, 'index.html')), true);
+  });
+
+  it('routes every browser-suite backend server through the owned launcher', () => {
+    const e2eDirectory = path.resolve(__dirname, '..', 'e2e');
+    const forbidden = /resolveTestServerCommand|scripts[\\/]test-server\.ts/;
+    const offenders = fs.readdirSync(e2eDirectory)
+      .filter((name) => name.endsWith('.spec.js'))
+      .flatMap((name) => {
+        const source = fs.readFileSync(path.join(e2eDirectory, name), 'utf8');
+        return forbidden.test(source) ? [name] : [];
+      });
+
+    assert.deepEqual(offenders, []);
   });
 
   it('starts the real child healthy and dark when all six parent controls are absent', async () => {

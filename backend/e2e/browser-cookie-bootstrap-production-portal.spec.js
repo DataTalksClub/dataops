@@ -1,68 +1,39 @@
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('child_process');
-const http = require('http');
-const path = require('path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
-const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require('./helpers/isolated-capability-server');
 
-const PORT = 3018;
-const BASE_URL = `http://localhost:${PORT}`;
 const GRACE_ID = '00000000-0000-0000-0000-000000000001';
-let processHandle;
-
-function waitForServer() {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 30000;
-    (function poll() {
-      const req = http.get(`${BASE_URL}/api/health`, (res) => {
-        res.resume();
-        resolve();
-      });
-      req.on('error', () => Date.now() > deadline
-        ? reject(new Error('browser-cookie portal server timeout'))
-        : setTimeout(poll, 250));
-    })();
-  });
-}
+let server;
 
 test.describe('production portal browser-cookie bootstrap', () => {
   test.beforeAll(async () => {
-    processHandle = spawn(...resolveTestServerCommand(), {
-      cwd: path.resolve(__dirname, '..'),
-      env: {
-        ...process.env,
-        NODE_ENV: 'test',
-        IS_LOCAL: 'true',
+    server = await startOwnedTestServer({
+      environment: {
         SKIP_AUTH: 'false',
-        DATAOPS_DOCS_DOMAIN: '1',
         WORK_ENGINE_AUTH_MODE: 'portal',
-        DTC_OFFLINE: '1',
-        DTC_CACHE_ROOT: createDocsCacheRoot('issue-190-docs-cache/browser-cookie-bootstrap-production-portal'),
-        // The built artifact packages this same canonical source at
-        // dist/frontend; source-mode E2E points to it explicitly.
-        FRONTEND_ROOT: path.resolve(__dirname, '..', '..', 'frontend'),
         AUTH_BASE_URL: 'https://auth.example.test',
         AUTH_ISSUER: 'https://issuer.example.test/pool',
         AUTH_CLIENT_ID: 'dataops-client',
-        AUTH_CALLBACK_URL: `${BASE_URL}/auth/callback`,
-        AUTH_LOGOUT_URL: `${BASE_URL}/`,
+        // The final loopback port is discovered only after the child binds
+        // port zero, and these journeys never perform an OAuth round trip.
+        AUTH_CALLBACK_URL: 'http://127.0.0.1/auth/callback',
+        AUTH_LOGOUT_URL: 'http://127.0.0.1/',
+        DTC_CACHE_ROOT: createDocsCacheRoot('issue-190-docs-cache/browser-cookie-bootstrap-production-portal'),
         E2E_BROWSER_SESSION_USER_ID: GRACE_ID,
-        PORT: String(PORT),
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
     });
-    await waitForServer();
   });
 
-  test.afterAll(() => {
-    if (processHandle) {
-      try { process.kill(-processHandle.pid, 'SIGTERM'); } catch {}
-    }
+  test.afterAll(async () => {
+    await stopOwnedTestServer(server);
   });
 
   test('loads the workspace from an HttpOnly cookie via /api/me without a browser bearer', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: BASE_URL });
+    const context = await browser.newContext({ baseURL: server.baseURL });
     const page = await context.newPage();
     await page.route('**/docs', (route) => route.fulfill({
       status: 503,
@@ -78,7 +49,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
     expect(response.status()).toBe(200);
     expect(requestHeaders.authorization).toBeUndefined();
     expect(requestHeaders.cookie).toContain('dataops_session=');
-    await expect(page).toHaveURL(`${BASE_URL}/#/`);
+    await expect(page).toHaveURL(`${server.baseURL}/#/`);
     await expect(page.locator('#library-title')).toHaveText('Home');
     const quickActions = page.locator('.home-quick-actions[aria-label="Quick actions"]');
     const creationActions = quickActions.getByRole('button');
@@ -107,8 +78,9 @@ test.describe('production portal browser-cookie bootstrap', () => {
   });
 
   test('keeps signed-out production navigation on the backend/shared login path', async ({ browser }) => {
-    const context = await browser.newContext({ baseURL: BASE_URL });
+    const context = await browser.newContext({ baseURL: server.baseURL });
     const root = await context.request.get('/', { maxRedirects: 0 });
+    assertOwnedServerResponse(server, root, 'signed-out root');
     expect(root.status()).toBe(302);
     expect(root.headers().location).toBe('/login');
     expect(await root.text()).not.toContain('Sign in');

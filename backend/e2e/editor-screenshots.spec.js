@@ -11,12 +11,15 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const net = require('node:net');
 const path = require('node:path');
 const { createDocsCacheRoot, REPO_ROOT } = require('./helpers/docs-content-root');
-const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
+const {
+  assertOwnedServerResponse,
+  installServerExitDiagnostics,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require('./helpers/isolated-capability-server');
 const {
   CANONICAL_SHOT_WEBP,
   UPLOADED_SHOT_WEBP,
@@ -24,7 +27,6 @@ const {
   UPLOADED_SHOT_SIZE,
 } = require('./helpers/issue-205-media-fixtures');
 
-const BACKEND_ROOT = path.resolve(__dirname, '..');
 const SCREENSHOT_DIR = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-205');
 const DOCUMENT_PATH = '/processes/media.md';
 
@@ -46,111 +48,45 @@ const FIXTURE_DOCUMENT = [
   '',
 ].join('\n');
 
-const server = {
-  userId: '20500000-0000-4000-8000-000000000205',
-  role: 'admin',
-  cacheRoot() {
-    return createDocsCacheRoot('issue-205-editor-media', {
-      [`content${DOCUMENT_PATH}`]: FIXTURE_DOCUMENT,
-      'content/images/canonical-shot.webp': CANONICAL_SHOT_WEBP,
-      'content/images/processes/uploaded-shot.webp': UPLOADED_SHOT_WEBP,
-    });
-  },
-};
+const server = {};
+let ownedServer;
 
-async function reserveFreePort() {
-  const listener = await new Promise((resolve, reject) => {
-    const candidate = net.createServer();
-    candidate.once('error', reject);
-    candidate.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => resolve(candidate));
-  });
-  const port = listener.address().port;
-  await new Promise((resolve, reject) => {
-    listener.close((error) => (error ? reject(error) : resolve()));
-  });
-  return port;
-}
-
-async function startServer(port) {
-  server.port = port;
-  server.baseURL = `http://127.0.0.1:${port}`;
-  server.stderr = '';
-  server.process = spawn(...resolveTestServerCommand(), {
-    cwd: BACKEND_ROOT,
-    detached: true,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      NODE_ENV: 'test',
-      IS_LOCAL: 'true',
-      SKIP_AUTH: 'false',
-      WORK_ENGINE_AUTH_MODE: 'portal',
-      DATAOPS_DOCS_DOMAIN: '1',
-      DTC_OFFLINE: '1',
-      DTC_CACHE_ROOT: server.cacheRoot(),
-      FRONTEND_ROOT: path.join(REPO_ROOT, 'frontend'),
+async function startServer() {
+  ownedServer = await startOwnedTestServer({
+    environment: {
       AUTH_BASE_URL: 'https://auth.example.test',
       AUTH_ISSUER: 'https://issuer.example.test/synthetic-pool',
       AUTH_CLIENT_ID: 'synthetic-client',
-      AUTH_CALLBACK_URL: `${server.baseURL}/auth/callback`,
-      AUTH_LOGOUT_URL: `${server.baseURL}/`,
-      E2E_BROWSER_SESSION_USER_ID: server.userId,
-      E2E_BROWSER_SESSION_USER_ROLE: server.role,
-      GITHUB_TOKEN: '',
-      GITHUB_TOKEN_SECRET_NAME: '',
-      AWS_EC2_METADATA_DISABLED: 'true',
-      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-      CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-      CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-      CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
-      CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
-      CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
+      AUTH_CALLBACK_URL: 'http://127.0.0.1/auth/callback',
+      AUTH_LOGOUT_URL: 'http://127.0.0.1/',
+      DTC_CACHE_ROOT: createDocsCacheRoot('issue-205-editor-media', {
+        [`content${DOCUMENT_PATH}`]: FIXTURE_DOCUMENT,
+        'content/images/canonical-shot.webp': CANONICAL_SHOT_WEBP,
+        'content/images/processes/uploaded-shot.webp': UPLOADED_SHOT_WEBP,
+      }),
+      E2E_BROWSER_SESSION_USER_ID: '20500000-0000-4000-8000-000000000205',
+      E2E_BROWSER_SESSION_USER_ROLE: 'admin',
+      SKIP_AUTH: 'false',
+      WORK_ENGINE_AUTH_MODE: 'portal',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
   });
-  server.process.stderr.on('data', (data) => {
-    server.stderr += data.toString();
-  });
-
-  const deadline = Date.now() + 60_000;
-  while (true) {
-    try {
-      const response = await fetch(`${server.baseURL}/api/health`);
-      if (response.ok) return;
-    } catch {}
-    if (Date.now() >= deadline) {
-      throw new Error(`issue #205 server did not start\n${server.stderr}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
+  Object.assign(server, ownedServer);
 }
 
 async function stopServer() {
-  if (!server.process) return;
-  const child = server.process;
-  const exited = new Promise((resolve) => child.once('exit', resolve));
-  try { process.kill(-child.pid, 'SIGTERM'); } catch {}
-  const stopped = await Promise.race([
-    exited.then(() => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
-  ]);
-  if (!stopped) {
-    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
-    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 1_000))]);
-  }
-  server.process = null;
+  await stopOwnedTestServer(ownedServer);
 }
 
 test.describe('issue 205 editor screenshots', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000);
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-    await startServer(await reserveFreePort());
+    await startServer();
   });
 
   test.afterAll(stopServer);
 
-  test('renders relative and uploaded screenshots through canonical content routes', async ({ browser }) => {
+  test('renders relative and uploaded screenshots through canonical content routes', async ({ browser }, testInfo) => {
     const context = await browser.newContext({
       baseURL: server.baseURL,
       // Tall enough that both fixtures and the sticky editor footer fit in one
@@ -160,8 +96,10 @@ test.describe('issue 205 editor screenshots', () => {
     });
     const session = await context.request.get('/__e2e__/browser-session');
     expect(session.status()).toBe(200);
+    assertOwnedServerResponse(ownedServer, session, 'editor media browser session');
 
     const page = await context.newPage();
+    installServerExitDiagnostics(context, ownedServer, testInfo);
     const failures = [];
     page.on('pageerror', (error) => failures.push(`pageerror: ${error.message}`));
     page.on('console', (message) => {

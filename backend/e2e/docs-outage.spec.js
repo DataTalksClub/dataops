@@ -14,16 +14,17 @@
  * must have been observed so the spec cannot pass against a healthy server.
  */
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const net = require('node:net');
 const path = require('node:path');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const { createDocsCacheRoot, missingDocsCacheRoot } = require('./helpers/docs-content-root');
-const { resolveTestServerCommand } = require('./helpers/tsx-launcher');
+const {
+  assertOwnedServerResponse,
+  startOwnedTestServer,
+  stopOwnedTestServer,
+} = require('./helpers/isolated-capability-server');
 
-const BACKEND_ROOT = path.resolve(__dirname, '..');
-const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SCREENSHOT_DIR = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-192');
 const OUTAGE_MESSAGE_PREFIX = 'Docs content root is unavailable:';
 // `buildOperationsReferenceLinks` indexes this exact repository path, so the
@@ -66,102 +67,26 @@ const servers = {
   },
 };
 
-/**
- * Reserve `count` distinct free ports.
- *
- * Every listener stays open until all ports are chosen, so two servers in the
- * same run cannot be handed the same port.
- */
-async function reserveFreePorts(count) {
-  const listeners = [];
-  for (let index = 0; index < count; index += 1) {
-    listeners.push(await new Promise((resolve, reject) => {
-      const listener = net.createServer();
-      listener.once('error', reject);
-      listener.listen({ host: '127.0.0.1', port: 0, exclusive: true }, () => resolve(listener));
-    }));
-  }
-  const ports = listeners.map((listener) => listener.address().port);
-  await Promise.all(listeners.map((listener) => new Promise((resolve, reject) => {
-    listener.close((error) => (error ? reject(error) : resolve()));
-  })));
-  return ports;
-}
-
-function waitForServer(server) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + 60_000;
-    const poll = async () => {
-      try {
-        const response = await fetch(`${server.baseURL}/api/health`);
-        if (response.ok) return resolve();
-      } catch {}
-      if (Date.now() >= deadline) {
-        return reject(new Error(`docs-outage server did not start\n${server.stderr}`));
-      }
-      setTimeout(poll, 200);
-    };
-    poll();
-  });
-}
-
-async function startServer(server, port) {
-  server.port = port;
-  server.baseURL = `http://127.0.0.1:${port}`;
-  server.stderr = '';
-  server.process = spawn(...resolveTestServerCommand(), {
-    cwd: BACKEND_ROOT,
-    detached: true,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      NODE_ENV: 'test',
-      IS_LOCAL: 'true',
-      SKIP_AUTH: 'false',
-      WORK_ENGINE_AUTH_MODE: 'portal',
-      DATAOPS_DOCS_DOMAIN: '1',
-      DTC_OFFLINE: '1',
-      DTC_CACHE_ROOT: server.cacheRoot(),
-      FRONTEND_ROOT: path.join(REPO_ROOT, 'frontend'),
+async function startServer(server) {
+  const ownedServer = await startOwnedTestServer({
+    target: server,
+    environment: {
       AUTH_BASE_URL: 'https://auth.example.test',
       AUTH_ISSUER: 'https://issuer.example.test/synthetic-pool',
       AUTH_CLIENT_ID: 'synthetic-client',
-      AUTH_CALLBACK_URL: `${server.baseURL}/auth/callback`,
-      AUTH_LOGOUT_URL: `${server.baseURL}/`,
+      AUTH_CALLBACK_URL: 'http://127.0.0.1/auth/callback',
+      AUTH_LOGOUT_URL: 'http://127.0.0.1/',
+      DTC_CACHE_ROOT: server.cacheRoot(),
       E2E_BROWSER_SESSION_USER_ID: server.userId,
       E2E_BROWSER_SESSION_USER_ROLE: server.role,
-      GITHUB_TOKEN: '',
-      GITHUB_TOKEN_SECRET_NAME: '',
-      AWS_EC2_METADATA_DISABLED: 'true',
-      CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: 'false',
-      CONVERSATIONAL_EXECUTION_ENABLED: 'false',
-      CONVERSATIONAL_ENABLED_PLUGINS: 'none',
-      CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED: 'false',
-      CONVERSATIONAL_TELEGRAM_VOICE_ENABLED: 'false',
-      CONVERSATIONAL_TELEGRAM_PHOTO_ENABLED: 'false',
+      SKIP_AUTH: 'false',
+      WORK_ENGINE_AUTH_MODE: 'portal',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
   });
-  server.process.stderr.on('data', (data) => {
-    server.stderr += data.toString();
-  });
-  await waitForServer(server);
 }
 
 async function stopServer(server) {
-  if (!server.process) return;
-  const child = server.process;
-  const exited = new Promise((resolve) => child.once('exit', resolve));
-  try { process.kill(-child.pid, 'SIGTERM'); } catch {}
-  const stopped = await Promise.race([
-    exited.then(() => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
-  ]);
-  if (!stopped) {
-    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
-    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 1_000))]);
-  }
-  server.process = null;
+  await stopOwnedTestServer(server);
 }
 
 /** The docs endpoints that go down together when the content root is missing. */
@@ -261,6 +186,7 @@ async function portalContext(browser, server, options = {}) {
   const context = await browser.newContext({ baseURL: server.baseURL, ...options });
   const response = await context.request.get('/__e2e__/browser-session');
   expect(response.status()).toBe(200);
+  assertOwnedServerResponse(server, response, 'docs-outage browser session');
   return context;
 }
 
@@ -269,8 +195,7 @@ test.describe('issue 192 docs outage versus empty corpus', () => {
     test.setTimeout(180_000);
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
     const entries = Object.values(servers);
-    const ports = await reserveFreePorts(entries.length);
-    await Promise.all(entries.map((server, index) => startServer(server, ports[index])));
+    await Promise.all(entries.map((server) => startServer(server)));
   });
 
   test.afterAll(async () => {
