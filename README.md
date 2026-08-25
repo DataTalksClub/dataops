@@ -194,7 +194,7 @@ lockfile; there is no nested `backend/package-lock.json`.
   (`Cmd/Ctrl+P`), sidebar tree filter, "Recently edited" + "Pinned" sections.
 - Diff view between draft and saved version. Lint dashboard for the whole
   corpus in the publish dialog. Loom + YouTube + Vimeo embeds. Lightbox for screenshots.
-- Dark mode, resizable sidebar, mobile layout.
+- Dark mode, collapsible sidebar, mobile layout.
 
 ## Keyboard shortcuts
 

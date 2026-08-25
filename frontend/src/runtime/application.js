@@ -88,7 +88,7 @@ const {
 
 const dom = queryAppDom(document);
 const {
-  body, sidebar, sidebarScrim, sidebarResize, mobileMenuButton,
+  body, sidebar, sidebarScrim, mobileMenuButton,
   sidebarCloseButton, sidebarCollapseButton, themeToggleButton,
   sidebarExpandButton, changesSection, changesToggle, changesCount,
   changesList, changesSaveAll, changesDiscardAll, lintOpenButton,
@@ -226,8 +226,8 @@ const {
   },
   notifications: notificationsShell,
   preferences: {
-    attachSidebarResize, closeSidebar, isMobileShell, openSidebar,
-    restoreDarkMode, restoreSidebarCollapsed, restoreSidebarWidth,
+    closeSidebar, isMobileShell, openSidebar,
+    restoreDarkMode, restoreSidebarCollapsed,
     setDarkMode, setSidebarCollapsed, syncSidebarShellState,
     syncThemeToggleLabel,
   },
@@ -960,7 +960,6 @@ bindApplicationEvents({
 
 
 initializeAppShell({
-  attachSidebarResize,
   enhanceSelect,
   filterSelects: [
     domainFilter,
@@ -976,7 +975,6 @@ initializeAppShell({
   refreshOperationsWorkSnapshot,
   restoreDarkMode,
   restoreSidebarCollapsed,
-  restoreSidebarWidth,
   showLibrary,
   syncSidebarShellState,
   updateSaveState,

@@ -112,6 +112,14 @@ describe("shell ownership contract", () => {
       ["setPageTitle writer", /\bsetPageTitle\b/],
       ["runtime editor chrome relocation", /\bcreateEditorChrome\b/],
       ["page-title coupled title resize", /\bgetResizeDocumentTitle\b/],
+      ["Workspace navigation caption", /<div class="section-label">\s*Workspace\s*<\/div>/],
+      ["#sidebar-resize element or selector", /(?<![\w-])#sidebar-resize\b/],
+      ["resizing state class", /(?<![\w-])is-resizing-sidebar\b/],
+      ["custom sidebar width storage", /dtc-sidebar-width/],
+      ["sidebarResize binding", /\bsidebarResize\b/],
+      ["attachSidebarResize writer", /\battachSidebarResize\b/],
+      ["custom sidebar width writer", /\bsetSidebarWidth\b/],
+      ["custom sidebar width restorer", /\brestoreSidebarWidth\b/],
     ];
 
     const ghosts = [];

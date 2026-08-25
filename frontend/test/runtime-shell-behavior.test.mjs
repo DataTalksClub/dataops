@@ -201,7 +201,6 @@ function createPreferenceHarness(options = {}) {
   const sidebarButton = element("sidebar-action", "button");
   sidebarButton.offsetParent = sidebar;
   sidebar.append(sidebarButton);
-  const sidebarResize = element("sidebar-resize", "button");
   const sidebarScrim = element("sidebar-scrim");
   const mobileMenuButton = element("mobile-menu-button", "button");
   const mobileNewButton = element("mobile-new-button", "button");
@@ -215,7 +214,6 @@ function createPreferenceHarness(options = {}) {
   const document = new TestDocument(
     body,
     sidebar,
-    sidebarResize,
     sidebarScrim,
     mobileMenuButton,
     mobileNewButton,
@@ -227,10 +225,6 @@ function createPreferenceHarness(options = {}) {
   attachDocument(document, ...document.roots);
   const media = { matches: Boolean(options.mobile) };
   const store = storage(options.storage);
-  let sidebarWidth = options.sidebarWidth || 268;
-  sidebar.getBoundingClientRect = () => ({ width: sidebarWidth });
-  sidebarResize.setPointerCapture = () => {};
-  sidebarResize.releasePointerCapture = () => {};
   const shell = createPreferencesShell({
     body,
     documentRef: document,
@@ -242,7 +236,6 @@ function createPreferenceHarness(options = {}) {
     pageShell,
     sidebar,
     sidebarExpandButton,
-    sidebarResize,
     sidebarScrim,
     storage: store,
     themeToggleButton,
@@ -255,14 +248,10 @@ function createPreferenceHarness(options = {}) {
     mobileMenuButton,
     mobileNewButton,
     pageShell,
-    setSidebarWidth: (value) => {
-      sidebarWidth = value;
-    },
     shell,
     sidebar,
     sidebarButton,
     sidebarExpandButton,
-    sidebarResize,
     sidebarScrim,
     store,
     themeLabel,
@@ -596,7 +585,6 @@ describe("runtime and shell production behavior", () => {
     });
     const windowRef = {};
     const result = initializeAppShell({
-      attachSidebarResize: () => calls.push("resize"),
       enhanceSelect: (select) => calls.push(`enhance:${select}`),
       filterSelects: ["domain", "type"],
       loadDocuments: () => {
@@ -617,20 +605,17 @@ describe("runtime and shell production behavior", () => {
       },
       restoreDarkMode: () => calls.push("theme"),
       restoreSidebarCollapsed: () => calls.push("collapsed"),
-      restoreSidebarWidth: () => calls.push("width"),
       showLibrary: (options) => calls.push(`library:${options.updateUrl}`),
       syncSidebarShellState: () => calls.push("sidebar-state"),
       updateSaveState: () => calls.push("save-state"),
       windowRef,
     });
     assert.equal(result.documentsReady, documentsReady);
-    assert.deepEqual(calls.slice(0, 8), [
+    assert.deepEqual(calls.slice(0, 6), [
       "enhance:domain",
       "enhance:type",
       "theme",
       "collapsed",
-      "width",
-      "resize",
       "sidebar-state",
       "library:false",
     ]);
@@ -640,12 +625,10 @@ describe("runtime and shell production behavior", () => {
     resolveDocuments();
   });
 
-  test("persists theme, collapse, and bounded sidebar width", async () => {
+  test("persists theme and sidebar visibility without custom width state", async () => {
     const harness = createPreferenceHarness({
-      sidebarWidth: 320,
       storage: {
         "dtc-sidebar-collapsed": "1",
-        "dtc-sidebar-width": "420",
         "dtc-theme": "dark",
       },
     });
@@ -662,35 +645,7 @@ describe("runtime and shell production behavior", () => {
     assert.equal(harness.sidebarExpandButton.hidden, false);
     shell.setSidebarCollapsed(false);
     assert.equal(harness.store.values.get("dtc-sidebar-collapsed"), "0");
-
-    shell.restoreSidebarWidth();
-    assert.equal(
-      harness.document.documentElement.style.getPropertyValue("--sidebar-width"),
-      "420px",
-    );
-    harness.store.setItem("dtc-sidebar-width", "900");
-    shell.restoreSidebarWidth();
-    assert.equal(
-      harness.document.documentElement.style.getPropertyValue("--sidebar-width"),
-      "420px",
-    );
-
-    shell.attachSidebarResize();
-    await harness.sidebarResize.dispatch("pointerdown", {
-      clientX: 100,
-      pointerId: 1,
-    });
-    await harness.sidebarResize.dispatch("pointermove", {
-      clientX: 450,
-      pointerId: 1,
-    });
-    assert.equal(
-      harness.document.documentElement.style.getPropertyValue("--sidebar-width"),
-      "560px",
-    );
-    harness.setSidebarWidth(560);
-    await harness.sidebarResize.dispatch("pointerup", { pointerId: 1 });
-    assert.equal(harness.store.values.get("dtc-sidebar-width"), "560");
+    assert.equal(harness.store.values.has("dtc-sidebar-width"), false);
   });
 
   test("opens the mobile sidebar as a modal, traps focus, and restores its opener", async () => {

@@ -224,14 +224,15 @@ describe("app shell coordinator characterization", () => {
     assert.match(shellMarkup, /id="account-work-scope-list"[^>]+role="radiogroup"/);
   });
 
-  test("persists and restores theme, sidebar visibility, and bounded sidebar width", () => {
+  test("persists theme and sidebar visibility while deleting custom resize state", () => {
     assert.match(functionSource("setDarkMode", preferencesSource), /storage\.setItem\("dtc-theme", on \? "dark" : "light"\)/);
     assert.match(functionSource("restoreDarkMode", preferencesSource), /storage\.getItem\("dtc-theme"\)/);
     assert.match(functionSource("setSidebarCollapsed", preferencesSource), /storage\.setItem\("dtc-sidebar-collapsed", collapsed \? "1" : "0"\)/);
     assert.match(functionSource("restoreSidebarCollapsed", preferencesSource), /storage\.getItem\("dtc-sidebar-collapsed"\) === "1"/);
-    assert.match(functionSource("restoreSidebarWidth", preferencesSource), /width >= 180 && width <= 600/);
-    assert.match(functionSource("attachSidebarResize", preferencesSource), /Math\.max\([\s\S]*200,[\s\S]*Math\.min\(560,/);
-    assert.match(functionSource("attachSidebarResize", preferencesSource), /storage\.setItem\("dtc-sidebar-width", String\(width\)\)/);
+    assert.doesNotMatch(preferencesSource, /\b(?:attachSidebarResize|restoreSidebarWidth|setSidebarWidth)\b/);
+    assert.doesNotMatch(preferencesSource, /dtc-sidebar-width/);
+    assert.doesNotMatch(shellMarkup, /id="sidebar-resize"/);
+    assert.doesNotMatch(shellMarkup, /<div class="section-label">\s*Workspace\s*<\/div>/);
     assert.match(shellMarkup, /id="theme-toggle-button"[^>]+aria-pressed="false"/);
     assert.match(shellMarkup, /id="sidebar-collapse-button"/);
   });
@@ -342,8 +343,6 @@ describe("app shell coordinator characterization", () => {
     assertInOrder(initializeAppShell, [
       "restoreDarkMode();",
       "restoreSidebarCollapsed();",
-      "restoreSidebarWidth();",
-      "attachSidebarResize();",
       "syncSidebarShellState();",
       "showLibrary({ updateUrl: false });",
       "refreshChangesPanel();",
@@ -373,6 +372,8 @@ describe("app shell coordinator characterization", () => {
 
   test("keeps isolated browser pointers for shell interaction and invalid-route recovery", () => {
     assert.match(browserCharacterization, /shell, Home, and account scope retain their primary DOM and interactions/);
+    assert.match(browserCharacterization, /keeps fixed-width sidebar and accessible drawer flows/);
+    assert.match(browserCharacterization, /locator\("#sidebar-resize"\)\)\.toHaveCount\(0\)/);
     assert.match(browserCharacterization, /locator\("#settings-button"\)\.click\(\)/);
     assert.match(browserCharacterization, /locator\("#sidebar-collapse-button"\)\.click\(\)/);
     assert.match(browserCharacterization, /invalid hashes recover to Home and unknown programmatic navigation is a no-op/);
