@@ -240,15 +240,43 @@ export function toIsoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-const BERLIN_TODAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Europe/Berlin",
+const BERLIN_TIME_ZONE = "Europe/Berlin";
+
+const BERLIN_DATE_PARTS_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: BERLIN_TIME_ZONE,
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
 });
 
-export function todayIsoDate() {
-  return BERLIN_TODAY_FORMATTER.format(new Date());
+const ISO_INSTANT_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T[^\s]+(?:Z|[+-]\d{2}:?\d{2})$/u;
+
+export function berlinIsoDate(instant) {
+  let date;
+  if (instant instanceof Date) {
+    date = instant;
+  } else if (
+    typeof instant === "number"
+    || (typeof instant === "string" && ISO_INSTANT_PATTERN.test(instant))
+  ) {
+    date = new Date(instant);
+  } else {
+    return "";
+  }
+
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = Object.fromEntries(
+    BERLIN_DATE_PARTS_FORMATTER.formatToParts(date).map(
+      ({ type, value }) => [type, value],
+    ),
+  );
+  const isoDate = `${parts.year}-${parts.month}-${parts.day}`;
+  return /^\d{4}-\d{2}-\d{2}$/u.test(isoDate) ? isoDate : "";
+}
+
+export function todayIsoDate(instant = new Date()) {
+  return berlinIsoDate(instant);
 }
 
 export function addDaysIso(isoDate, days) {
