@@ -83,6 +83,12 @@ const RESTORE_SMOKE_CHECKS = [
   'Export target data and compare counts',
 ];
 
+function normalizeRestoreTarget(targetEnvironment: string): string {
+  return targetEnvironment.trim().replace(/[A-Z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) + 32),
+  );
+}
+
 function sha256Bytes(content: Buffer): string {
   return `sha256:${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
@@ -293,7 +299,8 @@ async function writePortableExportArchive(
 }
 
 async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<RestoreEvidenceResult> {
-  if (!options.targetEnvironment || options.targetEnvironment === 'production' || options.targetEnvironment === 'prod') {
+  const normalizedTarget = normalizeRestoreTarget(options.targetEnvironment);
+  if (!normalizedTarget || normalizedTarget === 'production' || normalizedTarget === 'prod') {
     throw new Error('Restore evidence targetEnvironment must be a non-production environment');
   }
   if (!/^sha256:[a-f0-9]{64}$/.test(options.expectedArchiveChecksum)) {

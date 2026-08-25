@@ -67,7 +67,7 @@ describe('offsite portable export archives', () => {
       archiveUri: result.archiveUri,
       expectedArchiveChecksum: result.archiveChecksum,
       outputDir: path.join(tmpDir, 'evidence'),
-      targetEnvironment: 'restore-drill',
+      targetEnvironment: 'Restore Drill',
       appGitSha: 'test-sha',
       timestamp: '2026-06-27T10:00:00.000Z',
       smokeChecksPassed: true,
@@ -83,7 +83,7 @@ describe('offsite portable export archives', () => {
     assert.strictEqual(evidence.report.dry_run_import.wouldWrite.tasks, 1);
     assert.deepStrictEqual(evidence.report.skipped_record_counts, {});
     assert.strictEqual(evidence.report.invalid_record_count, 0);
-    assert.strictEqual(evidence.report.target_environment, 'restore-drill');
+    assert.strictEqual(evidence.report.target_environment, 'Restore Drill');
     assert.ok(evidence.report.smoke_check_checklist.every((item) => item.result === 'passed'));
     assert.match(evidence.report.production_write_gate, /human-approved/);
     await fs.access(evidence.evidencePath);
@@ -142,16 +142,41 @@ describe('offsite portable export archives', () => {
     assert.doesNotMatch(key, /@|token|secret|credential/i);
   });
 
-  it('refuses to generate restore evidence for production targets', async () => {
-    await assert.rejects(
-      () => writeRestoreEvidence({
-        archiveUri: 'file:///does/not/matter.tar.gz',
-        expectedArchiveChecksum: `sha256:${'0'.repeat(64)}`,
-        outputDir: path.join(tmpDir, 'evidence'),
-        targetEnvironment: 'production',
-      }),
-      /non-production/
-    );
+  it('rejects production target aliases before any restore side effect', async () => {
+    const targets = [
+      '',
+      '   ',
+      'Production',
+      'PRODUCTION',
+      'Prod',
+      'prod',
+      '  production  ',
+      '\tPROD\n',
+    ];
+    let s3Calls = 0;
+    const guardedS3 = {
+      send: async () => {
+        s3Calls += 1;
+        return {};
+      },
+    };
+
+    for (const [index, targetEnvironment] of targets.entries()) {
+      const outputDir = path.join(tmpDir, `guarded-${index}`);
+      await assert.rejects(
+        () => writeRestoreEvidence({
+          archiveUri: 's3://guarded-bucket/archive.tar.gz',
+          expectedArchiveChecksum: `sha256:${'0'.repeat(64)}`,
+          outputDir,
+          targetEnvironment,
+          s3Client: guardedS3,
+        }),
+        /non-production/,
+      );
+      await assert.rejects(() => fs.access(outputDir), /ENOENT/);
+    }
+
+    assert.strictEqual(s3Calls, 0);
   });
 
   it('rejects an archive checksum mismatch before creating restore evidence', async () => {
