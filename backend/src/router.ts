@@ -29,6 +29,15 @@ import { handleConversationalExecutionRoutes } from './routes/conversationalExec
 import { handleConversationalIdentityBindingRoutes } from './routes/conversationalIdentityBindings';
 import { handleConversationalReadiness } from './routes/conversationalReadiness';
 import { handleAuthRoutes, extractToken } from './routes/auth';
+import { handleTeamMemberRoutes } from './routes/teamMembers';
+import { resolveInteractiveActor, workAdminForbidden } from './identity/actor';
+import { TeamDirectory } from './identity/directory';
+import { identityProjection, projectTask, projectTasks } from './identity/projections';
+import {
+  matchesOwnerFilter,
+  ownerFilterUserId,
+  parseOwnerFilter,
+} from './identity/ownerFilter';
 import { getSession } from './db/sessions';
 import { getUser } from './db/users';
 import {
@@ -41,6 +50,7 @@ import {
   listTasksByDateRange,
   listTasksByCard,
   listTasksByStatus,
+  listTasksByOwner,
   TaskVersionConflictError,
   CardLifecycleConflictError,
 } from './db/tasks';
@@ -686,12 +696,16 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     const testTemplateActorId = skipAuth ? process.env.E2E_TEMPLATE_ACTOR_ID || '' : '';
     if (skipAuth && reqPath === '/api/me' && (headerValue(event.headers, 'x-user-id') || testTemplateActorId)) {
       const user = await getUser(client, headerValue(event.headers, 'x-user-id') || testTemplateActorId);
-      return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
+      return user && !user.disabled
+        ? jsonResponse(200, { user: identityProjection(user) })
+        : jsonResponse(401, { error: 'Unauthorized' });
     }
     if (portalMode && reqPath === '/api/me') {
       if (verifiedInteractiveUserId) {
         const user = await getUser(client, verifiedInteractiveUserId);
-        return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
+        return user && !user.disabled
+          ? jsonResponse(200, { user: identityProjection(user) })
+          : jsonResponse(401, { error: 'Unauthorized' });
       }
       // Preserve the existing non-browser bearer-session contract, and accept
       // the API tokens CLI clients hold: `whoami` runs through this route.
@@ -702,7 +716,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (bearerUserId) {
         if (bearerApiToken) await touchApiToken(client, bearerApiToken);
         const user = await getUser(client, bearerUserId);
-        return user && !user.disabled ? jsonResponse(200, { user }) : jsonResponse(401, { error: 'Unauthorized' });
+        return user && !user.disabled
+          ? jsonResponse(200, { user: identityProjection(user) })
+          : jsonResponse(401, { error: 'Unauthorized' });
       }
       return jsonResponse(401, { error: 'Unauthorized' });
     }
@@ -746,6 +762,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return jsonResponse(200, { status: 'ok' });
     }
 
+    // ── Safe team directory ───────────────────────────────────────
+    // The work projection of the workspace. `/api/users` stays the
+    // account-management surface and is not used by routine work views.
+    if (reqPath.startsWith('/api/team-members')) {
+      const result = await handleTeamMemberRoutes(reqPath, method, event);
+      if (result) return result;
+    }
+
     // ── Task routes ────────────────────────────────────────────────
     if (reqPath.startsWith('/api/bookkeeping')) {
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
@@ -782,6 +806,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // POST /api/tasks — Create a task
     if (method === 'POST' && reqPath === '/api/tasks') {
+      const createActor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!createActor.ok) return createActor.response;
+      const actor = createActor.actor;
       const body = parseBody(event);
       if (!body) {
         return jsonResponse(400, { error: 'Request body is required' });
@@ -820,8 +847,27 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (body.assistantJobRefs !== undefined) taskData.assistantJobRefs = body.assistantJobRefs;
       if (body.auditEventRefs !== undefined) taskData.auditEventRefs = body.auditEventRefs;
       taskData.source = (body.source as string) || 'manual';
-      const createActorId = headerValue(event.headers, 'x-user-id');
-      if (createActorId) taskData.createdBy = createActorId;
+      if (actor.id) taskData.createdBy = actor.id;
+
+      // Assignment is administration, not execution. An operator creates work
+      // for themselves; only an admin may create work assigned to a peer, and
+      // only to an active member.
+      if (!actor.testBypass) {
+        if (taskData.assigneeId !== undefined && taskData.assigneeId !== null && !isNonEmptyString(taskData.assigneeId)) {
+          return jsonResponse(400, { error: 'assigneeId must be a non-empty string' });
+        }
+        const requestedAssigneeId = isNonEmptyString(taskData.assigneeId) ? taskData.assigneeId.trim() : null;
+        if (requestedAssigneeId && requestedAssigneeId !== actor.id) {
+          if (!actor.isAdmin) {
+            return workAdminForbidden('Assigning a Task to another teammate requires an admin');
+          }
+          const target = await new TeamDirectory(client).project(requestedAssigneeId);
+          if (!target.active) {
+            return jsonResponse(400, { error: 'assigneeId must reference an active team member' });
+          }
+        }
+        taskData.assigneeId = requestedAssigneeId || actor.id;
+      }
       if (body.status !== undefined) {
         if (!isTaskStatus(body.status)) {
           return jsonResponse(400, { error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'" });
@@ -870,24 +916,49 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       }
 
       const task = await createTask(client, taskData);
-      return jsonResponse(201, task);
+      return jsonResponse(201, await projectTask(new TeamDirectory(client), task));
     }
 
     // GET /api/tasks — List tasks with filters
     if (method === 'GET' && reqPath === '/api/tasks') {
+      const listActor = await resolveInteractiveActor(client, event, 'work-read');
+      if (!listActor.ok) return listActor.response;
+
       const params = event.queryStringParameters || {};
       const { date, startDate, endDate, cardId, status } = params;
 
-      if (!date && !startDate && !endDate && !cardId && !status) {
+      // `owner` composes with one existing filter instead of competing with
+      // it, so the existing priority can never silently discard it.
+      const ownerParse = parseOwnerFilter(params.owner, listActor.actor);
+      if (!ownerParse.ok) return jsonResponse(400, { error: ownerParse.error });
+      const ownerFilter = ownerParse.filter;
+
+      if (!date && !startDate && !endDate && !cardId && !status && !ownerFilter) {
         return jsonResponse(400, {
-          error: 'At least one filter is required: date, startDate+endDate, cardId, or status',
+          error: 'At least one filter is required: owner, date, startDate+endDate, cardId, or status',
         });
       }
 
-      // Priority: date > startDate+endDate > cardId > status
+      const directory = new TeamDirectory(client);
+      await directory.loadAll();
+      const activeMemberIds = await directory.activeMemberIds();
+
+      async function ownerListResponse(tasks: Task[]): Promise<LambdaResponse> {
+        const visible = ownerFilter
+          ? tasks.filter((task) => matchesOwnerFilter(task.assigneeId, ownerFilter, activeMemberIds))
+          : tasks;
+        const responseBody: Record<string, unknown> = { tasks: await projectTasks(directory, visible) };
+        const ownerReference = ownerFilterUserId(ownerFilter);
+        // A concrete reference always answers with its honest availability,
+        // including for a disabled or missing teammate, so a deep link never
+        // degrades into a different scope.
+        if (ownerReference) responseBody.owner = await directory.project(ownerReference);
+        return jsonResponse(200, responseBody);
+      }
+
+      // Priority: date > startDate+endDate > cardId > status > owner
       if (date) {
-        const tasks = await listTasksByDate(client, date);
-        return jsonResponse(200, { tasks });
+        return await ownerListResponse(await listTasksByDate(client, date));
       }
 
       if (startDate || endDate) {
@@ -896,13 +967,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             error: 'Both startDate and endDate are required for range queries',
           });
         }
-        const tasks = await listTasksByDateRange(client, startDate, endDate);
-        return jsonResponse(200, { tasks });
+        return await ownerListResponse(await listTasksByDateRange(client, startDate, endDate));
       }
 
       if (cardId) {
-        const tasks = await listTasksByCard(client, cardId);
-        return jsonResponse(200, { tasks });
+        return await ownerListResponse(await listTasksByCard(client, cardId));
       }
 
       if (status) {
@@ -911,8 +980,19 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             error: "Invalid status. Must be 'todo', 'waiting', 'done', or 'archived'",
           });
         }
-        const tasks = await listTasksByStatus(client, status);
-        return jsonResponse(200, { tasks });
+        return await ownerListResponse(await listTasksByStatus(client, status));
+      }
+
+      if (ownerFilter) {
+        const owned = await listTasksByOwner(
+          client,
+          ownerFilter.kind === 'unassigned'
+            ? { kind: 'unassigned' }
+            : ownerFilter.kind === 'team'
+              ? { kind: 'any' }
+              : { kind: 'user', userId: ownerFilter.userId },
+        );
+        return await ownerListResponse(owned);
       }
     }
 
@@ -922,6 +1002,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!taskAction) {
         return jsonResponse(404, { error: 'Not found' });
       }
+
+      // Ordinary Task execution: allowed on an own, teammate, or unassigned
+      // Task. The assignee is not changed and history records the verified
+      // actor who did the work, never the assignee or a client-supplied id.
+      const actionActor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!actionActor.ok) return actionActor.response;
 
       const body = parseBody(event);
       if (!body) {
@@ -944,7 +1030,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         });
       }
 
-      const actorId = headerValue(event.headers, 'x-user-id') || undefined;
+      const actorId = actionActor.actor.id || undefined;
       const now = new Date().toISOString();
 
       if (taskAction.action === 'mark-waiting') {
@@ -985,7 +1071,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           actorId,
           triggerKind: 'task-marked-waiting',
         });
-        return jsonResponse(200, updated);
+        return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
       }
 
       if (taskAction.action === 'follow-up-sent') {
@@ -1023,7 +1109,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           actorId,
           triggerKind: 'task-follow-up-sent',
         });
-        return jsonResponse(200, updated);
+        return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
       }
 
       if (taskAction.action === 'response-received' || taskAction.action === 'unblocked') {
@@ -1056,7 +1142,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           actorId,
           triggerKind: `task-${action}`,
         });
-        return jsonResponse(200, updated);
+        return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
       }
 
       if (taskAction.action === 'resolve-done') {
@@ -1125,7 +1211,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           actorId,
           triggerKind: 'task-wait-resolved-done',
         });
-        return jsonResponse(200, updated);
+        return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
       }
 
       return jsonResponse(404, { error: 'Not found' });
@@ -1137,11 +1223,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!id) {
         return jsonResponse(404, { error: 'Not found' });
       }
+      const readActor = await resolveInteractiveActor(client, event, 'work-read');
+      if (!readActor.ok) return readActor.response;
       const task = await getTask(client, id);
       if (!task) {
         return jsonResponse(404, { error: 'Task not found' });
       }
-      return jsonResponse(200, task);
+      return jsonResponse(200, await projectTask(new TeamDirectory(client), task));
     }
 
     // PUT /api/tasks/:id — Update a task
@@ -1150,6 +1238,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!id) {
         return jsonResponse(404, { error: 'Not found' });
       }
+
+      const updateActor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!updateActor.ok) return updateActor.response;
+      const actor = updateActor.actor;
 
       const body = parseBody(event);
       if (!body) {
@@ -1211,6 +1303,40 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         });
       }
 
+      // Delegated execution must not become assignment or membership
+      // administration. Everything else on this route is ordinary Task work an
+      // active member may perform on a visible Task.
+      if (!actor.testBypass) {
+        const nextAssigneeId = isNonEmptyString(updates.assigneeId) ? String(updates.assigneeId).trim() : null;
+        const currentAssigneeId = isNonEmptyString(existing.assigneeId) ? existing.assigneeId.trim() : null;
+        if (updates.assigneeId !== undefined && nextAssigneeId !== currentAssigneeId) {
+          if (!actor.isAdmin) {
+            return workAdminForbidden('Changing a Task assignee requires an admin');
+          }
+          if (nextAssigneeId) {
+            const target = await new TeamDirectory(client).project(nextAssigneeId);
+            if (!target.active) {
+              return jsonResponse(400, { error: 'assigneeId must reference an active team member' });
+            }
+          }
+        }
+
+        if (Object.hasOwn(updates, 'cardId')) {
+          const nextCardId = isNonEmptyString(updates.cardId) ? String(updates.cardId).trim() : null;
+          const currentCardId = isNonEmptyString(existing.cardId) ? existing.cardId.trim() : null;
+          if (nextCardId !== currentCardId && !actor.isAdmin) {
+            // Moving a Task in or out of a Card administers that Card.
+            for (const affectedCardId of [currentCardId, nextCardId]) {
+              if (!affectedCardId) continue;
+              const affectedCard = await getCard(client, affectedCardId);
+              if (!affectedCard || affectedCard.ownerId !== actor.id) {
+                return workAdminForbidden('Changing Task membership requires the Card owner or an admin');
+              }
+            }
+          }
+        }
+      }
+
       const historyEvents: TaskHistoryEvent[] = [];
 
       const effectiveStatus = updates.status !== undefined ? updates.status : existing.status;
@@ -1267,7 +1393,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         }
 
         updates.completedAt = completedAt;
-        const actorId = headerValue(event.headers, 'x-user-id');
+        const actorId = actor.id;
         if (actorId) updates.completedBy = actorId;
         if (existing.status !== 'done') {
           historyEvents.push(makeTaskHistoryEvent('completed', existing, {
@@ -1280,9 +1406,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         existing.status === 'done'
         && (updates.status === 'todo' || updates.status === 'waiting')
       ) {
-        const actorId = headerValue(event.headers, 'x-user-id');
         historyEvents.push(makeTaskHistoryEvent('reopened', existing, {
-          actorId: actorId || undefined,
+          actorId: actor.id || undefined,
         }));
         updates.completedAt = null;
         updates.completedBy = null;
@@ -1293,7 +1418,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         expectedVersion,
         patch: updates,
         historyEvents,
-        actorId: headerValue(event.headers, 'x-user-id') || undefined,
+        actorId: actor.id || undefined,
         triggerKind: updates.status === 'done'
           ? 'task-completed'
           : updates.status === 'todo' || updates.status === 'waiting'
@@ -1301,7 +1426,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
             : 'task-updated',
       });
 
-      return jsonResponse(200, updated);
+      return jsonResponse(200, await projectTask(new TeamDirectory(client), updated));
     }
 
     // DELETE /api/tasks/:id — Delete a task
@@ -1309,6 +1434,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const id = extractTaskId(reqPath);
       if (!id) {
         return jsonResponse(404, { error: 'Not found' });
+      }
+      // Deletion is administration, not execution: an operator may not delete
+      // their own, a teammate's, or an unassigned Task.
+      const deleteActor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!deleteActor.ok) return deleteActor.response;
+      if (!deleteActor.actor.testBypass && !deleteActor.actor.isAdmin) {
+        return workAdminForbidden('Deleting a Task requires an admin');
       }
       const body = parseBody(event);
       if (!body) return jsonResponse(400, { error: 'Request body is required' });
@@ -1318,7 +1450,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         client,
         id,
         body.expectedVersion as number,
-        headerValue(event.headers, 'x-user-id') || undefined,
+        deleteActor.actor.id || undefined,
       );
       return {
         statusCode: 204,

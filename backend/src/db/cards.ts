@@ -210,15 +210,23 @@ async function updateCard(
   const fields: Record<string, unknown> = { ...mutation.patch, updatedAt: now };
 
   const expressionParts: string[] = [];
+  const removedParts: string[] = [];
   const expressionAttrNames: Record<string, string> = {};
   const expressionAttrValues: Record<string, unknown> = {};
 
   let i = 0;
   for (const [key, value] of Object.entries(fields)) {
     const nameToken = `#f${i}`;
+    expressionAttrNames[nameToken] = key;
+    // `null` clears an optional attribute. A cleared field is absent, not
+    // stored as an explicit null the readers would then have to interpret.
+    if (value === null) {
+      removedParts.push(nameToken);
+      i++;
+      continue;
+    }
     const valueToken = `:v${i}`;
     expressionParts.push(`${nameToken} = ${valueToken}`);
-    expressionAttrNames[nameToken] = key;
     expressionAttrValues[valueToken] = value;
     i++;
   }
@@ -237,7 +245,9 @@ async function updateCard(
     const result = await client.send(new UpdateCommand({
       TableName: TABLE_CARDS,
       Key: cardKey(id),
-      UpdateExpression: `SET ${expressionParts.join(', ')}`,
+      UpdateExpression: removedParts.length > 0
+        ? `SET ${expressionParts.join(', ')} REMOVE ${removedParts.join(', ')}`
+        : `SET ${expressionParts.join(', ')}`,
       ConditionExpression: conditionParts.join(' AND '),
       ExpressionAttributeNames: expressionAttrNames,
       ExpressionAttributeValues: expressionAttrValues,

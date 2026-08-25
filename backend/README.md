@@ -328,6 +328,7 @@ undelivered notifications non-replayable.
 ```
 src/
   db/          - DynamoDB data layer
+  identity/    - Verified actor resolution, safe team/work projections, owner filters
   routes/      - Route handlers for tasks, templates, assistants, intake, and files
   public/      - Frontend JS (vanilla, served as static files)
   pages/       - HTML templates
@@ -338,6 +339,36 @@ scripts/       - Dev server, seed, migration, and export scripts
 tests/         - Unit tests (node:test)
 e2e/           - Playwright E2E tests
 ```
+
+## Identity, team visibility, and the work authorization boundary
+
+Every interactive Task/Card/team request resolves one verified actor through
+`src/identity/actor.ts`. Identity comes from the browser cookie session, a
+bearer session, or an API token; a deleted, disabled, missing-role, or
+unsupported-role actor is refused before any read or write. Interactive routes
+never fall back to `system`, `portal-admin`, a requested owner, or an assignee.
+
+- `GET /api/me` returns the signed-in identity (`disabled` always explicit, no
+  password or session material). `/work/api/*` is the same surface.
+- `GET /api/team-members` is the safe work directory: id, display name,
+  supported role, and availability only. `GET /api/users` stays the
+  account-management surface for the Admin/Users screen and is not used by
+  routine work views.
+- `GET /api/tasks` and `GET /api/cards` accept
+  `owner=me|team|unassigned|<user-id>`, alone or combined with one existing
+  filter. `me` comes from the verified actor, `team` means active members, and
+  a concrete reference answers with an honest availability projection even when
+  that teammate is disabled or no longer exists.
+- Tasks keep `assigneeId` and add a safe `assignee` plus `historyActors`
+  projection. Cards persist an optional administrative `ownerId` and add safe
+  `owner` and `taskAssignees` projections.
+- Ordinary Task execution (waiting, follow-up, response, completion, reopen,
+  and general metadata) works on an own, teammate, or unassigned Task, keeps the
+  assignee, and records the verified actor. Assignment, deletion, Task/Card
+  membership changes outside a Card the operator owns, and direct Card
+  administration are admin-only or owner-only and answer `403` with
+  `work_admin_forbidden`; unsupported-role team reads answer `403` with
+  `team_read_forbidden`.
 
 ## Docs
 
