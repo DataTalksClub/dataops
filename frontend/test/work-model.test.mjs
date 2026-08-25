@@ -4,6 +4,7 @@ import { describe, test } from "node:test";
 import {
   addDaysIso,
   buildHomeAttentionItems,
+  berlinIsoDate,
   compareIsoDate,
   deriveHomeWorkState,
   formatCardMonthLabel,
@@ -26,6 +27,7 @@ import {
   summarizeCardProgress,
   taskProofState,
   tasksFromWorkPayload,
+  toIsoDate,
   todayIsoDate,
   workflowTaskGroups,
 } from "../src/core/workspace.js";
@@ -78,10 +80,55 @@ describe("frontend work model", () => {
 
     globalThis.Date = FixedDate;
     try {
+      assert.equal(toIsoDate(new Date()), "2026-07-30");
       assert.equal(todayIsoDate(), "2026-07-31");
     } finally {
       globalThis.Date = RealDate;
     }
+  });
+
+  test("resolves any instant through Europe/Berlin across DST boundaries", () => {
+    const winterInstant = "2026-01-15T23:30:00.000Z";
+    const springForwardBefore = "2026-03-29T00:59:59.999Z";
+    const springForwardAfter = "2026-03-29T01:00:00.000Z";
+    const fallBackBefore = "2026-10-25T00:59:59.999Z";
+    const fallBackAfter = "2026-10-25T01:00:00.000Z";
+
+    assert.equal(berlinIsoDate(winterInstant), "2026-01-16");
+    assert.equal(todayIsoDate(winterInstant), "2026-01-16");
+    assert.equal(todayIsoDate(springForwardBefore), "2026-03-29");
+    assert.equal(todayIsoDate(new Date(springForwardAfter)), "2026-03-29");
+    assert.equal(todayIsoDate(fallBackBefore), "2026-10-25");
+    assert.equal(todayIsoDate(new Date(fallBackAfter)), "2026-10-25");
+  });
+
+  test("fails safely when an input is not a valid timestamp instant", () => {
+    assert.equal(berlinIsoDate(new Date("not-a-date")), "");
+    assert.equal(berlinIsoDate(Number.NaN), "");
+    assert.equal(berlinIsoDate("not-a-date"), "");
+    assert.equal(todayIsoDate("2026-07-30"), "");
+  });
+
+  test("classifies Home and Task timing from an injected Berlin day", () => {
+    const berlinToday = todayIsoDate("2026-07-30T22:30:00.000Z");
+    const overdueTask = canonicalTask({ id: "overdue", date: "2026-07-30" });
+    const dueTask = canonicalTask({ id: "due", date: berlinToday });
+    const followUpTask = canonicalTask({
+      id: "follow-up",
+      status: "waiting",
+      followUpAt: "2026-07-31T09:00:00Z",
+    });
+
+    assert.equal(berlinToday, "2026-07-31");
+    assert.equal(isTaskDueToday(dueTask, berlinToday), true);
+    assert.equal(isTaskDueToday(dueTask, "2026-07-30"), false);
+    assert.equal(isTaskOverdue(overdueTask, berlinToday), true);
+    assert.equal(isFollowUpDueTask(followUpTask, berlinToday), true);
+    assert.equal(formatHomeTaskTiming({ priority: "overdue", dueDate: "2026-07-30" }, berlinToday), "Due yesterday");
+    assert.equal(formatHomeTaskTiming({ priority: "today", dueDate: berlinToday }, berlinToday), "Due today");
+    assert.equal(addDaysIso(berlinToday, -1), "2026-07-30");
+    assert.equal(isoDayDistance("2026-07-31", berlinToday), 0);
+    assert.equal(nextRecurringRunDate("0 9 * * *", berlinToday), "2026-07-31");
   });
 
   test("classifies open, done, due, overdue, waiting, and follow-up tasks", () => {
