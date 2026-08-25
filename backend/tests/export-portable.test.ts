@@ -4,9 +4,10 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
+import { TABLE_NOTIFICATIONS } from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
@@ -19,7 +20,12 @@ import { createRecurringConfig } from '../src/db/recurring';
 import { createTask, updateTask } from '../src/db/tasks';
 import { createTemplate, updateTemplate } from '../src/db/templates';
 import { createUser } from '../src/db/users';
-import { validatePortableExport, writePortableExport } from '../src/export/portable';
+import {
+  ENTITY_SPECS,
+  setPortableExportClockForTests,
+  validatePortableExport,
+  writePortableExport,
+} from '../src/export/portable';
 
 describe('portable execution data export', () => {
   let client: DynamoDBDocumentClient;
@@ -870,8 +876,211 @@ describe('portable execution data export', () => {
       const validation = await validatePortableExport(brokenDir);
 
       assert.strictEqual(validation.valid, false);
-      assert.ok(validation.errors.some((error) => error.includes('manifest generated_at must be a parseable date or timestamp')));
+      assert.ok(validation.errors.some((error) => error.includes('manifest generated_at must be a UTC RFC3339 date-time')));
     } finally {
+      await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
+});
+
+function projectTmpDir(name: string): string {
+  return path.join(__dirname, '..', '..', '.tmp', 'exports', `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+}
+
+describe('portable export timestamp anchoring', () => {
+  let client: DynamoDBDocumentClient;
+  let anchorUserId: string;
+  let anchorTaskId: string;
+
+  before(async () => {
+    const port = await startLocal();
+    client = await getClient(port);
+    await createTables(client);
+    const user = await createUser(client, {
+      name: 'Timestamp Anchor Operator',
+      email: 'timestamp-anchor@example.com',
+      passwordHash: 'must-not-export',
+    });
+    anchorUserId = user.id;
+    const anchorTask = await createTask(client, {
+      description: 'Timestamp anchor task',
+      date: '2026-06-27',
+    });
+    anchorTaskId = anchorTask.id;
+  });
+
+  after(async () => {
+    await stopLocal();
+  });
+
+  it('captures one automatic instant before expiration filtering and manifest generation', async () => {
+    const snapshotMs = Date.now();
+    let currentTime = snapshotMs;
+    let clockCalls = 0;
+    setPortableExportClockForTests(() => {
+      clockCalls += 1;
+      const instant = new Date(currentTime);
+      currentTime += 60_000;
+      return instant;
+    });
+
+    await createNotification(client, {
+      type: 'follow-up-due',
+      message: 'Live at the single export anchor',
+      userId: anchorUserId,
+      taskId: anchorTaskId,
+      dueAt: '2026-08-25T11:59:00.000Z',
+      expiresAt: new Date(snapshotMs + 1_000).toISOString(),
+    });
+
+    const originalSend = client.send.bind(client) as (...args: unknown[]) => Promise<unknown>;
+    let scanCount = 0;
+    let delayedScanTime = 0;
+    (client as unknown as { send: unknown }).send = async (...args: unknown[]) => {
+      const command = args[0];
+      if (command instanceof ScanCommand) {
+        scanCount += 1;
+      }
+      if (command instanceof ScanCommand && command.input.TableName === TABLE_NOTIFICATIONS) {
+        // Make a later entity family occur after the fixture's real expiry.
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        delayedScanTime = Date.now();
+      }
+      return originalSend(...args);
+    };
+
+    const outputDir = projectTmpDir('automatic-export');
+    try {
+      const result = await writePortableExport(client, outputDir, {
+        sourceEnvironment: 'test',
+      });
+      const notificationsPath = path.join(outputDir, 'notifications.jsonl');
+      const records = (await fs.readFile(notificationsPath, 'utf8'))
+        .trimEnd()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+
+      assert.strictEqual(clockCalls, 1);
+      assert.strictEqual(result.manifest.generated_at, new Date(snapshotMs).toISOString());
+      assert.strictEqual(result.manifest.entity_counts.notifications, 1);
+      assert.ok(records.some((record) => record.message === 'Live at the single export anchor'));
+      assert.ok(
+        scanCount >= ENTITY_SPECS.length,
+        `expected at least ${ENTITY_SPECS.length} scans, received ${scanCount}`,
+      );
+      assert.ok(delayedScanTime > snapshotMs + 1_000);
+      const validation = await validatePortableExport(outputDir);
+      assert.deepStrictEqual(validation.errors, []);
+      assert.strictEqual(validation.valid, true);
+    } finally {
+      (client as unknown as { send: unknown }).send = originalSend;
+      setPortableExportClockForTests();
+      await fs.rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it('canonicalizes explicit offset and lowercase-zone inputs to the same UTC anchor', async () => {
+    const canonicalInstant = '2026-06-27T00:15:30.000Z';
+    const cases: Array<{ input: string; message: string; expected?: string }> = [
+      { input: '2026-06-27T02:15:30+02:00', message: 'Offset anchor' },
+      { input: '2026-06-27t02:15:30+02:00', message: 'Lowercase separator anchor' },
+      { input: '2026-06-27t00:15:30z', message: 'Lowercase zone anchor' },
+    ];
+
+    for (const [index, testCase] of cases.entries()) {
+      const expiryMs = Date.parse(canonicalInstant) + 1000;
+      const testCaseAnchorMs = Date.parse(testCase.expected || canonicalInstant);
+      await createNotification(client, {
+        type: 'follow-up-due',
+        message: testCase.message,
+        userId: anchorUserId,
+        taskId: anchorTaskId,
+        dueAt: new Date(Date.parse(canonicalInstant) + index).toISOString(),
+        expiresAt: new Date(testCaseAnchorMs + 1_000).toISOString(),
+      });
+
+      const outputDir = projectTmpDir(`explicit-anchor-${index}`);
+      try {
+        const result = await writePortableExport(client, outputDir, {
+          generatedAt: testCase.input,
+          sourceEnvironment: 'test',
+        });
+        const notifications = (await fs.readFile(path.join(outputDir, 'notifications.jsonl'), 'utf8'))
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line));
+
+        assert.strictEqual(result.manifest.generated_at, testCase.expected || canonicalInstant);
+        assert.ok(notifications.some((record) => record.message === testCase.message));
+        const validation = await validatePortableExport(outputDir);
+        assert.deepStrictEqual(validation.errors, []);
+        assert.strictEqual(validation.valid, true);
+      } finally {
+        await fs.rm(outputDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('rejects invalid explicit instants before any database send or filesystem effect', async () => {
+    const invalidValues = [
+      '',
+      '2026-06-27',
+      '2026-06-27T10:15:30',
+      '2026-06-27 10:15:30Z',
+      '2026-13-01T10:15:30Z',
+      '2026-02-30T10:15:30Z',
+      '2026-06-27T24:00:00Z',
+      '2026-06-27T10:15:30.1234Z',
+      '2026-06-30T23:59:60Z',
+      '2026-06-30T23:59:60.123Z',
+      '2026-06-27T10:15:30+24:00',
+    ];
+    const invalidRoot = projectTmpDir('invalid-anchor-root');
+    let dynamoDbSends = 0;
+    const clientStub = {
+      send: async () => {
+        dynamoDbSends += 1;
+        return {};
+      },
+    } as unknown as DynamoDBDocumentClient;
+
+    try {
+      await fs.mkdir(invalidRoot, { recursive: true });
+      for (const [index, generatedAt] of invalidValues.entries()) {
+        const outputDir = path.join(invalidRoot, String(index));
+        await assert.rejects(
+          () => writePortableExport(clientStub, outputDir, { generatedAt }),
+          /generatedAt must be an RFC3339 date-time with millisecond precision/,
+        );
+        assert.strictEqual(dynamoDbSends, 0);
+        await assert.rejects(() => fs.access(outputDir), /ENOENT/);
+      }
+    } finally {
+      await fs.rm(invalidRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('requires manifest generated_at to be a UTC RFC3339 instant', async () => {
+    const sourceDir = projectTmpDir('utc-manifest-source');
+    const brokenDir = projectTmpDir('utc-manifest-broken');
+    try {
+      await writePortableExport(client, sourceDir, {
+        generatedAt: '2026-06-27T00:00:00Z',
+        sourceEnvironment: 'test',
+      });
+      await fs.cp(sourceDir, brokenDir, { recursive: true });
+      const manifestPath = path.join(brokenDir, 'manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      manifest.generated_at = '2026-06-27';
+      await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+
+      const validation = await validatePortableExport(brokenDir);
+      assert.strictEqual(validation.valid, false);
+      assert.ok(validation.errors.some((error) => (
+        error.includes('manifest generated_at must be a UTC RFC3339 date-time')
+      )));
+    } finally {
+      await fs.rm(sourceDir, { recursive: true, force: true });
       await fs.rm(brokenDir, { recursive: true, force: true });
     }
   });

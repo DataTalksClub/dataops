@@ -209,8 +209,8 @@ Run this sequence end-to-end before production data becomes critical:
 
 ## Known Limitations
 
-- The export scans tables sequentially; there is no multi-table transactional
-  snapshot guarantee.
+- `generated_at` is the logical snapshot anchor. The export scans tables
+  sequentially; there is no multi-table transactional snapshot guarantee.
 - File export covers metadata only; binary backup requires S3 versioning or
   a separate artifact archive.
 - The dry-run import validates and counts but does not write to a target
