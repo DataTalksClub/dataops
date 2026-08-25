@@ -1,3 +1,5 @@
+import { renderDataSummary } from "./operations-overview.js";
+
 export function createHomeSurface(context) {
   const {
     activeWorkOwner,
@@ -19,6 +21,7 @@ export function createHomeSurface(context) {
     emptyOperationsWorkSnapshot,
     formatHomeCalendarDate,
     formatHomeTaskTiming,
+    getActiveWorkspaceRouteToken,
     isActiveWorkCard,
     isOpenWorkTask,
     isOperationsHomeVisible,
@@ -47,7 +50,6 @@ export function createHomeSurface(context) {
     resolveCardLabel,
     resolveDocReference,
     setRouteTitle,
-    setStatus,
     settledPayload,
     state,
     summarizeWorkflowTemplate,
@@ -72,15 +74,6 @@ export function createHomeSurface(context) {
     libraryTitle.textContent = "Home";
     setRouteTitle("Today");
     clearSelectionButton.hidden = true;
-    if (model.stats.liveLoaded) {
-      setStatus(
-        `${model.stats.todayTasks} today · ${model.stats.overdueTasks} overdue · ${model.stats.waitingTasks} waiting · ${model.stats.activeCards} active cards.`,
-      );
-    } else {
-      setStatus(
-        `${model.stats.totalDocs} docs · ${model.stats.workflowTemplates} Templates · ${model.stats.recurringTemplates} recurring.`,
-      );
-    }
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home operations-home-daily";
@@ -119,7 +112,16 @@ export function createHomeSurface(context) {
     quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
     quickBar.append(quickTask, quickWorkflow);
     header.append(heading, quickBar);
-    wrap.append(header, renderHomeStatusStrip(model));
+    wrap.append(
+      header,
+      renderHomeStatusStrip(model, {
+        onRetryWork: async () => {
+          const routeToken = getActiveWorkspaceRouteToken();
+          await refreshOperationsWorkSnapshot({ rerender: false });
+          if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
+        },
+      }),
+    );
 
     const runtimeState = renderOperationsRuntimeState(model.runtime);
     if (runtimeState) wrap.append(runtimeState);
@@ -135,29 +137,15 @@ export function createHomeSurface(context) {
     documentList.replaceChildren(wrap);
   }
 
-  function renderHomeStatusStrip(model) {
+  function renderHomeStatusStrip(model, options = {}) {
     const summary = document.createElement("section");
     summary.className = "home-status-strip";
     summary.setAttribute("aria-label", "Daily work summary");
+    summary.append(renderHomeSummary(model, options));
     const stats = [
-      {
-        id: "overdue",
-        label: "Overdue",
-        value: model.stats.overdueTasks,
-        loaded: model.stats.overdueLoaded,
-      },
-      {
-        id: "today",
-        label: "Due today",
-        value: model.stats.todayTasks,
-        loaded: model.stats.todayLoaded,
-      },
-      {
-        id: "waiting",
-        label: "Waiting",
-        value: model.stats.waitingTasks,
-        loaded: model.stats.waitingLoaded,
-      },
+      { id: "overdue", label: "Overdue", value: model.stats.overdueTasks, loaded: model.stats.overdueLoaded },
+      { id: "today", label: "Due today", value: model.stats.todayTasks, loaded: model.stats.todayLoaded },
+      { id: "waiting", label: "Waiting", value: model.stats.waitingTasks, loaded: model.stats.waitingLoaded },
     ];
     for (const stat of stats) {
       const item = document.createElement("div");
@@ -174,6 +162,42 @@ export function createHomeSurface(context) {
       summary.append(item);
     }
     return summary;
+  }
+
+  function renderHomeSummary(model, options) {
+    const stats = model.stats;
+    const errors = (model.stats.workErrors || []).filter(Boolean);
+    const open =
+      stats.todayTasks + stats.overdueTasks + stats.waitingTasks + stats.activeCards;
+    const everyLaneLoaded =
+      stats.todayLoaded && stats.overdueLoaded && stats.waitingLoaded && stats.cardsLoaded;
+    // A failed lane has no count, not a zero.
+    const counts = [
+      stats.todayLoaded ? `${countLabel(stats.todayTasks, "task")} due today` : "due today unknown",
+      stats.overdueLoaded ? `${countLabel(stats.overdueTasks, "task")} overdue` : "overdue unknown",
+      stats.waitingLoaded ? `${countLabel(stats.waitingTasks, "task")} waiting` : "waiting unknown",
+      stats.cardsLoaded ? countLabel(stats.activeCards, "active card") : "active cards unknown",
+    ].join(" · ");
+    return renderDataSummary({
+      id: "home",
+      label: "Today",
+      loaded: stats.liveLoaded,
+      errors,
+      empty: everyLaneLoaded && open === 0,
+      messages: {
+        loading: "Loading today's tasks and cards…",
+        unavailable: "Today's work could not be loaded, so no counts are shown.",
+        empty: "Nothing is overdue, due today, or waiting, and no card is active.",
+        partial: `${counts}. Some work sources are unavailable.`,
+        ready: `${counts}.`,
+      },
+      retryLabel: "Retry loading work",
+      onRetry: options.onRetryWork,
+    });
+  }
+
+  function countLabel(count, singular) {
+    return `${count} ${count === 1 ? singular : `${singular}s`}`;
   }
 
   function homeStatusIcon(id) {

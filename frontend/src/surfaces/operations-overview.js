@@ -1,5 +1,210 @@
 import { docsAvailabilityView } from "../core/operations-model.js";
 
+const SUMMARY_LABELS = {
+  loading: "Loading",
+  ready: "Ready",
+  empty: "Empty",
+  partial: "Partial",
+  unavailable: "Unavailable",
+};
+
+/**
+ * Render one surface's own route summary.
+ *
+ * The state is named in text as well as carried in `data-summary-state`, so
+ * loading, ready, empty, partial and unavailable never depend on color.
+ */
+export function renderSurfaceSummary(view = {}) {
+  const state = SUMMARY_LABELS[view.state] ? view.state : "ready";
+  const label = String(view.label || "Surface");
+  const summary = document.createElement("section");
+  summary.className = "surface-summary";
+  summary.dataset.summaryState = state;
+  if (view.id) summary.dataset.summaryId = String(view.id);
+  summary.setAttribute("aria-label", `${label} summary`);
+
+  const line = document.createElement("p");
+  line.className = "surface-summary-line";
+  line.tabIndex = -1;
+  line.setAttribute("role", state === "unavailable" ? "alert" : "status");
+  line.setAttribute(
+    "aria-live",
+    state === "unavailable" ? "assertive" : "polite",
+  );
+  line.setAttribute("aria-atomic", "true");
+  const badge = document.createElement("span");
+  badge.className = "surface-summary-state";
+  badge.textContent = SUMMARY_LABELS[state];
+  const message = document.createElement("span");
+  message.className = "surface-summary-message";
+  message.textContent = String(view.message || "");
+  line.append(badge, message);
+  summary.append(line);
+
+  if (view.detail) {
+    const detail = document.createElement("small");
+    detail.className = "surface-summary-detail";
+    detail.textContent = String(view.detail);
+    summary.append(detail);
+  }
+
+  if (typeof view.onRetry === "function") {
+    const retryLabel = String(view.retryLabel || "Retry");
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "surface-summary-retry";
+    retry.textContent = retryLabel;
+    retry.setAttribute("aria-label", `${retryLabel}: ${label}`);
+    retry.addEventListener("click", async () => {
+      setControlPending(retry, {
+        pending: true,
+        pendingLabel: `${retryLabel}…`,
+      });
+      try {
+        await view.onRetry();
+      } finally {
+        if (retry.isConnected) {
+          setControlPending(retry, { pending: false, label: retryLabel });
+        }
+      }
+    });
+    summary.append(retry);
+  }
+
+  return summary;
+}
+
+export function resolveDataState({ loaded, errors = [], empty = false } = {}) {
+  const failures = (Array.isArray(errors) ? errors : [errors]).filter(Boolean);
+  if (!loaded) return failures.length > 0 ? "unavailable" : "loading";
+  if (failures.length > 0) return "partial";
+  return empty ? "empty" : "ready";
+}
+
+export function renderDataSummary(view = {}) {
+  const errors = (
+    Array.isArray(view.errors) ? view.errors : [view.errors]
+  ).filter(Boolean);
+  const state = resolveDataState({
+    loaded: view.loaded,
+    errors,
+    empty: view.empty,
+  });
+  const messages = view.messages || {};
+  const recoverable = state === "unavailable" || state === "partial";
+  return renderSurfaceSummary({
+    id: view.id,
+    label: view.label,
+    state,
+    message: messages[state] || messages.ready || "",
+    detail: recoverable ? errors[0] || "" : view.detail || "",
+    retryLabel: view.retryLabel,
+    onRetry: recoverable ? view.onRetry : null,
+  });
+}
+
+export function createFormFeedback() {
+  const node = document.createElement("div");
+  node.className = "form-feedback";
+  node.dataset.feedbackState = "idle";
+
+  const status = document.createElement("p");
+  status.className = "form-feedback-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  status.setAttribute("aria-atomic", "true");
+  status.hidden = true;
+
+  const error = document.createElement("p");
+  error.className = "form-feedback-error";
+  error.setAttribute("role", "alert");
+  error.tabIndex = -1;
+  error.hidden = true;
+
+  node.append(status, error);
+
+  function write(state, message) {
+    const text = String(message || "");
+    const failing = state === "error" || state === "conflict";
+    node.dataset.feedbackState = state;
+    error.textContent = failing ? text : "";
+    error.hidden = !failing;
+    status.textContent = failing || state === "idle" ? "" : text;
+    status.hidden = failing || state === "idle" || !text;
+    return failing ? error : status;
+  }
+
+  return {
+    node,
+    statusNode: status,
+    errorNode: error,
+    pending: (message) => write("pending", message),
+    success: (message) => write("success", message),
+    failure: (message) => write("error", message),
+    conflict: (message) => write("conflict", message),
+    clear: () => write("idle", ""),
+    get state() {
+      return node.dataset.feedbackState;
+    },
+  };
+}
+
+export function setControlPending(control, options = {}) {
+  if (!control) return control;
+  const pending = Boolean(options.pending);
+  control.disabled = pending;
+  if (pending) {
+    control.setAttribute("aria-busy", "true");
+    if (options.pendingLabel) control.textContent = options.pendingLabel;
+  } else {
+    control.removeAttribute("aria-busy");
+    if (options.label) control.textContent = options.label;
+  }
+  return control;
+}
+
+let fieldErrorSequence = 0;
+const fieldErrorNodes = new WeakMap();
+
+export function setFieldError(field, message) {
+  const input = field?.input || field;
+  const wrap = field?.wrap || field?.label || input?.parentElement;
+  if (!input || !wrap) return null;
+  const text = String(message || "");
+  let node = fieldErrorNodes.get(input) || null;
+  if (!node) {
+    node = document.createElement("span");
+    node.className = "field-error";
+    node.setAttribute("role", "alert");
+    node.setAttribute("id", `field-error-${++fieldErrorSequence}`);
+    fieldErrorNodes.set(input, node);
+    if (typeof wrap.after === "function" && wrap.parentElement)
+      wrap.after(node);
+    else wrap.append(node);
+  }
+  node.textContent = text;
+  node.hidden = !text;
+  if (text) {
+    input.setAttribute("aria-invalid", "true");
+    input.setAttribute("aria-describedby", node.getAttribute("id"));
+  } else {
+    input.removeAttribute("aria-invalid");
+    input.removeAttribute("aria-describedby");
+  }
+  return node;
+}
+
+export function reportFieldValidation(fields) {
+  let firstInvalid = null;
+  for (const [field, message] of fields) {
+    setFieldError(field, message);
+    if (message && !firstInvalid) firstInvalid = field;
+  }
+  const input = firstInvalid?.input || firstInvalid;
+  if (input?.focus) input.focus();
+  return firstInvalid;
+}
+
 export function createOperationsOverview(context) {
   const {
     document,

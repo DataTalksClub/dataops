@@ -196,7 +196,6 @@ function createHarness(options = {}) {
     reportError: (message) => errors.push(message),
     request,
     scheduleAnimationFrame: (callback) => callback(),
-    setStatus() {},
     settledPayload: (result) =>
       result?.status === "fulfilled" ? result.value : null,
     showUndoToast: (message, action) => undo.push({ message, action }),

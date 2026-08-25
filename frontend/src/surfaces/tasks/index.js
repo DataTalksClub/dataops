@@ -1,3 +1,4 @@
+import { renderDataSummary } from "../operations-overview.js";
 import { createCardsSurface } from "./cards.js";
 import { createQuickTaskActions } from "./quick-create.js";
 import { createTaskQueue } from "./queue.js";
@@ -51,15 +52,12 @@ export function createTasksSurface(context) {
     renderHonestState,
     renderOperationsRuntimeState,
     renderSurfaceHeader,
-    reportError,
     resolveAssigneeLabel,
     request,
     scheduleAnimationFrame,
     setRouteTitle,
-    setStatus,
     setWorkspaceEntityState,
     shellBody,
-    showErrorToast,
     sortWorkTasks,
     state,
     surfaceDescription,
@@ -119,7 +117,6 @@ export function createTasksSurface(context) {
     libraryTitle.textContent = title;
     setRouteTitle(title);
     clearSelectionButton.hidden = true;
-    setStatus(tasksSurfaceStatusText(activeSection, model));
 
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;
@@ -128,6 +125,8 @@ export function createTasksSurface(context) {
         renderSurfaceHeader(title, surfaceDescription(activeSection)),
       );
     }
+    const summary = renderTasksSummary(activeSection, model, documents);
+    if (summary) wrap.append(summary);
     const runtimeStatus = renderOperationsRuntimeState(model.runtime);
     if (runtimeStatus && ["queue", "workflows"].includes(activeSection)) {
       wrap.append(runtimeStatus);
@@ -148,31 +147,136 @@ export function createTasksSurface(context) {
     documentList.replaceChildren(wrap);
   }
 
-  function tasksSurfaceStatusText(view, model) {
+  // A retry is itself an async action. The route token proves that the operator
+  // is still looking at Templates before its late response can re-render.
+
+  // Each Tasks section reports its own load state where the operator is
+  // looking. A section that is still fetching, that failed, that answered with
+  // nothing, or that answered only in part are four different sentences.
+  function renderTasksSummary(view, model, documents) {
+    const work = state.workSnapshot;
+    const workErrors = (model.stats.workErrors || []).filter(Boolean);
+    const retryWork = async () => {
+      const routeToken = getActiveWorkspaceRouteToken();
+      await refreshOperationsWorkSnapshot({ rerender: false });
+      if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
+    };
     if (view === "queue") {
-      return [
-        countLabel(allWorkTasks(state.workSnapshot).length, "known work item"),
-        `${countLabel(model.stats.followUpTasks, "follow-up")} due`,
-        `${countLabel(model.stats.missingProofTasks, "item")} missing proof.`,
+      const total = allWorkTasks(work).length;
+      // A lane whose source did not answer has no count, not a zero.
+      const sourceLoaded = (flag) =>
+        flag === false ? false : flag === true ? true : Boolean(model.stats.liveLoaded);
+      const tasksLoaded =
+        sourceLoaded(model.stats.todayLoaded) ||
+        sourceLoaded(model.stats.overdueLoaded) ||
+        sourceLoaded(model.stats.waitingLoaded);
+      const counts = [
+        tasksLoaded
+          ? countLabel(total, "known work item")
+          : "known work items unknown",
+        model.stats.waitingLoaded
+          ? `${countLabel(model.stats.followUpTasks, "follow-up")} due`
+          : "follow-ups unknown",
+        model.stats.missingProofLoaded
+          ? `${countLabel(model.stats.missingProofTasks, "item")} missing proof`
+          : "missing proof unknown",
       ].join(" · ");
+      return renderDataSummary({
+        id: "tasks-queue",
+        label: "Work Queue",
+        loaded: model.stats.liveLoaded,
+        errors: workErrors,
+        empty: total === 0,
+        messages: {
+          loading: "Loading tasks from the work API…",
+          unavailable: "The work queue could not be loaded, so no tasks are listed.",
+          empty: "No tasks are open in this queue.",
+          partial: `${counts}. Some task sources are unavailable.`,
+          ready: `${counts}.`,
+        },
+        retryLabel: "Retry loading tasks",
+        onRetry: retryWork,
+      });
     }
     if (view === "workflows") {
-      return `${countLabel(model.stats.activeCards, "active card")} · at-risk first.`;
+      // The board renders from the snapshot, so the summary counts the same
+      // cards the operator can see rather than a parallel derived number.
+      const active = (work.activeCards || []).length;
+      const counts = `${countLabel(active, "active card")}, at-risk first`;
+      return renderDataSummary({
+        id: "tasks-workflows",
+        label: "Cards",
+        loaded: model.stats.cardsLoaded ?? model.stats.liveLoaded,
+        errors: workErrors,
+        empty: active === 0,
+        messages: {
+          loading: "Loading cards from the work API…",
+          unavailable: "Cards could not be loaded, so none are listed.",
+          empty: "No active cards. Finished cards move to the archive.",
+          partial: `${counts}. Some card sources are unavailable.`,
+          ready: `${counts}.`,
+        },
+        retryLabel: "Retry loading cards",
+        onRetry: retryWork,
+      });
     }
     if (view === "recurring") {
       const recurring = model.recurring;
-      if (!recurring.loaded) return "Recurring schedules not loaded.";
-      return [
+      const counts = [
         countLabel(recurring.configs.length, "recurring schedule"),
         `${recurring.enabled.length} enabled`,
-        `${recurring.disabled.length} paused.`,
+        `${recurring.disabled.length} paused`,
       ].join(" · ");
+      return renderDataSummary({
+        id: "tasks-recurring",
+        label: "Recurring",
+        loaded: recurring.loaded,
+        errors: recurring.errors,
+        empty: recurring.configs.length === 0,
+        messages: {
+          loading: "Loading recurring schedules…",
+          unavailable: "Recurring schedules could not be loaded.",
+          empty: "No recurring schedules yet. New schedule creates the first one.",
+          partial: `${counts}. Some schedule data is unavailable.`,
+          ready: `${counts}.`,
+        },
+        retryLabel: "Retry loading schedules",
+        onRetry: async () => {
+          const routeToken = getActiveWorkspaceRouteToken();
+          await refreshOperationsRecurringSnapshot({ rerender: false });
+          if (isWorkspaceRouteFresh(routeToken)) renderTasksSurface(documents, view);
+        },
+      });
     }
-    const runtimeState = getRuntimeTemplateState();
-    const runtimeCount = runtimeState.loaded
-      ? runtimeState.templates.length
-      : model.templates.length;
-    return `${countLabel(runtimeCount, "runtime template")}.`;
+    if (view === "templates") {
+      const routeToken = getActiveWorkspaceRouteToken();
+      const runtimeState = getRuntimeTemplateState();
+      const count = runtimeState.loaded
+        ? runtimeState.templates.length
+        : model.templates.length;
+      return renderDataSummary({
+        id: "tasks-templates",
+        label: "Templates",
+        loaded: runtimeState.loaded,
+        errors: runtimeState.error ? [runtimeState.error] : [],
+        empty: count === 0,
+        messages: {
+          loading: "Loading Git-authored templates…",
+          unavailable: "Runtime templates could not be loaded.",
+          empty: "No runtime templates are deployed.",
+          partial: `${countLabel(count, "runtime template")}. Some template data is unavailable.`,
+          ready: `${countLabel(count, "runtime template")}.`,
+        },
+        retryLabel: "Retry loading templates",
+        onRetry: async () => {
+          await refreshRuntimeTemplates();
+          if (isWorkspaceRouteFresh(routeToken)) renderTasksSurface(documents, view);
+        },
+      });
+    }
+    // Assistants and Artifacts render their own state; Tasks does not speak for
+    // surfaces it does not own.
+    return null;
   }
 
   // Process Docs owns a separate main-canvas surface. The global sidebar remains

@@ -1,3 +1,8 @@
+import {
+  renderSurfaceSummary,
+  setControlPending,
+} from "../operations-overview.js";
+
 export function createDeviceAuthSurface(context) {
   const {
     clearSelectionButton,
@@ -7,15 +12,28 @@ export function createDeviceAuthSurface(context) {
     renderSurfaceHeader,
     request,
     setRouteTitle,
-    setStatus,
     workApiUrl,
   } = context;
 
   // Confirming a device code is the one place a browser session is exchanged
   // for a long-lived credential, so the page states plainly what is being
   // authorized and never acts on the URL alone.
-  let state = { userCode: "", grant: null, error: "", result: "" };
+  let state = { userCode: "", grant: null, error: "", result: "", pending: "" };
   let primedCode = null;
+  let requestedFocus = "";
+  // Every lookup and decision carries the token it started with. A response
+  // that belongs to an earlier code, or to a code the operator has since
+  // replaced, is dropped instead of overwriting what is on screen now.
+  let requestSequence = 0;
+
+  function applyRequestedFocus(wrap) {
+    if (!requestedFocus) return;
+    const target = wrap.querySelector(requestedFocus);
+    requestedFocus = "";
+    if (!target) return;
+    target.tabIndex = -1;
+    target.focus();
+  }
 
   function renderDeviceSurfaceView() {
     primeFromRoute();
@@ -24,7 +42,6 @@ export function createDeviceAuthSurface(context) {
     libraryTitle.textContent = "Authorize device";
     setRouteTitle("Authorize device");
     clearSelectionButton.hidden = true;
-    setStatus("Confirm a code shown by the DataOps CLI.");
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-device";
@@ -33,11 +50,54 @@ export function createDeviceAuthSurface(context) {
         "Authorize device",
         "Confirm the code shown by a DataOps CLI so it can act as you.",
       ),
+      renderDeviceSummary(),
       renderDevicePanel(),
     );
     documentList.replaceChildren(wrap);
-    if (state.error && !state.grant)
-      wrap.querySelector(".device-code-input")?.focus();
+    applyRequestedFocus(wrap);
+  }
+
+  // The device page says what it is doing while it is doing it: a code being
+  // checked, a decision being sent, and a finished decision are three different
+  // states, and none of them is inferred from an empty panel.
+  function renderDeviceSummary() {
+    const view = { id: "device", label: "Authorize device" };
+    if (state.pending === "lookup") {
+      return renderSurfaceSummary({
+        ...view,
+        state: "loading",
+        message: "Checking that code with the work API…",
+      });
+    }
+    if (state.pending === "decision") {
+      return renderSurfaceSummary({
+        ...view,
+        state: "loading",
+        message: "Sending your decision to the work API…",
+      });
+    }
+    if (state.result) {
+      return renderSurfaceSummary({
+        ...view,
+        state: "ready",
+        message:
+          state.result === "approved"
+            ? "This machine is authorized."
+            : "Nothing was authorized.",
+      });
+    }
+    if (state.grant) {
+      return renderSurfaceSummary({
+        ...view,
+        state: "ready",
+        message: "Confirm that this machine should act as you.",
+      });
+    }
+    return renderSurfaceSummary({
+      ...view,
+      state: "ready",
+      message: "Enter the code shown by the DataOps CLI, then select Continue.",
+    });
   }
 
   function renderDevicePanel() {
@@ -50,8 +110,9 @@ export function createDeviceAuthSurface(context) {
       return panel;
     }
 
-    const form = document.createElement("div");
+    const form = document.createElement("form");
     form.className = "device-form";
+    form.addEventListener("submit", (event) => event.preventDefault());
     const label = document.createElement("label");
     label.className = "quick-form-label";
     label.textContent = "Code from the CLI";
@@ -70,10 +131,17 @@ export function createDeviceAuthSurface(context) {
     form.append(label);
 
     const lookup = document.createElement("button");
-    lookup.type = "button";
+    lookup.type = "submit";
     lookup.className = "primary-button";
     lookup.textContent = "Continue";
-    lookup.addEventListener("click", () => loadGrant(input.value));
+    form.addEventListener("submit", () => loadGrant(input.value));
+    if (state.pending === "lookup") {
+      input.disabled = true;
+      setControlPending(lookup, {
+        pending: true,
+        pendingLabel: "Checking code…",
+      });
+    }
     form.append(lookup);
     panel.append(form);
 
@@ -124,12 +192,14 @@ export function createDeviceAuthSurface(context) {
     deny.type = "button";
     deny.className = "quiet-button";
     deny.textContent = "Deny";
-    deny.addEventListener("click", () => decide(false, deny));
+    deny.disabled = state.pending === "decision";
+    deny.addEventListener("click", () => decide(false));
     const approve = document.createElement("button");
     approve.type = "button";
     approve.className = "primary-button";
     approve.textContent = "Authorize";
-    approve.addEventListener("click", () => decide(true, approve));
+    approve.disabled = state.pending === "decision";
+    approve.addEventListener("click", () => decide(true));
     actions.append(deny, approve);
     confirm.append(actions);
     return confirm;
@@ -152,47 +222,75 @@ export function createDeviceAuthSurface(context) {
   }
 
   async function loadGrant(rawCode) {
+    // Native forms deliver every submit listener even after the first one has
+    // begun an async request, so the operation itself rejects duplicates.
+    if (state.pending === "lookup") return;
     state.userCode = rawCode;
     state.error = "";
     state.grant = null;
     const code = String(rawCode || "").trim();
     if (!code) {
       state.error = "Enter the code shown by the CLI.";
+      requestedFocus = ".device-code-input";
       renderDeviceSurfaceView();
       return;
     }
+    const token = ++requestSequence;
+    state.pending = "lookup";
+    requestedFocus = ".surface-summary-line";
+    // Paint the pending state before waiting. primeFromRoute has already
+    // recorded the code it is priming, so this render cannot loop back into
+    // another lookup.
+    renderDeviceSurfaceView();
+    let grant = null;
+    let failure = "";
     try {
-      state.grant = await request(
+      grant = await request(
         workApiUrl("/api/auth/device/pending", { userCode: code }),
       );
     } catch (error) {
-      if (error.status === 404) {
-        state.error =
-          "That code is not waiting for confirmation. It may have expired - start the login again.";
-      } else if (error.status === 401) {
-        state.error = "Sign in to the portal first, then open this link again.";
+      if (error.status === 404 || error.status === 401) {
+        // This page is already inside a signed-in portal session. A 401 here
+        // is an unknown, expired, or unconfirmed code, not a prompt to sign in.
+        failure =
+          "That code is not waiting for confirmation. Refresh this page or retry device registration from the CLI.";
       } else {
-        state.error = `Could not look up that code: ${error.message || "request failed"}`;
+        failure = `Could not look up that code: ${error.message || "request failed"}`;
       }
     }
+    if (token !== requestSequence) return;
+    state.pending = "";
+    state.grant = grant;
+    state.error = failure;
+    requestedFocus = failure || !grant
+      ? ".device-code-input"
+      : ".surface-summary-line";
     renderDeviceSurfaceView();
   }
 
-  async function decide(approve, button) {
-    button.disabled = true;
-    button.textContent = approve ? "Authorizing..." : "Denying...";
+  async function decide(approve) {
+    const label = approve ? "Authorize" : "Deny";
+    const token = ++requestSequence;
+    state.pending = "decision";
+    requestedFocus = ".surface-summary-line";
+    // Replace both controls with one pending owner before yielding, so a
+    // second click cannot start another decision.
+    renderDeviceSurfaceView();
     try {
       const result = await request(workApiUrl("/api/auth/device/approve"), {
         method: "POST",
         body: JSON.stringify({ userCode: state.userCode, approve }),
       });
+      if (token !== requestSequence) return;
       state.result = result.status;
       state.grant = null;
+      state.error = "";
     } catch (error) {
-      state.error = `Could not complete that: ${error.message || "request failed"}`;
-      button.disabled = false;
-      button.textContent = approve ? "Authorize" : "Deny";
+      if (token !== requestSequence) return;
+      state.error = `Could not complete that: ${error.message || "request failed"} Select ${label} to retry.`;
     }
+    state.pending = "";
+    requestedFocus = state.result ? ".device-outcome" : ".device-error";
     renderDeviceSurfaceView();
   }
 
@@ -206,7 +304,11 @@ export function createDeviceAuthSurface(context) {
       route?.path === "/device" ? route.params.get("userCode") || "" : "";
     if (primedCode === userCode) return;
     primedCode = userCode;
-    state = { userCode, grant: null, error: "", result: "" };
+    requestedFocus = "";
+    // A new route wins: anything still in flight for the previous code is
+    // discarded rather than allowed to land on this render.
+    requestSequence += 1;
+    state = { userCode, grant: null, error: "", result: "", pending: "" };
     if (userCode) loadGrant(userCode);
   }
 

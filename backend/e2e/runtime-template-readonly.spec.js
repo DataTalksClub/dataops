@@ -51,7 +51,11 @@ test.describe('Git-authored runtime templates', () => {
     });
     await page.goto('/#/templates');
     await expect(page.getByText('Runtime templates unavailable')).toBeVisible();
-    await expect(page.getByText('Synthetic route failure (503)')).toBeVisible();
+    await expect(page.locator('.runtime-template-inspector')).toContainText('Synthetic route failure (503)');
+    // The Templates section also states its own load outcome (#204 slice 1).
+    const templatesSummary = page.locator('[data-summary-id="tasks-templates"]');
+    await expect(templatesSummary).toHaveAttribute('data-summary-state', /partial|unavailable/);
+    await expect(templatesSummary.locator('.surface-summary-detail')).toHaveText('Synthetic route failure (503)');
     await request.delete('/__e2e__/route-faults');
 
     await page.goto('/#/templates?templateId=missing-git-template');

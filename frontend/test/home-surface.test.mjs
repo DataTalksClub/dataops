@@ -157,7 +157,6 @@ function createHomeHarness(options = {}) {
     quickCards: 0,
     quickTasks: 0,
     refreshDocuments: 0,
-    status: [],
     workBell: 0,
   };
   const users = options.users || [
@@ -221,6 +220,7 @@ function createHomeHarness(options = {}) {
     emptyOperationsWorkSnapshot: emptyWorkSnapshot,
     formatHomeCalendarDate: (date) => `Thursday, ${date}`,
     formatHomeTaskTiming,
+    getActiveWorkspaceRouteToken: () => 1,
     isActiveWorkCard: (card) => card.status !== "done",
     isOpenWorkTask: (task) => task.status !== "done",
     isOperationsHomeVisible: () => options.homeVisible !== false,
@@ -283,7 +283,6 @@ function createHomeHarness(options = {}) {
     resolveCardLabel: (id) => `Card ${id}`,
     resolveDocReference: (id) => docRegistry.get(id) || null,
     setRouteTitle: (title) => calls.routeTitles.push(title),
-    setStatus: (message) => calls.status.push(message),
     settledPayload: (result) =>
       result.status === "fulfilled" ? result.value : {},
     state,
@@ -362,11 +361,19 @@ describe("Home surface production behavior", () => {
     assert.equal(root.dataset.operationsWorkLoaded, "true");
     assert.equal(harness.libraryTitle.textContent, "Home");
     assert.deepEqual(harness.calls.routeTitles, ["Today"]);
-    assert.match(harness.calls.status.at(-1), /1 today · 1 overdue · 1 waiting/);
+    const summaryLine = root.querySelector(".surface-summary");
+    assert.equal(summaryLine.dataset.summaryState, "ready");
+    assert.match(
+      summaryLine.textContent,
+      /1 task due today · 1 task overdue · 1 task waiting · 1 active card\./,
+    );
+    assert.equal(summaryLine.querySelector(".surface-summary-retry"), null);
 
     const summary = root.querySelector(".home-status-strip");
     assert.deepEqual(
-      summary.children.map((item) => item.querySelector("strong").textContent),
+      findAllByClass(summary, "home-status-item").map(
+        (item) => item.querySelector("strong").textContent,
+      ),
       ["1", "1", "1"],
     );
     const rows = findAllByClass(root, "home-attention-row");
@@ -504,7 +511,7 @@ describe("Home surface production behavior", () => {
     const root = harness.documentList.children[0];
     assert.equal(root.dataset.operationsWorkLoaded, "false");
     const summary = root.querySelector(".home-status-strip");
-    for (const item of summary.children) {
+    for (const item of findAllByClass(summary, "home-status-item")) {
       assert.equal(item.dataset.state, "unavailable");
       assert.equal(item.querySelector("strong").textContent, "—");
     }
@@ -513,6 +520,94 @@ describe("Home surface production behavior", () => {
       root.textContent.includes("no false work items are shown"),
       true,
     );
+  });
+
+  test("distinguishes loading, unavailable, partial, and empty work in Home's own summary", async () => {
+    const loading = createHomeHarness();
+    loading.surface.renderOperationsHome([]);
+    const loadingSummary =
+      loading.documentList.children[0].querySelector(".surface-summary");
+    assert.equal(loadingSummary.dataset.summaryState, "loading");
+    assert.equal(loadingSummary.dataset.summaryId, "home");
+    assert.equal(
+      loadingSummary.querySelector(".surface-summary-line").getAttribute("role"),
+      "status",
+    );
+    assert.match(loadingSummary.textContent, /Loading today's tasks and cards/);
+    assert.equal(loadingSummary.querySelector(".surface-summary-retry"), null);
+
+    const requests = [];
+    const unavailable = createHomeHarness({
+      request: async (url) => {
+        requests.push(String(url));
+        return {};
+      },
+      workSnapshot: { errors: ["Work API unreachable"] },
+    });
+    unavailable.surface.renderOperationsHome([]);
+    const outage =
+      unavailable.documentList.children[0].querySelector(".surface-summary");
+    assert.equal(outage.dataset.summaryState, "unavailable");
+    assert.equal(
+      outage.querySelector(".surface-summary-line").getAttribute("role"),
+      "alert",
+    );
+    assert.match(outage.textContent, /could not be loaded, so no counts are shown/);
+    assert.equal(
+      outage.querySelector(".surface-summary-detail").textContent,
+      "Work API unreachable",
+    );
+    const retry = outage.querySelector(".surface-summary-retry");
+    assert.equal(retry.textContent, "Retry loading work");
+    await retry.click();
+    await nextTicks();
+    assert.equal(
+      requests.some((url) => url.includes("/api/tasks")),
+      true,
+      "retry re-fetches the work snapshot from the summary that owns it",
+    );
+
+    const partial = createHomeHarness({
+      workSnapshot: {
+        errors: ["Waiting source unavailable"],
+        loaded: true,
+        overdueLoaded: true,
+        todayLoaded: true,
+        todayTasks: [{ dueDate: "2026-08-13", id: "task-today", title: "Approve" }],
+      },
+    });
+    partial.surface.renderOperationsHome([]);
+    const partialSummary =
+      partial.documentList.children[0].querySelector(".surface-summary");
+    assert.equal(partialSummary.dataset.summaryState, "partial");
+    assert.match(partialSummary.textContent, /1 task due today/);
+    assert.match(
+      partialSummary.textContent,
+      /waiting unknown/,
+      "a lane that did not load has no count, not a zero",
+    );
+    assert.match(partialSummary.textContent, /Some work sources are unavailable/);
+    assert.ok(partialSummary.querySelector(".surface-summary-retry"));
+
+    const empty = createHomeHarness({
+      workSnapshot: {
+        cardsLoaded: true,
+        loaded: true,
+        overdueLoaded: true,
+        todayLoaded: true,
+        waitingLoaded: true,
+      },
+    });
+    empty.surface.renderOperationsHome([]);
+    const emptySummary =
+      empty.documentList.children[0].querySelector(".surface-summary");
+    assert.equal(emptySummary.dataset.summaryState, "empty");
+    assert.equal(
+      emptySummary.querySelector(".surface-summary-state").textContent,
+      "Empty",
+    );
+    assert.match(emptySummary.textContent, /Nothing is overdue, due today, or waiting/);
+    assert.equal(emptySummary.querySelector(".surface-summary-retry"), null);
   });
 
   test("reports a docs outage on Home without hiding work or inventing a docs banner", () => {

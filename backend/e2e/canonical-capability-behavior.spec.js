@@ -1181,7 +1181,9 @@ test.describe('issue 159 retained canonical capability behavior', () => {
 
     await adminPage.getByRole('button', { name: 'Add user' }).click();
     await adminPage.getByRole('button', { name: 'Create user' }).click();
-    await expect(adminPage.getByRole('status')).toContainText('Name and email are required');
+    // Validation is owned by the fields it is about (#204 slice 1).
+    await expect(adminPage.locator('.ops-user-form .field-error').first()).toContainText('Name is required.');
+    await expect(adminPage.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true');
     await adminPage.getByRole('button', { name: 'Cancel' }).click();
     await setFaults(admin.request, [{ method: 'POST', path: '/api/users', status: 503 }]);
     await adminPage.getByRole('button', { name: 'Add user' }).click();
@@ -1189,7 +1191,8 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await adminPage.getByLabel('Email').fill(`${unique('failed')}@example.invalid`);
     await adminPage.getByLabel('Password').fill('synthetic-password');
     await adminPage.getByRole('button', { name: 'Create user' }).click();
-    await expect(adminPage.getByRole('status')).toContainText('Synthetic route failure (503)');
+    await expect(adminPage.locator('.ops-user-form-result .form-feedback-error')).toContainText('Synthetic route failure (503)');
+    await expect(adminPage.getByLabel('Name')).toHaveValue('Synthetic Failed User');
     await clearFaults(admin.request);
 
     const operatorPage = await operator.newPage();
@@ -1577,7 +1580,10 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(recurringRow).toBeVisible();
     await setFaults(admin.request, [{ method: 'PUT', path: `/api/recurring/${recurring.id}`, status: 503 }]);
     await recurringRow.getByRole('button', { name: 'Pause' }).click();
-    await expect(page.locator('#status-text')).toContainText('Could not update recurring operation: Synthetic route failure (503)');
+    // The failure belongs to the row whose control was used, not to a hidden
+    // shell status line (#204 slice 1).
+    await expect(recurringRow.locator('.recurring-row-error')).toContainText('Could not pause this schedule: Synthetic route failure (503)');
+    await expect(recurringRow.locator('.recurring-row-error')).toContainText('Select Pause to retry.');
     await clearFaults(admin.request);
     await recurringRow.getByRole('button', { name: 'Pause' }).click();
     await expect(recurringSection.locator('.ops-recurring-item', { hasText: `Synthetic recurring ${id}` }).getByRole('button', { name: 'Resume' })).toBeVisible();
