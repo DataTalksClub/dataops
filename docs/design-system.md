@@ -301,7 +301,7 @@ Usage rules:
 Current mapping:
 
 - Portal: `.app-shell`, `.sidebar`, `.mobile-topbar`, `.page-shell`,
-  `.page-toolbar`, `.sidebar-resize`, `.sidebar-toggle-button`.
+  `.page-toolbar`, `.sidebar-toggle-button`.
 - Work-engine: `nav`, `.brand`, route links, mobile menu. These map to
   `do-shell` but need DOM and class cleanup before full migration.
 

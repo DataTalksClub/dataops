@@ -1,5 +1,4 @@
 export function initializeAppShell({
-  attachSidebarResize,
   enhanceSelect,
   filterSelects,
   loadDocuments,
@@ -9,7 +8,6 @@ export function initializeAppShell({
   refreshOperationsWorkSnapshot,
   restoreDarkMode,
   restoreSidebarCollapsed,
-  restoreSidebarWidth,
   showLibrary,
   syncSidebarShellState,
   updateSaveState,
@@ -18,8 +16,6 @@ export function initializeAppShell({
   for (const select of filterSelects) enhanceSelect(select);
   restoreDarkMode();
   restoreSidebarCollapsed();
-  restoreSidebarWidth();
-  attachSidebarResize();
   syncSidebarShellState();
 
   showLibrary({ updateUrl: false });

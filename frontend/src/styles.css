@@ -712,10 +712,6 @@ svg {
   padding: 16px 12px;
 }
 
-.sidebar-resize {
-  display: none;
-}
-
 body.sidebar-collapsed .app-shell {
   grid-template-columns: 0 minmax(0, 1fr);
 }
@@ -825,10 +821,6 @@ body.sidebar-collapsed .sidebar {
   order: -1;
   gap: 2px;
   margin-bottom: 16px;
-}
-
-.workspace-nav .section-label {
-  display: none;
 }
 
 .workspace-nav-button {

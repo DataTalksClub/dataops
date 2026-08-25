@@ -39,7 +39,6 @@ export function createApplicationShells(context) {
     pageShell: dom.pageShell,
     sidebar: dom.sidebar,
     sidebarExpandButton: dom.sidebarExpandButton,
-    sidebarResize: dom.sidebarResize,
     sidebarScrim: dom.sidebarScrim,
     storage: localStorageRef,
     themeToggleButton: dom.themeToggleButton,

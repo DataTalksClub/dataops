@@ -12,7 +12,6 @@ export function createPreferencesShell({
   pageShell,
   sidebar,
   sidebarExpandButton,
-  sidebarResize,
   sidebarScrim,
   storage,
   themeToggleButton,
@@ -60,57 +59,6 @@ export function createPreferencesShell({
         setSidebarCollapsed(true);
       }
     } catch {}
-  }
-
-  function setSidebarWidth(px) {
-    documentRef.documentElement.style.setProperty(
-      "--sidebar-width",
-      `${px}px`,
-    );
-  }
-
-  function restoreSidebarWidth() {
-    try {
-      const width = parseInt(storage.getItem("dtc-sidebar-width") || "0", 10);
-      if (width >= 180 && width <= 600) setSidebarWidth(width);
-    } catch {}
-  }
-
-  function attachSidebarResize() {
-    let dragging = false;
-    let startX = 0;
-    let startWidth = 0;
-    sidebarResize.addEventListener("pointerdown", (event) => {
-      if (body.classList.contains("sidebar-collapsed")) return;
-      if (matchMedia("(max-width: 820px)").matches) return;
-      dragging = true;
-      startX = event.clientX;
-      startWidth = sidebar.getBoundingClientRect().width;
-      body.classList.add("is-resizing-sidebar");
-      sidebarResize.setPointerCapture(event.pointerId);
-    });
-    sidebarResize.addEventListener("pointermove", (event) => {
-      if (!dragging) return;
-      const next = Math.max(
-        200,
-        Math.min(560, startWidth + (event.clientX - startX)),
-      );
-      setSidebarWidth(next);
-    });
-    const endDrag = (event) => {
-      if (!dragging) return;
-      dragging = false;
-      body.classList.remove("is-resizing-sidebar");
-      try {
-        sidebarResize.releasePointerCapture(event.pointerId);
-      } catch {}
-      const width = parseInt(sidebar.getBoundingClientRect().width, 10);
-      try {
-        storage.setItem("dtc-sidebar-width", String(width));
-      } catch {}
-    };
-    sidebarResize.addEventListener("pointerup", endDrag);
-    sidebarResize.addEventListener("pointercancel", endDrag);
   }
 
   function isMobileShell() {
@@ -202,13 +150,11 @@ export function createPreferencesShell({
   }
 
   return {
-    attachSidebarResize,
     closeSidebar,
     isMobileShell,
     openSidebar,
     restoreDarkMode,
     restoreSidebarCollapsed,
-    restoreSidebarWidth,
     setDarkMode,
     setSidebarCollapsed,
     syncSidebarShellState,

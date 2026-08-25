@@ -170,7 +170,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     try { process.kill(-server.pid, "SIGTERM"); } catch {}
   });
 
-  test("shell, Home, and account scope retain their primary DOM and interactions", async ({ browser }) => {
+  test("shell, Home, and account scope retain their primary DOM and interactions; keeps fixed-width sidebar and accessible drawer flows", async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     const errors = observeErrors(page);
@@ -188,6 +188,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     await page.locator("#sidebar-collapse-button").click();
     await expect(page.locator("#sidebar-expand-button")).toBeVisible();
     await page.locator("#sidebar-expand-button").click();
+    await expect(page.locator("#sidebar-resize")).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
     expect(errors).toEqual([]);
     await context.close();

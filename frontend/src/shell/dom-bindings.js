@@ -1,7 +1,6 @@
 const SELECTORS = Object.freeze({
   sidebar: "#sidebar",
   sidebarScrim: "#sidebar-scrim",
-  sidebarResize: "#sidebar-resize",
   mobileMenuButton: "#mobile-menu-button",
   sidebarCloseButton: "#sidebar-close-button",
   sidebarCollapseButton: "#sidebar-collapse-button",
