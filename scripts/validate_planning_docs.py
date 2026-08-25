@@ -278,7 +278,7 @@ def validate_doc_registry(repo_root: Path) -> list[str]:
         return violations
 
     for template_path in sorted((root / "tasks" / "templates").glob("*.md")):
-        repo_path = _repo_path(root.parent, template_path)
+        repo_path = _corpus_path(root, template_path)
         record = registry.by_path.get(repo_path)
         if record is None:
             violations.append(f"{repo_path}: missing from document registry")
@@ -298,7 +298,7 @@ def validate_task_templates(repo_root: Path) -> list[str]:
 
     seen_titles: dict[str, str] = {}
     for template_path in template_paths:
-        repo_path = _repo_path(repo_root, template_path)
+        repo_path = _corpus_path(root, template_path)
         text = template_path.read_text(encoding="utf-8", errors="replace")
         raw, body = sop_parse.split_frontmatter(text)
         metadata = sop_parse.parse_frontmatter(raw) if raw else {}
@@ -480,6 +480,10 @@ def _normalize_text(text: str) -> str:
     text = text.replace("`", "")
     text = re.sub(r"\s+", " ", text)
     return text.lower()
+
+
+def _corpus_path(content_root: Path, path: Path) -> str:
+    return (Path("content") / path.resolve().relative_to(content_root.resolve())).as_posix()
 
 
 def _repo_path(repo_root: Path, path: Path) -> str:
