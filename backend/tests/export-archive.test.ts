@@ -10,7 +10,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createTask } from '../src/db/tasks';
-import { validatePortableExport } from '../src/export/portable';
+import { setPortableExportClockForTests, validatePortableExport } from '../src/export/portable';
 import {
   buildArchiveKey,
   extractExportArchive,
@@ -99,27 +99,38 @@ describe('offsite portable export archives', () => {
       },
     };
 
-    const result = await writePortableExportArchive(client, {
-      bucket: 'dataops-v1-export-archives',
-      prefix: 'exports',
-      environment: 'prod',
-      tempDir: path.join(tmpDir, 's3-working-export'),
-      s3Client: mockS3,
-    });
+    setPortableExportClockForTests(() => new Date('2026-06-27T12:15:30+02:00'));
+    try {
+      const result = await writePortableExportArchive(client, {
+        bucket: 'dataops-v1-export-archives',
+        prefix: 'exports',
+        environment: 'prod',
+        tempDir: path.join(tmpDir, 's3-working-export'),
+        s3Client: mockS3,
+      });
 
-    assert.strictEqual(result.archiveBucket, 'dataops-v1-export-archives');
-    assert.match(result.archiveUri, /^s3:\/\/dataops-v1-export-archives\/exports\/prod\//);
-    assert.ok(result.manifest.redactions.includes('proposal_presentations.action_token_hash'));
-    assert.ok(result.manifest.omitted_entities.includes('provider_credentials'));
-    assert.doesNotMatch(result.archiveUri, /[?&](token|credential|signature)=/i);
-    assert.strictEqual(sentCommands.length, 1);
-    assert.ok(sentCommands[0] instanceof PutObjectCommand);
-    const input = (sentCommands[0] as PutObjectCommand).input;
-    assert.strictEqual(input.Bucket, 'dataops-v1-export-archives');
-    assert.strictEqual(input.Key, result.archiveKey);
-    assert.strictEqual(input.ServerSideEncryption, 'AES256');
-    assert.strictEqual(input.ContentType, 'application/gzip');
-    assert.ok(input.Body instanceof Buffer);
+      assert.strictEqual(result.archiveBucket, 'dataops-v1-export-archives');
+      assert.match(result.archiveUri, /^s3:\/\/dataops-v1-export-archives\/exports\/prod\//);
+      assert.ok(result.manifest.redactions.includes('proposal_presentations.action_token_hash'));
+      assert.ok(result.manifest.omitted_entities.includes('provider_credentials'));
+      assert.doesNotMatch(result.archiveUri, /[?&](token|credential|signature)=/i);
+      assert.strictEqual(sentCommands.length, 1);
+      assert.ok(sentCommands[0] instanceof PutObjectCommand);
+      const input = (sentCommands[0] as PutObjectCommand).input;
+      assert.strictEqual(input.Bucket, 'dataops-v1-export-archives');
+      assert.strictEqual(input.Key, result.archiveKey);
+      assert.strictEqual(result.manifest.generated_at, '2026-06-27T10:15:30.000Z');
+      assert.strictEqual(
+        input.Key,
+        'exports/prod/2026-06-27/dataops-execution-2026-06-27T10-15-30-000Z.tar.gz',
+      );
+      assert.strictEqual(input.Metadata?.generated_at, result.manifest.generated_at);
+      assert.strictEqual(input.ServerSideEncryption, 'AES256');
+      assert.strictEqual(input.ContentType, 'application/gzip');
+      assert.ok(input.Body instanceof Buffer);
+    } finally {
+      setPortableExportClockForTests();
+    }
   });
 
   it('builds deterministic audit-friendly archive keys without private data', () => {

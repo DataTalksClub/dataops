@@ -114,7 +114,10 @@ before treating production execution data as critical.
 
 ## Portable Export Format
 
-Portable exports are application-level snapshots.
+Portable exports are application-level snapshots. `generated_at` is the single
+logical anchor used consistently for expiration filtering, manifest metadata,
+and archive naming. Sequential scans do not make it a transactional multi-table
+database snapshot.
 
 Current implementation:
 

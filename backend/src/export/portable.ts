@@ -145,6 +145,7 @@ const VALID_INTAKE_DATA_CLASSES = new Set(['public', 'internal', 'private', 'sen
 const VALID_INTAKE_ASSISTANT_STATUSES = new Set(['not-applicable', 'candidate', 'ready', 'submitted', 'blocked']);
 const SECRET_EXPORT_PATTERN = /(secret|token|password|credential|cookie|authorization|signed[_-]?url|api[_-]?key)/i;
 const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|signature=|sig=|access_token=|token=|password=|secret=|credential=|api[_-]?key=)/i;
+const RFC3339_INSTANT_PATTERN = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})[Tt](?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.(?<fraction>\d{1,3}))?(?:(?<utcZone>[Zz])|(?<offsetSign>[+-])(?<offsetHours>\d{2}):(?<offsetMinutes>\d{2}))$/;
 
 const ENTITY_SPECS: EntitySpec[] = [
   {
@@ -605,6 +606,13 @@ function sha256(content: string): string {
   return `sha256:${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
+let portableExportClock: () => Date = () => new Date();
+
+function resolveGeneratedAt(value?: string): string {
+  if (value === undefined) return portableExportClock().toISOString();
+  return canonicalizeRfc3339Instant(value);
+}
+
 async function writePortableExport(
   client: DynamoDBDocumentClient,
   outputDir: string,
@@ -616,6 +624,7 @@ async function writePortableExport(
     generatedAt?: string;
   } = {}
 ): Promise<PortableExportResult> {
+  const generatedAt = resolveGeneratedAt(options.generatedAt);
   await fs.mkdir(outputDir, { recursive: true });
 
   const entityFiles: Record<string, string> = {};
@@ -624,7 +633,6 @@ async function writePortableExport(
 
   for (const spec of ENTITY_SPECS) {
     const rawItems = await scanByPrefix(client, spec.tableName, spec.prefix, spec.recordType, spec.prefixes);
-    const generatedAt = options.generatedAt || new Date().toISOString();
     const records = rawItems
       .filter((item) => (
         (!spec.filter || spec.filter(item))
@@ -648,7 +656,7 @@ async function writePortableExport(
 
   const manifest: Manifest = {
     schema_version: SCHEMA_VERSION,
-    generated_at: options.generatedAt || new Date().toISOString(),
+    generated_at: generatedAt,
     source_environment: options.sourceEnvironment || process.env.DATAOPS_ENV || process.env.NODE_ENV || 'unknown',
     source_stack: options.sourceStack || process.env.AWS_STACK_NAME || 'unknown',
     source_region: options.sourceRegion || process.env.AWS_REGION || 'unknown',
@@ -1155,8 +1163,66 @@ function isIsoDate(value: string): boolean {
   );
 }
 
+function isRfc3339Instant(value: string, requireUtc = false): boolean {
+  const match = RFC3339_INSTANT_PATTERN.exec(value);
+  if (!match?.groups) return false;
+
+  if (requireUtc && !match.groups.utcZone) return false;
+  if (Number(match.groups.second) > 59) return false;
+  if (match.groups.offsetHours && Number(match.groups.offsetHours) > 23) return false;
+  if (match.groups.offsetMinutes && Number(match.groups.offsetMinutes) > 59) return false;
+
+  // Reapplying the numeric offset recovers the supplied wall-clock fields and
+  // prevents JavaScript from rolling invalid dates such as February 30 forward.
+  const secondTimestamp = Date.parse(rfc3339SecondBase(value));
+  if (Number.isNaN(secondTimestamp)) return false;
+  const offsetSign = match.groups.offsetSign === '-' ? -1 : 1;
+  const offsetMinutes = (
+    Number(match.groups.offsetHours || 0) * 60
+    + Number(match.groups.offsetMinutes || 0)
+  ) * offsetSign;
+  const wallClock = new Date(secondTimestamp + offsetMinutes * 60_000);
+  return (
+    wallClock.getUTCFullYear() === Number(match.groups.year)
+    && wallClock.getUTCMonth() + 1 === Number(match.groups.month)
+    && wallClock.getUTCDate() === Number(match.groups.day)
+    && wallClock.getUTCHours() === Number(match.groups.hour)
+    && wallClock.getUTCMinutes() === Number(match.groups.minute)
+    && wallClock.getUTCSeconds() === Number(match.groups.second)
+  );
+}
+
+function rfc3339SecondBase(value: string): string {
+  const match = RFC3339_INSTANT_PATTERN.exec(value);
+  if (!match?.groups) throw new Error('Value is not an RFC3339 instant');
+
+  const zone = match.groups.utcZone
+    ? 'Z'
+    : `${match.groups.offsetSign}${match.groups.offsetHours}:${match.groups.offsetMinutes}`;
+  return `${match.groups.year}-${match.groups.month}-${match.groups.day}`
+    + `T${match.groups.hour}:${match.groups.minute}:${match.groups.second}.000${zone}`;
+}
+
+function canonicalizeRfc3339Instant(value: string): string {
+  if (!isRfc3339Instant(value)) {
+    throw new Error('generatedAt must be an RFC3339 date-time with millisecond precision');
+  }
+
+  const match = RFC3339_INSTANT_PATTERN.exec(value);
+  if (!match?.groups) throw new Error('generatedAt must be an RFC3339 date-time with millisecond precision');
+  const utcSeconds = new Date(Date.parse(rfc3339SecondBase(value)))
+    .toISOString()
+    .slice(0, 19);
+  const fraction = (match.groups.fraction || '').padEnd(3, '0');
+  return `${utcSeconds}.${fraction}Z`;
+}
+
 function isParseableDateOrTimestamp(value: string): boolean {
   return isIsoDate(value) || !Number.isNaN(Date.parse(value));
+}
+
+function setPortableExportClockForTests(clock?: () => Date): void {
+  portableExportClock = clock || (() => new Date());
 }
 
 function validateDateField(
@@ -1234,8 +1300,8 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
   if (manifest.export_format_version !== EXPORT_FORMAT_VERSION) {
     errors.push(`manifest export_format_version must be ${EXPORT_FORMAT_VERSION}`);
   }
-  if (typeof manifest.generated_at !== 'string' || !isParseableDateOrTimestamp(manifest.generated_at)) {
-    errors.push('manifest generated_at must be a parseable date or timestamp');
+  if (typeof manifest.generated_at !== 'string' || !isRfc3339Instant(manifest.generated_at, true)) {
+    errors.push('manifest generated_at must be a UTC RFC3339 date-time');
   }
 
   const recordsByEntity: Partial<Record<ExportEntityName, JsonRecord[]>> = {};
@@ -1858,6 +1924,7 @@ export {
   REDACTIONS,
   SCHEMA_VERSION,
   dryRunImport,
+  setPortableExportClockForTests,
   validatePortableExport,
   writePortableExport,
 };
