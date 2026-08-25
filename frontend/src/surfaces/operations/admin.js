@@ -26,7 +26,6 @@ export function createAdminSurface(context) {
     request,
     setRouteTitle,
     settledPayload,
-    showCreate,
     showWorkspaceSurface,
     surfaceDescription,
     usersFromWorkPayload,
@@ -492,11 +491,6 @@ export function createAdminSurface(context) {
     const section = document.createElement("section");
     section.className = "ops-admin-grid";
     const cards = [
-      [
-        "New process doc",
-        "Create SOPs, templates, references, and playbooks in the git-backed content tree.",
-        showCreate,
-      ],
       [
         "Recurring config",
         `${model.recurring.configs.length} configs loaded. Generated tasks appear in Home and Work Queue.`,

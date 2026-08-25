@@ -134,6 +134,22 @@ describe("app shared operations domain characterization", () => {
     );
   });
 
+  test("keeps editor-owned document APIs wired into Process Docs", () => {
+    const bridgeDestructuring = applicationSource.match(
+      /const \{(?<names>[\s\S]*?)\} = surfaceBridge;/,
+    );
+
+    assert.match(bridgeDestructuring.groups.names, /(?:^|[\s,])titleFromMarkdown\b/);
+    assert.match(
+      applicationSource,
+      /createKnowledgeSurface\(\{[\s\S]*?\n  titleFromMarkdown:/,
+    );
+    assert.match(
+      applicationSource,
+      /createKnowledgeSurface\(\{[\s\S]*?\n  showCreate,/,
+    );
+  });
+
   test("normalizes work API collection envelopes and authenticated operator ids", () => {
     const card = { id: "card-1" };
     const user = { id: "grace" };

@@ -70,6 +70,7 @@ export function createDocumentEditor(context) {
     refreshChangesPanel: invoke("refreshChangesPanel"),
     refreshGitStatus: invoke("refreshGitStatus"),
     refreshParsedFromApi: invoke("refreshParsedFromApi"),
+    showChangesStatus: invoke("showChangesStatus"),
     renderMarkdown: invoke("renderMarkdown"),
     renderParsedDocument: invoke("renderParsedDocument"),
     renderProseBlock: invoke("renderProseBlock"),

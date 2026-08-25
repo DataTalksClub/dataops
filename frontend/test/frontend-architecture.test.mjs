@@ -120,6 +120,27 @@ describe("shell ownership contract", () => {
       ["attachSidebarResize writer", /\battachSidebarResize\b/],
       ["custom sidebar width writer", /\bsetSidebarWidth\b/],
       ["custom sidebar width restorer", /\brestoreSidebarWidth\b/],
+      ["sidebar-only knowledge control class", /\bdocs-sidebar-only\b/],
+      ["mobile New button id", /\bmobile-new-button\b/],
+      ["mobileNewButton binding", /\bmobileNewButton\b/],
+      ["new-document-button selector", /\bnew-document-button\b/],
+      ["newDocumentButton binding", /\bnewDocumentButton\b/],
+      ["doc-pin-button selector", /\bdoc-pin-button\b/],
+      ["docPinButton binding", /\bdocPinButton\b/],
+      ["knowledge pin UI", /\bpinned\b/i],
+      ["recently viewed UI", /\brecently-viewed\b|\brecentlyViewed\b/i],
+      ["recent-list selector", /\brecent-list\b/],
+      ["recentList binding", /\brecentList\b/],
+      ["changes-toggle selector", /\bchanges-toggle\b/],
+      ["changesToggle binding", /\bchangesToggle\b/],
+      ["filter-toggle selector", /\bfilter-toggle\b/],
+      ["filterToggle binding", /\bfilterToggle\b/],
+      ["filters expanded storage", /dtc-filters-expanded/],
+      ["current pin storage", /dtc-pinned/],
+      ["recently viewed storage", /dtc-recently-viewed/],
+      ["toggleCurrentDocPin API", /\btoggleCurrentDocPin\b/],
+      ["restoreFiltersExpanded API", /\brestoreFiltersExpanded\b/],
+      ["setFiltersExpanded API", /\bsetFiltersExpanded\b/],
     ];
 
     const ghosts = [];
@@ -130,6 +151,35 @@ describe("shell ownership contract", () => {
       }
     }
     assert.deepEqual(ghosts, []);
+  });
+
+  test("gives Process Docs ownership of its creation action", () => {
+    const producers = frontendJavaScriptFiles().filter((file) =>
+      read(`frontend/${file}`).includes('className = "primary-button ops-docs-create"'),
+    );
+    assert.deepEqual(producers, ["src/surfaces/knowledge/process-docs.js"]);
+    assert.match(
+      read("frontend/src/surfaces/knowledge/process-docs.js"),
+      /createButton\.addEventListener\("click", \(\) => showCreate\(\)\);/,
+    );
+    const admin = read("frontend/src/surfaces/operations/admin.js");
+    assert.doesNotMatch(admin, /\bshowCreate\b|New process doc/);
+
+    const application = read("frontend/src/runtime/application.js");
+    const adminWiring = application.match(
+      /createAdminSurface\(\{.*?\}\);/s,
+    )?.[0];
+    assert.ok(adminWiring, "Admin runtime wiring is present");
+    assert.doesNotMatch(
+      admin,
+      /\b(?:setStatus|showErrorToast|surfaceStatusText)\b/,
+      "Admin owns its visible feedback instead of consuming shell status APIs",
+    );
+    assert.doesNotMatch(
+      adminWiring,
+      /\b(?:setStatus|showErrorToast|surfaceStatusText):/,
+      "Shell status APIs are not injected into Admin",
+    );
   });
 
   test("writes route titles through a single-argument contract", () => {

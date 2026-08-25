@@ -203,7 +203,6 @@ function createPreferenceHarness(options = {}) {
   sidebar.append(sidebarButton);
   const sidebarScrim = element("sidebar-scrim");
   const mobileMenuButton = element("mobile-menu-button", "button");
-  const mobileNewButton = element("mobile-new-button", "button");
   const pageShell = element("page-shell", "main");
   const sidebarExpandButton = element("sidebar-expand-button", "button");
   const themeToggleButton = element("theme-toggle-button", "button");
@@ -216,7 +215,6 @@ function createPreferenceHarness(options = {}) {
     sidebar,
     sidebarScrim,
     mobileMenuButton,
-    mobileNewButton,
     pageShell,
     sidebarExpandButton,
     themeToggleButton,
@@ -232,7 +230,6 @@ function createPreferenceHarness(options = {}) {
     HTMLElementClass: FakeElement,
     matchMedia: () => media,
     mobileMenuButton,
-    mobileNewButton,
     pageShell,
     sidebar,
     sidebarExpandButton,
@@ -246,7 +243,6 @@ function createPreferenceHarness(options = {}) {
     document,
     media,
     mobileMenuButton,
-    mobileNewButton,
     pageShell,
     shell,
     sidebar,
@@ -383,7 +379,6 @@ function createBindingDom() {
     "helpBackdrop",
     "helpClose",
     "helpButton",
-    "docPinButton",
     "taskPanelClose",
     "taskModalBackdrop",
     "cardPanelClose",
@@ -394,7 +389,6 @@ function createBindingDom() {
     "sidebarCollapseButton",
     "sidebarExpandButton",
     "themeToggleButton",
-    "changesToggle",
     "changesSaveAll",
     "changesDiscardAll",
     "gitCommitButton",
@@ -403,9 +397,8 @@ function createBindingDom() {
     "cancelCommitButton",
     "gitCommitForm",
     "tasksNavButton",
-    "newDocumentButton",
-    "mobileNewButton",
     "clearSelectionButton",
+    "clearFiltersButton",
     "editorSaveButton",
     "editorDiscardButton",
     "viewToggleButton",
@@ -414,7 +407,6 @@ function createBindingDom() {
     "editor",
     "searchForm",
     "searchInput",
-    "filterToggle",
     "filtersSection",
     "domainFilter",
     "typeFilter",
@@ -431,7 +423,6 @@ function createBindingDom() {
   const dom = Object.fromEntries(names.map((name) => [name, element(name, "button")]));
   dom.body = element("body", "body");
   dom.changesSection = element("changes-section");
-  dom.filterRow = element("filter-row");
   dom.helpModal = element("help-modal");
   dom.diffModal = element("diff-modal");
   dom.lightbox = element("lightbox");
@@ -448,7 +439,6 @@ function createBindingDom() {
   dom.diffModal.hidden = true;
   dom.lightbox.hidden = true;
   dom.filtersSection.open = false;
-  dom.filterRow.hidden = true;
   return dom;
 }
 
@@ -650,13 +640,15 @@ describe("runtime and shell production behavior", () => {
 
   test("opens the mobile sidebar as a modal, traps focus, and restores its opener", async () => {
     const harness = createPreferenceHarness({ mobile: true });
+    harness.shell.syncSidebarShellState();
+    assert.equal(harness.sidebar.inert, true);
+    assert.equal(harness.pageShell.inert, false);
     harness.document.activeElement = harness.mobileMenuButton;
     harness.shell.openSidebar();
     assert.equal(harness.body.classList.contains("sidebar-open"), true);
     assert.equal(harness.sidebar.getAttribute("role"), "dialog");
     assert.equal(harness.sidebarScrim.hidden, false);
     assert.equal(harness.pageShell.inert, true);
-    assert.equal(harness.mobileNewButton.inert, true);
     assert.equal(harness.sidebarButton.focused, true);
 
     const escape = await harness.document.emit("keydown", { key: "Escape" });
@@ -664,6 +656,7 @@ describe("runtime and shell production behavior", () => {
     assert.equal(harness.body.classList.contains("sidebar-open"), false);
     assert.equal(harness.mobileMenuButton.focused, true);
     assert.equal(harness.sidebar.getAttribute("aria-hidden"), "true");
+    assert.equal(harness.sidebar.inert, true);
 
     harness.shell.openSidebar();
     harness.document.activeElement = harness.sidebarButton;
@@ -871,6 +864,7 @@ describe("runtime and shell production behavior", () => {
     const callbacks = new Proxy(
       {
         debounce: (callback) => callback,
+        clearDocumentFilters: () => calls.push(["clearDocumentFilters"]),
         handleWorkspaceEntityModalKeydown: (event) =>
           calls.push(["entity-key", event.key]),
         isSettingsMenuOpen: () => false,
@@ -917,6 +911,12 @@ describe("runtime and shell production behavior", () => {
     await dom.editor.dispatch("input");
     assert.equal(calls.some(([name]) => name === "storeDraft"), true);
     assert.equal(calls.some(([name]) => name === "updateSaveState"), true);
+
+    await dom.clearFiltersButton.click();
+    assert.equal(
+      calls.some(([name]) => name === "clearDocumentFilters"),
+      true,
+    );
 
     const saveEvent = await document.emit("keydown", {
       ctrlKey: true,

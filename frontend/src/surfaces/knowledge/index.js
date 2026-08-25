@@ -28,7 +28,6 @@ export function createKnowledgeSurface(context) {
   Object.assign(
     api,
     createKnowledgeCatalog(context, {
-      openDocument: invoke("openDocument"),
       populateFilterOptions: invoke("populateFilterOptions"),
       refreshDocuments: invoke("refreshDocuments"),
     }),
@@ -45,6 +44,7 @@ export function createKnowledgeSurface(context) {
       filterDocuments: invoke("filterDocuments"),
       openDocument: invoke("openDocument"),
       renderDocuments: invoke("renderDocuments"),
+      searchFilterParams: invoke("searchFilterParams"),
       setHighlightedText: invoke("setHighlightedText"),
       syncLibraryRouteTitle: invoke("syncLibraryRouteTitle"),
     }),
@@ -53,12 +53,8 @@ export function createKnowledgeSurface(context) {
   Object.assign(
     api,
     createKnowledgeNavigation(context, {
-      pushRecentlyViewed: invoke("pushRecentlyViewed"),
       refreshDocuments: invoke("refreshDocuments"),
-      renderPinned: invoke("renderPinned"),
-      renderRecentlyViewed: invoke("renderRecentlyViewed"),
       scrollPositions,
-      updatePinButton: invoke("updatePinButton"),
     }),
   );
   Object.assign(
@@ -115,13 +111,12 @@ export function createKnowledgeSurface(context) {
     renderWarningsBlock: api.renderWarningsBlock,
     resolveDocReference: api.resolveDocReference,
     resolveMarkdownDocLink: api.resolveMarkdownDocLink,
-    restoreFiltersExpanded: api.restoreFiltersExpanded,
-    setFiltersExpanded: api.setFiltersExpanded,
+    restoreDocumentFilters: api.restoreDocumentFilters,
+    searchFilterParams: api.searchFilterParams,
     setFolderUrl: api.setFolderUrl,
     setSelectedFolder: api.setSelectedFolder,
     showLibrary: api.showLibrary,
     syncLibraryRouteTitle: api.syncLibraryRouteTitle,
-    toggleCurrentDocPin: api.toggleCurrentDocPin,
     updateFilterSummary: api.updateFilterSummary,
     updateQuickNavMatches: api.updateQuickNavMatches,
     visibleDocUrl: api.visibleDocUrl,

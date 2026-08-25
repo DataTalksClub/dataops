@@ -19,6 +19,7 @@ const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-159-capability-behavior');
 const ISSUE_196_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-196');
 const ISSUE_193_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-193');
+const ISSUE_200_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-200');
 const BOUNDARY_OPERATOR_DATE = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 const ADMIN_ID = '15900000-0000-4000-8000-000000000011';
 const OPERATOR_ID = '15900000-0000-4000-8000-000000000012';
@@ -212,6 +213,94 @@ async function expectStackedQualityEmptyState(page) {
     animations: 'disabled',
     ...(page.viewportSize()?.width === 390 ? { fullPage: true } : {}),
   });
+}
+
+function observeBrowserErrors(page) {
+  const entries = [];
+  page.on('pageerror', (error) => entries.push({
+    kind: 'pageerror',
+    url: page.url(),
+    message: error.message,
+  }));
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    entries.push({
+      kind: 'console',
+      url: message.location()?.url || page.url(),
+      message: message.text(),
+    });
+  });
+  page.on('requestfailed', (request) => entries.push({
+    kind: 'requestfailed',
+    url: request.url(),
+    failure: request.failure()?.errorText || 'unknown',
+  }));
+  page.on('response', (response) => {
+    if (response.status() < 400) return;
+    entries.push({
+      kind: 'response',
+      method: response.request().method(),
+      url: response.url(),
+      status: response.status(),
+    });
+  });
+  return entries;
+}
+
+function expectOnlyDeliberateCatalogFailures(entries) {
+  const failures = entries.filter((entry) => entry.kind === 'response'
+    && entry.method === 'GET'
+    && new URL(entry.url).pathname === '/docs'
+    && !new URL(entry.url).searchParams.has('path'));
+  const failureUrls = new Set(failures.map((entry) => entry.url));
+  const unexpected = entries.filter((entry) => {
+    if (entry.kind === 'response') return false;
+    if (entry.kind === 'console' && failureUrls.has(entry.url)) return false;
+    return true;
+  }).map((entry) => `${entry.kind}: ${entry.message || entry.failure || entry.url}`);
+  expect(unexpected).toEqual([]);
+  expect(failures.length).toBeGreaterThan(0);
+  expect(failures.every((entry) => entry.status === 503)).toBe(true);
+}
+
+async function captureIssue200Screenshot(page, state) {
+  fs.mkdirSync(ISSUE_200_SCREENSHOTS, { recursive: true });
+  const viewport = page.viewportSize();
+  const dimensions = `${viewport.width}x${viewport.height}`;
+  const prefix = viewport.width === 390 ? 'mobile' : 'desktop';
+  const layout = await page.evaluate(() => ({
+    viewportWidth: document.documentElement.clientWidth,
+    pageOverflow: Math.max(
+      document.documentElement.scrollWidth,
+      document.body.scrollWidth,
+    ) - document.documentElement.clientWidth,
+    surfaceOverflow: document.querySelector('.ops-surface-docs')
+      ? document.querySelector('.ops-surface-docs').scrollWidth
+        - document.querySelector('.ops-surface-docs').clientWidth
+      : 0,
+  }));
+  expect(layout.pageOverflow).toBeLessThanOrEqual(0);
+  expect(layout.surfaceOverflow).toBeLessThanOrEqual(0);
+  await page.screenshot({
+    path: path.join(ISSUE_200_SCREENSHOTS, `${prefix}-${state}-${dimensions}.png`),
+    fullPage: true,
+    animations: 'disabled',
+  });
+}
+
+async function captureIssue200State(page, state, readyLocator) {
+  await expect(readyLocator).toBeVisible();
+  await captureIssue200Screenshot(page, state);
+}
+
+async function openMobileProcessDocs(page) {
+  await page.locator('#mobile-menu-button').click();
+  const sidebar = page.locator('#sidebar');
+  await expect(sidebar).toBeVisible();
+  await page.getByRole('button', { name: 'Process Docs', exact: true }).click();
+  await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
+  await expect(sidebar).toHaveAttribute('inert', '');
+  await expect(page.locator('#sidebar-scrim')).toBeHidden();
 }
 
 function unique(prefix) {
@@ -888,19 +977,87 @@ test.describe('issue 159 retained canonical capability behavior', () => {
 
   test('Process Docs search and Admin diagnostics use real synthetic local fixtures and fail safely', async ({ browser }, testInfo) => {
     test.setTimeout(120_000);
-    const empty = await portalContext(browser, servers.emptyDocs);
-    await setFaults(empty.request, [{ method: 'GET', path: '/docs', delayMs: 1200 }]);
+    const empty = await portalContext(browser, servers.emptyDocs, {
+      viewport: { width: 1440, height: 900 },
+    });
+    await setFaults(empty.request, [{
+      method: 'GET', path: '/docs', delayMs: 1200, remaining: 2,
+    }]);
     const emptyPage = await empty.newPage();
+    const emptyErrors = observeBrowserErrors(emptyPage);
     const emptyDocsReady = emptyPage.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET' && url.pathname === '/docs';
     });
     await emptyPage.goto('/#/processes', { waitUntil: 'domcontentloaded' });
+    await captureIssue200State(
+      emptyPage,
+      'process-docs-loading',
+      emptyPage.locator('.ops-surface-docs'),
+    );
     const emptyDocsResponse = await emptyDocsReady;
     expect(emptyDocsResponse.status()).toBe(200);
     expect((await json(emptyDocsResponse)).documents).toEqual([]);
+
+    await emptyPage.setViewportSize({ width: 390, height: 844 });
+    const mobileLoadingReady = emptyPage.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET' && url.pathname === '/docs';
+    });
+    await emptyPage.reload({ waitUntil: 'domcontentloaded' });
+    await captureIssue200State(
+      emptyPage,
+      'process-docs-loading',
+      emptyPage.locator('.ops-surface-docs'),
+    );
+    expect((await mobileLoadingReady).status()).toBe(200);
+
+    await setFaults(empty.request, [{
+      method: 'GET', path: '/docs', status: 503, remaining: 2,
+    }]);
+    await emptyPage.setViewportSize({ width: 1440, height: 900 });
+    const desktopOutageReady = emptyPage.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET' && url.pathname === '/docs';
+    });
+    await emptyPage.reload({ waitUntil: 'domcontentloaded' });
+    await captureIssue200State(
+      emptyPage,
+      'process-docs-unavailable',
+      emptyPage.locator('.ops-surface-docs [data-docs-state="unavailable"]'),
+    );
+    expect((await desktopOutageReady).status()).toBe(503);
+    await emptyPage.setViewportSize({ width: 390, height: 844 });
+    const mobileOutageReady = emptyPage.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET' && url.pathname === '/docs';
+    });
+    await emptyPage.reload({ waitUntil: 'domcontentloaded' });
+    await captureIssue200State(
+      emptyPage,
+      'process-docs-unavailable',
+      emptyPage.locator('.ops-surface-docs [data-docs-state="unavailable"]'),
+    );
+    expect((await mobileOutageReady).status()).toBe(503);
+    expectOnlyDeliberateCatalogFailures(emptyErrors);
+    const outageSearch = emptyPage.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === 'GET' && url.pathname === '/search';
+    });
+    await emptyPage.locator('#mobile-menu-button').click();
+    await expect(emptyPage.locator('#sidebar')).toBeVisible();
     await emptyPage.locator('#search-input').fill('no synthetic process exists');
+    const outageSearchRequest = await outageSearch;
+    expect([...new URL(outageSearchRequest.url()).searchParams]).toEqual([
+      ['q', 'no synthetic process exists'],
+      ['limit', '80'],
+      ['source', 'docs'],
+    ]);
     await expect(emptyPage.locator('#document-list.is-unified-search')).toBeVisible();
+    await emptyPage.locator('#sidebar-close-button').click();
+    await expect(emptyPage.locator('#sidebar')).toHaveAttribute('aria-hidden', 'true');
+    await expect(emptyPage.locator('#sidebar')).toHaveAttribute('inert', '');
+    await expect(emptyPage.locator('#sidebar-scrim')).toBeHidden();
     await expect(emptyPage.getByText('No work or process context matches this search.')).toBeVisible();
     await setFaults(empty.request, [
       { method: 'GET', path: '/docs/process-quality', delayMs: 1200 },
@@ -919,6 +1076,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await empty.close();
 
     const { context, page } = await portalPage(browser, servers.qualityAdmin);
+    const browserErrors = observeBrowserErrors(page);
     const docs = await context.request.get('/docs');
     expect(docs.status()).toBe(200);
     expect((await json(docs)).documents.some((item) => item.path === 'content/synthetic/capability.md')).toBe(true);
@@ -931,7 +1089,78 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await page.goto('/#/processes');
     await expect(page.locator('#library-title')).toHaveText('Docs');
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.locator('.ops-reference-link').first()).toBeVisible();
+    await captureIssue200Screenshot(page, 'process-docs-healthy');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await captureIssue200Screenshot(page, 'process-docs-healthy');
+
+    await openMobileProcessDocs(page);
+    const mobileCreateProcess = page.locator('.ops-docs-create');
+    await expect(mobileCreateProcess).toBeVisible();
+    await mobileCreateProcess.click();
+    await expect(page.locator('body')).toHaveAttribute('data-view', 'create');
+    await expect(page.locator('#new-doc-path')).toBeVisible();
+    await captureIssue200Screenshot(page, 'process-docs-create');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.locator('#docs-nav-button').click();
+    await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
+
+    await page.locator('#filters-section summary').click();
+    const documentFilters = page.locator('#filter-row .custom-select');
+    await expect(documentFilters).toHaveCount(4);
+    const chooseDocumentFilter = async (index, label) => {
+      const filter = documentFilters.nth(index);
+      await filter.getByRole('button').click();
+      await filter.getByRole('option', { name: label }).click();
+    };
+    await chooseDocumentFilter(0, 'Synthetic');
+    await chooseDocumentFilter(1, 'Sop');
+    await chooseDocumentFilter(2, 'Dataops');
+    await chooseDocumentFilter(3, 'Synthetic');
+    const canonicalFilterUrl = /\/#\/processes\?domain=synthetic&type=sop&system=dataops&tag=synthetic$/;
+    await expect(page).toHaveURL(canonicalFilterUrl);
+    await expect(page.locator('.ops-surface-docs')).toBeVisible();
+    await expect(page.locator('#filter-count')).toHaveText('4');
+    await captureIssue200Screenshot(page, 'process-docs-filtered');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await captureIssue200Screenshot(page, 'process-docs-filtered');
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.reload();
+    await expect(page.locator('.ops-surface-docs')).toBeVisible();
+    await expect(page).toHaveURL(canonicalFilterUrl);
+    await expect(page.locator('#filter-count')).toHaveText('4');
+    await page.locator('#filters-section summary').click();
+    await page.locator('#clear-filters-button').click();
+    await expect(page).toHaveURL(/\/#\/processes$/);
+    await expect(page.locator('#filter-count')).toBeHidden();
+    await expect(page.locator('#filter-count')).toHaveText('');
+    for (const selector of ['#domain-filter', '#type-filter', '#system-filter', '#tag-filter']) {
+      await expect(page.locator(selector)).toHaveValue('');
+    }
+
+    await chooseDocumentFilter(0, 'Synthetic');
+    await chooseDocumentFilter(1, 'Sop');
+    await chooseDocumentFilter(2, 'Dataops');
+    await chooseDocumentFilter(3, 'Synthetic');
+    await expect(page).toHaveURL(canonicalFilterUrl);
+    const filteredSearch = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === 'GET' && url.pathname === '/search';
+    });
     await page.locator('#search-input').fill('synthetic capability');
+    const searchRequest = await filteredSearch;
+    expect([...new URL(searchRequest.url()).searchParams]).toEqual([
+      ['q', 'synthetic capability'],
+      ['limit', '80'],
+      ['domain', 'synthetic'],
+      ['doc_type', 'sop'],
+      ['system', 'dataops'],
+      ['tag', 'synthetic'],
+      ['source', 'docs'],
+    ]);
     const docResult = page.locator('.unified-search-row.result-doc', { hasText: 'Synthetic Capability Procedure' });
     await expect(docResult).toBeVisible();
     await docResult.click();
@@ -941,11 +1170,13 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page).toHaveURL(/\/#\/processes$/);
     await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
     await expect(page.locator('#library-title')).toHaveText('Docs');
-    await page.locator('#settings-button').click();
-    await page.locator('#settings-admin-button').click();
-    const createProcess = page.locator('.ops-admin-card', { hasText: 'New process doc' });
+    const createProcess = page.locator('.ops-docs-create');
     await expect(createProcess).toBeVisible();
     await createProcess.click();
+    await expect(page.locator('body')).toHaveAttribute('data-view', 'create');
+    await captureIssue200Screenshot(page, 'process-docs-create');
+    expect(browserErrors.map((entry) => `${entry.kind}: ${entry.message || entry.failure || entry.url}`))
+      .toEqual([]);
 
     const createdSlug = unique('browser-process');
     const createdPath = `content/synthetic/${createdSlug}.md`;
@@ -987,6 +1218,55 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect((await successfulSave).status()).toBe(200);
     await page.reload();
     await expect(page.locator('#document-title')).toHaveValue(updatedTitle);
+
+    const draftPhaseErrors = observeBrowserErrors(page);
+
+    const draftPaths = [
+      `content/synthetic/${unique('browser-draft')}.md`,
+      'content/synthetic/capability.md',
+    ];
+    await page.evaluate((paths) => {
+      for (const [index, draftPath] of paths.entries()) {
+        localStorage.setItem(
+          `dtc-doc-draft:${draftPath}`,
+          `# Synthetic browser draft ${index + 1}\n`,
+        );
+      }
+    }, draftPaths);
+    const thirdDraftTitle = `${updatedTitle} draft`;
+    await page.locator('.block-title').click();
+    await page.locator('.block-title-editor').fill(thirdDraftTitle);
+    await page.locator('.block-title-editor').press('Enter');
+    const draftRows = page.locator('#changes-list .changes-row-wrap');
+    await expect(draftRows).toHaveCount(3);
+    for (let index = 0; index < 3; index += 1) {
+      await expect(draftRows.nth(index).getByRole('button', { name: 'Diff' })).toBeVisible();
+      await expect(draftRows.nth(index).getByTitle('Discard this draft')).toBeVisible();
+    }
+    await captureIssue200Screenshot(page, 'draft-management');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await captureIssue200Screenshot(page, 'draft-management');
+    expect(draftPhaseErrors.map((entry) => `${entry.kind}: ${entry.message || entry.failure || entry.url}`))
+      .toEqual([]);
+
+    await setFaults(context.request, [{
+      method: 'PUT', path: '/docs', status: 503, remaining: 1,
+    }]);
+    const partialSaveResponses = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'PUT' && url.pathname === '/docs';
+    });
+    await page.locator('#changes-save-all').click();
+    expect((await partialSaveResponses).status()).toBe(503);
+    await expect(page.locator('#changes-status')).toContainText('Saved 2, 1 failed.');
+    await expect(draftRows).toHaveCount(1);
+    await captureIssue200Screenshot(page, 'draft-partial-failure');
+    await clearFaults(context.request);
+    await page.locator('#changes-discard-all').click();
+    await page.locator('#confirm-ok').click();
+    await expect(page.locator('#changes-status')).toContainText('Discarded 1 draft.');
+    await expect(draftRows).toHaveCount(0);
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     const referencePath = `content/synthetic/${unique('browser-reference')}.md`;
     const referenceTitle = 'Synthetic browser backlink source';
@@ -1044,7 +1324,6 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expectStackedQualityEmptyState(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/#/admin');
-    await expect(page.locator('.ops-admin-card', { hasText: 'New process doc' })).toBeVisible();
     await expect(page.locator('.ops-admin-card', { hasText: 'Diagnostics' })).toBeVisible();
     const diagnostics = page.getByRole('region', { name: 'Read-only diagnostics' });
     await expect(diagnostics).toContainText('No pull, commit, publish, or provider action is available here');
@@ -1064,7 +1343,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await expect(page.locator('[data-diagnostic="quality"]')).toContainText(/finding\(s\); \d+ validation error\(s\)/);
     await context.close();
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.git-failure'] },
+      { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.filters.url-reload-clear-search', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.draft-management', 'process-docs.partial-save-failure', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.git-failure'] },
       { route: '/#/admin', roleId: 'admin', stateIds: ['admin.loading', 'admin.empty', 'admin.ready-read-only', 'admin.failure'] },
     ]);
   });

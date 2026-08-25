@@ -15,6 +15,7 @@ export function createWorkspaceState(context) {
     allDocuments: [],
     visibleDocuments: [],
     selectedFolder: "",
+    documentFilters: { domain: "", type: "", system: "", tag: "" },
     documentIdMap: new Map(),
     searchController: null,
     activeSearchSources: [],

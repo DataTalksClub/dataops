@@ -106,7 +106,8 @@ function createNavigationHarness(options = {}) {
   const shell = createNavigationShell({
     canLeaveCurrentDocument: async () => allowLeave,
     canonicalWorkspaceUrl,
-    clearDocumentFilters: () => calls.push(["clear-filters"]),
+    restoreDocumentFilters: (params) =>
+      calls.push(["restore-filters", [...params]]),
     closeSettingsMenu: () => calls.push(["close-settings"]),
     closeSidebar: () => calls.push(["close-sidebar"]),
     closeWorkBellPanel: (value) => calls.push(["close-bell", value]),
@@ -276,6 +277,51 @@ describe("canonical navigation shell behavior", () => {
     await harness.shell.applyWorkspaceRoute(incoming);
     assert.equal(harness.shell.getActiveWorkspaceRoute().path, "/tasks");
     assert.equal(harness.history.replaced.at(-1).url, "/#/tasks");
+  });
+
+  test("normal navigation clears composer input and closes the mobile shell", async () => {
+    const harness = createNavigationHarness();
+    harness.searchInput.value = "stale search";
+
+    await harness.shell.navigateCanonicalWorkspace("/tasks").ready;
+
+    assert.equal(harness.searchInput.value, "");
+    assert.deepEqual(harness.calls.find(([name]) => name === "close-sidebar"), [
+      "close-sidebar",
+    ]);
+    assert.deepEqual(harness.calls.find(([name]) => name === "restore-filters"), [
+      "restore-filters",
+      [],
+    ]);
+  });
+
+  test("document-filter navigation preserves composer input and keeps the shell open", async () => {
+    const harness = createNavigationHarness();
+    harness.searchInput.value = "keep this search";
+
+    const result = harness.shell.navigateCanonicalWorkspace(
+      "/processes",
+      { domain: "operations", type: "process", system: "portal", tag: "people" },
+      { preserveDocumentComposer: true },
+    );
+    await result.ready;
+
+    assert.equal(result.route.canonicalUrl,
+      "/#/processes?domain=operations&type=process&system=portal&tag=people");
+    assert.equal(harness.searchInput.value, "keep this search");
+    assert.equal(
+      harness.calls.some(([name]) => name === "close-sidebar"),
+      false,
+    );
+    assert.deepEqual(harness.calls.find(([name]) => name === "restore-filters"), [
+      "restore-filters",
+      [
+        ["domain", "operations"],
+        ["type", "process"],
+        ["system", "portal"],
+        ["tag", "people"],
+      ],
+    ]);
   });
 
   test("restores focus to visible Task, Card, nested Task, and Template list controls", async () => {

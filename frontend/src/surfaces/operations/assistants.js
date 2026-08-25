@@ -25,7 +25,6 @@ export function createAssistantsSurface(context) {
     scheduleAnimationFrame,
     setRouteTitle,
     setStatus,
-    showCreate,
     state,
     tasksFromWorkPayload,
     todayIsoDate,

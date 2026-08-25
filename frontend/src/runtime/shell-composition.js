@@ -35,7 +35,6 @@ export function createApplicationShells(context) {
     HTMLElementClass,
     matchMedia: (query) => windowRef.matchMedia(query),
     mobileMenuButton: dom.mobileMenuButton,
-    mobileNewButton: dom.mobileNewButton,
     pageShell: dom.pageShell,
     sidebar: dom.sidebar,
     sidebarExpandButton: dom.sidebarExpandButton,

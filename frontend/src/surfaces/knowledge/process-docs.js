@@ -47,10 +47,7 @@ export function createProcessDocsSurface(context, services) {
     createButton.type = "button";
     createButton.className = "primary-button ops-docs-create";
     createButton.textContent = "New process doc";
-    createButton.addEventListener("click", () => {
-      if (typeof showCreate === "function") showCreate();
-      else document.querySelector("#new-document-button")?.click();
-    });
+    createButton.addEventListener("click", () => showCreate());
     header.append(createButton);
     wrap.append(header);
     wrap.append(renderProcessesSurface(documents, model));

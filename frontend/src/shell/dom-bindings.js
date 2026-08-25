@@ -7,8 +7,8 @@ const SELECTORS = Object.freeze({
   themeToggleButton: "#theme-toggle-button",
   sidebarExpandButton: "#sidebar-expand-button",
   changesSection: "#changes-section",
-  changesToggle: "#changes-toggle",
   changesCount: "#changes-count",
+  changesStatus: "#changes-status",
   changesList: "#changes-list",
   changesSaveAll: "#changes-save-all",
   changesDiscardAll: "#changes-discard-all",
@@ -31,22 +31,16 @@ const SELECTORS = Object.freeze({
   gitCommitSubmit: "#git-commit-submit",
   cancelCommitButton: "[data-action='cancel-commit']",
   gitResult: "#git-result",
-  mobileNewButton: "#mobile-new-button",
   operationsHomeButton: "#operations-home-button",
-  newDocumentButton: "#new-document-button",
   searchForm: "#search-form",
   searchInput: "#search-input",
   domainFilter: "#domain-filter",
   typeFilter: "#type-filter",
   systemFilter: "#system-filter",
   tagFilter: "#tag-filter",
-  filterToggle: "#filter-toggle",
   filtersSection: "#filters-section",
   filterCount: "#filter-count",
-  filterRow: "#filter-row",
-  recentList: "#recent-list",
-  recentlyViewedSection: "#recently-viewed-section",
-  recentlyViewedList: "#recently-viewed-list",
+  clearFiltersButton: "#clear-filters-button",
   helpModal: "#help-modal",
   helpBackdrop: "#help-backdrop",
   helpClose: "#help-close",
@@ -69,9 +63,6 @@ const SELECTORS = Object.freeze({
   renderedView: "#rendered-view",
   viewToggleButton: "#view-toggle-button",
   docMenuButton: "#doc-menu-button",
-  docPinButton: "#doc-pin-button",
-  pinnedSection: "#pinned-section",
-  pinnedList: "#pinned-list",
   newDocForm: "#new-doc-form",
   newDocPath: "#new-doc-path",
   newDocTitle: "#new-doc-title",
@@ -131,8 +122,6 @@ export function bindAppDomEvents(context) {
   dom.helpBackdrop.addEventListener("click", handlers.hideHelpModal);
   dom.helpClose.addEventListener("click", handlers.hideHelpModal);
   dom.helpButton?.addEventListener("click", handlers.showHelpModal);
-  dom.docPinButton.addEventListener("click", handlers.toggleCurrentDocPin);
-
   dom.taskPanelClose.addEventListener("click", handlers.closeTaskPanel);
   dom.taskModalBackdrop.addEventListener("click", handlers.closeTaskPanel);
   dom.cardPanelClose.addEventListener("click", handlers.closeCardPanel);
@@ -162,7 +151,6 @@ export function bindAppDomEvents(context) {
     handlers.setSidebarCollapsed(false),
   );
   dom.themeToggleButton.addEventListener("click", handlers.toggleDarkMode);
-  dom.changesToggle.addEventListener("click", handlers.toggleChanges);
   dom.changesSaveAll.addEventListener("click", handlers.saveAllDrafts);
   dom.changesDiscardAll.addEventListener("click", handlers.discardAllDrafts);
   dom.gitCommitButton.addEventListener("click", handlers.openCommitForm);
@@ -186,8 +174,6 @@ export function bindAppDomEvents(context) {
     "dataops:navigate-workspace",
     handlers.navigateWorkspaceEvent,
   );
-  dom.newDocumentButton.addEventListener("click", handlers.showCreate);
-  dom.mobileNewButton.addEventListener("click", handlers.showCreate);
   dom.clearSelectionButton.addEventListener("click", handlers.clearSelection);
   dom.editorSaveButton.addEventListener("click", handlers.saveCurrentDocument);
   dom.editorDiscardButton.addEventListener("click", handlers.discardDraft);
@@ -200,12 +186,11 @@ export function bindAppDomEvents(context) {
   dom.editor.addEventListener("input", handlers.editorInput);
   dom.searchForm.addEventListener("submit", handlers.searchSubmit);
   dom.searchInput.addEventListener("input", handlers.searchInput);
-  dom.filterToggle.addEventListener("click", handlers.toggleFilters);
-  dom.filtersSection.addEventListener("toggle", handlers.filtersToggle);
   dom.domainFilter.addEventListener("change", handlers.onFilterChange);
   dom.typeFilter.addEventListener("change", handlers.onFilterChange);
   dom.systemFilter.addEventListener("change", handlers.onFilterChange);
   dom.tagFilter.addEventListener("change", handlers.onFilterChange);
+  dom.clearFiltersButton.addEventListener("click", handlers.clearDocumentFilters);
   dom.newDocForm.addEventListener("submit", handlers.createDocument);
   dom.cancelCreateButton.addEventListener("click", handlers.showLibrary);
   documentRef.addEventListener("click", handlers.closeCustomSelects);

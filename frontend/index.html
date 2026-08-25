@@ -16,7 +16,6 @@
         <span class="work-bell-count" aria-hidden="true">0</span>
       </button>
       <button id="mobile-settings-button" class="account-button mobile-account-button" type="button" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-menu-avatar aria-hidden="true">?</span></button>
-      <button id="mobile-new-button" class="quiet-button" type="button">New</button>
     </div>
     <div id="sidebar-scrim" class="sidebar-scrim" hidden></div>
 
@@ -54,19 +53,17 @@
           <button id="docs-nav-button" class="workspace-nav-button" type="button" data-workspace-view="docs"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span><span>Process Docs</span></button>
         </nav>
 
-        <button id="new-document-button" class="new-page-button admin-create-button docs-sidebar-only" type="button">+ New process doc</button>
-
         <form id="search-form" class="search-form">
           <input id="search-input" type="search" autocomplete="off" placeholder="Search work and docs">
         </form>
 
-        <details id="filters-section" class="sidebar-details filters-section docs-sidebar-only">
+        <details id="filters-section" class="sidebar-details filters-section">
           <summary>
             <span>Search filters</span>
             <span id="filter-count" class="filter-count" hidden></span>
           </summary>
-          <button id="filter-toggle" class="filter-toggle" type="button" aria-expanded="false" hidden>Filters</button>
-          <div id="filter-row" class="filter-row" aria-label="Document filters" hidden>
+          <fieldset id="filter-row" class="filter-row">
+            <legend>Document filters</legend>
             <label>
               Domain
               <select id="domain-filter">
@@ -94,38 +91,10 @@
                 <option value="">All</option>
               </select>
             </label>
-          </div>
+            <button id="clear-filters-button" class="quiet-button filter-clear" type="button">Clear filters</button>
+          </fieldset>
         </details>
 
-        <section id="changes-section" class="changes-section docs-sidebar-only" aria-label="Pending changes" hidden>
-          <button id="changes-toggle" class="changes-toggle" type="button" aria-expanded="true">
-            <span class="changes-toggle-label">Pending changes</span>
-            <span id="changes-count" class="changes-count">0</span>
-          </button>
-          <div id="changes-list" class="changes-list"></div>
-          <div class="changes-actions">
-            <button id="changes-discard-all" class="quiet-button" type="button">Discard all</button>
-            <button id="changes-save-all" class="primary-button" type="button">Save all</button>
-          </div>
-        </section>
-
-        <details class="sidebar-details docs-sidebar-only">
-          <summary>Recent</summary>
-          <section id="pinned-section" class="recent-section pinned-section" aria-label="Pinned" hidden>
-            <div class="section-label">Pinned</div>
-            <div id="pinned-list" class="recent-list"></div>
-          </section>
-
-          <section id="recently-viewed-section" class="recent-section" aria-label="Recently viewed" hidden>
-            <div class="section-label">Recently viewed</div>
-            <div id="recently-viewed-list" class="recent-list"></div>
-          </section>
-
-          <section class="recent-section" aria-label="Recently edited">
-            <div class="section-label">Recently edited</div>
-            <div id="recent-list" class="recent-list"></div>
-          </section>
-        </details>
       </aside>
 
       <section class="page-shell">
@@ -141,7 +110,6 @@
             <button id="help-button" class="icon-button home-help-button" type="button" title="Help" aria-label="Help"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.8 2c-1 .7-1.6 1.2-1.6 2.5M12 17h.01"/></svg></button>
             <button id="settings-button" class="account-button desktop-account-button" type="button" title="Account" aria-label="Account" aria-haspopup="true" aria-expanded="false"><span class="account-avatar" data-account-menu-avatar aria-hidden="true">?</span><span class="account-button-name" data-account-menu-name>Account</span><svg class="account-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
             <button id="view-toggle-button" class="quiet-button" type="button" hidden>View</button>
-            <button id="doc-pin-button" class="quiet-button" type="button" hidden title="Pin to sidebar" aria-label="Pin to sidebar">Pin</button>
             <button id="doc-menu-button" class="quiet-button" type="button" hidden title="Doc actions">⋯</button>
           </div>
         </header>
@@ -184,6 +152,17 @@
           <div id="document-path" class="document-path">No document selected</div>
           <textarea id="editor" class="markdown-editor" spellcheck="true" disabled placeholder="Open a document from the sidebar or create a new page."></textarea>
           <div id="rendered-view" class="rendered-view" aria-live="polite"></div>
+          <section id="changes-section" class="changes-section" aria-labelledby="changes-title" hidden>
+            <header class="changes-header">
+              <h3 id="changes-title">Pending changes <span id="changes-count" class="changes-count">0</span></h3>
+            </header>
+            <p id="changes-status" class="changes-status" role="status" aria-live="polite" hidden></p>
+            <div id="changes-list" class="changes-list"></div>
+            <div class="changes-actions">
+              <button id="changes-discard-all" class="quiet-button" type="button">Discard all</button>
+              <button id="changes-save-all" class="primary-button" type="button">Save all</button>
+            </div>
+          </section>
           <footer class="document-editor-footer">
             <div id="editor-inline-status" class="editor-inline-status" role="status" aria-live="polite" hidden></div>
             <div id="editor-save-state" class="document-editor-save-state" tabindex="-1"></div>

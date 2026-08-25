@@ -14,6 +14,7 @@ import {
 const originalDocument = globalThis.document;
 const originalGetComputedStyle = globalThis.getComputedStyle;
 const originalSetTimeout = globalThis.setTimeout;
+const originalClearTimeout = globalThis.clearTimeout;
 
 afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
@@ -21,6 +22,7 @@ afterEach(() => {
   if (originalGetComputedStyle === undefined) delete globalThis.getComputedStyle;
   else globalThis.getComputedStyle = originalGetComputedStyle;
   globalThis.setTimeout = originalSetTimeout;
+  globalThis.clearTimeout = originalClearTimeout;
 });
 
 class EditorElement extends FakeElement {
@@ -92,6 +94,7 @@ function createEditorHarness(options = {}) {
     "changesList",
     "changesSaveAll",
     "changesSection",
+    "changesStatus",
     "diffBody",
     "diffModal",
     "diffTitle",
@@ -471,6 +474,146 @@ describe("Document Editor surface boundary", () => {
     );
     assert.equal(harness.storageValues.get("unrelated-setting"), "keep");
     assert.equal(harness.document.activeElement, harness.elements.editorSaveState);
+    assert.equal(harness.elements.changesStatus.textContent, "Draft discarded.");
+    assert.equal(harness.elements.changesStatus.hidden, false);
+    assert.equal(harness.elements.changesSection.hidden, false);
+  });
+
+  test("reports Save all outcomes inline and briefly keeps an emptied panel visible", async () => {
+    const timers = [];
+    const previousSetTimeout = globalThis.setTimeout;
+    const previousClearTimeout = globalThis.clearTimeout;
+    globalThis.setTimeout = (callback, delay) => {
+      const timer = { callback, delay };
+      timers.push(timer);
+      return timer;
+    };
+    globalThis.clearTimeout = (timer) => {
+      if (timer) timer.cleared = true;
+    };
+    const harness = createEditorHarness({
+      currentDoc: { path: "content/processes/existing.md", updated: 10 },
+      storage: {
+        "dtc-doc-draft:content/processes/existing.md": "# Existing draft\n",
+        "dtc-doc-draft:content/z.md": "# Z draft\n",
+      },
+    });
+
+    try {
+      harness.api.refreshChangesPanel();
+      assert.equal(findAllByClass(
+        harness.elements.changesList,
+        "changes-row",
+      ).length, 2);
+
+      await harness.api.saveAllDrafts();
+      const saves = harness.requests.filter(
+        (entry) => entry.options.method === "PUT",
+      );
+      assert.deepEqual(saves.map((entry) => new URL(entry.url).searchParams.get("path")), [
+        "content/processes/existing.md",
+        "content/z.md",
+      ]);
+      assert.equal(harness.statuses.includes("Saved 2 documents."), false);
+      assert.equal(harness.elements.changesStatus.textContent, "Saved 2 documents.");
+      assert.equal(harness.elements.changesStatus.hidden, false);
+      assert.equal(harness.elements.changesStatus.classList.contains("is-error"), false);
+      assert.equal(harness.elements.changesSection.hidden, false);
+      assert.equal(harness.elements.changesCount.textContent, "0");
+      assert.equal(harness.elements.changesList.children.length, 0);
+      assert.equal(harness.loadCount(), 1);
+      assert.equal(timers.length, 1);
+      assert.equal(timers[0].delay, 4000);
+
+      timers[0].callback();
+      assert.equal(harness.elements.changesSection.hidden, true);
+      assert.equal(harness.elements.changesStatus.hidden, true);
+    } finally {
+      globalThis.setTimeout = previousSetTimeout;
+      globalThis.clearTimeout = previousClearTimeout;
+    }
+  });
+
+  test("keeps failed Save all drafts while reporting partial success inline", async () => {
+    const harness = createEditorHarness({
+      storage: {
+        "dtc-doc-draft:content/processes/existing.md": "# Existing draft\n",
+        "dtc-doc-draft:content/z.md": "# Z draft\n",
+      },
+      request: async (url, requestOptions, entry) => {
+        if (
+          requestOptions.method === "PUT" &&
+          new URL(url).searchParams.get("path") === "content/processes/existing.md"
+        ) {
+          throw new Error("Permission denied");
+        }
+        entry.saved = true;
+        return {};
+      },
+    });
+
+    await harness.api.saveAllDrafts();
+    assert.equal(
+      harness.storageValues.get("dtc-doc-draft:content/processes/existing.md"),
+      "# Existing draft\n",
+    );
+    assert.equal(
+      harness.storageValues.has("dtc-doc-draft:content/z.md"),
+      false,
+    );
+    assert.equal(harness.elements.changesStatus.textContent, "Saved 1, 1 failed.");
+    assert.equal(harness.elements.changesStatus.classList.contains("is-error"), true);
+    assert.equal(harness.elements.changesSection.hidden, false);
+    assert.equal(harness.elements.changesCount.textContent, "1");
+    const rows = findAllByClass(harness.elements.changesList, "changes-row");
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].textContent, /content\/processes\/existing\.md/);
+    assert.equal(harness.elements.changesSaveAll.disabled, false);
+    assert.equal(harness.elements.changesDiscardAll.disabled, false);
+  });
+
+  test("discards every local draft and reports the outcome before hiding the panel", async () => {
+    const timers = [];
+    const previousSetTimeout = globalThis.setTimeout;
+    const previousClearTimeout = globalThis.clearTimeout;
+    globalThis.setTimeout = (callback, delay) => {
+      const timer = { callback, delay };
+      timers.push(timer);
+      return timer;
+    };
+    globalThis.clearTimeout = (timer) => {
+      if (timer) timer.cleared = true;
+    };
+    const harness = createEditorHarness({
+      content: "# Saved\n",
+      editorValue: "# Local draft\n",
+      hasDraft: true,
+      storage: {
+        "dtc-doc-draft:content/processes/existing.md": "# Local draft\n",
+        "dtc-doc-draft:content/z.md": "# Z draft\n",
+      },
+    });
+
+    try {
+      await harness.api.discardAllDrafts();
+      assert.equal(
+        harness.confirmations.at(-1).message,
+        "Discard 2 unsaved drafts?",
+      );
+      assert.equal(harness.storageValues.size, 0);
+      assert.equal(harness.elements.editor.value, "# Saved\n");
+      assert.equal(harness.documentState.hasDraft, false);
+      assert.equal(harness.elements.changesStatus.textContent, "Discarded 2 drafts.");
+      assert.equal(harness.elements.changesSection.hidden, false);
+      assert.equal(harness.elements.changesCount.textContent, "0");
+      assert.equal(harness.elements.changesList.children.length, 0);
+
+      timers[0].callback();
+      assert.equal(harness.elements.changesSection.hidden, true);
+    } finally {
+      globalThis.setTimeout = previousSetTimeout;
+      globalThis.clearTimeout = previousClearTimeout;
+    }
   });
 
   test("keeps a local draft when discard confirmation is cancelled", async () => {

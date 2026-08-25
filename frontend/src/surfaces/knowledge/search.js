@@ -7,7 +7,6 @@ export function createKnowledgeSearch(context, services) {
     clearSelectionButton,
     cleanPath,
     documentList,
-    domainFilter,
     knowledgeState,
     labelizeWorkValue,
     libraryTitle,
@@ -22,10 +21,7 @@ export function createKnowledgeSearch(context, services) {
     searchInput,
     setStatus,
     showWorkspaceSurface,
-    systemFilter,
-    tagFilter,
     tasksFromWorkPayload,
-    typeFilter,
     workApiUrl,
   } = context;
   const {
@@ -33,6 +29,7 @@ export function createKnowledgeSearch(context, services) {
     openDocument,
     renderDocuments,
     setHighlightedText,
+    searchFilterParams,
     syncLibraryRouteTitle,
   } = services;
   const searchRanks = new Map();
@@ -52,13 +49,7 @@ export function createKnowledgeSearch(context, services) {
         const url = apiUrl("/search");
         url.searchParams.set("q", query);
         url.searchParams.set("limit", "80");
-        if (domainFilter.value)
-          url.searchParams.set("domain", domainFilter.value);
-        if (typeFilter.value) url.searchParams.set("doc_type", typeFilter.value);
-        if (systemFilter.value)
-          url.searchParams.set("system", systemFilter.value);
-        if (tagFilter.value) url.searchParams.set("tag", tagFilter.value);
-
+        searchFilterParams(url);
         url.searchParams.set("source", "docs");
         const [docsResult, workResult] = await Promise.allSettled([
           request(url, { signal: controller.signal }),

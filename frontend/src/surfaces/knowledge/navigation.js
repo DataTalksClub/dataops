@@ -52,12 +52,8 @@ export function createKnowledgeNavigation(context, services) {
   } = context;
   const DOCS_UNAVAILABLE_STATUS = 503;
   const {
-    pushRecentlyViewed,
     refreshDocuments,
-    renderPinned,
-    renderRecentlyViewed,
     scrollPositions,
-    updatePinButton,
   } = services;
 
   function captureScrollPosition() {
@@ -140,9 +136,6 @@ export function createKnowledgeNavigation(context, services) {
       documentState.lastSavedContent = payload.content;
       docMenuButton.hidden = false;
       updateGithubLink();
-      updatePinButton();
-      pushRecentlyViewed(payload.path);
-      renderRecentlyViewed();
       const draft = storage.getItem(draftKey(payload.path));
       documentState.hasDraft = draft !== null;
       refreshChangesPanel();

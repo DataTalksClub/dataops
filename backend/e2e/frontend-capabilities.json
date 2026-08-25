@@ -1324,6 +1324,14 @@
           }
         },
         {
+          "id": "process-docs.filters.url-reload-clear-search",
+          "kind": "ready",
+          "description": "Metadata filters serialize canonically, survive reload, clear atomically, and compose with unified search.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
           "id": "process-docs.result-detail",
           "kind": "ready",
           "description": "Search opens the exact synthetic document detail.",
@@ -1334,7 +1342,23 @@
         {
           "id": "process-docs.create-read-edit",
           "kind": "ready",
-          "description": "Synthetic create, read, and edit round-trip through the docs API.",
+          "description": "Process Docs owns creation at both required widths, and synthetic create, read, and edit round-trip through the docs API.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.draft-management",
+          "kind": "ready",
+          "description": "The editor-owned Pending Changes panel exposes every local draft with open, Diff, and Discard affordances.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "process-docs.partial-save-failure",
+          "kind": "error",
+          "description": "Save all reports saved and failed counts inline while preserving unrelated drafts.",
           "coverage": {
             "status": "runtime"
           }

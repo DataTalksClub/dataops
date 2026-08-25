@@ -138,6 +138,9 @@ test.describe("production portal bookkeeping", () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => document.body.classList.remove("sidebar-open"));
+    await expect(
+      page.locator(".mobile-topbar").getByRole("button", { name: "New" }),
+    ).toHaveCount(0);
     const topbarGeometry = await page.locator(".mobile-topbar").evaluate((bar) => {
       const bounds = bar.getBoundingClientRect();
       return {
@@ -154,7 +157,7 @@ test.describe("production portal bookkeeping", () => {
         }),
       };
     });
-    expect(topbarGeometry.children).toHaveLength(5);
+    expect(topbarGeometry.children).toHaveLength(4);
     for (const child of topbarGeometry.children) {
       expect(child.top).toBeGreaterThanOrEqual(topbarGeometry.top);
       expect(child.bottom).toBeLessThanOrEqual(topbarGeometry.bottom);

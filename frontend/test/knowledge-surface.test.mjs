@@ -82,12 +82,12 @@ function createKnowledgeHarness(options = {}) {
   const elements = Object.fromEntries(
     [
       "clearSelectionButton",
+      "clearFiltersButton",
       "diffBody",
       "diffModal",
       "diffTitle",
       "docContextReturn",
       "docMenuButton",
-      "docPinButton",
       "docState",
       "documentList",
       "documentPath",
@@ -97,18 +97,11 @@ function createKnowledgeHarness(options = {}) {
       "editorView",
       "emptyNote",
       "filterCount",
-      "filterRow",
-      "filterToggle",
       "filtersSection",
       "libraryTitle",
-      "pinnedList",
-      "pinnedSection",
       "quickNav",
       "quickNavInput",
       "quickNavResults",
-      "recentList",
-      "recentlyViewedList",
-      "recentlyViewedSection",
       "renderedView",
       "searchInput",
       "systemFilter",
@@ -150,7 +143,20 @@ function createKnowledgeHarness(options = {}) {
     searchController: null,
     activeSearchSources: [],
     docReturnContext: null,
+    documentFilters: {
+      domain: "",
+      type: "",
+      system: "",
+      tag: "",
+    },
     ...options.knowledgeState,
+  };
+  knowledgeState.documentFilters = {
+    domain: "",
+    type: "",
+    system: "",
+    tag: "",
+    ...options.knowledgeState?.documentFilters,
   };
   const documentState = {
     currentDoc: null,
@@ -241,6 +247,7 @@ function createKnowledgeHarness(options = {}) {
     draftKey: (path) => `draft:${path}`,
     enterRenderedMode() {},
     escapeRegex: (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    getActiveWorkspaceRoute: () => options.activeRoute || null,
     getActiveTasksSection: () => "queue",
     getActiveWorkspaceView: () => "docs",
     getDocsAvailability: () => docsAvailability,
@@ -258,8 +265,8 @@ function createKnowledgeHarness(options = {}) {
         .join(" "),
     listDraftPaths: () => [],
     locationAdapter: location,
-    navigateCanonicalWorkspace: (path, params) => {
-      navigations.push({ path, params });
+    navigateCanonicalWorkspace: (path, params, navigationOptions = {}) => {
+      navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
     },
     openCardPanel: (id) => openedCards.push(id),
@@ -389,13 +396,12 @@ describe("Knowledge surface boundary", () => {
       "renderWarningsBlock",
       "resolveDocReference",
       "resolveMarkdownDocLink",
-      "restoreFiltersExpanded",
-      "setFiltersExpanded",
+      "restoreDocumentFilters",
+      "searchFilterParams",
       "setFolderUrl",
       "setSelectedFolder",
       "showLibrary",
       "syncLibraryRouteTitle",
-      "toggleCurrentDocPin",
       "updateFilterSummary",
       "updateQuickNavMatches",
       "visibleDocUrl",
@@ -816,6 +822,123 @@ describe("Knowledge surface boundary", () => {
     await documentRow.click();
     assert.equal(harness.documentState.currentDoc.path, document.path);
     assert.equal(harness.body.dataset.view, "editor");
+  });
+
+  test("keeps Process Docs filters canonical across controls, routes, and search", async () => {
+    const activeRoute = { path: "/" };
+    const documents = [
+      {
+        path: "content/operations/onboarding.md",
+        title: "Onboarding",
+        domain: "operations",
+        doc_type: "process",
+        systems: ["portal"],
+        tags: ["people"],
+      },
+      {
+        path: "content/product/design.md",
+        title: "Design review",
+        domain: "product",
+        doc_type: "reference",
+        systems: ["figma"],
+        tags: ["design"],
+      },
+    ];
+    const harness = createKnowledgeHarness({
+      activeRoute,
+      knowledgeState: { allDocuments: documents },
+    });
+
+    for (const [name, value] of [
+      ["tagFilter", "people"],
+      ["systemFilter", "portal"],
+      ["typeFilter", "process"],
+      ["domainFilter", "operations"],
+    ]) {
+      harness.elements[name].value = value;
+    }
+
+    await harness.api.onFilterChange();
+    assert.deepEqual(harness.knowledgeState.documentFilters, {
+      domain: "operations",
+      type: "process",
+      system: "portal",
+      tag: "people",
+    });
+    assert.deepEqual(harness.api.filterDocuments(documents), [documents[0]]);
+    assert.equal(harness.navigations.at(-1).path, "/processes");
+    assert.deepEqual(
+      [...harness.navigations.at(-1).params],
+      [
+        ["domain", "operations"],
+        ["type", "process"],
+        ["system", "portal"],
+        ["tag", "people"],
+      ],
+    );
+    assert.deepEqual(harness.navigations.at(-1).options, {
+      history: "push",
+      preserveDocumentComposer: true,
+    });
+    activeRoute.path = "/processes";
+    assert.equal(harness.elements.filterCount.hidden, false);
+    assert.equal(harness.elements.filterCount.textContent, "4");
+
+    const restored = new URLSearchParams([
+      ["unsupported", "ignore"],
+      ["tag", "people"],
+      ["system", "portal"],
+      ["type", "process"],
+      ["domain", "operations"],
+    ]);
+    harness.api.restoreDocumentFilters(restored);
+    assert.deepEqual(harness.knowledgeState.documentFilters, {
+      domain: "operations",
+      type: "process",
+      system: "portal",
+      tag: "people",
+    });
+    assert.equal(harness.elements.filterCount.textContent, "4");
+    assert.equal(harness.elements.domainFilter.value, "operations");
+    assert.equal(harness.elements.typeFilter.value, "process");
+    assert.equal(harness.elements.systemFilter.value, "portal");
+    assert.equal(harness.elements.tagFilter.value, "people");
+
+    harness.api.clearDocumentFilters();
+    assert.deepEqual(harness.knowledgeState.documentFilters, {
+      domain: "",
+      type: "",
+      system: "",
+      tag: "",
+    });
+    assert.equal(harness.navigations.at(-1).path, "/processes");
+    assert.equal([...harness.navigations.at(-1).params].length, 0);
+    assert.deepEqual(harness.navigations.at(-1).options, {
+      history: "replace",
+      preserveDocumentComposer: true,
+    });
+    assert.equal(harness.elements.filterCount.hidden, true);
+    assert.equal(harness.elements.filterCount.textContent, "");
+    for (const name of ["domainFilter", "typeFilter", "systemFilter", "tagFilter"]) {
+      assert.equal(harness.elements[name].value, "");
+    }
+
+    const searching = createKnowledgeHarness({
+      knowledgeState: { allDocuments: documents },
+    });
+    for (const [name, value] of [
+      ["domainFilter", "operations"],
+      ["typeFilter", "process"],
+      ["systemFilter", "portal"],
+      ["tagFilter", "people"],
+    ]) {
+      searching.elements[name].value = value;
+    }
+    await searching.api.onFilterChange();
+    searching.elements.searchInput.value = "launch";
+    await searching.api.refreshDocuments();
+    assert.equal(String(searching.requests[0].url),
+      "http://portal.test/search?q=launch&limit=80&domain=operations&doc_type=process&system=portal&tag=people&source=docs");
   });
 
   test("groups unified search results and keeps partial source failures visible", async () => {

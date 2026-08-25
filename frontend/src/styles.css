@@ -925,16 +925,10 @@ body.sidebar-collapsed .sidebar {
   stroke-linejoin: round;
 }
 
-.new-page-button,
 .sidebar-details {
   margin-top: 10px;
 }
 
-.docs-sidebar-only {
-  display: none;
-}
-
-.new-page-button,
 .tool-row-button {
   width: 100%;
   min-height: 36px;
@@ -956,6 +950,73 @@ body.sidebar-collapsed .sidebar {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
+}
+
+.filters-section {
+  margin-top: 10px;
+}
+
+.filters-section[open] {
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 10px;
+}
+
+.filters-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.filter-count {
+  display: inline-grid;
+  min-width: 18px;
+  min-height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.filter-row {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 10px;
+}
+
+.filter-row legend {
+  color: var(--text-heading);
+  padding-inline: 4px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.filter-row label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.filter-row select {
+  width: 100%;
+  min-height: 34px;
+}
+
+.filter-clear {
+  justify-self: start;
+  min-height: 32px;
+  margin-top: 2px;
+  padding-inline: 9px;
+  font-size: 12px;
 }
 
 .page-shell {
@@ -4845,10 +4906,6 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  #mobile-new-button {
-    display: none;
   }
 
   .app-shell {
@@ -10000,42 +10057,6 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
   margin: 0 auto;
 }
 
-.recent-list {
-  display: grid;
-  gap: 2px;
-}
-
-.recent-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-muted);
-  padding: 5px 6px;
-  text-align: left;
-}
-
-.recent-row:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.recent-row-label,
-.recent-row-when {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recent-row-when {
-  color: var(--text-faint);
-  font-size: 11px;
-}
-
 .custom-select {
   position: relative;
   min-width: 0;
@@ -10848,6 +10869,72 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
 
 .doc-menu-item.is-danger {
   color: var(--danger-text);
+}
+
+.changes-section {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 14px;
+}
+
+.changes-section[hidden] {
+  display: none;
+}
+
+.changes-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.changes-count {
+  display: inline-grid;
+  min-width: 20px;
+  min-height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.changes-status {
+  margin: 0;
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  color: var(--info-text);
+  padding: 8px 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.changes-status.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.changes-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.changes-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
 }
 
 .changes-row-wrap {

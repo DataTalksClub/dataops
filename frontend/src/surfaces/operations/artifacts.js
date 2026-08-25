@@ -25,7 +25,6 @@ export function createArtifactsSurface(context) {
     scheduleAnimationFrame,
     setRouteTitle,
     setStatus,
-    showCreate,
     state,
     tasksFromWorkPayload,
     todayIsoDate,

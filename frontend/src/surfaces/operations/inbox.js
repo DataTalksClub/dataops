@@ -25,7 +25,6 @@ export function createInboxSurface(context) {
     scheduleAnimationFrame,
     setRouteTitle,
     setStatus,
-    showCreate,
     state,
     tasksFromWorkPayload,
     todayIsoDate,

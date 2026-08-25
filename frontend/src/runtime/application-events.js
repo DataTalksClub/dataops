@@ -12,13 +12,9 @@ export function bindApplicationEvents(context) {
     workspaceState,
   } = context;
   const {
-    changesSection,
-    changesToggle,
     diffModal,
     editor,
     editorSaveButton,
-    filtersSection,
-    filterRow,
     helpClose,
     helpModal,
     lightbox,
@@ -56,10 +52,6 @@ export function bindApplicationEvents(context) {
         navigationShell.scheduleCurrentBrowserLocation,
       toggleDarkMode: () =>
         callbacks.setDarkMode(!dom.body.classList.contains("dark")),
-      toggleChanges: () => {
-        const collapsed = changesSection.classList.toggle("is-collapsed");
-        changesToggle.setAttribute("aria-expanded", String(!collapsed));
-      },
       workspaceButton: (button) =>
         documentRef.dispatchEvent(
           new CustomEvent("dataops:navigate-workspace", {
@@ -100,9 +92,6 @@ export function bindApplicationEvents(context) {
         callbacks.closeSidebar();
       },
       searchInput: callbacks.debounce(callbacks.refreshDocuments, 250),
-      toggleFilters: () => callbacks.setFiltersExpanded(filterRow.hidden),
-      filtersToggle: () =>
-        callbacks.setFiltersExpanded(filtersSection.open),
       createDocument: async (event) => {
         event.preventDefault();
         await callbacks.createDocument();

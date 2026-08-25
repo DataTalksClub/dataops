@@ -2,7 +2,8 @@ export function createEditorChanges(context, services) {
   const {
     apiUrl, basename, changesCount, changesDiscardAll, changesList,
     changesSaveAll, changesSection, confirmDialog, docMenuButton,
-    documentPath, documentState, documentTitle, editor, editorView,
+    changesStatus, documentPath, documentState, documentTitle, editor,
+    editorView,
     labelForPath, loadDocuments, openDocument, promptUser,
     refreshGitStatus: refreshGitStatusContext, reportError, request,
     setRouteTitle, setStatus, showLibrary, storage,
@@ -12,15 +13,49 @@ export function createEditorChanges(context, services) {
     showDiffForDraft, titleFromMarkdown, updateSaveState,
   } = services;
 
-  function refreshChangesPanel() {
+  let hideEmptyChangesTimer;
+
+  function clearHideEmptyChangesTimer() {
+    if (hideEmptyChangesTimer) {
+      clearTimeout(hideEmptyChangesTimer);
+      hideEmptyChangesTimer = null;
+    }
+  }
+
+  function showChangesStatus(message, { isError = false } = {}) {
+    changesStatus.textContent = message;
+    changesStatus.hidden = !message;
+    changesStatus.classList.toggle("is-error", isError);
+  }
+
+  function scheduleEmptyChangesDismissal() {
+    clearHideEmptyChangesTimer();
+    hideEmptyChangesTimer = setTimeout(() => {
+      hideEmptyChangesTimer = null;
+      if (listDraftPaths().length === 0) {
+        showChangesStatus("");
+        changesSection.hidden = true;
+      }
+    }, 4000);
+  }
+
+  function refreshChangesPanel({ keepVisibleAfterAction = false } = {}) {
     const paths = listDraftPaths();
     const draftSet = new Set(paths);
     changesCount.textContent = String(paths.length);
+    clearHideEmptyChangesTimer();
     if (paths.length === 0) {
-      changesSection.hidden = true;
       changesList.replaceChildren();
+      if (keepVisibleAfterAction) {
+        changesSection.hidden = false;
+        scheduleEmptyChangesDismissal();
+        return;
+      }
+      showChangesStatus("");
+      changesSection.hidden = true;
       return;
     }
+    showChangesStatus("");
     changesSection.hidden = false;
     const items = paths.map((path) => {
       const row = document.createElement("div");
@@ -72,7 +107,8 @@ export function createEditorChanges(context, services) {
             renderParsedDocument();
           }
         }
-        refreshChangesPanel();
+        refreshChangesPanel({ keepVisibleAfterAction: true });
+        showChangesStatus("Draft discarded.");
       });
       row.append(drop);
       return row;
@@ -121,11 +157,19 @@ export function createEditorChanges(context, services) {
     changesSaveAll.disabled = false;
     changesSaveAll.classList.remove("is-busy");
     changesDiscardAll.disabled = false;
-    setStatus(
-      failed
-        ? `Saved ${savedCount}, ${failed} failed.`
-        : `Saved ${savedCount} document${savedCount === 1 ? "" : "s"}.`,
-    );
+    if (failed) {
+      refreshChangesPanel({ keepVisibleAfterAction: true });
+      showChangesStatus(`Saved ${savedCount}, ${failed} failed.`, {
+        isError: true,
+      });
+    } else {
+      refreshChangesPanel({
+        keepVisibleAfterAction: savedCount > 0,
+      });
+      showChangesStatus(
+        `Saved ${savedCount} document${savedCount === 1 ? "" : "s"}.`,
+      );
+    }
     await loadDocuments();
     refreshGitStatus();
   }
@@ -146,7 +190,10 @@ export function createEditorChanges(context, services) {
         titleFromMarkdown(editor.value) || basename(documentState.currentDoc.path);
       updateSaveState();
     }
-    refreshChangesPanel();
+    refreshChangesPanel({ keepVisibleAfterAction: true });
+    showChangesStatus(
+      `Discarded ${paths.length} draft${paths.length === 1 ? "" : "s"}.`,
+    );
   }
 
   async function renameCurrentDoc() {
@@ -218,6 +265,6 @@ export function createEditorChanges(context, services) {
 
   return {
     deleteCurrentDoc, discardAllDrafts, refreshChangesPanel,
-    renameCurrentDoc, saveAllDrafts,
+    renameCurrentDoc, saveAllDrafts, showChangesStatus,
   };
 }

@@ -11,7 +11,7 @@ export function createEditorLifecycle(context, services) {
   } = context;
   const {
     refreshChangesPanel, refreshGitStatus, refreshParsedFromApi,
-    renderParsedDocument, updateViewToggleAvailability,
+    renderParsedDocument, showChangesStatus, updateViewToggleAvailability,
   } = services;
 
   const DRAFT_PREFIX = "dtc-doc-draft:";
@@ -82,7 +82,8 @@ export function createEditorLifecycle(context, services) {
     documentTitle.value =
       titleFromMarkdown(editor.value) || basename(documentState.currentDoc.path);
     updateSaveState();
-    refreshChangesPanel();
+    refreshChangesPanel({ keepVisibleAfterAction: true });
+    showChangesStatus("Draft discarded.");
     restoreMutationFocus();
   }
 

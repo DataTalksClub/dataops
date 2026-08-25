@@ -156,6 +156,7 @@ They intentionally follow the Course Management Platform names where practical.
 - Process Docs is a separate main-canvas view. Its library, search/filter
   controls, document tree or list, pending state, editor, and creation actions
   belong inside that view—not inside the global sidebar.
+- The Process Docs surface header owns its `New process doc` action.
 - Top-level routes own and replace the entire main canvas. Clear the previous
   route before rendering the next one; never retain a shared page title, status
   summary, filter strip, quality count, or content fragment across areas.

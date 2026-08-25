@@ -2,7 +2,6 @@ export function createNavigationShell(context) {
   const {
     canLeaveCurrentDocument,
     canonicalWorkspaceUrl,
-    clearDocumentFilters,
     closeSettingsMenu,
     closeSidebar,
     closeWorkBellPanel,
@@ -32,6 +31,7 @@ export function createNavigationShell(context) {
     refreshOperationsAssistantSnapshot,
     refreshUsersSurface,
     refreshWorkBell,
+    restoreDocumentFilters,
     renderWorkspaceNav,
     requestAnimationFrameImpl,
     resetCardPanel,
@@ -217,12 +217,13 @@ export function createNavigationShell(context) {
       activeTasksSection,
     );
     getKnowledgeState().selectedFolder = "";
-    searchInput.value = "";
-    clearDocumentFilters();
+    const preserveComposer = Boolean(options.preserveDocumentComposer);
+    if (!preserveComposer) searchInput.value = "";
+    restoreDocumentFilters(route.params);
     setView("library");
     documentList.replaceChildren();
     refreshDocuments();
-    closeSidebar();
+    if (!preserveComposer) closeSidebar();
 
     const cardId = ["/cards", "/cards/archive"].includes(route.path)
       ? route.params.get("cardId")

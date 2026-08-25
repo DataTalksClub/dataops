@@ -4,29 +4,34 @@ export function createKnowledgeFilters(context, services) {
     domainFilter,
     escapeRegex,
     filterCount,
-    filterRow,
-    filterToggle,
-    filtersSection,
+    getActiveWorkspaceRoute,
     knowledgeState,
-    storage,
+    navigateCanonicalWorkspace,
     systemFilter,
     tagFilter,
     typeFilter,
   } = context;
-  const { refreshDocuments } = services;
+
+  const DOCUMENT_FILTERS = [
+    ["domain", domainFilter],
+    ["type", typeFilter],
+    ["system", systemFilter],
+    ["tag", tagFilter],
+  ];
 
   function filterDocuments(documents) {
     return documents.filter((doc) => {
-      if (domainFilter.value && doc.domain !== domainFilter.value) return false;
-      if (typeFilter.value && doc.doc_type !== typeFilter.value) return false;
+      const filters = knowledgeState.documentFilters;
+      if (filters.domain && doc.domain !== filters.domain) return false;
+      if (filters.type && doc.doc_type !== filters.type) return false;
       if (
-        systemFilter.value &&
-        !(Array.isArray(doc.systems) && doc.systems.includes(systemFilter.value))
+        filters.system &&
+        !(Array.isArray(doc.systems) && doc.systems.includes(filters.system))
       )
         return false;
       if (
-        tagFilter.value &&
-        !(Array.isArray(doc.tags) && doc.tags.includes(tagFilter.value))
+        filters.tag &&
+        !(Array.isArray(doc.tags) && doc.tags.includes(filters.tag))
       )
         return false;
       return true;
@@ -34,38 +39,77 @@ export function createKnowledgeFilters(context, services) {
   }
 
   function onFilterChange() {
+    for (const [name, select] of DOCUMENT_FILTERS) {
+      knowledgeState.documentFilters[name] = select.value;
+    }
     updateFilterSummary();
-    refreshDocuments();
+    const activePath = getActiveWorkspaceRoute()?.path;
+    const historyMode = activePath === "/processes" ? "replace" : "push";
+    navigateCanonicalWorkspace(
+      "/processes",
+      documentFilterParams(),
+      { history: historyMode, preserveDocumentComposer: true },
+    );
   }
 
   function activeFilterCount() {
-    return [domainFilter, typeFilter, systemFilter, tagFilter].filter(
-      (select) => !!select.value,
-    ).length;
+    return Object.values(knowledgeState.documentFilters).filter(Boolean)
+      .length;
+  }
+
+  function documentFilterParams() {
+    const params = new URLSearchParams();
+    for (const [name] of DOCUMENT_FILTERS) {
+      const value = knowledgeState.documentFilters[name];
+      if (value) params.set(name, value);
+    }
+    return params;
+  }
+
+  function updateFilterControls() {
+    for (const [name, select] of DOCUMENT_FILTERS) {
+      select.value = knowledgeState.documentFilters[name];
+      const entry = customSelects.find((item) => item.select === select);
+      if (entry) updateCustomSelect(entry.root);
+    }
+  }
+
+  function restoreDocumentFilters(params = new URLSearchParams()) {
+    for (const [name] of DOCUMENT_FILTERS) {
+      knowledgeState.documentFilters[name] = params.get(name) || "";
+    }
+    updateFilterControls();
+    updateFilterSummary();
+  }
+
+  function clearDocumentFilters() {
+    for (const [name] of DOCUMENT_FILTERS) {
+      knowledgeState.documentFilters[name] = "";
+    }
+    updateFilterControls();
+    updateFilterSummary();
+    navigateCanonicalWorkspace("/processes", documentFilterParams(), {
+      history: getActiveWorkspaceRoute()?.path === "/processes"
+        ? "replace"
+        : "push",
+      preserveDocumentComposer: true,
+    });
+  }
+
+  function searchFilterParams(url) {
+    const filters = knowledgeState.documentFilters;
+    if (filters.domain) url.searchParams.set("domain", filters.domain);
+    if (filters.type) url.searchParams.set("doc_type", filters.type);
+    if (filters.system) url.searchParams.set("system", filters.system);
+    if (filters.tag) url.searchParams.set("tag", filters.tag);
+    return url;
   }
 
   function updateFilterSummary() {
     const count = activeFilterCount();
     filterCount.hidden = count === 0;
     filterCount.textContent = count ? String(count) : "";
-    filterToggle.classList.toggle("has-filters", count > 0);
-  }
-
-  function setFiltersExpanded(expanded) {
-    if (filtersSection.open !== expanded) filtersSection.open = expanded;
-    filterRow.hidden = !expanded;
-    filterToggle.setAttribute("aria-expanded", String(expanded));
-    try {
-      storage.setItem("dtc-filters-expanded", expanded ? "1" : "0");
-    } catch {}
-  }
-
-  function restoreFiltersExpanded() {
-    let expanded = false;
-    try {
-      expanded = storage.getItem("dtc-filters-expanded") === "1";
-    } catch {}
-    setFiltersExpanded(expanded || activeFilterCount() > 0);
+    filterCount.setAttribute("aria-label", `${count} active filters`);
   }
 
   function enhanceSelect(select) {
@@ -186,7 +230,9 @@ export function createKnowledgeFilters(context, services) {
   }
 
   function setSelectOptions(select, values, allLabel = "All") {
-    const previous = select.value;
+    const previous = knowledgeState.documentFilters[
+      DOCUMENT_FILTERS.find(([, element]) => element === select)?.[0]
+    ] || "";
     const items = [
       new Option(allLabel, ""),
       ...values.map((v) => new Option(humanizeOptionLabel(v), v)),
@@ -226,7 +272,6 @@ export function createKnowledgeFilters(context, services) {
     setSelectOptions(systemFilter, systems);
     setSelectOptions(tagFilter, tags);
     updateFilterSummary();
-    restoreFiltersExpanded();
   }
 
   function updateCustomSelect(root) {
@@ -267,15 +312,6 @@ export function createKnowledgeFilters(context, services) {
     el.innerHTML = safe.replace(re, "<mark>$1</mark>");
   }
 
-  function clearDocumentFilters() {
-    for (const select of [domainFilter, typeFilter, systemFilter, tagFilter]) {
-      select.value = "";
-      const entry = customSelects.find((item) => item.select === select);
-      if (entry) updateCustomSelect(entry.root);
-    }
-    updateFilterSummary();
-  }
-
   return {
     clearDocumentFilters,
     closeCustomSelects,
@@ -284,8 +320,8 @@ export function createKnowledgeFilters(context, services) {
     humanizeOptionLabel,
     onFilterChange,
     populateFilterOptions,
-    restoreFiltersExpanded,
-    setFiltersExpanded,
+    restoreDocumentFilters,
+    searchFilterParams,
     setHighlightedText,
     updateFilterSummary,
   };

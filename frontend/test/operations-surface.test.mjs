@@ -318,7 +318,6 @@ function createOperationsHarness(options = {}) {
     scheduleAnimationFrame: (callback) => callback(),
     setRouteTitle() {},
     setStatus: (message) => statuses.push(message),
-    showCreate() {},
     state,
     tasksFromWorkPayload: (payload) =>
       Array.isArray(payload) ? payload : payload?.tasks || [],
@@ -354,7 +353,6 @@ function createAdminHarness(options = {}) {
   const document = new OperationsDocument(documentList, libraryTitle);
   globalThis.document = document;
   const requests = [];
-  const errors = [];
   const documentRefreshes = [];
   let activeRouteToken = options.routeToken ?? 1;
   const api = createAdminSurface({
@@ -387,7 +385,6 @@ function createAdminHarness(options = {}) {
     setRouteTitle() {},
     settledPayload: (result) =>
       result.status === "fulfilled" ? result.value : null,
-    showCreate() {},
     showWorkspaceSurface() {},
     surfaceDescription: (surface) => `${surface} surface`,
     usersFromWorkPayload: (payload) =>
@@ -398,7 +395,6 @@ function createAdminHarness(options = {}) {
     api,
     document,
     documentList,
-    errors,
     requests,
     documentRefreshes,
     setActiveRouteToken: (value) => {
@@ -1390,7 +1386,6 @@ describe("Operations surface boundary", () => {
     assert.equal(rowError.getAttribute("role"), "alert");
     assert.match(rowError.textContent, /Could not disable this account/);
     assert.match(rowError.textContent, /Select Disable to retry/);
-    assert.deepEqual(harness.errors, [], "no global toast for a row failure");
   });
 
   test("confirms a saved user against the refreshed list", async () => {

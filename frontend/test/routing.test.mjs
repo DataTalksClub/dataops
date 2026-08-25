@@ -88,6 +88,8 @@ describe("canonical workspace routing", () => {
       ["#/cards?cardId=one&cardId=two", "invalid cardId"],
       ["#/cards?taskId=task-1", "taskId requires cardId"],
       ["#/cards/archive?taskId=task-1", "taskId requires cardId"],
+      ["#/processes?type=", "invalid type"],
+      ["#/processes?domain=one&domain=two", "invalid domain"],
       ["#/tasks?date=2026-02-30", "invalid date"],
       ["#/tasks?taskId=%E0%A4%A", "malformed encoding"],
       ["#/unknown", "unknown path"],
@@ -148,6 +150,33 @@ describe("canonical workspace routing", () => {
     assert.equal(route.path, "/cards/archive");
     assert.equal(route.canonicalUrl, "/#/cards/archive?cardId=card-a&taskId=task-b");
     assert.deepEqual([...route.params], [["cardId", "card-a"], ["taskId", "task-b"]]);
+  });
+
+  test("normalizes Process Docs filters into the canonical parameter order", () => {
+    const route = workspaceRouteFor(
+      "/processes",
+      { tag: "people", system: "portal", type: "process", domain: "operations" },
+      browserLocation(),
+    );
+    assert.equal(route.path, "/processes");
+    assert.equal(
+      route.canonicalUrl,
+      "/#/processes?domain=operations&type=process&system=portal&tag=people",
+    );
+    assert.deepEqual([...route.params], [
+      ["domain", "operations"],
+      ["type", "process"],
+      ["system", "portal"],
+      ["tag", "people"],
+    ]);
+
+    const parsed = parseWorkspaceHash(
+      "#/processes?tag=people&system=portal&type=process&domain=operations",
+      browserLocation("#/processes?tag=people&system=portal&type=process&domain=operations"),
+    );
+    assert.equal(parsed.normalized, true);
+    assert.equal(parsed.canonicalUrl, route.canonicalUrl);
+    assert.deepEqual([...parsed.params], [...route.params]);
   });
 
   test("returns an invalid route for an unknown programmatic destination", () => {

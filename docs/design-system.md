@@ -308,12 +308,13 @@ Current mapping:
 ### Navigation And Library
 
 Canonical primitives: `do-sidebar`, `do-drawer`, `do-nav-row`,
-`do-recent-list`.
+`do-filter-group`.
 
 Usage rules:
 
-- Search and filters live inside the sidebar or drawer, not above every content
-  screen on mobile.
+- The global sidebar and mobile drawer are navigation-only.
+- Search and structured filters are owned by their main-canvas surface; the
+  shell exposes them only where that surface is active.
 - Process Docs uses one filtered document list; do not add a second sidebar
   hierarchy for the same destination.
 - Navigation rows need explicit selected state where the row represents the
@@ -322,7 +323,7 @@ Usage rules:
 
 Current mapping:
 
-- Portal: `.sidebar`, `.mobile-topbar`, `.document-list`, `.recent-list`,
+- Portal: `.sidebar`, `.mobile-topbar`, `.document-list`, `.filter-row`,
   `.changes-section`.
 - Work-engine: route links only. Future work-engine shell migration should
   move route navigation into DataOps workspace navigation or a compact page tab
@@ -338,15 +339,17 @@ Usage rules:
 - Page headers describe the current work surface, not the product.
 - Operational page headings should be compact and leave work visible above the
   fold.
-- Save, discard, view toggle, pin, notifications, and panel actions live in the
-  toolbar.
+- The desktop toolbar contains global controls such as help, account,
+  notifications, and contextual view toggles.
+- Save, discard, and mutation state live in the form or editor that owns the
+  mutation, not in the global toolbar.
 - Disabled toolbar actions should remain visible only when they explain state;
   otherwise hide unavailable actions on mobile to preserve space.
 
 Current mapping:
 
-- Portal: `.page-toolbar`, `.page-context`, `.toolbar-actions`, `#save-state`,
-  `#save-button`, `#discard-button`, `#work-bell-button`.
+- Portal: `.page-toolbar`, `.page-context`, `.toolbar-actions`,
+  `#work-bell-button`; the editor owns its inline status and mutation controls.
 - Work-engine: route-level headings in generated HTML, `.page-header`,
   `.page-subtitle`, `.page-actions`, `.save-bar`.
 
@@ -391,13 +394,15 @@ Usage rules:
 - Do not use emoji or decorative glyphs as the only signifier.
 - Primary buttons use `--do-color-accent`; work-engine blue primary buttons
   should be migrated.
+- A surface header may own the primary creation action for that surface, as the
+  Process Docs header does.
 - Destructive actions need confirmation when deleting work, workflow state, or
   artifacts.
 
 Current mapping:
 
 - Portal: `.primary-button`, `.quiet-button`, `.icon-button`,
-  `.new-page-button`, `.task-action-btn`.
+  `.ops-docs-create`, `.task-action-btn`.
 - Work-engine: `.btn-primary`, `.btn-danger`, `.btn-today`, `.btn-back`,
   `.task-action-btn`, `.empty-state-action`, `.card-action-link`.
 

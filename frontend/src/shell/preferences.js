@@ -8,7 +8,6 @@ export function createPreferencesShell({
   HTMLElementClass,
   matchMedia,
   mobileMenuButton,
-  mobileNewButton,
   pageShell,
   sidebar,
   sidebarExpandButton,
@@ -78,7 +77,6 @@ export function createPreferencesShell({
       sidebar.inert = false;
       pageShell.inert = false;
       if (mobileWorkBellButton) mobileWorkBellButton.inert = false;
-      mobileNewButton.inert = false;
       documentRef.removeEventListener("keydown", handleSidebarKeydown);
       return;
     }
@@ -97,7 +95,6 @@ export function createPreferencesShell({
     }
     pageShell.inert = open;
     if (mobileWorkBellButton) mobileWorkBellButton.inert = open;
-    mobileNewButton.inert = open;
   }
 
   function openSidebar() {

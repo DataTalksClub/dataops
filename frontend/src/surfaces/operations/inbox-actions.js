@@ -25,7 +25,6 @@ export function createInboxActions(context) {
     scheduleAnimationFrame,
     setRouteTitle,
     setStatus,
-    showCreate,
     state,
     tasksFromWorkPayload,
     todayIsoDate,
