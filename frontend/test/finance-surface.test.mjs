@@ -294,7 +294,7 @@ describe("Finance surface boundary", () => {
 
   test("focuses the first usable control when bookkeeping and sponsor dialogs open", async () => {
     const bookkeepingControl = new FakeElement("input");
-    const { document, finance } = createHarness({
+    const { document, finance, requests } = createHarness({
       setupSurface: (surface) => {
         const dialog = new FakeElement("dialog");
         const form = new FakeElement("form");
@@ -351,7 +351,7 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
-        if (path.endsWith("/notifications")) return { notifications: [] };
+        if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
@@ -369,6 +369,110 @@ describe("Finance surface boundary", () => {
       },
     });
     assert.equal(sponsorControl.focused, true);
+  });
+
+  test("keeps sponsor alert failures truthful and retries pages without duplicates", async () => {
+    let notificationRequestCount = 0;
+    let continuationOnline = false;
+    const sponsorAlert = (id, message) => ({
+      id,
+      message,
+      dismissed: false,
+      dueAt: "2026-08-20",
+      metadata: { sponsorBookingId: "booking-alert" },
+    });
+    const { document, finance, requests } = createHarness({
+      request: async (url) => {
+        const path = requestPath(url);
+        const query = new URL(url, "http://dataops.test").searchParams;
+        if (path === "/api/notifications") {
+          notificationRequestCount += 1;
+          assert.equal(query.get("limit"), "100");
+          if (notificationRequestCount === 1)
+            throw new Error("Notifications offline");
+          if (!query.get("cursor")) {
+            return {
+              notifications: {
+                items: [
+                  sponsorAlert("alert-a", "First alert"),
+                  sponsorAlert("alert-b", "Second alert"),
+                ],
+                nextCursor: "opaque-notification-cursor",
+              },
+            };
+          }
+          if (!continuationOnline)
+            throw new Error("Notifications continuation offline");
+          return {
+            notifications: {
+              items: [
+                sponsorAlert("alert-a", "Duplicate alert"),
+                sponsorAlert("alert-c", "Third alert"),
+              ],
+            },
+          };
+        }
+        if (path.endsWith("/organizations"))
+          return { items: [{ id: "org-1", displayName: "Sponsor" }] };
+        if (path.endsWith("/contacts")) return { items: [] };
+        if (path.endsWith("/bookings"))
+          return {
+            items: [{ id: "booking-alert", organizationId: "org-1", status: "confirmed" }],
+          };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderSponsorCrmSurface();
+    const alerts = document.surface.querySelector("[data-crm-alerts]");
+    assert.doesNotMatch(alerts.innerHTML, /No active sponsor booking alerts/);
+    assert.match(alerts.innerHTML, /Booking alerts are unavailable:/);
+    assert.match(alerts.innerHTML, /Notifications offline/);
+    assert.match(
+      alerts.innerHTML,
+      /<button type="button" data-load-sponsor-alerts-retry>/,
+    );
+
+    const clickAlertControl = async (selector) => {
+      await alerts.dispatch("click", {
+        target: {
+          closest: (candidate) => (candidate === selector ? {} : null),
+        },
+      });
+      await settle();
+    };
+
+    await clickAlertControl("[data-load-sponsor-alerts-retry]");
+    assert.match(alerts.innerHTML, /First alert/);
+    assert.match(alerts.innerHTML, /Second alert/);
+    assert.match(alerts.innerHTML, /More booking alerts are available\./);
+    assert.match(
+      alerts.innerHTML,
+      /<button type="button" data-load-sponsor-alerts>/,
+    );
+
+    await clickAlertControl("[data-load-sponsor-alerts]");
+    assert.match(alerts.innerHTML, /First alert/);
+    assert.match(alerts.innerHTML, /Second alert/);
+    assert.match(alerts.innerHTML, /More alerts are available, but loading failed:/);
+    assert.match(alerts.innerHTML, /Notifications continuation offline/);
+
+    continuationOnline = true;
+    await clickAlertControl("[data-load-sponsor-alerts]");
+    const renderedArticleCount = [
+      ...alerts.innerHTML.matchAll(/<article class="crm-card">/g),
+    ].length;
+    assert.equal(renderedArticleCount, 3);
+    assert.match(alerts.innerHTML, /First alert/);
+    assert.match(alerts.innerHTML, /Second alert/);
+    assert.match(alerts.innerHTML, /Third alert/);
+    assert.doesNotMatch(alerts.innerHTML, /Duplicate alert/);
+    assert.doesNotMatch(alerts.innerHTML, /loading failed|are unavailable/);
+    assert.match(alerts.innerHTML, /All notification pages loaded\./);
+    const notificationUrls = requests
+      ? []
+      : [];
+    assert.deepEqual(notificationUrls, []);
   });
 
   test("renders only safe sponsor communication projections and preserves the operator action hierarchy", async () => {
@@ -401,7 +505,7 @@ describe("Finance surface boundary", () => {
             ],
           };
         if (path.endsWith("/bookings")) return { items: [booking] };
-        if (path.endsWith("/notifications")) return { notifications: [] };
+        if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
         if (path.includes("/communications"))
           return {
@@ -481,7 +585,7 @@ describe("Finance surface boundary", () => {
           return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
         if (path.endsWith("/bookings")) return { items: [booking] };
-        if (path.endsWith("/notifications")) return { notifications: [] };
+        if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
         if (path.includes("/bookings/booking-1/communications"))
           return {
@@ -787,7 +891,7 @@ describe("Finance surface boundary", () => {
 
   test("renders an honest no-configuration mailing state without offering a run", async () => {
     const { document, finance } = createHarness({
-      request: async () => ({ configs: [], exports: [] }),
+      request: async () => ({ configs: [], exports: { items: [] } }),
     });
 
     await finance.renderMailingExportsSurface();
@@ -831,6 +935,7 @@ describe("Finance surface boundary", () => {
     }));
     const exports = [
       {
+        id: "run-pending",
         configId: "pending",
         account: "Account pending",
         scopeLabel: "All contacts",
@@ -840,6 +945,7 @@ describe("Finance surface boundary", () => {
         requestedAt,
       },
       {
+        id: "run-failed",
         configId: "failed",
         account: "Account failed",
         scopeLabel: "All contacts",
@@ -851,6 +957,7 @@ describe("Finance surface boundary", () => {
         requestedAt,
       },
       {
+        id: "run-completed",
         configId: "completed",
         account: "Account completed",
         scopeLabel: "All contacts",
@@ -861,12 +968,18 @@ describe("Finance surface boundary", () => {
         completedAt,
       },
     ];
-    const { document, finance } = createHarness({
-      request: async () => ({ configs, exports }),
+    const { document, finance, requests } = createHarness({
+      request: async () => ({
+        configs,
+        exports: { items: exports },
+      }),
     });
 
     await finance.renderMailingExportsSurface();
 
+    assert.deepEqual(requests.map(({ url }) => url), [
+      "/api/mailing-exports?limit=100",
+    ]);
     const cards = document.surface.querySelector("[data-configs]").innerHTML;
     assert.match(cards, /data-export-state="pending"/);
     assert.match(
@@ -887,5 +1000,40 @@ describe("Finance surface boundary", () => {
     assert.match(cards, /Requested/);
     assert.match(cards, /Completed/);
     assert.doesNotMatch(cards, /2026-08-12T08:00:00\.000Z/);
+  });
+
+  test("does not retain a prior mailing snapshot when a refresh fails", async () => {
+    const requestedAt = "2026-08-12T08:00:00.000Z";
+    let requestCount = 0;
+    const { document, finance, requests } = createHarness({
+      request: async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            configs: [],
+            exports: { items: [] },
+          };
+        }
+        throw new Error("HTTP 503 Service Unavailable");
+      },
+    });
+
+    await finance.renderMailingExportsSurface();
+    await document.surface.querySelector("[data-refresh]").dispatch("click");
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+      "/api/mailing-exports?limit=100",
+      "/api/mailing-exports?limit=100",
+    ]);
+    const configs = document.surface.querySelector("[data-configs]").innerHTML;
+    const history = document.surface.querySelector("[data-history]").innerHTML;
+    assert.match(configs, /data-export-state="failure"/);
+    assert.match(configs, /HTTP 503 Service Unavailable/);
+    assert.match(history, /Export history is unavailable:/);
+    assert.equal(
+      document.surface.querySelector('[role="status"]').textContent,
+      "Could not load mailing-list exports: HTTP 503 Service Unavailable",
+    );
+    assert.equal(requestCount, 2);
   });
 });

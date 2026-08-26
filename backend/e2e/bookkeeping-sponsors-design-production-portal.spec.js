@@ -109,14 +109,16 @@ async function routeSponsors(page) {
     notes: "Confirm the public campaign link before scheduling.",
     version: 2,
   };
-  await page.route("**/work/api/notifications", (route) => route.fulfill({
+  await page.route("**/work/api/notifications*", (route) => route.fulfill({
     json: {
-      notifications: [{
-        message: "Sponsor materials need review",
-        dueAt: "2026-09-03",
-        dismissed: false,
-        metadata: { sponsorBookingId: booking.id },
-      }],
+      notifications: {
+        items: [{
+          message: "Sponsor materials need review",
+          dueAt: "2026-09-03",
+          dismissed: false,
+          metadata: { sponsorBookingId: booking.id },
+        }],
+      },
     },
   }));
   await page.route("**/work/api/sponsor-crm/**", (route) => {

@@ -158,8 +158,10 @@ describe("app shared operations domain characterization", () => {
 
     assert.equal(settledPayload({ status: "fulfilled", value: card }), card);
     assert.deepEqual(plain(settledPayload({ status: "rejected" })), {});
-    assert.equal(cardsFromWorkPayload({ cards: [card] })[0], card);
-    assert.equal(cardsFromWorkPayload({ items: [card] })[0], card);
+    assert.deepEqual(cardsFromWorkPayload([card]), []);
+    assert.equal(cardsFromWorkPayload({ cards: { items: [card] } })[0], card);
+    assert.deepEqual(cardsFromWorkPayload({ cards: [card] }), []);
+    assert.deepEqual(cardsFromWorkPayload({ items: [card] }), []);
     assert.equal(usersFromWorkPayload({ users: [user] })[0], user);
     assert.equal(
       recurringConfigsFromPayload({ configs: [recurring] })[0],
@@ -188,6 +190,8 @@ describe("app shared operations domain characterization", () => {
       overdueLoaded: false,
       waitingLoaded: false,
       cardsLoaded: false,
+      cardsComplete: false,
+      cardTasksComplete: false,
       usersLoaded: false,
     });
     assert.deepEqual(emptyOperationsRecurringSnapshot(), {
@@ -252,10 +256,12 @@ describe("app shared operations domain characterization", () => {
         cardTasks: {
           "card-1": [canonicalTask({ id: "today", title: "Today", date: "2026-08-13" })],
         },
-        cards: [
-          { id: "card-1", version: 1, title: "Risk card", status: "active", stage: "preparation", taskCount: 2, openTaskCount: 2, anchorDate: "2026-08-14" },
-          { id: "archived", version: 2, title: "Old", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-01T12:00:00.000Z", completedBy: "alexey", activeStageBeforeCompletion: "preparation" },
-        ],
+        cards: {
+          items: [
+            { id: "card-1", version: 1, title: "Risk card", status: "active", stage: "preparation", taskCount: 2, openTaskCount: 2, anchorDate: "2026-08-14" },
+            { id: "archived", version: 2, title: "Old", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-01T12:00:00.000Z", completedBy: "alexey", activeStageBeforeCompletion: "preparation" },
+          ],
+        },
         users: [{ id: "alexey", name: "Alexey" }],
         todayTaskCount: 9,
         errors: ["overdue unavailable"],
@@ -333,6 +339,16 @@ describe("app shared operations domain characterization", () => {
     );
     assert.equal(undated.anchorDate, "");
     assert.equal(undated.anchorLabel, "");
+
+    const unavailableRelationships = functions.operationItemFromCard(
+      { id: "card-3", title: "Partial Card", stage: "preparation" },
+      [],
+      { today: "2026-08-13", cardTasksComplete: false },
+    );
+    assert.equal(unavailableRelationships.taskRelationshipsComplete, false);
+    assert.equal(unavailableRelationships.progress, null);
+    assert.equal(unavailableRelationships.meta, "Task relationships unavailable");
+    assert.equal(unavailableRelationships.risk, "");
   });
 
   test("projects Template and Process Doc vocabulary without duplicate operation rows", () => {

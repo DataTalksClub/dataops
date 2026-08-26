@@ -736,21 +736,24 @@ describe("runtime and shell production behavior", () => {
 
   test("loads notifications, preserves stale state, and supports open and dismiss actions", async () => {
     let payload = {
-      notifications: [
-        {
-          dueAt: "2026-08-12",
-          id: "notification-1",
-          message: "Task overdue",
-          taskId: "task-1",
-          type: "task-overdue",
-        },
-        {
-          createdAt: "2026-08-13T10:00:00Z",
-          id: "notification-2",
-          message: "Recurring task generated: Weekly review for 2026-08-13",
-          type: "recurring-due",
-        },
-      ],
+      notifications: {
+        items: [
+          {
+            createdAt: "2026-08-13T11:00:00Z",
+            dueAt: "2026-08-12",
+            id: "notification-1",
+            message: "Task overdue",
+            taskId: "task-1",
+            type: "task-overdue",
+          },
+          {
+            createdAt: "2026-08-13T10:00:00Z",
+            id: "notification-2",
+            message: "Recurring task generated: Weekly review for 2026-08-13",
+            type: "recurring-due",
+          },
+        ],
+      },
     };
     const harness = createNotificationHarness({
       request: async (_url, options) => {
@@ -765,7 +768,7 @@ describe("runtime and shell production behavior", () => {
     harness.document.activeElement = harness.desktop;
     harness.shell.openWorkBellPanel();
     assert.equal(harness.panel.hidden, false);
-    assert.equal(harness.body.children.length, 2);
+    assert.equal(harness.body.children.length, 3);
     assert.match(harness.body.children[0].className, /is-overdue/);
     assert.equal(harness.body.children[0].textContent.includes("Due yesterday"), true);
     assert.equal(
@@ -792,7 +795,7 @@ describe("runtime and shell production behavior", () => {
     assert.match(harness.requests.at(-1).url, /notification-1\/dismiss$/);
     assert.equal(harness.requests.at(-1).options.method, "PUT");
 
-    payload = [];
+    payload = { notifications: { items: [] } };
     await harness.shell.refreshWorkBell({ token: "stale" });
     assert.equal(harness.desktopCount.textContent, "0");
     harness.shell.openWorkBellPanel();
@@ -804,7 +807,9 @@ describe("runtime and shell production behavior", () => {
     let fresh = false;
     const stale = createNotificationHarness({
       isWorkspaceRouteFresh: () => fresh,
-      request: async () => ({ notifications: [{ id: "ignored" }] }),
+      request: async () => ({
+        notifications: { items: [{ id: "ignored" }] },
+      }),
     });
     await stale.shell.refreshWorkBell({ token: "old" });
     assert.equal(stale.desktopCount.textContent, "");
@@ -816,7 +821,9 @@ describe("runtime and shell production behavior", () => {
           throw new Error("Dismiss unavailable");
         }
         if (options.method === "PUT") return {};
-        return [{ id: "notification-1", message: "Review task" }];
+        return {
+          notifications: { items: [{ id: "notification-1", message: "Review task" }] },
+        };
       },
     });
     await harness.shell.refreshWorkBell();
@@ -846,6 +853,45 @@ describe("runtime and shell production behavior", () => {
     assert.equal(unavailable.desktopCount.classList.contains("is-error"), true);
     unavailable.shell.openWorkBellPanel();
     assert.match(unavailable.body.textContent, /Notifications offline/);
+  });
+
+  test("keeps notification pagination reachable after dismissing every visible row", async () => {
+    const payloads = [
+      {
+        notifications: {
+          items: [{ id: "notification-page-1", message: "First page" }],
+          nextCursor: "page-two",
+        },
+      },
+      {
+        notifications: {
+          items: [{ id: "notification-page-2", message: "Second page" }],
+        },
+      },
+    ];
+    const harness = createNotificationHarness({
+      request: async (_url, options) => {
+        if (options.method === "PUT") return {};
+        return payloads.shift();
+      },
+    });
+
+    await harness.shell.refreshWorkBell();
+    harness.shell.openWorkBellPanel();
+    const dismiss = harness.body.querySelector("[data-dismiss-notification]");
+    await dismiss.click();
+    await nextTicks();
+
+    assert.equal(harness.desktopCount.textContent, "0");
+    const loadMore = harness.body.querySelector('[data-load-notifications="next"]');
+    assert.ok(loadMore, "a fully dismissed page must still expose its next page");
+    await loadMore.click();
+    await nextTicks();
+
+    assert.equal(harness.desktopCount.textContent, "1");
+    assert.match(harness.body.textContent, /Second page/);
+    assert.match(harness.requests.at(-1).url, /cursor=page-two/);
+    assert.match(harness.body.textContent, /All notifications loaded\./);
   });
 
   test("binds application events to canonical navigation, editor, and keyboard actions", async () => {

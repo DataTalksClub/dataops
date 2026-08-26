@@ -228,9 +228,9 @@ describe('API - File uploads', () => {
 
     assert.strictEqual(res.statusCode, 200);
     const parsed = JSON.parse(res.body);
-    assert.ok(Array.isArray(parsed.files));
-    assert.ok(parsed.files.length >= 1);
-    for (const f of parsed.files) {
+    assert.ok(Array.isArray(parsed.files.items));
+    assert.ok(parsed.files.items.length >= 1);
+    for (const f of parsed.files.items) {
       assert.strictEqual(f.taskId, taskId);
     }
   });
@@ -244,7 +244,7 @@ describe('API - File uploads', () => {
 
     assert.strictEqual(res.statusCode, 200);
     const parsed = JSON.parse(res.body);
-    assert.deepStrictEqual(parsed.files, []);
+    assert.deepStrictEqual(parsed.files, { items: [] });
   });
 
   it('GET /api/files/:id returns file metadata', async () => {
@@ -374,7 +374,7 @@ describe('API - File uploads', () => {
 
     assert.strictEqual(res.statusCode, 200);
     const parsed = JSON.parse(res.body);
-    for (const f of parsed.files) {
+    for (const f of parsed.files.items) {
       assert.strictEqual(f.category, 'image');
     }
   });

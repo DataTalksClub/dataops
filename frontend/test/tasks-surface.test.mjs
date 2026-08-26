@@ -35,7 +35,12 @@ import {
 } from "./support/fake-dom.mjs";
 
 const originalDocument = globalThis.document;
-const canonicalTask = (task) => ({ version: 1, taskHistory: [], status: "todo", ...task });
+const canonicalTask = (task) => ({
+  version: 1,
+  taskHistory: [],
+  status: "todo",
+  ...task,
+});
 
 afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
@@ -311,7 +316,11 @@ describe("Tasks surface boundary", () => {
 
   test("renders Queue lanes honestly and keeps route-context recovery actions canonical", async () => {
     const tasks = [
-      canonicalTask({ id: "overdue", description: "Overdue", date: "2026-08-11" }),
+      canonicalTask({
+        id: "overdue",
+        description: "Overdue",
+        date: "2026-08-11",
+      }),
       canonicalTask({
         id: "follow-up",
         description: "Follow up",
@@ -327,7 +336,12 @@ describe("Tasks surface boundary", () => {
         followUpAt: "2026-08-14",
       }),
       canonicalTask({ id: "today", description: "Today", date: "2026-08-12" }),
-      canonicalTask({ id: "done", description: "Done", status: "done", date: "2026-08-12" }),
+      canonicalTask({
+        id: "done",
+        description: "Done",
+        status: "done",
+        date: "2026-08-12",
+      }),
     ];
     const { api, documentList, navigations } = createHarness({
       workSnapshot: { tasks },
@@ -393,11 +407,46 @@ describe("Tasks surface boundary", () => {
 
   test("renders the active Cards board as exactly three columns and keeps Done in Archive", () => {
     const active = [
-      { id: "prep", version: 1, title: "Prepare", stage: "preparation", status: "active", taskCount: 0, openTaskCount: 0 },
-      { id: "announced", version: 1, title: "Announce", stage: "announced", status: "active", taskCount: 0, openTaskCount: 0 },
-      { id: "after-event", version: 1, title: "Follow up", stage: "after-event", status: "active", taskCount: 0, openTaskCount: 0 },
+      {
+        id: "prep",
+        version: 1,
+        title: "Prepare",
+        stage: "preparation",
+        status: "active",
+        taskCount: 0,
+        openTaskCount: 0,
+      },
+      {
+        id: "announced",
+        version: 1,
+        title: "Announce",
+        stage: "announced",
+        status: "active",
+        taskCount: 0,
+        openTaskCount: 0,
+      },
+      {
+        id: "after-event",
+        version: 1,
+        title: "Follow up",
+        stage: "after-event",
+        status: "active",
+        taskCount: 0,
+        openTaskCount: 0,
+      },
     ];
-    const archived = { id: "done", version: 2, title: "Completed", stage: "done", status: "archived", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-05T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "after-event" };
+    const archived = {
+      id: "done",
+      version: 2,
+      title: "Completed",
+      stage: "done",
+      status: "archived",
+      taskCount: 1,
+      openTaskCount: 0,
+      completedAt: "2026-08-05T12:00:00.000Z",
+      completedBy: "operator",
+      activeStageBeforeCompletion: "after-event",
+    };
     const { api, documentList, setRoute, state } = createHarness({
       route: { path: "/cards", params: new URLSearchParams() },
       workSnapshot: {
@@ -437,8 +486,30 @@ describe("Tasks surface boundary", () => {
 
   test("groups the archive into newest-first months", () => {
     const archived = [
-      { id: "old", version: 2, title: "July card", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-07-04T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "preparation" },
-      { id: "recent", version: 2, title: "August card", status: "archived", stage: "done", taskCount: 1, openTaskCount: 0, completedAt: "2026-08-02T12:00:00.000Z", completedBy: "operator", activeStageBeforeCompletion: "announced" },
+      {
+        id: "old",
+        version: 2,
+        title: "July card",
+        status: "archived",
+        stage: "done",
+        taskCount: 1,
+        openTaskCount: 0,
+        completedAt: "2026-07-04T12:00:00.000Z",
+        completedBy: "operator",
+        activeStageBeforeCompletion: "preparation",
+      },
+      {
+        id: "recent",
+        version: 2,
+        title: "August card",
+        status: "archived",
+        stage: "done",
+        taskCount: 1,
+        openTaskCount: 0,
+        completedAt: "2026-08-02T12:00:00.000Z",
+        completedBy: "operator",
+        activeStageBeforeCompletion: "announced",
+      },
     ];
     const { api, documentList } = createHarness({
       route: { path: "/cards/archive", params: new URLSearchParams() },
@@ -464,11 +535,48 @@ describe("Tasks surface boundary", () => {
     assert.equal(findAllByClass(documentList, "cards-archive-grid").length, 2);
   });
 
+  test("does not present incomplete Cards or archive collections as empty", () => {
+    const { api, documentList, setRoute } = createHarness({
+      route: { path: "/cards", params: new URLSearchParams() },
+      workSnapshot: {
+        activeCards: [],
+        cards: [],
+        cardTasks: {},
+        cardsLoaded: true,
+        cardsComplete: false,
+        cardTasksComplete: false,
+      },
+    });
+
+    api.renderTasksSurface([], "workflows");
+    assert.match(documentList.textContent, /Card availability is unknown/);
+    assert.doesNotMatch(documentList.textContent, /No active cards/);
+    assert.match(
+      documentList.textContent,
+      /remaining pages have not been evaluated/,
+    );
+
+    setRoute({ path: "/cards/archive", params: new URLSearchParams() });
+    api.renderTasksSurface([], "workflows");
+    assert.match(documentList.textContent, /Archive availability is unknown/);
+    assert.doesNotMatch(documentList.textContent, /Archive is empty/);
+  });
+
   test("shows the anchor date on each card and orders columns by anchor", () => {
     const active = [
-      { id: "late", title: "Late", stage: "preparation", anchorDate: "2026-09-01" },
+      {
+        id: "late",
+        title: "Late",
+        stage: "preparation",
+        anchorDate: "2026-09-01",
+      },
       { id: "undated", title: "Undated", stage: "preparation" },
-      { id: "soon", title: "Soon", stage: "preparation", anchorDate: "2026-08-13" },
+      {
+        id: "soon",
+        title: "Soon",
+        stage: "preparation",
+        anchorDate: "2026-08-13",
+      },
     ];
     const { api, documentList } = createHarness({
       route: { path: "/cards", params: new URLSearchParams() },
@@ -502,7 +610,12 @@ describe("Tasks surface boundary", () => {
 
   test("summarizes card progress as a count and severity flags instead of one meta line", () => {
     const active = [
-      { id: "risky", title: "Risky", stage: "preparation", anchorDate: "2026-08-10" },
+      {
+        id: "risky",
+        title: "Risky",
+        stage: "preparation",
+        anchorDate: "2026-08-10",
+      },
     ];
     const { api, documentList } = createHarness({
       route: { path: "/cards", params: new URLSearchParams() },
@@ -511,9 +624,24 @@ describe("Tasks surface boundary", () => {
         cards: active,
         cardTasks: {
           risky: [
-            canonicalTask({ id: "a", description: "Done", status: "done", date: "2026-08-01" }),
-            canonicalTask({ id: "b", description: "Late", date: "2026-08-05", requiresFile: true }),
-            canonicalTask({ id: "c", description: "Waiting", status: "waiting", waitingFor: "reply" }),
+            canonicalTask({
+              id: "a",
+              description: "Done",
+              status: "done",
+              date: "2026-08-01",
+            }),
+            canonicalTask({
+              id: "b",
+              description: "Late",
+              date: "2026-08-05",
+              requiresFile: true,
+            }),
+            canonicalTask({
+              id: "c",
+              description: "Waiting",
+              status: "waiting",
+              waitingFor: "reply",
+            }),
           ],
         },
       },
@@ -624,12 +752,25 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "templates");
 
     assert.match(harness.documentList.textContent, /Git-authored templates/);
-    assert.match(harness.documentList.textContent, /private knowledge repository/);
-    assert.match(harness.documentList.textContent, /workflow-templates\/newsletter.yaml/);
+    assert.match(
+      harness.documentList.textContent,
+      /private knowledge repository/,
+    );
+    assert.match(
+      harness.documentList.textContent,
+      /workflow-templates\/newsletter.yaml/,
+    );
     assert.match(harness.documentList.textContent, /1234567890ab/);
     assert.ok(findByText(harness.documentList, "Create card", "button"));
-    for (const mutation of ["New runtime template", "Save template", "Delete template"]) {
-      assert.equal(findByText(harness.documentList, mutation, "button"), undefined);
+    for (const mutation of [
+      "New runtime template",
+      "Save template",
+      "Delete template",
+    ]) {
+      assert.equal(
+        findByText(harness.documentList, mutation, "button"),
+        undefined,
+      );
     }
   });
 
@@ -644,9 +785,24 @@ describe("Tasks surface boundary", () => {
       ],
     };
     const cards = [
-      { id: "card-august", title: "August", templateId: template.id, status: "active" },
-      { id: "card-september", title: "September", templateId: template.id, status: "active" },
-      { id: "card-current", title: "October", templateId: template.id, status: "active" },
+      {
+        id: "card-august",
+        title: "August",
+        templateId: template.id,
+        status: "active",
+      },
+      {
+        id: "card-september",
+        title: "September",
+        templateId: template.id,
+        status: "active",
+      },
+      {
+        id: "card-current",
+        title: "October",
+        templateId: template.id,
+        status: "active",
+      },
     ];
     let previewCalls = 0;
     let workRefreshes = 0;
@@ -725,21 +881,27 @@ describe("Tasks surface boundary", () => {
     ).dispatch("click");
     assert.equal(previewCalls, 1);
     assert.deepEqual(
-      JSON.parse(calls.find(({ url }) => url.endsWith("/preview")).options.body),
+      JSON.parse(
+        calls.find(({ url }) => url.endsWith("/preview")).options.body,
+      ),
       { cardIds: ["card-august", "card-september", "card-current"] },
     );
-    assert.match(harness.documentList.textContent, /Nothing is selected automatically/);
+    assert.match(
+      harness.documentList.textContent,
+      /Nothing is selected automatically/,
+    );
     assert.equal(
-      findByText(harness.documentList, "Apply 0 selected Cards", "button").disabled,
+      findByText(harness.documentList, "Apply 0 selected Cards", "button")
+        .disabled,
       true,
     );
-    const cardCheckbox = (label) => harness.documentList
-      .querySelectorAll("input")
-      .find((input) => input.getAttribute("aria-label") === `Select ${label}`);
-    assert.equal(
-      cardCheckbox("October").disabled,
-      true,
-    );
+    const cardCheckbox = (label) =>
+      harness.documentList
+        .querySelectorAll("input")
+        .find(
+          (input) => input.getAttribute("aria-label") === `Select ${label}`,
+        );
+    assert.equal(cardCheckbox("October").disabled, true);
 
     let checkbox = cardCheckbox("August");
     checkbox.checked = true;
@@ -817,7 +979,9 @@ describe("Tasks surface boundary", () => {
     await findByText(harness.documentList, "Pause", "button").dispatch("click");
     assert.deepEqual(JSON.parse(calls.at(-1).options.body), { enabled: false });
 
-    await findByText(harness.documentList, "Delete", "button").dispatch("click");
+    await findByText(harness.documentList, "Delete", "button").dispatch(
+      "click",
+    );
     await nextTicks();
     assert.equal(calls.at(-1).options.method, "DELETE");
     assert.match(
@@ -851,10 +1015,7 @@ describe("Tasks surface boundary", () => {
     });
 
     harness.api.renderTasksSurface([], "recurring");
-    const statuses = findAllByClass(
-      harness.documentList,
-      "recurring-status",
-    );
+    const statuses = findAllByClass(harness.documentList, "recurring-status");
     assert.deepEqual(
       statuses.map((status) => status.textContent),
       ["Active", "Paused"],
@@ -864,8 +1025,7 @@ describe("Tasks surface boundary", () => {
     );
     assert.deepEqual(
       statuses.map(
-        (status) =>
-          findAllByClass(status, "visually-hidden")[0]?.textContent,
+        (status) => findAllByClass(status, "visually-hidden")[0]?.textContent,
       ),
       ["Active", "Paused"],
     );
@@ -955,7 +1115,11 @@ describe("Tasks surface boundary", () => {
     });
     harness.api.renderTasksSurface([], "recurring");
 
-    const createOpener = findByText(harness.documentList, "New schedule", "button");
+    const createOpener = findByText(
+      harness.documentList,
+      "New schedule",
+      "button",
+    );
     harness.document.activeElement = createOpener;
     await createOpener.dispatch("click");
     const createOverlay = findAllByClass(
@@ -1032,10 +1196,18 @@ describe("Tasks surface boundary", () => {
 
   test("reports Queue load state in the Tasks surface instead of a hidden status line", async () => {
     const loading = createHarness({
-      model: baseModel({ stats: { activeCards: 0, followUpTasks: 0, liveLoaded: false, missingProofTasks: 0 } }),
+      model: baseModel({
+        stats: {
+          activeCards: 0,
+          followUpTasks: 0,
+          liveLoaded: false,
+          missingProofTasks: 0,
+        },
+      }),
     });
     loading.api.renderTasksSurface([], "queue");
-    const loadingSummary = loading.documentList.querySelector(".surface-summary");
+    const loadingSummary =
+      loading.documentList.querySelector(".surface-summary");
     assert.equal(loadingSummary.dataset.summaryState, "loading");
     assert.equal(loadingSummary.dataset.summaryId, "tasks-queue");
     assert.match(loadingSummary.textContent, /Loading tasks from the work API/);
@@ -1043,7 +1215,10 @@ describe("Tasks surface boundary", () => {
     const refreshes = [];
     const failed = createHarness({
       model: baseModel({
-        runtime: { connected: false, errors: ["Synthetic route failure (503)"] },
+        runtime: {
+          connected: false,
+          errors: ["Synthetic route failure (503)"],
+        },
         stats: {
           activeCards: 0,
           followUpTasks: 0,
@@ -1085,10 +1260,13 @@ describe("Tasks surface boundary", () => {
           workErrors: ["Waiting source unavailable"],
         },
       }),
-      workSnapshot: { tasks: [canonicalTask({ id: "task-1", description: "Ship" })] },
+      workSnapshot: {
+        tasks: [canonicalTask({ id: "task-1", description: "Ship" })],
+      },
     });
     partial.api.renderTasksSurface([], "queue");
-    const partialSummary = partial.documentList.querySelector(".surface-summary");
+    const partialSummary =
+      partial.documentList.querySelector(".surface-summary");
     assert.equal(partialSummary.dataset.summaryState, "partial");
     assert.match(partialSummary.textContent, /1 known work item/);
     assert.match(
@@ -1096,7 +1274,10 @@ describe("Tasks surface boundary", () => {
       /follow-ups unknown/,
       "a source that did not answer has no count, not a zero",
     );
-    assert.match(partialSummary.textContent, /Some task sources are unavailable/);
+    assert.match(
+      partialSummary.textContent,
+      /Some task sources are unavailable/,
+    );
 
     const empty = createHarness();
     empty.api.renderTasksSurface([], "queue");
@@ -1109,7 +1290,10 @@ describe("Tasks surface boundary", () => {
   test("failed queue lanes show unknown counts instead of zero", () => {
     const failed = createHarness({
       model: baseModel({
-        runtime: { connected: false, errors: ["Synthetic route failure (503)"] },
+        runtime: {
+          connected: false,
+          errors: ["Synthetic route failure (503)"],
+        },
         stats: {
           activeCards: 0,
           followUpTasks: 0,
@@ -1177,7 +1361,8 @@ describe("Tasks surface boundary", () => {
       },
     });
     partialOutage.api.renderTasksSurface([], "queue");
-    const partialSummary = partialOutage.documentList.querySelector(".surface-summary");
+    const partialSummary =
+      partialOutage.documentList.querySelector(".surface-summary");
     assert.equal(partialSummary.dataset.summaryState, "partial");
     assert.match(partialSummary.textContent, /known work items unknown/);
     assert.equal(
@@ -1205,7 +1390,10 @@ describe("Tasks surface boundary", () => {
     const summary = unavailable.documentList.querySelector(".surface-summary");
     assert.equal(summary.dataset.summaryState, "unavailable");
     assert.equal(summary.dataset.summaryId, "tasks-recurring");
-    assert.match(summary.textContent, /Recurring schedules could not be loaded/);
+    assert.match(
+      summary.textContent,
+      /Recurring schedules could not be loaded/,
+    );
     await summary.querySelector(".surface-summary-retry").dispatch("click");
     await nextTicks();
     assert.deepEqual(refreshes, ["recurring"]);
@@ -1225,7 +1413,10 @@ describe("Tasks surface boundary", () => {
     ready.api.renderTasksSurface([], "recurring");
     const readySummary = ready.documentList.querySelector(".surface-summary");
     assert.equal(readySummary.dataset.summaryState, "ready");
-    assert.match(readySummary.textContent, /1 recurring schedule · 1 enabled · 0 paused/);
+    assert.match(
+      readySummary.textContent,
+      /1 recurring schedule · 1 enabled · 0 paused/,
+    );
 
     const templates = createHarness({
       request: async (url) => {
@@ -1235,7 +1426,8 @@ describe("Tasks surface boundary", () => {
     });
     await templates.api.refreshRuntimeTemplates();
     templates.api.renderTasksSurface([], "templates");
-    const templateSummary = templates.documentList.querySelector(".surface-summary");
+    const templateSummary =
+      templates.documentList.querySelector(".surface-summary");
     assert.equal(templateSummary.dataset.summaryState, "partial");
     assert.equal(
       templateSummary.querySelector(".surface-summary-detail").textContent,
@@ -1310,9 +1502,7 @@ describe("Tasks surface boundary", () => {
       },
     });
     harness.api.renderTasksSurface([], "recurring");
-    const retry = harness.documentList.querySelector(
-      ".surface-summary-retry",
-    );
+    const retry = harness.documentList.querySelector(".surface-summary-retry");
 
     const retryClick = retry.click();
     harness.setActiveRouteToken(2);
@@ -1598,7 +1788,8 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "recurring");
     await findByText(harness.documentList, "Edit", "button").dispatch("click");
     const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
-    overlay.querySelector('input[type="text"]').value = "Weekly newsletter prep";
+    overlay.querySelector('input[type="text"]').value =
+      "Weekly newsletter prep";
     await submitQuickForm(overlay);
     await nextTicks();
 
@@ -1641,7 +1832,11 @@ describe("Tasks surface boundary", () => {
       validation[0].getAttribute("id"),
     );
     assert.equal(description.focused, true);
-    assert.deepEqual(errors, [], "validation stays in the form, not in a toast");
+    assert.deepEqual(
+      errors,
+      [],
+      "validation stays in the form, not in a toast",
+    );
     assert.equal(requests.length, 0);
 
     const inputs = overlay.querySelectorAll("input");
@@ -1716,7 +1911,11 @@ describe("Tasks surface boundary", () => {
       request: async (url, options = {}) => {
         if (url === "/api/templates") {
           return cardsSubmitted
-            ? { templates: [{ id: "template-current", name: "Current newsletter" }] }
+            ? {
+                templates: [
+                  { id: "template-current", name: "Current newsletter" },
+                ],
+              }
             : { templates: [{ id: "template-old", name: "Old newsletter" }] };
         }
         if (url === "/api/cards" && options.method === "POST") {
@@ -1748,7 +1947,10 @@ describe("Tasks surface boundary", () => {
 
     const feedback = firstOverlay.querySelector(".form-feedback");
     assert.equal(feedback.dataset.feedbackState, "conflict");
-    assert.match(feedback.textContent, /Template changed since this form was opened/);
+    assert.match(
+      feedback.textContent,
+      /Template changed since this form was opened/,
+    );
     assert.equal(inputs[0].value, "August newsletter");
 
     await submitQuickForm(firstOverlay);

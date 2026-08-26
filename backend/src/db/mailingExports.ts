@@ -1,6 +1,7 @@
 import { GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from './tableNames';
+import { readCollectionPage } from './collectionPage';
 import type { MailingExportJob } from '../mailingExports/types';
 
 const key = (id: string) => ({ PK: `MAILING_EXPORT#${id}`, SK: `MAILING_EXPORT#${id}` });
@@ -72,4 +73,25 @@ export async function listMailingExports(client: DynamoDBDocumentClient): Promis
   }));
   return (result.Items || []).map(({ PK, SK, ...job }) => job as MailingExportJob)
     .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+}
+
+export async function listMailingExportsPage(
+  client: DynamoDBDocumentClient,
+  binding: Parameters<typeof readCollectionPage<MailingExportJob>>[0]['binding'],
+  pagination: Record<string, unknown>,
+) {
+  const command = {
+    FilterExpression: 'begins_with(PK, :prefix)',
+    ExpressionAttributeValues: { ':prefix': 'MAILING_EXPORT#' },
+  };
+  return readCollectionPage<MailingExportJob>({
+    client,
+    tableName: TABLE_ARTIFACTS,
+    kind: 'scan',
+    command,
+    binding,
+    input: pagination,
+    keyFor: (job) => ({ PK: `MAILING_EXPORT#${job.id}`, SK: `MAILING_EXPORT#${job.id}` }),
+    cleanItem: ({ PK: _partition, SK: _sort, ...job }) => job as unknown as MailingExportJob,
+  });
 }

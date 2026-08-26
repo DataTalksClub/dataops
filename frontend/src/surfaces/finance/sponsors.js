@@ -1,6 +1,8 @@
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
+import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
+import { createCollectionLoader } from "../../core/collection-loader.js";
 import { html } from "./shared.js";
 
 function focusFirstUsableControl(dialog) {
@@ -88,6 +90,16 @@ export function createSponsorCrmSurface(context) {
     let organizations = [],
       contacts = [],
       bookings = [];
+    const notificationLoader = createCollectionLoader({
+      collection: "notifications",
+      createUrl: ({ cursor, limit }) => {
+        const query = new URLSearchParams({ limit: String(limit) });
+        if (cursor) query.set("cursor", cursor);
+        return workApiUrl(`/api/notifications?${query}`);
+      },
+      request,
+    });
+    let notificationState = notificationLoader.getSnapshot();
     const sponsorFinance = createSponsorFinance({
       escapeHtml,
       humanizeOptionLabel,
@@ -416,40 +428,28 @@ export function createSponsorCrmSurface(context) {
     }
     async function refresh() {
       message.textContent = "Loading sponsor CRM…";
-      const results = await Promise.all([
-        api("/organizations"),
-        api("/contacts"),
-        api("/bookings"),
-        request(workApiUrl("/api/notifications")),
-      ]);
-      organizations = results[0].items || [];
-      contacts = results[1].items || [];
-      bookings = results[2].items || [];
-      const alerts = (results[3].notifications || []).filter(
-        (item) =>
-          (item.metadata?.sponsorBookingId ||
-            item.metadata?.financeBookingId) &&
-          !item.dismissed,
-      );
-      surface.querySelector("[data-crm-alerts]").innerHTML = alerts.length
-        ? alerts
-            .map(
-              (item) =>
-                html`<article class="crm-card">
-                  <strong>${escapeHtml(item.message)}</strong>
-                  <p>Due ${escapeHtml(item.dueAt || "now")}</p>
-                  <button
-                    data-alert-booking="${escapeHtml(item.metadata.sponsorBookingId || item.metadata.financeBookingId)}"
-                  >
-                    Open booking
-                  </button>
-                </article>`,
-            )
-            .join("")
-        : "No active sponsor booking alerts.";
+      const pendingAlertPage = notificationLoader.load();
+      notificationState = notificationLoader.getSnapshot();
+      drawAlerts();
+      const [organizationsResult, contactsResult, bookingsResult, alertPage] =
+        await Promise.all([
+          api("/organizations"),
+          api("/contacts"),
+          api("/bookings"),
+          pendingAlertPage,
+        ]);
+      organizations = organizationsResult.items || [];
+      contacts = contactsResult.items || [];
+      bookings = bookingsResult.items || [];
+      notificationState = alertPage;
+      drawAlerts();
       orgOptions();
       draw();
       message.textContent = "Sponsor CRM ready.";
+    }
+
+    function drawAlerts() {
+      renderSponsorBookingAlerts({ surface, notificationState, escapeHtml });
     }
     function openBooking(item) {
       const dialog = surface.querySelector("[data-booking-dialog]"),
@@ -523,6 +523,26 @@ export function createSponsorCrmSurface(context) {
       if (open) navigateCanonicalWorkspace("/sponsors", { bookingId: open });
     };
     surface.querySelector("[data-crm-alerts]").onclick = (event) => {
+      if (event.target.closest("[data-load-sponsor-alerts]")) {
+        safe(async () => {
+          const pendingPage = notificationLoader.loadMore();
+          notificationState = notificationLoader.getSnapshot();
+          drawAlerts();
+          notificationState = await pendingPage;
+          drawAlerts();
+        }, "Could not load more booking alerts");
+        return;
+      }
+      if (event.target.closest("[data-load-sponsor-alerts-retry]")) {
+        safe(async () => {
+          const pendingPage = notificationLoader.load();
+          notificationState = notificationLoader.getSnapshot();
+          drawAlerts();
+          notificationState = await pendingPage;
+          drawAlerts();
+        }, "Could not load booking alerts");
+        return;
+      }
       const id = event.target.closest("[data-alert-booking]")?.dataset
         .alertBooking;
       const booking = bookings.find((item) => item.id === id);

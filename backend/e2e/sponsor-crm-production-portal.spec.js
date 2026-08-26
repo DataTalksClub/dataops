@@ -422,20 +422,22 @@ test.describe("production sponsor CRM portal", () => {
         });
       },
     );
-    await page.route("**/work/api/notifications", async (route) => {
+    await page.route("**/work/api/notifications*", async (route) => {
       await gate;
       return route.fulfill({
         json: {
-          notifications: [
-            {
-              id: "alert-1",
-              message:
-                "Sponsor booking materials are missing 10 days before publication",
-              dueAt: "2026-08-20",
-              dismissed: false,
-              metadata: { sponsorBookingId: "booking-1" },
-            },
-          ],
+          notifications: {
+            items: [
+              {
+                id: "alert-1",
+                message:
+                  "Sponsor booking materials are missing 10 days before publication",
+                dueAt: "2026-08-20",
+                dismissed: false,
+                metadata: { sponsorBookingId: "booking-1" },
+              },
+            ],
+          },
         },
       });
     });
@@ -751,12 +753,12 @@ test.describe("production sponsor CRM portal", () => {
         json: { error: "Synthetic permission denied" },
       }),
     );
-    await errorPage.route("**/work/api/notifications", (route) =>
-      route.fulfill({ json: { notifications: [] } }),
+    await errorPage.route("**/work/api/notifications*", (route) =>
+      route.fulfill({ json: { notifications: { items: [] } } }),
     );
     await gotoOwnedSponsorPage(errorPage);
     await errorPage.getByRole("button", { name: "Sponsors" }).click();
-    await expect(errorPage.getByRole("status")).toContainText(
+    await expect(errorPage.locator("[data-crm-message]")).toContainText(
       "Permission or API error",
     );
     await errorPage.waitForTimeout(250);

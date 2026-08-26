@@ -96,13 +96,11 @@ function createHarness(options = {}) {
   const errors = [];
   const undo = [];
   const openedDocuments = [];
-  let route =
-    options.route ||
-    {
-      path: "/tasks",
-      params: new URLSearchParams(),
-      invalid: false,
-    };
+  let route = options.route || {
+    path: "/tasks",
+    params: new URLSearchParams(),
+    invalid: false,
+  };
   let fresh = options.fresh ?? true;
   const cards = options.cards || [];
   const state = {
@@ -122,7 +120,7 @@ function createHarness(options = {}) {
 
   const defaultRequest = async (url, requestOptions) => {
     if (requestOptions.method) return {};
-    if (url.startsWith("/api/files")) return { files: [] };
+    if (url.startsWith("/api/files")) return { files: { items: [] } };
     if (url.startsWith("/api/artifacts")) return { artifacts: [] };
     return {};
   };
@@ -163,11 +161,7 @@ function createHarness(options = {}) {
         .join(" "),
     localDocPathFromHref: (href) =>
       String(href).startsWith("/docs/") ? String(href) : "",
-    navigateCanonicalWorkspace: (
-      path,
-      params = {},
-      navigationOptions = {},
-    ) => {
+    navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
     },
@@ -195,7 +189,8 @@ function createHarness(options = {}) {
     renderTasksSurface() {},
     reportError: (message) => errors.push(message),
     request,
-    scheduleAnimationFrame: (callback) => callback(),
+    scheduleAnimationFrame:
+      options.scheduleAnimationFrame || ((callback) => setTimeout(callback, 0)),
     settledPayload: (result) =>
       result?.status === "fulfilled" ? result.value : null,
     showUndoToast: (message, action) => undo.push({ message, action }),
@@ -253,6 +248,17 @@ async function hydrateTask(harness, task, options = {}) {
   assert.ok(harness.requests.length > originalRequestCount);
 }
 
+async function waitFor(predicate, description) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const value = predicate();
+    if (value) return value;
+    await nextTicks(3);
+    // Let deferred paint callbacks run without draining them inside hydration.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
 describe("Work Detail surface boundary", () => {
   test("directly imports the production factory and exposes the stable Work Detail facade", () => {
     const { api } = createHarness();
@@ -300,7 +306,7 @@ describe("Work Detail surface boundary", () => {
       },
       request: async (url, requestOptions = {}) => {
         if (url === "/api/tasks/task-1" && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
@@ -309,10 +315,7 @@ describe("Work Detail surface boundary", () => {
     await harness.api.openTaskPanel(task.id);
     assert.equal(harness.navigations[0].path, "/tasks");
     assert.equal(harness.navigations[0].params.get("taskId"), task.id);
-    assert.equal(
-      harness.navigations[0].params.get("date"),
-      "2026-08-12",
-    );
+    assert.equal(harness.navigations[0].params.get("date"), "2026-08-12");
 
     harness.api.prepareTaskPanel(task.id);
     assert.equal(harness.taskPanel.hidden, false);
@@ -411,7 +414,7 @@ describe("Work Detail surface boundary", () => {
     const canonicalHarness = createHarness({
       request: async (url) => {
         if (url === `/api/tasks/${canonical.id}`) return canonical;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
@@ -420,8 +423,14 @@ describe("Work Detail surface boundary", () => {
     assert.ok(findByText(canonicalHarness.taskPanelBody, "Comment"));
     assert.ok(findByText(canonicalHarness.taskPanelBody, "Operator note"));
     assert.ok(findByText(canonicalHarness.taskPanelBody, "History"));
-    assert.match(canonicalHarness.taskPanelBody.textContent, /Task completed — Published/);
-    assert.match(canonicalHarness.taskPanelBody.textContent, /Task retired by Template update/);
+    assert.match(
+      canonicalHarness.taskPanelBody.textContent,
+      /Task completed — Published/,
+    );
+    assert.match(
+      canonicalHarness.taskPanelBody.textContent,
+      /Task retired by Template update/,
+    );
 
     const historyless = { ...canonical, id: "task-historyless" };
     delete historyless.taskHistory;
@@ -432,7 +441,10 @@ describe("Work Detail surface boundary", () => {
       },
     });
     await hydrateTask(historylessHarness, historyless);
-    assert.equal(historylessHarness.taskPanelTitle.textContent, "Task unavailable");
+    assert.equal(
+      historylessHarness.taskPanelTitle.textContent,
+      "Task unavailable",
+    );
     assert.equal(historylessHarness.entityStates.at(-1).status, "error");
   });
 
@@ -459,7 +471,7 @@ describe("Work Detail surface boundary", () => {
         if (url === `/api/tasks/${activeTask.id}` && !requestOptions.method) {
           return activeTask;
         }
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (requestOptions.method) {
           return { ...activeTask, version: activeTask.version + 1 };
@@ -529,13 +541,15 @@ describe("Work Detail surface boundary", () => {
     const archived = {
       id: "task-template-retired",
       version: 4,
-      taskHistory: [{
-        id: "retired-event",
-        taskId: "task-template-retired",
-        action: "template-retired",
-        actorId: "operator",
-        createdAt: "2026-08-12T10:00:00.000Z",
-      }],
+      taskHistory: [
+        {
+          id: "retired-event",
+          taskId: "task-template-retired",
+          action: "template-retired",
+          actorId: "operator",
+          createdAt: "2026-08-12T10:00:00.000Z",
+        },
+      ],
       description: "Retired Task",
       status: "archived",
       date: "2026-08-12",
@@ -545,19 +559,27 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url) => {
         if (url === `/api/tasks/${archived.id}`) return archived;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
     });
     await hydrateTask(harness, archived);
-    assert.equal(findByText(harness.taskPanelBody, "Reopen", "button"), undefined);
-    assert.ok(findByText(
-      harness.taskPanelBody,
-      "Retired Tasks can only be restored by a reviewed Template update.",
-      "p",
-    ));
-    assert.match(harness.taskPanelBody.textContent, /Task retired by Template update/);
+    assert.equal(
+      findByText(harness.taskPanelBody, "Reopen", "button"),
+      undefined,
+    );
+    assert.ok(
+      findByText(
+        harness.taskPanelBody,
+        "Retired Tasks can only be restored by a reviewed Template update.",
+        "p",
+      ),
+    );
+    assert.match(
+      harness.taskPanelBody.textContent,
+      /Task retired by Template update/,
+    );
   });
 
   test("keeps a focused Evidence URL draft through a background artifact rerender", async () => {
@@ -577,13 +599,17 @@ describe("Work Detail surface boundary", () => {
     });
     const harness = createHarness({
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) {
           await artifactsHeld;
           return { artifacts: [] };
         }
-        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+        if (
+          url === `/api/tasks/${task.id}` &&
+          requestOptions.method === "PUT"
+        ) {
           return {
             ...task,
             ...jsonBody({ options: requestOptions }),
@@ -669,7 +695,7 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url) => {
         if (url === `/api/tasks/${task.id}` && !url.includes("?")) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) {
           await artifactsHeld;
           return { artifacts: [] };
@@ -725,16 +751,18 @@ describe("Work Detail surface boundary", () => {
       (entry) =>
         entry.url === "/api/artifacts" && entry.options.method === "POST",
     );
-    assert.deepEqual(writes.map(jsonBody), [{
-      type: "external-link",
-      title: titleDraft,
-      storageUri: urlDraft,
-      storageProvider: "external-url",
-      dataClass: "internal",
-      sourceType: "manual-link",
-      status: "needs-review",
-      taskId: task.id,
-    }]);
+    assert.deepEqual(writes.map(jsonBody), [
+      {
+        type: "external-link",
+        title: titleDraft,
+        storageUri: urlDraft,
+        storageProvider: "external-url",
+        dataClass: "internal",
+        sourceType: "manual-link",
+        status: "needs-review",
+        taskId: task.id,
+      },
+    ]);
     assert.deepEqual(harness.errors, []);
   });
 
@@ -750,14 +778,20 @@ describe("Work Detail surface boundary", () => {
     let writeAttempt = 0;
     const harness = createHarness({
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
-        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+        if (
+          url === `/api/tasks/${task.id}` &&
+          requestOptions.method === "PUT"
+        ) {
           writeAttempt += 1;
           if (writeAttempt <= 2) {
             const currentVersion = writeAttempt + 1;
-            const error = new Error("Task changed; review the current task and retry");
+            const error = new Error(
+              "Task changed; review the current task and retry",
+            );
             error.status = 409;
             error.code = "task_version_conflict";
             error.payload = {
@@ -793,8 +827,14 @@ describe("Work Detail surface boundary", () => {
     const alert = harness.taskPanelBody.querySelector('[role="alert"]');
     assert.ok(alert);
     assert.equal(alert.focused, true);
-    assert.match(alert.textContent, /Latest server state: version 2, status waiting/);
-    assert.match(alert.textContent, new RegExp(draft.trim().replace(/[?]/g, "\\?")));
+    assert.match(
+      alert.textContent,
+      /Latest server state: version 2, status waiting/,
+    );
+    assert.match(
+      alert.textContent,
+      new RegExp(draft.trim().replace(/[?]/g, "\\?")),
+    );
     assert.equal(
       harness.taskPanelBody.querySelector('input[type="url"]')?.value ||
         harness.taskPanelBody
@@ -812,16 +852,30 @@ describe("Work Detail surface boundary", () => {
       draft,
     );
 
-    await findByText(harness.taskPanelBody, "Retry my change", "button").click();
-    assert.match(harness.taskPanelBody.textContent, /Latest server state: version 3/);
+    await findByText(
+      harness.taskPanelBody,
+      "Retry my change",
+      "button",
+    ).click();
+    assert.match(
+      harness.taskPanelBody.textContent,
+      /Latest server state: version 3/,
+    );
     assert.equal(
       harness.taskPanelBody
         .querySelectorAll("input")
         .find((input) => input.type === "url").value,
       draft,
     );
-    await findByText(harness.taskPanelBody, "Discard my change", "button").click();
-    assert.equal(findByText(harness.taskPanelBody, "Retry my change", "button"), undefined);
+    await findByText(
+      harness.taskPanelBody,
+      "Discard my change",
+      "button",
+    ).click();
+    assert.equal(
+      findByText(harness.taskPanelBody, "Retry my change", "button"),
+      undefined,
+    );
     assert.match(harness.taskPanelBody.textContent, /Version 3/);
     assert.equal(
       harness.taskPanelBody
@@ -837,14 +891,18 @@ describe("Work Detail surface boundary", () => {
     await latestLinkInput.dispatch("change");
 
     const writes = harness.requests.filter(
-      (entry) => entry.url === `/api/tasks/${task.id}` && entry.options.method === "PUT",
+      (entry) =>
+        entry.url === `/api/tasks/${task.id}` && entry.options.method === "PUT",
     );
     assert.deepEqual(writes.map(jsonBody), [
       { link: draft, expectedVersion: 1 },
       { link: draft, expectedVersion: 2 },
       { link: draft, expectedVersion: 3 },
     ]);
-    assert.equal(findByText(harness.taskPanelBody, "Retry my change", "button"), undefined);
+    assert.equal(
+      findByText(harness.taskPanelBody, "Retry my change", "button"),
+      undefined,
+    );
   });
 
   test("navigates a retried final-Task conflict to the completed Card in Archive", async () => {
@@ -885,13 +943,17 @@ describe("Work Detail surface boundary", () => {
         harness.state.workSnapshot.cardsById.set(card.id, card);
       },
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (url === `/api/cards/${card.id}` && !requestOptions.method) {
           return { card: archived };
         }
-        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+        if (
+          url === `/api/tasks/${task.id}` &&
+          requestOptions.method === "PUT"
+        ) {
           attempt += 1;
           if (attempt === 1) {
             const error = new Error("Card changed");
@@ -913,7 +975,11 @@ describe("Work Detail surface boundary", () => {
     await hydrateTask(harness, task);
     await findByText(harness.taskPanelBody, "Mark done", "button").click();
     await findByText(harness.taskPanelBody, "Review latest", "button").click();
-    await findByText(harness.taskPanelBody, "Retry my change", "button").click();
+    await findByText(
+      harness.taskPanelBody,
+      "Retry my change",
+      "button",
+    ).click();
     assert.deepEqual(harness.navigations.at(-1), {
       path: "/cards/archive",
       params: { cardId: card.id, taskId: task.id },
@@ -936,10 +1002,14 @@ describe("Work Detail surface boundary", () => {
     });
     const harness = createHarness({
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
-        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+        if (
+          url === `/api/tasks/${task.id}` &&
+          requestOptions.method === "PUT"
+        ) {
           return pendingWrite;
         }
         return {};
@@ -947,7 +1017,11 @@ describe("Work Detail surface boundary", () => {
     });
 
     await hydrateTask(harness, task);
-    const firstButton = findByText(harness.taskPanelBody, "Mark done", "button");
+    const firstButton = findByText(
+      harness.taskPanelBody,
+      "Mark done",
+      "button",
+    );
     const firstClick = firstButton.click();
     await nextTicks();
     assert.equal(
@@ -962,7 +1036,10 @@ describe("Work Detail surface boundary", () => {
 
     resolveWrite({ ...task, status: "done", version: 2 });
     await firstClick;
-    assert.equal(findByText(harness.taskPanelBody, "Reopen", "button").disabled, false);
+    assert.equal(
+      findByText(harness.taskPanelBody, "Reopen", "button").disabled,
+      false,
+    );
   });
 
   test("retains waiting action fields and retries only that intent", async () => {
@@ -977,8 +1054,9 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       promptUser: () => "Vendor contact",
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (url.endsWith("/actions/mark-waiting")) {
           attempt += 1;
@@ -1010,7 +1088,11 @@ describe("Work Detail surface boundary", () => {
       harness.taskPanelBody.textContent,
       /Your retained change: Mark waiting for Vendor contact; follow up 2026-08-15/,
     );
-    await findByText(harness.taskPanelBody, "Retry my change", "button").click();
+    await findByText(
+      harness.taskPanelBody,
+      "Retry my change",
+      "button",
+    ).click();
     const writes = harness.requests.filter((entry) =>
       entry.url.endsWith("/actions/mark-waiting"),
     );
@@ -1051,28 +1133,389 @@ describe("Work Detail surface boundary", () => {
         if (url === "/api/tasks/proof-task" && !requestOptions.method) {
           return task;
         }
-        if (url.startsWith("/api/files")) return { files: [] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
     });
 
     await hydrateTask(harness, task);
-    const complete = findByText(
-      harness.taskPanelBody,
-      "Mark done",
-      "button",
-    );
+    const complete = findByText(harness.taskPanelBody, "Mark done", "button");
     assert.equal(complete.disabled, true);
     assert.equal(
       complete.title,
       "Fill in Newsletter URL; Upload required file; Approve an attached artifact",
     );
     assert.ok(
-      findByText(
-        harness.taskPanelBody,
-        "No approved artifact attached.",
-      ),
+      findByText(harness.taskPanelBody, "No approved artifact attached."),
+    );
+  });
+
+  test("loads every required-file page before enabling completion", async () => {
+    const task = {
+      id: "task-paged-files",
+      version: 1,
+      status: "todo",
+      description: "Attach paged evidence",
+      taskHistory: [],
+      requiresFile: true,
+    };
+    const fileUrls = [];
+    const paintCallbacks = [];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) {
+          fileUrls.push(url);
+          if (fileUrls.length === 1) {
+            return {
+              files: {
+                items: [{ id: "file-1", filename: "first.pdf" }],
+                nextCursor: "file-cursor",
+              },
+            };
+          }
+          return {
+            files: {
+              items: [
+                { id: "file-1", filename: "first.pdf" },
+                { id: "file-2", filename: "second.pdf" },
+              ],
+            },
+          };
+        }
+        return { artifacts: [] };
+      },
+      scheduleAnimationFrame: (callback) => paintCallbacks.push(callback),
+    });
+
+    await hydrateTask(harness, task);
+    await waitFor(
+      () =>
+        harness.taskPanelBody.querySelectorAll(".task-file-item").length ===
+          1 && findByText(harness.taskPanelBody, "Mark done", "button"),
+      "the first evidence page and completion gate",
+    );
+    const completeBefore = findByText(
+      harness.taskPanelBody,
+      "Mark done",
+      "button",
+    );
+    assert.match(completeBefore.title, /Upload required file/);
+    assert.deepEqual(
+      harness.taskPanelBody
+        .querySelectorAll(".task-file-item")
+        .map((item) => item.textContent),
+      ["first.pdfRemove"],
+    );
+    assert.equal(paintCallbacks.length, 1);
+    paintCallbacks.shift()();
+    await waitFor(
+      () =>
+        harness.taskPanelBody.querySelectorAll(".task-file-item").length ===
+          2 &&
+        !findByText(harness.taskPanelBody, "Mark done", "button")?.title?.match(
+          /Upload required file/,
+        ),
+      "the completed evidence page",
+    );
+    assert.match(fileUrls[0], /taskId=task-paged-files/);
+    assert.match(fileUrls[0], /limit=100/);
+    assert.doesNotMatch(fileUrls[0], /cursor=/);
+    assert.match(fileUrls[1], /cursor=file-cursor/);
+    assert.equal(
+      findByText(harness.taskPanelBody, ".task-file-error"),
+      undefined,
+    );
+    assert.deepEqual(
+      harness.taskPanelBody
+        .querySelectorAll(".task-file-item")
+        .map((item) => item.textContent),
+      ["first.pdfRemove", "second.pdfRemove"],
+    );
+    const completeAfter = findByText(
+      harness.taskPanelBody,
+      "Mark done",
+      "button",
+    );
+    assert.equal(completeAfter.disabled, false);
+    if (completeAfter.title) {
+      assert.doesNotMatch(completeAfter.title, /Upload required file/);
+    }
+  });
+
+  test("keeps an empty paginated Files page in continuation and exposes failure accessibly", async () => {
+    const task = {
+      id: "task-empty-paged-files",
+      version: 1,
+      status: "todo",
+      description: "Attach paged evidence",
+      taskHistory: [],
+      requiresFile: true,
+    };
+    let continuationOnline = false;
+    let fileRequestCount = 0;
+    const paintCallbacks = [];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) {
+          fileRequestCount += 1;
+          if (fileRequestCount === 1) {
+            return {
+              files: {
+                items: [],
+                nextCursor: "empty-file-cursor",
+              },
+            };
+          }
+          if (!continuationOnline)
+            throw new Error("Files continuation offline");
+          return { files: { items: [] } };
+        }
+        return { artifacts: [] };
+      },
+      scheduleAnimationFrame: (callback) => paintCallbacks.push(callback),
+    });
+
+    await hydrateTask(harness, task);
+    await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-loading"),
+      "the empty Files page continuation",
+    );
+    const pending = harness.taskPanelBody.querySelector(".task-file-loading");
+    assert.equal(pending.textContent, "Loading remaining files...");
+    assert.equal(pending.getAttribute("role"), "status");
+    assert.equal(pending.getAttribute("aria-live"), "polite");
+    assert.equal(harness.taskPanelBody.querySelector(".task-file-empty"), null);
+    assert.equal(
+      findByText(harness.taskPanelBody, "Mark done", "button").disabled,
+      true,
+    );
+    assert.equal(paintCallbacks.length, 1);
+
+    paintCallbacks.shift()();
+    const continuationError = await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-error"),
+      "the failed empty Files continuation",
+    );
+    assert.match(
+      continuationError.textContent,
+      /More files are available, but loading failed: Files continuation offline/,
+    );
+    assert.equal(continuationError.getAttribute("role"), "alert");
+    assert.equal(continuationError.getAttribute("aria-live"), "assertive");
+    assert.ok(findByText(continuationError, "Retry loading files", "button"));
+    assert.equal(harness.taskPanelBody.querySelector(".task-file-empty"), null);
+    assert.match(
+      harness.requests.filter((entry) => entry.url.startsWith("/api/files"))[1]
+        .url,
+      /cursor=empty-file-cursor/,
+    );
+    assert.match(
+      findByText(harness.taskPanelBody, "Mark done", "button").title,
+      /Upload required file/,
+    );
+
+    continuationOnline = true;
+    await findByText(
+      continuationError,
+      "Retry loading files",
+      "button",
+    ).click();
+    await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-empty"),
+      "the terminal empty Files page",
+    );
+    assert.equal(
+      harness.taskPanelBody.querySelector(".task-file-empty").textContent,
+      "No files attached.",
+    );
+    assert.equal(harness.taskPanelBody.querySelector(".task-file-error"), null);
+    assert.equal(
+      findByText(harness.taskPanelBody, "Mark done", "button").disabled,
+      true,
+    );
+    assert.equal(fileRequestCount, 3);
+  });
+
+  test("exposes a failed continuation while retaining visible Files", async () => {
+    let continuationOnline = false;
+    let fileRequestCount = 0;
+    const paintCallbacks = [];
+    const task = {
+      id: "task-visible-paged-files",
+      version: 1,
+      status: "todo",
+      description: "Attach paged evidence",
+      taskHistory: [],
+      requiresFile: true,
+    };
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) {
+          fileRequestCount += 1;
+          if (fileRequestCount === 1) {
+            return {
+              files: {
+                items: [{ id: "file-a", filename: "first.pdf" }],
+                nextCursor: "visible-file-cursor",
+              },
+            };
+          }
+          if (!continuationOnline)
+            throw new Error("Files continuation offline");
+          return {
+            files: {
+              items: [
+                { id: "file-a", filename: "first.pdf" },
+                { id: "file-b", filename: "second.pdf" },
+              ],
+            },
+          };
+        }
+        return { artifacts: [] };
+      },
+      scheduleAnimationFrame: (callback) => paintCallbacks.push(callback),
+    });
+
+    await hydrateTask(harness, task);
+    await waitFor(
+      () =>
+        harness.taskPanelBody.querySelector(".task-file-item") &&
+        harness.taskPanelBody.querySelector(".task-file-loading"),
+      "the first Files page and scheduled continuation",
+    );
+    paintCallbacks.shift()();
+    const continuationError = await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-error"),
+      "the failed non-empty Files continuation",
+    );
+    assert.match(
+      continuationError.textContent,
+      /More files are available, but loading failed: Files continuation offline/,
+    );
+    assert.deepEqual(
+      harness.taskPanelBody
+        .querySelectorAll(".task-file-item")
+        .map((item) => item.textContent),
+      ["first.pdfRemove"],
+    );
+    assert.equal(paintCallbacks.length, 0);
+
+    continuationOnline = true;
+    await findByText(
+      continuationError,
+      "Retry loading files",
+      "button",
+    ).click();
+    await waitFor(
+      () =>
+        harness.taskPanelBody.querySelectorAll(".task-file-item").length ===
+          2 && !harness.taskPanelBody.querySelector(".task-file-error"),
+      "the duplicate-free recovered Files list",
+    );
+    assert.deepEqual(
+      harness.taskPanelBody
+        .querySelectorAll(".task-file-item")
+        .map((item) => item.textContent),
+      ["first.pdfRemove", "second.pdfRemove"],
+    );
+    assert.equal(fileRequestCount, 3);
+  });
+
+  test("shows an accessible pending state before the first Files page settles", async () => {
+    const task = {
+      id: "task-initial-files-loading",
+      version: 1,
+      status: "todo",
+      description: "Attach evidence",
+      taskHistory: [],
+      requiresFile: true,
+    };
+    let resolveFiles;
+    const paintCallbacks = [];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) {
+          await new Promise((resolve) => {
+            resolveFiles = resolve;
+          });
+          return { files: { items: [] } };
+        }
+        return { artifacts: [] };
+      },
+      scheduleAnimationFrame: (callback) => paintCallbacks.push(callback),
+    });
+
+    const hydration = hydrateTask(harness, task);
+    const pending = await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-loading"),
+      "the initial Files loading state",
+    );
+    assert.equal(pending.textContent, "Loading files...");
+    assert.equal(pending.getAttribute("role"), "status");
+    assert.equal(pending.getAttribute("aria-live"), "polite");
+    assert.equal(harness.taskPanelBody.querySelector(".task-file-empty"), null);
+
+    resolveFiles();
+    await hydration;
+    await waitFor(
+      () =>
+        harness.taskPanelBody.querySelector(".task-file-empty") &&
+        !harness.taskPanelBody.querySelector(".task-file-loading"),
+      "the terminal empty Files state",
+    );
+    assert.equal(paintCallbacks.length, 0);
+  });
+
+  test("distinguishes an initial file outage from a failed continuation and retries cleanly", async () => {
+    const task = {
+      id: "task-file-outage",
+      version: 1,
+      status: "todo",
+      description: "Recover file evidence",
+      taskHistory: [],
+      requiresFile: true,
+    };
+    let filesOnline = false;
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) {
+          if (!filesOnline) throw new Error("Files offline");
+          return { files: { items: [{ id: "file-recovered" }] } };
+        }
+        return { artifacts: [] };
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const outage = await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-error"),
+      "the initial Files outage",
+    );
+    assert.match(
+      outage.textContent,
+      /Files could not be loaded: Files offline/,
+    );
+
+    filesOnline = true;
+    await harness.taskPanelBody
+      .querySelector("[data-retry-task-files]")
+      .click();
+    await waitFor(
+      () =>
+        !harness.taskPanelBody.querySelector(".task-file-error") &&
+        harness.taskPanelBody.querySelector(".task-file-item"),
+      "recovered Files",
+    );
+    assert.equal(harness.taskPanelBody.querySelector(".task-file-error"), null);
+    assert.match(
+      harness.taskPanelBody.querySelector(".task-file-item").textContent,
+      /file-recovered/,
     );
   });
 
@@ -1142,7 +1585,10 @@ describe("Work Detail surface boundary", () => {
         entry.options.method === "PUT" &&
         jsonBody(entry).stage,
     );
-    assert.deepEqual(jsonBody(stageRequest), { stage: "announced", expectedVersion: 1 });
+    assert.deepEqual(jsonBody(stageRequest), {
+      stage: "announced",
+      expectedVersion: 1,
+    });
 
     const nestedTask = findByText(
       harness.cardPanelBody,
@@ -1192,7 +1638,8 @@ describe("Work Detail surface boundary", () => {
       request: async (url) => {
         if (url === `/api/cards/${card.id}`) return card;
         if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
-        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
         return {};
       },
     });
@@ -1218,7 +1665,8 @@ describe("Work Detail surface boundary", () => {
       task.description,
     );
     assert.equal(
-      harness.cardPanelBody.querySelector(".workflow-references-section a").textContent,
+      harness.cardPanelBody.querySelector(".workflow-references-section a")
+        .textContent,
       card.references[0].name,
     );
     assert.ok(harness.cardPanelBody.querySelector("wbr"));
@@ -1246,10 +1694,15 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       cards: [card],
       request: async (url, requestOptions = {}) => {
-        if (url === "/api/cards/card-conflict" && !requestOptions.method) return card;
+        if (url === "/api/cards/card-conflict" && !requestOptions.method)
+          return card;
         if (url === "/api/tasks?cardId=card-conflict") return { tasks: [] };
-        if (url === "/api/artifacts?cardId=card-conflict") return { artifacts: [] };
-        if (url === "/api/cards/card-conflict" && requestOptions.method === "PUT") {
+        if (url === "/api/artifacts?cardId=card-conflict")
+          return { artifacts: [] };
+        if (
+          url === "/api/cards/card-conflict" &&
+          requestOptions.method === "PUT"
+        ) {
           putAttempt += 1;
           if (putAttempt === 1) {
             throw conflictError({ ...card, version: 2, stage: "announced" });
@@ -1257,7 +1710,11 @@ describe("Work Detail surface boundary", () => {
           if (putAttempt === 2) {
             throw conflictError({ ...card, version: 3, stage: "after-event" });
           }
-          return { ...card, ...jsonBody({ options: requestOptions }), version: 4 };
+          return {
+            ...card,
+            ...jsonBody({ options: requestOptions }),
+            version: 4,
+          };
         }
         return {};
       },
@@ -1279,7 +1736,11 @@ describe("Work Detail surface boundary", () => {
 
     await findByText(alert, "Review latest", "button").click();
     assert.match(harness.cardPanelBody.textContent, /version 2/);
-    await findByText(harness.cardPanelBody, "Retry my change", "button").click();
+    await findByText(
+      harness.cardPanelBody,
+      "Retry my change",
+      "button",
+    ).click();
     alert = harness.cardPanelBody.querySelector('[role="alert"]');
     assert.match(alert.textContent, /version 3/);
     assert.deepEqual(jsonBody(harness.requests.at(-1)), {
@@ -1291,7 +1752,8 @@ describe("Work Detail surface boundary", () => {
     assert.equal(harness.cardPanelBody.querySelector('[role="alert"]'), null);
     const latestSelect = harness.cardPanelBody.querySelector("select");
     assert.equal(
-      latestSelect.querySelectorAll("option").find((option) => option.selected)?.value,
+      latestSelect.querySelectorAll("option").find((option) => option.selected)
+        ?.value,
       "after-event",
     );
     latestSelect.value = "preparation";
@@ -1334,24 +1796,50 @@ describe("Work Detail surface boundary", () => {
       },
       cardChanges: [{ field: "tags", operatorOverride: false }],
       taskChanges: [
-        { action: "add", taskRef: "publish", targetLabel: "Publish recording", changes: [], operatorOverrideFields: [] },
-        { action: "retain-completed", taskRef: "host", currentLabel: "Host event", changes: [], operatorOverrideFields: [] },
+        {
+          action: "add",
+          taskRef: "publish",
+          targetLabel: "Publish recording",
+          changes: [],
+          operatorOverrideFields: [],
+        },
+        {
+          action: "retain-completed",
+          taskRef: "host",
+          currentLabel: "Host event",
+          changes: [],
+          operatorOverrideFields: [],
+        },
       ],
     };
     let statusLoads = 0;
     const harness = createHarness({
       cards: [card],
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/cards/${card.id}` && !requestOptions.method) return { card };
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return { card };
         if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
-        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
-        if (url === `/api/cards/${card.id}/template-update` && !requestOptions.method) {
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        if (
+          url === `/api/cards/${card.id}/template-update` &&
+          !requestOptions.method
+        ) {
           statusLoads += 1;
           return statusLoads === 1
             ? { preview }
-            : { preview: { ...preview, state: "current", sourceTemplateVersion: 2 } };
+            : {
+                preview: {
+                  ...preview,
+                  state: "current",
+                  sourceTemplateVersion: 2,
+                },
+              };
         }
-        if (url === `/api/cards/${card.id}/template-update` && requestOptions.method === "POST") {
+        if (
+          url === `/api/cards/${card.id}/template-update` &&
+          requestOptions.method === "POST"
+        ) {
           return {
             applied: true,
             card: { ...card, version: 4, templateVersion: 2 },
@@ -1364,23 +1852,54 @@ describe("Work Detail surface boundary", () => {
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
 
-    assert.match(harness.cardPanelBody.textContent, /Update available: Template v1 → v2/);
-    await findByText(harness.cardPanelBody, "Review template update", "button").click();
-    assert.match(harness.cardPanelBody.textContent, /Removed incomplete tasks are archived/);
-    assert.match(harness.cardPanelBody.textContent, /1 operator override field will take/);
+    assert.match(
+      harness.cardPanelBody.textContent,
+      /Update available: Template v1 → v2/,
+    );
+    await findByText(
+      harness.cardPanelBody,
+      "Review template update",
+      "button",
+    ).click();
+    assert.match(
+      harness.cardPanelBody.textContent,
+      /Removed incomplete tasks are archived/,
+    );
+    assert.match(
+      harness.cardPanelBody.textContent,
+      /1 operator override field will take/,
+    );
     assert.ok(findByText(harness.cardPanelBody, "Add Publish recording", "li"));
-    assert.ok(findByText(harness.cardPanelBody, "Retain completed task: Host event", "li"));
+    assert.ok(
+      findByText(
+        harness.cardPanelBody,
+        "Retain completed task: Host event",
+        "li",
+      ),
+    );
 
     await findByText(harness.cardPanelBody, "Cancel", "button").click();
-    assert.equal(findByText(harness.cardPanelBody, "Apply reviewed update", "button"), undefined);
-    await findByText(harness.cardPanelBody, "Review template update", "button").click();
-    await findByText(harness.cardPanelBody, "Apply reviewed update", "button").click();
+    assert.equal(
+      findByText(harness.cardPanelBody, "Apply reviewed update", "button"),
+      undefined,
+    );
+    await findByText(
+      harness.cardPanelBody,
+      "Review template update",
+      "button",
+    ).click();
+    await findByText(
+      harness.cardPanelBody,
+      "Apply reviewed update",
+      "button",
+    ).click();
     await nextTicks();
 
-    const apply = harness.requests.find((entry) => (
-      entry.url === `/api/cards/${card.id}/template-update`
-      && entry.options.method === "POST"
-    ));
+    const apply = harness.requests.find(
+      (entry) =>
+        entry.url === `/api/cards/${card.id}/template-update` &&
+        entry.options.method === "POST",
+    );
     assert.deepEqual(jsonBody(apply), { previewToken: "a".repeat(64) });
     assert.match(harness.cardPanelBody.textContent, /Current at Template v2/);
   });
@@ -1400,22 +1919,50 @@ describe("Work Detail surface boundary", () => {
       sourceTemplateVersion: 1,
       targetTemplateVersion: 2,
       previewToken: "b".repeat(64),
-      counts: { added: 1, updated: 0, archived: 0, retainedCompleted: 0, cardFields: 0, operatorOverrides: 0 },
+      counts: {
+        added: 1,
+        updated: 0,
+        archived: 0,
+        retainedCompleted: 0,
+        cardFields: 0,
+        operatorOverrides: 0,
+      },
       cardChanges: [],
-      taskChanges: [{ action: "add", taskRef: "new", targetLabel: "New task", changes: [], operatorOverrideFields: [] }],
+      taskChanges: [
+        {
+          action: "add",
+          taskRef: "new",
+          targetLabel: "New task",
+          changes: [],
+          operatorOverrideFields: [],
+        },
+      ],
     };
     let previewLoads = 0;
     const harness = createHarness({
       cards: [card],
       request: async (url, requestOptions = {}) => {
-        if (url === `/api/cards/${card.id}` && !requestOptions.method) return { card };
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return { card };
         if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
-        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
-        if (url === `/api/cards/${card.id}/template-update` && !requestOptions.method) {
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        if (
+          url === `/api/cards/${card.id}/template-update` &&
+          !requestOptions.method
+        ) {
           previewLoads += 1;
-          return { preview: { ...preview, previewToken: (previewLoads === 1 ? "b" : "c").repeat(64) } };
+          return {
+            preview: {
+              ...preview,
+              previewToken: (previewLoads === 1 ? "b" : "c").repeat(64),
+            },
+          };
         }
-        if (url === `/api/cards/${card.id}/template-update` && requestOptions.method === "POST") {
+        if (
+          url === `/api/cards/${card.id}/template-update` &&
+          requestOptions.method === "POST"
+        ) {
           const error = new Error("conflict");
           error.status = 409;
           throw error;
@@ -1425,10 +1972,20 @@ describe("Work Detail surface boundary", () => {
     });
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
-    await findByText(harness.cardPanelBody, "Review template update", "button").click();
-    harness.cardPanelBody.querySelector(".card-link-input").value = "https://example.test/draft";
-    harness.cardPanelBody.querySelector(".card-ref-name").value = "Typed reference";
-    await findByText(harness.cardPanelBody, "Apply reviewed update", "button").click();
+    await findByText(
+      harness.cardPanelBody,
+      "Review template update",
+      "button",
+    ).click();
+    harness.cardPanelBody.querySelector(".card-link-input").value =
+      "https://example.test/draft";
+    harness.cardPanelBody.querySelector(".card-ref-name").value =
+      "Typed reference";
+    await findByText(
+      harness.cardPanelBody,
+      "Apply reviewed update",
+      "button",
+    ).click();
     await nextTicks();
 
     assert.match(harness.cardPanelBody.textContent, /Your review is retained/);
@@ -1442,7 +1999,11 @@ describe("Work Detail surface boundary", () => {
       "Typed reference",
     );
     assert.equal(previewLoads, 1);
-    await findByText(harness.cardPanelBody, "Reload latest preview", "button").click();
+    await findByText(
+      harness.cardPanelBody,
+      "Reload latest preview",
+      "button",
+    ).click();
     await nextTicks();
     assert.equal(previewLoads, 2);
     assert.equal(
@@ -1488,13 +2049,10 @@ describe("Work Detail surface boundary", () => {
     await findByText(harness.cardPanelBody, "Add", "button").click();
     const referenceRequest = harness.requests.find(
       (entry) =>
-        entry.url === "/api/cards/card-refs" &&
-        entry.options.method === "PUT",
+        entry.url === "/api/cards/card-refs" && entry.options.method === "PUT",
     );
     assert.deepEqual(jsonBody(referenceRequest), {
-      references: [
-        { name: "Internal launch process", url: "/docs/launch" },
-      ],
+      references: [{ name: "Internal launch process", url: "/docs/launch" }],
     });
 
     const artifact = harness.api.renderArtifactList({
@@ -1516,7 +2074,8 @@ describe("Work Detail surface boundary", () => {
     await findByText(artifact, "Approve", "button").click();
 
     const register = harness.requests.find(
-      (entry) => entry.url === "/api/artifacts" && entry.options.method === "POST",
+      (entry) =>
+        entry.url === "/api/artifacts" && entry.options.method === "POST",
     );
     assert.deepEqual(jsonBody(register), {
       type: "external-link",

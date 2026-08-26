@@ -43,6 +43,19 @@ tasks:
     schedule:
       offset_days: 0
 `;
+const RUNTIME_WORKFLOW_TEMPLATE_TYPES = Object.freeze([
+  'book-of-the-week',
+  'course',
+  'maven-ll',
+  'newsletter',
+  'office-hours',
+  'oss',
+  'podcast',
+  'social-media',
+  'tax-report',
+  'webinar',
+  'workshop',
+]);
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -116,10 +129,20 @@ function createSyntheticRoots(testInfo) {
     fs.copyFileSync(path.join(ROOT, 'frontend', relative), path.join(frontendRoot, relative));
   }
   fs.writeFileSync(path.join(cacheRoot, 'content', 'testing', 'synthetic-vite-development.md'), SYNTHETIC_DOC);
-  fs.writeFileSync(
-    path.join(templatesRoot, 'synthetic-vite-development.yaml'),
-    SYNTHETIC_WORKFLOW_TEMPLATE,
-  );
+  // Seeded local mode reconciles every runtime template type. Keep this public
+  // browser fixture self-contained instead of reading the private checkout.
+  for (const type of [...RUNTIME_WORKFLOW_TEMPLATE_TYPES, 'synthetic-vite-development']) {
+    fs.writeFileSync(
+      path.join(templatesRoot, `${type}.yaml`),
+      SYNTHETIC_WORKFLOW_TEMPLATE.replace(
+        'type: synthetic-vite-development',
+        `type: ${type}`,
+      ).replace(
+        'Synthetic Vite development workflow',
+        `Synthetic ${type} workflow`,
+      ),
+    );
+  }
   return { scratch, frontendRoot, cacheRoot, stateRoot, uploadRoot, templatesRoot };
 }
 
@@ -400,7 +423,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     expect(tasks.body.tasks.some((task) => task.id === created.body.id)).toBe(true);
     const workflows = await browserJson(page, '/work/api/cards', { headers: authorization });
     expect(workflows.status).toBe(200);
-    expect(Array.isArray(workflows.body.cards)).toBe(true);
+    expect(Array.isArray(workflows.body.cards.items)).toBe(true);
 
     const docs = await browserJson(page, '/docs');
     expect(docs.status).toBe(200);
