@@ -1197,6 +1197,7 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
     assert "sam deploy" in workflow
     oidc = deploy_job.index("aws-actions/configure-aws-credentials@")
     for operation in (
+        'echo "AUTH_CLIENT_ID=$(auth_output DataOpsClientId)"',
         "make sam-build",
         "sam deploy",
         "sam package",
@@ -1209,7 +1210,10 @@ def test_deploy_workflow_passes_shared_auth_contract_through_github_oidc_only():
             assert oidc < deploy_job.index(operation)
     for parameter, variable in expected.items():
         assert f"ParameterKey={parameter},ParameterValue=${variable}" in workflow
-    assert "dtcdev-shared-auth" not in workflow
+    assert "Resolve shared auth client" in deploy_job
+    assert "--stack-name dtcdev-shared-auth" in deploy_job
+    for auth_output_name in ("DataOpsClientId", "IssuerUrl", "JwksUrl"):
+        assert f"auth_output {auth_output_name}" in deploy_job
     assert "GoogleClientSecret" not in workflow
     assert "CognitoClientSecret" not in workflow
 
@@ -1218,24 +1222,32 @@ def test_deploy_workflow_keeps_production_auth_out_of_checks_and_scoped_to_deplo
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     before_jobs, jobs = workflow.split("\njobs:\n", 1)
     checks, deploy = jobs.split("\n  deploy:\n", 1)
-    expected_auth = {
+    static_auth = {
         "AUTH_BASE_URL": "https://auth.dtcdev.click",
         "AUTH_USER_POOL_ID": "us-east-1_H7nJu52Bs",
-        "AUTH_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs",
-        "AUTH_JWKS_URL": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json",
-        "AUTH_CLIENT_ID": "1kjv61esdjs3003s8u42sgr3hf",
         "AUTH_CALLBACK_URL": "https://ops.dtcdev.click/auth/callback",
         "AUTH_LOGOUT_URL": "https://ops.dtcdev.click/",
         "AUTH_SESSION_LIFETIME_SECONDS": "28800",
     }
+    resolved_auth = ("AUTH_ISSUER", "AUTH_JWKS_URL", "AUTH_CLIENT_ID")
 
-    for variable, value in expected_auth.items():
+    for variable, value in static_auth.items():
         # Workflow-level env reaches every check and every Playwright child
         # process. Production relying-party config belongs only to deployment.
         assert f"{variable}:" not in before_jobs
         assert f"{variable}:" not in checks
         assert f"      {variable}: {value}" in deploy
         assert f"ParameterValue=${variable}" in deploy
+
+    # Cognito rotates these identifiers when the app client is recreated.
+    # They must be read from the shared-auth stack after OIDC and never be
+    # pinned as literals that can silently expire.
+    for variable in resolved_auth:
+        assert f"{variable}:" not in before_jobs
+        assert f"{variable}:" not in checks
+        assert f'echo "{variable}=$(auth_output ' in deploy
+        assert f"ParameterValue=${variable}" in deploy
+    assert "1kjv61esdjs3003s8u42sgr3hf" not in workflow
 
 
 def test_sponsor_communication_table_indexes_ttl_stream_and_default_off_contract():
