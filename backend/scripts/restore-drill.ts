@@ -48,6 +48,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error((err as Error)?.message || 'Restore drill failed');
   process.exit(1);
 });

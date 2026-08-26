@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
 import { promisify } from 'util';
 import zlib from 'zlib';
 
@@ -43,6 +44,7 @@ interface RestoreEvidenceOptions {
   timestamp?: string;
   smokeChecksPassed?: boolean;
   s3Client?: Pick<S3Client, 'send'>;
+  extractionLimits?: Partial<ArchiveExtractionLimits>;
 }
 
 interface RestoreEvidenceReport {
@@ -71,6 +73,32 @@ interface RestoreEvidenceResult {
 }
 
 const TAR_BLOCK_SIZE = 512;
+const MIB = 1024 * 1024;
+const SAFE_ARCHIVE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+export interface ArchiveExtractionLimits {
+  maxCompressedArchiveBytes: number;
+  maxInflatedArchiveBytes: number;
+  maxMembers: number;
+  maxMemberBytes: number;
+  maxAggregatePayloadBytes: number;
+}
+
+export const DEFAULT_ARCHIVE_EXTRACTION_LIMITS: Readonly<ArchiveExtractionLimits> = Object.freeze({
+  maxCompressedArchiveBytes: 128 * MIB,
+  maxInflatedArchiveBytes: 256 * MIB,
+  maxMembers: 128,
+  maxMemberBytes: 64 * MIB,
+  maxAggregatePayloadBytes: 192 * MIB,
+});
+
+class ArchiveBoundaryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ArchiveBoundaryError';
+  }
+}
+
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 const RESTORE_SMOKE_CHECKS = [
@@ -126,6 +154,52 @@ function parseS3Uri(uri: string): { bucket: string; key: string } | null {
   return { bucket: match[1], key: match[2] };
 }
 
+function resolveArchiveExtractionLimits(
+  overrides?: Partial<ArchiveExtractionLimits>,
+): ArchiveExtractionLimits {
+  const resolved = { ...DEFAULT_ARCHIVE_EXTRACTION_LIMITS };
+
+  for (const [key, value] of Object.entries(overrides || {}) as Array<[keyof ArchiveExtractionLimits, unknown]>) {
+    if (value === undefined) continue;
+    if (
+      !Number.isSafeInteger(value)
+      || Number(value) <= 0
+      || Number(value) > DEFAULT_ARCHIVE_EXTRACTION_LIMITS[key]
+    ) {
+      throw new ArchiveBoundaryError(
+        `Archive extraction limit ${key} must be at or below the named default`,
+      );
+    }
+    resolved[key] = Number(value);
+  }
+
+  return resolved;
+}
+
+async function readBoundedChunks(
+  chunks: AsyncIterable<Uint8Array>,
+  maxBytes: number,
+): Promise<Buffer> {
+  const collected: Buffer[] = [];
+  let size = 0;
+
+  try {
+    for await (const chunk of chunks) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > maxBytes) {
+        throw new ArchiveBoundaryError('Archive exceeds the compressed-size limit');
+      }
+      collected.push(bytes);
+    }
+  } catch (error) {
+    if (error instanceof ArchiveBoundaryError) throw error;
+    throw new ArchiveBoundaryError('Archive could not be read');
+  }
+
+  return Buffer.concat(collected, size);
+}
+
 function archiveKeyFromUri(uri: string): string {
   const s3 = parseS3Uri(uri);
   if (s3) return s3.key;
@@ -171,66 +245,213 @@ async function createExportArchive(exportDir: string, manifest: Manifest): Promi
   return gzip(Buffer.concat(blocks));
 }
 
-async function extractExportArchive(archiveBuffer: Buffer, outputDir: string): Promise<void> {
-  await fs.mkdir(outputDir, { recursive: true });
-  const tar = await gunzip(archiveBuffer);
+async function extractExportArchive(
+  archiveBuffer: Buffer,
+  outputDir: string,
+  limitOverrides?: Partial<ArchiveExtractionLimits>,
+): Promise<void> {
+  const limits = resolveArchiveExtractionLimits(limitOverrides);
+  if (archiveBuffer.length > limits.maxCompressedArchiveBytes) {
+    throw new ArchiveBoundaryError('Archive exceeds the compressed-size limit');
+  }
+
+  let tar: Buffer;
+  try {
+    tar = await gunzip(archiveBuffer, { maxOutputLength: limits.maxInflatedArchiveBytes });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+      throw new ArchiveBoundaryError('Archive exceeds the inflated-size limit');
+    }
+    throw new ArchiveBoundaryError('Archive stream is truncated or malformed');
+  }
+  if (tar.length > limits.maxInflatedArchiveBytes) {
+    throw new ArchiveBoundaryError('Archive exceeds the inflated-size limit');
+  }
+
   let offset = 0;
+  let memberOrdinal = 0;
+  let aggregateSize = 0;
+  const members: Array<{ name: string; content: Buffer }> = [];
+  const seenNames = new Set<string>();
 
   while (offset + TAR_BLOCK_SIZE <= tar.length) {
     const header = tar.subarray(offset, offset + TAR_BLOCK_SIZE);
-    offset += TAR_BLOCK_SIZE;
-    if (header.every((byte) => byte === 0)) break;
-    validateTarHeaderChecksum(header);
 
-    const rawName = header.subarray(0, 100).toString('utf8').replace(/\0.*$/, '');
-    const filename = path.basename(rawName);
-    if (!filename || filename !== rawName) {
-      throw new Error(`Archive contains unsafe path: ${rawName}`);
+    if (header.every((byte) => byte === 0)) {
+      const trailing = tar.subarray(offset + TAR_BLOCK_SIZE);
+      if (
+        trailing.length < TAR_BLOCK_SIZE
+        || !trailing.subarray(0, TAR_BLOCK_SIZE).every((byte) => byte === 0)
+      ) {
+        throw new ArchiveBoundaryError('Archive is truncated');
+      }
+      if (trailing.subarray(TAR_BLOCK_SIZE).some((byte) => byte !== 0)) {
+        throw new ArchiveBoundaryError('Archive contains nonzero trailing data');
+      }
+
+      await fs.mkdir(outputDir, { recursive: true });
+      for (const member of members) {
+        await fs.writeFile(path.join(outputDir, member.name), member.content);
+      }
+      return;
+    }
+
+    memberOrdinal += 1;
+    if (memberOrdinal > limits.maxMembers) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} exceeds the member-count limit`);
+    }
+
+    validateTarHeaderChecksum(header);
+    offset += TAR_BLOCK_SIZE;
+
+    const nameField = header.subarray(0, 100);
+    const nameEnd = nameField.indexOf(0);
+    const rawName = nameEnd >= 0
+      ? nameField.subarray(0, nameEnd).toString('utf8')
+      : '';
+    if (
+      nameEnd < 0
+      || nameField.subarray(nameEnd + 1).some((byte) => byte !== 0)
+      || !SAFE_ARCHIVE_FILENAME.test(rawName)
+    ) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} has an unsafe flat name`);
+    }
+    if (header.subarray(345, 500).some((byte) => byte !== 0)) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} has an unsafe flat name`);
     }
 
     const sizeText = header.subarray(124, 136).toString('ascii').replace(/\0.*$/, '').trim();
-    const size = Number.parseInt(sizeText || '0', 8);
-    if (!Number.isFinite(size) || size < 0) {
-      throw new Error(`Archive contains invalid size for ${filename}`);
+    const size = /^[0-7]*$/.test(sizeText) ? Number.parseInt(sizeText || '0', 8) : Number.NaN;
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} has an invalid size`);
+    }
+    if (size > limits.maxMemberBytes) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} exceeds the member-size limit`);
+    }
+    aggregateSize += size;
+    if (aggregateSize > limits.maxAggregatePayloadBytes) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} exceeds the aggregate-payload limit`);
     }
     if (offset + size > tar.length) {
-      throw new Error(`Archive member ${filename} is truncated`);
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} is truncated`);
     }
 
-    const content = tar.subarray(offset, offset + size);
-    await fs.writeFile(path.join(outputDir, filename), content);
+    const typeFlag = header.subarray(156, 157).toString('ascii');
+    if (typeFlag !== '0') {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} has an unsupported type`);
+    }
+    const collisionKey = rawName.toLocaleLowerCase('en-US');
+    if (seenNames.has(collisionKey)) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} duplicates a flat filename`);
+    }
+    seenNames.add(collisionKey);
+
+    members.push({ name: rawName, content: tar.subarray(offset, offset + size) });
     offset += size;
     const padding = (TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
+    if (offset + padding > tar.length) {
+      throw new ArchiveBoundaryError(`Archive member ${memberOrdinal} is truncated`);
+    }
     offset += padding;
   }
+
+  throw new ArchiveBoundaryError('Archive is truncated');
 }
 
 function validateTarHeaderChecksum(header: Buffer): void {
   const storedText = header.subarray(148, 156).toString('ascii').replace(/\0.*$/, '').trim();
-  const stored = Number.parseInt(storedText || '', 8);
-  if (!Number.isFinite(stored)) throw new Error('Archive contains an invalid tar header checksum');
+  const stored = /^[0-7]+$/.test(storedText) ? Number.parseInt(storedText, 8) : Number.NaN;
+  if (!Number.isFinite(stored)) throw new ArchiveBoundaryError('Archive contains an invalid tar header checksum');
   const copy = Buffer.from(header);
   copy.fill(' ', 148, 156);
   let calculated = 0;
   for (const byte of copy) calculated += byte;
-  if (stored !== calculated) throw new Error('Archive tar header checksum mismatch');
+  if (stored !== calculated) throw new ArchiveBoundaryError('Archive contains an invalid tar header checksum');
 }
 
-async function readArchiveUri(uri: string, s3Client: Pick<S3Client, 'send'> = new S3Client({})): Promise<Buffer> {
+async function readLocalArchive(filePath: string, maxBytes: number): Promise<Buffer> {
+  let handle;
+  try {
+    handle = await fs.open(filePath, 'r');
+    const stats = await handle.stat();
+    if (stats.size > maxBytes) {
+      throw new ArchiveBoundaryError('Archive exceeds the compressed-size limit');
+    }
+
+    return await readBoundedChunks(handle.createReadStream(), maxBytes);
+  } catch (error) {
+    if (error instanceof ArchiveBoundaryError) throw error;
+    throw new ArchiveBoundaryError('Archive could not be read');
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+async function readS3Archive(
+  s3Client: Pick<S3Client, 'send'>,
+  bucket: string,
+  key: string,
+  maxBytes: number,
+): Promise<Buffer> {
+  let response;
+  try {
+    response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  } catch {
+    throw new ArchiveBoundaryError('Archive could not be read');
+  }
+
+  if (response.ContentLength !== undefined) {
+    if (
+      !Number.isSafeInteger(response.ContentLength)
+      || response.ContentLength < 0
+      || response.ContentLength > maxBytes
+    ) {
+      throw new ArchiveBoundaryError('Archive exceeds the compressed-size limit');
+    }
+  }
+
+  const body = response.Body;
+  try {
+    if (body instanceof Readable) {
+      return await readBoundedChunks(body, maxBytes);
+    }
+
+    if (typeof body === 'object' && body !== null && Symbol.asyncIterator in body) {
+      return await readBoundedChunks(body as AsyncIterable<Uint8Array>, maxBytes);
+    }
+
+    if (typeof Blob !== 'undefined' && body instanceof Blob) {
+      if (body.size > maxBytes) {
+        throw new ArchiveBoundaryError('Archive exceeds the compressed-size limit');
+      }
+      return await readBoundedChunks(body.stream() as unknown as AsyncIterable<Uint8Array>, maxBytes);
+    }
+
+    const streamBody = body as { stream?: () => unknown };
+    if (typeof streamBody?.stream === 'function') {
+      return await readBoundedChunks(streamBody.stream() as AsyncIterable<Uint8Array>, maxBytes);
+    }
+
+    throw new ArchiveBoundaryError('Archive body is not bounded-readable');
+  } catch (error) {
+    if (error instanceof ArchiveBoundaryError) throw error;
+    throw new ArchiveBoundaryError('Archive body could not be read');
+  }
+}
+
+async function readArchiveUri(
+  uri: string,
+  s3Client: Pick<S3Client, 'send'> = new S3Client({}),
+  limitOverrides?: Partial<ArchiveExtractionLimits>,
+): Promise<Buffer> {
+  const limits = resolveArchiveExtractionLimits(limitOverrides);
   const s3 = parseS3Uri(uri);
   if (!s3) {
     const filePath = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
-    return fs.readFile(filePath);
+    return readLocalArchive(filePath, limits.maxCompressedArchiveBytes);
   }
 
-  const response = await s3Client.send(new GetObjectCommand({ Bucket: s3.bucket, Key: s3.key }));
-  const body = response.Body as unknown as {
-    transformToByteArray?: () => Promise<Uint8Array>;
-  };
-  if (!body || typeof body.transformToByteArray !== 'function') {
-    throw new Error('S3 archive response body is not readable');
-  }
-  return Buffer.from(await body.transformToByteArray());
+  return readS3Archive(s3Client, s3.bucket, s3.key, limits.maxCompressedArchiveBytes);
 }
 
 async function writeLocalArchive(localArchiveDir: string, archiveKey: string, content: Buffer): Promise<string> {
@@ -306,7 +527,7 @@ async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<Re
   if (!/^sha256:[a-f0-9]{64}$/.test(options.expectedArchiveChecksum)) {
     throw new Error('Restore evidence requires an expected sha256 archive checksum');
   }
-  const archiveBuffer = await readArchiveUri(options.archiveUri, options.s3Client);
+  const archiveBuffer = await readArchiveUri(options.archiveUri, options.s3Client, options.extractionLimits);
   const calculatedArchiveChecksum = sha256Bytes(archiveBuffer);
   if (calculatedArchiveChecksum !== options.expectedArchiveChecksum) {
     throw new Error('Archive checksum mismatch');
@@ -314,7 +535,7 @@ async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<Re
   await fs.mkdir(options.outputDir, { recursive: true });
   const timestamp = options.timestamp || new Date().toISOString();
   const extractedDir = path.join(options.outputDir, `extracted-${timestamp.replace(/[:.]/g, '-')}`);
-  await extractExportArchive(archiveBuffer, extractedDir);
+  await extractExportArchive(archiveBuffer, extractedDir, options.extractionLimits);
 
   const manifest = JSON.parse(await fs.readFile(path.join(extractedDir, 'manifest.json'), 'utf8')) as Manifest;
   const validation = await validatePortableExport(extractedDir);
