@@ -6,10 +6,8 @@ import {
   dismissNotification,
   listUndismissedNotifications,
   listAllNotifications,
-  listNotificationsPage,
   dismissAllNotifications,
 } from '../db/notifications';
-import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -30,42 +28,19 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
     // Route: GET /api/notifications (with optional ?all=true)
     if ((suffix === '' || suffix === '/') && method === 'GET') {
       await createDueFollowUpNotifications(client);
-      const all = Boolean(queryParams && queryParams['all'] === 'true');
-      const binding = {
-        collection: 'notifications',
-        filters: { all },
-        principal: userId || 'account-viewer',
-      };
       if (queryParams && queryParams['all'] === 'true') {
-        const page = await listNotificationsPage(client, all, userId || '', binding, queryParams || {});
+        const notifications = await listAllNotifications(client, userId);
         return {
           statusCode: 200,
           headers: JSON_HEADERS,
-          body: JSON.stringify({
-            notifications: {
-              items: [...page.items].sort((left, right) => {
-                if (left.dismissed !== right.dismissed) return left.dismissed ? 1 : -1;
-                return right.createdAt.localeCompare(left.createdAt);
-              }),
-              ...(page.nextExclusiveStartKey ? {
-                nextCursor: await encodeCollectionCursor(binding, page.nextExclusiveStartKey),
-              } : {}),
-            },
-          }),
+          body: JSON.stringify({ notifications }),
         };
       }
-      const page = await listNotificationsPage(client, all, userId || '', binding, queryParams || {});
+      const notifications = await listUndismissedNotifications(client, userId);
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({
-          notifications: {
-            items: [...page.items].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
-            ...(page.nextExclusiveStartKey ? {
-              nextCursor: await encodeCollectionCursor(binding, page.nextExclusiveStartKey),
-            } : {}),
-          },
-        }),
+        body: JSON.stringify({ notifications }),
       };
     }
 
@@ -105,15 +80,8 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
       headers: JSON_HEADERS,
       body: JSON.stringify({ error: 'Not found' }),
     };
-  } catch (error: unknown) {
-    if (error instanceof CollectionCursorError) {
-      return {
-        statusCode: 400,
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ error: 'Invalid pagination input', code: 'invalid_pagination_input' }),
-      };
-    }
-    console.error('Notification route error:', error);
+  } catch (err: unknown) {
+    console.error('Notification route error:', err);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

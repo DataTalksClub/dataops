@@ -14,7 +14,6 @@
     "src/shell/dom-bindings.js",
     "src/core/workspace.js",
     "src/core/operations-model.js",
-    "src/core/collection-loader.js",
     "src/runtime/application.js",
     "src/runtime/application-events.js",
     "src/runtime/operation-kernel.js",

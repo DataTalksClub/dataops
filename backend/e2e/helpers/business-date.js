@@ -42,9 +42,8 @@ async function installCardCreatedAtOverride(page, cardId, createdAt) {
 
       const response = await route.fetch();
       const body = await response.json();
-      const cards = body.cards?.items;
-      if (Array.isArray(cards)) {
-        body.cards.items = cards.map((card) =>
+      if (Array.isArray(body.cards)) {
+        body.cards = body.cards.map((card) =>
           card.id === cardId ? { ...card, createdAt } : card
         );
       }

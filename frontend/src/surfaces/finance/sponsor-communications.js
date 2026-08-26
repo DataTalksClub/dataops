@@ -12,14 +12,6 @@ export function createSponsorCommunications(context) {
   } = context;
   let selectedBookingId = "";
   let communicationItems = [];
-  let communicationCursor = "";
-  let communicationLoading = false;
-  let communicationLoadingMore = false;
-  let communicationComplete = false;
-  let communicationMoreAvailable = false;
-  let communicationFailed = false;
-  let communicationError = "";
-  let communicationLoadToken = 0;
   let communicationConfig = null;
   let communicationPermissions = {
     role: "operator",
@@ -173,167 +165,29 @@ export function createSponsorCommunications(context) {
         </article>`;
       })
       .join("");
-    let continuation = "";
-    if (communicationLoading && communicationItems.length === 0) {
-      continuation = html`<div class="honest-state">
-          <strong>Loading communication history…</strong>
-        </div>`;
-    } else if (communicationLoadingMore) {
-      continuation = html`<p class="honest-state" role="status">
-          Loading more communication history…
-        </p>`;
-    } else if (communicationFailed && communicationMoreAvailable) {
-      continuation = html`<div class="honest-state">
-          <strong role="alert"
-            >More history is available, but loading failed:
-            ${escapeHtml(communicationError)}</strong
-          ><button data-load-communications-more>Retry next page</button>
-        </div>`;
-    } else if (communicationMoreAvailable) {
-      continuation = html`<div class="honest-state">
-          <span>More communication history is available.</span>
-          <button data-load-communications-more>Load more</button>
-        </div>`;
-    } else if (communicationComplete) {
-      continuation = html`<p class="honest-state">
-          All communication history loaded.
-        </p>`;
-    } else if (communicationFailed) {
-      continuation = html`<div class="honest-state">
-          <strong role="alert">Communication history is unavailable:
-            ${escapeHtml(communicationError)}</strong
-          ><button data-load-communications-retry>Retry</button>
-        </div>`;
-    }
-    root.innerHTML =
-      `${controls}${disabledBanner}${suggestionCards}${draftCards}${attemptCards}${continuation}`;
+    root.innerHTML = `${controls}${disabledBanner}${suggestionCards}${draftCards}${attemptCards}`;
   }
-
-  function communicationItemKey(item) {
-    if (item.id != null) return String(item.id);
-    if (item.communicationId != null && item.version != null) {
-      return `${item.communicationId}:${item.version}`;
-    }
-    return JSON.stringify(item);
-  }
-
-  function upsertCommunicationItem(item) {
-    if (!item || typeof item !== "object") return;
-    if (
-      item.bookingId &&
-      selectedBookingId &&
-      item.bookingId !== selectedBookingId
-    ) {
-      return;
-    }
-    const normalized = {
-      ...item,
-      recordType: item.recordType || "communication-draft-version",
-      communicationId: String(item.communicationId || ""),
-      version: Number(item.version),
-      reviewState: item.reviewState || "awaiting_review",
-      reviewable: item.reviewable !== false,
-    };
-    const key = communicationItemKey(normalized);
-    const existingIndex = communicationItems.findIndex(
-      (candidate) => communicationItemKey(candidate) === key,
-    );
-    if (existingIndex === -1) communicationItems.unshift(normalized);
-    else communicationItems[existingIndex] = normalized;
-    drawCommunications();
-  }
-
   async function loadCommunications(bookingId) {
-    const requestToken = ++communicationLoadToken;
     selectedBookingId = bookingId;
-    communicationItems = [];
-    communicationCursor = "";
-    communicationLoading = true;
-    communicationLoadingMore = false;
-    communicationComplete = false;
-    communicationMoreAvailable = false;
-    communicationFailed = false;
-    communicationError = "";
-    drawCommunications();
-    const query = new URLSearchParams({ limit: "50" });
-    try {
+    let cursor = "";
+    let pageCount = 0;
+    const items = [];
+    do {
+      const query = new URLSearchParams({ limit: "50" });
+      if (cursor) query.set("cursor", cursor);
       const result = await api(
         `/bookings/${bookingId}/communications?${query}`,
       );
-      if (requestToken !== communicationLoadToken) return;
-      if (!Array.isArray(result.items)) {
-        throw new Error("Communication history response was invalid");
-      }
-      communicationItems = [...new Map(
-        result.items.map((item) => [communicationItemKey(item), item]),
-      ).values()];
+      items.push(...(result.items || []));
       communicationConfig = result.config || { enabled: false };
       communicationPermissions = result.permissions || communicationPermissions;
-      communicationCursor = result.nextCursor || "";
-      communicationComplete = !communicationCursor;
-      communicationMoreAvailable = Boolean(communicationCursor);
-      communicationFailed = false;
-      communicationError = "";
-    } catch (error) {
-      if (requestToken !== communicationLoadToken) return;
-      communicationFailed = true;
-      communicationError = error?.message ||
-        "Communication history request failed";
-    } finally {
-      if (requestToken === communicationLoadToken) {
-        communicationLoading = false;
-        communicationLoadingMore = false;
-        drawCommunications();
-      }
-    }
-  }
-
-  async function loadMoreCommunications() {
-    if (!communicationCursor || communicationComplete) return;
-    if (communicationLoading || communicationLoadingMore) return;
-    const bookingId = selectedBookingId;
-    const requestToken = ++communicationLoadToken;
-    const cursor = communicationCursor;
-    communicationLoadingMore = true;
-    communicationFailed = false;
-    communicationError = "";
+      cursor = result.nextCursor || "";
+      pageCount += 1;
+      if (pageCount > 20)
+        throw new Error("Communication history is too large to display safely");
+    } while (cursor);
+    communicationItems = items;
     drawCommunications();
-    const query = new URLSearchParams({ limit: "50", cursor });
-    try {
-      const result = await api(
-        `/bookings/${bookingId}/communications?${query}`,
-      );
-      if (requestToken !== communicationLoadToken) return;
-      if (!Array.isArray(result.items)) {
-        throw new Error("Communication history response was invalid");
-      }
-      const seen = new Set(communicationItems.map(communicationItemKey));
-      for (const item of result.items) {
-        const key = communicationItemKey(item);
-        if (!seen.has(key)) {
-          seen.add(key);
-          communicationItems.push(item);
-        }
-      }
-      communicationConfig = result.config || communicationConfig;
-      communicationPermissions = result.permissions ||
-        communicationPermissions;
-      communicationCursor = result.nextCursor || "";
-      communicationComplete = !communicationCursor;
-      communicationMoreAvailable = Boolean(communicationCursor);
-      communicationFailed = false;
-      communicationError = "";
-    } catch (error) {
-      if (requestToken !== communicationLoadToken) return;
-      communicationFailed = true;
-      communicationError = error?.message ||
-        "Communication history request failed";
-    } finally {
-      if (requestToken === communicationLoadToken) {
-        communicationLoadingMore = false;
-        drawCommunications();
-      }
-    }
   }
   async function showExactReview(communicationId, version) {
     const presentation = await api(
@@ -449,9 +303,7 @@ export function createSponsorCommunications(context) {
     set selectedBookingId(value) {
       selectedBookingId = value;
     },
-    upsertCommunicationItem,
     drawCommunications,
-    loadMoreCommunications,
     loadCommunications,
     revokeCurrentReview,
     showExactReview,

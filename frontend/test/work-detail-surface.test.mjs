@@ -122,7 +122,7 @@ function createHarness(options = {}) {
 
   const defaultRequest = async (url, requestOptions) => {
     if (requestOptions.method) return {};
-    if (url.startsWith("/api/files")) return { files: { items: [] } };
+    if (url.startsWith("/api/files")) return { files: [] };
     if (url.startsWith("/api/artifacts")) return { artifacts: [] };
     return {};
   };
@@ -195,8 +195,7 @@ function createHarness(options = {}) {
     renderTasksSurface() {},
     reportError: (message) => errors.push(message),
     request,
-    scheduleAnimationFrame:
-      options.scheduleAnimationFrame || ((callback) => setTimeout(callback, 0)),
+    scheduleAnimationFrame: (callback) => callback(),
     settledPayload: (result) =>
       result?.status === "fulfilled" ? result.value : null,
     showUndoToast: (message, action) => undo.push({ message, action }),
@@ -254,17 +253,6 @@ async function hydrateTask(harness, task, options = {}) {
   assert.ok(harness.requests.length > originalRequestCount);
 }
 
-async function waitFor(predicate, description) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const value = predicate();
-    if (value) return value;
-    await nextTicks(3);
-    // Let deferred paint callbacks run without draining them inside hydration.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`Timed out waiting for ${description}`);
-}
-
 describe("Work Detail surface boundary", () => {
   test("directly imports the production factory and exposes the stable Work Detail facade", () => {
     const { api } = createHarness();
@@ -312,7 +300,7 @@ describe("Work Detail surface boundary", () => {
       },
       request: async (url, requestOptions = {}) => {
         if (url === "/api/tasks/task-1" && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
@@ -423,7 +411,7 @@ describe("Work Detail surface boundary", () => {
     const canonicalHarness = createHarness({
       request: async (url) => {
         if (url === `/api/tasks/${canonical.id}`) return canonical;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
@@ -471,7 +459,7 @@ describe("Work Detail surface boundary", () => {
         if (url === `/api/tasks/${activeTask.id}` && !requestOptions.method) {
           return activeTask;
         }
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (requestOptions.method) {
           return { ...activeTask, version: activeTask.version + 1 };
@@ -557,7 +545,7 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url) => {
         if (url === `/api/tasks/${archived.id}`) return archived;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
@@ -590,7 +578,7 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url, requestOptions = {}) => {
         if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) {
           await artifactsHeld;
           return { artifacts: [] };
@@ -681,7 +669,7 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url) => {
         if (url === `/api/tasks/${task.id}` && !url.includes("?")) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) {
           await artifactsHeld;
           return { artifacts: [] };
@@ -763,7 +751,7 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url, requestOptions = {}) => {
         if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
           writeAttempt += 1;
@@ -898,7 +886,7 @@ describe("Work Detail surface boundary", () => {
       },
       request: async (url, requestOptions = {}) => {
         if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (url === `/api/cards/${card.id}` && !requestOptions.method) {
           return { card: archived };
@@ -949,7 +937,7 @@ describe("Work Detail surface boundary", () => {
     const harness = createHarness({
       request: async (url, requestOptions = {}) => {
         if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
           return pendingWrite;
@@ -990,7 +978,7 @@ describe("Work Detail surface boundary", () => {
       promptUser: () => "Vendor contact",
       request: async (url, requestOptions = {}) => {
         if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         if (url.endsWith("/actions/mark-waiting")) {
           attempt += 1;
@@ -1063,7 +1051,7 @@ describe("Work Detail surface boundary", () => {
         if (url === "/api/tasks/proof-task" && !requestOptions.method) {
           return task;
         }
-        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/files")) return { files: [] };
         if (url.startsWith("/api/artifacts")) return { artifacts: [] };
         return {};
       },
@@ -1085,128 +1073,6 @@ describe("Work Detail surface boundary", () => {
         harness.taskPanelBody,
         "No approved artifact attached.",
       ),
-    );
-  });
-
-  test("loads every required-file page before enabling completion", async () => {
-    const task = {
-      id: "task-paged-files",
-      version: 1,
-      status: "todo",
-      description: "Attach paged evidence",
-      taskHistory: [],
-      requiresFile: true,
-    };
-    const fileUrls = [];
-    const paintCallbacks = [];
-    const harness = createHarness({
-      request: async (url) => {
-        if (url === `/api/tasks/${task.id}`) return task;
-        if (url.startsWith("/api/files")) {
-          fileUrls.push(url);
-          if (fileUrls.length === 1) {
-            return {
-              files: {
-                items: [{ id: "file-1", filename: "first.pdf" }],
-                nextCursor: "file-cursor",
-              },
-            };
-          }
-          return {
-            files: {
-              items: [
-                { id: "file-1", filename: "first.pdf" },
-                { id: "file-2", filename: "second.pdf" },
-              ],
-            },
-          };
-        }
-        return { artifacts: [] };
-      },
-      scheduleAnimationFrame: (callback) => paintCallbacks.push(callback),
-    });
-
-    await hydrateTask(harness, task);
-    await waitFor(
-      () =>
-        harness.taskPanelBody.querySelectorAll(".task-file-item").length === 1 &&
-        findByText(harness.taskPanelBody, "Mark done", "button"),
-      "the first evidence page and completion gate",
-    );
-    const completeBefore = findByText(harness.taskPanelBody, "Mark done", "button");
-    assert.match(completeBefore.title, /Upload required file/);
-    assert.deepEqual(
-      harness.taskPanelBody.querySelectorAll(".task-file-item").map((item) => item.textContent),
-      ["first.pdfRemove"],
-    );
-    assert.equal(paintCallbacks.length, 1);
-    paintCallbacks.shift()();
-    await waitFor(
-      () =>
-        harness.taskPanelBody.querySelectorAll(".task-file-item").length === 2 &&
-        !findByText(harness.taskPanelBody, "Mark done", "button")?.title?.match(
-          /Upload required file/,
-        ),
-      "the completed evidence page",
-    );
-    assert.match(fileUrls[0], /taskId=task-paged-files/);
-    assert.match(fileUrls[0], /limit=100/);
-    assert.doesNotMatch(fileUrls[0], /cursor=/);
-    assert.match(fileUrls[1], /cursor=file-cursor/);
-    assert.equal(findByText(harness.taskPanelBody, ".task-file-error"), undefined);
-    assert.deepEqual(
-      harness.taskPanelBody.querySelectorAll(".task-file-item").map((item) => item.textContent),
-      ["first.pdfRemove", "second.pdfRemove"],
-    );
-    const completeAfter = findByText(harness.taskPanelBody, "Mark done", "button");
-    assert.equal(completeAfter.disabled, false);
-    if (completeAfter.title) {
-      assert.doesNotMatch(completeAfter.title, /Upload required file/);
-    }
-  });
-
-  test("distinguishes an initial file outage from a failed continuation and retries cleanly", async () => {
-    const task = {
-      id: "task-file-outage",
-      version: 1,
-      status: "todo",
-      description: "Recover file evidence",
-      taskHistory: [],
-      requiresFile: true,
-    };
-    let filesOnline = false;
-    const harness = createHarness({
-      request: async (url) => {
-        if (url === `/api/tasks/${task.id}`) return task;
-        if (url.startsWith("/api/files")) {
-          if (!filesOnline) throw new Error("Files offline");
-          return { files: { items: [{ id: "file-recovered" }] } };
-        }
-        return { artifacts: [] };
-      },
-    });
-
-    await hydrateTask(harness, task);
-    const outage = await waitFor(
-      () => harness.taskPanelBody.querySelector(".task-file-error"),
-      "the initial Files outage",
-    );
-    assert.match(outage.textContent, /Files could not be loaded: Files offline/);
-
-    filesOnline = true;
-    await harness.taskPanelBody
-      .querySelector("[data-retry-task-files]")
-      .click();
-    await waitFor(
-      () =>
-        !harness.taskPanelBody.querySelector(".task-file-error") &&
-        harness.taskPanelBody.querySelector(".task-file-item"),
-      "recovered Files",
-    );
-    assert.equal(harness.taskPanelBody.querySelector(".task-file-error"), null);
-    assert.match(
-      harness.taskPanelBody.querySelector(".task-file-item").textContent,
-      /file-recovered/,
     );
   });
 

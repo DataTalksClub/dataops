@@ -422,22 +422,20 @@ test.describe("production sponsor CRM portal", () => {
         });
       },
     );
-    await page.route("**/work/api/notifications*", async (route) => {
+    await page.route("**/work/api/notifications", async (route) => {
       await gate;
       return route.fulfill({
         json: {
-          notifications: {
-            items: [
-              {
-                id: "alert-1",
-                message:
-                  "Sponsor booking materials are missing 10 days before publication",
-                dueAt: "2026-08-20",
-                dismissed: false,
-                metadata: { sponsorBookingId: "booking-1" },
-              },
-            ],
-          },
+          notifications: [
+            {
+              id: "alert-1",
+              message:
+                "Sponsor booking materials are missing 10 days before publication",
+              dueAt: "2026-08-20",
+              dismissed: false,
+              metadata: { sponsorBookingId: "booking-1" },
+            },
+          ],
         },
       });
     });
@@ -460,7 +458,6 @@ test.describe("production sponsor CRM portal", () => {
     await expect(
       page.getByText("This booking has not been classified."),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Load more" }).click();
     const statusMessage = page.locator("[data-crm-message]");
     await expect.poll(() => communicationRequests.length).toBe(2);
     expect(communicationRequests).toEqual([
@@ -710,7 +707,6 @@ test.describe("production sponsor CRM portal", () => {
     await expect(statusMessage).not.toContainText(
       /Could not|Synthetic route missing/,
     );
-    await page.getByRole("button", { name: "Load more" }).click();
     await expect(page.locator("[data-crm-communications]")).toContainText(
       "delivered",
     );
@@ -755,8 +751,8 @@ test.describe("production sponsor CRM portal", () => {
         json: { error: "Synthetic permission denied" },
       }),
     );
-    await errorPage.route("**/work/api/notifications*", (route) =>
-      route.fulfill({ json: { notifications: { items: [] } } }),
+    await errorPage.route("**/work/api/notifications", (route) =>
+      route.fulfill({ json: { notifications: [] } }),
     );
     await gotoOwnedSponsorPage(errorPage);
     await errorPage.getByRole("button", { name: "Sponsors" }).click();

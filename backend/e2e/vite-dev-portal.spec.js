@@ -400,7 +400,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     expect(tasks.body.tasks.some((task) => task.id === created.body.id)).toBe(true);
     const workflows = await browserJson(page, '/work/api/cards', { headers: authorization });
     expect(workflows.status).toBe(200);
-    expect(Array.isArray(workflows.body.cards.items)).toBe(true);
+    expect(Array.isArray(workflows.body.cards)).toBe(true);
 
     const docs = await browserJson(page, '/docs');
     expect(docs.status).toBe(200);

@@ -423,7 +423,6 @@ export function createTaskPanel(context) {
     // Actions
     const actions = document.createElement("div");
     actions.className = "task-action-group";
-    let syncCompletionForFiles = () => {};
     if (status === "done") {
       const reopen = createTaskActionButton("Reopen", () =>
         updateTaskStatus(task.id, "todo", task.version),
@@ -460,45 +459,26 @@ export function createTaskPanel(context) {
       );
       followRow.append(followUp);
       actions.append(followRow);
-    } else if (status === "todo") {
-      const completionProofState = () => {
-        const missingLink = task.requiredLinkName && !task.link;
-        const missingFile =
-          task.requiresFile && !detail.activeTaskPanelTask?._hasFiles;
-        const missingArtifact =
-          taskRequiresApprovedArtifact(task) &&
-          !hasApprovedArtifactEvidence(task, detail.activeTaskPanelArtifacts);
-        return {
-          missingLink,
-          missingFile,
-          missingArtifact,
-          canComplete: !missingLink && !missingFile && !missingArtifact,
-        };
-      };
+    } else {
+      const missingLink = task.requiredLinkName && !task.link;
+      const missingFile =
+        task.requiresFile && !detail.activeTaskPanelTask?._hasFiles;
+      const missingArtifact =
+        taskRequiresApprovedArtifact(task) &&
+        !hasApprovedArtifactEvidence(task, detail.activeTaskPanelArtifacts);
+      const canComplete = !missingLink && !missingFile && !missingArtifact;
       const complete = createTaskActionButton("Mark done", () =>
         updateTaskStatus(task.id, "done", task.version),
       );
       complete.classList.add("is-primary");
-
-      syncCompletionForFiles = () => {
-        const {
-          missingLink,
-          missingFile,
-          missingArtifact,
-          canComplete,
-        } = completionProofState();
-        complete.disabled = detail.activeTaskMutationBusy || !canComplete;
-        if (canComplete) {
-          complete.title = "";
-          return;
-        }
+      if (!canComplete) {
+        complete.disabled = true;
         const reasons = [];
         if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
         if (missingFile) reasons.push("Upload required file");
         if (missingArtifact) reasons.push("Approve an attached artifact");
         complete.title = reasons.join("; ");
-      };
-      syncCompletionForFiles();
+      }
       actions.append(complete);
 
       const markWaiting = createTaskActionButton("Mark waiting", () =>
@@ -510,9 +490,7 @@ export function createTaskPanel(context) {
       if (detail.activeTaskMutationBusy) button.disabled = true;
     }
     // File upload for required-file tasks
-    renderTaskFileSection(task, {
-      onFilesSettled: syncCompletionForFiles,
-    });
+    renderTaskFileSection(task);
     renderTaskArtifactSection(task);
 
     taskPanelBody.append(actions);

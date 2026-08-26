@@ -315,7 +315,7 @@ function freshHomeWork(page) {
   return Promise.all([
     page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.has('date'))),
     page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/tasks' && url.searchParams.get('status') === 'waiting')),
-    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/cards' && url.searchParams.has('limit'))),
+    page.waitForResponse((response) => exact(response, (url) => url.pathname === '/work/api/cards' && !url.search)),
   ]);
 }
 
@@ -433,7 +433,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     });
     const initialCards = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === '/work/api/cards' && url.searchParams.has('limit');
+      return url.pathname === '/work/api/cards' && !url.search;
     });
     await page.goto('/#/');
     expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('Europe/Berlin');
@@ -476,7 +476,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     const [todayResponse, waitingResponse, cardsResponse] = await populatedWork;
     expect((await json(todayResponse)).tasks.some((task) => task.description === title)).toBe(true);
     expect((await json(waitingResponse)).tasks.some((task) => task.description === notificationTitle)).toBe(true);
-    expect((await json(cardsResponse)).cards.items.some((card) => card.title === cardTitle)).toBe(true);
+    expect((await json(cardsResponse)).cards.some((card) => card.title === cardTitle)).toBe(true);
     await populatedRender;
     const populatedAttention = page.getByRole('region', { name: 'Needs your attention' });
     await expect(populatedAttention.locator('.home-attention-list')).toBeVisible();
@@ -1497,7 +1497,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect(notificationTaskResponse.status()).toBe(201);
     const notificationTaskPayload = await json(notificationTaskResponse);
     const notificationTask = notificationTaskPayload.task || notificationTaskPayload;
-    const notifications = (await json(await context.request.get('/api/notifications'))).notifications.items;
+    const notifications = (await json(await context.request.get('/api/notifications'))).notifications;
     const notification = notifications.find((item) => item.taskId === notificationTask.id);
     expect(notification).toBeTruthy();
     await page.reload();
@@ -1509,7 +1509,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await notificationRow.getByRole('button', { name: /Dismiss notification/ }).click();
     await expect(notificationRow.getByRole('alert')).toContainText('Select Dismiss to retry');
     await expect(notificationRow.getByRole('button', { name: /Dismiss notification/ })).toBeFocused();
-    expect(((await json(await context.request.get('/api/notifications'))).notifications.items).some((item) => item.id === notification.id)).toBe(true);
+    expect(((await json(await context.request.get('/api/notifications'))).notifications).some((item) => item.id === notification.id)).toBe(true);
     await clearFaults(context.request);
     await notificationRow.getByRole('button', { name: /Dismiss notification/ }).click();
     await expect(notificationRow).toHaveCount(0);

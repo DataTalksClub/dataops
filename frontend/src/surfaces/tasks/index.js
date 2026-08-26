@@ -158,8 +158,6 @@ export function createTasksSurface(context) {
     const workErrors = (model.stats.workErrors || []).filter(Boolean);
     const retryWork = async () => {
       const routeToken = getActiveWorkspaceRouteToken();
-      // Resetting the Cards loader is deliberate: a continuation retry must
-      // also recover a failed page, not merely preserve its broken cursor.
       await refreshOperationsWorkSnapshot({ rerender: false });
       if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
     };
@@ -204,18 +202,13 @@ export function createTasksSurface(context) {
       // The board renders from the snapshot, so the summary counts the same
       // cards the operator can see rather than a parallel derived number.
       const active = (work.activeCards || []).length;
-      const complete = model.stats.cardsComplete !== false;
-      const counts = complete
-        ? `${countLabel(active, "active card")}, at-risk first`
-        : `${countLabel(active, "loaded active card")}s; total unknown`;
+      const counts = `${countLabel(active, "active card")}, at-risk first`;
       return renderDataSummary({
         id: "tasks-workflows",
         label: "Cards",
-        loaded: complete
-          ? model.stats.cardsLoaded ?? model.stats.liveLoaded
-          : active > 0,
+        loaded: model.stats.cardsLoaded ?? model.stats.liveLoaded,
         errors: workErrors,
-        empty: complete && active === 0,
+        empty: active === 0,
         messages: {
           loading: "Loading cards from the work API…",
           unavailable: "Cards could not be loaded, so none are listed.",

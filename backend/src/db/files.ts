@@ -9,7 +9,6 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_FILES } from './tableNames';
 import type { FileRecord } from '../types';
-import { readCollectionPage } from './collectionPage';
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
@@ -87,34 +86,6 @@ async function listFilesByTask(client: DynamoDBDocumentClient, taskId: string): 
   return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as FileRecord);
 }
 
-type FilePaginationBinding = Parameters<typeof readCollectionPage<FileRecord>>[0]['binding'];
-
-function listFilesByTaskPage(
-  client: DynamoDBDocumentClient,
-  taskId: string,
-  binding: FilePaginationBinding,
-  pagination: { limit?: unknown; cursor?: unknown },
-) {
-  return readCollectionPage<FileRecord>({
-    client,
-    tableName: TABLE_FILES,
-    kind: 'query',
-    command: {
-      IndexName: 'GSI-Task',
-      KeyConditionExpression: 'taskId = :tid',
-      ExpressionAttributeValues: { ':tid': taskId },
-    },
-    binding,
-    input: pagination,
-    keyFor: (file: FileRecord) => ({
-      PK: `FILE#${file.id}`,
-      SK: `FILE#${file.id}`,
-      taskId: file.taskId,
-    }),
-    cleanItem: (item) => cleanItem(item) as FileRecord,
-  });
-}
-
 /**
  * List files with optional category and tag filters using a scan.
  */
@@ -149,58 +120,10 @@ async function listFiles(client: DynamoDBDocumentClient, filters?: { category?: 
   return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as FileRecord);
 }
 
-function listFilesPage(
-  client: DynamoDBDocumentClient,
-  filters: { category?: string; tag?: string },
-  binding: FilePaginationBinding,
-  pagination: { limit?: unknown; cursor?: unknown },
-) {
-  const filterExpressions: string[] = ['begins_with(PK, :prefix)'];
-  const expressionAttrValues: Record<string, unknown> = { ':prefix': 'FILE#' };
-  const expressionAttrNames: Record<string, string> = {};
-  if (filters.category) {
-    filterExpressions.push('#cat = :cat');
-    expressionAttrNames['#cat'] = 'category';
-    expressionAttrValues[':cat'] = filters.category;
-  }
-  if (filters.tag) {
-    filterExpressions.push('contains(tags, :tag)');
-    expressionAttrValues[':tag'] = filters.tag;
-  }
-  const command = {
-    FilterExpression: filterExpressions.join(' AND '),
-    ExpressionAttributeValues: expressionAttrValues,
-  };
-  if (Object.keys(expressionAttrNames).length > 0) {
-    return readCollectionPage<FileRecord>({
-      client,
-      tableName: TABLE_FILES,
-      kind: 'scan',
-      command: { ...command, ExpressionAttributeNames: expressionAttrNames },
-      binding,
-      input: pagination,
-      keyFor: (file) => ({ PK: `FILE#${file.id}`, SK: `FILE#${file.id}` }),
-      cleanItem: (item) => cleanItem(item) as FileRecord,
-    });
-  }
-  return readCollectionPage<FileRecord>({
-    client,
-    tableName: TABLE_FILES,
-    kind: 'scan',
-    command,
-    binding,
-    input: pagination,
-    keyFor: (file) => ({ PK: `FILE#${file.id}`, SK: `FILE#${file.id}` }),
-    cleanItem: (item) => cleanItem(item) as FileRecord,
-  });
-}
-
 export {
   createFile,
   getFile,
   deleteFile,
   listFilesByTask,
   listFiles,
-  listFilesByTaskPage,
-  listFilesPage,
 };

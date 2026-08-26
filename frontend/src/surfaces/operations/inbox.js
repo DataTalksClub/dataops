@@ -1,5 +1,3 @@
-import { createCollectionLoader } from "../../core/collection-loader.js";
-
 export function createInboxSurface(context) {
   const {
     assistantJobsFromPayload,
@@ -35,8 +33,6 @@ export function createInboxSurface(context) {
   } = context;
   const { intakeActionMarkup, renderIntakeHistoryMarkup, submitIntakeAction } =
     context;
-
-  let intakeCardsLoader;
 
   function intakeMatchesFilter(item, filter) {
     const status = String(item?.status || "new");
@@ -213,132 +209,37 @@ export function createInboxSurface(context) {
   }
 
   async function refreshIntakeSnapshot(options = {}) {
-    let intakeError = null;
-    intakeCardsLoader = createCollectionLoader({
-      request,
-      createUrl: (parameters) => workApiUrl("/api/cards", parameters),
-      collection: "cards",
-    });
-
-    const cardsPromise = intakeCardsLoader.load();
-    const [intakeResult] = await Promise.allSettled([
-      request(workApiUrl("/api/intake")),
-      cardsPromise,
-    ]);
-    if (intakeResult.status === "rejected") {
-      intakeError = intakeResult.reason?.message || "Inbox could not be loaded";
+    try {
+      const [intakePayload, cardPayload] = await Promise.all([
+        request(workApiUrl("/api/intake")),
+        request(workApiUrl("/api/cards")),
+      ]);
+      if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+      state.intake = {
+        ...state.intake,
+        items: Array.isArray(intakePayload)
+          ? intakePayload
+          : intakePayload.items || [],
+        cards: Array.isArray(cardPayload)
+          ? cardPayload
+          : cardPayload.cards || [],
+        loaded: true,
+        error: "",
+      };
+    } catch (error) {
+      if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+      state.intake = {
+        ...state.intake,
+        loaded: false,
+        error: error.message || "Inbox could not be loaded",
+      };
     }
-    let cardPage = await cardsPromise;
-    while (cardPage.moreAvailable && !cardPage.failed) {
-      cardPage = await intakeCardsLoader.loadMore();
-    }
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
-    const intakeItems =
-      intakeResult.status === "fulfilled" &&
-      Array.isArray(intakeResult.value?.items)
-        ? intakeResult.value.items
-        : [];
-    if (
-      intakeResult.status === "fulfilled" &&
-      !Array.isArray(intakeResult.value?.items)
-    ) {
-      intakeError ||= "Inbox API response was invalid";
-    }
-    state.intake = {
-      ...state.intake,
-      items: intakeItems,
-      cards: cardPage.items || [],
-      cardsLoaded: Boolean(cardPage.loaded),
-      cardsComplete: Boolean(cardPage.complete),
-      cardsLoading: false,
-      cardsError: cardPage.failed
-        ? cardPage.error || "Card relationships could not be loaded"
-        : "",
-      loaded: !intakeError,
-      error: intakeError || "",
-    };
     if (
       options.rerender &&
       getActiveWorkspaceView() === "inbox" &&
       isOperationsHomeVisible()
     )
       renderInboxSurface();
-  }
-
-  async function retryInboxCards() {
-    if (!intakeCardsLoader || state.intake.cardsLoading) return;
-    const current = intakeCardsLoader.getSnapshot();
-    state.intake.cardsLoading = true;
-    state.intake.cardsError = "";
-    renderInboxSurface();
-    let cardPage =
-      current.failed && !current.cursor
-        ? await intakeCardsLoader.load()
-        : current.failed || current.moreAvailable
-          ? await intakeCardsLoader.loadMore()
-          : await intakeCardsLoader.load();
-    while (cardPage.moreAvailable && !cardPage.failed) {
-      cardPage = await intakeCardsLoader.loadMore();
-    }
-    state.intake = {
-      ...state.intake,
-      cards: cardPage.items || [],
-      cardsLoaded: Boolean(cardPage.loaded),
-      cardsComplete: Boolean(cardPage.complete),
-      cardsLoading: false,
-      cardsError: cardPage.failed
-        ? cardPage.error || "Card relationships could not be loaded"
-        : "",
-    };
-    renderInboxSurface();
-  }
-
-  function renderIntakeCardsState() {
-    if (state.intake.cardsLoading) {
-      const status = document.createElement("p");
-      status.className = "intake-card-status";
-      status.setAttribute("role", "status");
-      status.textContent = "Retrying more Card relationships…";
-      return status;
-    }
-    if (state.intake.cardsComplete) return null;
-    if (!state.intake.cardsLoading && state.intake.cardsError) {
-      const status = document.createElement("p");
-      status.className = "intake-card-status";
-      status.setAttribute("role", "alert");
-      status.textContent =
-        (state.intake.cardsLoaded
-          ? "More Card relationships are available, but loading failed"
-          : "Card relationships could not be loaded") +
-        (state.intake.cardsError ? `: ${state.intake.cardsError}` : ".");
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.className = "quiet-button";
-      retry.dataset.retryInboxCards = "true";
-      retry.textContent = "Retry loading Cards";
-      retry.addEventListener("click", () => {
-        void retryInboxCards();
-      });
-      status.append(document.createTextNode(" "), retry);
-      return status;
-    }
-    if (!state.intake.cardsLoaded) return null;
-    const status = document.createElement("p");
-    status.className = "intake-card-status";
-    status.setAttribute("role", "alert");
-    status.textContent =
-      "More Card relationships are available, but loading failed" +
-      (state.intake.cardsError ? `: ${state.intake.cardsError}` : ".");
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "quiet-button";
-    retry.dataset.retryInboxCards = "true";
-    retry.textContent = "Retry loading Cards";
-    retry.addEventListener("click", () => {
-      void retryInboxCards();
-    });
-    status.append(document.createTextNode(" "), retry);
-    return status;
   }
 
   async function resolveIntakeRouteEntity(route, token) {
@@ -446,9 +347,6 @@ export function createInboxSurface(context) {
       filters.append(button);
     }
     wrap.append(filters);
-
-    const cardsState = renderIntakeCardsState();
-    if (cardsState) wrap.append(cardsState);
 
     if (state.intake.error) {
       wrap.append(renderHonestState("Inbox unavailable", state.intake.error));

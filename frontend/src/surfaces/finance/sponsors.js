@@ -1,7 +1,6 @@
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
-import { createCollectionLoader } from "../../core/collection-loader.js";
 import { html } from "./shared.js";
 
 function focusFirstUsableControl(dialog) {
@@ -89,16 +88,6 @@ export function createSponsorCrmSurface(context) {
     let organizations = [],
       contacts = [],
       bookings = [];
-    const notificationLoader = createCollectionLoader({
-      collection: "notifications",
-      createUrl: ({ cursor, limit }) => {
-        const query = new URLSearchParams({ limit: String(limit) });
-        if (cursor) query.set("cursor", cursor);
-        return workApiUrl(`/api/notifications?${query}`);
-      },
-      request,
-    });
-    let notificationState = notificationLoader.getSnapshot();
     const sponsorFinance = createSponsorFinance({
       escapeHtml,
       humanizeOptionLabel,
@@ -120,7 +109,6 @@ export function createSponsorCrmSurface(context) {
     const {
       drawCommunications,
       loadCommunications,
-      loadMoreCommunications,
       revokeCurrentReview,
       showExactReview,
     } = sponsorCommunications;
@@ -428,31 +416,22 @@ export function createSponsorCrmSurface(context) {
     }
     async function refresh() {
       message.textContent = "Loading sponsor CRM…";
-      const [organizationsResult, contactsResult, bookingsResult, alertPage] =
-        await Promise.all([
+      const results = await Promise.all([
         api("/organizations"),
         api("/contacts"),
         api("/bookings"),
-          notificationLoader.load(),
-        ]);
-      organizations = organizationsResult.items || [];
-      contacts = contactsResult.items || [];
-      bookings = bookingsResult.items || [];
-      notificationState = alertPage;
-      drawAlerts();
-      orgOptions();
-      draw();
-      message.textContent = "Sponsor CRM ready.";
-    }
-
-    function drawAlerts() {
-      const alerts = notificationState.items.filter(
+        request(workApiUrl("/api/notifications")),
+      ]);
+      organizations = results[0].items || [];
+      contacts = results[1].items || [];
+      bookings = results[2].items || [];
+      const alerts = (results[3].notifications || []).filter(
         (item) =>
           (item.metadata?.sponsorBookingId ||
             item.metadata?.financeBookingId) &&
           !item.dismissed,
       );
-      const alertCards = alerts.length
+      surface.querySelector("[data-crm-alerts]").innerHTML = alerts.length
         ? alerts
             .map(
               (item) =>
@@ -467,55 +446,10 @@ export function createSponsorCrmSurface(context) {
                 </article>`,
             )
             .join("")
-        : html`<div class="honest-state">
-            <strong>No active sponsor booking alerts</strong>
-          </div>`;
-      let continuation = "";
-      if (notificationState.loading || notificationState.loadingMore) {
-        continuation = html`<p class="honest-state" role="status">
-            ${
-              notificationState.loadingMore
-                ? "Loading more booking alerts…"
-                : "Loading booking alerts…"
-            }
-          </p>`;
-      } else if (
-        notificationState.failed &&
-        notificationState.moreAvailable
-      ) {
-        continuation = html`<div class="honest-state">
-            <strong role="alert"
-              >More alerts are available, but loading failed:
-              ${escapeHtml(notificationState.error)}</strong
-            ><button type="button" data-load-sponsor-alerts>
-              Retry next page</button
-            >
-          </div>`;
-      } else if (notificationState.moreAvailable) {
-        continuation = html`<div class="honest-state">
-            <span>More booking alerts are available.</span>
-            <button type="button" data-load-sponsor-alerts>
-              Load more alerts</button
-            >
-          </div>`;
-      } else if (notificationState.failed) {
-        continuation = html`<div class="honest-state">
-            <strong role="alert">Booking alerts are unavailable:
-              ${escapeHtml(notificationState.error)}</strong
-            ><button type="button" data-load-sponsor-alerts-retry>
-              Retry alerts</button
-            >
-          </div>`;
-      } else if (
-        notificationState.complete &&
-        notificationState.items.length
-      ) {
-        continuation = html`<p class="honest-state">
-            All notification pages loaded.
-          </p>`;
-      }
-      surface.querySelector("[data-crm-alerts]").innerHTML =
-        `${alertCards}${continuation}`;
+        : "No active sponsor booking alerts.";
+      orgOptions();
+      draw();
+      message.textContent = "Sponsor CRM ready.";
     }
     function openBooking(item) {
       const dialog = surface.querySelector("[data-booking-dialog]"),
@@ -589,20 +523,6 @@ export function createSponsorCrmSurface(context) {
       if (open) navigateCanonicalWorkspace("/sponsors", { bookingId: open });
     };
     surface.querySelector("[data-crm-alerts]").onclick = (event) => {
-      if (event.target.closest("[data-load-sponsor-alerts]")) {
-        safe(async () => {
-          notificationState = await notificationLoader.loadMore();
-          drawAlerts();
-        }, "Could not load more booking alerts");
-        return;
-      }
-      if (event.target.closest("[data-load-sponsor-alerts-retry]")) {
-        safe(async () => {
-          notificationState = await notificationLoader.load();
-          drawAlerts();
-        }, "Could not load booking alerts");
-        return;
-      }
       const id = event.target.closest("[data-alert-booking]")?.dataset
         .alertBooking;
       const booking = bookings.find((item) => item.id === id);
@@ -626,21 +546,6 @@ export function createSponsorCrmSurface(context) {
       }, "Could not refresh communication suggestions");
     surface.addEventListener("click", (event) => {
       if (!event.target.closest("[data-crm-communications]")) return;
-      if (event.target.closest("[data-load-communications-more]")) {
-        safe(
-          () => sponsorCommunications.loadMoreCommunications(),
-          "Could not load more communication history",
-        );
-        return;
-      }
-      if (event.target.closest("[data-load-communications-retry]")) {
-        safe(
-          () =>
-            loadCommunications(sponsorCommunications.selectedBookingId),
-          "Could not load communication history",
-        );
-        return;
-      }
       if (event.target.closest("[data-suppress-address]")) {
         const booking = bookings.find(
           (item) => item.id === sponsorCommunications.selectedBookingId,
@@ -884,16 +789,7 @@ export function createSponsorCrmSurface(context) {
           },
         );
         draftDialog.close();
-        sponsorCommunications.upsertCommunicationItem({
-          id: `${draft.communicationId}#${draft.version}`,
-          recordType: "communication-draft-version",
-          communicationId: draft.communicationId,
-          bookingId: sponsorCommunications.selectedBookingId,
-          suggestionId: value.suggestionId,
-          version: draft.version,
-          reviewState: "awaiting_review",
-          reviewable: true,
-        });
+        await loadCommunications(sponsorCommunications.selectedBookingId);
         if (sponsorCommunications.communicationPermissions.canApprove) {
           await showExactReviewAndFocus(draft.communicationId, draft.version);
         } else {

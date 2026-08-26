@@ -293,26 +293,15 @@ describe("app shell coordinator characterization", () => {
       "dismissWorkNotification",
       notificationsSource,
     );
-    const loadMore = functionSource(
-      "loadMoreNotifications",
-      notificationsSource,
-    );
-    assert.match(notificationsSource, /import \{ createCollectionLoader \}/);
-    assert.match(
-      notificationsSource,
-      /createCollectionLoader\(\{\s*request,\s*collection: "notifications",/,
-    );
-    assert.match(refresh, /await notificationLoader\.load\(\)/);
-    assert.doesNotMatch(refresh, /\brequest\s*\(/);
-    assert.match(loadMore, /await notificationLoader\.loadMore\(\)/);
-    assert.match(indicators, /notificationState\.failed && count === 0 \? "!" : String\(count\)/);
+    assert.match(refresh, /request\(workApiUrl\("\/api\/notifications"\)\)/);
+    assert.match(refresh, /notifications = \[\];[\s\S]*Notifications API request failed/);
+    assert.match(indicators, /const indicatorText = notificationError \? "!" : String\(count\)/);
     assert.match(panel, /Notifications unavailable:/);
     assert.match(panel, /You’re all caught up\./);
     assert.match(panel, /dismiss\.dataset\.dismissNotification = notification\.id/);
     assert.match(panel, /Select Dismiss to retry\./);
     assert.match(dismiss, /\/dismiss`[\s\S]*\{ method: "PUT" \}/);
-    assert.match(dismiss, /locallyDismissedIds\.add\(notification\.id\)/);
-    assert.doesNotMatch(dismiss, /notifications\s*=\s*notifications\.filter/);
+    assert.match(dismiss, /notifications = notifications\.filter/);
     assert.match(dismiss, /dismissErrors\.set/);
     assert.match(shellMarkup, /id="work-bell-panel"[^>]+role="dialog"/);
   });

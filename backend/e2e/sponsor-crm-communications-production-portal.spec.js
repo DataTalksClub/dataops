@@ -96,18 +96,16 @@ test.describe('production sponsor CRM communications portal', () => {
     };
 
     const routeRole = async (page, role) => {
-      await page.route('**/work/api/notifications*', (route) =>
+      await page.route('**/work/api/notifications', (route) =>
         route.fulfill({
           json: {
-            notifications: {
-              items: [{
-                id: 'alert-1',
-                message: 'Sponsor booking materials are missing 10 days before publication',
-                dueAt: '2026-08-20',
-                dismissed: false,
-                metadata: { sponsorBookingId: 'booking-1' },
-              }],
-            },
+            notifications: [{
+              id: 'alert-1',
+              message: 'Sponsor booking materials are missing 10 days before publication',
+              dueAt: '2026-08-20',
+              dismissed: false,
+              metadata: { sponsorBookingId: 'booking-1' },
+            }],
           },
         }));
       await page.route('**/work/api/sponsor-crm/**', async (route) => {
@@ -159,12 +157,9 @@ test.describe('production sponsor CRM communications portal', () => {
                 hmacAcceptedVersions: ['v1'],
               },
               permissions,
-              // Newest drafts belong to the first page once they exist, matching
-              // descending recency ordering and making review state immediately
-              // discoverable after reload.
               items: pageTwo
                 ? [...draftDtos, ...attempts.slice(3)]
-                : [...draftDtos, suggestion, ...attempts.slice(0, 3)],
+                : [suggestion, ...attempts.slice(0, 3)],
               nextCursor: pageTwo ? null : 'safe-page-2',
             },
           });
@@ -272,8 +267,6 @@ test.describe('production sponsor CRM communications portal', () => {
       await expect(page.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
       await page.getByRole('button', { name: 'Open booking' }).first().click();
       await expect(page.locator('[data-crm-communications]')).toContainText('Booking confirmed with an active recipient');
-      await page.getByRole('button', { name: 'Load more' }).click();
-      await expect(page.locator('[data-crm-communications]')).toContainText('All communication history loaded.');
     };
     const captureCommunications = async (page, screenshotPath) => {
       await page.locator('[data-crm-communications]').evaluate((source) => {
@@ -445,10 +438,6 @@ test.describe('production sponsor CRM communications portal', () => {
     adminPage.off('request', recordMutation);
     expect(mutationPaths).toHaveLength(1);
     expect(mutationPaths[0]).toMatch(/\/approve$/);
-    await adminPage.getByRole('button', { name: 'Load more' }).click();
-    await expect(adminPage.locator('[data-crm-communications]')).toContainText(
-      'All communication history loaded.',
-    );
     await expect(queuedCards).toHaveCount(queuedBeforeApproval + 1);
     const claimedDraft = adminPage.locator('[data-crm-communications] [data-communication-state="claimed"]');
     await expect(claimedDraft).toContainText('Draft version 1');
@@ -463,8 +452,8 @@ test.describe('production sponsor CRM communications portal', () => {
 
     const disabledContext = await browser.newContext({ baseURL: server.baseURL });
     const disabledPage = await disabledContext.newPage();
-    await disabledPage.route('**/work/api/notifications*', (route) =>
-      route.fulfill({ json: { notifications: { items: [] } } }));
+    await disabledPage.route('**/work/api/notifications', (route) =>
+      route.fulfill({ json: { notifications: [] } }));
     await disabledPage.route('**/work/api/sponsor-crm/**', (route) => {
       const url = new URL(route.request().url());
       const pathname = url.pathname;
