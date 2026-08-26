@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 import re
@@ -46,6 +47,8 @@ REQUIRED_WORKFLOW_PATHS = [
 WORKFLOW_TRIGGER_EVENTS = ("push", "pull_request")
 CANONICAL_PLANNING_DOCS_TEST_PATH = "tests/planning_docs/**"
 STALE_PLANNING_DOCS_TEST_PATH = "tests/planningdocs/**"
+CLEAN_HELP_DESCRIPTION = "Remove root generated search index and backend dist."
+STALE_WORK_ENGINE_HELP_PHRASE = "work-engine dist"
 TASK_TEMPLATE_SECTIONS = [
     "summary",
     "purpose",
@@ -114,6 +117,16 @@ PROCESS_CONTROLS = {
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*]\((?P<target>[^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(?P<title>.+?)\s*#*\s*$", re.MULTILINE)
 SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
+MAKE_HELP_ENTRY_RE = re.compile(
+    r"^\t@printf '%(?:-\d+)?s %s(?:\\n)?'"
+    r"\s+'make\s+(?P<target>[^\s']+)[^']*'"
+    r"\s+'(?P<description>[^']*)'\s*$"
+    ,
+    re.MULTILINE,
+)
+MAKE_TARGET_DEFINITION_RE = re.compile(
+    r"^(?P<targets>[^\t#=\s][^:=]*):(?:[^=]|$)", re.MULTILINE
+)
 
 
 
@@ -155,8 +168,59 @@ def validate(repo_root: Path) -> list[str]:
     violations.extend(validate_process_controls(repo_root))
     violations.extend(validate_doc_registry(repo_root))
     violations.extend(validate_task_templates(repo_root))
+    violations.extend(validate_makefile_help(repo_root))
     violations.extend(validate_workflow(repo_root))
     return violations
+
+
+def validate_makefile_help(repo_root: Path) -> list[str]:
+    """Keep the developer-facing Makefile menu accurate and executable."""
+    makefile = repo_root / "Makefile"
+    if not makefile.exists():
+        return ["Makefile: file is required"]
+
+    text = makefile.read_text(encoding="utf-8")
+    entries = _makefile_help_entries(text)
+    violations: list[str] = []
+
+    entry_counts = Counter(target for target, _description in entries)
+    for target, count in sorted(entry_counts.items()):
+        if count > 1:
+            violations.append(f"Makefile help advertises {target} {count} times")
+
+    for target, description in entries:
+        if STALE_WORK_ENGINE_HELP_PHRASE in description.lower():
+            violations.append(f"Makefile help for {target} contains retired work-engine wording")
+
+    clean_entries = [entry for entry in entries if entry[0] == "clean"]
+    if not clean_entries:
+        violations.append("Makefile help does not advertise clean")
+    else:
+        for _target, description in clean_entries:
+            if description != CLEAN_HELP_DESCRIPTION:
+                violations.append(
+                    "Makefile clean help must state that it removes the root generated "
+                    f"search index and backend dist, got: {description}"
+                )
+
+    defined_targets = _makefile_targets(text)
+    for target in sorted(set(entry_counts) - defined_targets):
+        violations.append(f"Makefile help advertises nonexistent target: {target}")
+    return violations
+
+
+def _makefile_help_entries(makefile_text: str) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    for match in MAKE_HELP_ENTRY_RE.finditer(makefile_text):
+        entries.append((match.group("target"), match.group("description")))
+    return entries
+
+
+def _makefile_targets(makefile_text: str) -> set[str]:
+    targets: set[str] = set()
+    for match in MAKE_TARGET_DEFINITION_RE.finditer(makefile_text):
+        targets.update(match.group("targets").split())
+    return targets
 
 
 def protected_markdown_files(repo_root: Path) -> list[Path]:
