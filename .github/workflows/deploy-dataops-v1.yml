@@ -90,9 +90,10 @@ jobs:
     env:
       AUTH_BASE_URL: https://auth.dtcdev.click
       AUTH_USER_POOL_ID: us-east-1_H7nJu52Bs
-      AUTH_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs
-      AUTH_JWKS_URL: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_H7nJu52Bs/.well-known/jwks.json
-      AUTH_CLIENT_ID: 1kjv61esdjs3003s8u42sgr3hf
+      # AUTH_ISSUER, AUTH_JWKS_URL, and AUTH_CLIENT_ID are resolved from the
+      # shared-auth stack's own outputs in the "Resolve shared auth client"
+      # step below, not hardcoded here — a hardcoded client_id goes stale
+      # silently whenever the Cognito app client is recreated.
       AUTH_CALLBACK_URL: https://ops.dtcdev.click/auth/callback
       AUTH_LOGOUT_URL: https://ops.dtcdev.click/
       AUTH_SESSION_LIFETIME_SECONDS: 28800
@@ -164,6 +165,17 @@ jobs:
           role-session-name: dataops-v1-deploy
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Resolve shared auth client
+        run: |
+          auth_output() {
+            aws cloudformation describe-stacks --region us-east-1 --stack-name dtcdev-shared-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          {
+            echo "AUTH_CLIENT_ID=$(auth_output DataOpsClientId)"
+            echo "AUTH_ISSUER=$(auth_output IssuerUrl)"
+            echo "AUTH_JWKS_URL=$(auth_output JwksUrl)"
+          } >> "$GITHUB_ENV"
 
       - name: Build SAM artifact
         run: make sam-build
