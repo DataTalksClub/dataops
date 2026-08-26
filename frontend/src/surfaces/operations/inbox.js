@@ -1,4 +1,6 @@
 import { createCollectionLoader } from "../../core/collection-loader.js";
+import { renderDataSummary } from "../operations-overview.js";
+import { createIntakeCaptureSurface } from "./inbox-capture.js";
 
 export function createInboxSurface(context) {
   const {
@@ -10,6 +12,7 @@ export function createInboxSurface(context) {
     documentList,
     escapeHtml,
     getActiveWorkspaceRoute,
+    getActiveWorkspaceRouteToken = () => undefined,
     getActiveWorkspaceView,
     isOperationsHomeVisible,
     isMobileShell,
@@ -22,11 +25,9 @@ export function createInboxSurface(context) {
     refreshDocuments,
     renderEntityLoadState,
     renderHonestState,
-    reportError,
     request,
     scheduleAnimationFrame,
     setRouteTitle,
-    setStatus,
     state,
     tasksFromWorkPayload,
     todayIsoDate,
@@ -35,8 +36,20 @@ export function createInboxSurface(context) {
   } = context;
   const { intakeActionMarkup, renderIntakeHistoryMarkup, submitIntakeAction } =
     context;
+  const document = context.document || documentList?.ownerDocument || globalThis.document;
 
   let intakeCardsLoader;
+  let intakeRefreshSequence = 0;
+
+  const { renderManualIntakeForm } = createIntakeCaptureSurface({
+    ...context,
+    refreshIntakeSnapshot: (...args) => context.refreshIntakeSnapshot(...args),
+    renderInboxSurface: (...args) => renderInboxSurface(...args),
+  });
+
+  function routeIsFresh(token) {
+    return token === undefined || token === null || isWorkspaceRouteFresh(token);
+  }
 
   function intakeMatchesFilter(item, filter) {
     const status = String(item?.status || "new");
@@ -121,6 +134,8 @@ export function createInboxSurface(context) {
       error: previous.error || "",
       busy: previous.busy || false,
       status: previous.status || "",
+      phase: previous.phase || "idle",
+      routeToken: previous.routeToken ?? getActiveWorkspaceRouteToken(),
     };
   }
 
@@ -147,6 +162,8 @@ export function createInboxSurface(context) {
       error: "",
       busy: false,
       status: "",
+      phase: "idle",
+      routeToken: getActiveWorkspaceRouteToken(),
     };
   }
 
@@ -213,6 +230,7 @@ export function createInboxSurface(context) {
   }
 
   async function refreshIntakeSnapshot(options = {}) {
+    const sequence = ++intakeRefreshSequence;
     let intakeError = null;
     intakeCardsLoader = createCollectionLoader({
       request,
@@ -221,18 +239,29 @@ export function createInboxSurface(context) {
     });
 
     const cardsPromise = intakeCardsLoader.load();
-    const [intakeResult] = await Promise.allSettled([
+    const [intakeResult, cardsResult] = await Promise.allSettled([
       request(workApiUrl("/api/intake")),
       cardsPromise,
     ]);
     if (intakeResult.status === "rejected") {
       intakeError = intakeResult.reason?.message || "Inbox could not be loaded";
     }
-    let cardPage = await cardsPromise;
+    let cardPage = cardsResult.status === "fulfilled"
+      ? cardsResult.value
+      : intakeCardsLoader.getSnapshot();
+    if (cardsResult.status === "rejected") {
+      cardPage = {
+        ...cardPage,
+        failed: true,
+        error: cardsResult.reason?.message || "Card relationships could not be loaded",
+      };
+    }
     while (cardPage.moreAvailable && !cardPage.failed) {
       cardPage = await intakeCardsLoader.loadMore();
     }
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+    if (sequence !== intakeRefreshSequence || !routeIsFresh(options.token)) {
+      return { applied: false };
+    }
     const intakeItems =
       intakeResult.status === "fulfilled" &&
       Array.isArray(intakeResult.value?.items)
@@ -263,10 +292,17 @@ export function createInboxSurface(context) {
       isOperationsHomeVisible()
     )
       renderInboxSurface();
+    return {
+      applied: true,
+      loaded: state.intake.loaded,
+      error: state.intake.error,
+      itemCount: state.intake.items.length,
+    };
   }
 
-  async function retryInboxCards() {
+  async function retryInboxCards(options = {}) {
     if (!intakeCardsLoader || state.intake.cardsLoading) return;
+    const routeToken = options.token ?? getActiveWorkspaceRouteToken();
     const current = intakeCardsLoader.getSnapshot();
     state.intake.cardsLoading = true;
     state.intake.cardsError = "";
@@ -280,6 +316,7 @@ export function createInboxSurface(context) {
     while (cardPage.moreAvailable && !cardPage.failed) {
       cardPage = await intakeCardsLoader.loadMore();
     }
+    if (!routeIsFresh(routeToken)) return { applied: false };
     state.intake = {
       ...state.intake,
       cards: cardPage.items || [],
@@ -291,6 +328,7 @@ export function createInboxSurface(context) {
         : "",
     };
     renderInboxSurface();
+    return { applied: true, error: state.intake.cardsError };
   }
 
   function renderIntakeCardsState() {
@@ -387,25 +425,26 @@ export function createInboxSurface(context) {
     renderInboxSurface();
   }
 
-  async function mutateIntake(itemId, action, data, successMessage) {
-    try {
-      const payload = await request(
-        workApiUrl(`/api/intake/${encodeURIComponent(itemId)}/${action}`),
-        {
-          method: "POST",
-          body: JSON.stringify(data || {}),
-        },
-      );
-      setStatus(successMessage);
-      await refreshIntakeSnapshot({ rerender: true });
-      return payload;
-    } catch (error) {
-      reportError(error.message || "Intake action failed");
-      return null;
-    }
-  }
-
   function renderInboxSurface() {
+    const currentToken = getActiveWorkspaceRouteToken();
+    if (
+      state.intakeMutation.itemId &&
+      !state.intakeMutation.busy &&
+      state.intakeMutation.routeToken !== undefined &&
+      state.intakeMutation.routeToken !== currentToken
+    ) {
+      state.intakeMutation = {
+        itemId: "",
+        action: "",
+        values: {},
+        focus: null,
+        error: "",
+        busy: false,
+        status: "",
+        phase: "idle",
+        routeToken: currentToken,
+      };
+    }
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     libraryTitle.textContent = "Inbox";
@@ -419,6 +458,40 @@ export function createInboxSurface(context) {
     intro.textContent =
       "Capture raw operational inputs, then attach, convert, defer, resolve, or prepare them for an assistant.";
     wrap.append(intro);
+    const inboxErrors = [
+      state.intake.error,
+      state.intake.cardsError &&
+        (state.intake.cardsLoaded
+          ? `Some Card relationships are unavailable: ${state.intake.cardsError}`
+          : state.intake.cardsError),
+    ].filter(Boolean);
+    const retryInbox = async () => {
+      const token = getActiveWorkspaceRouteToken();
+      if (state.intake.error) {
+        await refreshIntakeSnapshot({ token, rerender: false });
+      } else {
+        await retryInboxCards({ token });
+      }
+      if (routeIsFresh(token)) renderInboxSurface();
+    };
+    wrap.append(
+      renderDataSummary({
+        id: "inbox",
+        label: "Inbox",
+        loaded: state.intake.loaded,
+        errors: inboxErrors,
+        empty: state.intake.loaded && state.intake.items.length === 0,
+        messages: {
+          loading: "Fetching intake items and Card relationships.",
+          unavailable: "Inbox is unavailable; no intake rows are shown until it reloads.",
+          partial: "Inbox items are loaded, but some Card relationships are unavailable.",
+          empty: "No intake items have been captured yet.",
+          ready: `${state.intake.items.length} intake item${state.intake.items.length === 1 ? "" : "s"} loaded.`,
+        },
+        retryLabel: "Retry loading Inbox",
+        onRetry: retryInbox,
+      }),
+    );
     wrap.append(renderManualIntakeForm());
 
     const filters = document.createElement("nav");
@@ -451,20 +524,11 @@ export function createInboxSurface(context) {
     if (cardsState) wrap.append(cardsState);
 
     if (state.intake.error) {
-      wrap.append(renderHonestState("Inbox unavailable", state.intake.error));
       documentList.replaceChildren(wrap);
-      setStatus(`Inbox unavailable: ${state.intake.error}`);
       return;
     }
     if (!state.intake.loaded) {
-      wrap.append(
-        renderHonestState(
-          "Loading inbox",
-          "Fetching intake items and Card relationships.",
-        ),
-      );
       documentList.replaceChildren(wrap);
-      setStatus("Loading inbox…");
       return;
     }
 
@@ -488,79 +552,6 @@ export function createInboxSurface(context) {
           detail.scrollIntoView({ block: "start" });
       });
     }
-    setStatus(
-      `${filtered.length} inbox item${filtered.length === 1 ? "" : "s"} in ${state.intake.filter}.`,
-    );
-  }
-
-  function renderManualIntakeForm() {
-    const panel = document.createElement("details");
-    panel.className = "intake-panel";
-    panel.innerHTML = `
-      <summary>Capture a new intake item</summary>
-      <div class="intake-create-grid">
-        <label class="wide">
-          Note
-          <textarea
-            data-intake-create-note
-            placeholder="Paste the request, context, and safe links"
-          ></textarea>
-        </label>
-        <label>
-          Title
-          <input data-intake-create-title placeholder="Short subject">
-        </label>
-        <label>
-          Data class
-          <select data-intake-create-class>
-            <option>internal</option>
-            <option>public</option>
-            <option>private</option>
-            <option>sensitive</option>
-          </select>
-        </label>
-        <label>
-          Tags
-          <input data-intake-create-tags placeholder="comma,separated">
-        </label>
-        <button class="primary-button" data-intake-create>Capture intake</button>
-      </div>
-    `;
-    panel
-      .querySelector("[data-intake-create]")
-      .addEventListener("click", async () => {
-        const note = panel
-          .querySelector("[data-intake-create-note]")
-          .value.trim();
-        const title = panel
-          .querySelector("[data-intake-create-title]")
-          .value.trim();
-        if (!note && !title)
-          return reportError("Add a note or title before capturing intake.");
-        try {
-          await request(workApiUrl("/api/intake"), {
-            method: "POST",
-            body: JSON.stringify({
-              source: "manual",
-              title: title || note.split(/\r?\n/)[0],
-              note: note || title,
-              dataClass: panel.querySelector("[data-intake-create-class]")
-                .value,
-              tags: panel
-                .querySelector("[data-intake-create-tags]")
-                .value.split(",")
-                .map((tag) => tag.trim())
-                .filter(Boolean),
-            }),
-          });
-          state.intake.filter = "actionable";
-          setStatus("Manual intake captured.");
-          await refreshIntakeSnapshot({ rerender: true });
-        } catch (error) {
-          reportError(error.message || "Could not capture intake");
-        }
-      });
-    return panel;
   }
 
   function renderIntakeQueue(items) {
@@ -771,9 +762,26 @@ export function createInboxSurface(context) {
           submitIntakeAction(panel, item, button.dataset.intakeSubmit),
         );
       });
+    panel.querySelectorAll("[data-intake-reload]").forEach((button) => {
+      button.addEventListener("click", () => {
+        void context.reloadIntakeAction(item);
+      });
+    });
+    panel.querySelectorAll("[data-intake-discard]").forEach((button) => {
+      button.addEventListener("click", () => context.discardIntakeAction(item));
+    });
     if (state.intakeMutation.itemId === item.id && state.intakeMutation.error) {
       const error = panel.querySelector("[data-intake-inline-error]");
-      if (error) scheduleAnimationFrame(() => error.focus());
+      const focusField = state.intakeMutation.focus?.field;
+      scheduleAnimationFrame(() => {
+        const target = focusField
+          ? [...panel.querySelectorAll("input,select,textarea")].find(
+              (field) => field.name === focusField,
+            )
+          : error;
+        const fallback = target || error;
+        if (fallback?.isConnected) fallback.focus();
+      });
     }
     return panel;
   }

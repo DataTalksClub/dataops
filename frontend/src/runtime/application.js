@@ -594,6 +594,7 @@ const {
   documentList,
   escapeHtml,
   getActiveWorkspaceRoute,
+  getActiveWorkspaceRouteToken,
   getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
   isMobileShell,
   isOperationsHomeVisible,

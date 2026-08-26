@@ -53,6 +53,18 @@ export function createWorkspaceState(context) {
     error: "",
     busy: false,
     status: "",
+    phase: "idle",
+    routeToken: 0,
+  };
+  let assistantMutation = {
+    target: "",
+    action: "",
+    values: {},
+    error: "",
+    busy: false,
+    status: "",
+    phase: "idle",
+    routeToken: 0,
   };
   let assistantQueue = { filter: "podcast", selectedJobId: null };
   let qualityFilters = {
@@ -149,6 +161,12 @@ export function createWorkspaceState(context) {
     set intakeMutation(snapshot) {
       intakeMutation = snapshot;
     },
+    get assistantMutation() {
+      return assistantMutation;
+    },
+    set assistantMutation(snapshot) {
+      assistantMutation = snapshot;
+    },
     get assistantQueue() {
       return assistantQueue;
     },
@@ -222,6 +240,12 @@ export function createWorkspaceState(context) {
     },
     set assistantSnapshot(snapshot) {
       assistantSnapshot = snapshot;
+    },
+    get assistantMutation() {
+      return assistantMutation;
+    },
+    set assistantMutation(snapshot) {
+      assistantMutation = snapshot;
     },
     get docsSnapshot() {
       return docsSnapshot;

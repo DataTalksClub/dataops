@@ -244,6 +244,16 @@ function operationState(overrides = {}) {
       busy: false,
       status: "",
     },
+    assistantMutation: {
+      target: "",
+      action: "",
+      values: {},
+      error: "",
+      busy: false,
+      status: "",
+      phase: "idle",
+      routeToken: 1,
+    },
     assistantQueue: { filter: "all", selectedJobId: null },
     assistantSnapshot: { loaded: true, jobs: [], errors: [] },
     artifactSnapshot: { loaded: true, artifacts: [], errors: [] },
@@ -267,6 +277,7 @@ function createOperationsHarness(options = {}) {
   const openedTasks = [];
   const openedCards = [];
   const state = operationState(options.state);
+  let activeRouteToken = options.routeToken ?? 1;
   let route = options.route || {
     path: "/inbox",
     params: new URLSearchParams(),
@@ -284,10 +295,12 @@ function createOperationsHarness(options = {}) {
     documentList,
     escapeHtml,
     getActiveWorkspaceRoute: () => route,
+    getActiveWorkspaceRouteToken: () => activeRouteToken,
     getActiveWorkspaceView: () => route.path.slice(1),
     isMobileShell: () => false,
     isOperationsHomeVisible: () => true,
-    isWorkspaceRouteFresh: () => options.fresh !== false,
+    isWorkspaceRouteFresh: (token) =>
+      options.fresh !== false && token === activeRouteToken,
     libraryTitle,
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
@@ -340,6 +353,9 @@ function createOperationsHarness(options = {}) {
     requests,
     setRoute: (value) => {
       route = value;
+    },
+    setActiveRouteToken: (value) => {
+      activeRouteToken = value;
     },
     state,
     statuses,
@@ -939,9 +955,10 @@ describe("Operations surface boundary", () => {
     const capture = manualPanel.querySelector("[data-intake-create]");
     await capture.click();
     assert.equal(
-      harness.errors.at(-1),
+      harness.documentList.querySelector(".form-feedback-error").textContent,
       "Add a note or title before capturing intake.",
     );
+    assert.deepEqual(harness.errors, [], "capture errors stay in the form");
 
     manualPanel.querySelector("[data-intake-create-note]").value =
       "Please prepare the August issue\nWith the latest links";
@@ -961,7 +978,113 @@ describe("Operations surface boundary", () => {
       tags: ["newsletter", "urgent"],
     });
     assert.equal(harness.state.intake.filter, "actionable");
-    assert.ok(harness.statuses.includes("Manual intake captured."));
+    assert.equal(harness.statuses.length, 0, "capture does not write shell status");
+    assert.match(
+      harness.documentList.querySelector(".form-feedback-status").textContent,
+      /visible in the refreshed Inbox/,
+    );
+  });
+
+  test("keeps Inbox collection states and action progress in the owning surface", async () => {
+    const item = { id: "intake-pending", title: "Pending request", status: "new" };
+    let resolveAction;
+    let actionCalls = 0;
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        intake: {
+          ...operationState().intake,
+          loaded: false,
+          items: [],
+        },
+      },
+      request: async (url) => {
+        if (url === "/api/intake/intake-pending/block") {
+          actionCalls += 1;
+          return new Promise((resolve) => {
+            resolveAction = resolve;
+          });
+        }
+        if (url === "/api/intake") {
+          return { items: [{ ...item, status: "blocked" }] };
+        }
+        if (url === "/api/cards") return { cards: [] };
+        return {};
+      },
+    });
+    harness.api.renderInboxSurface();
+    let summary = harness.documentList.querySelector(
+      '[data-summary-id="inbox"]',
+    );
+    assert.equal(summary.dataset.summaryState, "loading");
+
+    harness.state.intake = {
+      ...harness.state.intake,
+      loaded: false,
+      error: "Inbox API offline",
+    };
+    harness.api.renderInboxSurface();
+    summary = harness.documentList.querySelector('[data-summary-id="inbox"]');
+    assert.equal(summary.dataset.summaryState, "unavailable");
+    assert.match(summary.textContent, /Inbox API offline/);
+    assert.ok(summary.querySelector(".surface-summary-retry"));
+
+    harness.state.intake = {
+      ...harness.state.intake,
+      loaded: true,
+      error: "",
+      items: [item],
+      cards: [],
+      cardsLoaded: false,
+      cardsComplete: false,
+      cardsError: "Card API offline",
+    };
+    harness.api.renderInboxSurface();
+    let surface = harness.documentList;
+    summary = surface.querySelector('[data-summary-id="inbox"]');
+    assert.equal(summary.dataset.summaryState, "partial");
+    assert.match(summary.textContent, /Card API offline/);
+    assert.ok(surface.querySelector('[data-retry-inbox-cards="true"]'));
+
+    harness.state.intake = {
+      ...harness.state.intake,
+      filter: "blocked",
+      cardsLoaded: true,
+      cardsComplete: true,
+      cardsError: "",
+    };
+    harness.api.renderInboxSurface();
+    surface = harness.documentList;
+    summary = surface.querySelector('[data-summary-id="inbox"]');
+    assert.equal(summary.dataset.summaryState, "ready");
+    assert.ok(findByText(surface, "No matching intake", "strong"));
+    assert.deepEqual(harness.errors, []);
+    assert.deepEqual(harness.statuses, []);
+
+    harness.state.intake.filter = "actionable";
+    harness.state.intake.selectedId = item.id;
+    harness.api.renderInboxSurface();
+    surface = harness.documentList;
+    const block = surface
+      .querySelector(".intake-detail")
+      .querySelectorAll("[data-intake-submit]")
+      .find((button) => button.dataset.intakeSubmit === "block");
+    const details = block.closest("details");
+    details.fields.reason.value = "Waiting for confirmation";
+    const firstAttempt = block.click();
+    await nextTicks();
+    const pendingBlock = harness.documentList
+      .querySelector(".intake-detail")
+      .querySelectorAll("[data-intake-submit]")
+      .find((button) => button.dataset.intakeSubmit === "block");
+    assert.equal(harness.state.intakeMutation.busy, true);
+    assert.equal(harness.state.intakeMutation.status, "Blocked for a response…");
+    await block.click();
+    assert.equal(actionCalls, 1, "a second click cannot duplicate the mutation");
+
+    resolveAction({ item: { ...item, status: "blocked" } });
+    await firstAttempt;
+    assert.match(harness.state.intakeMutation.status, /visible in the refreshed Inbox/);
   });
 
   test("validates and submits atomic Inbox block actions, retaining conflict recovery state", async () => {
@@ -1262,6 +1385,135 @@ describe("Operations surface boundary", () => {
         (entry) => entry.url === "/api/assistant-jobs/job-failed/submit",
       ),
     );
+  });
+
+  test("keeps Assistant load and create feedback in the owning form", async () => {
+    const card = { id: "card-assistant", title: "Podcast workflow" };
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        workSnapshot: { cards: [card] },
+        assistantSnapshot: { loaded: false, jobs: [], errors: [] },
+      },
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/tasks") return { tasks: [] };
+        if (
+          url === "/api/assistant-jobs" &&
+          requestOptions.method === "POST"
+        ) {
+          const error = new Error("Synthetic route failure (503)");
+          error.status = 503;
+          throw error;
+        }
+        return { jobs: [] };
+      },
+    });
+
+    let surface = harness.api.renderAssistantsSurface();
+    let summary = surface.querySelector('[data-summary-id="assistants"]');
+    assert.equal(summary.dataset.summaryState, "loading");
+
+    harness.state.assistantSnapshot = {
+      loaded: false,
+      jobs: [],
+      errors: ["Assistant API offline"],
+    };
+    surface = harness.api.renderAssistantsSurface();
+    summary = surface.querySelector('[data-summary-id="assistants"]');
+    assert.equal(summary.dataset.summaryState, "unavailable");
+    assert.match(summary.textContent, /Assistant API offline/);
+    assert.ok(summary.querySelector(".surface-summary-retry"));
+
+    harness.state.assistantSnapshot = { loaded: true, jobs: [], errors: [] };
+    surface = harness.api.renderAssistantsSurface();
+    summary = surface.querySelector('[data-summary-id="assistants"]');
+    assert.equal(summary.dataset.summaryState, "empty");
+    const createPanel = findAllByClass(surface, "assistant-panel").find(
+      (panel) => panel.className === "assistant-panel",
+    );
+    const createForm = createPanel.querySelector(".assistant-create-form");
+    await createForm.dispatch("submit");
+    surface = harness.api.renderAssistantsSurface();
+    const validationPanel = findAllByClass(surface, "assistant-panel").find(
+      (panel) => panel.className === "assistant-panel",
+    );
+    assert.match(
+      validationPanel.querySelector(".assistant-create-feedback").textContent,
+      /Select a Card or Task/,
+    );
+    const refreshedCreatePanel = findAllByClass(
+      surface,
+      "assistant-panel",
+    ).find((panel) => panel.className === "assistant-panel");
+    const cardSelect = refreshedCreatePanel.querySelector("[data-assistant-card]");
+    const title = refreshedCreatePanel.querySelector("[data-assistant-title]");
+    cardSelect.value = card.id;
+    title.value = "Retain this assistant request";
+    await cardSelect.dispatch("change");
+    await refreshedCreatePanel
+      .querySelector("[data-assistant-create]")
+      .click();
+    harness.api.renderAssistantsSurface();
+    const failedCreatePanel = findAllByClass(
+      harness.api.renderAssistantsSurface(),
+      "assistant-panel",
+    ).find((panel) => panel.className === "assistant-panel");
+    assert.match(
+      failedCreatePanel.querySelector(".assistant-create-feedback").textContent,
+      /Synthetic route failure \(503\)/,
+    );
+    assert.equal(
+      harness.state.assistantMutation.values.title,
+      "Retain this assistant request",
+    );
+    assert.deepEqual(harness.errors, []);
+    assert.deepEqual(harness.statuses, []);
+  });
+
+  test("keeps Assistant lifecycle conflicts recoverable in job detail", async () => {
+    const job = {
+      id: "job-conflict",
+      title: "Review conflict",
+      assistantType: "podcast",
+      status: "waiting_approval",
+      attemptCount: 1,
+      maxAttempts: 2,
+    };
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        assistantSnapshot: { loaded: true, jobs: [job], errors: [] },
+        assistantQueue: { filter: "all", selectedJobId: job.id },
+      },
+      request: async (url) => {
+        if (url === "/api/assistant-jobs/job-conflict") {
+          return { job, artifacts: [], events: [] };
+        }
+        if (url === "/api/assistant-jobs/job-conflict/approve") {
+          const error = new Error("Synthetic route failure (409)");
+          error.status = 409;
+          throw error;
+        }
+        return { jobs: [job] };
+      },
+    });
+    let surface = harness.api.renderAssistantsSurface();
+    await nextTicks();
+    let detail = surface.querySelector("[data-assistant-detail]");
+    const approve = detail
+      .querySelectorAll("[data-assistant-lifecycle]")
+      .find((button) => button.dataset.assistantLifecycle === "approve");
+    await approve.click();
+    assert.match(harness.state.assistantMutation.error, /changed since it was loaded/);
+    surface = harness.api.renderAssistantsSurface();
+    await nextTicks();
+    detail = surface.querySelector("[data-assistant-detail]");
+    const feedback = detail.querySelector(".assistant-detail-feedback");
+    assert.equal(feedback.querySelector(".form-feedback-error").getAttribute("role"), "alert");
+    assert.match(feedback.textContent, /changed since it was loaded/);
+    assert.ok(detail.querySelector('[aria-label="Assistant job recovery"]'));
+    assert.deepEqual(harness.errors, []);
+    assert.deepEqual(harness.statuses, []);
   });
 
   test("renders Assistant detail failure with retry and canonical return recovery", async () => {
