@@ -133,8 +133,8 @@ export async function inspectArchives(
     manifest.exclusions.map((item) => [`${item.archive}\0${normalizedMember(item.member)}`, item]),
   );
   for (const archive of archives) {
-    const stat = await fs.stat(archive.path).catch(() => null);
-    if (!stat?.isFile() || stat.size > limits.maxArchiveBytes)
+    const stat = await fs.lstat(archive.path).catch(() => null);
+    if (!stat?.isFile() || stat.isSymbolicLink() || stat.size > limits.maxArchiveBytes)
       throw new ImportFailure("archive-size-limit", archive.alias);
     archiveFingerprints[archive.alias] = await hashFile(archive.path);
     const declared = manifest.archives.find((item) => item.alias === archive.alias)!;
@@ -225,8 +225,8 @@ export async function openArchiveMember(
   limits: InventoryLimits = DEFAULT_LIMITS,
 ): Promise<{ stream: NodeJS.ReadableStream; close: () => void }> {
   validateInventoryLimits(limits);
-  const stat = await fs.stat(archivePath).catch(() => null);
-  if (!stat?.isFile() || stat.size > limits.maxArchiveBytes)
+  const stat = await fs.lstat(archivePath).catch(() => null);
+  if (!stat?.isFile() || stat.isSymbolicLink() || stat.size > limits.maxArchiveBytes)
     throw new ImportFailure("archive-size-limit");
   if ((await hashFile(archivePath)) !== expected.archiveSha256)
     throw new ImportFailure("archive-fingerprint-mismatch");
