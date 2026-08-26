@@ -1,3 +1,8 @@
+import {
+  reportFieldValidation,
+  setFieldError,
+} from "../operations-overview.js";
+
 export function createInboxActions(context) {
   const {
     assistantJobsFromPayload,
@@ -8,6 +13,7 @@ export function createInboxActions(context) {
     documentList,
     escapeHtml,
     getActiveWorkspaceRoute,
+    getActiveWorkspaceRouteToken = () => undefined,
     getActiveWorkspaceView,
     isOperationsHomeVisible,
     isMobileShell,
@@ -20,11 +26,9 @@ export function createInboxActions(context) {
     refreshDocuments,
     renderEntityLoadState,
     renderHonestState,
-    reportError,
     request,
     scheduleAnimationFrame,
     setRouteTitle,
-    setStatus,
     state,
     tasksFromWorkPayload,
     todayIsoDate,
@@ -66,9 +70,9 @@ export function createInboxActions(context) {
             type="button"
             class="${primary ? "primary-button" : destructive ? "danger-button" : ""}"
             data-intake-submit="${action}"
-            ${mutation.busy ? "disabled" : ""}
+            ${mutation.busy ? "disabled aria-busy=\"true\"" : ""}
           >
-            ${escapeHtml(label)}
+            ${escapeHtml(mutation.busy && mutation.action === action ? `${label}…` : label)}
           </button>
         </div>
       </details>
@@ -297,27 +301,31 @@ export function createInboxActions(context) {
   }
 
   function intakeMutationFeedback(item) {
-    if (state.intakeMutation.itemId !== item.id) {
-      return `
-        <p
-          class="intake-inline-feedback"
-          data-intake-inline-error
-          tabindex="-1"
-          aria-live="polite"
-        ></p>
-      `;
-    }
-    const role = state.intakeMutation.error ? "alert" : "status";
+    if (state.intakeMutation.itemId !== item.id) return "";
+    const mutation = state.intakeMutation;
+    const failing = Boolean(mutation.error);
+    const role = failing ? "alert" : "status";
+    const live = failing ? "assertive" : "polite";
+    const recovery = failing
+      ? `
+          <div class="intake-mutation-recovery" aria-label="Intake action recovery">
+            <button type="button" data-intake-reload="${escapeHtml(item.id)}">Reload current item</button>
+            <button type="button" data-intake-discard="${escapeHtml(item.id)}">Discard draft</button>
+          </div>
+        `
+      : "";
     return `
       <p
-        class="intake-inline-feedback ${state.intakeMutation.error ? "is-error" : ""}"
+        class="intake-inline-feedback ${failing ? "is-error" : ""}"
         data-intake-inline-error
+        data-intake-feedback-state="${escapeHtml(mutation.phase || (failing ? "error" : "success"))}"
         tabindex="-1"
         role="${role}"
-        aria-live="assertive"
+        aria-live="${live}"
       >
-        ${escapeHtml(state.intakeMutation.error || state.intakeMutation.status || "")}
+        ${escapeHtml(mutation.error || mutation.status || "")}
       </p>
+      ${recovery}
     `;
   }
 
@@ -326,9 +334,11 @@ export function createInboxActions(context) {
     const details = panel
       .querySelector(`[data-intake-submit="${cssEscape(action)}"]`)
       ?.closest("details");
-    details
-      .querySelectorAll("[aria-invalid]")
-      .forEach((field) => field.removeAttribute("aria-invalid"));
+    if (!details) return;
+    details.querySelectorAll("[aria-invalid]").forEach((field) => {
+      field.removeAttribute("aria-invalid");
+      setFieldError(field, "");
+    });
     const values = Object.fromEntries(
       [...details.querySelectorAll("input,select,textarea")].map((field) => [
         field.name,
@@ -349,26 +359,23 @@ export function createInboxActions(context) {
         note: "Operational note",
         nextFollowUpAt: "Next follow-up",
       };
+      const message = `${labels[missing.name] || "This field"} is required.`;
       state.intakeMutation = {
         itemId: item.id,
         action,
         values,
         focus: { field: missing.name },
-        error: `${labels[missing.name] || "This field"} is required.`,
+        error: message,
         busy: false,
         status: "",
+        phase: "error",
+        routeToken: getActiveWorkspaceRouteToken(),
       };
-      missing.setAttribute("aria-invalid", "true");
-      const error = panel.querySelector("[data-intake-inline-error]");
-      if (error) {
-        error.classList.add("is-error");
-        error.setAttribute("role", "alert");
-        error.setAttribute("aria-live", "assertive");
-        error.textContent = state.intakeMutation.error;
-      }
-      missing.focus();
+      reportFieldValidation([[missing, message]]);
+      renderInboxSurface();
       return;
     }
+    const routeToken = getActiveWorkspaceRouteToken();
     state.intakeMutation = {
       itemId: item.id,
       action,
@@ -376,7 +383,9 @@ export function createInboxActions(context) {
       focus: state.intakeMutation.focus || null,
       error: "",
       busy: true,
-      status: "Saving…",
+      status: `${humanizeIntakeAction(action)}…`,
+      phase: "pending",
+      routeToken,
     };
     renderInboxSurface();
     const payloadByAction = {
@@ -417,6 +426,20 @@ export function createInboxActions(context) {
         workApiUrl(`/api/intake/${encodeURIComponent(item.id)}/${action}`),
         { method: "POST", body: JSON.stringify(payloadByAction[action]) },
       );
+      const refreshed = await refreshIntakeSnapshot({
+        token: routeToken,
+        rerender: false,
+      });
+      if (!isWorkspaceRouteFresh(routeToken)) return;
+      if (
+        refreshed?.applied === false ||
+        state.intake.error ||
+        !state.intake.items.some((candidate) => candidate.id === item.id)
+      ) {
+        throw new Error(
+          "The Inbox could not confirm this change after saving. Retry loading the Inbox.",
+        );
+      }
       state.intakeMutation = {
         itemId: item.id,
         action: "",
@@ -424,9 +447,10 @@ export function createInboxActions(context) {
         focus: null,
         error: "",
         busy: false,
-        status: `${humanizeIntakeAction(action)} recorded.`,
+        status: `${humanizeIntakeAction(action)} is visible in the refreshed Inbox.`,
+        phase: "success",
+        routeToken,
       };
-      await refreshIntakeSnapshot();
       renderInboxSurface();
       const createdTaskId =
         result.task?.id || (action === "attach" ? values.taskId : "");
@@ -434,17 +458,88 @@ export function createInboxActions(context) {
       else if (action === "attach" && values.cardId)
         openCardPanel(values.cardId);
     } catch (error) {
+      if (!isWorkspaceRouteFresh(routeToken)) return;
+      const conflict = error.status === 409;
       state.intakeMutation = {
         itemId: item.id,
         action,
         values,
         focus: state.intakeMutation.focus || null,
-        error: error.message || "Intake action failed",
+        error: conflict
+          ? `This intake changed since it was loaded. Your entries are kept. Reload the current item, then retry this action. (${error.message || "conflict"})`
+          : error.message || "Intake action failed. Select the action to retry.",
         busy: false,
         status: "",
+        phase: conflict ? "conflict" : "error",
+        routeToken,
       };
       renderInboxSurface();
     }
+  }
+
+  async function reloadIntakeAction(item) {
+    const mutation = state.intakeMutation;
+    if (mutation.itemId !== item.id || mutation.busy) return;
+    const routeToken = getActiveWorkspaceRouteToken();
+    state.intakeMutation = {
+      ...mutation,
+      busy: true,
+      error: "",
+      status: "Reloading the current intake…",
+      phase: "pending",
+      routeToken,
+    };
+    renderInboxSurface();
+    try {
+      const refreshed = await refreshIntakeSnapshot({
+        token: routeToken,
+        rerender: false,
+      });
+      if (!isWorkspaceRouteFresh(routeToken)) return;
+      const found = state.intake.items.some((candidate) => candidate.id === item.id);
+      state.intakeMutation = {
+        ...state.intakeMutation,
+        busy: false,
+        error:
+          refreshed?.applied === false || state.intake.error || !found
+            ? "The current intake could not be reloaded. Try Reload current item again."
+            : "The current intake is refreshed. Review it, then retry the action.",
+        status: "",
+        phase:
+          refreshed?.applied === false || state.intake.error || !found
+            ? "error"
+            : "success",
+        routeToken,
+      };
+      renderInboxSurface();
+    } catch (error) {
+      if (!isWorkspaceRouteFresh(routeToken)) return;
+      state.intakeMutation = {
+        ...state.intakeMutation,
+        busy: false,
+        error: `Could not reload the current intake: ${error.message || "request failed"}`,
+        status: "",
+        phase: "error",
+        routeToken,
+      };
+      renderInboxSurface();
+    }
+  }
+
+  function discardIntakeAction(item) {
+    if (state.intakeMutation.itemId !== item.id || state.intakeMutation.busy) return;
+    state.intakeMutation = {
+      itemId: "",
+      action: "",
+      values: {},
+      focus: null,
+      error: "",
+      busy: false,
+      status: "",
+      phase: "idle",
+      routeToken: getActiveWorkspaceRouteToken(),
+    };
+    renderInboxSurface();
   }
 
   function humanizeIntakeAction(action) {
@@ -453,6 +548,9 @@ export function createInboxActions(context) {
         "manual-created": "Captured manually",
         created: "Captured",
         updated: "Updated details",
+        attach: "Attached to work",
+        "convert-task": "Converted to task",
+        block: "Blocked for a response",
         attached: "Attached to work",
         "converted-to-task": "Converted to task",
         duplicate: "Marked as duplicate",
@@ -534,7 +632,9 @@ export function createInboxActions(context) {
 
   return {
     intakeActionMarkup,
+    reloadIntakeAction,
     renderIntakeHistoryMarkup,
+    discardIntakeAction,
     submitIntakeAction,
   };
 }

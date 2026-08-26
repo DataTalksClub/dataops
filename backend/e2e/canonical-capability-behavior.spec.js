@@ -1434,7 +1434,8 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     const capture = page.locator('.intake-panel').filter({ hasText: 'Capture a new intake item' });
     await capture.locator('summary').click();
     await capture.getByRole('button', { name: 'Capture intake' }).click();
-    await expect(page.locator('#status-text')).toContainText('Add a note or title before capturing intake');
+    await expect(capture.locator('.intake-create-feedback .form-feedback-error'))
+      .toContainText('Add a note or title before capturing intake');
 
     const originalResponse = await context.request.post('/api/intake', { data: {
       source: 'manual', title: unique('Synthetic original intake'), note: 'Original public-safe request', dataClass: 'internal',
@@ -1490,7 +1491,8 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await capture.locator('[data-intake-create-note]').fill('Retain this safe input on failure');
     await setFaults(context.request, [{ method: 'POST', path: '/api/intake', status: 503 }]);
     await capture.getByRole('button', { name: 'Capture intake' }).click();
-    await expect(page.locator('#status-text')).toContainText('Synthetic route failure (503)');
+    await expect(capture.locator('.intake-create-feedback .form-feedback-error'))
+      .toContainText('Synthetic route failure (503)');
     await expect(capture.locator('[data-intake-create-title]')).toHaveValue(failedTitle);
     await clearFaults(context.request);
     await capture.getByRole('button', { name: 'Capture intake' }).click();

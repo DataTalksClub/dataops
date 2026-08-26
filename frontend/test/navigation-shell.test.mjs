@@ -402,6 +402,8 @@ describe("canonical navigation shell behavior", () => {
       error: "",
       busy: false,
       status: "",
+      phase: "idle",
+      routeToken: 2,
     });
 
     await harness.shell.navigateCanonicalWorkspace(

@@ -1,3 +1,11 @@
+import {
+  createFormFeedback,
+  renderDataSummary,
+  reportFieldValidation,
+  setFieldError,
+} from "../operations-overview.js";
+import { createAssistantCreateSurface } from "./assistants-create.js";
+
 export function createAssistantsSurface(context) {
   const {
     assistantJobsFromPayload,
@@ -8,6 +16,7 @@ export function createAssistantsSurface(context) {
     documentList,
     escapeHtml,
     getActiveWorkspaceRoute,
+    getActiveWorkspaceRouteToken = () => undefined,
     getActiveWorkspaceView,
     isOperationsHomeVisible,
     isMobileShell,
@@ -20,30 +29,118 @@ export function createAssistantsSurface(context) {
     refreshDocuments,
     renderEntityLoadState,
     renderHonestState,
-    reportError,
     request,
     scheduleAnimationFrame,
     setRouteTitle,
-    setStatus,
     state,
     tasksFromWorkPayload,
     todayIsoDate,
     workApiUrl,
     workTaskTitle,
   } = context;
+  const document = context.document || documentList?.ownerDocument || globalThis.document;
+
+  let assistantRefreshSequence = 0;
+
+  function routeIsFresh(token) {
+    return token === undefined || token === null || isWorkspaceRouteFresh(token);
+  }
+
+  function assistantMutation() {
+    if (!state.assistantMutation) {
+      state.assistantMutation = {
+        target: "",
+        action: "",
+        values: {},
+        error: "",
+        busy: false,
+        status: "",
+        phase: "idle",
+        routeToken: getActiveWorkspaceRouteToken(),
+      };
+    }
+    return state.assistantMutation;
+  }
+
+  function resetAssistantMutation() {
+    state.assistantMutation = {
+      target: "",
+      action: "",
+      values: {},
+      error: "",
+      busy: false,
+      status: "",
+      phase: "idle",
+      routeToken: getActiveWorkspaceRouteToken(),
+    };
+  }
+
+  function renderAssistantFeedback(node, mutation) {
+    const feedback = createFormFeedback();
+    feedback.node.classList.add("assistant-detail-feedback");
+    node.append(feedback.node);
+    if (mutation?.phase === "pending") feedback.pending(mutation.status);
+    else if (mutation?.error) {
+      if (mutation.phase === "conflict") feedback.conflict(mutation.error);
+      else feedback.failure(mutation.error);
+    } else if (mutation?.status) feedback.success(mutation.status);
+    return feedback;
+  }
+
+  function assistantVisibleMessage(title, detail, role = "status") {
+    const node = renderHonestState(title, detail);
+    node.setAttribute("role", role);
+    node.setAttribute("aria-live", role === "alert" ? "assertive" : "polite");
+    return node;
+  }
+
+  const { renderAssistantCreatePanel } = createAssistantCreateSurface({
+    ...context,
+    assistantMutation,
+    document,
+    refreshAssistantSnapshot: (...args) =>
+      refreshOperationsAssistantSnapshot(...args),
+    resetAssistantMutation,
+    routeIsFresh,
+  });
 
   function renderAssistantsSurface() {
+    const currentToken = getActiveWorkspaceRouteToken();
+    const currentMutation = assistantMutation();
+    if (
+      currentMutation.target &&
+      !currentMutation.busy &&
+      currentMutation.routeToken !== undefined &&
+      currentMutation.routeToken !== currentToken
+    ) {
+      resetAssistantMutation();
+    }
     const section = document.createElement("section");
     section.className = "assistant-workspace";
     section.setAttribute("aria-label", "Assistant jobs");
+    const snapshot = state.assistantSnapshot;
+    section.append(
+      renderDataSummary({
+        id: "assistants",
+        label: "Assistants",
+        loaded: snapshot.loaded,
+        errors: snapshot.errors,
+        empty: snapshot.loaded && snapshot.jobs.length === 0,
+        messages: {
+          loading: "Loading assistant jobs from the work API.",
+          unavailable: "Assistant jobs unavailable; no lifecycle state is being invented.",
+          partial: "Assistant jobs are only partially available.",
+          empty: "No assistant jobs have been created yet.",
+          ready: `${snapshot.jobs.length} assistant job${snapshot.jobs.length === 1 ? "" : "s"} loaded.`,
+        },
+        retryLabel: "Retry loading assistants",
+        onRetry: async () => {
+          const token = getActiveWorkspaceRouteToken();
+          await refreshOperationsAssistantSnapshot({ rerender: true, token });
+        },
+      }),
+    );
     if (!state.assistantSnapshot.loaded) {
-      section.append(
-        renderHonestState(
-          "Assistant jobs unavailable",
-          state.assistantSnapshot.errors[0] ||
-            "The assistant job API is not connected in this environment.",
-        ),
-      );
       return section;
     }
 
@@ -92,7 +189,7 @@ export function createAssistantsSurface(context) {
     queue.append(heading);
     if (!filtered.length)
       queue.append(
-        renderHonestState(
+        assistantVisibleMessage(
           "No matching assistant jobs",
           "Choose another filter or request assistant help for a Card.",
         ),
@@ -108,7 +205,7 @@ export function createAssistantsSurface(context) {
     if (selectedId) renderAssistantJobDetail(detail, selectedId);
     else
       detail.append(
-        renderHonestState(
+        assistantVisibleMessage(
           "Assistant job detail",
           "Select a job to inspect inputs, events, output artifacts, and approval history.",
         ),
@@ -217,115 +314,7 @@ export function createAssistantsSurface(context) {
     return "";
   }
 
-  function renderAssistantCreatePanel() {
-    const panel = document.createElement("section");
-    panel.className = "assistant-panel";
-    const cards = state.workSnapshot.cards || [];
-    const cardOptions = cards
-      .map(
-        (card) => `
-          <option value="${escapeHtml(card.id)}">
-            ${escapeHtml(card.title || card.id)}
-          </option>
-        `,
-      )
-      .join("");
-    panel.innerHTML = `
-      <h3>Request DataOps Assistant help</h3>
-      <div class="assistant-create-grid">
-        <label>
-          Card
-          <select data-assistant-card>
-            <option value="">Select card</option>
-            ${cardOptions}
-          </select>
-        </label>
-        <label>
-          Task
-          <select data-assistant-task>
-            <option value="">Card-level job</option>
-          </select>
-        </label>
-        <label>
-          Assistant type
-          <input data-assistant-type value="podcast">
-        </label>
-        <label>
-          Title
-          <input data-assistant-title placeholder="DataOps Assistant podcast prep">
-        </label>
-        <button class="primary-button" data-assistant-create>
-          Ask DataOps Assistant
-        </button>
-      </div>
-    `;
-    const cardSelect = panel.querySelector("[data-assistant-card]");
-    const taskSelect = panel.querySelector("[data-assistant-task]");
-    cardSelect.addEventListener("change", async () => {
-      taskSelect.innerHTML = `<option value="">Card-level job</option>`;
-      if (!cardSelect.value) return;
-      try {
-        const payload = await request(
-          workApiUrl("/api/tasks", { cardId: cardSelect.value }),
-        );
-        for (const task of tasksFromWorkPayload(payload)) {
-          const option = document.createElement("option");
-          option.value = task.id;
-          option.textContent = workTaskTitle(task);
-          taskSelect.append(option);
-        }
-      } catch (error) {
-        reportError(error.message || "Could not load card tasks");
-      }
-    });
-    panel
-      .querySelector("[data-assistant-create]")
-      .addEventListener("click", async () => {
-        const cardId = cardSelect.value;
-        const taskId = taskSelect.value;
-        if (!cardId && !taskId)
-          return reportError(
-            "Select a Card or Task before requesting assistant help.",
-          );
-        const assistantType =
-          panel.querySelector("[data-assistant-type]").value.trim() ||
-          "podcast";
-        const title =
-          panel.querySelector("[data-assistant-title]").value.trim() ||
-          `DataOps Assistant: ${assistantType}`;
-        const inputRefs = [];
-        if (cardId) inputRefs.push({ type: "card", id: cardId });
-        if (taskId) inputRefs.push({ type: "task", id: taskId });
-        try {
-          const created = await request(workApiUrl("/api/assistant-jobs"), {
-            method: "POST",
-            body: JSON.stringify({
-              assistantType,
-              title,
-              cardId: cardId || undefined,
-              taskId: taskId || undefined,
-              inputRefs,
-              approvalRequired: true,
-              maxAttempts: 2,
-            }),
-          });
-          const job = created.job || created;
-          await request(
-            workApiUrl(
-              `/api/assistant-jobs/${encodeURIComponent(job.id)}/submit`,
-            ),
-            { method: "POST" },
-          );
-          setStatus("Assistant job queued.");
-          await navigateCanonicalWorkspace("/assistants", {
-            assistantJobId: job.id,
-          }).ready;
-        } catch (error) {
-          reportError(error.message || "Could not create assistant job");
-        }
-      });
-    return panel;
-  }
+
 
   function assistantActionButtons(job) {
     const actions = [];
@@ -340,13 +329,48 @@ export function createAssistantsSurface(context) {
     return actions;
   }
 
+  function assistantActionLabel(action) {
+    return {
+      submit: "Submit",
+      "run-dry": "Run dry",
+      approve: "Approve",
+      reject: "Reject",
+      retry: "Retry",
+      cancel: "Cancel",
+    }[action] || action.replace(/-/g, " ");
+  }
+
+  function assistantActionSucceeded(action, status) {
+    if (action === "run-dry") return ["waiting_approval", "succeeded", "approved"].includes(status);
+    if (action === "retry" || action === "submit") return ["queued", "running", "retrying"].includes(status);
+    return status === ({
+      approve: "approved",
+      reject: "rejected",
+      cancel: "canceled",
+    }[action] || status);
+  }
+
   async function runAssistantAction(job, action) {
+    const existing = assistantMutation();
+    if (existing.busy) return;
     let body;
     if (action === "reject") {
       const reason = promptUser("Rejection reason");
       if (!reason?.trim()) return;
       body = JSON.stringify({ reason: reason.trim() });
     }
+    const routeToken = getActiveWorkspaceRouteToken();
+    state.assistantMutation = {
+      target: `job:${job.id}`,
+      action,
+      values: action === "reject" && body ? { reason: JSON.parse(body).reason } : {},
+      error: "",
+      busy: true,
+      status: `${assistantActionLabel(action)} assistant job…`,
+      phase: "pending",
+      routeToken,
+    };
+    refreshDocuments();
     try {
       const result = await request(
         workApiUrl(
@@ -362,16 +386,180 @@ export function createAssistantsSurface(context) {
           { method: "POST" },
         );
       }
-      setStatus(`Assistant job ${action.replace(/-/g, " ")} complete.`);
-      await refreshOperationsAssistantSnapshot({ rerender: true });
+      await refreshOperationsAssistantSnapshot({
+        token: routeToken,
+        rerender: false,
+      });
+      if (!routeIsFresh(routeToken)) return;
+      const durable = state.assistantSnapshot.jobs.find(
+        (candidate) => candidate.id === job.id,
+      );
+      if (!durable || !assistantActionSucceeded(action, durable.status)) {
+        throw new Error(
+          `The refreshed assistant queue did not confirm ${assistantActionLabel(action).toLowerCase()}.`,
+        );
+      }
+      state.assistantMutation = {
+        target: `job:${job.id}`,
+        action: "",
+        values: {},
+        error: "",
+        busy: false,
+        status: `Assistant job is ${String(durable.status).replace(/_/g, " ")} in the refreshed queue.`,
+        phase: "success",
+        routeToken,
+      };
+      refreshDocuments();
     } catch (error) {
-      reportError(error.message || "Assistant action failed");
+      if (!routeIsFresh(routeToken)) return;
+      const conflict = error.status === 409;
+      state.assistantMutation = {
+        target: `job:${job.id}`,
+        action,
+        values:
+          action === "reject" && body
+            ? { reason: JSON.parse(body).reason }
+            : {},
+        error: conflict
+          ? `This assistant job changed since it was loaded. Review or reload ` +
+            `the current job, then retry ${assistantActionLabel(action).toLowerCase()}. (${error.message || "conflict"})`
+          : error.message ||
+            `Could not ${assistantActionLabel(action).toLowerCase()} the assistant job. Select ${assistantActionLabel(action)} to retry.`,
+        busy: false,
+        status: "",
+        phase: conflict ? "conflict" : "error",
+        routeToken,
+      };
+      refreshDocuments();
+    }
+  }
+
+  function appendAssistantDetailRecovery(container, jobId) {
+    const mutation = assistantMutation();
+    if (!mutation.error) return;
+    const recovery = document.createElement("div");
+    recovery.className = "assistant-mutation-recovery";
+    recovery.setAttribute("aria-label", "Assistant job recovery");
+    const reload = document.createElement("button");
+    reload.type = "button";
+    reload.textContent = "Reload current job";
+    reload.addEventListener("click", () => {
+      resetAssistantMutation();
+      void renderAssistantJobDetail(container, jobId);
+    });
+    const discard = document.createElement("button");
+    discard.type = "button";
+    discard.textContent = "Discard changes";
+    discard.addEventListener("click", () => {
+      resetAssistantMutation();
+      void renderAssistantJobDetail(container, jobId);
+    });
+    recovery.append(reload, discard);
+    container.append(recovery);
+  }
+
+  async function saveAssistantDraft(container, job, routeToken) {
+    const mutation = assistantMutation();
+    if (mutation.busy) return;
+    const titleField = container.querySelector("[data-assistant-edit-title]");
+    const typeField = container.querySelector("[data-assistant-edit-type]");
+    const approvalField = container.querySelector("[data-assistant-edit-approval]");
+    const values = {
+      title: titleField?.value.trim() || "",
+      assistantType: typeField?.value.trim() || "",
+      approvalRequired: approvalField?.value === "true",
+    };
+    for (const field of [titleField, typeField]) setFieldError(field, "");
+    const invalid = [];
+    if (!values.title) invalid.push([titleField, "Title is required."]);
+    if (!values.assistantType) invalid.push([typeField, "Assistant type is required."]);
+    if (invalid.length) {
+      state.assistantMutation = {
+        target: `job:${job.id}`,
+        action: "save",
+        values,
+        error: invalid[0][1],
+        busy: false,
+        status: "",
+        phase: "error",
+        routeToken,
+        focus: invalid[0][0]?.dataset?.assistantEditTitle ? "title" : "type",
+      };
+      reportFieldValidation(invalid);
+      void renderAssistantJobDetail(container, job.id);
+      return;
+    }
+    state.assistantMutation = {
+      target: `job:${job.id}`,
+      action: "save",
+      values,
+      error: "",
+      busy: true,
+      status: "Saving assistant draft fields…",
+      phase: "pending",
+      routeToken,
+    };
+    void renderAssistantJobDetail(container, job.id);
+    try {
+      await request(
+        workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}`),
+        {
+          method: "PUT",
+          body: JSON.stringify(values),
+        },
+      );
+      const refreshed = await refreshOperationsAssistantSnapshot({
+        token: routeToken,
+        rerender: false,
+      });
+      if (!routeIsFresh(routeToken)) return;
+      if (
+        !refreshed?.applied ||
+        refreshed.errors?.length ||
+        !state.assistantSnapshot.jobs.some((candidate) => candidate.id === job.id)
+      ) {
+        throw new Error(
+          "The refreshed assistant queue did not confirm the saved draft.",
+        );
+      }
+      const detail = await request(
+        workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}`),
+      );
+      if (!detail?.job && !detail?.id) throw new Error("Assistant detail refresh returned no job.");
+      state.assistantMutation = {
+        target: `job:${job.id}`,
+        action: "",
+        values: {},
+        error: "",
+        busy: false,
+        status: "Draft fields are saved in the refreshed assistant job.",
+        phase: "success",
+        routeToken,
+      };
+      await renderAssistantJobDetail(container, job.id);
+    } catch (error) {
+      if (!routeIsFresh(routeToken)) return;
+      const conflict = error.status === 409;
+      state.assistantMutation = {
+        target: `job:${job.id}`,
+        action: "save",
+        values,
+        error: conflict
+          ? `This assistant draft changed since it was loaded. Your edits are kept. Reload the current job, then retry saving. (${error.message || "conflict"})`
+          : error.message || "Could not save assistant draft fields. Select Save draft fields to retry.",
+        busy: false,
+        status: "",
+        phase: conflict ? "conflict" : "error",
+        routeToken,
+      };
+      await renderAssistantJobDetail(container, job.id);
     }
   }
 
   async function renderAssistantJobDetail(container, jobId) {
+    const routeToken = getActiveWorkspaceRouteToken();
     container.replaceChildren(
-      renderHonestState(
+      assistantVisibleMessage(
         "Assistant job detail",
         "Loading job events and artifacts…",
       ),
@@ -382,23 +570,35 @@ export function createAssistantsSurface(context) {
       );
       if (
         state.assistantQueue.selectedJobId !== jobId ||
-        !container.isConnected
+        !container.isConnected ||
+        !routeIsFresh(routeToken)
       )
         return;
       const job = payload.job || payload;
       const artifacts = payload.artifacts || [];
       const events = payload.events || [];
+      const mutation =
+        assistantMutation().target === `job:${jobId}`
+          ? assistantMutation()
+          : null;
+      const editValues = mutation?.action === "save" ? mutation.values || {} : {};
+      const mutationBusy =
+        mutation?.target === `job:${jobId}` && mutation.busy;
+      const currentAction = mutationBusy ? mutation.action : "";
       const actionButtons = assistantActionButtons(job)
-        .map(
-          ([action, label]) => `
+        .map(([action, label]) => {
+          const pending = currentAction === action;
+          return `
             <button
+              type="button"
               data-assistant-lifecycle="${action}"
               class="${action === "approve" ? "primary-button" : ""}"
+              ${mutationBusy ? "disabled aria-busy=\"true\"" : ""}
             >
-              ${label}
+              ${escapeHtml(pending ? `${label}…` : label)}
             </button>
-          `,
-        )
+          `;
+        })
         .join("");
       const inputReferences = (job.inputRefs || []).length
         ? job.inputRefs
@@ -462,20 +662,26 @@ export function createAssistantsSurface(context) {
         <div class="assistant-editor">
           <label>
             Title
-            <input data-assistant-edit-title value="${escapeHtml(job.title || "")}">
+            <input data-assistant-edit-title value="${escapeHtml(editValues.title ?? job.title ?? "")}">
           </label>
           <label>
             Assistant type
-            <input data-assistant-edit-type value="${escapeHtml(job.assistantType || "")}">
+            <input data-assistant-edit-type value="${escapeHtml(editValues.assistantType ?? job.assistantType ?? "")}">
           </label>
           <label>
             Approval required
             <select data-assistant-edit-approval>
-              <option value="true" ${job.approvalRequired !== false ? "selected" : ""}>Yes</option>
-              <option value="false" ${job.approvalRequired === false ? "selected" : ""}>No</option>
+              <option value="true" ${(editValues.approvalRequired ?? job.approvalRequired !== false) ? "selected" : ""}>Yes</option>
+              <option value="false" ${(editValues.approvalRequired ?? job.approvalRequired === false) ? "selected" : ""}>No</option>
             </select>
           </label>
-          <button data-assistant-save>Save draft fields</button>
+          <button
+            type="button"
+            data-assistant-save
+            ${job.status !== "draft" || mutationBusy ? "disabled aria-busy=\"true\"" : ""}
+          >
+            ${mutation?.busy && mutation.action === "save" ? "Saving draft fields…" : "Save draft fields"}
+          </button>
         </div>
         <div class="assistant-actions">
           ${actionButtons}
@@ -494,33 +700,22 @@ export function createAssistantsSurface(context) {
           <ul class="assistant-timeline">${timeline}</ul>
         </section>
       `;
+      const feedback = renderAssistantFeedback(
+        container,
+        mutation?.target === `job:${jobId}` ? mutation : null,
+      );
+      if (mutation?.error) appendAssistantDetailRecovery(container, jobId);
+      if (mutation?.error || mutation?.status) {
+        scheduleAnimationFrame(() => {
+          const target = mutation.error ? feedback.errorNode : feedback.statusNode;
+          if (target?.isConnected) target.focus();
+        });
+      }
       container
         .querySelector("[data-assistant-save]")
-        .addEventListener("click", async () => {
-          try {
-            await request(
-              workApiUrl(`/api/assistant-jobs/${encodeURIComponent(job.id)}`),
-              {
-                method: "PUT",
-                body: JSON.stringify({
-                  title: container
-                    .querySelector("[data-assistant-edit-title]")
-                    .value.trim(),
-                  assistantType: container
-                    .querySelector("[data-assistant-edit-type]")
-                    .value.trim(),
-                  approvalRequired:
-                    container.querySelector("[data-assistant-edit-approval]")
-                      .value === "true",
-                }),
-              },
-            );
-            setStatus("Assistant draft fields saved.");
-            await refreshOperationsAssistantSnapshot({ rerender: true });
-          } catch (error) {
-            reportError(error.message || "Could not update assistant job");
-          }
-        });
+        ?.addEventListener("click", () =>
+          saveAssistantDraft(container, job, routeToken),
+        );
       container
         .querySelectorAll("[data-assistant-lifecycle]")
         .forEach((button) =>
@@ -529,6 +724,7 @@ export function createAssistantsSurface(context) {
           ),
         );
     } catch (error) {
+      if (!routeIsFresh(routeToken)) return;
       renderEntityLoadState(container, {
         kind: "assistant job",
         id: jobId,
@@ -542,7 +738,9 @@ export function createAssistantsSurface(context) {
     }
   }
 
+
   async function refreshOperationsAssistantSnapshot(options = {}) {
+    const sequence = ++assistantRefreshSequence;
     const snapshot = {
       loaded: false,
       jobs: [],
@@ -550,7 +748,9 @@ export function createAssistantsSurface(context) {
     };
     try {
       const payload = await request(workApiUrl("/api/assistant-jobs"));
-      if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+      if (sequence !== assistantRefreshSequence || !routeIsFresh(options.token)) {
+        return { applied: false };
+      }
       const jobs = assistantJobsFromPayload(payload);
       if (
         jobs.length > 0 ||
@@ -567,12 +767,17 @@ export function createAssistantsSurface(context) {
         ];
       }
     } catch (err) {
-      if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+      if (sequence !== assistantRefreshSequence || !routeIsFresh(options.token)) {
+        return { applied: false };
+      }
       snapshot.errors = [err?.message || "Assistant jobs API request failed"];
     }
-    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+    if (sequence !== assistantRefreshSequence || !routeIsFresh(options.token)) {
+      return { applied: false };
+    }
     state.assistantSnapshot = snapshot;
     if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+    return { applied: true, ...snapshot };
   }
 
   return {

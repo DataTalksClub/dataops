@@ -237,6 +237,23 @@ export function createNavigationShell(context) {
   function clearIntakeDraftForRoute(route) {
     const intakeState = getIntakeSurfaceState();
     const mutation = intakeState.intakeMutation;
+    const assistantMutation = intakeState.assistantMutation;
+    if (
+      assistantMutation?.target &&
+      assistantMutation.routeToken !== undefined &&
+      assistantMutation.routeToken !== activeRouteToken
+    ) {
+      intakeState.assistantMutation = {
+        target: "",
+        action: "",
+        values: {},
+        error: "",
+        busy: false,
+        status: "",
+        phase: "idle",
+        routeToken: activeRouteToken,
+      };
+    }
     if (!mutation.itemId) return;
     const nextItemId =
       route?.path === "/inbox" ? route.params.get("intakeId") : null;
@@ -249,6 +266,8 @@ export function createNavigationShell(context) {
       error: "",
       busy: false,
       status: "",
+      phase: "idle",
+      routeToken: activeRouteToken,
     };
   }
 

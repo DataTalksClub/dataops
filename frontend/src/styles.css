@@ -1699,6 +1699,26 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   color: var(--danger-text);
 }
 
+.intake-mutation-recovery,
+.assistant-mutation-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.intake-mutation-recovery button,
+.assistant-mutation-recovery button {
+  min-height: 34px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .field-error {
   display: block;
   margin-top: 4px;
@@ -9289,6 +9309,42 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
     min-width: 44px;
     min-height: 44px;
     margin: 0;
+  }
+}
+
+/* Slice 2 controls must follow denser Inbox and Tasks rules to preserve the
+   44px native mobile target at the requested 390px browser width. */
+@media (max-width: 768px) {
+  body[data-workspace-view="inbox"] .intake-filter-bar .ops-subnav-tab,
+  body[data-workspace-view="inbox"] .intake-panel > summary,
+  body[data-workspace-view="inbox"] .intake-create-grid input,
+  body[data-workspace-view="inbox"] .intake-create-grid select,
+  body[data-workspace-view="inbox"] .intake-create-grid textarea,
+  body[data-workspace-view="inbox"] .intake-create-grid button,
+  body[data-workspace-view="inbox"] .intake-action-disclosure > summary,
+  body[data-workspace-view="inbox"] .intake-secondary-actions > summary,
+  body[data-workspace-view="inbox"] .intake-action-fields input,
+  body[data-workspace-view="inbox"] .intake-action-fields select,
+  body[data-workspace-view="inbox"] .intake-action-fields textarea,
+  body[data-workspace-view="inbox"] .intake-action-fields button,
+  body[data-workspace-view="inbox"] .intake-detail-heading-actions > button,
+  body[data-workspace-view="inbox"] .intake-mutation-recovery button,
+  body[data-workspace-view="tasks"] .assistant-filter-bar button,
+  body[data-workspace-view="tasks"] .assistant-create-grid input,
+  body[data-workspace-view="tasks"] .assistant-create-grid select,
+  body[data-workspace-view="tasks"] .assistant-create-grid button,
+  body[data-workspace-view="tasks"] .assistant-editor input,
+  body[data-workspace-view="tasks"] .assistant-editor select,
+  body[data-workspace-view="tasks"] .assistant-editor button,
+  body[data-workspace-view="tasks"] .assistant-actions button,
+  body[data-workspace-view="tasks"] .assistant-mutation-recovery button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  body[data-workspace-view="inbox"] .intake-detail > section > div > button {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 
