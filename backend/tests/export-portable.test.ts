@@ -7,7 +7,19 @@ import path from 'path';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { TABLE_NOTIFICATIONS } from '../src/db/tableNames';
+import {
+  TABLE_ARTIFACTS,
+  TABLE_ASSISTANT_JOBS,
+  TABLE_AUDIT_EVENTS,
+  TABLE_CARDS,
+  TABLE_CONVERSATIONAL_STATE,
+  TABLE_FILES,
+  TABLE_INTAKE,
+  TABLE_NOTIFICATIONS,
+  TABLE_TASKS,
+  TABLE_TEMPLATES,
+  TABLE_USERS,
+} from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { appendAssistantJobEvent, createAssistantJob, updateAssistantJob } from '../src/db/assistantJobs';
@@ -26,6 +38,32 @@ import {
   validatePortableExport,
   writePortableExport,
 } from '../src/export/portable';
+
+async function documentedRequiredLayouts(markdownPath: string): Promise<string[][]> {
+  const markdown = await fs.readFile(markdownPath, 'utf8');
+  const layouts = [...markdown.matchAll(/```text\n(manifest\.json\n(?:[a-z0-9_]+\.jsonl\n)+)```/g)]
+    .map((match) => match[1].trimEnd().split('\n'));
+
+  assert.ok(layouts.length > 0, `${markdownPath} must contain a required-layout block`);
+  return layouts;
+}
+
+function documentedDurableTableInventories(markdown: string): string[][] {
+  return markdown
+    .split(/\n\s*\n/)
+    .map((block) => [...block.matchAll(/^\s*- `<stack>-([a-z0-9-]+)`$/gm)].map((match) => match[1]))
+    .filter((tables) => tables.length > 0);
+}
+
+function documentedPostgresMappings(markdown: string): Array<[string, string]> {
+  const section = markdown
+    .split(/^## /m)
+    .find((candidate) => candidate.startsWith('Postgres Migration Path'));
+
+  assert.ok(section, 'execution data safety must contain Postgres Migration Path');
+  return [...section.matchAll(/^- `([a-z0-9_]+\.jsonl)` to `([a-z0-9_]+)`$/gm)]
+    .map((match) => [match[1], match[2]]);
+}
 
 describe('portable execution data export', () => {
   let client: DynamoDBDocumentClient;
@@ -1082,6 +1120,100 @@ describe('portable export timestamp anchoring', () => {
     } finally {
       await fs.rm(sourceDir, { recursive: true, force: true });
       await fs.rm(brokenDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps recovery documentation synchronized with the generated export contract', async () => {
+    const expectedFiles = [
+      'manifest.json',
+      ...ENTITY_SPECS.map((spec) => spec.filename),
+    ];
+    assert.strictEqual(ENTITY_SPECS.length, 24);
+    assert.strictEqual(new Set(expectedFiles).size, expectedFiles.length);
+
+    const durableTableSuffixBySourceName = new Map<string, string>([
+      [TABLE_TASKS, 'tasks'],
+      [TABLE_CARDS, 'cards'],
+      [TABLE_TEMPLATES, 'templates'],
+      [TABLE_USERS, 'users'],
+      [TABLE_FILES, 'files'],
+      [TABLE_ARTIFACTS, 'artifacts'],
+      [TABLE_ASSISTANT_JOBS, 'assistant-jobs'],
+      [TABLE_AUDIT_EVENTS, 'audit-events'],
+      [TABLE_INTAKE, 'intake'],
+      [TABLE_NOTIFICATIONS, 'notifications'],
+      [TABLE_CONVERSATIONAL_STATE, 'conversational-state'],
+    ]);
+    const expectedDurableTables = [
+      'tasks',
+      'cards',
+      'templates',
+      'users',
+      'files',
+      'artifacts',
+      'assistant-jobs',
+      'audit-events',
+      'intake',
+      'notifications',
+      'conversational-state',
+    ];
+    const actualDurableTables = [
+      ...new Set(ENTITY_SPECS.map((spec) => {
+        const tableSuffix = durableTableSuffixBySourceName.get(spec.tableName);
+        assert.ok(tableSuffix, `unexpected portable-export source table ${spec.tableName}`);
+        return tableSuffix;
+      })),
+    ].sort();
+    assert.deepStrictEqual(actualDurableTables, expectedDurableTables.slice().sort());
+
+    const recoveryDocuments = [
+      path.join(__dirname, '..', '..', 'docs', 'restore-drill.md'),
+      path.join(__dirname, '..', '..', 'docs', 'v1-execution-data-safety.md'),
+    ];
+    for (const documentPath of recoveryDocuments) {
+      const layouts = await documentedRequiredLayouts(documentPath);
+      for (const layout of layouts) {
+        assert.deepStrictEqual(layout, expectedFiles);
+      }
+      const markdown = await fs.readFile(documentPath, 'utf8');
+      if (documentPath.endsWith('restore-drill.md')) {
+        const durableTableInventories = documentedDurableTableInventories(markdown);
+        assert.strictEqual(durableTableInventories.length, 2);
+        for (const inventory of durableTableInventories) {
+          assert.deepStrictEqual(inventory, expectedDurableTables);
+        }
+      }
+      assert.doesNotMatch(markdown, /npm --prefix work-engine/);
+    }
+
+    const safetyMarkdown = await fs.readFile(recoveryDocuments[1], 'utf8');
+    assert.deepStrictEqual(
+      documentedPostgresMappings(safetyMarkdown),
+      ENTITY_SPECS.map((spec) => [spec.filename, spec.name]),
+    );
+    assert.match(
+      await fs.readFile(recoveryDocuments[0], 'utf8'),
+      /byte-for-byte local copy[\s\S]*not infer it from bucket metadata/,
+    );
+
+    const outputDir = projectTmpDir('documented-layout-export');
+    try {
+      const result = await writePortableExport(client, outputDir, {
+        generatedAt: '2026-06-27T00:00:00.000Z',
+        sourceEnvironment: 'test',
+      });
+      assert.deepStrictEqual(Object.keys(result.manifest.entity_files).sort(), ENTITY_SPECS.map((spec) => spec.name).sort());
+      assert.deepStrictEqual(
+        Object.values(result.manifest.entity_files).sort(),
+        ENTITY_SPECS.map((spec) => spec.filename).sort(),
+      );
+      assert.deepStrictEqual((await fs.readdir(outputDir)).sort(), expectedFiles.slice().sort());
+
+      const validation = await validatePortableExport(outputDir);
+      assert.deepStrictEqual(validation.errors, []);
+      assert.strictEqual(validation.valid, true);
+    } finally {
+      await fs.rm(outputDir, { recursive: true, force: true });
     }
   });
 });
