@@ -9,9 +9,9 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import {
   createTables,
+  deleteTables,
   TABLE_CONVERSATIONAL_STATE,
   TABLE_TASKS,
 } from '../scripts/local-dynamodb';
@@ -157,15 +157,14 @@ describe('confirmed Telegram media composes with the real todo core', {
   before(async () => {
     process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'todo';
     process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
-    const port = await startLocal();
-    client = await getClient(port);
+    client = await getClient();
+    await deleteTables(client);
     await createTables(client);
     await mkdir(ROOT, { recursive: true });
   });
 
   after(async () => {
     await rm(ROOT, { recursive: true, force: true });
-    await stopLocal();
     process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
     process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
   });

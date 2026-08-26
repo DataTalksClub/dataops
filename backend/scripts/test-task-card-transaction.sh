@@ -2,7 +2,7 @@
 set -euo pipefail
 
 container_name="dataops-task-card-transaction-${PPID}-$$"
-container_id=""
+container_id="$container_name"
 
 cleanup() {
   if [ -n "$container_id" ]; then
@@ -27,6 +27,18 @@ if [[ ! "$mapping" =~ ^127\.0\.0\.1:[0-9]+$ ]]; then
 fi
 
 endpoint="http://${mapping}"
+ready="false"
+for _attempt in $(seq 1 50); do
+  status="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 1 --max-time 2 "$endpoint" || true)"
+  if [ "$status" != "000" ]; then ready="true"; break; fi
+  sleep 0.2
+done
+if [ "$ready" != "true" ]; then
+  docker logs "$container_id" >&2
+  echo "DynamoDB Local did not become ready" >&2
+  exit 1
+fi
+
 set +e
 DYNAMODB_ENDPOINT="$endpoint" \
 DATAOPS_TASKS_TABLE=Issue183TaskCardTransactionTasks \
@@ -36,7 +48,7 @@ AWS_ACCESS_KEY_ID=local \
 AWS_SECRET_ACCESS_KEY=local \
 AWS_REGION=us-east-1 \
 NODE_ENV=production \
-node --import tsx --test --test-concurrency=1 tests/task-card-transaction.ddb.ts
+node --import tsx --test --test-concurrency=1 --test-force-exit tests/task-card-transaction.ddb.ts
 test_status=$?
 set -e
 

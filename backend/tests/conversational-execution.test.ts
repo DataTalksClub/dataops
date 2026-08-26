@@ -3,8 +3,12 @@ import assert from 'node:assert';
 import { GetCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createTables, TABLE_CONVERSATIONAL_STATE } from '../scripts/local-dynamodb';
+import {
+  createTables,
+  startLocal,
+  stopLocal,
+  TABLE_CONVERSATIONAL_STATE,
+} from '../scripts/local-dynamodb';
 import { createUserWithId, updateUser } from '../src/db/users';
 import {
   createChannelBinding,
@@ -131,10 +135,12 @@ describe('transactional conversational approval and durable execution', () => {
     }),
   };
   const registry = new ExecutorRegistry([provider, correlation, operatorOnly, unsafeExecutor]);
+  let ownsLocalDatabase = false;
 
   before(async () => {
-    const port = await startLocal();
-    client = await getClient(port);
+    ownsLocalDatabase = !process.env.DYNAMODB_ENDPOINT;
+    if (ownsLocalDatabase) await startLocal();
+    client = await getClient();
     await createTables(client);
     await createUserWithId(client, 'owner-1', {
       name: 'Owner',
@@ -175,7 +181,7 @@ describe('transactional conversational approval and durable execution', () => {
   });
 
   after(async () => {
-    await stopLocal();
+    if (ownsLocalDatabase) await stopLocal();
   });
 
   async function context(
