@@ -63,20 +63,27 @@ export function createCardsSurface(context) {
     section.append(header);
 
     if (displayedCards.length === 0) {
+      const sourceComplete =
+        state.workSnapshot.cardsComplete === true;
       if (archiveVisible) {
         section.append(
           renderHonestState(
-            "Archive is empty",
-            "Cards appear here after all of their Tasks are complete.",
+            sourceComplete ? "Archive is empty" : "Archive availability is unknown",
+            sourceComplete
+              ? "Cards appear here after all of their Tasks are complete."
+              : "Card collection data is incomplete, so remaining archived Cards cannot be ruled out.",
           ),
         );
       } else {
+        const loaded = Boolean(state.workSnapshot.cardsLoaded);
         section.append(
           renderHonestState(
-            "No active cards",
-            state.workSnapshot.cardsLoaded
+            sourceComplete ? "No active cards" : "Card availability is unknown",
+            sourceComplete
               ? "Create a card from a Template when new work arrives."
-              : "Live card data is unavailable.",
+              : loaded
+                ? "The loaded page has no active Cards, but remaining pages have not been evaluated."
+                : "Live card data is unavailable.",
           ),
           renderWorkflowBoard([]),
         );
@@ -90,7 +97,11 @@ export function createCardsSurface(context) {
         operationItemFromCard(
           card,
           state.workSnapshot.cardTasks[card.id] || [],
-          { today },
+          {
+            today,
+            cardTasksComplete:
+              state.workSnapshot.cardTasksComplete !== false,
+          },
         ),
       );
       for (const group of groupCardItemsByMonth(archiveItems)) {
@@ -116,7 +127,11 @@ export function createCardsSurface(context) {
 
     const boardItems = cards.map((card) => {
       const tasks = state.workSnapshot.cardTasks[card.id] || [];
-      return operationItemFromCard(card, tasks, { today });
+      return operationItemFromCard(card, tasks, {
+        today,
+        cardTasksComplete:
+          state.workSnapshot.cardTasksComplete !== false,
+      });
     });
     section.append(renderWorkflowBoard(boardItems));
     return section;
@@ -219,6 +234,13 @@ export function createCardsSurface(context) {
     title.className = "workflow-card-title";
     title.textContent = item.title;
     card.append(title);
+
+    if (item.taskRelationshipsComplete === false) {
+      const unavailable = document.createElement("span");
+      unavailable.className = "workflow-card-count";
+      unavailable.textContent = "Task relationships unavailable";
+      card.append(unavailable);
+    }
 
     if (item.progress) {
       const percent = Number(item.progress.percent) || 0;

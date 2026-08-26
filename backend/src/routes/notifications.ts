@@ -6,8 +6,10 @@ import {
   dismissNotification,
   listUndismissedNotifications,
   listAllNotifications,
+  listNotificationsPage,
   dismissAllNotifications,
 } from '../db/notifications';
+import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -28,19 +30,24 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
     // Route: GET /api/notifications (with optional ?all=true)
     if ((suffix === '' || suffix === '/') && method === 'GET') {
       await createDueFollowUpNotifications(client);
-      if (queryParams && queryParams['all'] === 'true') {
-        const notifications = await listAllNotifications(client, userId);
-        return {
-          statusCode: 200,
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ notifications }),
-        };
-      }
-      const notifications = await listUndismissedNotifications(client, userId);
+      const all = Boolean(queryParams && queryParams['all'] === 'true');
+      const binding = {
+        collection: 'notifications',
+        filters: { all },
+        principal: userId || 'account-viewer',
+      };
+      const page = await listNotificationsPage(client, all, userId || '', binding, queryParams || {});
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ notifications }),
+        body: JSON.stringify({
+          notifications: {
+            items: page.items,
+            ...(page.nextExclusiveStartKey ? {
+              nextCursor: await encodeCollectionCursor(binding, page.nextExclusiveStartKey),
+            } : {}),
+          },
+        }),
       };
     }
 
@@ -80,8 +87,15 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
       headers: JSON_HEADERS,
       body: JSON.stringify({ error: 'Not found' }),
     };
-  } catch (err: unknown) {
-    console.error('Notification route error:', err);
+  } catch (error: unknown) {
+    if (error instanceof CollectionCursorError) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'Invalid pagination input', code: 'invalid_pagination_input' }),
+      };
+    }
+    console.error('Notification route error:', error);
     return {
       statusCode: 500,
       headers: JSON_HEADERS,

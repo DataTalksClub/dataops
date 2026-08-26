@@ -194,7 +194,7 @@ describe('API - Podcast end-to-end operator slice (#9)', () => {
     assert.strictEqual(parse(waiting).status, 'waiting');
     const notifications = await invoke('GET', '/api/notifications');
     assert.strictEqual(notifications.statusCode, 200, notifications.body);
-    assert.ok(parse(notifications).notifications.some((notification: any) => (
+    assert.ok(parse(notifications).notifications.items.some((notification: any) => (
       notification.type === 'follow-up-due' && notification.taskId === waitingTask.id && notification.cardId === card.id
     )));
     const responseReceived = await invoke('POST', `/api/tasks/${waitingTask.id}/actions/response-received`, {

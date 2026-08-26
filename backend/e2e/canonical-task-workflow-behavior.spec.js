@@ -180,11 +180,14 @@ async function openProofTask(page, taskId, cardId, title, options = {}) {
   } else {
     await page.goto(`/#/tasks?taskId=${taskId}`);
   }
-  const responses = await Promise.all([
+  let responses = [
     hydration.exactTask,
     hydration.exactTaskArtifacts,
-    hydration.filesReady,
-  ]);
+  ];
+  // Same-document navigation reuses the evidence loader's settled cache.
+  // A reload creates a fresh runtime and must prove the network read again.
+  if (!options.byNavigation) responses.push(hydration.filesReady);
+  responses = await Promise.all(responses);
   if (hydration.exactCardArtifacts) responses.push(await hydration.exactCardArtifacts);
   for (const response of responses) expect(response.status()).toBe(200);
   await expect(page.locator('#task-panel-title')).toHaveText(title);
@@ -421,7 +424,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
         && url.pathname === '/work/api/cards'
-        && !url.search;
+        && url.searchParams.has('limit');
     });
     await page.reload();
     await refreshedWorkflows;

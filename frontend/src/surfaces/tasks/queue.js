@@ -36,9 +36,10 @@ export function createTaskQueue(context) {
       Overdue: state.workSnapshot.overdueLoaded,
       "Follow-ups due": state.workSnapshot.waitingLoaded,
       "Missing proof":
-        state.workSnapshot.todayLoaded ||
-        state.workSnapshot.overdueLoaded ||
-        state.workSnapshot.waitingLoaded,
+        (state.workSnapshot.todayLoaded ||
+          state.workSnapshot.overdueLoaded ||
+          state.workSnapshot.waitingLoaded) &&
+        state.workSnapshot.cardTasksComplete !== false,
       Waiting: state.workSnapshot.waitingLoaded,
       Today: state.workSnapshot.todayLoaded,
       "Done / history":

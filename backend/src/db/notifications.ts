@@ -7,6 +7,7 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_NOTIFICATIONS } from './tableNames';
+import { readCollectionPage } from './collectionPage';
 import { listIntakeItems } from './intake';
 import { listTasksByStatus } from './tasks';
 import type { IntakeItem, Notification, Task } from '../types';
@@ -197,32 +198,13 @@ async function dismissNotification(client: DynamoDBDocumentClient, id: string): 
  * If userId is provided, returns notifications where userId matches OR userId is absent (global).
  */
 async function listUndismissedNotifications(client: DynamoDBDocumentClient, userId?: string): Promise<Notification[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_NOTIFICATIONS,
-      FilterExpression: 'begins_with(PK, :prefix) AND dismissed = :dismissed',
-      ExpressionAttributeValues: {
-        ':prefix': 'NOTIFICATION#',
-        ':dismissed': false,
-      },
-    })
-  );
-
-  let notifications = (result.Items || []).map(
-    (item) => cleanItem(item as Record<string, unknown>) as Notification
-  );
-
-  // Filter by userId: show global (no userId) + matching userId
-  if (userId) {
-    notifications = notifications.filter(
-      (n) => !n.userId || n.userId === userId
-    );
-  }
-
-  // Sort by createdAt descending (most recent first)
-  notifications.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-  return notifications;
+  return scanNotifications(client, 'begins_with(PK, :prefix) AND dismissed = :dismissed', {
+    ':prefix': 'NOTIFICATION#',
+    ':dismissed': false,
+  }, userId).then((items) => {
+    items.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return items;
+  });
 }
 
 /**
@@ -230,37 +212,88 @@ async function listUndismissedNotifications(client: DynamoDBDocumentClient, user
  * If userId is provided, returns notifications where userId matches OR userId is absent (global).
  */
 async function listAllNotifications(client: DynamoDBDocumentClient, userId?: string): Promise<Notification[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_NOTIFICATIONS,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: {
-        ':prefix': 'NOTIFICATION#',
-      },
-    })
-  );
-
-  let notifications = (result.Items || []).map(
-    (item) => cleanItem(item as Record<string, unknown>) as Notification
-  );
-
-  // Filter by userId: show global (no userId) + matching userId
-  if (userId) {
-    notifications = notifications.filter(
-      (n) => !n.userId || n.userId === userId
-    );
-  }
-
-  // Sort: undismissed first, then within each group by createdAt descending
-  notifications.sort((a, b) => {
-    if (a.dismissed !== b.dismissed) {
-      return a.dismissed ? 1 : -1; // undismissed (false) comes first
-    }
-    return b.createdAt.localeCompare(a.createdAt);
+  return scanNotifications(client, 'begins_with(PK, :prefix)', {
+    ':prefix': 'NOTIFICATION#',
+  }, userId).then((items) => {
+    items.sort((left, right) => {
+      if (left.dismissed !== right.dismissed) return left.dismissed ? 1 : -1;
+      return right.createdAt.localeCompare(left.createdAt);
+    });
+    return items;
   });
-
-  return notifications;
 }
+
+/**
+ * Collect a bounded-complete repository set. Client-facing API reads use
+ * `list*NotificationsPage`; dismissal must never stop at an API logical page.
+ */
+async function scanNotifications(
+  client: DynamoDBDocumentClient,
+  filterExpression: string,
+  values: Record<string, unknown>,
+  userId?: string,
+): Promise<Notification[]> {
+  const items: Notification[] = [];
+  let startKey: Record<string, unknown> | undefined;
+  for (let pageIndex = 0; pageIndex < MAX_NOTIFICATION_SCAN_PAGES; pageIndex += 1) {
+    const result = await client.send(new ScanCommand({
+      TableName: TABLE_NOTIFICATIONS,
+      FilterExpression: filterExpression,
+      ExpressionAttributeValues: values,
+      ...(startKey ? { ExclusiveStartKey: startKey } : {}),
+    }));
+    for (const rawItem of result.Items || []) {
+      const notification = cleanItem(rawItem as Record<string, unknown>);
+      if (!notification) continue;
+      if (!userId || !notification.userId || notification.userId === userId) {
+        items.push(notification);
+      }
+    }
+    startKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    if (!startKey) return items;
+  }
+  throw new Error('Notification listing exceeded its bounded page limit');
+}
+
+type NotificationBinding = Parameters<typeof readCollectionPage<Notification>>[0]['binding'];
+
+function listNotificationsPage(
+  client: DynamoDBDocumentClient,
+  all: boolean,
+  viewerId: string,
+  binding: NotificationBinding,
+  pagination: Record<string, unknown>,
+) {
+  // The router resolves the portal-admin placeholder to an empty viewer for
+  // its deliberately unscoped operator read.
+  const visible = (item: Notification): boolean =>
+    viewerId === '' || !item.userId || item.userId === viewerId;
+  return readCollectionPage<Notification>({
+    client,
+    tableName: TABLE_NOTIFICATIONS,
+    kind: 'scan',
+    command: {
+      FilterExpression: all ? 'begins_with(PK, :prefix)' : 'begins_with(PK, :prefix) AND dismissed = :dismissed',
+      ExpressionAttributeValues: all
+        ? { ':prefix': 'NOTIFICATION#' }
+        : { ':prefix': 'NOTIFICATION#', ':dismissed': false },
+    },
+    binding,
+    input: pagination,
+    keyFor: (notification) => ({
+      PK: `NOTIFICATION#${notification.id}`,
+      SK: `NOTIFICATION#${notification.id}`,
+    }),
+    matches: visible,
+    cleanItem: (item) => {
+      const notification = cleanItem(item);
+      if (!notification) throw new Error('Canonical Notification was absent');
+      return notification;
+    },
+  });
+}
+
+const MAX_NOTIFICATION_SCAN_PAGES = 200;
 
 /**
  * Dismiss all undismissed notifications. Returns the count of notifications dismissed.
@@ -298,5 +331,6 @@ export {
   dismissNotification,
   listUndismissedNotifications,
   listAllNotifications,
+  listNotificationsPage,
   dismissAllNotifications,
 };

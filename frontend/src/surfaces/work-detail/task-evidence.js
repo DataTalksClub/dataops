@@ -1,3 +1,5 @@
+import { createCollectionLoader } from "../../core/collection-loader.js";
+
 export function createTaskEvidence(context) {
   const {
     createTaskActionButton,
@@ -7,13 +9,33 @@ export function createTaskEvidence(context) {
     renderTaskPanel,
     reportError,
     request,
+    scheduleAnimationFrame,
     settledPayload,
     taskPanelBody,
     taskRequiresApprovedArtifact,
     workApiUrl,
   } = context;
 
-  function renderTaskFileSection(task) {
+  const taskFilesLoaders = new Map();
+  const taskFilesContinuations = new Map();
+  const taskFilesSettledCallbacks = new Map();
+
+  function taskFilesLoader(taskId) {
+    if (!taskFilesLoaders.has(taskId)) {
+      taskFilesLoaders.set(
+        taskId,
+        createCollectionLoader({
+          request,
+          createUrl: (parameters) =>
+            workApiUrl("/api/files", { taskId, ...parameters }),
+          collection: "files",
+        }),
+      );
+    }
+    return taskFilesLoaders.get(taskId);
+  }
+
+  function renderTaskFileSection(task, options = {}) {
     if (!task.requiresFile && !task.id) return;
     const section = document.createElement("div");
     section.className = "task-required-link";
@@ -36,60 +58,185 @@ export function createTaskEvidence(context) {
     section.append(fileList);
 
     taskPanelBody.append(section);
-    loadTaskFiles(task.id, fileList);
+    loadTaskFiles(task.id, fileList, options);
   }
 
-  async function loadTaskFiles(taskId, container) {
-    try {
-      const payload = await request(workApiUrl("/api/files", { taskId }));
-      const files = Array.isArray(payload) ? payload : payload.files || [];
-      const hasActiveTask =
-        detail.activeTaskPanelTask && detail.activeTaskPanelTask.id === taskId;
-      const hadFiles = Boolean(
-        hasActiveTask && detail.activeTaskPanelTask._hasFiles,
+  async function loadTaskFiles(taskId, container, options = {}) {
+    const loader = taskFilesLoader(taskId);
+    const onFilesSettled =
+      options.onFilesSettled || taskFilesSettledCallbacks.get(taskId);
+    taskFilesSettledCallbacks.set(taskId, onFilesSettled);
+    let page = loader.getSnapshot();
+    if (!page.loaded && !page.failed) {
+      renderTaskFiles(taskId, container, page);
+    }
+    if (options.retry && page.cursor) {
+      page = await loader.loadMore();
+    } else if (!page.loaded && !page.loading && !page.loadingMore) {
+      page = await loader.load();
+    } else {
+      page = await loader.whenSettled();
+    }
+
+    updateTaskFilesContainer(taskId, container);
+    renderTaskFiles(taskId, container, page);
+    onFilesSettled?.();
+  }
+
+  function updateTaskFilesContainer(taskId, container) {
+    const continuation = taskFilesContinuations.get(taskId);
+    if (continuation) continuation.container = container;
+  }
+
+  async function continueTaskFiles(taskId, continuation) {
+    const loader = taskFilesLoader(taskId);
+    const page = await loader.loadMore();
+    if (taskFilesContinuations.get(taskId) !== continuation) return;
+    renderTaskFiles(taskId, continuation.container, page);
+    taskFilesSettledCallbacks.get(taskId)?.();
+  }
+
+  function scheduleTaskFilesContinuation(taskId, container) {
+    let continuation = taskFilesContinuations.get(taskId);
+    if (!continuation) {
+      continuation = { container };
+      taskFilesContinuations.set(taskId, continuation);
+    }
+    continuation.container = container;
+    if (continuation.scheduled) return;
+    continuation.scheduled = true;
+    scheduleAnimationFrame(() => {
+      if (taskFilesContinuations.get(taskId) !== continuation) return;
+      continuation.scheduled = false;
+      void continueTaskFiles(taskId, continuation);
+    });
+  }
+
+  function cancelTaskFilesContinuation(taskId) {
+    taskFilesContinuations.delete(taskId);
+  }
+
+  async function retryTaskFiles(taskId, container) {
+    const current = taskFilesLoader(taskId).getSnapshot();
+    await loadTaskFiles(taskId, container, {
+      retry: Boolean(current.cursor),
+    });
+  }
+
+  function renderTaskFiles(taskId, container, page) {
+    const hasActiveTask =
+      detail.activeTaskPanelTask && detail.activeTaskPanelTask.id === taskId;
+    container.replaceChildren();
+    if (!page.loaded && page.failed) {
+      if (hasActiveTask) detail.activeTaskPanelTask._hasFiles = false;
+      appendTaskFilesError(
+        container,
+        page.error,
+        () => retryTaskFiles(taskId, container),
+        { continuation: false },
       );
-      container.replaceChildren();
-      if (files.length === 0) {
-        if (hasActiveTask) detail.activeTaskPanelTask._hasFiles = false;
-        if (hadFiles && detail.activeTaskPanelId === taskId) {
-          renderTaskPanel({ preserveDrafts: true });
-          return;
-        }
-        const empty = document.createElement("small");
-        empty.className = "task-file-empty";
-        empty.textContent = "No files attached.";
-        container.append(empty);
+      return;
+    }
+    if (!page.loaded && !page.failed) {
+      const pending = document.createElement("small");
+      pending.className = "task-file-loading";
+      pending.setAttribute("role", "status");
+      pending.setAttribute("aria-live", "polite");
+      pending.textContent = "Loading files...";
+      container.append(pending);
+      return;
+    }
+    if (page.items.length === 0) {
+      if (hasActiveTask) detail.activeTaskPanelTask._hasFiles = false;
+      if (page.moreAvailable && !page.failed) {
+        const pending = document.createElement("small");
+        pending.className = "task-file-loading";
+        pending.setAttribute("role", "status");
+        pending.setAttribute("aria-live", "polite");
+        pending.textContent = "Loading remaining files...";
+        container.append(pending);
+        scheduleTaskFilesContinuation(taskId, container);
         return;
       }
-      if (hasActiveTask) {
-        detail.activeTaskPanelTask._hasFiles = true;
-        if (!hadFiles && detail.activeTaskPanelId === taskId) {
-          renderTaskPanel({ preserveDrafts: true });
-          return;
-        }
-      }
-      for (const file of files) {
-        const item = document.createElement("div");
-        item.className = "task-file-item";
-        const name = document.createElement("span");
-        name.textContent = file.filename || file.id;
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "quiet-button task-file-remove";
-        remove.textContent = "Remove";
-        remove.addEventListener("click", () =>
-          removeTaskFile(file.id, taskId, container),
+      if (page.failed) {
+        appendTaskFilesError(container, page.error, () =>
+          retryTaskFiles(taskId, container),
         );
-        item.append(name, remove);
-        container.append(item);
+        return;
       }
-    } catch {
-      container.replaceChildren();
       const empty = document.createElement("small");
       empty.className = "task-file-empty";
-      empty.textContent = "Could not load files.";
+      empty.textContent = "No files attached.";
       container.append(empty);
+      return;
     }
+
+    for (const file of page.items) {
+      const item = document.createElement("div");
+      item.className = "task-file-item";
+      const name = document.createElement("span");
+      name.textContent = file.filename || file.id;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "quiet-button task-file-remove";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () =>
+        removeTaskFile(file.id, taskId, container),
+      );
+      item.append(name, remove);
+      container.append(item);
+    }
+
+    if (page.moreAvailable || page.failed) {
+      if (hasActiveTask) detail.activeTaskPanelTask._hasFiles = false;
+    }
+    if (page.moreAvailable && !page.failed) {
+      const pending = document.createElement("small");
+      pending.className = "task-file-loading";
+      pending.setAttribute("role", "status");
+      pending.setAttribute("aria-live", "polite");
+      pending.textContent = "Loading remaining files...";
+      container.append(pending);
+      scheduleTaskFilesContinuation(taskId, container);
+      return;
+    }
+    if (page.failed) {
+      appendTaskFilesError(
+        container,
+        page.error,
+        () => retryTaskFiles(taskId, container),
+        { continuation: Boolean(page.moreAvailable) },
+      );
+      return;
+    }
+
+    cancelTaskFilesContinuation(taskId);
+    if (hasActiveTask) {
+      detail.activeTaskPanelTask._hasFiles = true;
+    }
+  }
+
+  function appendTaskFilesError(
+    container,
+    error,
+    retry,
+    { continuation = true } = {},
+  ) {
+    const status = document.createElement("p");
+    status.className = "task-file-error";
+    status.setAttribute("role", "alert");
+    status.setAttribute("aria-live", "assertive");
+    status.textContent =
+      (continuation
+        ? "More files are available, but loading failed"
+        : "Files could not be loaded") + (error ? `: ${error}` : ".");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.retryTaskFiles = "true";
+    button.textContent = "Retry loading files";
+    button.addEventListener("click", retry);
+    status.append(document.createTextNode(" "), button);
+    container.append(status);
   }
 
   async function loadArtifactsForTask(task) {
@@ -149,6 +296,8 @@ export function createTaskEvidence(context) {
       await response.json();
       if (detail.activeTaskPanelTask)
         detail.activeTaskPanelTask._hasFiles = true;
+      cancelTaskFilesContinuation(taskId);
+      taskFilesLoaders.delete(taskId);
       renderTaskPanel({ preserveDrafts: true });
     } catch (err) {
       reportError(`Upload failed: ${err.message || "request failed"}`);
@@ -163,7 +312,9 @@ export function createTaskEvidence(context) {
         reportError(`Could not remove file: HTTP ${response.status}`);
         return;
       }
-      loadTaskFiles(taskId, container);
+      cancelTaskFilesContinuation(taskId);
+      taskFilesLoaders.delete(taskId);
+      renderTaskPanel({ preserveDrafts: true });
     } catch (err) {
       reportError(`Could not remove file: ${err.message || "request failed"}`);
     }

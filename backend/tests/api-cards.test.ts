@@ -262,8 +262,8 @@ describe('API — Cards', () => {
       assert.strictEqual(res.headers!['Content-Type'], 'application/json');
 
       const body = JSON.parse(res.body);
-      assert.ok(Array.isArray(body.cards));
-      assert.ok(body.cards.length > 0);
+      assert.ok(Array.isArray(body.cards.items));
+      assert.ok(body.cards.items.length > 0);
     });
   });
 

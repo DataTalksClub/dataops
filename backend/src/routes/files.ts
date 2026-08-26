@@ -7,10 +7,14 @@ import {
   createFile,
   getFile,
   deleteFile,
+  listFilesByTaskPage,
+  listFilesPage,
   listFilesByTask,
   listFiles,
 } from '../db/files';
+import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
 import { saveFile, readFile, removeFile, isLocalFilesystemStorageAllowed } from '../storage';
+import { resolveInteractiveActor } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -21,6 +25,15 @@ function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
     headers: JSON_HEADERS,
     body: typeof body === 'string' ? body : JSON.stringify(body),
   };
+}
+
+function paginationFailure(error: unknown): LambdaResponse | null {
+  if (!(error instanceof CollectionCursorError)) return null;
+  return jsonResponse(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
+}
+
+function fileViewer(actorId: string): string {
+  return actorId || 'test-bypass';
 }
 
 /**
@@ -274,23 +287,37 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
  * Handle GET /api/files - list files with query params.
  */
 async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
-  const params = event.queryStringParameters || {};
-
-  if (params.taskId) {
-    const files = await listFilesByTask(client, params.taskId);
-    return jsonResponse(200, { files });
+  try {
+    const viewer = await resolveInteractiveActor(client, event, 'work-read');
+    if (!viewer.ok) return viewer.response;
+    const params = event.queryStringParameters || {};
+    const taskId = typeof params.taskId === 'string' ? params.taskId.trim() : '';
+    const filters = {
+      category: typeof params.category === 'string' ? params.category : undefined,
+      tag: typeof params.tag === 'string' ? params.tag : undefined,
+    };
+    const binding = {
+      collection: 'files',
+      filters: { taskId: taskId || null, category: filters.category || null, tag: filters.tag || null },
+      principal: fileViewer(viewer.actor.id),
+    };
+    const page = taskId
+      ? await listFilesByTaskPage(client, taskId, binding, params)
+      : await listFilesPage(client, filters, binding, params);
+    const items = [...page.items].sort((left, right) => (
+      right.createdAt.localeCompare(left.createdAt)
+      || left.id.localeCompare(right.id)
+    ));
+    const body: { files: Record<string, unknown> } = { files: { items } };
+    if (page.nextExclusiveStartKey) {
+      body.files.nextCursor = await encodeCollectionCursor(binding, page.nextExclusiveStartKey);
+    }
+    return jsonResponse(200, body);
+  } catch (error) {
+    const failure = paginationFailure(error);
+    if (failure) return failure;
+    throw error;
   }
-
-  const filters: { category?: string; tag?: string } = {};
-  if (params.category) {
-    filters.category = params.category;
-  }
-  if (params.tag) {
-    filters.tag = params.tag;
-  }
-
-  const files = await listFiles(client, Object.keys(filters).length > 0 ? filters : undefined);
-  return jsonResponse(200, { files });
 }
 
 /**

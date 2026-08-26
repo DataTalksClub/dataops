@@ -96,16 +96,18 @@ test.describe('production sponsor CRM communications portal', () => {
     };
 
     const routeRole = async (page, role) => {
-      await page.route('**/work/api/notifications', (route) =>
+      await page.route('**/work/api/notifications*', (route) =>
         route.fulfill({
           json: {
-            notifications: [{
-              id: 'alert-1',
-              message: 'Sponsor booking materials are missing 10 days before publication',
-              dueAt: '2026-08-20',
-              dismissed: false,
-              metadata: { sponsorBookingId: 'booking-1' },
-            }],
+            notifications: {
+              items: [{
+                id: 'alert-1',
+                message: 'Sponsor booking materials are missing 10 days before publication',
+                dueAt: '2026-08-20',
+                dismissed: false,
+                metadata: { sponsorBookingId: 'booking-1' },
+              }],
+            },
           },
         }));
       await page.route('**/work/api/sponsor-crm/**', async (route) => {
@@ -452,8 +454,8 @@ test.describe('production sponsor CRM communications portal', () => {
 
     const disabledContext = await browser.newContext({ baseURL: server.baseURL });
     const disabledPage = await disabledContext.newPage();
-    await disabledPage.route('**/work/api/notifications', (route) =>
-      route.fulfill({ json: { notifications: [] } }));
+    await disabledPage.route('**/work/api/notifications*', (route) =>
+      route.fulfill({ json: { notifications: { items: [] } } }));
     await disabledPage.route('**/work/api/sponsor-crm/**', (route) => {
       const url = new URL(route.request().url());
       const pathname = url.pathname;
