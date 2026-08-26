@@ -1,4 +1,15 @@
 import { renderDataSummary } from "./operations-overview.js";
+import { createCollectionLoader } from "../core/collection-loader.js";
+import {
+  compareQualityFindings,
+  dedupeQualityFindings,
+  findingMatchesCard,
+  findingMatchesDoc,
+  normalizeOperationsQualitySnapshot,
+  normalizeQualityFinding,
+  taskHasClearProofInstruction,
+  taskNeedsProofInstruction,
+} from "../core/operations-model.js";
 
 export function createHomeSurface(context) {
   const {
@@ -10,7 +21,6 @@ export function createHomeSurface(context) {
     buildHomeAttentionItems,
     buildOperationsFutureSections,
     buildOperationsReferenceLinks,
-    cardsFromWorkPayload,
     clearSelectionButton,
     currentOperatorIdForTodayScope,
     currentOperatorIdFromPayload,
@@ -61,6 +71,9 @@ export function createHomeSurface(context) {
     workTaskTitle,
     workflowPriority,
   } = context;
+
+  let cardsLoader;
+  let lastGoodCardsPage;
 
   function renderOperationsHome(documents) {
     const model = buildOperationsHomeModel(documents, {
@@ -117,7 +130,11 @@ export function createHomeSurface(context) {
       renderHomeStatusStrip(model, {
         onRetryWork: async () => {
           const routeToken = getActiveWorkspaceRouteToken();
-          await refreshOperationsWorkSnapshot({ rerender: false });
+          await refreshOperationsWorkSnapshot({
+            rerender: false,
+            continueCards:
+              model.stats.cardsLoaded && !model.stats.cardsComplete,
+          });
           if (isWorkspaceRouteFresh(routeToken)) refreshDocuments();
         },
       }),
@@ -170,13 +187,19 @@ export function createHomeSurface(context) {
     const open =
       stats.todayTasks + stats.overdueTasks + stats.waitingTasks + stats.activeCards;
     const everyLaneLoaded =
-      stats.todayLoaded && stats.overdueLoaded && stats.waitingLoaded && stats.cardsLoaded;
+      stats.todayLoaded &&
+      stats.overdueLoaded &&
+      stats.waitingLoaded &&
+      stats.cardsComplete &&
+      stats.cardTasksComplete;
     // A failed lane has no count, not a zero.
     const counts = [
       stats.todayLoaded ? `${countLabel(stats.todayTasks, "task")} due today` : "due today unknown",
       stats.overdueLoaded ? `${countLabel(stats.overdueTasks, "task")} overdue` : "overdue unknown",
       stats.waitingLoaded ? `${countLabel(stats.waitingTasks, "task")} waiting` : "waiting unknown",
-      stats.cardsLoaded ? countLabel(stats.activeCards, "active card") : "active cards unknown",
+      stats.cardsComplete
+        ? countLabel(stats.activeCards, "active card")
+        : "active cards unknown",
     ].join(" · ");
     return renderDataSummary({
       id: "home",
@@ -341,64 +364,6 @@ export function createHomeSurface(context) {
     };
   }
 
-  // Tasks owns Queue / Workflows / Templates / Assistants / Artifacts. Its
-  // expandable sidebar group selects the canonical sub-route; the main canvas is
-  // reserved for the selected work surface.
-
-  function normalizeOperationsQualitySnapshot(input) {
-    const snapshot = input && typeof input === "object" ? input : {};
-    const findings = Array.isArray(snapshot.findings)
-      ? snapshot.findings
-          .filter((finding) => finding && typeof finding === "object")
-          .map(normalizeQualityFinding)
-      : [];
-    return {
-      loaded: Boolean(snapshot.loaded),
-      ok: snapshot.ok !== false,
-      findings,
-      summary:
-        snapshot.summary && typeof snapshot.summary === "object"
-          ? snapshot.summary
-          : { total: findings.length },
-      errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
-      validationErrors: Array.isArray(snapshot.validationErrors)
-        ? snapshot.validationErrors
-        : [],
-    };
-  }
-
-  function normalizeQualityFinding(finding) {
-    return {
-      ...finding,
-      id: String(
-        finding.id ||
-          `${finding.category || "quality"}:${finding.title || ""}:${finding.docPath || ""}:${finding.taskId || ""}`,
-      ),
-      category: String(finding.category || "process-quality"),
-      severity: normalizeQualitySeverity(finding.severity),
-      title: String(finding.title || "Process quality finding"),
-      summary: String(finding.summary || ""),
-      source: String(finding.source || "process quality"),
-      nextAction: String(finding.nextAction || "open doc"),
-      status: String(finding.status || "open"),
-      docId: String(finding.docId || ""),
-      docPath: String(finding.docPath || ""),
-      templateId: String(finding.templateId || ""),
-      workflowSlug: String(finding.workflowSlug || ""),
-      instructionDocId: String(finding.instructionDocId || ""),
-      taskRef: String(finding.taskRef || ""),
-      taskId: String(finding.taskId || ""),
-      cardId: String(finding.cardId || ""),
-    };
-  }
-
-  function normalizeQualitySeverity(value) {
-    const severity = String(value || "warning").toLowerCase();
-    return ["blocking", "warning", "info"].includes(severity)
-      ? severity
-      : "warning";
-  }
-
   function buildProcessQualityModel(report, work) {
     const snapshot = normalizeOperationsQualitySnapshot(
       report || state.qualitySnapshot,
@@ -463,7 +428,11 @@ export function createHomeSurface(context) {
     }
     for (const card of work.activeCards || []) {
       const matched = reportFindings.filter((finding) =>
-        findingMatchesCard(finding, card),
+        findingMatchesCard(
+          finding,
+          card,
+          normalizeTemplateMatchValue,
+        ),
       );
       for (const finding of matched) {
         findings.push({
@@ -622,47 +591,6 @@ export function createHomeSurface(context) {
     );
   }
 
-  function findingMatchesCard(finding, card) {
-    if (!finding || !card) return false;
-    const workflowValues = [
-      card.templateId,
-      card.templateType,
-      card.type,
-      card.workflowSlug,
-      card.workflowType,
-      card.slug,
-      card.title,
-      card.name,
-    ]
-      .filter(Boolean)
-      .map(normalizeTemplateMatchValue);
-    const findingValues = [finding.templateId, finding.workflowSlug]
-      .filter(Boolean)
-      .map(normalizeTemplateMatchValue);
-    return findingValues.some((value) => workflowValues.includes(value));
-  }
-
-  function dedupeQualityFindings(findings) {
-    const seen = new Set();
-    const out = [];
-    for (const finding of findings.map(normalizeQualityFinding)) {
-      const key = finding.id;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(finding);
-    }
-    return out;
-  }
-
-  function compareQualityFindings(a, b) {
-    const order = { blocking: 0, warning: 1, info: 2 };
-    const bySeverity = (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
-    if (bySeverity !== 0) return bySeverity;
-    return `${a.workflowSlug || ""}:${a.category}:${a.title}`.localeCompare(
-      `${b.workflowSlug || ""}:${b.category}:${b.title}`,
-    );
-  }
-
   function buildOperationsHomeModel(documents, options) {
     options = options || {};
     const docs = Array.isArray(documents) ? documents : [];
@@ -684,10 +612,8 @@ export function createHomeSurface(context) {
       options.recurringSnapshot || {},
     );
     const hasLiveWork = work.loaded;
-    // Per-lane load state (#97): each lane degrades against its OWN data source
-    // rather than the coarse top-level `loaded` (.some()). Missing-proof is a
-    // derived view over all task fetches, so it is "loaded" when any task source
-    // resolved; cards is gated on the cards fetch alone.
+    // Missing-proof spans direct Task queries and Card checklist Tasks. Its
+    // list is trustworthy only when every contributing source has loaded.
     const tasksLoaded =
       work.todayLoaded || work.overdueLoaded || work.waitingLoaded;
     const templates = docs
@@ -739,9 +665,12 @@ export function createHomeSurface(context) {
         )
       : [];
     const missingProofTasks = homeWork.tasks.missingProof;
-    const missingProofItems = tasksLoaded
-      ? missingProofTasks.map((task) => operationItemFromTask(task, { today }))
-      : [];
+    const missingProofItems =
+      tasksLoaded && work.cardTasksComplete
+        ? missingProofTasks.map((task) =>
+            operationItemFromTask(task, { today }),
+          )
+        : [];
     const fallbackQualitySnapshot =
       typeof state.qualitySnapshot !== "undefined" ? state.qualitySnapshot : {};
     const quality = buildProcessQualityModel(
@@ -779,9 +708,11 @@ export function createHomeSurface(context) {
       {
         id: "missing-proof",
         title: "Missing Proof",
-        empty: tasksLoaded
-          ? "No tasks waiting on proof."
-          : "Live work data unavailable; missing-proof work cannot be confirmed.",
+        empty: !tasksLoaded
+          ? "Live work data unavailable; missing-proof work cannot be confirmed."
+          : work.cardTasksComplete
+            ? "No tasks waiting on proof."
+            : "Card task data is incomplete; missing-proof totals are partial.",
         items: missingProofItems,
       },
       {
@@ -840,13 +771,17 @@ export function createHomeSurface(context) {
         overdueLoaded: work.overdueLoaded,
         waitingLoaded: work.waitingLoaded,
         cardsLoaded: work.cardsLoaded,
+        cardsComplete: work.cardsComplete,
         usersLoaded: work.usersLoaded,
-        missingProofLoaded: tasksLoaded,
+        cardTasksComplete: work.cardTasksComplete,
+        missingProofLoaded: tasksLoaded && work.cardTasksComplete,
         todayTasks: homeWork.counts.today,
         overdueTasks: homeWork.counts.overdue,
         waitingTasks: homeWork.counts.waiting,
         followUpTasks: homeWork.counts.followUps,
-        missingProofTasks: homeWork.counts.missingProof,
+        missingProofTasks: work.cardTasksComplete
+          ? homeWork.counts.missingProof
+          : 0,
         activeCards: work.activeCards.length,
         recurringConfigs: recurring.configs.length,
         enabledRecurringConfigs: recurring.enabled.length,
@@ -888,13 +823,30 @@ export function createHomeSurface(context) {
       endDate: yesterday,
     });
     const waitingUrl = workApiUrl("/api/tasks", { status: "waiting" });
-    const cardsUrl = workApiUrl("/api/cards");
+    if (!options.continueCards || !cardsLoader) {
+      cardsLoader = createCollectionLoader({
+        request,
+        createUrl: (parameters) => workApiUrl("/api/cards", parameters),
+        collection: "cards",
+      });
+    }
     const usersUrl = workApiUrl("/api/users");
     const meUrl = workApiUrl("/api/me");
     const localContext = await readLocalPreviewContext();
     const meRequest = localContext?.actorEmail
       ? Promise.resolve({})
       : request(meUrl);
+    let cardsPromise;
+    if (options.continueCards && cardsLoader) {
+      const currentPage = cardsLoader.getSnapshot();
+      cardsPromise = !currentPage.loaded || (currentPage.failed && !currentPage.cursor)
+        ? cardsLoader.load()
+        : currentPage.failed && currentPage.cursor
+          ? cardsLoader.loadMore()
+          : Promise.resolve(currentPage);
+    } else {
+      cardsPromise = cardsLoader.load();
+    }
     const [
       todayResult,
       overdueResult,
@@ -906,7 +858,7 @@ export function createHomeSurface(context) {
       request(todayUrl),
       request(overdueUrl),
       request(waitingUrl),
-      request(cardsUrl),
+      cardsPromise,
       request(usersUrl),
       meRequest,
     ]);
@@ -920,25 +872,42 @@ export function createHomeSurface(context) {
     // behind a never-true signal. The real robustness for stale snapshots lives in
     // the e2e specs' retry-with-refresh loop, not in making this signal precise.
     // (See #97 for finer per-lane degradation tracking.) /api/me is optional.
-    snapshot.loaded = [
-      todayResult,
-      overdueResult,
-      waitingResult,
-      cardsResult,
-      usersResult,
-    ].some((result) => result.status === "fulfilled");
+    let cardPage = settledPayload(cardsResult);
+    while (cardPage.moreAvailable && !cardPage.failed) {
+      cardPage = await cardsLoader.loadMore();
+    }
+    const cardsRequestFailed = Boolean(cardPage.failed);
+    const cardsRequestError = String(cardPage.error || "");
+    if (cardPage.loaded && !cardPage.failed) {
+      lastGoodCardsPage = cardPage;
+    } else if (cardPage.failed && !cardPage.loaded && lastGoodCardsPage) {
+      // A fresh reload that never received its first page must not erase the
+      // operator's last known-good view. The runtime error above still makes
+      // that retained view explicitly stale.
+      cardPage = lastGoodCardsPage;
+    }
+
+    snapshot.loaded =
+      [
+        todayResult,
+        overdueResult,
+        waitingResult,
+        usersResult,
+      ].some((result) => result.status === "fulfilled") ||
+      Boolean(cardPage.loaded);
     // Per-lane load state (#97): each fetch tracks whether its OWN data source
     // resolved, so a single failed endpoint degrades only its lane rather than
     // hiding the whole work surface behind the coarse `.some()` signal above.
     snapshot.todayLoaded = todayResult.status === "fulfilled";
     snapshot.overdueLoaded = overdueResult.status === "fulfilled";
     snapshot.waitingLoaded = waitingResult.status === "fulfilled";
-    snapshot.cardsLoaded = cardsResult.status === "fulfilled";
+    snapshot.cardsLoaded = Boolean(cardPage.loaded);
+    snapshot.cardsComplete = Boolean(cardPage.complete);
     snapshot.usersLoaded = usersResult.status === "fulfilled";
     snapshot.todayTasks = tasksFromWorkPayload(settledPayload(todayResult));
     snapshot.overdueTasks = tasksFromWorkPayload(settledPayload(overdueResult));
     snapshot.waitingTasks = tasksFromWorkPayload(settledPayload(waitingResult));
-    snapshot.cards = cardsFromWorkPayload(settledPayload(cardsResult));
+    snapshot.cards = cardPage.items || [];
     snapshot.users = usersFromWorkPayload(settledPayload(usersResult));
     snapshot.currentOperatorId = currentOperatorIdFromPayload(
       settledPayload(meResult),
@@ -947,13 +916,20 @@ export function createHomeSurface(context) {
       todayResult,
       overdueResult,
       waitingResult,
-      cardsResult,
       usersResult,
     ]
       .filter((result) => result.status === "rejected")
       .map((result) => result.reason?.message || "Work API request failed");
+    if (cardsRequestFailed || cardPage.failed) {
+      snapshot.errors.push(
+        cardsRequestError ||
+          cardPage.error ||
+          "Cards could not be completely loaded",
+      );
+    }
 
     const activeCards = snapshot.cards.filter(isActiveWorkCard);
+
     const cardTaskResults = await Promise.allSettled(
       activeCards.map((card) =>
         request(workApiUrl("/api/tasks", { cardId: card.id })),
@@ -970,6 +946,9 @@ export function createHomeSurface(context) {
         );
       }
     });
+    snapshot.cardTasksComplete =
+      cardPage.complete &&
+      cardTaskResults.every((result) => result.status === "fulfilled");
 
     state.workSnapshot = normalizeOperationsWorkSnapshot(snapshot, { today });
     await refreshAccountIdentity(

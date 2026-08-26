@@ -8,6 +8,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_CARDS } from './tableNames';
 import type { Card } from '../types';
+import { readCollectionPage } from './collectionPage';
 
 type ActiveCardStage = 'preparation' | 'announced' | 'after-event';
 
@@ -303,6 +304,43 @@ async function listCards(client: DynamoDBDocumentClient): Promise<Card[]> {
   return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Card);
 }
 
+interface CardPageInput {
+  limit?: unknown;
+  cursor?: unknown;
+}
+
+/**
+ * Read one client-facing Card page. The owner predicate stays in memory so a
+ * physical page containing only other owners cannot end the filtered traversal.
+ */
+function listCardsPage(
+  client: DynamoDBDocumentClient,
+  input: {
+    binding: Parameters<typeof readCollectionPage<Card>>[0]['binding'];
+    pagination: CardPageInput;
+    matches?: (card: Card) => boolean;
+    physicalPageSize?: number;
+  },
+) {
+  return readCollectionPage<Card>({
+    client,
+    tableName: TABLE_CARDS,
+    kind: 'scan',
+    command: {
+      FilterExpression: 'begins_with(PK, :prefix)',
+      ExpressionAttributeValues: { ':prefix': 'CARD#' },
+    },
+    ...input,
+    input: input.pagination,
+    keyFor: (card) => ({ PK: `CARD#${card.id}`, SK: `CARD#${card.id}` }),
+    cleanItem: (item) => {
+      const card = cleanItem(item);
+      if (!card) throw new Error('Canonical Card was absent');
+      return card;
+    },
+  });
+}
+
 export {
   createCard,
   buildCard,
@@ -311,6 +349,7 @@ export {
   updateCard,
   updateCardAdditive,
   listCards,
+  listCardsPage,
   CardVersionConflictError,
   CardNotFoundError,
   isActiveCardStage,

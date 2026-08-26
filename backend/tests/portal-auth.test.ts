@@ -328,7 +328,7 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(response.statusCode, 200);
     const body = JSON.parse(response.body);
     assert.ok(
-      body.notifications.some((notification: { id?: string }) => notification.id === assignedNotification.id),
+      body.notifications.items.some((notification: { id?: string }) => notification.id === assignedNotification.id),
       'portal-admin should receive the unscoped notifications list, including operator-assigned notifications',
     );
   });
@@ -367,7 +367,7 @@ describe('Portal broker authentication', () => {
 
     assert.strictEqual(response.statusCode, 200);
     const body = JSON.parse(response.body);
-    const ids = body.notifications.map((notification: { id: string }) => notification.id);
+    const ids = body.notifications.items.map((notification: { id: string }) => notification.id);
     assert.ok(ids.includes(globalNotification.id), 'real users should still see global notifications');
     assert.ok(!ids.includes(otherUserNotification.id), 'real users should not see notifications assigned to another user');
   });

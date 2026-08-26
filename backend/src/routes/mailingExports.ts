@@ -1,11 +1,15 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
-  listMailingExports,
+  listMailingExportsPage,
+} from '../db/mailingExports';
+import {
   loadMailingExportConfigs,
   publicMailingExportConfigs,
   runMailingExport,
   type MailingExportDependencies,
 } from '../mailingExports/service';
+import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
+import { resolveInteractiveActor } from '../identity/actor';
 import type { MailingExportJob } from '../mailingExports/types';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -24,8 +28,36 @@ function publicJob(job: MailingExportJob): Omit<MailingExportJob, 'leaseOwner' |
 
 export async function handleMailingExportRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   if (path === '/api/mailing-exports' && method === 'GET') {
-    const configs = loadMailingExportConfigs();
-    return response(200, { configs: publicMailingExportConfigs(configs), exports: (await listMailingExports(client)).map(publicJob) });
+    try {
+      const configs = loadMailingExportConfigs();
+      const viewer = await resolveInteractiveActor(client, event, 'work-read');
+      if (!viewer.ok) return response(viewer.response.statusCode, JSON.parse(viewer.response.body));
+      const pagination = event.queryStringParameters || {};
+      const binding = {
+        collection: 'mailing-exports',
+        filters: {},
+        principal: viewer.actor.id || 'test-bypass',
+      };
+      const page = await listMailingExportsPage(client, binding, pagination);
+      const items = [...page.items]
+        .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt)
+          || left.id.localeCompare(right.id))
+        .map(publicJob);
+      return response(200, {
+        configs: publicMailingExportConfigs(configs),
+        exports: {
+          items,
+          ...(page.nextExclusiveStartKey ? {
+            nextCursor: await encodeCollectionCursor(binding, page.nextExclusiveStartKey),
+          } : {}),
+        },
+      });
+    } catch (error) {
+      if (error instanceof CollectionCursorError) {
+        return response(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
+      }
+      throw error;
+    }
   }
   if (path === '/api/mailing-exports/run' && method === 'POST') {
     let body: Record<string, unknown> = {};

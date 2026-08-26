@@ -36,6 +36,8 @@ export function emptyOperationsWorkSnapshot() {
     overdueLoaded: false,
     waitingLoaded: false,
     cardsLoaded: false,
+    cardsComplete: false,
+    cardTasksComplete: false,
     usersLoaded: false,
   };
 }
@@ -148,8 +150,15 @@ export function settledPayload(result) {
 export function cardsFromWorkPayload(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
-  if (Array.isArray(payload.cards)) return payload.cards;
-  if (Array.isArray(payload.items)) return payload.items;
+  const collection = payload.cards;
+  if (
+    collection &&
+    typeof collection === "object" &&
+    !Array.isArray(collection) &&
+    Array.isArray(collection.items)
+  ) {
+    return collection.items;
+  }
   return [];
 }
 
@@ -205,6 +214,144 @@ export function normalizeTemplateMatchValue(value) {
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export function taskNeedsProofInstruction(task) {
+  if (!task || typeof task !== "object") return false;
+  if (task.requiredLinkName || task.requiresFile) return true;
+  const proof = task.proofRequirement;
+  if (proof && typeof proof === "object" && proof.required !== false)
+    return true;
+  const validation = task.validation;
+  return Boolean(
+    validation &&
+    typeof validation === "object" &&
+    (validation.requiredEvidence || validation.requiredCardLinks),
+  );
+}
+
+export function taskHasClearProofInstruction(task) {
+  if (task.requiredLinkName) return true;
+  const proof = task.proofRequirement;
+  if (proof && typeof proof === "object" && String(proof.label || "").trim())
+    return true;
+  const validation = task.validation;
+  if (
+    validation &&
+    typeof validation === "object" &&
+    String(validation.requiredEvidence || "").trim()
+  )
+    return true;
+  return false;
+}
+
+export function findingMatchesDoc(finding, doc) {
+  if (!finding || !doc) return false;
+  const ids = [doc.id, ...(Array.isArray(doc.aliases) ? doc.aliases : [])]
+    .filter(Boolean)
+    .map(String);
+  return (
+    (finding.docPath && finding.docPath === doc.path) ||
+    (finding.docId && ids.includes(String(finding.docId))) ||
+    (finding.instructionDocId &&
+      ids.includes(String(finding.instructionDocId)))
+  );
+}
+
+export function findingMatchesCard(
+  finding,
+  card,
+  normalizeTemplateMatchValue,
+) {
+  if (!finding || !card) return false;
+  const workflowValues = [
+    card.templateId,
+    card.templateType,
+    card.type,
+    card.workflowSlug,
+    card.workflowType,
+    card.slug,
+    card.title,
+    card.name,
+  ]
+    .filter(Boolean)
+    .map(normalizeTemplateMatchValue);
+  const findingValues = [finding.templateId, finding.workflowSlug]
+    .filter(Boolean)
+    .map(normalizeTemplateMatchValue);
+  return findingValues.some((value) => workflowValues.includes(value));
+}
+
+export function normalizeOperationsQualitySnapshot(input) {
+  const snapshot = input && typeof input === "object" ? input : {};
+  const findings = Array.isArray(snapshot.findings)
+    ? snapshot.findings
+        .filter((finding) => finding && typeof finding === "object")
+        .map(normalizeQualityFinding)
+    : [];
+  return {
+    loaded: Boolean(snapshot.loaded),
+    ok: snapshot.ok !== false,
+    findings,
+    summary:
+      snapshot.summary && typeof snapshot.summary === "object"
+        ? snapshot.summary
+        : { total: findings.length },
+    errors: Array.isArray(snapshot.errors) ? snapshot.errors : [],
+    validationErrors: Array.isArray(snapshot.validationErrors)
+      ? snapshot.validationErrors
+      : [],
+  };
+}
+
+export function normalizeQualityFinding(finding) {
+  return {
+    ...finding,
+    id: String(
+      finding.id ||
+        `${finding.category || "quality"}:${finding.title || ""}:${finding.docPath || ""}:${finding.taskId || ""}`,
+    ),
+    category: String(finding.category || "process-quality"),
+    severity: normalizeQualitySeverity(finding.severity),
+    title: String(finding.title || "Process quality finding"),
+    summary: String(finding.summary || ""),
+    source: String(finding.source || "process quality"),
+    nextAction: String(finding.nextAction || "open doc"),
+    status: String(finding.status || "open"),
+    docId: String(finding.docId || ""),
+    docPath: String(finding.docPath || ""),
+    templateId: String(finding.templateId || ""),
+    workflowSlug: String(finding.workflowSlug || ""),
+    instructionDocId: String(finding.instructionDocId || ""),
+    taskRef: String(finding.taskRef || ""),
+    taskId: String(finding.taskId || ""),
+    cardId: String(finding.cardId || ""),
+  };
+}
+
+function normalizeQualitySeverity(value) {
+  const severity = String(value || "warning").toLowerCase();
+  return ["blocking", "warning", "info"].includes(severity)
+    ? severity
+    : "warning";
+}
+
+export function dedupeQualityFindings(findings) {
+  const seen = new Set();
+  return findings.map(normalizeQualityFinding).filter((finding) => {
+    if (seen.has(finding.id)) return false;
+    seen.add(finding.id);
+    return true;
+  });
+}
+
+export function compareQualityFindings(a, b) {
+  const order = { blocking: 0, warning: 1, info: 2 };
+  const bySeverity = (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
+  if (bySeverity !== 0) return bySeverity;
+  return `${a.workflowSlug || ""}:${a.category}:${a.title}`.localeCompare(
+    `${b.workflowSlug || ""}:${b.category}:${b.title}`,
+  );
 }
 
 export function createOperationsModel({
@@ -365,6 +512,8 @@ export function createOperationsModel({
       overdueLoaded: laneLoaded("overdueLoaded"),
       waitingLoaded: laneLoaded("waitingLoaded"),
       cardsLoaded: laneLoaded("cardsLoaded"),
+      cardsComplete: Boolean(snapshot.cardsComplete),
+      cardTasksComplete: Boolean(snapshot.cardTasksComplete),
       usersLoaded: laneLoaded("usersLoaded"),
       currentOperatorId: String(snapshot.currentOperatorId || ""),
       todayTasks: sortWorkTasks(normalizedTodayTasks, "today", today),

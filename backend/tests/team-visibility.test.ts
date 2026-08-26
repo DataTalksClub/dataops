@@ -545,11 +545,11 @@ describe('signed-in identity, teammate projections, and the work authorization b
   it('filters Cards by owner and projects owners and Task assignees safely', async () => {
     const mine = await invoke({ path: '/api/cards', query: { owner: 'me' }, bearer: sessions[MORGAN] });
     assert.strictEqual(mine.statusCode, 200);
-    assert.ok((body(mine).cards as Card[]).every((card) => card.ownerId === MORGAN));
+    assert.ok((body(mine).cards.items as Card[]).every((card) => card.ownerId === MORGAN));
 
     const unassigned = await invoke({ path: '/api/cards', query: { owner: 'unassigned' }, bearer: sessions[AVERY] });
-    assert.ok((body(unassigned).cards as Card[]).some((card) => card.id === work.unownedCard.id));
-    assert.ok((body(unassigned).cards as Card[]).every((card) => card.ownerId === undefined));
+    assert.ok((body(unassigned).cards.items as Card[]).some((card) => card.id === work.unownedCard.id));
+    assert.ok((body(unassigned).cards.items as Card[]).every((card) => card.ownerId === undefined));
 
     const single = await invoke({ path: `/api/cards/${work.morganCard.id}`, bearer: sessions[AVERY] });
     assert.strictEqual(single.statusCode, 200);
@@ -558,7 +558,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
 
     const collection = await invoke({ path: '/api/cards', bearer: sessions[AVERY] });
     assert.strictEqual(collection.statusCode, 200);
-    const listedSummary = (body(collection).cards as ProjectedCard[])
+    const listedSummary = (body(collection).cards.items as ProjectedCard[])
       .find((card) => card.id === work.summaryCard.id);
     assert.ok(listedSummary);
     assert.strictEqual(listedSummary.owner?.name, 'Morgan Teammate');

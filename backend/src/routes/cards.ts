@@ -7,8 +7,9 @@ import {
   getCard,
   getCardConsistent,
   updateCard,
-  listCards,
+  listCardsPage,
 } from '../db/cards';
+import { CollectionCursorError, encodeCollectionCursor } from '../db/collectionPagination';
 import {
   createCardFromTemplate,
   getTemplate,
@@ -418,12 +419,30 @@ async function handleCollection(
     const directory = new TeamDirectory(client);
     await directory.loadAll();
     const activeMemberIds = await directory.activeMemberIds();
-    const [allCards, allTasks] = await Promise.all([
-      listCards(client),
-      listAllTasks(client),
-    ]);
-    const cards = allCards
-      .filter((card) => matchesOwnerFilter(card.ownerId, ownerFilter, activeMemberIds));
+    const binding = {
+      collection: 'cards',
+      filters: { owner: ownerFilter },
+      principal: listActor.actor.id || 'test-bypass',
+    };
+    let cardPage;
+    try {
+      cardPage = await listCardsPage(client, {
+        binding,
+        pagination: event.queryStringParameters || {},
+        matches: (card) => matchesOwnerFilter(card.ownerId, ownerFilter, activeMemberIds),
+      });
+    } catch (error) {
+      if (error instanceof CollectionCursorError) {
+        return json(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
+      }
+      throw error;
+    }
+
+    // The bounded-complete Task read is intentionally sequential with Cards:
+    // if it reaches its ceiling, the API fails instead of projecting an
+    // apparently complete board with orphan-looking relationships.
+    const allTasks = await listAllTasks(client);
+
     const tasksByCardId = new Map<string, Task[]>();
     for (const task of allTasks) {
       if (typeof task.cardId !== 'string' || task.cardId.length === 0) continue;
@@ -432,9 +451,17 @@ async function handleCollection(
       tasksByCardId.set(task.cardId, tasks);
     }
 
-    const responseBody: Record<string, unknown> = {
-      cards: await projectCards(directory, cards, tasksByCardId),
+    const responseBody: {
+      cards: Record<string, unknown>;
+      owner?: Awaited<ReturnType<TeamDirectory['project']>>;
+    } = {
+      cards: {
+        items: await projectCards(directory, cardPage.items, tasksByCardId),
+      },
     };
+    if (cardPage.nextExclusiveStartKey) {
+      responseBody.cards.nextCursor = await encodeCollectionCursor(binding, cardPage.nextExclusiveStartKey);
+    }
     const ownerReference = ownerFilterUserId(ownerFilter);
     if (ownerReference) responseBody.owner = await directory.project(ownerReference);
     return json(200, responseBody);

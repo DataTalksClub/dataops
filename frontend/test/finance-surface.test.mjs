@@ -351,7 +351,7 @@ describe("Finance surface boundary", () => {
               },
             ],
           };
-        if (path.endsWith("/notifications")) return { notifications: [] };
+        if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
@@ -401,7 +401,7 @@ describe("Finance surface boundary", () => {
             ],
           };
         if (path.endsWith("/bookings")) return { items: [booking] };
-        if (path.endsWith("/notifications")) return { notifications: [] };
+        if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
         if (path.includes("/communications"))
           return {
@@ -481,7 +481,7 @@ describe("Finance surface boundary", () => {
           return { items: [{ id: "org-1", displayName: "Safe Sponsor" }] };
         if (path.endsWith("/contacts")) return { items: [] };
         if (path.endsWith("/bookings")) return { items: [booking] };
-        if (path.endsWith("/notifications")) return { notifications: [] };
+        if (path.endsWith("/notifications")) return { notifications: { items: [] } };
         if (path.endsWith("/history")) return { items: [] };
         if (path.includes("/bookings/booking-1/communications"))
           return {
@@ -787,7 +787,7 @@ describe("Finance surface boundary", () => {
 
   test("renders an honest no-configuration mailing state without offering a run", async () => {
     const { document, finance } = createHarness({
-      request: async () => ({ configs: [], exports: [] }),
+      request: async () => ({ configs: [], exports: { items: [] } }),
     });
 
     await finance.renderMailingExportsSurface();
@@ -831,6 +831,7 @@ describe("Finance surface boundary", () => {
     }));
     const exports = [
       {
+        id: "run-pending",
         configId: "pending",
         account: "Account pending",
         scopeLabel: "All contacts",
@@ -840,6 +841,7 @@ describe("Finance surface boundary", () => {
         requestedAt,
       },
       {
+        id: "run-failed",
         configId: "failed",
         account: "Account failed",
         scopeLabel: "All contacts",
@@ -851,6 +853,7 @@ describe("Finance surface boundary", () => {
         requestedAt,
       },
       {
+        id: "run-completed",
         configId: "completed",
         account: "Account completed",
         scopeLabel: "All contacts",
@@ -861,12 +864,18 @@ describe("Finance surface boundary", () => {
         completedAt,
       },
     ];
-    const { document, finance } = createHarness({
-      request: async () => ({ configs, exports }),
+    const { document, finance, requests } = createHarness({
+      request: async () => ({
+        configs,
+        exports: { items: exports },
+      }),
     });
 
     await finance.renderMailingExportsSurface();
 
+    assert.deepEqual(requests.map(({ url }) => url), [
+      "/api/mailing-exports?limit=100",
+    ]);
     const cards = document.surface.querySelector("[data-configs]").innerHTML;
     assert.match(cards, /data-export-state="pending"/);
     assert.match(
@@ -887,5 +896,40 @@ describe("Finance surface boundary", () => {
     assert.match(cards, /Requested/);
     assert.match(cards, /Completed/);
     assert.doesNotMatch(cards, /2026-08-12T08:00:00\.000Z/);
+  });
+
+  test("does not retain a prior mailing snapshot when a refresh fails", async () => {
+    const requestedAt = "2026-08-12T08:00:00.000Z";
+    let requestCount = 0;
+    const { document, finance, requests } = createHarness({
+      request: async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            configs: [],
+            exports: { items: [] },
+          };
+        }
+        throw new Error("HTTP 503 Service Unavailable");
+      },
+    });
+
+    await finance.renderMailingExportsSurface();
+    await document.surface.querySelector("[data-refresh]").dispatch("click");
+
+    assert.deepEqual(requests.map(({ url }) => url), [
+      "/api/mailing-exports?limit=100",
+      "/api/mailing-exports?limit=100",
+    ]);
+    const configs = document.surface.querySelector("[data-configs]").innerHTML;
+    const history = document.surface.querySelector("[data-history]").innerHTML;
+    assert.match(configs, /data-export-state="failure"/);
+    assert.match(configs, /HTTP 503 Service Unavailable/);
+    assert.match(history, /Export history is unavailable:/);
+    assert.equal(
+      document.surface.querySelector('[role="status"]').textContent,
+      "Could not load mailing-list exports: HTTP 503 Service Unavailable",
+    );
+    assert.equal(requestCount, 2);
   });
 });

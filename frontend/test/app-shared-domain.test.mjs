@@ -158,8 +158,9 @@ describe("app shared operations domain characterization", () => {
 
     assert.equal(settledPayload({ status: "fulfilled", value: card }), card);
     assert.deepEqual(plain(settledPayload({ status: "rejected" })), {});
-    assert.equal(cardsFromWorkPayload({ cards: [card] })[0], card);
-    assert.equal(cardsFromWorkPayload({ items: [card] })[0], card);
+    assert.equal(cardsFromWorkPayload({ cards: { items: [card] } })[0], card);
+    assert.deepEqual(cardsFromWorkPayload({ cards: [card] }), []);
+    assert.deepEqual(cardsFromWorkPayload({ items: [card] }), []);
     assert.equal(usersFromWorkPayload({ users: [user] })[0], user);
     assert.equal(
       recurringConfigsFromPayload({ configs: [recurring] })[0],
@@ -188,6 +189,8 @@ describe("app shared operations domain characterization", () => {
       overdueLoaded: false,
       waitingLoaded: false,
       cardsLoaded: false,
+      cardsComplete: false,
+      cardTasksComplete: false,
       usersLoaded: false,
     });
     assert.deepEqual(emptyOperationsRecurringSnapshot(), {

@@ -1,3 +1,4 @@
+import { createCollectionLoader } from "../../core/collection-loader.js";
 import { html } from "./shared.js";
 
 export function createMailingExportsSurface(context) {
@@ -40,6 +41,29 @@ export function createMailingExportsSurface(context) {
         },
         ...options,
       });
+    let configs = [];
+    let latestConfigs = null;
+    let configsGeneration = 0;
+    const exportsLoader = createCollectionLoader({
+      request: async (url) => {
+        const requestGeneration = configsGeneration;
+        const result = await api(String(url));
+        if (!Array.isArray(result.configs)) {
+          throw new Error("Mailing export response was invalid");
+        }
+        if (requestGeneration === configsGeneration) {
+          latestConfigs = result.configs;
+        }
+        return result;
+      },
+      createUrl: ({ cursor, limit }) => {
+        const query = new URLSearchParams({ limit: String(limit) });
+        if (cursor) query.set("cursor", cursor);
+        return `?${query}`;
+      },
+      collection: "exports",
+    });
+    let exportState = exportsLoader.getSnapshot();
     const actionCopy = {
       wait: "Wait for the provider, then refresh or advance this run.",
       retry: "Retry this run with the same key.",
@@ -62,6 +86,32 @@ export function createMailingExportsSurface(context) {
       run.runKey
         ? run.runKey
         : todayIsoDate();
+
+    function historyMarkup(runs) {
+      if (!runs.length) {
+        return html`<div class="honest-state" data-export-state="empty">
+            <strong>No export runs yet</strong>
+            <p>Start an enabled configuration to create durable history.</p>
+          </div>`;
+      }
+      return runs
+        .map(
+          (run) =>
+            html`<article class="mailing-export-history">
+                <strong
+                  >${escapeHtml(run.account)} · ${escapeHtml(run.status)}</strong
+                ><span
+                  >${escapeHtml(run.scopeLabel)} · requested
+                  ${escapeHtml(formatTime(run.requestedAt))}${
+                    run.completedAt
+                      ? ` · completed ${escapeHtml(formatTime(run.completedAt))}`
+                      : ""
+                  }</span
+                >
+              </article>`,
+        )
+        .join("");
+    }
 
     function runCard(config, run) {
       const state = run?.status || "empty";
@@ -129,72 +179,140 @@ export function createMailingExportsSurface(context) {
       refreshButton.disabled = true;
       refreshButton.setAttribute("aria-busy", "true");
       status.textContent = "Loading export configurations…";
+      configsGeneration += 1;
+      latestConfigs = null;
       try {
-        const result = await api();
-        const configs = result.configs || [],
-          runs = result.exports || [];
-        if (!configs.length) {
-          configsRoot.innerHTML = html`<div
-            class="honest-state"
-            data-export-state="no-config"
-          >
-            <strong>No export configurations</strong>
-            <p>
-              Add an enabled provider configuration through the approved deploy
-              mechanism. No secret values belong in the portal.
-            </p>
-          </div>`;
-        } else {
-          configsRoot.innerHTML = configs
-            .map((config) =>
-              runCard(
-                config,
-                runs.find((run) => run.configId === config.id),
-              ),
-            )
-            .join("");
-        }
-        historyRoot.innerHTML = runs.length
-          ? runs
-              .map(
-                (run) =>
-                  html`<article class="mailing-export-history">
-                    <strong
-                      >${escapeHtml(run.account)} ·
-                      ${escapeHtml(run.status)}</strong
-                    ><span
-                      >${escapeHtml(run.scopeLabel)} · requested
-                      ${escapeHtml(formatTime(run.requestedAt))}${run.completedAt ? ` · completed ${escapeHtml(formatTime(run.completedAt))}` : ""}</span
-                    >
-                  </article>`,
-              )
-              .join("")
-          : html`<div class="honest-state" data-export-state="empty">
-              <strong>No export runs yet</strong>
-              <p>Start an enabled configuration to create durable history.</p>
-            </div>`;
-        status.textContent = configs.length
-          ? `${configs.length} export configuration${configs.length === 1 ? "" : "s"} loaded.`
-          : "No export configurations are enabled.";
+        const snapshot = await exportsLoader.load();
+        configs = latestConfigs || [];
+        exportState = snapshot;
+        drawExports();
       } catch (error) {
         status.textContent = `Could not load mailing-list exports: ${error.message}`;
-        configsRoot.innerHTML = html`<div
-          class="honest-state"
-          data-export-state="failure"
-        >
-          <strong>Exports unavailable</strong>
-          <p>
-            Retry with Refresh. No provider or archive details were exposed.
-          </p>
-        </div>`;
-        historyRoot.replaceChildren();
       } finally {
         refreshButton.disabled = false;
         refreshButton.removeAttribute("aria-busy");
       }
     }
 
+    function sortedRuns() {
+      return [...exportState.items].sort(
+        (left, right) =>
+          right.requestedAt.localeCompare(left.requestedAt) ||
+          left.id.localeCompare(right.id),
+      );
+    }
+
+    function continuationMarkup() {
+      if (exportState.loading || exportState.loadingMore) {
+        return html`<p class="honest-state" role="status">
+            ${
+              exportState.loadingMore
+                ? "Loading more export history…"
+                : "Loading export history…"
+            }
+          </p>`;
+      }
+      if (exportState.failed && exportState.moreAvailable) {
+        return html`<div class="honest-state">
+            <strong role="alert"
+              >More export history is available, but loading failed:
+              ${escapeHtml(exportState.error)}</strong
+            ><button type="button" class="quiet-button" data-load-history>
+              Retry next page</button
+            >
+          </div>`;
+      }
+      if (exportState.moreAvailable) {
+        return html`<div class="honest-state">
+            <span>More export history is available.</span>
+            <button type="button" class="quiet-button" data-load-history>
+              Load more</button
+            >
+          </div>`;
+      }
+      if (exportState.failed) {
+        return html`<div class="honest-state">
+            <strong role="alert">Export history is unavailable:
+              ${escapeHtml(exportState.error)}</strong
+            ><button type="button" class="quiet-button" data-load-history-retry>
+              Retry</button
+            >
+          </div>`;
+      }
+      return html`<p class="honest-state">All export history loaded.</p>`;
+    }
+
+    function drawConfigs() {
+      const runs = sortedRuns();
+      if (exportState.failed && latestConfigs === null) {
+        configsRoot.innerHTML = html`<div
+          class="honest-state"
+          data-export-state="failure"
+        >
+          <strong>Exports unavailable</strong>
+          <p>${escapeHtml(exportState.error)} Retry with Refresh.</p>
+        </div>`;
+        return;
+      }
+      if (!configs.length) {
+        configsRoot.innerHTML = html`<div
+          class="honest-state"
+          data-export-state="no-config"
+        >
+          <strong>No export configurations</strong>
+          <p>
+            Add an enabled provider configuration through the approved deploy
+            mechanism. No secret values belong in the portal.
+          </p>
+        </div>`;
+        return;
+      }
+      configsRoot.innerHTML = configs
+        .map((config) =>
+          runCard(
+            config,
+            runs.find((run) => run.configId === config.id),
+          ),
+        )
+        .join("");
+    }
+
+    function drawExports() {
+      const runs = sortedRuns();
+      drawConfigs();
+      historyRoot.innerHTML =
+        `${historyMarkup(runs)}${continuationMarkup()}`;
+      status.textContent = exportState.failed && latestConfigs === null
+        ? `Could not load mailing-list exports: ${exportState.error}`
+        : configs.length
+          ? `${
+              configs.length
+            } export configuration${configs.length === 1 ? "" : "s"} loaded.${
+              exportState.failed
+                ? ` Export history is incomplete: ${exportState.error}`
+                : exportState.moreAvailable
+                  ? " More export history is available."
+                  : " All export history loaded."
+            }`
+          : "No export configurations are enabled.";
+    }
+
     surface.querySelector("[data-refresh]").addEventListener("click", load);
+    historyRoot.addEventListener("click", (event) => {
+      if (event.target.closest("[data-load-history]")) {
+        const button = event.target.closest("[data-load-history]");
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        void (async () => {
+          exportState = await exportsLoader.loadMore();
+          drawExports();
+        })();
+        return;
+      }
+      if (event.target.closest("[data-load-history-retry]")) {
+        void load();
+      }
+    });
     configsRoot.addEventListener("click", async (event) => {
       const run = event.target.closest("[data-run]");
       const download = event.target.closest("[data-download]");

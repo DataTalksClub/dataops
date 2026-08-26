@@ -378,12 +378,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await page.goto('/#/notifications');
     const initialItem = page.locator('.work-bell-item', { hasText: initialTask.description });
     await expect(initialItem).toBeVisible();
-    const initialNotifications = (await (await request.get('/api/notifications')).json()).notifications;
+    const initialNotifications = (await (await request.get('/api/notifications')).json()).notifications.items;
     await expect(desktopCount).toHaveText(String(initialNotifications.length));
     await expect(mobileCount).toHaveText(String(initialNotifications.length));
 
     const retryTask = await createDueTask('Retry count notification');
-    const refreshedNotifications = (await (await request.get('/api/notifications')).json()).notifications;
+    const refreshedNotifications = (await (await request.get('/api/notifications')).json()).notifications.items;
     const retryNotification = refreshedNotifications.find((item) => item.taskId === retryTask.id);
     expect(retryNotification).toBeTruthy();
     expect(refreshedNotifications.length).toBe(initialNotifications.length + 1);
@@ -404,14 +404,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(retryItem.getByRole('button', { name: /Dismiss notification/ })).toBeFocused();
     await expect(desktopCount).toHaveText(String(refreshedNotifications.length));
     await expect(mobileCount).toHaveText(String(refreshedNotifications.length));
-    const afterFailure = (await (await request.get('/api/notifications')).json()).notifications;
+    const afterFailure = (await (await request.get('/api/notifications')).json()).notifications.items;
     expect(afterFailure.some((item) => item.id === retryNotification.id)).toBe(true);
     await expect(page).toHaveURL(/\/#\/notifications$/);
 
     await clearRouteFaults(request);
     await retryItem.getByRole('button', { name: /Dismiss notification/ }).click();
     await expect(retryItem).toHaveCount(0);
-    const afterSuccess = (await (await request.get('/api/notifications')).json()).notifications;
+    const afterSuccess = (await (await request.get('/api/notifications')).json()).notifications.items;
     expect(afterSuccess.some((item) => item.id === retryNotification.id)).toBe(false);
     await expect(desktopCount).toHaveText(String(afterSuccess.length));
     await expect(mobileCount).toHaveText(String(afterSuccess.length));
@@ -444,7 +444,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       let largerSnapshotResolved = false;
       const largerSnapshot = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && !url.search;
+        return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && url.searchParams.has('limit');
       }).then(() => { largerSnapshotResolved = true; });
 
       await page.goto(route);
@@ -465,7 +465,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await setRouteFaults(request, [{ method: 'GET', path: '/api/cards', delayMs: 900 }]);
     const laterSnapshot = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && !url.search;
+      return response.request().method() === 'GET' && url.pathname === '/work/api/cards' && url.searchParams.has('limit');
     });
     await page.goto(`/#/cards?cardId=${fixture.contextCard.id}&taskId=${fixture.task.id}`);
     await expect(page.locator('.entity-route-mismatch')).toContainText(fixture.task.id);
@@ -720,7 +720,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     expect(dueResponse.ok()).toBe(true);
     const duePayload = await dueResponse.json();
     const dueTask = duePayload.task || duePayload;
-    const notifications = (await (await request.get('/api/notifications')).json()).notifications;
+    const notifications = (await (await request.get('/api/notifications')).json()).notifications.items;
     const notification = notifications.find((item) => item.taskId === dueTask.id);
     expect(notification).toBeTruthy();
 
@@ -738,7 +738,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(notificationItem).toHaveCount(0);
     await expect(page).toHaveURL(/\/#\/notifications$/);
     const apiAfterDismiss = await (await request.get('/api/notifications')).json();
-    expect(apiAfterDismiss.notifications.some((item) => item.id === notification.id)).toBe(false);
+    expect(apiAfterDismiss.notifications.items.some((item) => item.id === notification.id)).toBe(false);
     recordCapabilityEvidence(testInfo, [{
       route: '/#/notifications',
       roleId: 'admin',

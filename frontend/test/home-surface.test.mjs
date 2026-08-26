@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
+import { cardsFromWorkPayload } from "../src/core/operations-model.js";
 import {
   buildHomeAttentionItems,
   formatHomeTaskTiming,
@@ -30,6 +31,8 @@ function emptyWorkSnapshot() {
     cardTasks: {},
     cards: [],
     cardsLoaded: false,
+    cardsComplete: false,
+    cardTasksComplete: false,
     currentOperatorId: "",
     errors: [],
     loaded: false,
@@ -204,7 +207,7 @@ function createHomeHarness(options = {}) {
     buildHomeAttentionItems,
     buildOperationsFutureSections: () => [],
     buildOperationsReferenceLinks: () => [],
-    cardsFromWorkPayload: (payload) => payload?.items || payload?.cards || [],
+    cardsFromWorkPayload,
     clearSelectionButton,
     currentOperatorIdForTodayScope: (id) => id,
     currentOperatorIdFromPayload: (payload) => payload?.user?.id || "",
@@ -324,6 +327,8 @@ describe("Home surface production behavior", () => {
       workSnapshot: {
         cards: [{ id: "card-1", status: "preparation", title: "Podcast" }],
         cardsLoaded: true,
+        cardsComplete: true,
+        cardTasksComplete: true,
         currentOperatorId: "alexey",
         loaded: true,
         overdueLoaded: true,
@@ -403,6 +408,8 @@ describe("Home surface production behavior", () => {
       workSnapshot: {
         cards: [{ id: "card-proof", status: "preparation", title: "Proof workflow" }],
         cardsLoaded: true,
+        cardsComplete: true,
+        cardTasksComplete: true,
         cardTasks: {
           "card-proof": [{
             date: "2026-08-14",
@@ -592,6 +599,8 @@ describe("Home surface production behavior", () => {
     const empty = createHomeHarness({
       workSnapshot: {
         cardsLoaded: true,
+        cardsComplete: true,
+        cardTasksComplete: true,
         loaded: true,
         overdueLoaded: true,
         todayLoaded: true,
@@ -664,6 +673,8 @@ describe("Home surface production behavior", () => {
       workSnapshot: {
         currentOperatorId: "alexey",
         loaded: true,
+        cardsComplete: true,
+        cardTasksComplete: true,
         overdueLoaded: true,
         overdueTasks: [],
         todayLoaded: true,
@@ -788,7 +799,9 @@ describe("Home surface production behavior", () => {
         }
         if (value.pathname === "/api/cards") {
           return {
-            items: [{ id: "card-1", status: "preparation", title: "Card" }],
+            cards: {
+              items: [{ id: "card-1", status: "preparation", title: "Card" }],
+            },
           };
         }
         if (value.pathname === "/api/tasks" && value.searchParams.has("cardId")) {
@@ -809,6 +822,8 @@ describe("Home surface production behavior", () => {
     assert.equal(harness.state.workSnapshot.todayLoaded, true);
     assert.equal(harness.state.workSnapshot.waitingLoaded, false);
     assert.deepEqual(harness.state.workSnapshot.todayTasks.map((task) => task.id), ["today"]);
+    assert.equal(harness.state.workSnapshot.cardsComplete, true);
+    assert.equal(harness.state.workSnapshot.cardTasksComplete, true);
     assert.deepEqual(
       harness.state.workSnapshot.cardTasks["card-1"].map((task) => task.id),
       ["card-task"],

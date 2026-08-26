@@ -1,3 +1,5 @@
+import { createCollectionLoader } from "../core/collection-loader.js";
+
 export function createNotificationsShell({
   closeSettingsMenu,
   documentRef,
@@ -26,9 +28,18 @@ export function createNotificationsShell({
   const workBellPanel = documentRef.querySelector("#work-bell-panel");
   const workBellBody = documentRef.querySelector("#work-bell-body");
   const workBellClose = documentRef.querySelector("#work-bell-close");
-  let notifications = [];
-  let notificationError = "";
+  const notificationLoader = createCollectionLoader({
+    request,
+    collection: "notifications",
+    createUrl: ({ cursor, limit }) => {
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (cursor) query.set("cursor", cursor);
+      return workApiUrl(`/api/notifications?${query}`);
+    },
+  });
+  let notificationState = notificationLoader.getSnapshot();
   const dismissErrors = new Map();
+  const locallyDismissedIds = new Set();
   let opener = null;
   let pendingDismissFocusId = "";
   let panelRenderVersion = 0;
@@ -64,16 +75,22 @@ export function createNotificationsShell({
   }
 
   function syncWorkBellIndicators() {
-    const count = notifications.length;
-    const indicatorText = notificationError ? "!" : String(count);
+    const count = [...notificationState.items].filter(
+      (item) => !locallyDismissedIds.has(item.id),
+    ).length;
+    const indicatorText =
+      notificationState.failed && count === 0 ? "!" : String(count);
     for (const indicator of [workBellCount, mobileWorkBellCount]) {
       if (!indicator) continue;
       indicator.textContent = indicatorText;
       indicator.classList.toggle(
         "is-visible",
-        Boolean(notificationError) || count > 0,
+        Boolean(notificationState.failed && count === 0) || count > 0,
       );
-      indicator.classList.toggle("is-error", Boolean(notificationError));
+      indicator.classList.toggle(
+        "is-error",
+        Boolean(notificationState.failed && count === 0),
+      );
     }
   }
 
@@ -116,9 +133,7 @@ export function createNotificationsShell({
         ),
         { method: "PUT" },
       );
-      notifications = notifications.filter(
-        (item) => item.id !== notification.id,
-      );
+      locallyDismissedIds.add(notification.id);
       dismissErrors.delete(notification.id);
       pendingDismissFocusId = "";
       syncWorkBellIndicators();
@@ -158,14 +173,29 @@ export function createNotificationsShell({
   function renderWorkBellPanel() {
     const version = ++panelRenderVersion;
     workBellBody.replaceChildren();
-    if (notificationError) {
+    if (notificationState.failed && notificationState.items.length === 0) {
       const empty = documentRef.createElement("p");
       empty.className = "work-bell-empty is-error";
-      empty.textContent = `Notifications unavailable: ${notificationError}`;
+      empty.textContent = `Notifications unavailable: ${notificationState.error}`;
       workBellBody.append(empty);
       return;
     }
-    if (notifications.length === 0) {
+    if (
+      !notificationState.loaded &&
+      notificationState.loading &&
+      notificationState.items.length === 0
+    ) {
+      const loading = documentRef.createElement("p");
+      loading.className = "work-bell-empty";
+      loading.setAttribute("role", "status");
+      loading.textContent = "Loading notifications…";
+      workBellBody.append(loading);
+      return;
+    }
+    const visibleNotifications = notificationState.items.filter(
+      (item) => !locallyDismissedIds.has(item.id),
+    );
+    if (visibleNotifications.length === 0) {
       const empty = documentRef.createElement("div");
       empty.className = "work-bell-empty-state";
       empty.innerHTML = `
@@ -179,9 +209,8 @@ export function createNotificationsShell({
         <p class="work-bell-empty">No active notifications.</p>
       `;
       workBellBody.append(empty);
-      return;
     }
-    for (const notification of notifications) {
+    for (const notification of visibleNotifications) {
       const item = documentRef.createElement("div");
       item.className = "work-bell-item";
       item.classList.add(notificationUrgencyClass(notification));
@@ -247,27 +276,78 @@ export function createNotificationsShell({
     }
     if (
       pendingDismissFocusId &&
-      !notifications.some((item) => item.id === pendingDismissFocusId)
+      !visibleNotifications.some((item) => item.id === pendingDismissFocusId)
     ) {
       pendingDismissFocusId = "";
     }
     scheduleDismissRecoveryFocus(version);
+
+    const continuation = documentRef.createElement("div");
+    continuation.className = "work-bell-continuation";
+    if (notificationState.loading || notificationState.loadingMore) {
+      const loading = documentRef.createElement("p");
+      loading.className = "work-bell-empty";
+      loading.setAttribute("role", "status");
+      loading.textContent = notificationState.loadingMore
+        ? "Loading more notifications…"
+        : "Loading notifications…";
+      continuation.append(loading);
+    } else if (
+      notificationState.failed &&
+      notificationState.moreAvailable
+    ) {
+      const error = documentRef.createElement("p");
+      error.className = "work-bell-item-error";
+      error.setAttribute("role", "alert");
+      error.textContent = `More notifications are available, but loading failed: ${notificationState.error}`;
+      const retry = documentRef.createElement("button");
+      retry.type = "button";
+      retry.className = "work-bell-action";
+      retry.dataset.loadNotifications = "retry";
+      retry.textContent = "Retry next page";
+      retry.addEventListener("click", () => {
+        loadMoreNotifications(retry);
+      });
+      continuation.append(error, retry);
+    } else if (notificationState.moreAvailable) {
+      const available = documentRef.createElement("p");
+      available.className = "work-bell-empty";
+      available.textContent = "More notifications are available.";
+      const loadMore = documentRef.createElement("button");
+      loadMore.type = "button";
+      loadMore.className = "work-bell-action";
+      loadMore.dataset.loadNotifications = "next";
+      loadMore.textContent = "Load more";
+      loadMore.addEventListener("click", () => {
+        loadMoreNotifications(loadMore);
+      });
+      continuation.append(available, loadMore);
+    } else if (
+      notificationState.complete &&
+      visibleNotifications.length > 0
+    ) {
+      const exhausted = documentRef.createElement("p");
+      exhausted.className = "work-bell-empty";
+      exhausted.textContent = "All notifications loaded.";
+      continuation.append(exhausted);
+    }
+    if (continuation.children.length > 0) workBellBody.append(continuation);
+  }
+
+  async function loadMoreNotifications(button) {
+    button.disabled = true;
+    button.textContent = "Loading…";
+    notificationState = await notificationLoader.loadMore();
+    syncWorkBellIndicators();
+    renderWorkBellPanel();
   }
 
   async function refreshWorkBell(options = {}) {
-    try {
-      const payload = await request(workApiUrl("/api/notifications"));
-      if (options.token && !isWorkspaceRouteFresh(options.token)) return;
-      notifications = Array.isArray(payload)
-        ? payload
-        : payload.notifications || [];
-      notificationError = "";
-    } catch (error) {
-      if (options.token && !isWorkspaceRouteFresh(options.token)) return;
-      notifications = [];
-      notificationError =
-        error?.message || "Notifications API request failed";
-    }
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+    const snapshot = await notificationLoader.load();
+    if (options.token && !isWorkspaceRouteFresh(options.token)) return;
+    notificationState = snapshot;
+    locallyDismissedIds.clear();
     syncWorkBellIndicators();
     if (!workBellPanel.hidden) renderWorkBellPanel();
   }
