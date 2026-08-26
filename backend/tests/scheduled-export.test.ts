@@ -10,6 +10,7 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createTask } from '../src/db/tasks';
 import { handleCronRoutes } from '../src/routes/cron';
+import { extractExportArchive } from '../src/export/archive';
 import { validatePortableExport } from '../src/export/portable';
 
 describe('scheduled export route (POST /api/cron/export)', () => {
@@ -24,6 +25,7 @@ describe('scheduled export route (POST /api/cron/export)', () => {
     exportDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-cron-export-'));
     archiveDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-cron-archive-'));
     process.env.EXPORT_OUTPUT_DIR = exportDir;
+    delete process.env.DATAOPS_ENV;
   });
 
   after(async () => {
@@ -71,6 +73,9 @@ describe('scheduled export route (POST /api/cron/export)', () => {
     // The exported files must exist and validate
     const manifestPath = path.join(exportDir, 'manifest.json');
     await fs.access(manifestPath);
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    assert.strictEqual(manifest.source_environment, process.env.NODE_ENV || 'unknown');
+    assert.notStrictEqual(manifest.source_environment, 'sandbox');
     const validation = await validatePortableExport(exportDir);
     assert.strictEqual(validation.valid, true);
   });
@@ -96,6 +101,38 @@ describe('scheduled export route (POST /api/cron/export)', () => {
     assert.strictEqual(typeof body.archive_size_bytes, 'number');
     assert.doesNotMatch(result!.body, /secret|token|credential|signed/i);
 
-    await fs.access(body.archive_uri.replace('file://', ''));
+    const archivePath = body.archive_uri.replace('file://', '');
+    await fs.access(archivePath);
+    const manifest = JSON.parse(await fs.readFile(path.join(exportDir, 'manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.source_environment, 'staging');
+    assert.notStrictEqual(manifest.source_environment, 'sandbox');
+  });
+
+  it('writes a manually routed archive with immutable sandbox provenance', async () => {
+    await createTask(client, { description: 'Sandbox archive route task', date: '2026-06-29' });
+    process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR = archiveDir;
+    process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX = 'execution-exports';
+    process.env.DATAOPS_ENV = 'sandbox';
+
+    const result = await handleCronRoutes('/api/cron/export', 'POST');
+    assert.ok(result);
+    assert.strictEqual(result!.statusCode, 200);
+    const body = JSON.parse(result!.body);
+    const archivePath = body.archive_uri.replace('file://', '');
+    const extractedDir = path.join(archiveDir, 'manual-sandbox-extracted');
+
+    assert.match(
+      body.archive_key,
+      /^execution-exports\/sandbox\/\d{4}-\d{2}-\d{2}\/dataops-execution-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.tar\.gz$/,
+    );
+    await extractExportArchive(await fs.readFile(archivePath), extractedDir);
+    const manifest = JSON.parse(await fs.readFile(path.join(extractedDir, 'manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.source_environment, 'sandbox');
+    assert.strictEqual(
+      body.archive_key,
+      `execution-exports/sandbox/${manifest.generated_at.slice(0, 10)}`
+        + `/dataops-execution-${manifest.generated_at.replace(/[:.]/g, '-')}.tar.gz`,
+    );
+    assert.strictEqual((await validatePortableExport(extractedDir)).valid, true);
   });
 });

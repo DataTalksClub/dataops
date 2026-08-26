@@ -132,6 +132,13 @@ Offsite archives are gzip-compressed tar files stored under:
 <prefix>/<environment>/<YYYY-MM-DD>/dataops-execution-<generated-at>.tar.gz
 ```
 
+The active DataOps V1 deployment is sandbox-only. New archive keys use the
+exact `sandbox` environment segment, and the archive manifest records
+`source_environment: "sandbox"` for both authenticated and scheduled export
+paths. This identifies provenance only; sandbox data remains subject to the
+same private-data, encryption, integrity, backup, retention, access, rollback,
+and redaction controls. Historical archives are not renamed or rewritten.
+
 The deployed SAM stack sets `DATAOPS_EXPORT_ARCHIVE_BUCKET`,
 `DATAOPS_EXPORT_ARCHIVE_PREFIX`, and `DATAOPS_ENV` for the backend.
 The archive bucket is retained, private, encrypted, versioned, tagged for backup

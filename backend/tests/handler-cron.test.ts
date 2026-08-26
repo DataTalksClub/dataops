@@ -6,6 +6,8 @@ import path from 'path';
 import { handler } from '../src/handler';
 import { stopLocal } from '../scripts/local-dynamodb';
 import { useTestDatabase } from './helpers/db';
+import { extractExportArchive } from '../src/export/archive';
+import { validatePortableExport } from '../src/export/portable';
 
 describe('handler - EventBridge scheduled events', () => {
   before(async () => {
@@ -62,7 +64,52 @@ describe('handler - EventBridge scheduled events', () => {
       assert.match(body.archive_uri, /^file:\/\//);
       assert.match(body.archive_key, /^execution-exports\/test\//);
       assert.strictEqual(body.schema_version, 'dataops.execution.v1');
-      await fs.access(body.archive_uri.replace('file://', ''));
+      const archivePath = body.archive_uri.replace('file://', '');
+      await fs.access(archivePath);
+      const extractedDir = path.join(archiveDir, 'test-extracted');
+      await extractExportArchive(await fs.readFile(archivePath), extractedDir);
+      const manifest = JSON.parse(await fs.readFile(path.join(extractedDir, 'manifest.json'), 'utf8'));
+      assert.strictEqual(manifest.source_environment, 'test');
+      assert.notStrictEqual(manifest.source_environment, 'sandbox');
+      assert.strictEqual((await validatePortableExport(extractedDir)).valid, true);
+    } finally {
+      delete process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR;
+      delete process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX;
+      delete process.env.DATAOPS_ENV;
+      await fs.rm(archiveDir, { recursive: true, force: true });
+    }
+  });
+
+  it('routes scheduled exports with immutable sandbox provenance', async () => {
+    const archiveDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-handler-sandbox-export-'));
+    process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR = archiveDir;
+    process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX = 'execution-exports';
+    process.env.DATAOPS_ENV = 'sandbox';
+    try {
+      const result = await handler({
+        source: 'aws.events',
+        'detail-type': 'Scheduled Event',
+        detail: { dataopsAction: 'export' },
+      });
+
+      assert.ok('statusCode' in result, 'should return an HTTP-style archive summary');
+      assert.strictEqual((result as Record<string, unknown>).statusCode, 200);
+      const body = JSON.parse((result as { body: string }).body);
+      const archivePath = body.archive_uri.replace('file://', '');
+      const extractedDir = path.join(archiveDir, 'sandbox-extracted');
+      assert.match(
+        body.archive_key,
+        /^execution-exports\/sandbox\/\d{4}-\d{2}-\d{2}\/dataops-execution-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.tar\.gz$/,
+      );
+      await extractExportArchive(await fs.readFile(archivePath), extractedDir);
+      const manifest = JSON.parse(await fs.readFile(path.join(extractedDir, 'manifest.json'), 'utf8'));
+      assert.strictEqual(manifest.source_environment, 'sandbox');
+      assert.strictEqual(
+        body.archive_key,
+        `execution-exports/sandbox/${manifest.generated_at.slice(0, 10)}`
+          + `/dataops-execution-${manifest.generated_at.replace(/[:.]/g, '-')}.tar.gz`,
+      );
+      assert.strictEqual((await validatePortableExport(extractedDir)).valid, true);
     } finally {
       delete process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR;
       delete process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX;

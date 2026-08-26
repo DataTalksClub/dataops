@@ -919,6 +919,34 @@ describe('portable execution data export', () => {
       await fs.rm(brokenDir, { recursive: true, force: true });
     }
   });
+
+  it('keeps missing, local, test, and sandbox source provenance distinguishable', async () => {
+    const originalEnvironment = process.env.DATAOPS_ENV;
+    const cases: Array<{ name: string; environment?: string; expected: string }> = [
+      { name: 'missing', expected: process.env.NODE_ENV || 'unknown' },
+      { name: 'local', environment: 'local', expected: 'local' },
+      { name: 'test', environment: 'test', expected: 'test' },
+      { name: 'sandbox', environment: 'sandbox', expected: 'sandbox' },
+    ];
+    const outputDirs: string[] = [];
+
+    try {
+      for (const testCase of cases) {
+        if (testCase.environment === undefined) delete process.env.DATAOPS_ENV;
+        else process.env.DATAOPS_ENV = testCase.environment;
+        const outputDir = projectTmpDir(`source-environment-${testCase.name}`);
+        outputDirs.push(outputDir);
+        const result = await writePortableExport(client, outputDir, {
+          generatedAt: '2026-06-27T00:00:00.000Z',
+        });
+        assert.strictEqual(result.manifest.source_environment, testCase.expected);
+      }
+    } finally {
+      if (originalEnvironment === undefined) delete process.env.DATAOPS_ENV;
+      else process.env.DATAOPS_ENV = originalEnvironment;
+      await Promise.all(outputDirs.map((outputDir) => fs.rm(outputDir, { recursive: true, force: true })));
+    }
+  });
 });
 
 function projectTmpDir(name: string): string {

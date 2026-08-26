@@ -90,6 +90,12 @@ environment variables:
 - `DATAOPS_EXPORT_ARCHIVE_PREFIX` (default `execution-exports`)
 - `DATAOPS_ENV`
 
+The current DataOps V1 application stack is sandbox-only. Its
+`DataOpsEnvironment` parameter defaults to and permits only the exact lowercase
+value `sandbox`, and the normal deployment workflow passes that value
+explicitly. Both the authenticated export route and the scheduled EventBridge
+export route receive the same stack-provided `DATAOPS_ENV`.
+
 Archive object keys use this shape:
 
 ```text
@@ -99,6 +105,14 @@ Archive object keys use this shape:
 The key includes environment and generation time only. It must not include task
 titles, user emails, operator names, customer names, credentials, signed URLs,
 or other private data.
+
+For the active deployment, new archive keys therefore use the exact shape
+`execution-exports/sandbox/<YYYY-MM-DD>/dataops-execution-<generated-at>.tar.gz`,
+and each new `manifest.json` records `source_environment: "sandbox"`. This is
+source provenance, not a data-classification label: sandbox exports retain the
+same private-data, encryption, integrity, backup, retention, access, rollback,
+and redaction controls. Existing archives keep their historical keys and
+manifests unchanged.
 
 The archive object is a gzip-compressed tar containing `manifest.json` and the
 portable JSONL entity files. It is still an application-level export and must
@@ -182,7 +196,7 @@ Example:
 {
   "schema_version": "dataops.execution.v1",
   "generated_at": "2026-06-27T00:00:00Z",
-  "source_environment": "prod",
+  "source_environment": "sandbox",
   "source_stack": "<stack>",
   "source_region": "<region>",
   "app_git_sha": "unknown",

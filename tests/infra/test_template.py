@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import copy
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import pytest
 import yaml
 
 
@@ -15,6 +18,12 @@ DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions-dataops.ya
 LEGACY_DEPLOY_ROLE_TEMPLATE = REPO_ROOT / "infra" / "template.github-actions.yaml"
 DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-dataops-v1.yml"
 E2E_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "validate-backend-e2e.yml"
+SANDBOX_BASELINE_SHA = "6236865e509c0e142d364e6c56f7856d8f932076"
+SANDBOX_CONSUMER_FUNCTIONS = {
+    "ConversationalExecutionWorkerFunction",
+    "ConversationalResultDispatcherFunction",
+    "BackendFunction",
+}
 
 ALARM_CONTRACT = {
     "ConversationalExecutionOutcomeUnknownAlarm": ("execution-outcome-unknown", "ExecutionOutcomeUnknown", 1, 300, 1, "Sum"),
@@ -60,7 +69,90 @@ _CloudFormationLoader.add_multi_constructor("!", _intrinsic)
 
 
 def _load_template(path: Path = TEMPLATE) -> dict:
-    return yaml.load(path.read_text(encoding="utf-8"), Loader=_CloudFormationLoader)
+    return _load_template_text(path.read_text(encoding="utf-8"))
+
+
+def _load_template_text(template: str) -> dict:
+    return yaml.load(template, Loader=_CloudFormationLoader)
+
+
+def _git_show(path: str) -> str:
+    completed = subprocess.run(
+        ["git", "show", f"{SANDBOX_BASELINE_SHA}:{path}"],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    return completed.stdout
+
+
+def _diff_paths(left, right, path: str = "") -> list[str]:
+    if left == right:
+        return []
+    if isinstance(left, dict) and isinstance(right, dict):
+        keys = sorted(set(left) | set(right))
+        return [
+            difference
+            for key in keys
+            for difference in _diff_paths(
+                left.get(key),
+                right.get(key),
+                f"{path}.{key}" if path else str(key),
+            )
+        ]
+    if isinstance(left, list) and isinstance(right, list):
+        if len(left) != len(right):
+            return [path]
+        return [
+            difference
+            for index, (left_item, right_item) in enumerate(zip(left, right))
+            for difference in _diff_paths(left_item, right_item, f"{path}[{index}]")
+        ]
+    return [path]
+
+
+def _resolve_dataops_environment(value, environment: str):
+    if value == {"Ref": "DataOpsEnvironment"}:
+        return environment
+    if isinstance(value, dict):
+        return {key: _resolve_dataops_environment(item, environment) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_resolve_dataops_environment(item, environment) for item in value]
+    return value
+
+
+def _assert_sandbox_provenance_contract(template: dict, workflow: str) -> None:
+    assert template["Parameters"]["DataOpsEnvironment"] == {
+        "Type": "String",
+        "Default": "sandbox",
+        "AllowedValues": ["sandbox"],
+    }
+
+    consumers = {
+        logical_id: resource["Properties"]["Environment"]["Variables"]["DATAOPS_ENV"]
+        for logical_id, resource in template["Resources"].items()
+        if "DATAOPS_ENV" in resource.get("Properties", {}).get("Environment", {}).get("Variables", {})
+    }
+    assert set(consumers) == SANDBOX_CONSUMER_FUNCTIONS
+    assert all(value == {"Ref": "DataOpsEnvironment"} for value in consumers.values())
+    assert "WorkEngineFunction" not in template["Resources"]
+
+    override = "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox"
+    assert workflow.count(override) == 1
+    assert workflow.count("DataOpsEnvironment") == 1
+    assert "ParameterKey=DataOpsEnvironment,ParameterValue=$" not in workflow
+    assert not re.search(
+        r"ParameterKey=DataOpsEnvironment,ParameterValue=(?:prod|production)",
+        workflow,
+        re.IGNORECASE,
+    )
+    assert "inputs:" not in workflow
+    assert workflow.count("--config-env full-sandbox") == 1
+    deploy = workflow.split("\n  deploy:\n", 1)[1]
+    assert deploy.index("sam deploy") < deploy.index(override)
+    assert deploy.index("ParameterKey=SponsorFinanceEnabled") < deploy.index(override)
+    assert deploy.index(override) < deploy.index("ParameterKey=ConversationalExecutionEnabled")
 
 
 def _resource_block(template: str, resource_name: str) -> str:
@@ -128,7 +220,9 @@ def _translated_template_from_sam(sam_binary: str, template: Path, scratch_dir: 
     output = f"{completed.stderr}\n{completed.stdout}"
     marker = " | Translated template is:\n"
     assert marker in output, "SAM CLI debug output did not include the translated template"
-    return output.partition(marker)[2]
+    translated = output.partition(marker)[2]
+    trailing_log = re.search(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} \|", translated, re.MULTILINE)
+    return translated[:trailing_log.start()].rstrip() + "\n" if trailing_log else translated
 
 
 def _template_with_parameter_default(template: str, parameter_name: str, value: str) -> str:
@@ -1102,6 +1196,127 @@ def test_dataops_export_archive_bucket_is_private_retained_and_versioned():
     assert "NoncurrentVersionExpirationInDays: !Ref ExportArchiveRetentionDays" in bucket
     assert "Value: ExecutionExportArchive" in bucket
     assert "Value: DataOpsV1ExecutionExports" in bucket
+
+
+def test_deployed_environment_is_exactly_sandbox_and_has_exactly_three_consumers():
+    template = _load_template()
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    _assert_sandbox_provenance_contract(template, workflow)
+
+
+def test_sandbox_environment_contract_rejects_escape_hatches():
+    template = _load_template()
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    override_text = "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox"
+    override_line = next(
+        line for line in workflow.splitlines(keepends=True) if override_text in line
+    )
+
+    for alternate in ("prod", "production", "staging"):
+        candidate = copy.deepcopy(template)
+        candidate["Parameters"]["DataOpsEnvironment"]["Default"] = alternate
+        with pytest.raises(AssertionError):
+            _assert_sandbox_provenance_contract(candidate, workflow)
+
+    workflow_mutations = (
+        workflow.replace(override_line, "", 1),
+        workflow.replace(override_text, "ParameterKey=DataOpsEnvironment,ParameterValue=prod", 1),
+        workflow.replace(override_line, override_line + override_line, 1),
+        workflow.replace(
+            "  workflow_dispatch:\n",
+            "  workflow_dispatch:\n    inputs:\n      environment: {}\n",
+            1,
+        ),
+    )
+    for candidate in workflow_mutations:
+        with pytest.raises(AssertionError):
+            _assert_sandbox_provenance_contract(template, candidate)
+
+
+def test_sandbox_provenance_source_and_processed_templates_have_no_resource_changes():
+    source = TEMPLATE.read_text(encoding="utf-8")
+    baseline_source = _git_show("infra/template.full.yaml")
+    template = _load_template_text(source)
+    baseline = _load_template_text(baseline_source)
+
+    assert baseline["Parameters"]["DataOpsEnvironment"] == {
+        "Type": "String",
+        "Default": "prod",
+        "AllowedPattern": "^[a-zA-Z0-9_.-]+$",
+    }
+    assert set(template["Parameters"]) == set(baseline["Parameters"])
+    for parameter_name in template["Parameters"]:
+        if parameter_name != "DataOpsEnvironment":
+            assert template["Parameters"][parameter_name] == baseline["Parameters"][parameter_name]
+
+    assert set(template["Resources"]) == set(baseline["Resources"])
+    assert template["Resources"] == baseline["Resources"]
+    for top_level_key in set(template) | set(baseline):
+        if top_level_key != "Parameters":
+            assert template.get(top_level_key) == baseline.get(top_level_key)
+
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    baseline_workflow = _git_show(".github/workflows/deploy-dataops-v1.yml")
+    override_text = "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox"
+    override_line = next(
+        line for line in workflow.splitlines(keepends=True) if override_text in line
+    )
+    assert workflow.count(override_text) == 1
+    assert override_text not in baseline_workflow
+    assert workflow.replace(override_line, "", 1) == baseline_workflow
+
+    sam_binary = shutil.which("sam")
+    assert sam_binary, "AWS SAM CLI is required for the source/processed diff contract"
+    scratch_root = REPO_ROOT / ".tmp"
+    scratch_root.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="sam-sandbox-provenance-", dir=scratch_root) as scratch_name:
+        scratch_dir = Path(scratch_name)
+        source_path = scratch_dir / "template-current.yaml"
+        baseline_path = scratch_dir / "template-baseline.yaml"
+        source_path.write_text(source, encoding="utf-8")
+        baseline_path.write_text(baseline_source, encoding="utf-8")
+        processed = _load_template_text(
+            _translated_template_from_sam(sam_binary, source_path, scratch_dir)
+        )
+        baseline_processed = _load_template_text(
+            _translated_template_from_sam(sam_binary, baseline_path, scratch_dir)
+        )
+
+    assert set(processed["Resources"]) == set(baseline_processed["Resources"])
+    assert {
+        logical_id: resource["Type"]
+        for logical_id, resource in processed["Resources"].items()
+    } == {
+        logical_id: resource["Type"]
+        for logical_id, resource in baseline_processed["Resources"].items()
+    }
+    assert {
+        logical_id: (
+            resource.get("DeletionPolicy"),
+            resource.get("UpdateReplacePolicy"),
+            resource.get("Condition"),
+            resource.get("DependsOn"),
+        )
+        for logical_id, resource in processed["Resources"].items()
+    } == {
+        logical_id: (
+            resource.get("DeletionPolicy"),
+            resource.get("UpdateReplacePolicy"),
+            resource.get("Condition"),
+            resource.get("DependsOn"),
+        )
+        for logical_id, resource in baseline_processed["Resources"].items()
+    }
+
+    expected_environment_paths = sorted(
+        f"Resources.{logical_id}.Properties.Environment.Variables.DATAOPS_ENV"
+        for logical_id in SANDBOX_CONSUMER_FUNCTIONS
+    )
+    assert _diff_paths(
+        _resolve_dataops_environment({"Resources": baseline_processed["Resources"]}, "prod"),
+        _resolve_dataops_environment({"Resources": processed["Resources"]}, "sandbox"),
+    ) == expected_environment_paths
 
 
 def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda():

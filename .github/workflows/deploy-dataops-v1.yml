@@ -304,6 +304,7 @@ jobs:
               "ParameterKey=MailingExportsConfig,ParameterValue=$MAILING_EXPORTS_CONFIG" \
               "ParameterKey=ConversationalTelegramIngressEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" \
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
+              "ParameterKey=DataOpsEnvironment,ParameterValue=sandbox" \
               "ParameterKey=ConversationalExecutionEnabled,ParameterValue=$CONVERSATIONAL_EXECUTION_ENABLED" \
               "ParameterKey=ConversationalEnabledPlugins,ParameterValue=$CONVERSATIONAL_ENABLED_PLUGINS" \
               "ParameterKey=ConversationalTypefullyExternalExecutionEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED" \

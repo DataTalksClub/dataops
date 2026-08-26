@@ -80,8 +80,8 @@ Parameters:
     AllowedValues: ["true", "false"]
   DataOpsEnvironment:
     Type: String
-    Default: prod
-    AllowedPattern: "^[a-zA-Z0-9_.-]+$"
+    Default: sandbox
+    AllowedValues: ["sandbox"]
   ExportArchivePrefix:
     Type: String
     Default: execution-exports
