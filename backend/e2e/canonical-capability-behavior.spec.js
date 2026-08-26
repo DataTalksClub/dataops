@@ -581,7 +581,24 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
+    const sidebar = page.locator('#sidebar');
+    const mobileMenuButton = page.locator('#mobile-menu-button');
+    await mobileMenuButton.click();
+    await expect(mobileMenuButton).toHaveAttribute('aria-expanded', 'true');
+    await expect(sidebar).toHaveAttribute('role', 'dialog');
+    await page.locator('#sidebar-close-button').click();
+    await expect(mobileMenuButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(sidebar).toHaveAttribute('aria-hidden', 'true');
+    await expect(sidebar).toHaveAttribute('inert', '');
+    await expect(page.locator('#sidebar-scrim')).toBeHidden();
     await expect(attentionRow).toBeVisible();
+    const mobileOverflow = await page.evaluate(() => ({
+      viewportWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+    }));
+    expect(mobileOverflow.documentScrollWidth).toBeLessThanOrEqual(mobileOverflow.viewportWidth);
+    expect(mobileOverflow.bodyScrollWidth).toBeLessThanOrEqual(mobileOverflow.viewportWidth);
     await page.screenshot({
       path: path.join(ISSUE_196_SCREENSHOTS, 'operator-day-new-york-mobile.png'),
       fullPage: true,
