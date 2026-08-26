@@ -46,7 +46,9 @@ REQUIRED_WORKFLOW_PATHS = [
 ]
 WORKFLOW_TRIGGER_EVENTS = ("push", "pull_request")
 CANONICAL_PLANNING_DOCS_TEST_PATH = "tests/planning_docs/**"
+CANONICAL_PLANNING_DOCS_TEST_COMMAND = "uv run --with pytest python -m pytest tests/planning_docs"
 STALE_PLANNING_DOCS_TEST_PATH = "tests/planningdocs/**"
+STALE_PLANNING_DOCS_TEST_COMMAND_PATH = "tests/planningdocs"
 CLEAN_HELP_DESCRIPTION = "Remove root generated search index and backend dist."
 STALE_WORK_ENGINE_HELP_PHRASE = "work-engine dist"
 TASK_TEMPLATE_SECTIONS = [
@@ -409,7 +411,6 @@ def validate_workflow(repo_root: Path) -> list[str]:
         "workflow_dispatch:",
         "permissions:",
         "contents: read",
-        "uv run --with pytest python -m pytest tests/planning_docs",
         "uv run --with pytest python -m pytest tests/infra",
         "npm --prefix backend run validate:docs-links",
     ]
@@ -420,6 +421,10 @@ def validate_workflow(repo_root: Path) -> list[str]:
         if protected_path not in text:
             violations.append(f"{_repo_path(repo_root, workflow)}: path filter missing {protected_path}")
     workflow_label = _repo_path(repo_root, workflow)
+    violations.extend(
+        f"{workflow_label}: {violation}"
+        for violation in validate_workflow_execution_command(text)
+    )
     violations.extend(
         f"{workflow_label}: {violation}"
         for violation in validate_workflow_trigger_paths(text)
@@ -441,6 +446,28 @@ def validate_workflow(repo_root: Path) -> list[str]:
             violations.append(f"{_repo_path(repo_root, workflow)}: forbidden read-only planning workflow snippet: {snippet}")
     if re.search(r"^\s+\w[\w-]*:\s+write\s*$", text, re.MULTILINE):
         violations.append(f"{_repo_path(repo_root, workflow)}: workflow permissions must not grant write scopes")
+    return violations
+
+
+def validate_workflow_execution_command(workflow_text: str) -> list[str]:
+    """Require the planning-doc test step to use the exact canonical command."""
+    run_commands = [
+        match.group("command").strip()
+        for match in re.finditer(
+            r"(?m)^\s*run:\s*(?P<command>\S.*?)\s*$", workflow_text
+        )
+    ]
+    violations: list[str] = []
+    if any(STALE_PLANNING_DOCS_TEST_COMMAND_PATH in command for command in run_commands):
+        violations.append(
+            "planning docs test command must not use the retired path "
+            f"{STALE_PLANNING_DOCS_TEST_COMMAND_PATH}"
+        )
+    if CANONICAL_PLANNING_DOCS_TEST_COMMAND not in run_commands:
+        violations.append(
+            "planning docs test command must be exactly "
+            f"{CANONICAL_PLANNING_DOCS_TEST_COMMAND}"
+        )
     return violations
 
 

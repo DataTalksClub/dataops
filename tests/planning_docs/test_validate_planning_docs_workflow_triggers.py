@@ -55,6 +55,35 @@ def test_current_workflow_trigger_paths_are_canonical_and_consistent():
     assert validate_planning_docs.validate_workflow_trigger_paths(WORKFLOW_TEXT) == []
 
 
+def test_current_workflow_execution_command_is_canonical():
+    assert validate_planning_docs.validate_workflow_execution_command(WORKFLOW_TEXT) == []
+
+
+@pytest.mark.parametrize(
+    ("replacement", "expected_violation"),
+    [
+        (
+            "uv run --with pytest python -m pytest tests/planningdocs",
+            "planning docs test command must not use the retired path tests/planningdocs",
+        ),
+        (
+            "uv run --with pytest python -m pytest tests/planning_docs_extra",
+            "planning docs test command must be exactly uv run --with pytest python -m pytest tests/planning_docs",
+        ),
+    ],
+)
+def test_execution_command_drift_fails_closed(replacement, expected_violation):
+    modified = WORKFLOW_TEXT.replace(
+        validate_planning_docs.CANONICAL_PLANNING_DOCS_TEST_COMMAND,
+        replacement,
+        1,
+    )
+
+    violations = validate_planning_docs.validate_workflow_execution_command(modified)
+
+    assert expected_violation in violations
+
+
 @pytest.mark.parametrize("event", ["push", "pull_request"])
 def test_missing_canonical_path_fails_closed_for_each_event(event):
     modified = _remove_event_path(
