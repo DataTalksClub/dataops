@@ -3,7 +3,6 @@ import { after, before, describe, it } from 'node:test';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createUserWithId } from '../src/db/users';
 import {
@@ -254,13 +253,11 @@ describe('generic proposal coordinator with two enabled adapters', {
     process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'todo,typefully';
     process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
     process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'true';
-    const port = await startLocal();
-    client = await getClient(port);
+    client = await getClient();
     await createTables(client);
   });
 
-  after(async () => {
-    await stopLocal();
+  after(() => {
     process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
     process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
     process.env.CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED = 'false';

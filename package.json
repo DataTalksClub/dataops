@@ -14,6 +14,7 @@
     "dry-run:import:backend": "npm run dry-run:import --workspace dataops-backend --",
     "export:data:backend": "npm run export:data --workspace dataops-backend --",
     "seed:backend": "npm run seed:users --workspace dataops-backend && npm run seed --workspace dataops-backend",
+    "test:backend:transactions": "bash scripts/test-backend-transactions.sh",
     "test:frontend:coverage": "c8 node --test frontend/test/*.test.mjs",
     "test:frontend:unit": "node --test frontend/test/*.test.mjs",
     "test:e2e:backend": "npm run test:e2e --workspace dataops-backend",

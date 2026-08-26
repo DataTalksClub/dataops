@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend test-backend-transactions typecheck-backend build-backend test-backend-e2e test-assistant sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -17,6 +17,7 @@ help:
 	@printf '%-28s %s\n' 'make test-frontend-unit' 'Run fast frontend routing and work-model unit tests.'
 	@printf '%-28s %s\n' 'make test-frontend-coverage' 'Run frontend unit tests with all production modules in coverage.'
 	@printf '%-28s %s\n' 'make test-backend' 'Run backend unit tests.'
+	@printf '%-36s %s\n' 'make test-backend-transactions' 'Run all seven blocking DynamoDB transaction suites.'
 	@printf '%-28s %s\n' 'make typecheck-backend' 'Run backend TypeScript checks.'
 	@printf '%-28s %s\n' 'make build-backend' 'Build backend TypeScript/package assets.'
 	@printf '%-28s %s\n' 'make test-backend-e2e' 'Run backend Playwright E2E tests; browsers must be installed.'
@@ -65,6 +66,9 @@ sop-lint:
 test-backend:
 	npm --prefix backend test
 
+test-backend-transactions:
+	npm run test:backend:transactions
+
 test-frontend-unit:
 	npm run test:frontend:unit
 
@@ -109,6 +113,7 @@ test-sam-frontend-isolation:
 ci:
 	$(MAKE) test-frontend-coverage
 	$(MAKE) test-backend
+	$(MAKE) test-backend-transactions
 	$(MAKE) typecheck-backend
 	$(MAKE) build-backend
 	$(MAKE) sam-validate

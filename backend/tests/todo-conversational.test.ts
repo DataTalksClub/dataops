@@ -9,9 +9,9 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import {
   createTables,
+  deleteTables,
   TABLE_CONVERSATIONAL_STATE,
   TABLE_TASKS,
   TABLE_USERS,
@@ -267,13 +267,12 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
   before(async () => {
     process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'todo';
     process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'true';
-    const port = await startLocal();
-    client = await getClient(port);
+    client = await getClient();
+    await deleteTables(client);
     await createTables(client);
   });
 
-  after(async () => {
-    await stopLocal();
+  after(() => {
     process.env.CONVERSATIONAL_ENABLED_PLUGINS = 'none';
     process.env.CONVERSATIONAL_EXECUTION_ENABLED = 'false';
   });
@@ -592,6 +591,9 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
     });
     let proposedDescription = 'Follow up with Jane';
     let modelCalls = 0;
+    const initialTaskCount = Number(
+      (await client.send(new ScanCommand({ TableName: TABLE_TASKS }))).Count || 0
+    );
     const model: ConversationalModel = {
       async complete(request: ModelRequest): Promise<ModelResponse> {
         modelCalls += 1;
@@ -692,7 +694,10 @@ describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_EN
     assert.match(preview.message, /2026-08-04 \(Europe\/Berlin, date only\)/);
     assert.match(preview.message, /Assignee: You/);
     assert.equal(modelCalls, 7);
-    assert.equal((await client.send(new ScanCommand({ TableName: TABLE_TASKS }))).Count, 2);
+    const beforeApprovalCount = Number(
+      (await client.send(new ScanCommand({ TableName: TABLE_TASKS }))).Count || 0
+    );
+    assert.equal(beforeApprovalCount, initialTaskCount);
     const firstApprovalAction = preview.buttons?.find((button) => button.text === 'Approve todo')?.action;
     const firstToken = (firstApprovalAction as Record<string, unknown>)?.presentationAction;
     const changesAction = preview.buttons?.find((button) => button.text === 'Request changes')?.action;
