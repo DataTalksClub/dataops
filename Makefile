@@ -29,7 +29,6 @@ help:
 	@printf '%-28s %s\n' 'make verify-sam-runtime-boundary' 'Verify the existing SAM artifact contains no local infrastructure code.'
 	@printf '%-28s %s\n' 'make test-sam-frontend-isolation' 'Run the existing SAM artifact in frontend isolation; never rebuilds.'
 	@printf '%-28s %s\n' 'make ci' 'Run non-interactive deploy-workflow parity checks; no AWS deploy/cache refresh.'
-	@printf '%-28s %s\n' 'make clean' 'Remove root generated search index and work-engine dist.'
 	@printf '%-28s %s\n' 'make clean' 'Remove root generated search index and backend dist.'
 	@printf '%s\n' ''
 	@printf '%s\n' 'Local dev is a single backend (frontend + docs + work): make dev'
