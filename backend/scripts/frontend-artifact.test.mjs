@@ -111,6 +111,12 @@ function fixture(name) {
   return { root, source, artifact };
 }
 
+function parseProbeResult(stdout) {
+  const match = stdout.match(/^__DATAOPS_PACKAGED_HANDLER_PROBE__(.*)$/m);
+  assert.ok(match, 'Packaged handler probe omitted its marked result record');
+  return JSON.parse(match[1]);
+}
+
 function run(source, artifact, extra = []) {
   return spawnSync(process.execPath, [verifier, '--source', source, '--artifact', artifact, ...extra], { encoding: 'utf8' });
 }
@@ -330,7 +336,7 @@ describe('isolated SAM handler frontend runtime', () => {
       const manifestAssets = readFrontendAssetManifest().files.map((asset) => `/${asset}`);
       const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api'], 'Packaged frontend positive-route probe');
       assert.equal(positive.status, 0, positive.stderr);
-      const result = JSON.parse(positive.stdout);
+      const result = parseProbeResult(positive.stdout);
       assert.equal(result.outsideModuleResolution, false, JSON.stringify(result.outsideModuleResolutions));
       const responses = new Map(result.responses.map((response) => [response.path, response]));
       const responseFor = (path) => {
@@ -375,7 +381,7 @@ describe('isolated SAM handler frontend runtime', () => {
       renameSync(join(missing, 'dist/frontend/index.html'), join(missing, 'dist/frontend/index.missing'));
       const missingResult = await probe(missing, ['/'], 'Packaged frontend missing-index probe');
       assert.equal(missingResult.status, 0, missingResult.stderr);
-      const missingResponse = JSON.parse(missingResult.stdout).responses[0];
+      const missingResponse = parseProbeResult(missingResult.stdout).responses[0];
       assert.ok(missingResponse, '/ (missing index fixture): packaged handler returned no response');
       assert.equal(missingResponse.statusCode, 500, '/ (missing index fixture): missing frontend must return 500');
       assert.match(missingResponse.contentType, /application\/json/, '/ (missing index fixture): error must be JSON');

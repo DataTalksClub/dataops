@@ -67,4 +67,8 @@ for (const path of paths) {
     isBase64Encoded: Boolean(response.isBase64Encoded),
   });
 }
-process.stdout.write(JSON.stringify({ outsideModuleResolution, outsideModuleResolutions, responses }), () => process.exit(0));
+const PROBE_RESULT_PREFIX = '__DATAOPS_PACKAGED_HANDLER_PROBE__';
+process.stdout.write(
+  `\n${PROBE_RESULT_PREFIX}${JSON.stringify({ outsideModuleResolution, outsideModuleResolutions, responses })}\n`,
+  () => process.exit(0),
+);
