@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -30,6 +31,7 @@ PROTECTED_MARKDOWN_FILES = [
 ]
 REQUIRED_WORKFLOW_PATHS = [
     ".github/workflows/validate-planning-docs.yml",
+    "_docs/**",
     "docs/**",
     "templates/**",
     ".goal-v1.md",
@@ -37,10 +39,13 @@ REQUIRED_WORKFLOW_PATHS = [
     "PORTAL_ANALYSIS.md",
     "README.md",
     "scripts/validate_planning_docs.py",
-    "tests/planningdocs/**",
+    "tests/planning_docs/**",
     "tools/content_tools/content_tools/doc_registry.py",
     "backend/scripts/validate-docs-links.ts",
 ]
+WORKFLOW_TRIGGER_EVENTS = ("push", "pull_request")
+CANONICAL_PLANNING_DOCS_TEST_PATH = "tests/planning_docs/**"
+STALE_PLANNING_DOCS_TEST_PATH = "tests/planningdocs/**"
 TASK_TEMPLATE_SECTIONS = [
     "summary",
     "purpose",
@@ -350,6 +355,11 @@ def validate_workflow(repo_root: Path) -> list[str]:
     for protected_path in REQUIRED_WORKFLOW_PATHS:
         if protected_path not in text:
             violations.append(f"{_repo_path(repo_root, workflow)}: path filter missing {protected_path}")
+    workflow_label = _repo_path(repo_root, workflow)
+    violations.extend(
+        f"{workflow_label}: {violation}"
+        for violation in validate_workflow_trigger_paths(text)
+    )
     forbidden_snippets = [
         "id-token:",
         "configure-aws-credentials",
@@ -368,6 +378,89 @@ def validate_workflow(repo_root: Path) -> list[str]:
     if re.search(r"^\s+\w[\w-]*:\s+write\s*$", text, re.MULTILINE):
         violations.append(f"{_repo_path(repo_root, workflow)}: workflow permissions must not grant write scopes")
     return violations
+
+
+def validate_workflow_trigger_paths(workflow_text: str) -> list[str]:
+    """Validate the planning workflow's protected-path contract without YAML dependencies."""
+    try:
+        trigger_paths = _workflow_trigger_paths(workflow_text)
+    except ValueError as exc:
+        return [f"unable to validate trigger path filters: {exc}"]
+
+    violations: list[str] = []
+    for event in WORKFLOW_TRIGGER_EVENTS:
+        if CANONICAL_PLANNING_DOCS_TEST_PATH not in trigger_paths[event]:
+            violations.append(
+                f"{event} trigger path filter must include "
+                f"{CANONICAL_PLANNING_DOCS_TEST_PATH}"
+            )
+        if STALE_PLANNING_DOCS_TEST_PATH in trigger_paths[event]:
+            violations.append(
+                f"{event} trigger path filter must not contain the retired path "
+                f"{STALE_PLANNING_DOCS_TEST_PATH}"
+            )
+
+    push_only = sorted(set(trigger_paths["push"]) - set(trigger_paths["pull_request"]))
+    pull_request_only = sorted(
+        set(trigger_paths["pull_request"]) - set(trigger_paths["push"])
+    )
+    if push_only or pull_request_only:
+        violations.append(
+            "push and pull_request path filters differ (branches excluded): "
+            f"push-only={push_only}; pull_request-only={pull_request_only}"
+        )
+    return violations
+
+
+def _workflow_trigger_paths(workflow_text: str) -> dict[str, list[str]]:
+    lines = workflow_text.splitlines()
+    try:
+        trigger_start = next(index for index, line in enumerate(lines) if line == "on:")
+    except StopIteration as exc:
+        raise ValueError("top-level on: block is required") from exc
+
+    trigger_end = len(lines)
+    for index in range(trigger_start + 1, len(lines)):
+        if lines[index].strip() and not lines[index].startswith((" ", "#")):
+            trigger_end = index
+            break
+
+    paths: dict[str, list[str]] = {event: [] for event in WORKFLOW_TRIGGER_EVENTS}
+    current_event: str | None = None
+    collecting_paths = False
+    for line in lines[trigger_start + 1 : trigger_end]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = len(line) - len(line.lstrip())
+        if indent <= 2:
+            collecting_paths = False
+            event_match = re.fullmatch(r"\s*(push|pull_request):\s*$", line)
+            current_event = event_match.group(1) if event_match else None
+            continue
+
+        if current_event is None:
+            continue
+        if stripped == "paths:":
+            collecting_paths = True
+        elif collecting_paths and stripped.startswith("- "):
+            paths[current_event].append(_workflow_yaml_scalar(stripped[2:]))
+        else:
+            collecting_paths = False
+    return paths
+
+
+def _workflow_yaml_scalar(value: str) -> str:
+    value = value.strip()
+    if value.startswith('"') and value.endswith('"'):
+        try:
+            return str(json.loads(value))
+        except json.JSONDecodeError:
+            return value.strip('"')
+    if value.startswith("'") and value.endswith("'"):
+        return value.removeprefix("'").removesuffix("'").replace("''", "'")
+    return value
 
 
 def markdown_anchors(markdown: str) -> set[str]:
