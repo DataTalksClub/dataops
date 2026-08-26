@@ -64,6 +64,7 @@ interface RestoreEvidenceReport {
   evidence_timestamp: string;
   smoke_check_checklist: Array<{ check: string; result: 'passed' | 'not_run' }>;
   production_write_gate: string;
+  artifact_binary_backup_proof: string;
 }
 
 interface RestoreEvidenceResult {
@@ -110,6 +111,8 @@ const RESTORE_SMOKE_CHECKS = [
   'List files for task',
   'Export target data and compare counts',
 ];
+const ARTIFACT_BINARY_BACKUP_PROOF =
+  'Not performed or verified by this drill; external artifact-binary backup proof remains the separate privately retained responsibility of the authorized artifact-storage operator.';
 
 function normalizeRestoreTarget(targetEnvironment: string): string {
   return targetEnvironment.trim().replace(/[A-Z]/g, (character) =>
@@ -560,6 +563,7 @@ async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<Re
       result: options.smokeChecksPassed ? 'passed' : 'not_run',
     })),
     production_write_gate: 'No restore/import/write action is performed by this drill. Production writes require a separate human-approved command.',
+    artifact_binary_backup_proof: ARTIFACT_BINARY_BACKUP_PROOF,
   };
   const evidencePath = path.join(options.outputDir, `restore-evidence-${timestamp.replace(/[:.]/g, '-')}.json`);
   await fs.writeFile(evidencePath, JSON.stringify(report, null, 2) + '\n', 'utf8');

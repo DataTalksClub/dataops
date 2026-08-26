@@ -186,6 +186,14 @@ describe('offsite portable export archives', () => {
     assert.strictEqual(evidence.report.target_environment, 'Restore Drill');
     assert.ok(evidence.report.smoke_check_checklist.every((item) => item.result === 'passed'));
     assert.match(evidence.report.production_write_gate, /human-approved/);
+    assert.match(
+      evidence.report.artifact_binary_backup_proof,
+      /Not performed or verified by this drill/,
+    );
+    assert.match(
+      evidence.report.artifact_binary_backup_proof,
+      /authorized artifact-storage operator/,
+    );
     await fs.access(evidence.evidencePath);
   });
 

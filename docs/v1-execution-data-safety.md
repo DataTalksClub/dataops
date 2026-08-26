@@ -83,7 +83,7 @@ metadata. DynamoDB shouldn't store the file binaries.
 ## Offsite Export Archives
 
 The V1 SAM stack owns a retained S3 bucket for portable execution export
-archives. The work-engine receives the bucket name and prefix through stack
+archives. The backend receives the bucket name and prefix through stack
 environment variables:
 
 - `DATAOPS_EXPORT_ARCHIVE_BUCKET`
@@ -121,9 +121,9 @@ database snapshot.
 
 Current implementation:
 
-- `npm --prefix work-engine run export:data -- <export-dir>`
-- `npm --prefix work-engine run validate:export -- <export-dir>`
-- `npm --prefix work-engine run restore:drill -- --archive <file-or-s3-uri> --target-environment <non-prod> --output-dir .tmp/exports/restore-drill`
+- `npm --prefix backend run export:data -- <export-dir>`
+- `npm --prefix backend run validate:export -- <export-dir>`
+- `npm --prefix backend run restore:drill -- --archive <file-or-s3-uri> --archive-checksum <sha256> --target-environment <non-prod> --output-dir .tmp/exports/restore-drill`
 
 Required archive layout:
 
@@ -135,14 +135,29 @@ cards.jsonl
 templates.jsonl
 recurring_configs.jsonl
 files.jsonl
-notifications.jsonl
 artifacts.jsonl
 assistant_jobs.jsonl
 audit_events.jsonl
+intake_items.jsonl
+notifications.jsonl
+identity_bindings.jsonl
+identity_binding_audits.jsonl
+conversations.jsonl
+channel_bindings.jsonl
+conversation_events.jsonl
+summary_checkpoints.jsonl
+plugin_drafts.jsonl
+proposal_versions.jsonl
+proposal_presentations.jsonl
+execution_attempts.jsonl
+conversation_audit_events.jsonl
+result_notifications.jsonl
+conversational_private_payloads.jsonl
 ```
 
-Files may be omitted only when the entity isn't implemented yet. The manifest
-must list omitted entity types explicitly.
+All 24 JSONL files are required, including when they are empty. The manifest's
+`omitted_entities` list describes intentionally excluded categories such as live
+sessions and binary payloads; it is not a way to omit implemented entity files.
 
 ## Manifest
 
@@ -168,8 +183,8 @@ Example:
   "schema_version": "dataops.execution.v1",
   "generated_at": "2026-06-27T00:00:00Z",
   "source_environment": "prod",
-  "source_stack": "dataops-v1",
-  "source_region": "eu-west-1",
+  "source_stack": "<stack>",
+  "source_region": "<region>",
   "app_git_sha": "unknown",
   "export_format_version": 1,
   "entity_files": {
@@ -241,6 +256,12 @@ File and artifact records should include:
 Binary backup is handled by S3 versioning, S3 replication, external system
 exports, or a separate artifact export archive.
 
+A successful portable-export validation, dry-run import, restore drill, or
+restore-evidence report does not prove that those external binaries remain
+recoverable. Proof of artifact-binary backups is not collected by the drill; it
+remains a separate privately retained responsibility of the authorized
+artifact-storage operator.
+
 `artifacts.jsonl` is implemented in V1 and must be present in normal exports.
 It contains metadata only. It must not contain binary payloads, large assistant
 outputs, raw assistant logs, signed temporary URLs, OAuth tokens, cookies, API
@@ -303,10 +324,24 @@ The export structure should map cleanly to relational tables:
 - `templates.jsonl` to `templates`
 - `recurring_configs.jsonl` to `recurring_configs`
 - `files.jsonl` to `files`
-- `notifications.jsonl` to `notifications`
 - `artifacts.jsonl` to `artifacts`
 - `assistant_jobs.jsonl` to `assistant_jobs`
 - `audit_events.jsonl` to `audit_events`
+- `intake_items.jsonl` to `intake_items`
+- `notifications.jsonl` to `notifications`
+- `identity_bindings.jsonl` to `identity_bindings`
+- `identity_binding_audits.jsonl` to `identity_binding_audits`
+- `conversations.jsonl` to `conversations`
+- `channel_bindings.jsonl` to `channel_bindings`
+- `conversation_events.jsonl` to `conversation_events`
+- `summary_checkpoints.jsonl` to `summary_checkpoints`
+- `plugin_drafts.jsonl` to `plugin_drafts`
+- `proposal_versions.jsonl` to `proposal_versions`
+- `proposal_presentations.jsonl` to `proposal_presentations`
+- `execution_attempts.jsonl` to `execution_attempts`
+- `conversation_audit_events.jsonl` to `conversation_audit_events`
+- `result_notifications.jsonl` to `result_notifications`
+- `conversational_private_payloads.jsonl` to `conversational_private_payloads`
 
 The export shouldn't require DynamoDB to read it. A migration script should be
 able to read the archive from disk or S3 and write to Postgres.
@@ -338,8 +373,8 @@ Minimum smoke checks:
 The restore evidence report records the source archive URI/key, app git SHA,
 export `generated_at`, manifest checksum summary, validation result, dry-run
 import counts, skipped/invalid record counts, target environment, timestamp,
-and smoke-check checklist result. The evidence command never writes production
-data.
+smoke-check checklist result, and a generic artifact-binary backup proof
+boundary. The evidence command never writes production data.
 
 Production restore, import, table replacement, overwrite, delete, or data repair
 is human-gated. Automated cron export, admin export, validation, restore

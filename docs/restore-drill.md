@@ -27,8 +27,23 @@ AWS-native backups and portable exports.
 Before any restore, make sure both layers are active:
 
 1. **DynamoDB PITR** - point-in-time recovery is enabled on all durable
-   execution tables (tasks, cards, templates, users, files, notifications).
-   This protects against accidental deletes and bad updates.
+   execution tables:
+
+   - `<stack>-tasks`
+   - `<stack>-cards`
+   - `<stack>-templates`
+   - `<stack>-users`
+   - `<stack>-files`
+   - `<stack>-artifacts`
+   - `<stack>-assistant-jobs`
+   - `<stack>-audit-events`
+   - `<stack>-intake`
+   - `<stack>-notifications`
+   - `<stack>-conversational-state`
+
+   This protects against accidental deletes and bad updates. Ephemeral session
+   state is excluded. Separately governed bookkeeping, sponsor-CRM, calendar,
+   and newsletter-slot domains are outside the portable execution boundary.
 2. **Portable export archive** - an application-level JSONL snapshot bundled as
    a retained offsite archive that does not depend on DynamoDB internals. This
    is the migration path to Postgres or another store.
@@ -40,19 +55,32 @@ scripts, or risky releases:
 
 ```bash
 aws dynamodb create-backup \
-  --table-name dataops-v1-tasks \
-  --backup-name dataops-v1-tasks-pre-migration-$(date +%Y%m%d%H%M%S)
+  --table-name <stack>-tasks \
+  --backup-name <stack>-tasks-pre-migration-$(date +%Y%m%d%H%M%S)
 ```
 
-Repeat for each durable table: `cards`, `templates`, `users`, `files`,
-`notifications`. Tag or name backups with the environment, date, and reason.
+Repeat for each durable execution table:
+
+- `<stack>-tasks`
+- `<stack>-cards`
+- `<stack>-templates`
+- `<stack>-users`
+- `<stack>-files`
+- `<stack>-artifacts`
+- `<stack>-assistant-jobs`
+- `<stack>-audit-events`
+- `<stack>-intake`
+- `<stack>-notifications`
+- `<stack>-conversational-state`
+
+Tag or name backups with the environment, date, and reason.
 
 ## Portable Export
 
 Create a portable export:
 
 ```bash
-npm --prefix work-engine run export:data -- .tmp/exports/dataops-export
+npm --prefix backend run export:data -- .tmp/exports/dataops-export
 ```
 
 Or trigger the scheduled export route:
@@ -73,14 +101,30 @@ cards.jsonl
 templates.jsonl
 recurring_configs.jsonl
 files.jsonl
-notifications.jsonl
 artifacts.jsonl
 assistant_jobs.jsonl
 audit_events.jsonl
+intake_items.jsonl
+notifications.jsonl
+identity_bindings.jsonl
+identity_binding_audits.jsonl
+conversations.jsonl
+channel_bindings.jsonl
+conversation_events.jsonl
+summary_checkpoints.jsonl
+plugin_drafts.jsonl
+proposal_versions.jsonl
+proposal_presentations.jsonl
+execution_attempts.jsonl
+conversation_audit_events.jsonl
+result_notifications.jsonl
+conversational_private_payloads.jsonl
 ```
 
-Password hashes and session tokens are redacted. File binaries are excluded;
-only metadata is exported.
+All 24 JSONL families are required even when a snapshot contains zero records,
+so an empty JSONL file is valid. Password hashes and session tokens are redacted.
+The portable export excludes file and artifact binaries; it contains metadata
+only.
 
 Offsite archives are gzip-compressed tar files stored under:
 
@@ -89,7 +133,7 @@ Offsite archives are gzip-compressed tar files stored under:
 ```
 
 The deployed SAM stack sets `DATAOPS_EXPORT_ARCHIVE_BUCKET`,
-`DATAOPS_EXPORT_ARCHIVE_PREFIX`, and `DATAOPS_ENV` for the private work-engine.
+`DATAOPS_EXPORT_ARCHIVE_PREFIX`, and `DATAOPS_ENV` for the backend.
 The archive bucket is retained, private, encrypted, versioned, tagged for backup
 selection, and configured with noncurrent-version lifecycle retention.
 
@@ -98,7 +142,7 @@ selection, and configured with noncurrent-version lifecycle retention.
 Validate the export:
 
 ```bash
-npm --prefix work-engine run validate:export -- .tmp/exports/dataops-export
+npm --prefix backend run validate:export -- .tmp/exports/dataops-export
 ```
 
 This checks manifest schema version, file presence, entity counts, checksums,
@@ -110,7 +154,7 @@ Run a dry-run import to see what a restore would write without mutating any
 data:
 
 ```bash
-npm --prefix work-engine run dry-run:import -- .tmp/exports/dataops-export
+npm --prefix backend run dry-run:import -- .tmp/exports/dataops-export
 ```
 
 Output:
@@ -137,11 +181,20 @@ Exits zero when valid, non-zero when validation fails.
 Generate local restore evidence from an archive without writing production data:
 
 ```bash
-npm --prefix work-engine run restore:drill -- \
+# Download or copy the selected remote archive byte-for-byte to
+# .tmp/exports/selected-archive.tar.gz before computing its checksum.
+s3_archive_checksum=$(
+  sha256sum .tmp/exports/selected-archive.tar.gz | awk '{print "sha256:"$1}'
+)
+npm --prefix backend run restore:drill -- \
   --archive s3://<archive-bucket>/<archive-key> \
+  --archive-checksum "$s3_archive_checksum" \
   --target-environment staging-drill \
   --output-dir .tmp/exports/restore-drill
 ```
+
+The checksum must come from that byte-for-byte local copy of the selected remote
+archive. Do not infer it from bucket metadata.
 
 For local tests, pass a `file://` archive URI returned by the scheduled export
 route. The command extracts the archive under `.tmp/exports/restore-drill`, runs
@@ -160,6 +213,9 @@ The evidence report includes:
 - target environment
 - evidence timestamp
 - smoke-check checklist result
+- generic statement that artifact-binary backup proof was not performed or
+  verified by this drill and remains the separate privately retained
+  responsibility of the authorized artifact-storage operator
 
 `restore:drill` rejects `production` and `prod` as target environments. It does
 not restore, import, overwrite, delete, or repair production DynamoDB records.
@@ -174,8 +230,8 @@ backups:
 
 ```bash
 aws dynamodb restore-table-to-point-in-time \
-  --source-table-name dataops-v1-tasks \
-  --target-table-name dataops-v1-tasks-restored \
+  --source-table-name <stack>-tasks \
+  --target-table-name <stack>-tasks-restored \
   --restore-date-time 2026-06-27T10:00:00Z
 ```
 
@@ -211,8 +267,10 @@ Run this sequence end-to-end before production data becomes critical:
 
 - `generated_at` is the logical snapshot anchor. The export scans tables
   sequentially; there is no multi-table transactional snapshot guarantee.
-- File export covers metadata only; binary backup requires S3 versioning or
-  a separate artifact archive.
+- Portable export validation, dry-run analysis, restore evidence, and passed
+  smoke checks do not prove that externally stored file or artifact binaries
+  remain recoverable. Artifact-binary backup proof is retained privately by the
+  authorized artifact-storage operator under a separate process.
 - The dry-run import validates and counts but does not write to a target
   database. A full import tool (for Postgres migration) is a follow-up.
 - Production restore/import/write behavior is human-gated. Automated cron
