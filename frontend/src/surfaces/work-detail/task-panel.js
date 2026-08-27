@@ -61,6 +61,15 @@ export function createTaskPanel(context) {
   }
 
   function openTaskPanel(taskId, options = {}) {
+    const currentRoute = parseWorkspaceHash();
+    detail.taskPanelOrigin =
+      currentRoute && !currentRoute.invalid && currentRoute.path === "/"
+        ? {
+            path: "/",
+            params: {},
+            restoreFocus: { kind: "home-task", id: taskId },
+          }
+        : null;
     let target = taskRouteParams(taskId);
     if (options.preserveCard && options.expectedCardId) {
       const expected = state.workSnapshot.cardsById?.get(

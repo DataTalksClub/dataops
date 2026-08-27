@@ -112,6 +112,16 @@ export function createNavigationShell(context) {
         ? search
         : null;
     }
+    if (restoreFocus?.kind === "home-task") {
+      return (
+        [...documentRef.querySelectorAll(".home-task-action[data-task-id]")].find(
+          (candidate) =>
+            candidate.dataset.taskId === restoreFocus.id &&
+            candidate.isConnected &&
+            candidate.offsetParent !== null,
+        ) || null
+      );
+    }
     if (!restoreFocus?.id) return null;
     const candidates =
       restoreFocus.kind === "workflow"

@@ -351,6 +351,28 @@ describe("Work Detail surface boundary", () => {
     });
   });
 
+  test("returns a Home task to its originating action with focus restored", async () => {
+    const harness = createHarness({
+      route: { path: "/", params: new URLSearchParams(), invalid: false },
+    });
+
+    await harness.api.openTaskPanel("home-task");
+    harness.setRoute({
+      path: "/tasks",
+      params: new URLSearchParams("taskId=home-task"),
+      invalid: false,
+    });
+    await harness.api.closeTaskPanel();
+
+    const close = harness.navigations.at(-1);
+    assert.equal(close.path, "/");
+    assert.deepEqual(close.params, {});
+    assert.deepEqual(close.options.restoreFocus, {
+      kind: "home-task",
+      id: "home-task",
+    });
+  });
+
   test("keeps keyboard focus in the top Task modal and Escape closes only that route layer", async () => {
     const harness = createHarness({
       route: {

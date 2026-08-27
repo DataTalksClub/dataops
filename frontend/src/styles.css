@@ -2166,6 +2166,10 @@ body[data-workspace-view="home"] #git-section {
   display: none;
 }
 
+body[data-workspace-view="home"] #filters-section {
+  display: none;
+}
+
 .task-modal,
 .diff-modal,
 .confirm-modal,
@@ -5116,7 +5120,8 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   }
 
   .home-daily-header h2 {
-    display: none;
+    display: block;
+    font-size: 26px;
   }
 
   .home-daily-header time {

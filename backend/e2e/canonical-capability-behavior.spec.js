@@ -20,6 +20,7 @@ const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-159-capability-behavior');
 const ISSUE_196_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-196');
 const ISSUE_193_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-193');
 const ISSUE_200_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-200');
+const ISSUE_161_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-161');
 const BOUNDARY_OPERATOR_DATE = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
 const ADMIN_ID = '15900000-0000-4000-8000-000000000011';
 const OPERATOR_ID = '15900000-0000-4000-8000-000000000012';
@@ -143,6 +144,16 @@ async function portalPage(browser, server = servers.admin) {
   await page.goto('/#/');
   await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
   return { context, page };
+}
+
+async function closeMobileSidebar(page) {
+  const close = page.locator('#sidebar-close-button');
+  if (!(await close.isVisible())) return;
+  await close.evaluate((button) => button.click());
+  await expect(page.locator('#sidebar')).toHaveAttribute('aria-hidden', 'true');
+  await expect
+    .poll(() => page.locator('#sidebar').evaluate((sidebar) => sidebar.getBoundingClientRect().right))
+    .toBeLessThanOrEqual(0);
 }
 
 async function json(response) {
@@ -319,7 +330,7 @@ function freshHomeWork(page) {
   ]);
 }
 
-test.describe('issue 159 retained canonical capability behavior', () => {
+test.describe('canonical frontend capability behavior', () => {
   test.beforeEach(async () => {
     await Promise.all(Object.values(servers).map(stopServer));
     fs.rmSync(TMP_ROOT, { recursive: true, force: true });
@@ -420,13 +431,15 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     ]);
   });
 
-  test('Home preserves real ready data and honest partial failure recovery', async ({ browser }, testInfo) => {
+  test('Home scan-first queue proves loading, empty, ready, and partial failure states', async ({ browser }, testInfo) => {
+    fs.mkdirSync(ISSUE_161_SCREENSHOTS, { recursive: true });
     const context = await portalContext(browser, servers.admin);
     await setFaults(context.request, [
       { method: 'GET', path: '/api/tasks', delayMs: 800 },
       { method: 'GET', path: '/api/cards', delayMs: 800 },
     ]);
     const page = await context.newPage();
+    const browserErrors = observeBrowserErrors(page);
     const initialToday = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.pathname === '/work/api/tasks' && url.searchParams.has('date');
@@ -444,19 +457,50 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     const today = await page.evaluate(() => new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date()));
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+    await expect(page.locator('#filters-section')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'New task', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create card', exact: true })).toBeVisible();
     const attention = page.getByRole('region', { name: 'Needs your attention' });
     await expect(attention.locator('.home-attention-empty')).toBeVisible();
     await expect(attention.locator('.home-attention-list')).toHaveCount(0);
     await expect(attention.getByRole('button')).toBeEnabled();
+    await expect(attention.getByRole('button', { name: 'View all tasks' })).toBeVisible();
     const dailySummary = page.getByRole('region', { name: 'Daily work summary' });
     await expect(dailySummary.locator('.home-status-item[data-state="ready"]')).toHaveCount(3);
     await expect(dailySummary.locator('.home-status-item > strong')).toHaveText(['0', '0', '0']);
     await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('0');
+
+    await page.getByRole('button', { name: 'New task', exact: true }).click();
+    await expect(page.locator('.quick-form-overlay')).toBeVisible();
+    await page.locator('.quick-form-overlay').getByRole('button', { name: 'Close' }).click();
+    await expect(page.locator('.quick-form-overlay')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Create card', exact: true }).click();
+    await expect(page.locator('.quick-form-overlay')).toBeVisible();
+    await page.locator('.quick-form-overlay').getByRole('button', { name: 'Close' }).click();
+    await expect(page.locator('.quick-form-overlay')).toHaveCount(0);
+
+    await attention.getByRole('button', { name: 'View all tasks' }).click();
+    await expect(page).toHaveURL(/\/\#\/tasks$/);
+    await expect(page.getByRole('heading', { name: 'Tasks - Work Queue' })).toBeVisible();
+    await page.goto('/#/');
+    await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await closeMobileSidebar(page);
+    await expect(page.locator('.home-daily-header h2')).toBeVisible();
+    await page.screenshot({
+      path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-empty-mobile-390x844.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+
     const title = unique('Synthetic home task');
     const created = await context.request.post('/api/tasks', { data: {
       description: title, date: today, assigneeId: ADMIN_ID, instructionDocId: 'sop.synthetic.missing-home',
     } });
     expect(created.status()).toBe(201);
+    const createdTask = await json(created);
+    expect(createdTask.id).toBeTruthy();
     const notificationTitle = unique('Synthetic home notification');
     const notificationTask = await context.request.post('/api/tasks', { data: {
       description: notificationTitle,
@@ -480,9 +524,24 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await populatedRender;
     const populatedAttention = page.getByRole('region', { name: 'Needs your attention' });
     await expect(populatedAttention.locator('.home-attention-list')).toBeVisible();
-    await expect(populatedAttention.locator('.home-attention-row', { hasText: title })).toBeVisible();
+    const homeTaskRow = populatedAttention.locator('.home-attention-row', { hasText: title });
+    await expect(homeTaskRow).toBeVisible();
+    await expect(homeTaskRow.getByRole('button')).toHaveAttribute('aria-label', `Open: ${title}`);
     await expect(page.getByRole('region', { name: 'Daily work summary' }).locator('.home-status-item > strong')).toHaveText(['1', '1', '1']);
     await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('1');
+    await page.screenshot({
+      path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-ready-desktop-1440x900.png'),
+      fullPage: true,
+    });
+    await homeTaskRow.getByRole('button').click();
+    await expect(page).toHaveURL(new RegExp(`/#/tasks\\?taskId=${createdTask.id}(?:&|$)`));
+    await expect(page.locator('#task-panel-title')).toHaveText(title);
+    await expect(page.locator('#task-panel-close')).toBeFocused();
+    await page.locator('#task-panel-close').click();
+    await expect(page.locator('#task-panel')).toBeHidden();
+    await expect(page).toHaveURL(/\/\#\/$/);
+    await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toBeVisible();
+    await expect(homeTaskRow.getByRole('button')).toBeFocused();
     await page.locator('#work-bell-button').click();
     const bellItem = page.locator('.work-bell-item', { hasText: notificationTitle });
     await expect(bellItem).toBeVisible();
@@ -507,6 +566,10 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await partialRender;
     await expect(page.locator('.ops-runtime-state')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Needs your attention' }).getByText(title)).toBeVisible();
+    await page.screenshot({
+      path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-partial-failure-desktop-1440x900.png'),
+      fullPage: true,
+    });
     await clearFaults(context.request);
     const recoveredWork = freshHomeWork(page);
     const recoveredRender = page.evaluate(() => window.__dataopsRefreshWork());
@@ -514,6 +577,33 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await recoveredRender;
     await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Needs your attention' }).locator('.home-attention-row', { hasText: title })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await closeMobileSidebar(page);
+    await expect(page.getByRole('region', { name: 'Needs your attention' }).locator('.home-attention-row', { hasText: title })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Open: ${title}` })).toBeVisible();
+    await expect(page.locator('.home-view-all')).toHaveCSS('min-height', '44px');
+    await page.screenshot({
+      path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-ready-mobile-390x844.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/#/processes');
+    await expect(page.locator('.ops-surface-docs')).toBeVisible();
+    await expect(page.locator('#filters-section')).toBeVisible();
+    await page.screenshot({
+      path: path.join(ISSUE_161_SCREENSHOTS, 'source-docs-controls-retained-desktop-1440x900.png'),
+      fullPage: true,
+    });
+    const deliberateFailureUrls = new Set(
+      browserErrors
+        .filter(({ kind, status }) => kind === 'response' && status === 503)
+        .map(({ url }) => url),
+    );
+    const unexpectedBrowserErrors = browserErrors.filter((entry) => {
+      if (entry.kind === 'response') return false;
+      return !(entry.kind === 'console' && deliberateFailureUrls.has(entry.url));
+    });
+    expect(unexpectedBrowserErrors).toEqual([]);
     await context.close();
     recordCapabilityEvidence(testInfo, [{
       route: '/#/',

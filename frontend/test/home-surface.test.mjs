@@ -117,7 +117,7 @@ function operationItem(task, options = {}) {
           : "today";
   return {
     cardId: task.cardId || "",
-    dueDate: task.dueDate || "",
+    dueDate: task.dueDate || task.date || "",
     priority,
     followUpDate: task.followUpDate || "",
     nextAction: task.nextAction || "Open",
@@ -474,7 +474,7 @@ describe("Home surface production behavior", () => {
       {
         action: "Add proof",
         className: "home-attention-missing-proof",
-        date: "",
+        date: "2026-08-14",
         taskId: "task-proof",
         text: "Proof required",
         title: "Collect evidence",

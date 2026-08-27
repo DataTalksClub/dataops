@@ -35,14 +35,19 @@ export function createRouteState(context) {
       route.invalid ||
       !route.params.has("taskId")
     ) {
+      detail.taskPanelOrigin = null;
       resetTaskPanel();
       return;
     }
     if (route.params.has("taskId")) {
       const taskId = route.params.get("taskId");
+      const origin = detail.taskPanelOrigin;
+      detail.taskPanelOrigin = null;
       const params = new URLSearchParams(route.params);
       params.delete("taskId");
-      return navigateCanonicalWorkspace(route.path, params, {
+      const target = origin || {
+        path: route.path,
+        params,
         restoreFocus: {
           kind: "task",
           id: taskId,
@@ -51,6 +56,9 @@ export function createRouteState(context) {
               ? "workflows"
               : "tasks",
         },
+      };
+      return navigateCanonicalWorkspace(target.path, target.params, {
+        restoreFocus: target.restoreFocus,
       }).ready;
     }
   }

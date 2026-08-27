@@ -20,6 +20,7 @@ export function createWorkDetailSurface(context) {
     activeTaskPanelConflict: null,
     activeTaskPanelFeedback: null,
     activeTaskMutationBusy: false,
+    taskPanelOrigin: null,
     activeCardPanelId: null,
     activeCardPanelData: null,
     activeCardPanelDraft: null,

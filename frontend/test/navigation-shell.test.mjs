@@ -35,6 +35,7 @@ function createNavigationHarness(options = {}) {
   const searchInput = new FakeElement("input");
   const runtimeTemplateSearch = visibleButton("runtime-template-search", {});
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
+  const homeTaskButton = visibleButton("home-task-action", { taskId: "home-task" });
   const nestedTask = visibleButton("card-checklist-label", {
     taskId: "task-nested",
   });
@@ -48,6 +49,7 @@ function createNavigationHarness(options = {}) {
     searchInput,
     runtimeTemplateSearch,
     taskButton,
+    homeTaskButton,
     nestedTask,
     cardButton,
     recurring,
@@ -193,6 +195,7 @@ function createNavigationHarness(options = {}) {
     },
     shell,
     taskButton,
+    homeTaskButton,
   };
 }
 
@@ -328,6 +331,7 @@ describe("canonical navigation shell behavior", () => {
         "nestedTask",
       ],
       ["/templates", {}, { kind: "runtime-template-list" }, "runtimeTemplateSearch"],
+      ["/", {}, { id: "home-task", kind: "home-task" }, "homeTaskButton"],
     ];
     for (const [path, params, restoreFocus, targetName] of cases) {
       const harness = createNavigationHarness();

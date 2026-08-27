@@ -298,9 +298,7 @@ export function createHomeSurface(context) {
     state.className = "home-task-state";
     const timing = document.createElement("time");
     const timingDate =
-      item.priority === "missing-proof"
-        ? ""
-        : item.priority === "follow-up"
+      item.priority === "follow-up"
         ? item.followUpDate
         : item.dueDate || item.followUpDate;
     if (timingDate) timing.dateTime = timingDate;
@@ -310,6 +308,7 @@ export function createHomeSurface(context) {
     const action = document.createElement("button");
     action.type = "button";
     action.className = "home-task-action";
+    action.dataset.taskId = item.taskId;
     action.textContent = homeTaskActionLabel(item.nextAction);
     action.setAttribute("aria-label", `${action.textContent}: ${item.title}`);
     action.addEventListener("click", () => openTaskPanel(item.taskId));
