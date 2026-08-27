@@ -5,6 +5,7 @@ __pycache__/
 reports/
 coverage/
 .tmp/
+.agent-runs/
 dist/
 .aws-sam/
 .env
