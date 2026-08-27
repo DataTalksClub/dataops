@@ -101,6 +101,7 @@ function createHarness(options = {}) {
     params: new URLSearchParams(),
     invalid: false,
   };
+  let routeToken = options.routeToken ?? 1;
   let fresh = options.fresh ?? true;
   const cards = options.cards || [];
   const state = {
@@ -140,12 +141,15 @@ function createHarness(options = {}) {
     cardPanelClose,
     cardPanelTitle,
     escapeHtml,
-    fetchResource: async () => ({ ok: true, json: async () => ({}) }),
+    fetchResource:
+      options.fetchResource ||
+      (async () => ({ ok: true, json: async () => ({}) })),
     FOCUSABLE_SELECTOR:
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     formatTaskDateMeta,
     getActiveTasksSection: () => "queue",
     getActiveWorkspaceRoute: () => route,
+    getActiveWorkspaceRouteToken: () => routeToken,
     getActiveWorkspaceView: () => "tasks",
     getAllDocuments: () => [],
     getCurrentOperator: () => ({ id: "alexey", name: "Alexey" }),
@@ -153,7 +157,7 @@ function createHarness(options = {}) {
     hasTaskFileEvidence,
     isArchivedWorkCard,
     isOpenWorkTask,
-    isWorkspaceRouteFresh: () => fresh,
+    isWorkspaceRouteFresh: (token) => fresh && token === routeToken,
     labelizeWorkValue: (value) =>
       String(value || "")
         .split("-")
@@ -226,6 +230,9 @@ function createHarness(options = {}) {
     requests,
     setFresh: (value) => {
       fresh = value;
+    },
+    setRouteToken: (value) => {
+      routeToken = value;
     },
     setRoute: (value) => {
       route = value;
@@ -1025,6 +1032,12 @@ describe("Work Detail surface boundary", () => {
     const firstClick = firstButton.click();
     await nextTicks();
     assert.equal(
+      harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="pending"]',
+      )?.getAttribute("role"),
+      "status",
+    );
+    assert.equal(
       findByText(harness.taskPanelBody, "Mark done", "button").disabled,
       true,
     );
@@ -1039,6 +1052,525 @@ describe("Work Detail surface boundary", () => {
     assert.equal(
       findByText(harness.taskPanelBody, "Reopen", "button").disabled,
       false,
+    );
+  });
+
+  test("keeps generic Task failures in the owning panel and retries the retained link intent", async () => {
+    const task = {
+      id: "task-generic-failure",
+      version: 1,
+      taskHistory: [],
+      description: "Publish the synthetic update",
+      status: "todo",
+      requiredLinkName: "Published URL",
+    };
+    let attempt = 0;
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (
+          url === `/api/tasks/${task.id}` &&
+          requestOptions.method === "PUT"
+        ) {
+          attempt += 1;
+          if (attempt === 1) {
+            const error = new Error("Synthetic route failure (503)");
+            error.status = 503;
+            throw error;
+          }
+          const body = JSON.parse(requestOptions.body);
+          return { ...task, link: body.link, version: 2 };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const draft = "https://synthetic.example/published?attempt=1";
+    const linkInput = harness.taskPanelBody.querySelector(
+      '[data-panel-field="required-link"]',
+    );
+    linkInput.value = draft;
+    await linkInput.dispatch("change");
+
+    const failure = harness.taskPanelBody.querySelector(
+      '[data-task-mutation-feedback="error"]',
+    );
+    assert.ok(failure);
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(failure.focused, true);
+    assert.match(failure.textContent, /Could not save link: Synthetic route failure/);
+    assert.equal(
+      harness.taskPanelBody.querySelector('[data-panel-field="required-link"]').value,
+      draft,
+    );
+    assert.ok(findByText(failure, "Retry change", "button"));
+    assert.ok(findByText(failure, "Reload current Task", "button"));
+    assert.ok(findByText(failure, "Discard change", "button"));
+    assert.deepEqual(harness.errors, []);
+
+    await findByText(failure, "Retry change", "button").click();
+    const success = await waitFor(
+      () => harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="success"]',
+      ),
+      "Task link success feedback",
+    );
+    assert.equal(success.getAttribute("role"), "status");
+    assert.match(success.textContent, /saved in the refreshed Task/);
+    assert.equal(
+      harness.taskPanelBody.querySelector('[data-panel-field="required-link"]').value,
+      draft,
+    );
+    const writes = harness.requests.filter(
+      (entry) =>
+        entry.url === `/api/tasks/${task.id}` && entry.options.method === "PUT",
+    );
+    assert.deepEqual(writes.map(jsonBody), [
+      { link: draft, expectedVersion: 1 },
+      { link: draft, expectedVersion: 1 },
+    ]);
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("keeps generic Card failures in the Card panel and confirms retry after refresh", async () => {
+    const card = {
+      id: "card-generic-failure",
+      version: 1,
+      title: "Synthetic release Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 0,
+      openTaskCount: 0,
+      references: [],
+    };
+    let attempt = 0;
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        if (
+          url === `/api/cards/${card.id}` &&
+          requestOptions.method === "PUT"
+        ) {
+          attempt += 1;
+          if (attempt === 1) {
+            const error = new Error("Synthetic Card failure (503)");
+            error.status = 503;
+            throw error;
+          }
+          return {
+            ...card,
+            ...JSON.parse(requestOptions.body),
+            version: 2,
+          };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const stage = harness.cardPanelBody.querySelector("select");
+    stage.value = "announced";
+    await stage.dispatch("change");
+
+    const failure = harness.cardPanelBody.querySelector(
+      '[data-card-mutation-feedback="error"]',
+    );
+    assert.ok(failure);
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(failure.focused, true);
+    assert.match(failure.textContent, /Could not update stage: Synthetic Card failure/);
+    assert.equal(
+      harness.cardPanelBody.querySelector("select").querySelectorAll("option")
+        .find((option) => option.selected)?.value,
+      "announced",
+    );
+    assert.ok(findByText(failure, "Retry change", "button"));
+    assert.ok(findByText(failure, "Reload current Card", "button"));
+    assert.ok(findByText(failure, "Discard change", "button"));
+    assert.deepEqual(harness.errors, []);
+
+    await findByText(failure, "Retry change", "button").click();
+    const success = await waitFor(
+      () => harness.cardPanelBody.querySelector(
+        '[data-card-mutation-feedback="success"]',
+      ),
+      "Card stage success feedback",
+    );
+    assert.equal(success.getAttribute("role"), "status");
+    assert.match(success.textContent, /saved in the refreshed Card/);
+    assert.equal(
+      harness.cardPanelBody.querySelector("select").querySelectorAll("option")
+        .find((option) => option.selected)?.value,
+      "announced",
+    );
+    const writes = harness.requests.filter(
+      (entry) =>
+        entry.url === `/api/cards/${card.id}` && entry.options.method === "PUT",
+    );
+    assert.deepEqual(writes.map(jsonBody), [
+      { stage: "announced", expectedVersion: 1 },
+      { stage: "announced", expectedVersion: 1 },
+    ]);
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("routes Card-owned Task failures to the Card checklist and retries only that Task intent", async () => {
+    const card = {
+      id: "card-task-failure",
+      version: 1,
+      title: "Synthetic checklist Card",
+      status: "active",
+      stage: "preparation",
+      taskCount: 1,
+      openTaskCount: 1,
+      references: [],
+    };
+    const task = {
+      id: "card-task-failure-item",
+      cardId: card.id,
+      version: 1,
+      taskHistory: [],
+      description: "Complete the synthetic checklist item",
+      status: "todo",
+    };
+    let attempt = 0;
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method)
+          return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [task] };
+        if (url === `/api/artifacts?cardId=${card.id}`)
+          return { artifacts: [] };
+        if (url === `/api/tasks/${task.id}` && requestOptions.method === "PUT") {
+          attempt += 1;
+          if (attempt === 1) {
+            const error = new Error("Synthetic checklist failure (503)");
+            error.status = 503;
+            throw error;
+          }
+          return { ...task, status: "done", version: 2 };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const checkbox = harness.cardPanelBody.querySelector(
+      '.card-checklist-item input[type="checkbox"]',
+    );
+    await checkbox.dispatch("change");
+    const failure = await waitFor(
+      () => harness.cardPanelBody.querySelector(
+        '[data-card-mutation-feedback="error"]',
+      ),
+      "Card-owned Task failure feedback",
+    );
+    assert.match(
+      failure.textContent,
+      /Could not update task: Synthetic checklist failure/,
+    );
+    assert.ok(findByText(failure, "Retry change", "button"));
+    assert.ok(findByText(failure, "Reload current Card", "button"));
+    assert.ok(findByText(failure, "Discard change", "button"));
+    assert.deepEqual(harness.errors, []);
+
+    await findByText(failure, "Retry change", "button").click();
+    const success = await waitFor(
+      () => harness.cardPanelBody.querySelector(
+        '[data-card-mutation-feedback="success"]',
+      ),
+      "Card-owned Task success feedback",
+    );
+    assert.equal(success.getAttribute("role"), "status");
+    assert.match(success.textContent, /now done in the refreshed Task/);
+    assert.equal(
+      harness.cardPanelBody.querySelector(
+        '.card-checklist-item input[type="checkbox"]',
+      ).checked,
+      true,
+    );
+    assert.equal(
+      harness.requests.filter(
+        (entry) =>
+          entry.url === `/api/tasks/${task.id}` && entry.options.method === "PUT",
+      ).length,
+      2,
+    );
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("keeps evidence registration failures in the Task panel and recovers with retained fields", async () => {
+    const task = {
+      id: "task-evidence-failure",
+      version: 1,
+      taskHistory: [],
+      description: "Register synthetic evidence",
+      status: "todo",
+    };
+    const artifact = {
+      id: "artifact-synthetic",
+      title: "Synthetic evidence",
+      storageUri: "https://synthetic.example/evidence",
+      status: "needs-review",
+    };
+    let attempt = 0;
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url === `/api/files?taskId=${task.id}`)
+          return { files: { items: [] } };
+        if (url === `/api/artifacts?taskId=${task.id}`)
+          return { artifacts: attempt >= 2 ? [artifact] : [] };
+        if (url === "/api/artifacts" && requestOptions.method === "POST") {
+          attempt += 1;
+          if (attempt === 1) {
+            const error = new Error("Synthetic evidence route failure (503)");
+            error.status = 503;
+            throw error;
+          }
+          return artifact;
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const title = "Synthetic evidence";
+    const url = "https://synthetic.example/evidence";
+    harness.taskPanelBody.querySelector('[data-panel-field="artifact-title"]').value = title;
+    harness.taskPanelBody.querySelector('[data-panel-field="artifact-url"]').value = url;
+    await findByText(harness.taskPanelBody, "Register", "button").click();
+
+    const failure = harness.taskPanelBody.querySelector(
+      '[data-task-mutation-feedback="error"]',
+    );
+    assert.ok(failure);
+    assert.match(failure.textContent, /Could not register artifact: Synthetic evidence route failure/);
+    assert.equal(
+      harness.taskPanelBody.querySelector('[data-panel-field="artifact-title"]').value,
+      title,
+    );
+    assert.equal(
+      harness.taskPanelBody.querySelector('[data-panel-field="artifact-url"]').value,
+      url,
+    );
+    assert.ok(findByText(failure, "Retry change", "button"));
+    assert.deepEqual(harness.errors, []);
+
+    await findByText(failure, "Retry change", "button").click();
+    const success = await waitFor(
+      () => harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="success"]',
+      ),
+      "evidence registration success feedback",
+    );
+    assert.equal(success.getAttribute("role"), "status");
+    assert.match(success.textContent, /confirmed in the refreshed Task/);
+    assert.ok(findByText(harness.taskPanelBody, title, "a"));
+    assert.equal(
+      harness.requests.filter(
+        (entry) => entry.url === "/api/artifacts" && entry.options.method === "POST",
+      ).length,
+      2,
+    );
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("keeps Task file upload failures local and retries the retained synthetic file", async () => {
+    const task = {
+      id: "task-file-failure",
+      version: 1,
+      taskHistory: [],
+      description: "Attach synthetic evidence file",
+      status: "todo",
+      requiresFile: true,
+    };
+    let uploadAttempt = 0;
+    let uploaded = false;
+    const harness = createHarness({
+      fetchResource: async () => {
+        uploadAttempt += 1;
+        if (uploadAttempt === 1) {
+          return {
+            ok: false,
+            status: 503,
+            text: async () => JSON.stringify({ error: "Synthetic upload outage" }),
+          };
+        }
+        uploaded = true;
+        return { ok: true, status: 201, json: async () => ({ id: "file-synthetic" }) };
+      },
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method)
+          return task;
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url.startsWith(`/api/files?taskId=${task.id}`)) {
+          return {
+            files: {
+              items: uploaded
+                ? [{ id: "file-synthetic", filename: "synthetic.txt" }]
+                : [],
+            },
+          };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const fileInput = harness.taskPanelBody.querySelector('input[type="file"]');
+    fileInput.files = [new Blob(["synthetic fixture"], { type: "text/plain" })];
+    await fileInput.dispatch("change");
+    const failure = await waitFor(
+      () => harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="error"]',
+      ),
+      "file upload failure feedback",
+    );
+    assert.match(failure.textContent, /Upload failed: Synthetic upload outage/);
+    assert.ok(findByText(failure, "Retry change", "button"));
+    assert.deepEqual(harness.errors, []);
+
+    await findByText(failure, "Retry change", "button").click();
+    const success = await waitFor(
+      () => harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="success"]',
+      ),
+      "file upload success feedback",
+    );
+    assert.equal(success.getAttribute("role"), "status");
+    assert.match(success.textContent, /File is attached in the refreshed Task/);
+    await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-file-item"),
+      "uploaded synthetic file",
+    );
+    assert.equal(uploadAttempt, 2);
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("does not announce artifact success when the owning Task cannot refresh", async () => {
+    const task = {
+      id: "task-artifact-refresh-failure",
+      version: 1,
+      taskHistory: [],
+      description: "Confirm refreshed artifact state",
+      status: "todo",
+    };
+    let registered = false;
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) {
+          return task;
+        }
+        if (url === `/api/artifacts?taskId=${task.id}`) {
+          if (registered) throw new Error("Synthetic artifact refresh outage");
+          return { artifacts: [] };
+        }
+        if (url === "/api/artifacts" && requestOptions.method === "POST") {
+          registered = true;
+          return { id: "artifact-refresh-failure" };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const urlInput = harness.taskPanelBody.querySelector(
+      '[data-panel-field="artifact-url"]',
+    );
+    urlInput.value = "https://example.invalid/refresh-failure";
+    await findByText(harness.taskPanelBody, "Register", "button").click();
+
+    const failure = await waitFor(
+      () => harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="error"]',
+      ),
+      "artifact refresh failure feedback",
+    );
+    assert.match(failure.textContent, /Task artifacts could not be refreshed/);
+    assert.equal(
+      harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="success"]',
+      ),
+      null,
+    );
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("serializes evidence mutations with Task status changes", async () => {
+    const task = {
+      id: "task-evidence-serialization",
+      version: 1,
+      taskHistory: [],
+      description: "Do not race evidence and status",
+      status: "todo",
+      requiresFile: true,
+    };
+    let releaseUpload;
+    const upload = new Promise((resolve) => {
+      releaseUpload = resolve;
+    });
+    let uploaded = false;
+    const harness = createHarness({
+      fetchResource: () => upload.then((response) => {
+        uploaded = true;
+        return response;
+      }),
+      request: async (url) => {
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) {
+          return {
+            files: {
+              items: uploaded
+                ? [{ id: "file-serialization", filename: "evidence.txt" }]
+                : [],
+            },
+          };
+        }
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const fileInput = harness.taskPanelBody.querySelector('input[type="file"]');
+    fileInput.files = [new Blob(["synthetic fixture"], { type: "text/plain" })];
+    const uploadRequest = fileInput.dispatch("change");
+    await nextTicks();
+
+    assert.equal(
+      findByText(harness.taskPanelBody, "Mark done", "button").disabled,
+      true,
+    );
+    assert.equal(
+      harness.requests.filter((entry) => entry.options.method === "PUT").length,
+      0,
+    );
+
+    releaseUpload({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: "file-serialization" }),
+    });
+    await uploadRequest;
+    await waitFor(
+      () => harness.taskPanelBody.querySelector(
+        '[data-task-mutation-feedback="success"]',
+      ),
+      "serialized evidence upload completion",
     );
   });
 
@@ -2016,6 +2548,113 @@ describe("Work Detail surface boundary", () => {
     );
   });
 
+  test("ignores a Card template response from an older route token", async () => {
+    const card = {
+      id: "card-stale-template",
+      version: 1,
+      title: "Stale template Card",
+      templateId: "template-1",
+      templateVersion: 1,
+      references: [],
+    };
+    let initialPreview = true;
+    let releasePreview;
+    const delayedPreview = new Promise((resolve) => {
+      releasePreview = resolve;
+    });
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) {
+          return { card };
+        }
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`) return { artifacts: [] };
+        if (
+          url === `/api/cards/${card.id}/template-update` &&
+          !requestOptions.method
+        ) {
+          if (initialPreview) {
+            initialPreview = false;
+            throw new Error("Synthetic preview unavailable");
+          }
+          return delayedPreview;
+        }
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const reload = findByText(
+      harness.cardPanelBody,
+      "Reload template status",
+      "button",
+    ).click();
+    await nextTicks();
+    harness.setRouteToken(2);
+    harness.api.prepareCardPanel("new-card");
+    releasePreview({ preview: { state: "current", targetTemplateVersion: 2 } });
+    await reload;
+
+    assert.equal(harness.cardPanelTitle.textContent, "Loading card...");
+    assert.equal(harness.cardPanelBody.textContent, "Loading card new-card…");
+  });
+
+  test("does not apply a stale Card artifact refresh to a re-entered panel", async () => {
+    const card = {
+      id: "card-stale-artifacts",
+      version: 1,
+      title: "Stale artifacts Card",
+      stage: "preparation",
+      references: [],
+    };
+    let cardArtifactLoads = 0;
+    let releaseRefresh;
+    const delayedRefresh = new Promise((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) {
+          return { card };
+        }
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/artifacts?cardId=${card.id}`) {
+          cardArtifactLoads += 1;
+          return cardArtifactLoads === 1
+            ? { artifacts: [] }
+            : delayedRefresh;
+        }
+        if (url === "/api/artifacts" && requestOptions.method === "POST") {
+          return { id: "stale-artifact" };
+        }
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const urlInput = harness.cardPanelBody.querySelector(
+      '[data-panel-field="artifact-url"]',
+    );
+    urlInput.value = "https://example.invalid/stale-artifact";
+    const registration = findByText(
+      harness.cardPanelBody,
+      "Register",
+      "button",
+    ).click();
+    await nextTicks();
+    harness.setRouteToken(2);
+    harness.api.prepareCardPanel("new-card");
+    releaseRefresh({ artifacts: [{ id: "stale-artifact" }] });
+    await registration;
+
+    assert.equal(harness.cardPanelTitle.textContent, "Loading card...");
+    assert.equal(harness.cardPanelBody.textContent, "Loading card new-card…");
+  });
+
   test("registers Card references and registers plus approves external artifacts", async () => {
     const card = {
       id: "card-refs",
@@ -2117,6 +2756,7 @@ describe("Work Detail surface boundary", () => {
     const notFoundError = new Error("Missing task");
     notFoundError.status = 404;
     const missing = createHarness({
+      routeToken: 2,
       route: {
         path: "/tasks",
         params: new URLSearchParams("taskId=missing-task"),

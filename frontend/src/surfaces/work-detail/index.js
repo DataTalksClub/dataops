@@ -18,11 +18,13 @@ export function createWorkDetailSurface(context) {
     activeTaskPanelArtifacts: [],
     activeTaskPanelDraft: null,
     activeTaskPanelConflict: null,
+    activeTaskPanelFeedback: null,
     activeTaskMutationBusy: false,
     activeCardPanelId: null,
     activeCardPanelData: null,
     activeCardPanelDraft: null,
     activeCardPanelConflict: null,
+    activeCardPanelFeedback: null,
     activeCardMutationBusy: false,
     activeCardTemplateReviewOpen: false,
     activeCardTemplateBusy: false,
@@ -64,7 +66,12 @@ export function createWorkDetailSurface(context) {
     renderTaskFileSection: (...args) =>
       taskEvidenceApi.renderTaskFileSection(...args),
     renderTaskPanel: (...args) => taskPanelApi.renderTaskPanel(...args),
+    reloadTaskIntent: (...args) => taskActionsApi.reloadTaskIntent(...args),
     saveTaskLink: (...args) => taskActionsApi.saveTaskLink(...args),
+    setCardPanelFeedback: (...args) =>
+      taskActionsApi.setCardPanelFeedback(...args),
+    setTaskPanelFeedback: (...args) =>
+      taskActionsApi.setTaskPanelFeedback(...args),
     updateTaskStatus: (...args) => taskActionsApi.updateTaskStatus(...args),
   };
 

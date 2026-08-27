@@ -342,7 +342,9 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await complete.click();
     const failedCompletion = await failedCompletionRequest;
     expect(failedCompletion.postDataJSON().expectedVersion).toBe(savedTask.version);
-    await expect(page.locator('#status-text')).toContainText('Could not update task: Synthetic route failure (409)');
+    const taskMutationFailure = page.locator('#task-panel [data-task-mutation-feedback="error"]');
+    await expect(taskMutationFailure).toContainText('Could not update task: Synthetic route failure (409)');
+    await expect(taskMutationFailure).toBeFocused();
     await expect(page.locator('#task-panel .task-status-badge')).toHaveText('todo');
     await expect(requiredLink).toHaveValue(proofUrl);
     await expect(page.locator('#task-panel .task-file-item')).toContainText('synthetic-proof.txt');
@@ -471,7 +473,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await page.reload();
     const missingArtifactCheckbox = page.getByRole('checkbox', { name: `Complete ${missingArtifactTitle}` });
     await expect(missingArtifactCheckbox).toBeEnabled();
-    await missingArtifactCheckbox.check();
+    await missingArtifactCheckbox.click();
     await expect.poll(async () => (await json(await context.request.get(`/api/tasks/${missingArtifactTask.id}`))).status).toBe('done');
     await page.reload();
     await expect(page.locator('#card-panel [role="progressbar"]')).toHaveAttribute('aria-valuenow', '100');
