@@ -9084,6 +9084,57 @@ body[data-workspace-view="tasks"] .task-version-conflict {
   padding: 14px;
 }
 
+body[data-workspace-view="tasks"] .task-mutation-feedback,
+body[data-workspace-view="tasks"] .card-mutation-feedback {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--info-border);
+  border-radius: 10px;
+  background: var(--info-bg);
+  color: var(--info-text);
+  padding: 14px;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="tasks"] .task-mutation-feedback.is-error,
+body[data-workspace-view="tasks"] .card-mutation-feedback.is-error {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+body[data-workspace-view="tasks"] .task-mutation-feedback.is-success,
+body[data-workspace-view="tasks"] .card-mutation-feedback.is-success {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+body[data-workspace-view="tasks"] .task-mutation-feedback-message {
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+body[data-workspace-view="tasks"] .task-mutation-feedback-controls,
+body[data-workspace-view="tasks"] .card-mutation-feedback-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+body[data-workspace-view="tasks"] .task-mutation-feedback-controls button,
+body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 body[data-workspace-view="tasks"] .entity-route-state {
   display: grid;
   gap: 8px;
@@ -11606,5 +11657,43 @@ body[data-workspace-view="tasks"] .ops-queue-row strong {
     min-width: 44px;
     min-height: 44px;
     margin: 0;
+  }
+
+}
+
+@media (max-width: 768px) {
+  body[data-workspace-view="tasks"] .task-action-btn,
+  body[data-workspace-view="tasks"] .task-action-group button,
+  body[data-workspace-view="tasks"] .task-conflict-controls button,
+  body[data-workspace-view="tasks"] .task-mutation-feedback-controls button,
+  body[data-workspace-view="tasks"] .card-mutation-feedback-controls button,
+  body[data-workspace-view="tasks"] .card-stage-select,
+  body[data-workspace-view="tasks"] .card-link-input,
+  body[data-workspace-view="tasks"] .workflow-references-section input {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .task-mutation-feedback-controls .task-action-btn,
+  .card-mutation-feedback-controls .task-action-btn,
+  .card-stage-select,
+  .card-link-input,
+  .workflow-references-section input {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-summary-top .card-stage-select {
+    min-height: 44px;
+  }
+
+  body[data-workspace-view="tasks"] .task-mutation-feedback-controls,
+  body[data-workspace-view="tasks"] .card-mutation-feedback-controls {
+    align-items: stretch;
+  }
+
+  body[data-workspace-view="tasks"] .task-mutation-feedback-controls button,
+  body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
+    flex: 1 1 140px;
   }
 }

@@ -28,6 +28,7 @@ export function createTaskPanel(context) {
     renderEntityLoadState,
     renderTaskArtifactSection,
     renderTaskFileSection,
+    reloadTaskIntent = () => undefined,
     request,
     resolveDocReference = () => null,
     saveTaskLink,
@@ -192,7 +193,11 @@ export function createTaskPanel(context) {
       : null;
   }
 
-  function restoreTaskPanelFields(capturedFields, focusedFieldKey) {
+  function restoreTaskPanelFields(
+    capturedFields,
+    focusedFieldKey,
+    { restoreFocus = true } = {},
+  ) {
     let focusedField = null;
     for (const [key, capture] of capturedFields) {
       const field = taskPanelBody.querySelector(
@@ -214,7 +219,58 @@ export function createTaskPanel(context) {
         }
       }
     }
-    if (focusedField) focusedField.focus();
+    if (restoreFocus && focusedField) focusedField.focus();
+  }
+
+  function renderTaskPanelFeedback(feedback) {
+    if (!feedback) return null;
+    const phase = feedback.phase === "success" ? "success" :
+      feedback.phase === "pending" ? "pending" : "error";
+    const section = document.createElement("section");
+    section.className = `task-mutation-feedback is-${phase}`;
+    section.dataset.taskMutationFeedback = phase;
+    section.setAttribute("role", phase === "error" ? "alert" : "status");
+    section.setAttribute(
+      "aria-live",
+      phase === "error" ? "assertive" : "polite",
+    );
+    section.setAttribute("aria-atomic", "true");
+    section.tabIndex = -1;
+
+    const message = document.createElement("p");
+    message.className = "task-mutation-feedback-message";
+    message.textContent = String(feedback.message || "");
+    section.append(message);
+
+    if (phase === "error") {
+      const controls = document.createElement("div");
+      controls.className = "task-mutation-feedback-controls";
+      const retry = typeof feedback.retry === "function"
+        ? feedback.retry
+        : feedback.intent
+          ? retryTaskIntent
+          : null;
+      if (retry) {
+        const retryButton = createTaskActionButton("Retry change", retry);
+        retryButton.classList.add("is-primary");
+        retryButton.dataset.taskMutationRetry = "true";
+        controls.append(retryButton);
+      }
+      const reload = createTaskActionButton(
+        "Reload current Task",
+        reloadTaskIntent,
+      );
+      reload.dataset.taskMutationReload = "true";
+      controls.append(reload);
+      const discard = createTaskActionButton(
+        "Discard change",
+        feedback.discard || discardTaskIntent,
+      );
+      discard.dataset.taskMutationDiscard = "true";
+      controls.append(discard);
+      section.append(controls);
+    }
+    return section;
   }
 
   function renderTaskPanel(options = {}) {
@@ -231,12 +287,16 @@ export function createTaskPanel(context) {
     }
     if (!task) return;
     let conflictClaimedFocus = false;
+    let feedbackClaimedFocus = false;
 
     if (!isCanonicalWorkTask(task)) {
       throw new Error("Task payload is not in the canonical versioned shape");
     }
     const status = task.status;
     const today = todayIsoDate();
+    const panelMutationBusy = detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy;
 
     if (detail.activeTaskPanelConflict && detail.activeTaskPanelDraft) {
       const conflict = detail.activeTaskPanelConflict;
@@ -267,14 +327,30 @@ export function createTaskPanel(context) {
       const retry = createTaskActionButton("Retry my change", retryTaskIntent);
       retry.classList.add("is-primary");
       const discard = createTaskActionButton("Discard my change", discardTaskIntent);
-      review.disabled = detail.activeTaskMutationBusy;
-      retry.disabled = detail.activeTaskMutationBusy;
-      discard.disabled = detail.activeTaskMutationBusy;
+      review.disabled = panelMutationBusy;
+      retry.disabled = panelMutationBusy;
+      discard.disabled = panelMutationBusy;
       controls.append(review, retry, discard);
       recovery.append(heading, latestState, retained, controls);
       taskPanelBody.append(recovery);
       recovery.focus();
       conflictClaimedFocus = true;
+    }
+
+    if (!conflictClaimedFocus && detail.activeTaskPanelFeedback) {
+      const feedback = renderTaskPanelFeedback(detail.activeTaskPanelFeedback);
+      taskPanelBody.append(feedback);
+      const focusSelector = detail.activeTaskPanelFeedback.focusSelector;
+      const focusTarget = focusSelector
+        ? taskPanelBody.querySelector(focusSelector)
+        : null;
+      if (focusTarget) {
+        focusTarget.setAttribute("aria-invalid", "true");
+        focusTarget.focus();
+      } else {
+        feedback.focus();
+      }
+      feedbackClaimedFocus = true;
     }
 
     const routeContextParts = [
@@ -371,7 +447,7 @@ export function createTaskPanel(context) {
           ? detail.activeTaskPanelDraft.payload.link
           : savedLink;
       input.placeholder = "https://...";
-      input.disabled = detail.activeTaskMutationBusy;
+      input.disabled = panelMutationBusy;
       // `change` is the normal browser commit. `blur` also covers a draft that
       // was restored after a background rerender, where the browser no longer
       // treats the restored text as a user edit. `committedLink` tracks the
@@ -452,7 +528,7 @@ export function createTaskPanel(context) {
         detail.activeTaskPanelDraft?.kind === "follow-up-sent"
           ? detail.activeTaskPanelDraft.payload.nextFollowUpAt
           : defaultNextFollowUpDate();
-      nextInput.disabled = detail.activeTaskMutationBusy;
+      nextInput.disabled = panelMutationBusy;
       nextLabel.append(nextInput);
       followRow.append(nextLabel);
       const followUp = createTaskActionButton("Follow-up sent", () =>
@@ -487,7 +563,7 @@ export function createTaskPanel(context) {
           missingArtifact,
           canComplete,
         } = completionProofState();
-        complete.disabled = detail.activeTaskMutationBusy || !canComplete;
+        complete.disabled = panelMutationBusy || !canComplete;
         if (canComplete) {
           complete.title = "";
           return;
@@ -507,7 +583,7 @@ export function createTaskPanel(context) {
       actions.append(markWaiting);
     }
     for (const button of actions.querySelectorAll("button")) {
-      if (detail.activeTaskMutationBusy) button.disabled = true;
+      if (panelMutationBusy) button.disabled = true;
     }
     // File upload for required-file tasks
     renderTaskFileSection(task, {
@@ -584,8 +660,22 @@ export function createTaskPanel(context) {
       taskPanelBody.append(instructions);
     }
 
-    if (!conflictClaimedFocus && preserveDrafts) {
-      restoreTaskPanelFields(capturedFields, focusedFieldKey);
+    if (feedbackClaimedFocus && detail.activeTaskPanelFeedback?.focusSelector) {
+      const focusTarget = taskPanelBody.querySelector(
+        detail.activeTaskPanelFeedback.focusSelector,
+      );
+      if (focusTarget) {
+        focusTarget.setAttribute("aria-invalid", "true");
+        focusTarget.focus();
+      }
+    }
+
+    if (preserveDrafts) {
+      restoreTaskPanelFields(
+        capturedFields,
+        conflictClaimedFocus || feedbackClaimedFocus ? null : focusedFieldKey,
+        { restoreFocus: !conflictClaimedFocus && !feedbackClaimedFocus },
+      );
     }
   }
 

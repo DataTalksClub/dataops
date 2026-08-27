@@ -1,4 +1,5 @@
 import { isCanonicalWorkTask } from "../../core/workspace.js";
+import { createCardActions } from "./card-actions.js";
 
 export function createCardPanel(context) {
   const {
@@ -8,6 +9,7 @@ export function createCardPanel(context) {
     detail,
     formatCardAnchorLabel,
     getActiveWorkspaceRoute,
+    getActiveWorkspaceRouteToken = () => 0,
     hasApprovedArtifactEvidence,
     hasTaskFileEvidence,
     isArchivedWorkCard,
@@ -22,7 +24,10 @@ export function createCardPanel(context) {
     renderArtifactList,
     renderEntityLoadState,
     renderTaskPanel,
-    reportError,
+    reloadTaskIntent,
+    retryTaskIntent,
+    discardTaskIntent,
+    reviewLatestTask,
     request,
     settledPayload,
     state,
@@ -43,6 +48,10 @@ export function createCardPanel(context) {
     const card = state.workSnapshot.cardsById?.get(cardId);
     const path = isArchivedWorkCard(card) ? "/cards/archive" : "/cards";
     return navigateCanonicalWorkspace(path, { cardId: cardId }).ready;
+  }
+
+  function routeIsFresh(token) {
+    return token === undefined || token === null || isWorkspaceRouteFresh(token);
   }
 
   async function hydrateCardPanel(cardId, token) {
@@ -124,7 +133,66 @@ export function createCardPanel(context) {
     container.replaceChildren(loadingState);
   }
 
-  function renderCardPanel() {
+  function renderCardPanelFeedback(feedback) {
+    if (!feedback) return null;
+    const isTaskIntent = feedback.intent?.entity === "task";
+    const phase = feedback.phase === "success" ? "success" :
+      feedback.phase === "pending" ? "pending" : "error";
+    const section = document.createElement("section");
+    section.className = `card-mutation-feedback is-${phase}`;
+    section.dataset.cardMutationFeedback = phase;
+    section.setAttribute("role", phase === "error" ? "alert" : "status");
+    section.setAttribute(
+      "aria-live",
+      phase === "error" ? "assertive" : "polite",
+    );
+    section.setAttribute("aria-atomic", "true");
+    section.tabIndex = -1;
+
+    const message = document.createElement("p");
+    message.className = "card-mutation-feedback-message";
+    message.textContent = String(feedback.message || "");
+    section.append(message);
+
+    if (phase === "error") {
+      const controls = document.createElement("div");
+      controls.className = "card-mutation-feedback-controls";
+      const retry = typeof feedback.retry === "function"
+        ? feedback.retry
+        : isTaskIntent
+          ? retryTaskIntent
+          : feedback.intent
+            ? retryCardIntent
+            : null;
+      if (retry) {
+        const retryButton = createTaskActionButton("Retry change", retry);
+        retryButton.classList.add("is-primary");
+        retryButton.dataset.cardMutationRetry = "true";
+        controls.append(retryButton);
+      }
+      const reload = createTaskActionButton(
+        "Reload current Card",
+        isTaskIntent ? reloadTaskIntent : reloadCardIntent,
+      );
+      reload.dataset.cardMutationReload = "true";
+      controls.append(reload);
+      const discard = createTaskActionButton(
+        "Discard change",
+        feedback.discard ||
+          (isTaskIntent ? discardTaskIntent : discardCardIntent),
+      );
+      discard.dataset.cardMutationDiscard = "true";
+      controls.append(discard);
+      section.append(controls);
+    }
+    return section;
+  }
+
+  function renderCardPanel(options = {}) {
+    const preserveDrafts = options.preserveDrafts === true;
+    const capturedDrafts = preserveDrafts
+      ? captureCardPanelDrafts()
+      : new Map();
     const data = detail.activeCardPanelData;
     const card = data?.card;
     const tasks = data?.tasks || [];
@@ -135,6 +203,9 @@ export function createCardPanel(context) {
     if (!card) return;
 
     const today = todayIsoDate();
+    const panelMutationBusy = detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy;
     const progress = summarizeCardProgress(card, tasks, today);
     const layout = document.createElement("div");
     layout.className = "workflow-modal-layout";
@@ -142,6 +213,46 @@ export function createCardPanel(context) {
     main.className = "workflow-modal-main";
     layout.append(main);
     cardPanelBody.append(layout);
+
+    let conflictClaimedFocus = false;
+    let feedbackClaimedFocus = false;
+
+    if (detail.activeTaskPanelConflict?.owner === "card" && detail.activeTaskPanelDraft) {
+      const conflict = detail.activeTaskPanelConflict;
+      const latest = conflict.currentTask;
+      const recovery = document.createElement("section");
+      recovery.className = "task-version-conflict card-task-version-conflict";
+      recovery.setAttribute("role", "alert");
+      recovery.setAttribute("aria-live", "assertive");
+      recovery.tabIndex = -1;
+      const heading = document.createElement("strong");
+      heading.textContent = conflict.code === "card_lifecycle_conflict"
+        ? "This Card or its Tasks changed elsewhere. Review the latest work or retry your change."
+        : "This Task changed elsewhere. Review the latest Task or retry your change.";
+      const latestState = document.createElement("p");
+      latestState.textContent = `Latest server state: version ${latest.version}, status ${latest.status}.`;
+      const currentCard = conflict.currentCard || conflict.currentCards?.[0];
+      if (currentCard) {
+        latestState.textContent += ` Card version ${currentCard.version}, ${labelizeWorkValue(currentCard.stage)}.`;
+      }
+      const retained = document.createElement("p");
+      retained.className = "task-conflict-draft";
+      retained.textContent = `Your retained change: ${detail.activeTaskPanelDraft.label}`;
+      const controls = document.createElement("div");
+      controls.className = "task-conflict-controls";
+      const review = createTaskActionButton("Review latest", reviewLatestTask);
+      const retry = createTaskActionButton("Retry my change", retryTaskIntent);
+      retry.classList.add("is-primary");
+      const discard = createTaskActionButton("Discard my change", discardTaskIntent);
+      for (const button of [review, retry, discard]) {
+        button.disabled = panelMutationBusy;
+      }
+      controls.append(review, retry, discard);
+      recovery.append(heading, latestState, retained, controls);
+      main.append(recovery);
+      recovery.focus();
+      conflictClaimedFocus = true;
+    }
 
     if (detail.activeCardPanelConflict && detail.activeCardPanelDraft) {
       const conflict = detail.activeCardPanelConflict;
@@ -169,12 +280,29 @@ export function createCardPanel(context) {
       retry.classList.add("is-primary");
       const discard = createTaskActionButton("Discard my change", discardCardIntent);
       for (const button of [review, retry, discard]) {
-        button.disabled = detail.activeCardMutationBusy;
+        button.disabled = panelMutationBusy;
       }
       controls.append(review, retry, discard);
       recovery.append(heading, latestState, retained, controls);
       main.append(recovery);
       recovery.focus();
+      conflictClaimedFocus = true;
+    }
+
+    if (!conflictClaimedFocus && detail.activeCardPanelFeedback) {
+      const feedback = renderCardPanelFeedback(detail.activeCardPanelFeedback);
+      main.append(feedback);
+      const focusSelector = detail.activeCardPanelFeedback.focusSelector;
+      const focusTarget = focusSelector
+        ? main.querySelector(focusSelector)
+        : null;
+      if (focusTarget) {
+        focusTarget.setAttribute("aria-invalid", "true");
+        focusTarget.focus();
+      } else {
+        feedback.focus();
+      }
+      feedbackClaimedFocus = true;
     }
 
     // Stage + progress summary
@@ -208,7 +336,10 @@ export function createCardPanel(context) {
         if (displayedStage === stage) opt.selected = true;
         stageSelect.append(opt);
       }
-      stageSelect.disabled = detail.activeCardMutationBusy;
+      stageSelect.disabled =
+        detail.activeCardMutationBusy ||
+        detail.activeTaskMutationBusy ||
+        detail.activeCardTemplateBusy;
       stageSelect.addEventListener("change", () =>
         updateCardStage(card.id, stageSelect.value),
       );
@@ -317,7 +448,10 @@ export function createCardPanel(context) {
           (value) => (value.name || value.label) === linkName,
         )?.url ?? linkUrl;
         input.placeholder = "https://...";
-        input.disabled = detail.activeCardMutationBusy;
+        input.disabled =
+          detail.activeCardMutationBusy ||
+          detail.activeTaskMutationBusy ||
+          detail.activeCardTemplateBusy;
         input.addEventListener("change", () =>
           saveCardLink(
             card.id,
@@ -462,9 +596,18 @@ export function createCardPanel(context) {
     addBtn.type = "button";
     addBtn.className = "task-action-btn";
     addBtn.textContent = "Add";
-    nameInput.disabled = detail.activeCardMutationBusy;
-    urlInput.disabled = detail.activeCardMutationBusy;
-    addBtn.disabled = detail.activeCardMutationBusy;
+    nameInput.disabled =
+      detail.activeCardMutationBusy ||
+      detail.activeTaskMutationBusy ||
+      detail.activeCardTemplateBusy;
+    urlInput.disabled =
+      detail.activeCardMutationBusy ||
+      detail.activeTaskMutationBusy ||
+      detail.activeCardTemplateBusy;
+    addBtn.disabled =
+      detail.activeCardMutationBusy ||
+      detail.activeTaskMutationBusy ||
+      detail.activeCardTemplateBusy;
     addBtn.addEventListener("click", () =>
       addCardReference(
         card.id,
@@ -482,15 +625,34 @@ export function createCardPanel(context) {
         artifacts,
         required: false,
         onRefresh: async () => {
+          const token = getActiveWorkspaceRouteToken();
+          if (!routeIsFresh(token) || detail.activeCardPanelId !== card.id) {
+            return false;
+          }
+          const refreshedArtifacts = await loadArtifactsForCard(card.id);
+          if (!routeIsFresh(token) || detail.activeCardPanelId !== card.id) {
+            return false;
+          }
           detail.activeCardPanelData = {
             ...detail.activeCardPanelData,
-            artifacts: await loadArtifactsForCard(card.id),
+            artifacts: refreshedArtifacts,
           };
-          renderCardPanel();
+          renderCardPanel({ preserveDrafts: true });
+          return refreshedArtifacts;
         },
       }),
     );
     main.append(refsSection);
+    if (preserveDrafts) restoreCardPanelDrafts(capturedDrafts);
+    if (feedbackClaimedFocus && detail.activeCardPanelFeedback?.focusSelector) {
+      const focusTarget = main.querySelector(
+        detail.activeCardPanelFeedback.focusSelector,
+      );
+      if (focusTarget) {
+        focusTarget.setAttribute("aria-invalid", "true");
+        focusTarget.focus();
+      }
+    }
   }
 
   function renderCardChecklistItem(task, cardId, today) {
@@ -504,6 +666,11 @@ export function createCardPanel(context) {
     const isArchived = status === "archived";
     const isWaiting = status === "waiting";
     const cardArtifacts = detail.activeCardPanelData?.artifacts || [];
+    const pendingStatus = detail.activeTaskMutationBusy &&
+      detail.activeTaskPanelDraft?.taskId === task.id &&
+      detail.activeTaskPanelDraft?.kind === "status"
+      ? detail.activeTaskPanelDraft.payload?.status
+      : null;
 
     const missingLink = !isDone && task.requiredLinkName && !task.link;
     const missingFile =
@@ -519,8 +686,14 @@ export function createCardPanel(context) {
       "aria-label",
       `${isArchived ? "Retired" : isDone ? "Reopen" : "Complete"} ${workTaskTitle(task)}`,
     );
-    checkbox.checked = isDone;
+    // Preserve the native checkbox state while the change handler is awaiting
+    // the server. The pending rerender must not make Playwright/keyboard users
+    // observe an unchecked replacement after they just checked it.
+    checkbox.checked = pendingStatus ? pendingStatus === "done" : isDone;
     checkbox.disabled =
+      detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy ||
       isArchived || isWaiting || missingLink || missingFile || missingArtifact;
     if (checkbox.disabled && !isDone) {
       const reasons = [];
@@ -710,13 +883,15 @@ export function createCardPanel(context) {
     apply.type = "button";
     apply.className = "primary-button";
     apply.textContent = detail.activeCardTemplateBusy ? "Applying…" : "Apply reviewed update";
-    apply.disabled = detail.activeCardTemplateBusy;
+    apply.disabled = detail.activeCardTemplateBusy ||
+      detail.activeCardMutationBusy || detail.activeTaskMutationBusy;
     apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken));
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.className = "task-action-btn";
     cancel.textContent = "Cancel";
-    cancel.disabled = detail.activeCardTemplateBusy;
+    cancel.disabled = detail.activeCardTemplateBusy ||
+      detail.activeCardMutationBusy || detail.activeTaskMutationBusy;
     cancel.addEventListener("click", () => {
       detail.activeCardTemplateReviewOpen = false;
       detail.activeCardTemplateMessage = "";
@@ -756,63 +931,6 @@ export function createCardPanel(context) {
     restoreCardPanelDrafts(drafts);
   }
 
-  async function reloadCardTemplateUpdate(cardId) {
-    const drafts = captureCardPanelDrafts();
-    detail.activeCardTemplateBusy = true;
-    detail.activeCardTemplateMessage = "";
-    renderCardPanelRetainingDrafts(drafts);
-    try {
-      const response = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
-      );
-      if (detail.activeCardPanelId !== cardId) return;
-      detail.activeCardPanelData = {
-        ...detail.activeCardPanelData,
-        templateUpdate: response?.preview || response,
-        templateUpdateError: "",
-      };
-      detail.activeCardTemplateReviewOpen = true;
-    } catch (error) {
-      detail.activeCardTemplateMessage = error.message || "Could not reload the latest preview.";
-    } finally {
-      detail.activeCardTemplateBusy = false;
-      if (detail.activeCardPanelId === cardId) renderCardPanelRetainingDrafts(drafts);
-    }
-  }
-
-  async function applyCardTemplateUpdate(cardId, previewToken) {
-    const drafts = captureCardPanelDrafts();
-    detail.activeCardTemplateBusy = true;
-    detail.activeCardTemplateMessage = "";
-    renderCardPanelRetainingDrafts(drafts);
-    try {
-      const response = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
-        { method: "POST", body: JSON.stringify({ previewToken }) },
-      );
-      if (detail.activeCardPanelId !== cardId) return;
-      detail.activeCardPanelData = {
-        ...detail.activeCardPanelData,
-        card: response.card || detail.activeCardPanelData.card,
-        tasks: Array.isArray(response.tasks) ? response.tasks : detail.activeCardPanelData.tasks,
-      };
-      const latest = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
-      );
-      detail.activeCardPanelData.templateUpdate = latest?.preview || latest;
-      detail.activeCardTemplateReviewOpen = false;
-      detail.activeCardTemplateMessage = "";
-      await refreshOperationsWorkSnapshot({ rerender: true });
-    } catch (error) {
-      detail.activeCardTemplateMessage = error.status === 409
-        ? "Card, Task, or Template changed after preview. Your review is retained; reload the latest preview when ready."
-        : `Could not apply Template update: ${error.message || "request failed"}`;
-    } finally {
-      detail.activeCardTemplateBusy = false;
-      if (detail.activeCardPanelId === cardId) renderCardPanelRetainingDrafts(drafts);
-    }
-  }
-
   async function navigateTaskToWorkflow(task) {
     if (!task?.cardId) return;
     const card = state.workSnapshot.cardsById?.get(task.cardId);
@@ -821,137 +939,6 @@ export function createCardPanel(context) {
       cardId: task.cardId,
       taskId: task.id,
     }).ready;
-  }
-
-  async function submitCardIntent(intent, expectedVersion) {
-    if (detail.activeCardMutationBusy) return null;
-    detail.activeCardPanelDraft = intent;
-    detail.activeCardMutationBusy = true;
-    renderCardPanel();
-    try {
-      const currentCard = detail.activeCardPanelConflict?.currentCard
-        || detail.activeCardPanelData?.card;
-      const payload = intent.buildPayload
-        ? intent.buildPayload(currentCard)
-        : intent.payload;
-      intent.payload = payload;
-      const response = await request(
-        workApiUrl(`/api/cards/${encodeURIComponent(intent.cardId)}`),
-        {
-          method: "PUT",
-          body: JSON.stringify({ ...intent.payload, expectedVersion }),
-        },
-      );
-      const updatedCard = response && (response.card || response);
-      if (updatedCard && detail.activeCardPanelId === intent.cardId) {
-        detail.activeCardPanelData = {
-          ...detail.activeCardPanelData,
-          card: updatedCard,
-        };
-        detail.activeCardPanelDraft = null;
-        detail.activeCardPanelConflict = null;
-      }
-      detail.activeCardMutationBusy = false;
-      await refreshOperationsWorkSnapshot({ rerender: true });
-      if (detail.activeCardPanelId === intent.cardId) renderCardPanel();
-      return updatedCard;
-    } catch (error) {
-      detail.activeCardMutationBusy = false;
-      if (
-        error?.status === 409
-        && error?.code === "card_version_conflict"
-        && error?.payload?.currentCard?.id === intent.cardId
-      ) {
-        detail.activeCardPanelConflict = error.payload;
-        renderCardPanel();
-        return null;
-      }
-      renderCardPanel();
-      reportError(`${intent.errorPrefix}: ${error.message || "request failed"}`);
-      return null;
-    }
-  }
-
-  function reviewLatestCard() {
-    const latest = detail.activeCardPanelConflict?.currentCard;
-    if (!latest) return;
-    detail.activeCardPanelData = {
-      ...detail.activeCardPanelData,
-      card: latest,
-    };
-    renderCardPanel();
-  }
-
-  async function retryCardIntent() {
-    const intent = detail.activeCardPanelDraft;
-    const latest = detail.activeCardPanelConflict?.currentCard;
-    if (!intent || !latest) return;
-    await submitCardIntent(intent, latest.version);
-  }
-
-  function discardCardIntent() {
-    const latest = detail.activeCardPanelConflict?.currentCard;
-    if (latest) {
-      detail.activeCardPanelData = {
-        ...detail.activeCardPanelData,
-        card: latest,
-      };
-    }
-    detail.activeCardPanelDraft = null;
-    detail.activeCardPanelConflict = null;
-    renderCardPanel();
-  }
-
-  async function addCardReference(cardId, currentRefs, name, url) {
-    if (!url) {
-      reportError("URL is required.");
-      return;
-    }
-    const ref = { name: name || url, url };
-    const updatedRefs = [...(currentRefs || []), ref];
-    await submitCardIntent({
-      cardId,
-      kind: "reference",
-      label: `Add reference ${ref.name}`,
-      payload: { references: updatedRefs },
-      buildPayload: (currentCard) => ({
-        references: [...(currentCard?.references || []), ref],
-      }),
-      form: { name, url },
-      errorPrefix: "Could not add link",
-    }, detail.activeCardPanelData?.card?.version);
-  }
-
-  async function updateCardStage(cardId, stage) {
-    await submitCardIntent({
-      cardId,
-      kind: "stage",
-      label: `Set stage to ${labelizeWorkValue(stage)}`,
-      payload: { stage },
-      errorPrefix: "Could not update stage",
-    }, detail.activeCardPanelData?.card?.version);
-  }
-
-  async function saveCardLink(cardId, currentLinks, linkName, linkValue) {
-    const updatedLinks = (currentLinks || []).map((link) =>
-      (link.name || link.label) === linkName
-        ? { ...link, url: linkValue }
-        : link,
-    );
-    await submitCardIntent({
-      cardId,
-      kind: "card-link",
-      label: `Save ${linkName}: ${linkValue}`,
-      payload: { cardLinks: updatedLinks },
-      buildPayload: (currentCard) => ({
-        cardLinks: (currentCard?.cardLinks || []).map((link) =>
-          (link.name || link.label) === linkName
-            ? { ...link, url: linkValue }
-            : link,
-        ),
-      }),
-      errorPrefix: "Could not save link",
-    }, detail.activeCardPanelData?.card?.version);
   }
 
   // Keep long operator-provided values breakable in the narrow Card modal
@@ -974,12 +961,31 @@ export function createCardPanel(context) {
     if (chunk) element.append(document.createTextNode(chunk));
   }
 
+  const {
+    addCardReference,
+    applyCardTemplateUpdate,
+    discardCardIntent,
+    reloadCardIntent,
+    reloadCardTemplateUpdate,
+    retryCardIntent,
+    reviewLatestCard,
+    saveCardLink,
+    updateCardStage,
+  } = createCardActions({
+    ...context,
+    captureCardPanelDrafts,
+    detail,
+    renderCardPanel,
+    renderCardPanelRetainingDrafts,
+  });
+
   // ---------- Notification bell ----------
 
   return {
     hydrateCardPanel,
     navigateTaskToWorkflow,
     openCardPanel,
+    reloadCardIntent,
     renderCardPanel,
     renderEntityLoadingState,
   };

@@ -72,6 +72,7 @@
     "src/surfaces/work-detail/task-panel.js",
     "src/surfaces/work-detail/task-actions.js",
     "src/surfaces/work-detail/task-evidence.js",
+    "src/surfaces/work-detail/card-actions.js",
     "src/surfaces/work-detail/card-panel.js"
   ]
 }

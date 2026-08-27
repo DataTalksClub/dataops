@@ -5,11 +5,14 @@ export function createTaskEvidence(context) {
     createTaskActionButton,
     detail,
     fetchResource,
+    getActiveWorkspaceRouteToken = () => 0,
+    isWorkspaceRouteFresh = () => true,
     refreshTaskPanel,
     renderTaskPanel,
-    reportError,
     request,
     scheduleAnimationFrame,
+    setCardPanelFeedback,
+    setTaskPanelFeedback,
     settledPayload,
     taskPanelBody,
     taskRequiresApprovedArtifact,
@@ -19,6 +22,62 @@ export function createTaskEvidence(context) {
   const taskFilesLoaders = new Map();
   const taskFilesContinuations = new Map();
   const taskFilesSettledCallbacks = new Map();
+
+  function evidenceOwnerIsCurrent(ownerType, ownerId, token) {
+    if (!isWorkspaceRouteFresh(token)) return false;
+    if (ownerType === "card") return detail.activeCardPanelId === ownerId;
+    return detail.activeTaskPanelId === ownerId;
+  }
+
+  function setEvidenceFeedback(ownerType, ownerId, token, feedback) {
+    if (!evidenceOwnerIsCurrent(ownerType, ownerId, token)) return false;
+    const setter = ownerType === "card"
+      ? setCardPanelFeedback
+      : setTaskPanelFeedback;
+    if (typeof setter !== "function") return false;
+    setter(feedback);
+    return true;
+  }
+
+  function ownerMutationBusy(ownerType, ownerId) {
+    if (!evidenceOwnerIsCurrent(ownerType, ownerId, getActiveWorkspaceRouteToken())) return false;
+    return detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy;
+  }
+
+  function beginEvidenceMutation(ownerType, ownerId, token, feedback) {
+    const ownerIsCurrent = evidenceOwnerIsCurrent(ownerType, ownerId, token);
+    const ownerHasPanel = ownerType === "card"
+      ? Boolean(detail.activeCardPanelId)
+      : Boolean(detail.activeTaskPanelId);
+    if ((!ownerIsCurrent && ownerHasPanel) ||
+        (ownerIsCurrent && ownerMutationBusy(ownerType, ownerId))) {
+      return false;
+    }
+    if (!ownerIsCurrent) return true;
+    if (ownerType === "card") detail.activeCardMutationBusy = true;
+    else detail.activeTaskMutationBusy = true;
+    return setEvidenceFeedback(ownerType, ownerId, token, feedback);
+  }
+
+  function finishEvidenceMutation(ownerType, ownerId, token, feedback) {
+    if (!evidenceOwnerIsCurrent(ownerType, ownerId, token)) return false;
+    if (ownerType === "card") detail.activeCardMutationBusy = false;
+    else detail.activeTaskMutationBusy = false;
+    return setEvidenceFeedback(ownerType, ownerId, token, feedback);
+  }
+
+  function ownerMutationPending(ownerType, ownerId) {
+    const feedback = ownerType === "card"
+      ? detail.activeCardPanelFeedback
+      : detail.activeTaskPanelFeedback;
+    return feedback?.owner === ownerType &&
+      feedback?.phase === "pending" &&
+      (ownerType === "card"
+        ? detail.activeCardPanelId === ownerId
+        : detail.activeTaskPanelId === ownerId);
+  }
 
   function taskFilesLoader(taskId) {
     if (!taskFilesLoaders.has(taskId)) {
@@ -45,6 +104,10 @@ export function createTaskEvidence(context) {
 
     const fileInput = document.createElement("input");
     fileInput.type = "file";
+    fileInput.disabled = detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy ||
+      ownerMutationPending("task", task.id);
     fileInput.addEventListener("change", () => {
       if (fileInput.files && fileInput.files[0])
         uploadTaskFile(task.id, fileInput.files[0]);
@@ -81,6 +144,7 @@ export function createTaskEvidence(context) {
     updateTaskFilesContainer(taskId, container);
     renderTaskFiles(taskId, container, page);
     onFilesSettled?.();
+    return page;
   }
 
   function updateTaskFilesContainer(taskId, container) {
@@ -121,6 +185,23 @@ export function createTaskEvidence(context) {
     await loadTaskFiles(taskId, container, {
       retry: Boolean(current.cursor),
     });
+  }
+
+  async function refreshTaskFiles(taskId, container, token) {
+    if (!evidenceOwnerIsCurrent("task", taskId, token)) return null;
+    cancelTaskFilesContinuation(taskId);
+    taskFilesLoaders.delete(taskId);
+    let page = await loadTaskFiles(taskId, container);
+    while (page?.moreAvailable && !page.failed) {
+      if (!evidenceOwnerIsCurrent("task", taskId, token)) return null;
+      cancelTaskFilesContinuation(taskId);
+      page = await loadTaskFiles(taskId, container, { retry: true });
+    }
+    if (!evidenceOwnerIsCurrent("task", taskId, token)) return null;
+    if (!page?.loaded || page.failed) {
+      throw new Error(page?.error || "Task files could not be refreshed");
+    }
+    return page;
   }
 
   function renderTaskFiles(taskId, container, page) {
@@ -180,6 +261,10 @@ export function createTaskEvidence(context) {
       remove.type = "button";
       remove.className = "quiet-button task-file-remove";
       remove.textContent = "Remove";
+      remove.disabled = detail.activeTaskMutationBusy ||
+        detail.activeCardMutationBusy ||
+        detail.activeCardTemplateBusy ||
+        ownerMutationPending("task", taskId);
       remove.addEventListener("click", () =>
         removeTaskFile(file.id, taskId, container),
       );
@@ -239,13 +324,17 @@ export function createTaskEvidence(context) {
     container.append(status);
   }
 
-  async function loadArtifactsForTask(task) {
+  async function loadArtifactsForTask(task, options = {}) {
     const results = await Promise.allSettled([
       request(workApiUrl("/api/artifacts", { taskId: task.id })),
       task.cardId
         ? request(workApiUrl("/api/artifacts", { cardId: task.cardId }))
         : Promise.resolve({ artifacts: [] }),
     ]);
+    if (options.strict) {
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed) throw failed.reason;
+    }
     const artifacts = [];
     for (const result of results) {
       const payload = settledPayload(result);
@@ -275,6 +364,12 @@ export function createTaskEvidence(context) {
   }
 
   async function uploadTaskFile(taskId, file) {
+    const token = getActiveWorkspaceRouteToken();
+    if (!beginEvidenceMutation("task", taskId, token, {
+      phase: "pending",
+      message: "Uploading the Task file…",
+      retry: () => uploadTaskFile(taskId, file),
+    })) return;
     const formData = new FormData();
     formData.append("taskId", taskId);
     formData.append("category", "document");
@@ -290,33 +385,80 @@ export function createTaskEvidence(context) {
         try {
           msg = JSON.parse(text).error || msg;
         } catch {}
-        reportError(`Upload failed: ${msg}`);
+        finishEvidenceMutation("task", taskId, token, {
+          phase: "error",
+          message: `Upload failed: ${msg}`,
+          retry: () => uploadTaskFile(taskId, file),
+        });
         return;
       }
-      await response.json();
-      if (detail.activeTaskPanelTask)
-        detail.activeTaskPanelTask._hasFiles = true;
-      cancelTaskFilesContinuation(taskId);
-      taskFilesLoaders.delete(taskId);
-      renderTaskPanel({ preserveDrafts: true });
+      const uploaded = await response.json();
+      if (!evidenceOwnerIsCurrent("task", taskId, token)) return;
+      const container = taskPanelBody.querySelector(".task-file-list");
+      if (!container) throw new Error("Task file list is unavailable for refresh");
+      const refreshed = await refreshTaskFiles(taskId, container, token);
+      if (!refreshed) return;
+      const uploadedId = uploaded?.file?.id || uploaded?.id;
+      if (
+        uploadedId &&
+        !refreshed.items.some((file) => file?.id === uploadedId)
+      ) {
+        throw new Error("Uploaded file was not present in the refreshed Task");
+      }
+      if (detail.activeTaskPanelTask) {
+        detail.activeTaskPanelTask._hasFiles = refreshed.items.length > 0;
+      }
+      finishEvidenceMutation("task", taskId, token, {
+        phase: "success",
+        message: "File is attached in the refreshed Task.",
+      });
     } catch (err) {
-      reportError(`Upload failed: ${err.message || "request failed"}`);
+      finishEvidenceMutation("task", taskId, token, {
+        phase: "error",
+        message: `Upload failed: ${err.message || "request failed"}`,
+        retry: () => uploadTaskFile(taskId, file),
+      });
     }
   }
 
   async function removeTaskFile(fileId, taskId, container) {
+    const token = getActiveWorkspaceRouteToken();
+    if (!beginEvidenceMutation("task", taskId, token, {
+      phase: "pending",
+      message: "Removing the Task file…",
+      retry: () => removeTaskFile(fileId, taskId, container),
+    })) return;
     try {
       const url = workApiUrl(`/api/files/${encodeURIComponent(fileId)}`);
       const response = await fetch(url, { method: "DELETE" });
       if (!response.ok && response.status !== 204) {
-        reportError(`Could not remove file: HTTP ${response.status}`);
+        finishEvidenceMutation("task", taskId, token, {
+          phase: "error",
+          message: `Could not remove file: HTTP ${response.status}`,
+          retry: () => removeTaskFile(fileId, taskId, container),
+        });
         return;
       }
-      cancelTaskFilesContinuation(taskId);
-      taskFilesLoaders.delete(taskId);
-      renderTaskPanel({ preserveDrafts: true });
+      if (!evidenceOwnerIsCurrent("task", taskId, token)) return;
+      const refreshed = await refreshTaskFiles(
+        taskId,
+        taskPanelBody.querySelector(".task-file-list") || container,
+        token,
+      );
+      if (!refreshed) return;
+      if (refreshed.items.some((file) => file?.id === fileId)) {
+        throw new Error("Removed file was still present in the refreshed Task");
+      }
+      finishEvidenceMutation("task", taskId, token, {
+        phase: "success",
+        message: "File removal is confirmed in the refreshed Task.",
+      });
     } catch (err) {
-      reportError(`Could not remove file: ${err.message || "request failed"}`);
+      finishEvidenceMutation("task", taskId, token, {
+        phase: "error",
+        message: `Could not remove file: ${err.message || "request failed"}`,
+        retry: () => removeTaskFile(fileId, taskId, container),
+      });
     }
   }
 
@@ -366,8 +508,18 @@ export function createTaskEvidence(context) {
       item.append(document.createTextNode(" "), status);
       if (artifact.status !== "approved" && artifact.status !== "archived") {
         const approve = createTaskActionButton("Approve", async () =>
-          updateArtifactStatus(artifact.id, "approved", options.onRefresh),
+          updateArtifactStatus(
+            artifact.id,
+            "approved",
+            options.onRefresh,
+            options.ownerType,
+            options.ownerId,
+          ),
         );
+        approve.disabled = detail.activeTaskMutationBusy ||
+          detail.activeCardMutationBusy ||
+          detail.activeCardTemplateBusy ||
+          ownerMutationPending(options.ownerType, options.ownerId);
         item.append(document.createTextNode(" "), approve);
       }
       list.append(item);
@@ -382,14 +534,24 @@ export function createTaskEvidence(context) {
     // Marked so a panel rerender can hand a half-typed registration back to the
     // operator instead of clearing it.
     titleInput.dataset.panelField = "artifact-title";
+    if (options.ownerType === "card") {
+      titleInput.dataset.cardDraftKey = "artifact-title";
+    }
     const urlInput = document.createElement("input");
     urlInput.type = "url";
     urlInput.placeholder = "https://...";
     urlInput.dataset.panelField = "artifact-url";
+    if (options.ownerType === "card") {
+      urlInput.dataset.cardDraftKey = "artifact-url";
+    }
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "task-action-btn";
     addBtn.textContent = "Register";
+    addBtn.disabled = detail.activeTaskMutationBusy ||
+      detail.activeCardMutationBusy ||
+      detail.activeCardTemplateBusy ||
+      ownerMutationPending(options.ownerType, options.ownerId);
     addBtn.addEventListener("click", () =>
       registerExternalArtifact({
         ownerType: options.ownerType,
@@ -405,8 +567,13 @@ export function createTaskEvidence(context) {
   }
 
   async function registerExternalArtifact(options) {
+    const token = getActiveWorkspaceRouteToken();
     if (!options.url) {
-      reportError("Artifact URL is required.");
+      setEvidenceFeedback(options.ownerType, options.ownerId, token, {
+        phase: "error",
+        message: "Artifact URL is required.",
+        focusSelector: '[data-panel-field="artifact-url"]',
+      });
       return;
     }
     const body = {
@@ -420,33 +587,128 @@ export function createTaskEvidence(context) {
     };
     if (options.ownerType === "task") body.taskId = options.ownerId;
     if (options.ownerType === "card") body.cardId = options.ownerId;
+    if (!beginEvidenceMutation(options.ownerType, options.ownerId, token, {
+      phase: "pending",
+      message: "Registering the artifact…",
+      retry: () => registerExternalArtifact(options),
+    })) return;
     try {
-      await request(workApiUrl("/api/artifacts"), {
+      const response = await request(workApiUrl("/api/artifacts"), {
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (typeof options.onRefresh === "function") await options.onRefresh();
+      if (!evidenceOwnerIsCurrent(options.ownerType, options.ownerId, token)) return;
+      if (typeof options.onRefresh === "function") {
+        const refreshed = await options.onRefresh();
+        if (refreshed === false) {
+          throw new Error(
+            options.ownerType === "card"
+              ? "Card artifacts could not be refreshed"
+              : "Task artifacts could not be refreshed",
+          );
+        }
+        assertArtifactMutationConfirmed(
+          refreshed,
+          response?.artifact || response,
+          body,
+        );
+      }
+      if (!evidenceOwnerIsCurrent(options.ownerType, options.ownerId, token)) return;
+      finishEvidenceMutation(options.ownerType, options.ownerId, token, {
+        phase: "success",
+        message: options.ownerType === "card"
+          ? "Artifact registration is confirmed in the refreshed Card."
+          : "Artifact registration is confirmed in the refreshed Task.",
+      });
     } catch (err) {
-      reportError(
-        `Could not register artifact: ${err.message || "request failed"}`,
-      );
+      finishEvidenceMutation(options.ownerType, options.ownerId, token, {
+        phase: "error",
+        message: `Could not register artifact: ${err.message || "request failed"}`,
+        retry: () => registerExternalArtifact(options),
+      });
     }
   }
 
-  async function updateArtifactStatus(artifactId, status, onRefresh) {
+  async function updateArtifactStatus(
+    artifactId,
+    status,
+    onRefresh,
+    ownerType = "task",
+    ownerId = detail.activeTaskPanelId,
+  ) {
+    const token = getActiveWorkspaceRouteToken();
+    if (!beginEvidenceMutation(ownerType, ownerId, token, {
+      phase: "pending",
+      message: "Updating the artifact…",
+      retry: () => updateArtifactStatus(
+        artifactId,
+        status,
+        onRefresh,
+        ownerType,
+        ownerId,
+      ),
+    })) return;
     try {
-      await request(
+      const response = await request(
         workApiUrl(`/api/artifacts/${encodeURIComponent(artifactId)}`),
         {
           method: "PUT",
           body: JSON.stringify({ status }),
         },
       );
-      if (typeof onRefresh === "function") await onRefresh();
+      if (!evidenceOwnerIsCurrent(ownerType, ownerId, token)) return;
+      if (typeof onRefresh === "function") {
+        const refreshed = await onRefresh();
+        if (refreshed === false) {
+          throw new Error(
+            ownerType === "card"
+              ? "Card artifacts could not be refreshed"
+              : "Task artifacts could not be refreshed",
+          );
+        }
+        assertArtifactMutationConfirmed(
+          refreshed,
+          response?.artifact || response,
+          { id: artifactId, status },
+        );
+      }
+      if (!evidenceOwnerIsCurrent(ownerType, ownerId, token)) return;
+      finishEvidenceMutation(ownerType, ownerId, token, {
+        phase: "success",
+        message: ownerType === "card"
+          ? "Artifact status is confirmed in the refreshed Card."
+          : "Artifact status is confirmed in the refreshed Task.",
+      });
     } catch (err) {
-      reportError(
-        `Could not update artifact: ${err.message || "request failed"}`,
-      );
+      finishEvidenceMutation(ownerType, ownerId, token, {
+        phase: "error",
+        message: `Could not update artifact: ${err.message || "request failed"}`,
+        retry: () => updateArtifactStatus(
+          artifactId,
+          status,
+          onRefresh,
+          ownerType,
+          ownerId,
+        ),
+      });
+    }
+  }
+
+  function assertArtifactMutationConfirmed(refreshed, responseArtifact, expected) {
+    if (!Array.isArray(refreshed)) return;
+    const expectedId = responseArtifact?.id || expected.id;
+    const expectedUri = responseArtifact?.storageUri || expected.storageUri;
+    const expectedTitle = responseArtifact?.title || expected.title;
+    const artifact = refreshed.find((candidate) =>
+      (expectedId && candidate?.id === expectedId) ||
+      (expectedUri && candidate?.storageUri === expectedUri) ||
+      (expectedTitle && candidate?.title === expectedTitle),
+    );
+    if (!artifact) {
+      throw new Error("Artifact mutation was not present in the refreshed owner");
+    }
+    if (expected.status && artifact.status !== expected.status) {
+      throw new Error("Artifact refresh did not confirm the requested status");
     }
   }
 
