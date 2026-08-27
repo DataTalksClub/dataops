@@ -140,14 +140,10 @@ function honestState(title, detail) {
 function createHomeHarness(options = {}) {
   const documentList = new FakeElement("main");
   documentList.id = "document-list";
-  const libraryTitle = new FakeElement("h1");
-  const clearSelectionButton = new FakeElement("button");
   const body = new FakeElement("body");
   const document = new FakeDocument(
     body,
     documentList,
-    libraryTitle,
-    clearSelectionButton,
   );
   document.body = body;
   globalThis.document = document;
@@ -208,7 +204,6 @@ function createHomeHarness(options = {}) {
     buildOperationsFutureSections: () => [],
     buildOperationsReferenceLinks: () => [],
     cardsFromWorkPayload,
-    clearSelectionButton,
     currentOperatorIdForTodayScope: (id) => id,
     currentOperatorIdFromPayload: (payload) => payload?.user?.id || "",
     dedupeOperationItems: (items) =>
@@ -229,7 +224,6 @@ function createHomeHarness(options = {}) {
     isOperationsHomeVisible: () => options.homeVisible !== false,
     isWorkflowTemplateDoc: (doc) => doc.type === "workflow-template",
     isWorkspaceRouteFresh: () => true,
-    libraryTitle,
     listDraftPaths: () => [],
     navigateCanonicalWorkspace: (path) => {
       calls.navigations.push(path);
@@ -312,10 +306,8 @@ function createHomeHarness(options = {}) {
 
   return {
     calls,
-    clearSelectionButton,
     document,
     documentList,
-    libraryTitle,
     state,
     surface,
   };
@@ -364,7 +356,6 @@ describe("Home surface production behavior", () => {
     harness.surface.renderOperationsHome([]);
     const root = harness.documentList.children[0];
     assert.equal(root.dataset.operationsWorkLoaded, "true");
-    assert.equal(harness.libraryTitle.textContent, "Home");
     assert.deepEqual(harness.calls.routeTitles, ["Today"]);
     const summaryLine = root.querySelector(".surface-summary");
     assert.equal(summaryLine.dataset.summaryState, "ready");

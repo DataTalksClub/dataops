@@ -265,22 +265,17 @@ function createFeedbackHarness() {
     "undo-toast",
     "undo-toast-text",
     "undo-toast-button",
-    "error-toast",
-    "error-toast-text",
-    "error-toast-close",
   ];
   const values = Object.fromEntries(
     ids.map((id) => [id, element(id, id.includes("button") ? "button" : "div")]),
   );
   values["confirm-modal"].hidden = true;
   values["undo-toast"].hidden = true;
-  values["error-toast"].hidden = true;
   const body = element("body", "body");
   const document = new TestDocument(body, ...Object.values(values));
   attachDocument(document, ...document.roots);
   const timers = [];
   const cleared = [];
-  const statuses = [];
   const shell = createFeedbackShell({
     clearTimeoutImpl: (id) => cleared.push(id),
     documentRef: document,
@@ -288,14 +283,13 @@ function createFeedbackHarness() {
     labelizeWorkValue: (value) =>
       String(value || "").replace(/^./, (letter) => letter.toUpperCase()),
     requestAnimationFrameImpl: (callback) => callback(),
-    setStatus: (message) => statuses.push(message),
     setTimeoutImpl: (callback, delay) => {
       const timer = { callback, delay };
       timers.push(timer);
       return timer;
     },
   });
-  return { cleared, document, shell, statuses, timers, values };
+  return { cleared, document, shell, timers, values };
 }
 
 function createNotificationHarness(options = {}) {
@@ -397,7 +391,6 @@ function createBindingDom() {
     "cancelCommitButton",
     "gitCommitForm",
     "tasksNavButton",
-    "clearSelectionButton",
     "clearFiltersButton",
     "editorSaveButton",
     "editorDiscardButton",
@@ -726,12 +719,6 @@ describe("runtime and shell production behavior", () => {
     assert.equal(restored, 1);
     assert.equal(harness.values["undo-toast"].hidden, true);
 
-    harness.shell.reportError("Could not save");
-    assert.deepEqual(harness.statuses, ["Could not save"]);
-    assert.equal(harness.values["error-toast-text"].textContent, "Could not save");
-    assert.equal(harness.timers.at(-1).delay, 10000);
-    harness.timers.at(-1).callback();
-    assert.equal(harness.values["error-toast"].hidden, true);
   });
 
   test("loads notifications, preserves stale state, and supports open and dismiss actions", async () => {

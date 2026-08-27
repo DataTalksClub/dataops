@@ -21,6 +21,7 @@ export function createKnowledgeSurface(context) {
   Object.assign(
     api,
     createKnowledgeList(context, {
+      clearSelection: invoke("clearSelection"),
       openDocument: invoke("openDocument"),
       setHighlightedText: invoke("setHighlightedText"),
     }),

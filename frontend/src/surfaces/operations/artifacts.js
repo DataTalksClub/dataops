@@ -1,7 +1,6 @@
 export function createArtifactsSurface(context) {
   const {
     assistantJobsFromPayload,
-    clearSelectionButton,
     cssEscape,
     dedupeArtifacts,
     defaultNextFollowUpDate,
@@ -12,7 +11,6 @@ export function createArtifactsSurface(context) {
     isOperationsHomeVisible,
     isMobileShell,
     isWorkspaceRouteFresh,
-    libraryTitle,
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,
@@ -20,11 +18,9 @@ export function createArtifactsSurface(context) {
     refreshDocuments,
     renderEntityLoadState,
     renderHonestState,
-    reportError,
     request,
     scheduleAnimationFrame,
     setRouteTitle,
-    setStatus,
     state,
     tasksFromWorkPayload,
     todayIsoDate,

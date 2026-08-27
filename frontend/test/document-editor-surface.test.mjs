@@ -81,6 +81,16 @@ function bodyOf(entry) {
   return JSON.parse(entry.options.body || "{}");
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function createEditorHarness(options = {}) {
   if (options.immediateTimers) {
     globalThis.setTimeout = (callback) => {
@@ -204,18 +214,20 @@ function createEditorHarness(options = {}) {
   elements.documentTitle.value = "Existing process";
 
   const requests = [];
-  const statuses = [];
   const routeTitles = [];
   const views = [];
-  const errors = [];
   const openedDocuments = [];
   const confirmations = [];
+  let routeToken = 0;
   let loadCount = 0;
   let libraryCount = 0;
   let formResetCount = 0;
   let sidebarCloses = 0;
 
   const newDocForm = element("form");
+  const createStatus = element("p");
+  createStatus.className = "status-text";
+  newDocForm.append(createStatus);
   newDocForm.reset = () => {
     formResetCount += 1;
   };
@@ -252,7 +264,9 @@ function createEditorHarness(options = {}) {
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;"),
     fetchBacklinksForCurrentDoc() {},
+    getActiveWorkspaceRouteToken: () => routeToken,
     documentState,
+    isWorkspaceRouteFresh: (token) => token === routeToken,
     knowledgeState: { selectedFolder: options.selectedFolder || "" },
     labelForPath: (path) => `Label: ${path}`,
     loadDocuments: async () => {
@@ -261,6 +275,7 @@ function createEditorHarness(options = {}) {
     newDocForm,
     openDocument: async (path) => {
       openedDocuments.push(path);
+      documentState.currentDoc = { path, updated: 20 };
     },
     operationsViewTitle: (view) => view,
     promptUser: options.promptUser || (() => "content/processes/renamed.md"),
@@ -269,7 +284,6 @@ function createEditorHarness(options = {}) {
     renderLoomBlock: nullableBlock,
     renderRelatedDocsBlock: nullableBlock,
     renderWarningsBlock: nullableBlock,
-    reportError: (message) => errors.push(message),
     request,
     resetCardPanel() {},
     resetTaskPanel() {},
@@ -290,12 +304,10 @@ function createEditorHarness(options = {}) {
     scheduleAnimationFrame: (callback) => callback(),
     setFolderUrl() {},
     setRouteTitle: (title) => routeTitles.push(title),
-    setStatus: (message) => statuses.push(message),
     setView: (view) => {
       body.dataset.view = view;
       views.push(view);
     },
-    showErrorToast: (message) => errors.push(message),
     showLibrary: () => {
       libraryCount += 1;
     },
@@ -312,10 +324,10 @@ function createEditorHarness(options = {}) {
     api,
     body,
     confirmations,
+    createStatus,
     document,
     documentState,
     elements,
-    errors,
     formResetCount: () => formResetCount,
     libraryCount: () => libraryCount,
     loadCount: () => loadCount,
@@ -323,9 +335,11 @@ function createEditorHarness(options = {}) {
     routeTitles,
     requests,
     sidebarCloses: () => sidebarCloses,
-    statuses,
     storageValues,
     views,
+    invalidateRoute: () => {
+      routeToken += 1;
+    },
   };
 }
 
@@ -380,7 +394,8 @@ describe("Document Editor surface boundary", () => {
     });
 
     await harness.api.createDocument();
-    assert.equal(harness.statuses.at(-1), "Path is required.");
+    assert.equal(harness.createStatus.textContent, "Path is required.");
+    assert.equal(harness.elements.editorInlineStatus.textContent, "");
     assert.equal(harness.requests.length, 0);
 
     harness.elements.newDocPath.value = "/operations/new-process";
@@ -406,9 +421,38 @@ describe("Document Editor surface boundary", () => {
       "content/operations/new-process.md",
     ]);
     assert.equal(
-      harness.statuses.at(-1),
+      harness.elements.editorInlineStatus.textContent,
       "Created content/operations/new-process.md.",
     );
+  });
+
+  test("blocks duplicate creates and ignores a stale create response", async () => {
+    const response = deferred();
+    const harness = createEditorHarness({
+      request: async (url, requestOptions) => {
+        if (new URL(url).pathname === "/docs" && requestOptions.method === "POST") {
+          return response.promise;
+        }
+        return {};
+      },
+    });
+    harness.elements.newDocPath.value = "content/operations/duplicate.md";
+    harness.elements.newDocTitle.value = "Duplicate guard";
+
+    const first = harness.api.createDocument();
+    await nextTicks();
+    const second = harness.api.createDocument();
+    await nextTicks();
+    assert.equal(
+      harness.requests.filter((entry) => entry.options.method === "POST").length,
+      1,
+    );
+
+    harness.invalidateRoute();
+    response.resolve({ path: "content/operations/duplicate.md" });
+    await Promise.all([first, second]);
+    assert.deepEqual(harness.openedDocuments, []);
+    assert.equal(harness.formResetCount(), 0);
   });
 
   test("guards create navigation, defaults its folder path, and moves focus safely", async () => {
@@ -514,7 +558,6 @@ describe("Document Editor surface boundary", () => {
         "content/processes/existing.md",
         "content/z.md",
       ]);
-      assert.equal(harness.statuses.includes("Saved 2 documents."), false);
       assert.equal(harness.elements.changesStatus.textContent, "Saved 2 documents.");
       assert.equal(harness.elements.changesStatus.hidden, false);
       assert.equal(harness.elements.changesStatus.classList.contains("is-error"), false);
@@ -706,7 +749,10 @@ describe("Document Editor surface boundary", () => {
       harness.storageValues.get("dtc-doc-draft:content/other.md"),
       "# Other\n",
     );
-    assert.match(harness.statuses.at(-1), /^Saved · summary is missing/);
+    assert.match(
+      harness.elements.editorInlineStatus.textContent,
+      /^Saved · summary is missing/,
+    );
     assert.equal(harness.loadCount(), 1);
     assert.equal(harness.document.activeElement, harness.elements.editorSaveState);
   });
@@ -731,7 +777,7 @@ describe("Document Editor surface boundary", () => {
       });
 
       await harness.api.saveCurrentDocument();
-      assert.equal(harness.statuses.at(-1), message);
+      assert.equal(harness.elements.editorInlineStatus.textContent, message);
       assert.equal(harness.storageValues.get(draftKey), "# Unsaved\n");
       assert.equal(harness.documentState.hasDraft, true);
       assert.equal(harness.documentState.lastSavedContent, "# Saved\n");
@@ -789,6 +835,53 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.elements.editor.disabled, true);
     assert.equal(harness.storageValues.has(`dtc-doc-draft:${renamedPath}`), false);
     assert.equal(harness.libraryCount(), 1);
+  });
+
+  test("serializes rename and delete mutations and keeps delete success visible", async () => {
+    const renamedPath = "content/processes/serialized.md";
+    const renameResponse = deferred();
+    const deleteResponse = deferred();
+    const harness = createEditorHarness({
+      promptUser: () => renamedPath,
+      request: async (url, requestOptions) => {
+        const pathname = new URL(url).pathname;
+        if (pathname === "/docs/rename") return renameResponse.promise;
+        if (pathname === "/docs" && requestOptions.method === "DELETE") {
+          return deleteResponse.promise;
+        }
+        return {};
+      },
+    });
+
+    const firstRename = harness.api.renameCurrentDoc();
+    await nextTicks();
+    const secondRename = harness.api.renameCurrentDoc();
+    await nextTicks();
+    assert.equal(
+      harness.requests.filter(
+        (entry) => new URL(entry.url).pathname === "/docs/rename",
+      ).length,
+      1,
+    );
+    assert.equal(harness.elements.docMenuButton.disabled, true);
+    renameResponse.resolve({ new_path: renamedPath });
+    await Promise.all([firstRename, secondRename]);
+    assert.equal(harness.elements.docMenuButton.disabled, false);
+
+    const firstDelete = harness.api.deleteCurrentDoc();
+    await nextTicks();
+    const secondDelete = harness.api.deleteCurrentDoc();
+    await nextTicks();
+    assert.equal(
+      harness.requests.filter((entry) => entry.options.method === "DELETE").length,
+      1,
+    );
+    assert.equal(harness.elements.docMenuButton.disabled, true);
+    deleteResponse.resolve({});
+    await Promise.all([firstDelete, secondDelete]);
+    assert.equal(harness.elements.docMenuButton.disabled, false);
+    assert.equal(harness.elements.changesStatus.textContent, `Deleted ${renamedPath}.`);
+    assert.equal(harness.elements.changesStatus.hidden, false);
   });
 
   test("reviews Git status and submits an explicit commit-and-push action", async () => {
@@ -961,23 +1054,21 @@ describe("Document Editor surface boundary", () => {
   test("stores uploaded screenshots at their repository-absolute path", async () => {
     const renderedView = new FakeElement("section");
     const rewrites = [];
-    const statuses = [];
+    const editorInlineStatus = new FakeElement("div");
     const step = { id: 1, screenshots: [] };
     const procedure = { flat_steps: [step] };
+    const rendererContext = {
+      apiUrl: (path) => new URL(path, "https://portal.test"),
+      documentState: { currentDoc: { path: "content/processes/existing.md" } },
+      editorInlineStatus,
+      renderedView,
+      request: async () => ({
+        path: "../images/existing/uploaded-shot.webp",
+        absolute_path: "content/images/existing/uploaded-shot.webp",
+      }),
+    };
     const renderer = createProcedureRenderer(
-      {
-        apiUrl: (path) => new URL(path, "https://portal.test"),
-        documentState: { currentDoc: { path: "content/processes/existing.md" } },
-        renderedView,
-        request: async () => ({
-          path: "../images/existing/uploaded-shot.webp",
-          absolute_path: "content/images/existing/uploaded-shot.webp",
-        }),
-        setStatus: (message) => statuses.push(message),
-        reportError: (message) => {
-          throw new Error(message);
-        },
-      },
+      rendererContext,
       {
         applyProcedureRewrite: (rewrittenProcedure, focusStepId) =>
           rewrites.push([rewrittenProcedure, focusStepId]),
@@ -989,7 +1080,10 @@ describe("Document Editor surface boundary", () => {
     await renderer.addScreenshot(step, procedure, { name: "uploaded-shot.webp" });
     assert.equal(step.screenshots[0].src, "content/images/existing/uploaded-shot.webp");
     assert.deepEqual(rewrites, [[procedure, null]]);
-    assert.match(statuses.at(-1), /Uploaded content\/images\/existing\/uploaded-shot\.webp/);
+    assert.match(
+      editorInlineStatus.textContent,
+      /Uploaded content\/images\/existing\/uploaded-shot\.webp/,
+    );
   });
 
   test("keeps dirty-leave and parse or Git failures recoverable", async () => {

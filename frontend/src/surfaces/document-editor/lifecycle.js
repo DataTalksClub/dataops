@@ -1,3 +1,5 @@
+import { editorMutationGuard, feedbackKindForError } from "./feedback.js";
+
 export function createEditorLifecycle(context, services) {
   const {
     apiUrl, basename, beginDocumentNavigation, canLeaveCurrentDocument,
@@ -6,7 +8,7 @@ export function createEditorLifecycle(context, services) {
     editorSaveState, editorView, knowledgeState, loadDocuments,
     newDocForm, newDocPath, newDocSummary, newDocTitle, newDocType,
     openDocument,
-    request, setRouteTitle, setStatus, setView,
+    request, setRouteTitle, setView, showEditorFeedback,
     storage,
   } = context;
   const {
@@ -15,30 +17,53 @@ export function createEditorLifecycle(context, services) {
   } = services;
 
   const DRAFT_PREFIX = "dtc-doc-draft:";
+  let saveInFlight = false;
+  let createInFlight = false;
+
+  function setCreateBusy(busy) {
+    const submit = newDocForm.querySelector?.('button[type="submit"]');
+    if (submit) {
+      submit.disabled = busy;
+      submit.classList.toggle("is-busy", busy);
+      if (busy) submit.setAttribute("aria-busy", "true");
+      else submit.removeAttribute("aria-busy");
+    }
+    if (busy) newDocForm.setAttribute?.("aria-busy", "true");
+    else newDocForm.removeAttribute?.("aria-busy");
+  }
 
   async function saveCurrentDocument() {
-    if (!documentState.currentDoc) return;
+    if (!documentState.currentDoc || saveInFlight) return;
+    saveInFlight = true;
 
+    const path = documentState.currentDoc.path;
+    const isFresh = editorMutationGuard(context);
+    const isCurrentDocument = () =>
+      isFresh() && documentState.currentDoc?.path === path;
+    const content = editor.value;
     const url = apiUrl("/docs");
-    url.searchParams.set("path", documentState.currentDoc.path);
+    url.searchParams.set("path", path);
     editorSaveButton.disabled = true;
     setSaveState("Saving...");
+    showEditorFeedback("Saving…", { kind: "pending" });
 
     try {
       const payload = await request(url, {
         method: "PUT",
-        body: JSON.stringify({ content: editor.value }),
+        body: JSON.stringify({ content }),
       });
+      if (!isCurrentDocument()) return;
 
       documentState.currentDoc.updated = payload.updated;
-      documentState.lastSavedContent = editor.value;
-      storage.removeItem(draftKey(documentState.currentDoc.path));
+      documentState.lastSavedContent = content;
+      storage.removeItem(draftKey(path));
       documentState.hasDraft = false;
       documentState.currentParsed = null;
       updateViewToggleAvailability();
       if (editorView.dataset.mode === "rendered") {
         // Body changed; reparse via API.
         await refreshParsedFromApi();
+        if (!isCurrentDocument()) return;
         renderParsedDocument();
       }
       updateSaveState();
@@ -48,22 +73,27 @@ export function createEditorLifecycle(context, services) {
         flashSaveState(
           `Saved with ${warnings.length} lint warning${warnings.length === 1 ? "" : "s"}`,
         );
-        setStatus(
+        showEditorFeedback(
           `Saved · ${warnings[0]}${warnings.length > 1 ? ` (and ${warnings.length - 1} more)` : ""}`,
+          { kind: "warning" },
         );
       } else {
         flashSaveState("Saved");
-        setStatus(`Saved ${documentState.currentDoc.path}.`);
+        showEditorFeedback(`Saved ${path}.`);
       }
       if (editorView.dataset.mode === "rendered") renderParsedDocument();
       refreshChangesPanel();
       refreshGitStatus();
       await loadDocuments();
+      if (!isCurrentDocument()) return;
       restoreMutationFocus();
     } catch (error) {
-      setStatus(error.message);
+      if (!isCurrentDocument()) return;
+      showEditorFeedback(error.message, { kind: feedbackKindForError(error) });
       updateSaveState();
       restoreMutationFocus();
+    } finally {
+      saveInFlight = false;
     }
   }
 
@@ -88,6 +118,8 @@ export function createEditorLifecycle(context, services) {
   }
 
   async function createDocument() {
+    if (createInFlight) return;
+    const isFresh = editorMutationGuard(context);
     let path = newDocPath.value.trim();
     const title = newDocTitle.value.trim();
     const docType = newDocType.value;
@@ -97,7 +129,6 @@ export function createEditorLifecycle(context, services) {
 
     if (!path) {
       setCreateStatus("Path is required.", "error");
-      setStatus("Path is required.");
       return;
     }
     // Normalise so the user gets a friendly hint instead of a backend 400.
@@ -109,6 +140,9 @@ export function createEditorLifecycle(context, services) {
       path += ".md";
     }
 
+    createInFlight = true;
+    setCreateBusy(true);
+    setCreateStatus("Creating…", "pending");
     try {
       const payload = await request(apiUrl("/docs"), {
         method: "POST",
@@ -120,15 +154,21 @@ export function createEditorLifecycle(context, services) {
           scaffold,
         }),
       });
+      if (!isFresh()) return;
 
       newDocForm.reset();
       setCreateStatus("");
       await loadDocuments();
+      if (!isFresh()) return;
       await openDocument(payload.path);
-      setStatus(`Created ${payload.path}.`);
+      if (documentState.currentDoc?.path !== payload.path) return;
+      showEditorFeedback(`Created ${payload.path}.`);
     } catch (error) {
-      setCreateStatus(error.message, "error");
-      setStatus(error.message);
+      if (!isFresh()) return;
+      setCreateStatus(error.message, feedbackKindForError(error));
+    } finally {
+      createInFlight = false;
+      setCreateBusy(false);
     }
   }
 
@@ -245,11 +285,16 @@ export function createEditorLifecycle(context, services) {
     const status = newDocForm.querySelector?.(".status-text");
     if (!status) return;
     status.classList.add("create-status");
-    status.classList.toggle("is-error", kind === "error");
+    const assertive = ["validation", "conflict", "error"].includes(kind);
+    const state = message ? kind || "success" : "idle";
+    status.classList.toggle("is-error", assertive);
+    status.classList.toggle("is-warning", kind === "warning");
     status.textContent = message || "Create a Markdown document in this repository.";
     status.hidden = false;
-    if (message) status.setAttribute("role", kind === "error" ? "alert" : "status");
-    else status.removeAttribute("role");
+    status.dataset.feedbackState = state;
+    status.setAttribute("role", assertive ? "alert" : "status");
+    status.setAttribute("aria-live", assertive ? "assertive" : "polite");
+    status.setAttribute("aria-atomic", "true");
   }
 
   function setSaveState(message) {

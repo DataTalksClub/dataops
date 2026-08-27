@@ -81,7 +81,7 @@ async function expectStableRouteFocus(page) {
   const focus = await page.evaluate(() => {
     const active = document.activeElement;
     const isRouteFallback = active?.matches?.(
-      '#library-title, #document-list h1, #document-list h2, #document-list h3, .workspace-nav-button.is-active, .ops-subnav-tab.is-active',
+      '#document-list h1, #document-list h2, #document-list h3, .workspace-nav-button.is-active, .ops-subnav-tab.is-active',
     );
     return {
       connected: Boolean(active?.isConnected),
@@ -100,6 +100,19 @@ async function expectStableRouteFocus(page) {
   });
 }
 
+const VISIBLE_ROUTE_HEADINGS = {
+  Home: 'Today',
+  'Tasks - Cards': 'Cards',
+  Newsletter: 'Newsletter planner',
+  Calendar: 'Operations calendar',
+  'Mailing exports': 'Mailing-list exports',
+};
+
+async function expectVisibleRouteHeading(page, routeTitle) {
+  const heading = VISIBLE_ROUTE_HEADINGS[routeTitle] || routeTitle;
+  await expect(page.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible();
+}
+
 test.describe('issue 156 canonical route and operator parity', () => {
   test('boots hash workspace routes without waiting for a delayed docs provider', async ({ page, request }) => {
     await setRouteFaults(request, [{ method: 'GET', path: '/docs', delayMs: 5000 }]);
@@ -107,7 +120,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       const docsStarted = page.waitForRequest((req) => new URL(req.url()).pathname === '/docs');
       await page.goto('/#/');
       await docsStarted;
-      await expect(page.locator('#library-title')).toHaveText('Home', { timeout: 2000 });
+      await expectVisibleRouteHeading(page, 'Home');
       await expect(page.locator('.operations-home')).toBeVisible();
     } finally {
       await page.goto('about:blank');
@@ -138,7 +151,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     ];
     for (const [route, title] of routes) {
       await page.goto(route);
-      await expect(page.locator('#library-title')).toHaveText(title);
+      await expectVisibleRouteHeading(page, title);
       expect(new URL(page.url()).hash).toBe(new URL(`http://local${route}`).hash);
     }
 
@@ -539,7 +552,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#task-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/tasks$/);
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Work Queue');
+    await expectVisibleRouteHeading(page, 'Tasks - Work Queue');
     await expectStableRouteFocus(page);
   });
 
@@ -600,14 +613,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#card-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/cards$/);
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
+    await expectVisibleRouteHeading(page, 'Tasks - Cards');
     await expectStableRouteFocus(page);
   });
 
   test('ignores stale real-server entity responses after a newer navigation', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     await page.goto('/#/');
-    await expect(page.locator('#library-title')).toHaveText('Home');
+    await expectVisibleRouteHeading(page, 'Home');
     await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, delayMs: 900 }]);
     const started = page.waitForRequest((req) => new URL(req.url()).pathname.endsWith(`/api/cards/${fixture.card.id}`));
     const staleCardResponse = page.waitForResponse((response) =>
@@ -620,7 +633,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await staleCardResponse;
     await expect(page.locator('#card-panel')).toBeHidden();
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Assistants');
+    await expectVisibleRouteHeading(page, 'Tasks - Assistants');
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await clearRouteFaults(request);
   });

@@ -55,7 +55,6 @@ export function createSurfaceBridge() {
     "setFolderUrl",
     "showLibrary",
     "syncLibraryRouteTitle",
-    "clearSelection",
     "clearDocumentFilters",
     "restoreDocumentFilters",
     "enhanceSelect",
@@ -142,7 +141,6 @@ export function createSurfaceComposition(context) {
     request,
     searchInput,
     setTimeoutImpl,
-    statusText,
     tasksNavButton,
     tasksNavSectionButtons,
     tasksNavSubmenu,
@@ -324,10 +322,6 @@ export function createSurfaceComposition(context) {
     mobileTitle.textContent = title;
   }
 
-  function setStatus(message) {
-    statusText.textContent = message;
-  }
-
   const warnedOutsideContent = new Set();
   function cleanPath(value) {
     if (!value.startsWith("content/") && !warnedOutsideContent.has(value)) {
@@ -372,7 +366,6 @@ export function createSurfaceComposition(context) {
     refreshOperationsRecurringSnapshot,
     renderOperationsWorkspace,
     setRouteTitle,
-    setStatus,
     setTasksNavExpanded,
     setView,
     showOperationsHome,

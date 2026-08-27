@@ -265,14 +265,10 @@ function operationState(overrides = {}) {
 
 function createOperationsHarness(options = {}) {
   const documentList = new FakeElement("main");
-  const libraryTitle = new FakeElement("h1");
-  const clearSelectionButton = new FakeElement("button");
-  const document = new OperationsDocument(documentList, libraryTitle);
+  const document = new OperationsDocument(documentList);
   globalThis.document = document;
   const requests = [];
   const navigations = [];
-  const errors = [];
-  const statuses = [];
   const entityStates = [];
   const openedTasks = [];
   const openedCards = [];
@@ -286,7 +282,6 @@ function createOperationsHarness(options = {}) {
   const api = createOperationsSurface({
     assistantJobsFromPayload: (payload) =>
       Array.isArray(payload) ? payload : payload?.jobs || [],
-    clearSelectionButton,
     cssEscape: (value) => String(value),
     dedupeArtifacts: (artifacts) => [
       ...new Map((artifacts || []).map((item) => [item.id, item])).values(),
@@ -301,7 +296,6 @@ function createOperationsHarness(options = {}) {
     isOperationsHomeVisible: () => true,
     isWorkspaceRouteFresh: (token) =>
       options.fresh !== false && token === activeRouteToken,
-    libraryTitle,
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
       return { ready: Promise.resolve() };
@@ -322,7 +316,6 @@ function createOperationsHarness(options = {}) {
       header.textContent = `${title}: ${description}`;
       return header;
     },
-    reportError: (message) => errors.push(message),
     request: async (url, requestOptions = {}) => {
       const entry = { url, options: requestOptions };
       requests.push(entry);
@@ -330,7 +323,6 @@ function createOperationsHarness(options = {}) {
     },
     scheduleAnimationFrame: (callback) => callback(),
     setRouteTitle() {},
-    setStatus: (message) => statuses.push(message),
     state,
     tasksFromWorkPayload: (payload) =>
       Array.isArray(payload) ? payload : payload?.tasks || [],
@@ -341,12 +333,9 @@ function createOperationsHarness(options = {}) {
 
   return {
     api,
-    clearSelectionButton,
     document,
     documentList,
     entityStates,
-    errors,
-    libraryTitle,
     navigations,
     openedCards,
     openedTasks,
@@ -358,15 +347,12 @@ function createOperationsHarness(options = {}) {
       activeRouteToken = value;
     },
     state,
-    statuses,
   };
 }
 
 function createAdminHarness(options = {}) {
   const documentList = new FakeElement("main");
-  const libraryTitle = new FakeElement("h1");
-  const clearSelectionButton = new FakeElement("button");
-  const document = new OperationsDocument(documentList, libraryTitle);
+  const document = new OperationsDocument(documentList);
   globalThis.document = document;
   const requests = [];
   const documentRefreshes = [];
@@ -374,7 +360,6 @@ function createAdminHarness(options = {}) {
   const api = createAdminSurface({
     apiUrl,
     buildOperationsHomeModel: () => ({ recurring: { configs: [] } }),
-    clearSelectionButton,
     currentOperatorIdFromPayload: (payload) => payload?.id || "",
     documentList,
     getActiveWorkspaceView: () => options.view || "users",
@@ -384,7 +369,6 @@ function createAdminHarness(options = {}) {
     getOperationsQualitySnapshot: () => ({}),
     getOperationsRecurringSnapshot: () => ({}),
     getOperationsWorkSnapshot: () => ({}),
-    libraryTitle,
     listDraftPaths: () => [],
     refreshDocuments: async () => documentRefreshes.push("users"),
     renderHonestState: honestState,
@@ -569,7 +553,6 @@ describe("Operations surface boundary", () => {
     const summary = harness.documentList.querySelector(".surface-summary");
     assert.equal(summary.dataset.summaryId, "device");
     assert.match(summary.textContent, /Enter the code shown by the DataOps CLI/);
-    assert.deepEqual(harness.statuses, [], "no hidden status writer is used");
 
     const input = findAllByClass(harness.documentList, "device-code-input")[0];
     input.value = "ABCD-1234";
@@ -616,7 +599,6 @@ describe("Operations surface boundary", () => {
       true,
       "a lookup failure returns keyboard ownership to the code field",
     );
-    assert.deepEqual(harness.errors, [], "no global toast for a device failure");
 
     input.value = "ABCD-1234";
     await submitDeviceForm(harness.documentList);
@@ -958,7 +940,6 @@ describe("Operations surface boundary", () => {
       harness.documentList.querySelector(".form-feedback-error").textContent,
       "Add a note or title before capturing intake.",
     );
-    assert.deepEqual(harness.errors, [], "capture errors stay in the form");
 
     manualPanel.querySelector("[data-intake-create-note]").value =
       "Please prepare the August issue\nWith the latest links";
@@ -978,7 +959,6 @@ describe("Operations surface boundary", () => {
       tags: ["newsletter", "urgent"],
     });
     assert.equal(harness.state.intake.filter, "actionable");
-    assert.equal(harness.statuses.length, 0, "capture does not write shell status");
     assert.match(
       harness.documentList.querySelector(".form-feedback-status").textContent,
       /visible in the refreshed Inbox/,
@@ -1058,8 +1038,6 @@ describe("Operations surface boundary", () => {
     summary = surface.querySelector('[data-summary-id="inbox"]');
     assert.equal(summary.dataset.summaryState, "ready");
     assert.ok(findByText(surface, "No matching intake", "strong"));
-    assert.deepEqual(harness.errors, []);
-    assert.deepEqual(harness.statuses, []);
 
     harness.state.intake.filter = "actionable";
     harness.state.intake.selectedId = item.id;
@@ -1466,8 +1444,6 @@ describe("Operations surface boundary", () => {
       harness.state.assistantMutation.values.title,
       "Retain this assistant request",
     );
-    assert.deepEqual(harness.errors, []);
-    assert.deepEqual(harness.statuses, []);
   });
 
   test("keeps Assistant lifecycle conflicts recoverable in job detail", async () => {
@@ -1512,8 +1488,6 @@ describe("Operations surface boundary", () => {
     assert.equal(feedback.querySelector(".form-feedback-error").getAttribute("role"), "alert");
     assert.match(feedback.textContent, /changed since it was loaded/);
     assert.ok(detail.querySelector('[aria-label="Assistant job recovery"]'));
-    assert.deepEqual(harness.errors, []);
-    assert.deepEqual(harness.statuses, []);
   });
 
   test("renders Assistant detail failure with retry and canonical return recovery", async () => {

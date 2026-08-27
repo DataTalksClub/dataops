@@ -243,7 +243,7 @@ async function navigateState(page, baseURL, state) {
     await page.goto(`${baseURL}/#/processes`);
     await settle(page);
     await page.locator('#library-view').waitFor({ state: 'visible' });
-    await page.locator('#library-title').filter({ hasText: 'Docs' }).waitFor({ state: 'attached' });
+    await page.getByRole('heading', { name: 'Docs', exact: true }).waitFor({ state: 'visible' });
     if (page.viewportSize().width < 700) await page.locator('#mobile-menu-button').click();
     const search = page.locator('#search-input');
     await search.fill('Synthetic parity process');
@@ -331,7 +331,7 @@ async function captureTarget(target, baseURL, browser) {
         state,
         viewport: viewportName,
         route: new URL(page.url()).hash || new URL(page.url()).pathname,
-        title: await page.locator('#library-title').innerText(),
+        title: await page.locator('#document-list h1, #document-list h2, #document-list h3').first().innerText(),
         mutation: action.mutation,
         visibleSummary,
         visibleHash: sha256(visibleSummary),

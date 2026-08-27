@@ -12,11 +12,11 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.locator('button[data-workspace-view="inbox"]')).toBeVisible();
 
     await page.goto('/#/cards');
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Cards');
+    await expect(page.getByRole('heading', { name: 'Cards', exact: true })).toBeVisible();
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/recurring');
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Recurring');
+    await expect(page.getByRole('heading', { name: 'Tasks - Recurring', exact: true })).toBeVisible();
     await expect(page.locator('[data-tasks-section="recurring"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/notifications');
@@ -57,7 +57,7 @@ test.describe('canonical DataOps frontend', () => {
     const item = (await response.json()).item;
 
     await page.goto(`/#/inbox?intakeId=${item.id}`);
-    await expect(page.locator('#library-title')).toHaveText('Inbox');
+    await expect(page.getByRole('heading', { name: 'Inbox', exact: true })).toBeVisible();
     await expect(page.locator('.intake-detail h3')).toHaveText(`Canonical intake ${id}`);
     await expect(page.locator('.intake-action-disclosure.is-primary > summary')).toHaveText('Convert to task');
     await expect(page.locator('[data-intake-submit="follow-up-sent"]')).toHaveCount(0);
@@ -91,7 +91,7 @@ test.describe('canonical DataOps frontend', () => {
     const job = (await jobResponse.json()).job;
 
     await page.goto(`/#/assistants?assistantJobId=${job.id}`);
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Assistants');
+    await expect(page.getByRole('heading', { name: 'Tasks - Assistants', exact: true })).toBeVisible();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Canonical assistant ${id}`);
     await expect(page.locator('[data-assistant-save]')).toBeVisible();
     await expect(page.locator('[data-assistant-lifecycle="submit"]')).toBeVisible();

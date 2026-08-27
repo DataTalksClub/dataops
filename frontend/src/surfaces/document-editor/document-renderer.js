@@ -1,15 +1,18 @@
+import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
+
 export function createDocumentRenderer(context, services, editorState) {
   const {
     apiUrl, basename, documentState, documentTitle, editor, editorView,
     fetchBacklinksForCurrentDoc, renderGithubRawFooter, renderLoomBlock,
     renderRelatedDocsBlock, renderWarningsBlock, renderedView, request,
-    setRouteTitle, setStatus, viewToggleButton,
+    setRouteTitle, viewToggleButton,
   } = context;
   const {
     appendProcedureChildren, attachInlineEditor, escapeRegex, makeAttrRow,
     patchSectionInMarkdown, renderMarkdown, storeDraft, stripFrontmatter,
     resizeDocumentTitle, setMarkdownTitle, stripLeadingHeading, updateSaveState,
   } = services;
+  const showFeedback = editorFeedbackFor(context);
 
   const DOC_TYPES = [
     "sop", "checklist", "template", "reference", "playbook", "prompt",
@@ -21,24 +24,32 @@ export function createDocumentRenderer(context, services, editorState) {
   }
 
   async function enterRenderedMode() {
+    const path = documentState.currentDoc?.path;
+    const isFresh = editorMutationGuard(context);
     editorView.dataset.mode = "rendered";
     viewToggleButton.hidden = true;
     // If the user edited in raw mode without saving, re-parse the current
     // textarea content so the block view reflects the latest draft.
     if (documentState.currentDoc && editor.value && editor.value !== documentState.lastSavedContent) {
       await reparseEditorContent();
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
     }
     renderParsedDocument();
   }
 
   async function reparseEditorContent() {
+    const path = documentState.currentDoc?.path;
+    const isFresh = editorMutationGuard(context);
     try {
       const payload = await request(apiUrl("/parse"), {
         method: "POST",
         body: JSON.stringify({ content: editor.value }),
       });
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
       if (payload.parsed) documentState.currentParsed = payload.parsed;
-    } catch {}
+    } catch {
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
+    }
   }
 
   function exitRenderedMode() {
@@ -58,13 +69,17 @@ export function createDocumentRenderer(context, services, editorState) {
 
   async function refreshParsedFromApi() {
     if (!documentState.currentDoc) return;
+    const path = documentState.currentDoc.path;
+    const isFresh = editorMutationGuard(context);
     try {
       const url = apiUrl("/docs");
-      url.searchParams.set("path", documentState.currentDoc.path);
+      url.searchParams.set("path", path);
       const payload = await request(url);
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
       documentState.currentParsed = payload.parsed || null;
       updateViewToggleAvailability();
     } catch {
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
       documentState.currentParsed = null;
     }
   }
@@ -498,7 +513,9 @@ export function createDocumentRenderer(context, services, editorState) {
     section.body_md = `## ${heading}\n\n${restOfBody}`.replace(/\n+$/, "");
     const updated = patchSectionInMarkdown(editor.value, name, section.body_md);
     if (updated == null) {
-      setStatus(`Could not locate section ${name}; heading not saved.`);
+      showFeedback(`Could not locate section ${name}; heading not saved.`, {
+        kind: "error",
+      });
       return;
     }
     editor.value = updated;
@@ -521,7 +538,9 @@ export function createDocumentRenderer(context, services, editorState) {
 
     const updated = patchSectionInMarkdown(editor.value, name, combined);
     if (updated == null) {
-      setStatus(`Could not locate section ${name}; edit not saved.`);
+      showFeedback(`Could not locate section ${name}; edit not saved.`, {
+        kind: "error",
+      });
       return;
     }
     editor.value = updated;

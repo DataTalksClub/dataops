@@ -4,12 +4,10 @@ export function createKnowledgeSearch(context, services) {
     assistantJobsFromPayload,
     buildOperationsReferenceLinks,
     cardsFromWorkPayload,
-    clearSelectionButton,
     cleanPath,
     documentList,
     knowledgeState,
     labelizeWorkValue,
-    libraryTitle,
     navigateCanonicalWorkspace,
     openCardPanel,
     openQuickWorkflowForm,
@@ -364,9 +362,6 @@ export function createKnowledgeSearch(context, services) {
   function renderSearchLoading(query) {
     documentList.classList.remove("is-operations-home");
     documentList.classList.add("is-unified-search");
-    setLibraryHeadingVisibility(true);
-    libraryTitle.textContent = "Search results";
-    clearSelectionButton.hidden = false;
 
     const wrap = document.createElement("div");
     wrap.className = "unified-search-results";
@@ -383,9 +378,6 @@ export function createKnowledgeSearch(context, services) {
   function renderUnifiedSearchResults(results, sources, query, metadata = {}) {
     documentList.classList.remove("is-operations-home");
     documentList.classList.add("is-unified-search");
-    setLibraryHeadingVisibility(true);
-    libraryTitle.textContent = "Search results";
-    clearSelectionButton.hidden = false;
 
     const wrap = document.createElement("div");
     wrap.className = "unified-search-results";
@@ -456,13 +448,6 @@ export function createKnowledgeSearch(context, services) {
     }
     documentList.replaceChildren(wrap);
     focusSearchStateIfRequested(wrap);
-  }
-
-  function setLibraryHeadingVisibility(visible) {
-    const heading = libraryTitle.parentElement?.parentElement;
-    if (!heading) return;
-    heading.hidden = !visible;
-    heading.classList.toggle("is-visible", visible);
   }
 
   function searchStateFor(results, sources, query, metadata = {}) {

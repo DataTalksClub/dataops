@@ -27,8 +27,6 @@ function visibleButton(className, dataset) {
 }
 
 function createNavigationHarness(options = {}) {
-  const libraryTitle = new FakeElement("h1");
-  libraryTitle.offsetParent = options.libraryTitleVisible === false ? null : {};
   const documentList = new FakeElement("main");
   const routeHeading = new FakeElement("h2");
   routeHeading.textContent = "Current route";
@@ -46,7 +44,6 @@ function createNavigationHarness(options = {}) {
   const body = new FakeElement("body");
   const document = new FakeDocument(
     body,
-    libraryTitle,
     documentList,
     searchInput,
     runtimeTemplateSearch,
@@ -134,11 +131,9 @@ function createNavigationHarness(options = {}) {
     hydrateCardPanel: async (id, token) => calls.push(["hydrate-card", id, token]),
     hydrateTaskPanel: async (id, token, value) =>
       calls.push(["hydrate-task", id, token, value]),
-    libraryTitle,
     locationRef: location,
     openDocument: async (...args) => calls.push(["open-doc", ...args]),
     openWorkBellPanel: () => calls.push(["open-bell"]),
-    operationsViewTitle: (view, section) => `${view}:${section}`,
     parseWorkspaceHash: (hash) => parseWorkspaceHash(hash, location),
     prepareCardPanel: (id) => calls.push(["prepare-card", id]),
     prepareTaskPanel: (id) => calls.push(["prepare-task", id]),
@@ -187,7 +182,6 @@ function createNavigationHarness(options = {}) {
     intake,
     intakeSurfaceState,
     knowledge,
-    libraryTitle,
     location,
     nestedTask,
     recurring,
@@ -214,7 +208,6 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(harness.history.pushed[0].url, result.route.canonicalUrl);
     assert.equal(harness.active.view, "tasks");
     assert.equal(harness.active.tasksSection, "workflows");
-    assert.equal(harness.libraryTitle.textContent, "tasks:workflows");
     assert.equal(harness.knowledge.selectedFolder, "");
     assert.equal(harness.searchInput.value, "");
     assert.ok(
@@ -346,18 +339,8 @@ describe("canonical navigation shell behavior", () => {
     await fallback.shell.navigateCanonicalWorkspace("/tasks", {}, {
       restoreFocus: { id: "missing", kind: "task" },
     }).ready;
-    assert.equal(fallback.libraryTitle.focused, true);
-    assert.equal(fallback.libraryTitle.tabIndex, -1);
-
-    const headingFallback = createNavigationHarness({
-      libraryTitleVisible: false,
-    });
-    await headingFallback.shell.navigateCanonicalWorkspace("/tasks", {}, {
-      restoreFocus: { id: "missing", kind: "task" },
-    }).ready;
-    assert.equal(headingFallback.libraryTitle.focused, false);
-    assert.equal(headingFallback.routeHeading.focused, true);
-    assert.equal(headingFallback.routeHeading.tabIndex, -1);
+    assert.equal(fallback.routeHeading.focused, true);
+    assert.equal(fallback.routeHeading.tabIndex, -1);
   });
 
   test("starts document navigation by invalidating route work and closing overlays", () => {

@@ -1,6 +1,8 @@
+import { editorFeedbackFor } from "./feedback.js";
+
 export function createProcedureMarkdown(context, services, editorState) {
   const {
-    editor, renderedView, setStatus, showUndoToast,
+    editor, renderedView, showUndoToast,
   } = context;
   const {
     attachInlineEditor, deleteProse, formatStepBody, onProseDragEnd,
@@ -9,6 +11,7 @@ export function createProcedureMarkdown(context, services, editorState) {
     resolveImageSrc, restoreProcedure, snapshotProcedure, storeDraft,
     updateSaveState,
   } = services;
+  const showFeedback = editorFeedbackFor(context);
 
   function renumberProcedure(procedure) {
     let n = 0;
@@ -30,7 +33,9 @@ export function createProcedureMarkdown(context, services, editorState) {
     const newBody = emitProcedureSectionBody(procedure);
     const updated = patchSectionInMarkdown(editor.value, "procedure", newBody);
     if (updated == null) {
-      setStatus("Could not locate procedure section; structural edit not saved.");
+      showFeedback("Could not locate procedure section; structural edit not saved.", {
+        kind: "error",
+      });
       return;
     }
     editor.value = updated;
@@ -276,7 +281,9 @@ export function createProcedureMarkdown(context, services, editorState) {
     prose.body_md = newBody;
     const updated = patchProseInMarkdown(editor.value, index, newBody);
     if (updated == null) {
-      setStatus(`Could not locate prose block #${index + 1}; edit not saved.`);
+      showFeedback(`Could not locate prose block #${index + 1}; edit not saved.`, {
+        kind: "error",
+      });
       return;
     }
     editor.value = updated;
@@ -471,8 +478,9 @@ export function createProcedureMarkdown(context, services, editorState) {
       shot.src,
     );
     if (updated == null) {
-      setStatus(
+      showFeedback(
         `Could not locate alt for screenshot #${screenshotIndex + 1} on step ${step.id}.`,
+        { kind: "error" },
       );
       return;
     }
@@ -516,8 +524,9 @@ export function createProcedureMarkdown(context, services, editorState) {
       newCaption,
     );
     if (updated == null) {
-      setStatus(
+      showFeedback(
         `Could not locate caption #${screenshotIndex + 1} on step ${step.id}; edit not saved.`,
+        { kind: "error" },
       );
       return;
     }

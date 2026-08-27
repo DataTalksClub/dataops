@@ -18,11 +18,9 @@ export function createNavigationShell(context) {
     HTMLElementClass,
     hydrateCardPanel,
     hydrateTaskPanel,
-    libraryTitle,
     locationRef,
     openDocument,
     openWorkBellPanel,
-    operationsViewTitle,
     parseWorkspaceHash,
     prepareCardPanel,
     prepareTaskPanel,
@@ -156,7 +154,6 @@ export function createNavigationShell(context) {
           ".workspace-nav-button.is-active, .ops-subnav-tab.is-active",
         );
         const visibleFallbacks = [
-          libraryTitle,
           routeHeading,
           activeRouteControl,
         ].filter(
@@ -211,11 +208,7 @@ export function createNavigationShell(context) {
     } else {
       setActiveWorkspaceView(requestedView || "home");
     }
-    const { activeWorkspaceView, activeTasksSection } = renderWorkspaceNav();
-    libraryTitle.textContent = operationsViewTitle(
-      activeWorkspaceView,
-      activeTasksSection,
-    );
+    renderWorkspaceNav();
     getKnowledgeState().selectedFolder = "";
     const preserveComposer = Boolean(options.preserveDocumentComposer);
     if (!preserveComposer) searchInput.value = "";

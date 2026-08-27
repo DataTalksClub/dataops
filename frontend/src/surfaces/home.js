@@ -21,7 +21,6 @@ export function createHomeSurface(context) {
     buildHomeAttentionItems,
     buildOperationsFutureSections,
     buildOperationsReferenceLinks,
-    clearSelectionButton,
     currentOperatorIdForTodayScope,
     currentOperatorIdFromPayload,
     dedupeOperationItems,
@@ -37,7 +36,6 @@ export function createHomeSurface(context) {
     isOperationsHomeVisible,
     isWorkflowTemplateDoc,
     isWorkspaceRouteFresh,
-    libraryTitle,
     listDraftPaths,
     navigateCanonicalWorkspace,
     normalizeOperationsRecurringSnapshot,
@@ -84,9 +82,7 @@ export function createHomeSurface(context) {
     });
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    libraryTitle.textContent = "Home";
     setRouteTitle("Today");
-    clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home operations-home-daily";

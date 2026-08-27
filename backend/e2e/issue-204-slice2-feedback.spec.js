@@ -174,7 +174,6 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     await capture.getByRole('button', { name: 'Capture intake' }).click();
     await expect(capture.locator('.intake-create-feedback .form-feedback-error'))
       .toContainText('Add a note or title before capturing intake');
-    await expect(page.locator('#status-text')).not.toContainText('Add a note or title');
 
     const failedTitle = `Slice 2 retained intake ${Date.now()}`;
     await capture.locator('[data-intake-create-title]').fill(failedTitle);
@@ -185,7 +184,6 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
       .toContainText('Synthetic route failure (503)');
     await expect(capture.locator('[data-intake-create-title]')).toHaveValue(failedTitle);
     await expect(capture.getByRole('button', { name: 'Capture intake' })).toBeEnabled();
-    await expect(page.locator('#status-text')).not.toContainText('Synthetic route failure (503)');
     await screenshot(page, 'inbox-capture-failure-desktop-1440x900');
 
     await clearFaults(context.request);
@@ -224,7 +222,6 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
       .toContainText('Synthetic route failure (409)');
     await expect(duplicateAction.getByLabel('Reason')).toHaveValue('Same safe upstream request.');
     await expect(detail.getByRole('button', { name: 'Reload current item' })).toBeVisible();
-    await expect(page.locator('#status-text')).not.toContainText('Synthetic route failure (409)');
     await screenshot(
       page,
       'inbox-conflict-recovery-desktop-1440x900',
@@ -305,7 +302,6 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     await expect(createPanel.locator('.assistant-create-feedback .form-feedback-error'))
       .toContainText('Synthetic route failure (503)');
     await expect(form.getByLabel('Title')).toHaveValue(assistantTitle);
-    await expect(page.locator('#status-text')).not.toContainText('Synthetic route failure (503)');
     await screenshot(page, 'assistants-create-failure-desktop-1440x900');
 
     await clearFaults(context.request);
@@ -338,7 +334,6 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     await expect(detail.locator('.assistant-detail-feedback .form-feedback-error'))
       .toContainText('Synthetic route failure (409)');
     await expect(detail.getByRole('button', { name: 'Reload current job' })).toBeVisible();
-    await expect(page.locator('#status-text')).not.toContainText('Synthetic route failure (409)');
     await screenshot(
       page,
       'assistants-lifecycle-conflict-desktop-1440x900',

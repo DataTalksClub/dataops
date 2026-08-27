@@ -42,6 +42,7 @@
     "src/surfaces/knowledge/menus.js",
     "src/surfaces/knowledge/references.js",
     "src/surfaces/document-editor/index.js",
+    "src/surfaces/document-editor/feedback.js",
     "src/surfaces/document-editor/lifecycle.js",
     "src/surfaces/document-editor/changes.js",
     "src/surfaces/document-editor/git.js",

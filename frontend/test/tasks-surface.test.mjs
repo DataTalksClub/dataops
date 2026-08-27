@@ -107,14 +107,11 @@ function baseModel(overrides = {}) {
 function createHarness(options = {}) {
   const documentList = new FakeElement("main");
   const shellBody = new FakeElement("body");
-  const libraryTitle = new FakeElement("h1");
-  const clearSelectionButton = new FakeElement("button");
-  const document = new FakeDocument(documentList, shellBody, libraryTitle);
+  const document = new FakeDocument(documentList, shellBody);
   globalThis.document = document;
 
   const requests = [];
   const navigations = [];
-  const errors = [];
   const openedTasks = [];
   const openedCards = [];
   const entityStates = [];
@@ -161,7 +158,6 @@ function createHarness(options = {}) {
     allWorkTasks: (snapshot) => snapshot.tasks || [],
     buildOperationsHomeModel: () => model,
     cardsHeaderViewModel,
-    clearSelectionButton,
     compareIsoDate,
     confirmDialog: options.confirmDialog || (async () => true),
     countLabel,
@@ -187,7 +183,6 @@ function createHarness(options = {}) {
     isTaskOverdue,
     isWaitingOrFollowUpTask,
     isWorkspaceRouteFresh: (token) => token === activeRouteToken,
-    libraryTitle,
     listDraftPaths: () => [],
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
       navigations.push({ path, params, options: navigationOptions });
@@ -265,7 +260,6 @@ function createHarness(options = {}) {
     document,
     documentList,
     entityStates,
-    errors,
     navigations,
     openedCards,
     openedTasks,
@@ -1655,7 +1649,6 @@ describe("Tasks surface boundary", () => {
     assert.equal(create.disabled, false);
     assert.equal(create.getAttribute("aria-busy"), null);
     assert.equal(overlay.removed, false);
-    assert.deepEqual(harness.errors, [], "no global toast for a form failure");
   });
 
   test("gives a conflicting quick Task explicit reload, retry, and discard paths", async () => {
@@ -1755,7 +1748,6 @@ describe("Tasks surface boundary", () => {
     assert.match(rowError.textContent, /Could not pause this schedule/);
     assert.match(rowError.textContent, /Select Pause to retry/);
     assert.equal(rowError.focused, true);
-    assert.deepEqual(harness.errors, [], "no global toast for a row failure");
     assert.equal(
       findByText(harness.documentList, "Pause", "button").disabled,
       false,
@@ -1808,7 +1800,7 @@ describe("Tasks surface boundary", () => {
   });
 
   test("validates and creates quick Tasks with the canonical mutation shape", async () => {
-    const { api, errors, openedTasks, requests, shellBody } = createHarness({
+    const { api, openedTasks, requests, shellBody } = createHarness({
       request: async (url) =>
         url === "/api/tasks" ? { task: { id: "task-created" } } : {},
     });
@@ -1832,10 +1824,10 @@ describe("Tasks surface boundary", () => {
       validation[0].getAttribute("id"),
     );
     assert.equal(description.focused, true);
-    assert.deepEqual(
-      errors,
-      [],
-      "validation stays in the form, not in a toast",
+    assert.equal(
+      overlay.querySelector(".form-feedback-error").hidden,
+      true,
+      "validation stays in the form, not in a global toast",
     );
     assert.equal(requests.length, 0);
 
@@ -1879,11 +1871,6 @@ describe("Tasks surface boundary", () => {
     assert.equal(
       overlay.querySelector("select").getAttribute("aria-invalid"),
       "true",
-    );
-    assert.deepEqual(
-      harness.errors,
-      [],
-      "validation stays in the form, not in a toast",
     );
     assert.equal(calls.filter(({ url }) => url === "/api/cards").length, 0);
 

@@ -91,14 +91,17 @@ function deferred() {
 
 function surfaceHeader(title, description) {
   const header = new FakeElement("header");
-  header.textContent = `${title}: ${description}`;
+  const heading = new FakeElement("h3");
+  heading.textContent = title;
+  const detail = new FakeElement("p");
+  detail.textContent = description;
+  header.append(heading, detail);
   return header;
 }
 
 function createKnowledgeHarness(options = {}) {
   const elements = Object.fromEntries(
     [
-      "clearSelectionButton",
       "clearFiltersButton",
       "diffBody",
       "diffModal",
@@ -115,7 +118,6 @@ function createKnowledgeHarness(options = {}) {
       "emptyNote",
       "filterCount",
       "filtersSection",
-      "libraryTitle",
       "quickNav",
       "quickNavInput",
       "quickNavResults",
@@ -199,7 +201,6 @@ function createKnowledgeHarness(options = {}) {
   const storageValues = new Map(Object.entries(options.storage || {}));
   const requests = [];
   const documentNavigationEvents = [];
-  const statuses = [];
   const routeTitles = [];
   const views = [];
   const history = [];
@@ -314,7 +315,6 @@ function createKnowledgeHarness(options = {}) {
     },
     renderQualityFindingRow: () => new FakeElement("div"),
     renderSurfaceHeader: surfaceHeader,
-    reportError() {},
     request,
     resetCardPanel() {},
     resetTaskPanel() {},
@@ -324,8 +324,7 @@ function createKnowledgeHarness(options = {}) {
       docsAvailability = snapshot;
     },
     setRouteTitle: (title) => routeTitles.push(title),
-    setSaveState: (value) => statuses.push(`save:${value}`),
-    setStatus: (value) => statuses.push(value),
+    setSaveState() {},
     setView: (value) => {
       body.dataset.view = value;
       views.push(value);
@@ -340,7 +339,6 @@ function createKnowledgeHarness(options = {}) {
       removeItem: (key) => storageValues.delete(key),
     },
     surfaceDescription: (surface) => `${surface} surface`,
-    surfaceStatusText: () => "Process Docs ready",
     tasksFromWorkPayload: (payload) => payload?.tasks || [],
     titleFromMarkdown: () => "Loaded process",
     updateGithubLink() {},
@@ -373,23 +371,12 @@ function createKnowledgeHarness(options = {}) {
     renderedWorkspaceDocuments: () => renderedWorkspaceDocuments,
     requests,
     sidebarCloses: () => sidebarCloses,
-    statuses,
     storageValues,
     views,
   };
 }
 
 describe("Knowledge surface boundary", () => {
-  test("keeps shell status ownership out of the four Knowledge feedback owners", () => {
-    for (const file of ["catalog.js", "search.js", "process-docs.js", "navigation.js"]) {
-      const source = readFileSync(
-        path.join(repoRoot, "frontend/src/surfaces/knowledge", file),
-        "utf8",
-      );
-      assert.doesNotMatch(source, /\bsetStatus\b/, file);
-    }
-  });
-
   test("directly imports production factory and exposes the stable Knowledge facade", () => {
     assert.deepEqual(Object.keys(createKnowledgeHarness().api).sort(), [
       "clearDocumentFilters",
@@ -469,7 +456,6 @@ describe("Knowledge surface boundary", () => {
       harness.refreshes.every((entry) => entry.options.rerender === true),
     );
     assert.equal(harness.docsAvailability().state, "loading");
-    assert.equal(harness.statuses.includes("Loading documents..."), false);
 
     releaseDocs({ documents });
     await loading;
@@ -541,18 +527,13 @@ describe("Knowledge surface boundary", () => {
       },
     });
     await failed.api.loadDocuments();
-    // The failure is now carried by the shared snapshot, not by the
-    // permanently hidden #status-text element.
+    // The failure is carried by the shared snapshot, not a global shell node.
     assert.deepEqual(failed.docsAvailability(), {
       state: "unavailable",
       documentCount: 0,
       error: "Docs content root is unavailable: /missing/content",
       status: 503,
     });
-    assert.equal(
-      failed.statuses.includes("Docs content root is unavailable: /missing/content"),
-      false,
-    );
     assert.deepEqual(failed.api.getAllDocuments(), []);
     assert.deepEqual(
       failed.refreshes.map((entry) => entry.name),
@@ -708,12 +689,6 @@ describe("Knowledge surface boundary", () => {
     assert.equal(harness.elements.documentTitle.disabled, true);
     assert.equal(harness.documentState.currentDoc, null);
     assert.equal(harness.docsAvailability().state, "loading");
-    assert.equal(
-      harness.statuses.includes(
-        "Docs content root is unavailable: /missing/content",
-      ),
-      false,
-    );
 
     // The single-document route answers 404 while the whole content root is
     // missing, so the shared snapshot is what tells an outage from one missing
@@ -738,7 +713,6 @@ describe("Knowledge surface boundary", () => {
       notice.children[1].textContent,
       "Docs content root is unavailable: /missing/content",
     );
-    assert.equal(knownOutage.statuses.includes("Document not found"), false);
   });
 
   test("keeps a single-document outage local so a successful retry preserves the catalog", async () => {
@@ -800,7 +774,10 @@ describe("Knowledge surface boundary", () => {
     ];
 
     harness.api.renderDocsSurface(documents);
-    assert.equal(harness.elements.libraryTitle.textContent, "Docs");
+    assert.equal(
+      findByText(harness.elements.documentList, "Docs", "h3").textContent,
+      "Docs",
+    );
     assert.equal(
       harness.elements.documentList.classList.contains("is-operations-home"),
       true,
@@ -844,7 +821,6 @@ describe("Knowledge surface boundary", () => {
     assert.match(state.textContent, /catalog contains 2 process documents/);
     assert.match(state.textContent, /Clear filters/);
     assert.ok(findByText(harness.elements.documentList, "New process doc", "button"));
-    assert.equal(harness.elements.clearSelectionButton.hidden, true);
   });
 
   test("separates filtered Process Docs empty-state guidance semantically", () => {
@@ -914,8 +890,19 @@ describe("Knowledge surface boundary", () => {
         "div",
       ),
     );
-    assert.equal(harness.elements.clearSelectionButton.hidden, false);
-    assert.equal(harness.elements.documentList.children.length, 1);
+    const header = harness.elements.documentList.querySelector(
+      ".document-list-header",
+    );
+    assert.ok(header);
+    assert.equal(header.querySelector("h3").textContent, "empty");
+    const allDocs = findByText(
+      harness.elements.documentList,
+      "All docs",
+      "button",
+    );
+    assert.ok(allDocs);
+    assert.equal(allDocs.getAttribute("aria-label"), "Show all docs");
+    assert.equal(harness.elements.documentList.children.length, 2);
 
     harness.api.showLibrary();
     assert.equal(harness.body.dataset.view, "library");
@@ -923,6 +910,17 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(harness.history.at(-1), {
       state: { folder: "empty" },
       url: "/empty",
+    });
+
+    // The fake history adapter records pushes without mutating location.
+    harness.location.pathname = "/empty";
+    harness.elements.searchInput.value = "stale query";
+    await allDocs.click();
+    assert.equal(harness.knowledgeState.selectedFolder, "");
+    assert.equal(harness.elements.searchInput.value, "");
+    assert.deepEqual(harness.history.at(-1), {
+      state: { folder: "" },
+      url: "/",
     });
   });
 
@@ -1147,10 +1145,6 @@ describe("Knowledge surface boundary", () => {
     )[0];
     assert.equal(sourceState.dataset.searchState, "partial");
     assert.ok(findByText(harness.elements.documentList, "Retry search", "button"));
-    assert.equal(
-      harness.statuses.includes("2 search results · 1 source issues."),
-      false,
-    );
 
     const taskRow = findAllByClass(
       harness.elements.documentList,
@@ -1576,7 +1570,6 @@ describe("Knowledge surface boundary", () => {
       },
     });
     await missing.api.openDocument("content/removed.md");
-    assert.equal(missing.statuses.includes("Document not found"), false);
     assert.equal(missing.elements.docState.hidden, false);
     assert.equal(
       missing.elements.docState.children[0].dataset.documentState,

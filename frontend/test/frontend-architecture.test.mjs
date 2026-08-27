@@ -165,21 +165,7 @@ describe("shell ownership contract", () => {
     const admin = read("frontend/src/surfaces/operations/admin.js");
     assert.doesNotMatch(admin, /\bshowCreate\b|New process doc/);
 
-    const application = read("frontend/src/runtime/application.js");
-    const adminWiring = application.match(
-      /createAdminSurface\(\{.*?\}\);/s,
-    )?.[0];
-    assert.ok(adminWiring, "Admin runtime wiring is present");
-    assert.doesNotMatch(
-      admin,
-      /\b(?:setStatus|showErrorToast|surfaceStatusText)\b/,
-      "Admin owns its visible feedback instead of consuming shell status APIs",
-    );
-    assert.doesNotMatch(
-      adminWiring,
-      /\b(?:setStatus|showErrorToast|surfaceStatusText):/,
-      "Shell status APIs are not injected into Admin",
-    );
+    assert.match(admin, /renderSurfaceHeader\("Admin"/);
   });
 
   test("writes route titles through a single-argument contract", () => {
@@ -248,7 +234,10 @@ describe("shell ownership contract", () => {
 
     const editorIndex = read("frontend/src/surfaces/document-editor/index.js");
     assert.doesNotMatch(editorIndex, /createElement\("footer"\)/);
-    assert.match(editorIndex, /writeEditorInlineStatus\(context\.editorInlineStatus, message\)/);
+    assert.match(
+      editorIndex,
+      /writeEditorFeedback\(context\.editorInlineStatus, message, options\)/,
+    );
 
     const lifecycle = read("frontend/src/surfaces/document-editor/lifecycle.js");
     assert.match(lifecycle, /editorSaveButton\.disabled = !hasChanges;/);

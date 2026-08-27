@@ -9,7 +9,6 @@ export function createAdminSurface(context) {
   const {
     apiUrl,
     buildOperationsHomeModel,
-    clearSelectionButton,
     currentOperatorIdFromPayload,
     documentList,
     getActiveWorkspaceView,
@@ -18,7 +17,6 @@ export function createAdminSurface(context) {
     getOperationsQualitySnapshot,
     getOperationsRecurringSnapshot,
     getOperationsWorkSnapshot,
-    libraryTitle,
     listDraftPaths,
     refreshDocuments,
     renderHonestState,
@@ -55,9 +53,7 @@ export function createAdminSurface(context) {
     });
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    libraryTitle.textContent = "Admin";
     setRouteTitle("Admin");
-    clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-admin";
@@ -99,9 +95,7 @@ export function createAdminSurface(context) {
   function renderUsersSurfaceView() {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    libraryTitle.textContent = "Users";
     setRouteTitle("Users");
-    clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-users";

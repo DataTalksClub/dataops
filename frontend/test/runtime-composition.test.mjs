@@ -19,7 +19,6 @@ function createSurfaceHarness(options = {}) {
   const mobileTitle = element();
   const searchInput = element("input");
   searchInput.value = options.searchValue || "";
-  const statusText = element();
   const tasksNavButton = element("button");
   const tasksNavSubmenu = element();
   const workspaceNavButtons = ["home", "inbox", "docs"].map((view) => {
@@ -123,7 +122,6 @@ function createSurfaceHarness(options = {}) {
       scheduled.push(timer);
       return timer;
     },
-    statusText,
     tasksFromWorkPayload: (payload) => payload,
     tasksNavButton,
     tasksNavSectionButtons,
@@ -152,7 +150,6 @@ function createSurfaceHarness(options = {}) {
     setFinanceLeave(value) {
       financeLeave = value;
     },
-    statusText,
     tasksNavButton,
     tasksNavSectionButtons,
     tasksNavSubmenu,
@@ -353,10 +350,8 @@ describe("runtime surface composition", () => {
     const harness = createSurfaceHarness();
     harness.composition.setView("editor");
     harness.composition.setRouteTitle("Process");
-    harness.composition.setStatus("Saved");
     assert.equal(harness.body.dataset.view, "editor");
     assert.equal(harness.mobileTitle.textContent, "Process");
-    assert.equal(harness.statusText.textContent, "Saved");
     assert.equal(harness.composition.setRouteTitle.length, 1);
     assert.equal(harness.composition.cleanPath("content/ops/start.md"), "ops/start.md");
     assert.equal(harness.composition.basename("content/ops/start-here.md"), "start here");

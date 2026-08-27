@@ -3,7 +3,6 @@ export function createFeedbackShell({
   HTMLElementClass,
   labelizeWorkValue,
   requestAnimationFrameImpl,
-  setStatus,
   setTimeoutImpl,
   clearTimeoutImpl,
 }) {
@@ -15,14 +14,10 @@ export function createFeedbackShell({
   const undoToast = documentRef.querySelector("#undo-toast");
   const undoToastText = documentRef.querySelector("#undo-toast-text");
   const undoToastButton = documentRef.querySelector("#undo-toast-button");
-  const errorToast = documentRef.querySelector("#error-toast");
-  const errorToastText = documentRef.querySelector("#error-toast-text");
-  const errorToastClose = documentRef.querySelector("#error-toast-close");
   let confirmResolve = null;
   let confirmOpener = null;
   let undoTimer = null;
   let undoAction = null;
-  let errorTimer = null;
 
   function resolveConfirm(value) {
     if (!confirmResolve) return;
@@ -152,30 +147,10 @@ export function createFeedbackShell({
     undoTimer = setTimeoutImpl(hideUndoToast, 8000);
   }
 
-  errorToastClose.addEventListener("click", () => {
-    errorToast.hidden = true;
-  });
-
-  function showErrorToast(message) {
-    errorToastText.textContent = message;
-    errorToast.hidden = false;
-    if (errorTimer) clearTimeoutImpl(errorTimer);
-    errorTimer = setTimeoutImpl(() => {
-      errorToast.hidden = true;
-    }, 10000);
-  }
-
-  function reportError(message) {
-    setStatus(message);
-    showErrorToast(message);
-  }
-
   return {
     confirmDialog,
     renderEntityLoadState,
     renderEntityLoadingState,
-    reportError,
-    showErrorToast,
     showUndoToast,
   };
 }
