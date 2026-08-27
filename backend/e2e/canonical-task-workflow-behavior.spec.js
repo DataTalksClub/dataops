@@ -12,8 +12,10 @@ const path = require('path');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
-const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-207-task-workflows');
-const SCREENSHOT_PATH = path.join(REPO_ROOT, '.tmp/screenshots/issue-207/desktop.png');
+const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-216-task-workflows');
+const SCREENSHOTS_ROOT = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-216');
+const PENDING_SCREENSHOT_PATH = path.join(SCREENSHOTS_ROOT, 'required-file-pending-disabled.png');
+const UPLOADED_SCREENSHOT_PATH = path.join(SCREENSHOTS_ROOT, 'required-file-saved-uploaded.png');
 const ADMIN_ID = '20700000-0000-4000-8000-000000000001';
 
 const syntheticSop = `---
@@ -87,6 +89,66 @@ function unique(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function observeBrowserErrors(page) {
+  const errors = [];
+  page.on('pageerror', (error) => errors.push({
+    kind: 'pageerror',
+    url: page.url(),
+    message: error.message,
+  }));
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    errors.push({
+      kind: 'console',
+      url: message.location()?.url || page.url(),
+      message: message.text(),
+    });
+  });
+  page.on('requestfailed', (request) => errors.push({
+    kind: 'requestfailed',
+    method: request.method(),
+    url: request.url(),
+    failure: request.failure()?.errorText || 'unknown',
+  }));
+  return errors;
+}
+
+function isExpectedReloadAbort(entry, cardId) {
+  if (entry.kind !== 'requestfailed') return false;
+  if (entry.method !== 'GET') return false;
+  if (entry.failure !== 'net::ERR_ABORTED') return false;
+
+  const url = new URL(entry.url);
+  const exactReloadReads = new Set([
+    `/work/api/cards/${encodeURIComponent(cardId)}`,
+    '/work/api/notifications?limit=100',
+  ]);
+  return exactReloadReads.has(`${url.pathname}${url.search}`);
+}
+
+function expectNoUnexpectedBrowserErrors(entries, conflictTaskId, cardId, markers) {
+  const expectedConflictPath = `/work/api/tasks/${conflictTaskId}`;
+  const conflictStart = markers.conflictStart;
+  const reloadStart = markers.reloadStart;
+  const unexpected = entries.filter((entry, index) => {
+    if (entry.kind === 'console' && index >= conflictStart && index < reloadStart) {
+      const url = new URL(entry.url);
+      return !(
+        url.pathname === expectedConflictPath
+        && entry.message === 'Failed to load resource: the server responded with a status of 409 (Conflict)'
+      );
+    }
+    if (entry.kind === 'console') {
+      return true;
+    }
+    if (index >= reloadStart && isExpectedReloadAbort(entry, cardId)) {
+      return false;
+    }
+    return true;
+  });
+  expect(unexpected).toEqual([]);
+}
+
 const test = baseTest.extend({
   taskWorkflowPortal: [async ({ browser }, use, testInfo) => {
     fs.rmSync(TMP_ROOT, { recursive: true, force: true });
@@ -133,11 +195,11 @@ const test = baseTest.extend({
       catch (error) { cleanupErrors.push(error.message); }
     }
     if (cleanupErrors.length > 0) {
-      await testInfo.attach('issue-207-cleanup-errors', {
+      await testInfo.attach('issue-216-cleanup-errors', {
         contentType: 'text/plain',
         body: cleanupErrors.join('\n'),
       });
-      throw new Error(`Issue 207 fixture cleanup failed:\n${cleanupErrors.join('\n')}`);
+      throw new Error(`Issue 216 fixture cleanup failed:\n${cleanupErrors.join('\n')}`);
     }
   }, { auto: false }],
 });
@@ -260,6 +322,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
   test('Required proof saves one versioned link, file, conflict, and durable completion', async ({ taskWorkflowPortal }, testInfo) => {
     test.setTimeout(60_000);
     const { context, page, server: ownedServer } = taskWorkflowPortal;
+    const browserErrors = observeBrowserErrors(page);
     const cardTitle = unique('Synthetic staged workflow');
     const cardResponse = await context.request.post('/api/cards', { data: {
       title: cardTitle, anchorDate: '2026-08-12', description: 'Public-safe staged workflow', stage: 'preparation',
@@ -276,6 +339,7 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     expect(proofResponse.status()).toBe(201);
     const proofTask = await json(proofResponse);
 
+    await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toHaveCount(1);
     await openProofTask(page, proofTask.id, card.id, proofTitle);
     const complete = page.locator('#task-panel').getByRole('button', { name: 'Mark done' });
     await expect(complete).toBeDisabled();
@@ -302,46 +366,154 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     );
     await returnedPanel;
     const requiredLink = page.locator('#task-panel .task-required-link input[type="url"]');
+    const fileInput = page.locator('#task-panel input[type="file"]');
     const proofUrl = 'https://example.invalid/synthetic-evidence';
     const savedLinkRequests = [];
+    const uploadRequests = [];
+    const uploadResponses = [];
     const onRequest = (request) => {
       if (request.method() === 'PUT' && new URL(request.url()).pathname === `/work/api/tasks/${proofTask.id}`) {
         savedLinkRequests.push(request);
       }
     };
+    const onUploadRequest = (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'POST' && url.pathname === '/work/api/files') {
+        uploadRequests.push(request);
+      }
+    };
+    const onUploadResponse = (response) => {
+      const url = new URL(response.url());
+      if (response.request().method() === 'POST' && url.pathname === '/work/api/files') {
+        uploadResponses.push(response);
+      }
+    };
     page.on('request', onRequest);
+    page.on('request', onUploadRequest);
+    page.on('response', onUploadResponse);
+    await setFaults(context.request, [{
+      method: 'GET',
+      path: '/api/tasks',
+      query: { cardId: card.id },
+      delayMs: 500,
+    }]);
+    const taskRefreshRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === 'GET'
+        && url.pathname === '/work/api/tasks'
+        && url.searchParams.get('cardId') === card.id;
+    });
+    const taskRefreshResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/work/api/tasks'
+        && url.searchParams.get('cardId') === card.id;
+    });
     const linkRequest = page.waitForRequest((request) => request.method() === 'PUT'
       && new URL(request.url()).pathname === `/work/api/tasks/${proofTask.id}`);
     await requiredLink.fill(proofUrl);
     await requiredLink.blur();
     const savedLinkRequest = await linkRequest;
+    await savedLinkRequest.response();
+    await taskRefreshRequest;
+    await expect(page.locator('#task-panel [data-task-mutation-feedback="pending"]'))
+      .toHaveText('Saving Task link…');
+    await expect(fileInput).toBeDisabled();
+    expect(uploadRequests).toHaveLength(0);
+    expect(uploadResponses).toHaveLength(0);
+    fs.mkdirSync(SCREENSHOTS_ROOT, { recursive: true });
+    await page.screenshot({ path: PENDING_SCREENSHOT_PATH, animations: 'disabled', fullPage: true });
     const savedLinkResponse = await savedLinkRequest.response();
-    page.off('request', onRequest);
+    const refreshedTaskResponse = await taskRefreshResponse;
     expect(savedLinkRequests).toHaveLength(1);
     expect(savedLinkResponse.status()).toBe(200);
     assertOwnedServerResponse(ownedServer, savedLinkResponse, 'required-link PUT');
+    expect(refreshedTaskResponse.status()).toBe(200);
+    assertOwnedServerResponse(ownedServer, refreshedTaskResponse, 'required-link task refresh');
     expect(savedLinkRequests[0].postDataJSON()).toEqual({ expectedVersion: proofTask.version, link: proofUrl });
     const savedTask = await json(savedLinkResponse);
     expect(savedTask.version).toBe(proofTask.version + 1);
     await expect(requiredLink).toHaveValue(proofUrl);
     await expect(page.locator('#task-panel .task-detail-meta').first()).toContainText(`Version ${savedTask.version}`);
+    await expect(page.locator('#task-panel [data-task-mutation-feedback="success"]'))
+      .toHaveText('Task link is saved in the refreshed Task.');
+    await expect(fileInput).toBeEnabled();
 
-    await page.locator('#task-panel input[type="file"]').setInputFiles({
+    const uploadResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'POST'
+        && url.pathname === '/work/api/files';
+    });
+    const uploadedFilesResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/work/api/files'
+        && url.searchParams.get('taskId') === proofTask.id
+        && url.searchParams.get('limit') === '100'
+        && !url.searchParams.has('cursor');
+    });
+    await fileInput.setInputFiles({
       name: 'synthetic-proof.txt', mimeType: 'text/plain', buffer: Buffer.from('public-safe synthetic proof'),
     });
+    const uploadedResponse = await uploadResponse;
+    expect(uploadedResponse.status()).toBe(201);
+    assertOwnedServerResponse(ownedServer, uploadedResponse, 'required-file POST');
+    const uploadedPayload = await json(uploadedResponse);
+    const uploadedFile = uploadedPayload.file;
+    expect(uploadedFile).toEqual(expect.objectContaining({
+      id: expect.any(String),
+      taskId: proofTask.id,
+      cardId: card.id,
+      filename: 'synthetic-proof.txt',
+      category: 'document',
+    }));
+    const uploadedFilesResponseValue = await uploadedFilesResponse;
+    expect(uploadedFilesResponseValue.status()).toBe(200);
+    assertOwnedServerResponse(ownedServer, uploadedFilesResponseValue, 'required-file refresh');
+    const uploadedFilesPayload = await json(uploadedFilesResponseValue);
+    expect(uploadedFilesPayload.files.items).toHaveLength(1);
+    expect(uploadedFilesPayload.files.nextCursor).toBeUndefined();
+    expect(uploadedFilesPayload.files.items[0]).toEqual(expect.objectContaining({
+      id: uploadedFile.id,
+      taskId: proofTask.id,
+      cardId: card.id,
+      filename: 'synthetic-proof.txt',
+      category: 'document',
+    }));
     await expect(page.locator('#task-panel .task-file-item')).toContainText('synthetic-proof.txt');
+    await expect(page.locator('#task-panel [data-task-mutation-feedback="success"]'))
+      .toHaveText('File is attached in the refreshed Task.');
+    expect(uploadRequests).toHaveLength(1);
+    expect(uploadResponses).toHaveLength(1);
+    expect(uploadResponses[0].status()).toBe(201);
     await expect(complete).toBeEnabled();
-    fs.mkdirSync(path.dirname(SCREENSHOT_PATH), { recursive: true });
-    await page.screenshot({ path: SCREENSHOT_PATH, animations: 'disabled', fullPage: true });
+    await page.screenshot({ path: UPLOADED_SCREENSHOT_PATH, animations: 'disabled', fullPage: true });
+    page.off('request', onRequest);
+    page.off('request', onUploadRequest);
+    page.off('response', onUploadResponse);
 
+    const conflictErrorStart = browserErrors.length;
     await setFaults(context.request, [{ method: 'PUT', path: `/api/tasks/${proofTask.id}`, status: 409 }]);
     const failedCompletionRequest = page.waitForRequest((request) => {
       const url = new URL(request.url());
       return request.method() === 'PUT' && url.pathname === `/work/api/tasks/${proofTask.id}`;
     });
+    const failedCompletionResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'PUT'
+        && url.pathname === `/work/api/tasks/${proofTask.id}`
+        && response.status() === 409;
+    });
     await complete.click();
     const failedCompletion = await failedCompletionRequest;
-    expect(failedCompletion.postDataJSON().expectedVersion).toBe(savedTask.version);
+    const failedResponse = await failedCompletionResponse;
+    expect(failedResponse.status()).toBe(409);
+    assertOwnedServerResponse(ownedServer, failedResponse, 'synthetic completion conflict');
+    expect(await json(failedResponse)).toEqual({ error: 'Synthetic route failure (409)' });
+    expect(failedCompletion.postDataJSON()).toEqual({
+      expectedVersion: savedTask.version,
+      status: 'done',
+    });
     const taskMutationFailure = page.locator('#task-panel [data-task-mutation-feedback="error"]');
     await expect(taskMutationFailure).toContainText('Could not update task: Synthetic route failure (409)');
     await expect(taskMutationFailure).toBeFocused();
@@ -367,10 +539,16 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(page.locator('#task-panel .task-status-badge')).toHaveText('done');
     await expect(page.locator('#task-panel')).toContainText(completedTask.taskHistory.at(-1)?.note || '');
 
+    await page.waitForLoadState('networkidle');
+    const reloadErrorStart = browserErrors.length;
     await openProofTask(page, proofTask.id, card.id, proofTitle, { reload: true });
     await expect(page.locator('#task-panel .task-status-badge')).toHaveText('done');
     await expect(page.locator('#task-panel .task-required-link input[type="url"]')).toHaveValue(proofUrl);
     await expect(page.locator('#task-panel .task-file-item')).toContainText('synthetic-proof.txt');
+    expectNoUnexpectedBrowserErrors(browserErrors, proofTask.id, card.id, {
+      conflictStart: conflictErrorStart,
+      reloadStart: reloadErrorStart,
+    });
 
     recordCapabilityEvidence(testInfo, [{
       route: '/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>',
