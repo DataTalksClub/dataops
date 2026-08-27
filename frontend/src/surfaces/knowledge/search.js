@@ -19,7 +19,6 @@ export function createKnowledgeSearch(context, services) {
     renderOperationsWorkspace,
     request,
     searchInput,
-    setStatus,
     showWorkspaceSurface,
     tasksFromWorkPayload,
     workApiUrl,
@@ -33,9 +32,12 @@ export function createKnowledgeSearch(context, services) {
     syncLibraryRouteTitle,
   } = services;
   const searchRanks = new Map();
+  let searchRequestId = 0;
+  let focusSearchFeedback = false;
 
   async function refreshDocuments() {
     const query = searchInput.value.trim();
+    const requestId = ++searchRequestId;
     if (knowledgeState.searchController) {
       knowledgeState.searchController.abort();
       knowledgeState.searchController = null;
@@ -45,18 +47,14 @@ export function createKnowledgeSearch(context, services) {
       if (query) {
         const controller = new AbortController();
         knowledgeState.searchController = controller;
+        renderSearchLoading(query);
 
-        const url = apiUrl("/search");
-        url.searchParams.set("q", query);
-        url.searchParams.set("limit", "80");
-        searchFilterParams(url);
-        url.searchParams.set("source", "docs");
+        const url = docsSearchUrl(query);
         const [docsResult, workResult] = await Promise.allSettled([
           request(url, { signal: controller.signal }),
           loadUnifiedWorkSearch(query, controller.signal),
         ]);
-        if (knowledgeState.searchController !== controller) return;
-        knowledgeState.searchController = null;
+        if (!isCurrentSearch(requestId, controller, query)) return;
 
         const payload =
           docsResult.status === "fulfilled"
@@ -85,27 +83,55 @@ export function createKnowledgeSearch(context, services) {
                       workResult.reason?.message || "Work search unavailable",
                   },
                 ],
-              };
+            };
+        let unfilteredDocsResultCount = null;
+        if (
+          docsResult.status === "fulfilled" &&
+          activeDocumentFilterCount() > 0 &&
+          Array.isArray(payload?.results) &&
+          payload.results.length === 0
+        ) {
+          const probe = await Promise.allSettled([
+            request(docsSearchUrl(query, { applyFilters: false }), {
+              signal: controller.signal,
+            }),
+          ]);
+          if (!isCurrentSearch(requestId, controller, query)) return;
+          if (probe[0].status === "fulfilled") {
+            unfilteredDocsResultCount = Array.isArray(probe[0].value?.results)
+              ? probe[0].value.results.length
+              : 0;
+          }
+        }
+        knowledgeState.searchController = null;
         const results = rankSearchResults([
-          ...(Array.isArray(payload.results) ? payload.results : []),
+          ...(Array.isArray(payload?.results) ? payload.results : []),
           ...workSearch.results,
         ], query).slice(0, 80);
-        knowledgeState.activeSearchSources = [
-          ...(Array.isArray(payload.sources) ? payload.sources : []),
+        const sources = [
+          ...normalizeDocsSearchSources(payload, payload?.results),
+          ...(Array.isArray(payload?.sources) ? payload.sources : []),
           ...workSearch.sources,
         ];
+        knowledgeState.activeSearchSources = dedupeSearchSources(sources);
         knowledgeState.visibleDocuments = results;
         knowledgeState.selectedFolder = "";
-        renderUnifiedSearchResults(results, knowledgeState.activeSearchSources, query);
-        const unavailable = knowledgeState.activeSearchSources.filter(
-          (source) => source.status === "unavailable",
-        ).length;
-        setStatus(
-          `${results.length} search results${unavailable ? ` · ${unavailable} source issues` : ""}.`,
+        renderUnifiedSearchResults(
+          results,
+          knowledgeState.activeSearchSources,
+          query,
+          {
+            docsResultCount: Array.isArray(payload?.results)
+              ? payload.results.length
+              : 0,
+            unfilteredDocsResultCount,
+          },
         );
         syncLibraryRouteTitle();
         return;
       }
+
+      if (requestId !== searchRequestId) return;
 
       if (!knowledgeState.selectedFolder) {
         // No folder or search: show the daily operations workspace and skip
@@ -122,12 +148,65 @@ export function createKnowledgeSearch(context, services) {
         cleanPath(doc.path).startsWith(`${knowledgeState.selectedFolder}/`),
       );
       renderDocuments(knowledgeState.visibleDocuments, knowledgeState.selectedFolder);
-      setStatus(`${knowledgeState.visibleDocuments.length} documents shown.`);
       syncLibraryRouteTitle();
     } catch (error) {
-      if (error.name === "AbortError") return;
-      setStatus(error.message);
+      if (error.name === "AbortError" || requestId !== searchRequestId) return;
+      knowledgeState.searchController = null;
+      knowledgeState.activeSearchSources = [
+        {
+          source: "search",
+          status: "unavailable",
+          error: error.message || "Search unavailable",
+        },
+      ];
+      knowledgeState.visibleDocuments = [];
+      renderUnifiedSearchResults(
+        [],
+        knowledgeState.activeSearchSources,
+        query,
+      );
+      syncLibraryRouteTitle();
     }
+  }
+
+  function isCurrentSearch(requestId, controller, query) {
+    return (
+      requestId === searchRequestId &&
+      knowledgeState.searchController === controller &&
+      searchInput.value.trim() === query
+    );
+  }
+
+  function docsSearchUrl(query, { applyFilters = true } = {}) {
+    const url = apiUrl("/search");
+    url.searchParams.set("q", query);
+    url.searchParams.set("limit", "80");
+    if (applyFilters) searchFilterParams(url);
+    url.searchParams.set("source", "docs");
+    return url;
+  }
+
+  function normalizeDocsSearchSources(payload, results) {
+    if (Array.isArray(payload?.sources) && payload.sources.length > 0) {
+      return [];
+    }
+    return [
+      {
+        source: "docs",
+        status: "ok",
+        count: Array.isArray(results) ? results.length : 0,
+      },
+    ];
+  }
+
+  function dedupeSearchSources(sources) {
+    const seen = new Set();
+    return (Array.isArray(sources) ? sources : []).filter((source) => {
+      const key = String(source?.source || "source");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   async function loadUnifiedWorkSearch(query, signal) {
@@ -282,7 +361,7 @@ export function createKnowledgeSearch(context, services) {
     return section;
   }
 
-  function renderUnifiedSearchResults(results, sources, query) {
+  function renderSearchLoading(query) {
     documentList.classList.remove("is-operations-home");
     documentList.classList.add("is-unified-search");
     setLibraryHeadingVisibility(true);
@@ -291,18 +370,72 @@ export function createKnowledgeSearch(context, services) {
 
     const wrap = document.createElement("div");
     wrap.className = "unified-search-results";
+    wrap.append(
+      renderSearchState(
+        "Loading search results",
+        `Searching Process Docs and work for “${query}”…`,
+        "loading",
+      ),
+    );
+    documentList.replaceChildren(wrap);
+  }
+
+  function renderUnifiedSearchResults(results, sources, query, metadata = {}) {
+    documentList.classList.remove("is-operations-home");
+    documentList.classList.add("is-unified-search");
+    setLibraryHeadingVisibility(true);
+    libraryTitle.textContent = "Search results";
+    clearSelectionButton.hidden = false;
+
+    const wrap = document.createElement("div");
+    wrap.className = "unified-search-results";
+    const safeResults = Array.isArray(results) ? results : [];
+    const state = searchStateFor(safeResults, sources, query, metadata);
     const sourceState = renderSearchSourceState(sources);
     if (sourceState) wrap.append(sourceState);
 
-    const safeResults = Array.isArray(results) ? results : [];
-    if (safeResults.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "empty-state";
-      empty.textContent = query
-        ? "No work or process context matches this search."
-        : "Search for Cards, Tasks, Artifacts, Assistant jobs, Templates, or Process Docs.";
-      wrap.append(empty);
+    if (state === "unavailable") {
       documentList.replaceChildren(wrap);
+      focusSearchStateIfRequested(wrap);
+      return;
+    }
+    if (state === "partial-empty") {
+      wrap.append(
+        renderSearchState(
+          "No matches from available sources",
+          "The sources that answered found no matches. Unavailable sources may still contain results.",
+          "partial",
+        ),
+      );
+    } else if (state === "filter-empty") {
+      wrap.append(
+        renderSearchState(
+          "No Process Docs match these filters",
+          "The search query ran, but the active metadata filters excluded every Process Doc match.",
+          "filter-empty",
+        ),
+      );
+    } else if (safeResults.length === 0) {
+      wrap.append(
+        renderSearchState(
+          "No matching results",
+          "No work or process context matches this search.",
+          "query-empty",
+        ),
+      );
+    } else if (state === "loaded") {
+      wrap.append(
+        renderSearchState(
+          "Search complete",
+          `${safeResults.length} matching result${safeResults.length === 1 ? "" : "s"} from all available sources.`,
+          "loaded",
+        ),
+      );
+    }
+
+    if (safeResults.length === 0) {
+      documentList.replaceChildren(wrap);
+      focusSearchStateIfRequested(wrap);
       return;
     }
 
@@ -322,6 +455,7 @@ export function createKnowledgeSearch(context, services) {
       wrap.append(section);
     }
     documentList.replaceChildren(wrap);
+    focusSearchStateIfRequested(wrap);
   }
 
   function setLibraryHeadingVisibility(visible) {
@@ -331,21 +465,112 @@ export function createKnowledgeSearch(context, services) {
     heading.classList.toggle("is-visible", visible);
   }
 
-  function renderSearchSourceState(sources) {
-    const unavailable = (sources || []).filter(
-      (source) => source && source.status === "unavailable",
+  function searchStateFor(results, sources, query, metadata = {}) {
+    const unavailable = unavailableSearchSources(sources);
+    if (unavailable.length > 0 && unavailable.length === (sources || []).length) {
+      return "unavailable";
+    }
+    if (unavailable.length > 0) {
+      return results.length === 0 ? "partial-empty" : "partial";
+    }
+    const docsSource = (sources || []).find(
+      (source) => source?.source === "docs",
     );
+    const docsResultCount = Number.isFinite(metadata.docsResultCount)
+      ? metadata.docsResultCount
+      : Number(docsSource?.count || 0);
+    const unfilteredDocsResultCount = Number.isFinite(
+      metadata.unfilteredDocsResultCount,
+    )
+      ? metadata.unfilteredDocsResultCount
+      : null;
+    if (
+      query &&
+      activeDocumentFilterCount() > 0 &&
+      docsSource?.status === "ok" &&
+      docsResultCount === 0 &&
+      unfilteredDocsResultCount > 0
+    ) {
+      return "filter-empty";
+    }
+    return results.length === 0 ? "query-empty" : "loaded";
+  }
+
+  function unavailableSearchSources(sources) {
+    return (Array.isArray(sources) ? sources : []).filter(
+      (source) => source && isUnavailableSearchSource(source),
+    );
+  }
+
+  function isUnavailableSearchSource(source) {
+    return (
+      source.status === "unavailable" ||
+      source.status === "error" ||
+      source.available === false
+    );
+  }
+
+  function activeDocumentFilterCount() {
+    return Object.values(knowledgeState.documentFilters || {}).filter(Boolean)
+      .length;
+  }
+
+  function renderSearchState(titleText, bodyText, state) {
+    const node = renderHonestState(titleText, bodyText);
+    node.classList.add("ops-runtime-state", "search-feedback");
+    node.dataset.searchState = state;
+    node.setAttribute("role", state === "unavailable" ? "alert" : "status");
+    node.setAttribute(
+      "aria-live",
+      state === "unavailable" ? "assertive" : "polite",
+    );
+    node.setAttribute("aria-atomic", "true");
+    return node;
+  }
+
+  function focusSearchStateIfRequested(wrap) {
+    if (!focusSearchFeedback) return;
+    focusSearchFeedback = false;
+    const node = wrap.querySelector(
+      ".search-feedback, .search-source-state",
+    );
+    if (!node || typeof node.focus !== "function") return;
+    node.tabIndex = -1;
+    node.focus();
+  }
+
+  function renderSearchSourceState(sources) {
+    const unavailable = unavailableSearchSources(sources);
     if (unavailable.length === 0) return null;
     const section = document.createElement("section");
     section.className = "ops-runtime-state search-source-state";
+    section.dataset.searchState =
+      unavailable.length === (sources || []).length
+        ? "unavailable"
+        : "partial";
+    section.setAttribute(
+      "aria-label",
+      section.dataset.searchState === "unavailable"
+        ? "Search unavailable"
+        : "Partial search results",
+    );
+    section.setAttribute("role", "alert");
+    section.setAttribute("aria-live", "assertive");
+    section.setAttribute("aria-atomic", "true");
     const title = document.createElement("strong");
-    title.textContent = "Partial search results";
+    title.textContent =
+      section.dataset.searchState === "unavailable"
+        ? "Search unavailable"
+        : "Partial search results";
     const body = document.createElement("span");
     // Attribute the failure to what actually failed. Calling a docs outage a
     // work-source problem sent operators looking in the wrong system.
     const docsFailed = unavailable.some((source) => source.source === "docs");
     const workFailed = unavailable.some((source) => source.source !== "docs");
-    if (docsFailed && workFailed) {
+    if (section.dataset.searchState === "unavailable") {
+      body.textContent =
+        "No Process Docs or work search source responded. Retry to run the same query with its current filters.";
+    } else if (docsFailed && workFailed) {
       body.textContent =
         "Process documents and some work sources could not load. Results from the sources that answered remain visible.";
     } else if (docsFailed) {
@@ -357,12 +582,33 @@ export function createKnowledgeSearch(context, services) {
     }
     section.append(title, body);
     const list = document.createElement("ul");
-    for (const source of unavailable.slice(0, 5)) {
+    for (const source of unavailable) {
       const item = document.createElement("li");
       item.textContent = `${searchSourceLabel(source.source)}: ${source.error || "unavailable"}`;
       list.append(item);
     }
     section.append(list);
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "surface-summary-retry";
+    retry.textContent = "Retry search";
+    retry.setAttribute("aria-label", "Retry search with the current query");
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.setAttribute("aria-busy", "true");
+      retry.textContent = "Retrying…";
+      focusSearchFeedback = true;
+      try {
+        await refreshDocuments();
+      } finally {
+        if (retry.isConnected) {
+          retry.disabled = false;
+          retry.removeAttribute("aria-busy");
+          retry.textContent = "Retry search";
+        }
+      }
+    });
+    section.append(retry);
     return section;
   }
 

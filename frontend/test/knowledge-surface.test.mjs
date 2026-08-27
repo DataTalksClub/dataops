@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, test } from "node:test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { emptyOperationsDocsSnapshot } from "../src/core/operations-model.js";
 import { createKnowledgeSurface } from "../src/surfaces/knowledge/index.js";
@@ -14,6 +17,10 @@ import {
 
 const originalDocument = globalThis.document;
 const originalOption = globalThis.Option;
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
@@ -70,6 +77,16 @@ function createDocumentRow() {
 
 function apiUrl(path) {
   return new URL(path, "http://portal.test");
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 function surfaceHeader(title, description) {
@@ -301,6 +318,7 @@ function createKnowledgeHarness(options = {}) {
     request,
     resetCardPanel() {},
     resetTaskPanel() {},
+    resizeDocumentTitle() {},
     scheduleAnimationFrame: (callback) => callback(),
     setDocsAvailability: (snapshot) => {
       docsAvailability = snapshot;
@@ -362,6 +380,16 @@ function createKnowledgeHarness(options = {}) {
 }
 
 describe("Knowledge surface boundary", () => {
+  test("keeps shell status ownership out of the four Knowledge feedback owners", () => {
+    for (const file of ["catalog.js", "search.js", "process-docs.js", "navigation.js"]) {
+      const source = readFileSync(
+        path.join(repoRoot, "frontend/src/surfaces/knowledge", file),
+        "utf8",
+      );
+      assert.doesNotMatch(source, /\bsetStatus\b/, file);
+    }
+  });
+
   test("directly imports production factory and exposes the stable Knowledge facade", () => {
     assert.deepEqual(Object.keys(createKnowledgeHarness().api).sort(), [
       "clearDocumentFilters",
@@ -440,7 +468,8 @@ describe("Knowledge surface boundary", () => {
     assert.ok(
       harness.refreshes.every((entry) => entry.options.rerender === true),
     );
-    assert.equal(harness.statuses[0], "Loading documents...");
+    assert.equal(harness.docsAvailability().state, "loading");
+    assert.equal(harness.statuses.includes("Loading documents..."), false);
 
     releaseDocs({ documents });
     await loading;
@@ -453,6 +482,38 @@ describe("Knowledge surface boundary", () => {
     assert.equal(harness.api.folderExists("content/operations"), true);
     assert.equal(harness.renderedWorkspace(), 1);
     assert.deepEqual(harness.renderedWorkspaceDocuments(), documents);
+  });
+
+  test("ignores a stale catalog response after a newer load starts", async () => {
+    const firstResponse = deferred();
+    let docsRequestCount = 0;
+    const current = {
+      path: "content/current.md",
+      title: "Current catalog document",
+    };
+    const stale = {
+      path: "content/stale.md",
+      title: "Stale catalog document",
+    };
+    const harness = createKnowledgeHarness({
+      request: async (url) => {
+        if (new URL(url).pathname !== "/docs") return {};
+        docsRequestCount += 1;
+        return docsRequestCount === 1
+          ? firstResponse.promise
+          : { documents: [current] };
+      },
+    });
+
+    const first = harness.api.loadDocuments();
+    await nextTicks();
+    const second = harness.api.loadDocuments();
+    await second;
+    firstResponse.resolve({ documents: [stale] });
+    await first;
+
+    assert.deepEqual(harness.api.getAllDocuments(), [current]);
+    assert.equal(harness.docsAvailability().documentCount, 1);
   });
 
   test("keeps empty and failed catalog truth explicit without blocking work refreshes", async () => {
@@ -519,10 +580,10 @@ describe("Knowledge surface boundary", () => {
     const loading = harness.api.loadDocuments();
     assert.equal(harness.docsAvailability().state, "loading");
     harness.api.renderDocsSurface([]);
-    assert.equal(
-      harness.elements.documentList.querySelector("[data-docs-state]"),
-      null,
-    );
+    const loadingState =
+      harness.elements.documentList.querySelector("[data-docs-state]");
+    assert.equal(loadingState.dataset.docsState, "loading");
+    assert.equal(loadingState.getAttribute("role"), "status");
 
     releaseDocs({ documents: [] });
     await loading;
@@ -646,7 +707,7 @@ describe("Knowledge surface boundary", () => {
     assert.equal(harness.elements.editor.disabled, true);
     assert.equal(harness.elements.documentTitle.disabled, true);
     assert.equal(harness.documentState.currentDoc, null);
-    assert.equal(harness.docsAvailability().state, "unavailable");
+    assert.equal(harness.docsAvailability().state, "loading");
     assert.equal(
       harness.statuses.includes(
         "Docs content root is unavailable: /missing/content",
@@ -680,8 +741,57 @@ describe("Knowledge surface boundary", () => {
     assert.equal(knownOutage.statuses.includes("Document not found"), false);
   });
 
+  test("keeps a single-document outage local so a successful retry preserves the catalog", async () => {
+    let available = false;
+    const harness = createKnowledgeHarness({
+      docsAvailability: {
+        state: "loaded",
+        documentCount: 1,
+        error: "",
+        status: 0,
+      },
+      request: async () => {
+        if (!available) {
+          const error = new Error("Synthetic document route unavailable");
+          error.status = 503;
+          throw error;
+        }
+        return {
+          path: "content/retry.md",
+          content: "# Retry succeeds",
+          updated: 1,
+        };
+      },
+    });
+
+    await harness.api.openDocument("content/retry.md");
+    assert.equal(harness.docsAvailability().state, "loaded");
+    assert.equal(harness.elements.docState.hidden, false);
+    assert.equal(
+      harness.elements.docState.children[0].dataset.documentState,
+      "unavailable",
+    );
+
+    available = true;
+    await findByText(
+      harness.elements.docState,
+      "Retry document",
+      "button",
+    ).click();
+    assert.equal(harness.docsAvailability().state, "loaded");
+    assert.equal(harness.elements.docState.hidden, true);
+    assert.equal(harness.elements.editor.disabled, false);
+  });
+
   test("renders the Process Docs route with executable quality and reference context", () => {
-    const harness = createKnowledgeHarness();
+    const harness = createKnowledgeHarness({
+      docsAvailability: {
+        state: "loaded",
+        documentCount: 1,
+        error: "",
+        status: 0,
+      },
+    });
     const documents = [
       {
         path: "content/processes/newsletter.md",
@@ -706,7 +816,35 @@ describe("Knowledge surface boundary", () => {
     assert.ok(
       findByText(harness.elements.documentList, "Process catalog", "a"),
     );
-    assert.equal(harness.statuses.at(-1), "Process Docs ready");
+    assert.equal(
+      harness.elements.documentList.querySelector("[data-docs-state]"),
+      null,
+    );
+  });
+
+  test("shows filter-empty guidance without replacing the Process Docs controls", () => {
+    const harness = createKnowledgeHarness({
+      docsAvailability: {
+        state: "loaded",
+        documentCount: 2,
+        error: "",
+        status: 0,
+      },
+      knowledgeState: {
+        documentFilters: { domain: "operations" },
+      },
+    });
+
+    harness.api.renderDocsSurface([]);
+    const state = harness.elements.documentList.querySelector(
+      '[data-docs-state="filter-empty"]',
+    );
+    assert.ok(state);
+    assert.equal(state.getAttribute("role"), "status");
+    assert.match(state.textContent, /catalog contains 2 process documents/);
+    assert.match(state.textContent, /Clear filters/);
+    assert.ok(findByText(harness.elements.documentList, "New process doc", "button"));
+    assert.equal(harness.elements.clearSelectionButton.hidden, true);
   });
 
   test("separates filtered Process Docs empty-state guidance semantically", () => {
@@ -1003,7 +1141,16 @@ describe("Knowledge surface boundary", () => {
       ).length,
       2,
     );
-    assert.equal(harness.statuses.at(-1), "2 search results · 1 source issues.");
+    const sourceState = findAllByClass(
+      harness.elements.documentList,
+      "search-source-state",
+    )[0];
+    assert.equal(sourceState.dataset.searchState, "partial");
+    assert.ok(findByText(harness.elements.documentList, "Retry search", "button"));
+    assert.equal(
+      harness.statuses.includes("2 search results · 1 source issues."),
+      false,
+    );
 
     const taskRow = findAllByClass(
       harness.elements.documentList,
@@ -1047,6 +1194,216 @@ describe("Knowledge surface boundary", () => {
     );
   });
 
+  test("renders query loading, query-empty, and filter-empty search feedback", async () => {
+    const pending = deferred();
+    const query = createKnowledgeHarness({
+      request: async (url) => {
+        if (new URL(url).pathname === "/search") return pending.promise;
+        return {};
+      },
+    });
+    query.elements.searchInput.value = "missing synthetic result";
+
+    const loading = query.api.refreshDocuments();
+    const loadingState = query.elements.documentList.querySelector(
+      '[data-search-state="loading"]',
+    );
+    assert.ok(loadingState);
+    assert.equal(loadingState.getAttribute("role"), "status");
+
+    pending.resolve({
+      results: [],
+      sources: [{ source: "docs", status: "ok", count: 0 }],
+    });
+    await loading;
+    const queryEmpty = query.elements.documentList.querySelector(
+      '[data-search-state="query-empty"]',
+    );
+    assert.ok(queryEmpty);
+    assert.match(queryEmpty.textContent, /No work or process context matches this search/);
+
+    const filtered = createKnowledgeHarness({
+      knowledgeState: { documentFilters: { domain: "operations" } },
+      request: async (url) => {
+        if (new URL(url).pathname === "/search") {
+          const parsed = new URL(url);
+          if (!parsed.searchParams.has("domain")) {
+            return {
+              results: [
+                {
+                  type: "doc",
+                  path: "content/unfiltered-match.md",
+                  title: "Unfiltered synthetic match",
+                  source: "docs",
+                },
+              ],
+              sources: [{ source: "docs", status: "ok", count: 1 }],
+            };
+          }
+          return {
+            results: [],
+            sources: [{ source: "docs", status: "ok", count: 0 }],
+          };
+        }
+        return {};
+      },
+    });
+    filtered.elements.searchInput.value = "synthetic";
+    await filtered.api.refreshDocuments();
+    const filterEmpty = filtered.elements.documentList.querySelector(
+      '[data-search-state="filter-empty"]',
+    );
+    assert.ok(filterEmpty);
+    assert.equal(filterEmpty.getAttribute("role"), "status");
+    assert.match(filterEmpty.textContent, /active metadata filter/);
+
+    const filteredQueryEmpty = createKnowledgeHarness({
+      knowledgeState: { documentFilters: { domain: "operations" } },
+      request: async (url) => {
+        if (new URL(url).pathname === "/search") {
+          return {
+            results: [],
+            sources: [{ source: "docs", status: "ok", count: 0 }],
+          };
+        }
+        return {};
+      },
+    });
+    filteredQueryEmpty.elements.searchInput.value = "not anywhere";
+    await filteredQueryEmpty.api.refreshDocuments();
+    assert.ok(
+      filteredQueryEmpty.elements.documentList.querySelector(
+        '[data-search-state="query-empty"]',
+      ),
+    );
+    assert.equal(
+      filteredQueryEmpty.elements.documentList.querySelector(
+        '[data-search-state="filter-empty"]',
+      ),
+      null,
+    );
+  });
+
+  test("names every unavailable search source and retries the same query and filters", async () => {
+    let available = false;
+    const harness = createKnowledgeHarness({
+      knowledgeState: { documentFilters: { tag: "synthetic" } },
+      request: async (url) => {
+        const parsed = new URL(url);
+        if (!available) {
+          const error = new Error(`${parsed.pathname} unavailable`);
+          error.status = 503;
+          throw error;
+        }
+        if (parsed.pathname === "/search") {
+          return {
+            results: [
+              {
+                type: "doc",
+                path: "content/synthetic/retry.md",
+                title: "Synthetic retry result",
+                context: "Public-safe retry fixture",
+                source: "docs",
+              },
+            ],
+            sources: [{ source: "docs", status: "ok", count: 1 }],
+          };
+        }
+        return {};
+      },
+    });
+    harness.elements.searchInput.value = "retry fixture";
+
+    await harness.api.refreshDocuments();
+    const unavailable = harness.elements.documentList.querySelector(
+      '[data-search-state="unavailable"]',
+    );
+    assert.ok(unavailable);
+    assert.equal(unavailable.querySelectorAll("li").length, 6);
+    for (const source of [
+      "process documents",
+      "tasks",
+      "workflows",
+      "templates",
+      "artifacts",
+      "assistant-jobs",
+    ]) {
+      assert.match(unavailable.textContent, new RegExp(source));
+    }
+
+    available = true;
+    const retry = findByText(
+      harness.elements.documentList,
+      "Retry search",
+      "button",
+    );
+    assert.ok(retry);
+    await retry.click();
+    assert.equal(
+      harness.knowledgeState.visibleDocuments[0].title,
+      "Synthetic retry result",
+    );
+    const searchRequest = harness.requests.find((entry) =>
+      entry.url.includes("/search?q=retry+fixture"),
+    );
+    assert.match(searchRequest.url, /tag=synthetic/);
+    assert.equal(harness.elements.searchInput.value, "retry fixture");
+  });
+
+  test("ignores stale unified-search results after the query changes", async () => {
+    const firstResponse = deferred();
+    const secondResponse = deferred();
+    const pending = new Map([
+      ["first", firstResponse],
+      ["second", secondResponse],
+    ]);
+    const harness = createKnowledgeHarness({
+      request: async (url) => {
+        const parsed = new URL(url);
+        if (parsed.pathname === "/search") {
+          return pending.get(parsed.searchParams.get("q")).promise;
+        }
+        return {};
+      },
+    });
+
+    harness.elements.searchInput.value = "first";
+    const first = harness.api.refreshDocuments();
+    await nextTicks();
+    harness.elements.searchInput.value = "second";
+    const second = harness.api.refreshDocuments();
+    await nextTicks();
+    secondResponse.resolve({
+      results: [
+        {
+          type: "doc",
+          path: "content/second.md",
+          title: "Second query result",
+          source: "docs",
+        },
+      ],
+      sources: [{ source: "docs", status: "ok", count: 1 }],
+    });
+    await second;
+    firstResponse.resolve({
+      results: [
+        {
+          type: "doc",
+          path: "content/first.md",
+          title: "First query result",
+          source: "docs",
+        },
+      ],
+      sources: [{ source: "docs", status: "ok", count: 1 }],
+    });
+    await first;
+
+    assert.equal(
+      harness.knowledgeState.visibleDocuments[0].title,
+      "Second query result",
+    );
+  });
+
   test("normalizes document and folder deep links and rejects stale references", () => {
     const documentRoute = createKnowledgeHarness({
       location: { pathname: "/operations/onboarding.md" },
@@ -1082,6 +1439,83 @@ describe("Knowledge surface boundary", () => {
       state: { folder: "operations" },
       url: "/operations",
     });
+  });
+
+  test("keeps document loading and non-404 failure feedback visible and disables editing", async () => {
+    const pending = deferred();
+    const loading = createKnowledgeHarness({
+      request: async () => pending.promise,
+    });
+    const opening = loading.api.openDocument("content/loading.md");
+    await nextTicks();
+    const loadingState = loading.elements.docState.children[0];
+    assert.equal(loading.elements.docState.hidden, false);
+    assert.equal(loadingState.dataset.documentState, "loading");
+    assert.equal(loading.elements.editor.disabled, true);
+    assert.equal(loading.elements.documentTitle.disabled, true);
+
+    pending.resolve({
+      path: "content/loading.md",
+      content: "# Loaded after wait",
+      updated: 10,
+    });
+    await opening;
+    assert.equal(loading.elements.docState.hidden, true);
+
+    const failed = createKnowledgeHarness({
+      request: async () => {
+        const error = new Error("Document service timed out");
+        error.status = 500;
+        throw error;
+      },
+    });
+    await failed.api.openDocument("content/temporary.md");
+    const errorState = failed.elements.docState.children[0];
+    assert.equal(errorState.dataset.documentState, "error");
+    assert.match(errorState.textContent, /Document service timed out/);
+    assert.ok(findByText(failed.elements.docState, "Retry document", "button"));
+    assert.equal(failed.elements.editor.disabled, true);
+    assert.equal(failed.elements.documentTitle.disabled, true);
+  });
+
+  test("ignores a stale Process Doc response after a newer document opens", async () => {
+    const firstResponse = deferred();
+    const secondResponse = deferred();
+    const pending = new Map([
+      ["content/first.md", firstResponse],
+      ["content/second.md", secondResponse],
+    ]);
+    const harness = createKnowledgeHarness({
+      request: async (url) => {
+        const path = new URL(url).searchParams.get("path");
+        return pending.get(path).promise;
+      },
+    });
+
+    const first = harness.api.openDocument("content/first.md");
+    await nextTicks();
+    const second = harness.api.openDocument("content/second.md");
+    await nextTicks();
+    secondResponse.resolve({
+      path: "content/second.md",
+      content: "# Second document",
+      updated: 2,
+    });
+    await second;
+    firstResponse.resolve({
+      path: "content/first.md",
+      content: "# First document",
+      updated: 1,
+    });
+    await first;
+
+    assert.deepEqual(harness.documentState.currentDoc, {
+      path: "content/second.md",
+      updated: 2,
+    });
+    assert.equal(harness.elements.editor.value, "# Second document");
+    assert.equal(harness.history.at(-1).url, "/second.md");
+    assert.equal(harness.elements.docState.hidden, true);
   });
 
   test("opens canonical Process Docs and exposes recoverable not-found state", async () => {
@@ -1136,12 +1570,22 @@ describe("Knowledge surface boundary", () => {
 
     const missing = createKnowledgeHarness({
       request: async () => {
-        throw new Error("Document not found");
+        const error = new Error("Document not found");
+        error.status = 404;
+        throw error;
       },
     });
     await missing.api.openDocument("content/removed.md");
-    assert.equal(missing.statuses.at(-1), "Document not found");
-    assert.equal(missing.elements.docState.hidden, true);
+    assert.equal(missing.statuses.includes("Document not found"), false);
+    assert.equal(missing.elements.docState.hidden, false);
+    assert.equal(
+      missing.elements.docState.children[0].dataset.documentState,
+      "not-found",
+    );
+    assert.equal(
+      missing.elements.docState.children[0].getAttribute("role"),
+      "alert",
+    );
     assert.equal(missing.documentState.currentDoc, null);
     assert.deepEqual(missing.history, []);
     assert.equal(missing.elements.editor.disabled, true);

@@ -9,6 +9,7 @@ export function createProcessDocsSurface(context, services) {
     getOperationsQualitySnapshot,
     getOperationsRecurringSnapshot,
     getOperationsWorkSnapshot,
+    knowledgeState,
     libraryTitle,
     listDraftPaths,
     qualityFiltersState,
@@ -18,15 +19,14 @@ export function createProcessDocsSurface(context, services) {
     renderQualityFindingRow,
     renderSurfaceHeader,
     setRouteTitle,
-    setStatus,
     showCreate,
     surfaceDescription,
-    surfaceStatusText,
   } = context;
   const { refreshDocuments } = services;
 
   function renderDocsSurface(documents) {
-    const model = buildOperationsHomeModel(documents, {
+    const visibleDocuments = Array.isArray(documents) ? documents : [];
+    const model = buildOperationsHomeModel(visibleDocuments, {
       draftPaths: listDraftPaths(),
       workSnapshot: getOperationsWorkSnapshot(),
       recurringSnapshot: getOperationsRecurringSnapshot(),
@@ -38,8 +38,6 @@ export function createProcessDocsSurface(context, services) {
     libraryTitle.textContent = "Docs";
     setRouteTitle("Docs");
     clearSelectionButton.hidden = true;
-    setStatus(surfaceStatusText("processes", model));
-
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
     const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
@@ -50,7 +48,7 @@ export function createProcessDocsSurface(context, services) {
     createButton.addEventListener("click", () => showCreate());
     header.append(createButton);
     wrap.append(header);
-    wrap.append(renderProcessesSurface(documents, model));
+    wrap.append(renderProcessesSurface(visibleDocuments, model));
     documentList.replaceChildren(wrap);
   }
 
@@ -78,9 +76,7 @@ export function createProcessDocsSurface(context, services) {
 
     // Docs is the surface where an unreachable corpus is most easily mistaken
     // for an empty one, so the availability state sits above Quality Findings.
-    const docsState = renderDocsAvailabilityState(getDocsAvailability(), {
-      includeEmpty: true,
-    });
+    const docsState = renderCatalogState(documents);
     if (docsState) section.append(docsState);
 
     section.append(renderProcessQualityDrilldown(quality));
@@ -91,6 +87,76 @@ export function createProcessDocsSurface(context, services) {
       grid.append(renderOperationsReference(ref));
     section.append(grid);
     return section;
+  }
+
+  function renderCatalogState(documents) {
+    const snapshot = getDocsAvailability() || {};
+    const visibleDocuments = Array.isArray(documents) ? documents : [];
+
+    if (snapshot.state === "unavailable") {
+      return markLiveState(
+        renderDocsAvailabilityState(snapshot),
+        "unavailable",
+      );
+    }
+    if (snapshot.state === "loaded" && Number(snapshot.documentCount || 0) === 0) {
+      return markLiveState(
+        renderDocsAvailabilityState(snapshot, { includeEmpty: true }),
+        "empty",
+      );
+    }
+    if (snapshot.state === "loading") {
+      return renderCatalogNotice(
+        "Loading Process Docs",
+        "Fetching the process-document catalog…",
+        "loading",
+        "Work, Cards, and Tasks remain independent while the catalog loads.",
+      );
+    }
+
+    const activeFilters = Object.values(knowledgeState.documentFilters || {})
+      .filter(Boolean).length;
+    if (
+      snapshot.state === "loaded" &&
+      activeFilters > 0 &&
+      visibleDocuments.length === 0
+    ) {
+      const documentLabel =
+        snapshot.documentCount === 1 ? "process document" : "process documents";
+      const filterLabel =
+        activeFilters === 1 ? "active metadata filter" : "active metadata filters";
+      return renderCatalogNotice(
+        "No Process Docs match these filters",
+        `The catalog contains ${snapshot.documentCount} ${documentLabel}, but none match the ${activeFilters} ${filterLabel}.`,
+        "filter-empty",
+        "Use Search filters and choose Clear filters to restore the full catalog.",
+      );
+    }
+    return null;
+  }
+
+  function renderCatalogNotice(title, body, state, detail) {
+    const node = renderHonestState(title, body);
+    node.classList.add("ops-docs-state");
+    node.dataset.docsState = state;
+    if (detail) {
+      const note = document.createElement("small");
+      note.className = "ops-docs-state-detail";
+      note.textContent = detail;
+      node.append(note);
+    }
+    return markLiveState(node, state);
+  }
+
+  function markLiveState(node, state) {
+    if (!node) return node;
+    node.setAttribute("role", state === "unavailable" ? "alert" : "status");
+    node.setAttribute(
+      "aria-live",
+      state === "unavailable" ? "assertive" : "polite",
+    );
+    node.setAttribute("aria-atomic", "true");
+    return node;
   }
 
   function renderProcessQualityDrilldown(quality) {
@@ -113,19 +179,19 @@ export function createProcessDocsSurface(context, services) {
 
     if (!quality.loaded) {
       wrap.append(
-        renderHonestState(
+        markLiveState(renderHonestState(
           "Process quality report unavailable",
           quality.errors[0] || "Validation could not run.",
-        ),
+        ), "unavailable"),
       );
       return wrap;
     }
     if (!quality.activeWorkLoaded) {
       wrap.append(
-        renderHonestState(
+        markLiveState(renderHonestState(
           "Live work unavailable",
           "Active Task/Card impact cannot be confirmed. Severity below reflects Template and Process Doc risk only.",
-        ),
+        ), "unavailable"),
       );
     }
 
@@ -202,10 +268,10 @@ export function createProcessDocsSurface(context, services) {
     list.className = "ops-quality-list";
     if (filtered.length === 0) {
       list.append(
-        renderHonestState(
+        markLiveState(renderHonestState(
           "No findings match filters",
           "Change filters to inspect other process quality findings.",
-        ),
+        ), "empty"),
       );
     } else {
       for (const finding of filtered.slice(0, 80))

@@ -34,6 +34,7 @@ export function createKnowledgeNavigation(context, services) {
     quickNavResults,
     refreshChangesPanel,
     renderDocsAvailabilityState,
+    renderHonestState,
     request,
     resizeDocumentTitle,
     scheduleAnimationFrame,
@@ -41,7 +42,6 @@ export function createKnowledgeNavigation(context, services) {
     setDocsAvailability,
     setRouteTitle,
     setSaveState,
-    setStatus,
     setView,
     showOperationsHome,
     storage,
@@ -51,6 +51,7 @@ export function createKnowledgeNavigation(context, services) {
     updateViewToggleAvailability,
   } = context;
   const DOCS_UNAVAILABLE_STATUS = 503;
+  let documentRequestId = 0;
   const {
     refreshDocuments,
     scrollPositions,
@@ -79,18 +80,83 @@ export function createKnowledgeNavigation(context, services) {
     docState.hidden = true;
   }
 
-  /**
-   * Render the shared docs outage state inside the editor view.
-   *
-   * The corpus is unreachable, so there is no document to show: say so with
-   * the server's message instead of leaving a blank editor behind.
-   */
-  function showDocumentUnavailable(snapshot) {
-    setDocsAvailability(snapshot);
-    const node = renderDocsAvailabilityState(snapshot);
+  function isCurrentDocumentRequest(requestId) {
+    return requestId === documentRequestId && body?.dataset?.view === "editor";
+  }
+
+  function setDocumentStateNode(node, state) {
     if (!docState || !node) return;
+    node.classList.add("ops-runtime-state");
+    node.dataset.documentState = state;
+    node.setAttribute("role", state === "loading" ? "status" : "alert");
+    node.setAttribute(
+      "aria-live",
+      state === "loading" ? "polite" : "assertive",
+    );
+    node.setAttribute("aria-atomic", "true");
     docState.replaceChildren(node);
     docState.hidden = false;
+  }
+
+  function appendDocumentRetry(node, path) {
+    if (!node) return;
+    const documentRef = docState?.ownerDocument || globalThis.document;
+    if (!documentRef?.createElement) return;
+    const retry = documentRef.createElement("button");
+    retry.type = "button";
+    retry.className = "surface-summary-retry";
+    retry.textContent = "Retry document";
+    retry.setAttribute("aria-label", `Retry loading ${path}`);
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.setAttribute("aria-busy", "true");
+      retry.textContent = "Retrying…";
+      try {
+        await openDocument(path, {
+          updateUrl: false,
+          returnContext: knowledgeState.docReturnContext,
+        });
+      } finally {
+        if (retry.isConnected) {
+          retry.disabled = false;
+          retry.removeAttribute("aria-busy");
+          retry.textContent = "Retry document";
+        }
+      }
+    });
+    node.append(retry);
+  }
+
+  function showDocumentLoading(path) {
+    const node = renderHonestState(
+      "Loading Process Doc",
+      `Fetching ${path}…`,
+    );
+    setDocumentStateNode(node, "loading");
+  }
+
+  function showDocumentUnavailable(snapshot, path) {
+    const node = renderDocsAvailabilityState(snapshot);
+    appendDocumentRetry(node, path);
+    setDocumentStateNode(node, "unavailable");
+  }
+
+  function showDocumentNotFound(path, error) {
+    const node = renderHonestState(
+      "Process Doc not found",
+      error?.message || `No Process Doc exists at ${path}.`,
+    );
+    appendDocumentRetry(node, path);
+    setDocumentStateNode(node, "not-found");
+  }
+
+  function showDocumentError(path, error) {
+    const node = renderHonestState(
+      "Could not load Process Doc",
+      error?.message || `The document at ${path} could not be loaded.`,
+    );
+    appendDocumentRetry(node, path);
+    setDocumentStateNode(node, "error");
   }
 
   /**
@@ -112,8 +178,18 @@ export function createKnowledgeNavigation(context, services) {
   async function openDocument(path, options = {}) {
     if (!(await canLeaveCurrentDocument())) return;
     beginDocumentNavigation();
+    const requestId = ++documentRequestId;
     captureScrollPosition();
     clearDocumentStateNotice();
+    documentState.currentDoc = null;
+    documentState.currentParsed = null;
+    documentState.currentWarnings = [];
+    documentState.lastSavedContent = "";
+    documentState.hasDraft = false;
+    documentTitle.value = "";
+    editor.value = "";
+    docMenuButton.hidden = true;
+    refreshChangesPanel();
     knowledgeState.docReturnContext = options.returnContext || null;
     renderDocReturnContext();
 
@@ -123,11 +199,14 @@ export function createKnowledgeNavigation(context, services) {
     setView("editor");
     setRouteTitle(basename(path));
     documentPath.textContent = path;
+    showDocumentLoading(path);
 
     try {
       const url = apiUrl("/docs");
       url.searchParams.set("path", path);
       const payload = await request(url);
+      if (!isCurrentDocumentRequest(requestId)) return;
+      clearDocumentStateNotice();
 
       documentState.currentDoc = { path: payload.path, updated: payload.updated };
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
@@ -162,21 +241,22 @@ export function createKnowledgeNavigation(context, services) {
       if (scrollEl) {
         // Defer to next frame so layout has settled.
         scheduleAnimationFrame(() => {
+          if (!isCurrentDocumentRequest(requestId)) return;
           scrollEl.scrollTop = restoreTop;
         });
       }
     } catch (error) {
-      // An unreachable corpus is reported through the shared availability
-      // state instead of the permanently hidden status line. Other failures,
-      // such as one missing document, keep their existing behavior.
+      if (!isCurrentDocumentRequest(requestId)) return;
       const outage = docsOutageSnapshotFor(error);
       if (outage) {
-        showDocumentUnavailable(outage);
+        showDocumentUnavailable(outage, path);
+      } else if (Number(error?.status) === 404) {
+        showDocumentNotFound(path, error);
       } else {
-        setStatus(error.message);
+        showDocumentError(path, error);
       }
-      documentTitle.disabled = !documentState.currentDoc;
-      editor.disabled = !documentState.currentDoc;
+      documentTitle.disabled = true;
+      editor.disabled = true;
       updateSaveState();
     }
   }
