@@ -16,15 +16,15 @@ export function createKnowledgeCatalog(context, services) {
     refreshOperationsWorkSnapshot,
     request,
     setDocsAvailability,
-    setStatus,
   } = context;
   const {
     populateFilterOptions,
     refreshDocuments,
   } = services;
+  let catalogRequestId = 0;
 
   async function loadDocuments() {
-    setStatus("Loading documents...");
+    const requestId = ++catalogRequestId;
     setDocsAvailability(emptyOperationsDocsSnapshot());
 
     // Work APIs are independent of the Git-backed docs API. Start their
@@ -38,12 +38,16 @@ export function createKnowledgeCatalog(context, services) {
 
     try {
       const payload = await request(apiUrl("/docs"));
-      knowledgeState.allDocuments = payload.documents || [];
+      if (requestId !== catalogRequestId) return;
+      knowledgeState.allDocuments = Array.isArray(payload?.documents)
+        ? payload.documents
+        : [];
       setDocsAvailability(loadedOperationsDocsSnapshot(knowledgeState.allDocuments));
       rebuildDocumentIdMap();
       populateFilterOptions();
       refreshDocuments();
     } catch (error) {
+      if (requestId !== catalogRequestId) return;
       // The bootstrap catalog request is the single source of docs
       // availability. Record the outage with the server's own message and
       // repaint, so the surface the operator is already looking at stops
