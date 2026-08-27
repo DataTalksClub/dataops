@@ -1,7 +1,8 @@
+import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
+
 export function createProcedureRenderer(context, services, editorState) {
   const {
-    apiUrl, documentState, editor, renderedView, reportError, request,
-    setStatus, showUndoToast,
+    apiUrl, documentState, editor, renderedView, request, showUndoToast,
   } = context;
   const {
     addGroup, addProse, addStep, applyProcedureRewrite,
@@ -13,6 +14,7 @@ export function createProcedureRenderer(context, services, editorState) {
     renderScreenshot, renumberProcedure, restoreProcedure,
     snapshotProcedure, storeDraft, toggleStepAttrEditor, updateSaveState,
   } = services;
+  const showFeedback = editorFeedbackFor(context);
 
   function appendProcedureChildren(container, procedure) {
     container.append(renderTodoBlock(procedure));
@@ -200,7 +202,9 @@ export function createProcedureRenderer(context, services, editorState) {
     group.title = newTitle;
     const updated = patchGroupTitleInMarkdown(editor.value, oldTitle, newTitle);
     if (updated == null) {
-      setStatus(`Could not locate group "${oldTitle}"; edit not saved.`);
+      showFeedback(`Could not locate group "${oldTitle}"; edit not saved.`, {
+        kind: "error",
+      });
       return;
     }
     editor.value = updated;
@@ -401,29 +405,40 @@ export function createProcedureRenderer(context, services, editorState) {
 
   async function addScreenshot(step, procedure, file) {
     if (!documentState.currentDoc) return;
-    setStatus("Uploading image…");
+    const path = documentState.currentDoc.path;
+    const isFresh = editorMutationGuard(context);
+    const isCurrentDocument = () =>
+      isFresh() && documentState.currentDoc?.path === path;
+    showFeedback("Uploading image…", { kind: "pending" });
     const addBtn = renderedView.querySelector(
       `.block-step[data-step-id="${step.id}"] .block-add-screenshot`,
     );
+    const input = addBtn?.querySelector?.("input");
     addBtn?.classList.add("is-busy");
+    if (input) input.disabled = true;
     try {
       const data = await fileToBase64(file);
+      if (!isCurrentDocument()) return;
       const payload = await request(apiUrl("/images"), {
         method: "POST",
         body: JSON.stringify({
-          doc_path: documentState.currentDoc.path,
+          doc_path: path,
           filename: file.name,
           data,
         }),
       });
+      if (!isCurrentDocument()) return;
       step.screenshots = step.screenshots || [];
       step.screenshots.push({ src: payload.absolute_path, alt: "", caption: "" });
       applyProcedureRewrite(procedure, null);
-      setStatus(`Uploaded ${payload.absolute_path}`);
+      showFeedback(`Uploaded ${payload.absolute_path}`);
     } catch (err) {
-      reportError(`Upload failed: ${err.message}`);
+      if (!isCurrentDocument()) return;
+      showFeedback(`Upload failed: ${err.message}`, { kind: "error" });
     } finally {
+      if (!isCurrentDocument()) return;
       addBtn?.classList.remove("is-busy");
+      if (input) input.disabled = false;
     }
   }
 

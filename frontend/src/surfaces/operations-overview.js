@@ -272,26 +272,6 @@ export function createOperationsOverview(context) {
     return countLabel(count, singular, category);
   }
 
-  function surfaceStatusText(view, model) {
-    if (view === "assistants") {
-      return state.assistantSnapshot.loaded
-        ? `${countLabel(state.assistantSnapshot.jobs.length, "assistant job")}.`
-        : "Assistant jobs not connected.";
-    }
-    if (view === "artifacts") {
-      return state.artifactSnapshot.loaded
-        ? `${countLabel(state.artifactSnapshot.artifacts.length, "artifact")} indexed.`
-        : "Artifact index not connected.";
-    }
-    if (view === "processes") {
-      return state.qualitySnapshot.loaded
-        ? `${countLabel(state.qualitySnapshot.findings.length, "process quality finding")}.`
-        : "Process quality report unavailable.";
-    }
-    if (view === "search") return "Unified operator search.";
-    return "Card and task workspace.";
-  }
-
   function renderSurfaceHeader(titleText, descriptionText) {
     const header = document.createElement("section");
     header.className = "ops-surface-header";
@@ -754,6 +734,5 @@ export function createOperationsOverview(context) {
     renderQualityFindingRow,
     renderSurfaceHeader,
     surfaceDescription,
-    surfaceStatusText,
   };
 }

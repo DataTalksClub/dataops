@@ -1,3 +1,9 @@
+import {
+  editorFeedbackFor,
+  editorMutationGuard,
+  feedbackKindForError,
+} from "./feedback.js";
+
 export function createEditorChanges(context, services) {
   const {
     apiUrl, basename, changesCount, changesDiscardAll, changesList,
@@ -5,15 +11,32 @@ export function createEditorChanges(context, services) {
     changesStatus, documentPath, documentState, documentTitle, editor,
     editorView,
     labelForPath, loadDocuments, openDocument, promptUser,
-    refreshGitStatus: refreshGitStatusContext, reportError, request,
-    setRouteTitle, setStatus, showLibrary, storage,
+    refreshGitStatus: refreshGitStatusContext, request,
+    setRouteTitle, showLibrary, storage,
   } = context;
   const {
     draftKey, listDraftPaths, refreshGitStatus, refreshParsedFromApi, renderParsedDocument,
     showDiffForDraft, titleFromMarkdown, updateSaveState,
   } = services;
+  const showFeedback = editorFeedbackFor(context);
 
   let hideEmptyChangesTimer;
+  let documentMutationPending = "";
+
+  function beginDocumentMutation(name) {
+    if (documentMutationPending) return false;
+    documentMutationPending = name;
+    docMenuButton.disabled = true;
+    docMenuButton.setAttribute("aria-busy", "true");
+    return true;
+  }
+
+  function endDocumentMutation(name) {
+    if (documentMutationPending !== name) return;
+    documentMutationPending = "";
+    docMenuButton.disabled = false;
+    docMenuButton.removeAttribute("aria-busy");
+  }
 
   function clearHideEmptyChangesTimer() {
     if (hideEmptyChangesTimer) {
@@ -26,6 +49,14 @@ export function createEditorChanges(context, services) {
     changesStatus.textContent = message;
     changesStatus.hidden = !message;
     changesStatus.classList.toggle("is-error", isError);
+    changesStatus.dataset.feedbackState = message
+      ? isError
+        ? "error"
+        : "success"
+      : "idle";
+    changesStatus.setAttribute("role", isError ? "alert" : "status");
+    changesStatus.setAttribute("aria-live", isError ? "assertive" : "polite");
+    changesStatus.setAttribute("aria-atomic", "true");
   }
 
   function scheduleEmptyChangesDismissal() {
@@ -129,6 +160,7 @@ export function createEditorChanges(context, services) {
     changesSaveAll.disabled = true;
     changesSaveAll.classList.add("is-busy");
     changesDiscardAll.disabled = true;
+    showChangesStatus("Saving drafts…");
     let failed = 0;
     let savedCount = 0;
     for (const path of paths) {
@@ -197,21 +229,23 @@ export function createEditorChanges(context, services) {
   }
 
   async function renameCurrentDoc() {
-    if (!documentState.currentDoc) return;
+    if (!documentState.currentDoc || !beginDocumentMutation("rename")) return;
     const oldPath = documentState.currentDoc.path;
-    let newPath = promptUser("New path:", oldPath);
-    if (!newPath) return;
-    newPath = newPath.trim();
-    if (newPath === oldPath) return;
-    if (!newPath.startsWith("content/")) {
-      setStatus("Path must start with content/");
-      return;
-    }
+    const isFresh = editorMutationGuard(context);
     try {
+      let newPath = promptUser("New path:", oldPath);
+      if (!newPath) return;
+      newPath = newPath.trim();
+      if (newPath === oldPath) return;
+      if (!newPath.startsWith("content/")) {
+        showFeedback("Path must start with content/", { kind: "validation" });
+        return;
+      }
       const payload = await request(apiUrl("/docs/rename"), {
         method: "POST",
         body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
       });
+      if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
       // Move any local draft over to the new key.
       const draft = storage.getItem(draftKey(oldPath));
       if (draft !== null) {
@@ -221,27 +255,35 @@ export function createEditorChanges(context, services) {
       documentState.currentDoc.path = payload.new_path;
       documentPath.textContent = payload.new_path;
       setRouteTitle(documentTitle.value);
-      setStatus(`Renamed to ${payload.new_path}.`);
       refreshChangesPanel();
       refreshGitStatus();
       await loadDocuments();
+      if (!isFresh() || documentState.currentDoc?.path !== payload.new_path) return;
+      showFeedback(`Renamed to ${payload.new_path}.`);
     } catch (err) {
-      reportError(`Rename failed: ${err.message}`);
+      if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
+      showFeedback(`Rename failed: ${err.message}`, {
+        kind: feedbackKindForError(err),
+      });
+    } finally {
+      endDocumentMutation("rename");
     }
   }
 
   async function deleteCurrentDoc() {
-    if (!documentState.currentDoc) return;
-    const ok = await confirmDialog(
-      `Delete ${documentState.currentDoc.path}? You can recover it from git if needed.`,
-      { okText: "Delete", danger: true },
-    );
-    if (!ok) return;
+    if (!documentState.currentDoc || !beginDocumentMutation("delete")) return;
     const path = documentState.currentDoc.path;
+    const isFresh = editorMutationGuard(context);
     try {
+      const ok = await confirmDialog(
+        `Delete ${path}? You can recover it from git if needed.`,
+        { okText: "Delete", danger: true },
+      );
+      if (!ok || !isFresh() || documentState.currentDoc?.path !== path) return;
       await request(`${apiUrl("/docs")}?path=${encodeURIComponent(path)}`, {
         method: "DELETE",
       });
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
       storage.removeItem(draftKey(path));
       documentState.currentDoc = null;
       documentState.currentParsed = null;
@@ -252,13 +294,20 @@ export function createEditorChanges(context, services) {
       documentTitle.disabled = true;
       editor.value = "";
       editor.disabled = true;
-      setStatus(`Deleted ${path}.`);
       refreshChangesPanel();
       refreshGitStatus();
       await loadDocuments();
+      if (!isFresh()) return;
       showLibrary();
+      refreshChangesPanel({ keepVisibleAfterAction: true });
+      showChangesStatus(`Deleted ${path}.`);
     } catch (err) {
-      reportError(`Delete failed: ${err.message}`);
+      if (!isFresh() || documentState.currentDoc?.path !== path) return;
+      showFeedback(`Delete failed: ${err.message}`, {
+        kind: feedbackKindForError(err),
+      });
+    } finally {
+      endDocumentMutation("delete");
     }
   }
 

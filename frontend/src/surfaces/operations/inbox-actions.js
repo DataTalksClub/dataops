@@ -6,7 +6,6 @@ import {
 export function createInboxActions(context) {
   const {
     assistantJobsFromPayload,
-    clearSelectionButton,
     cssEscape,
     dedupeArtifacts,
     defaultNextFollowUpDate,
@@ -18,7 +17,6 @@ export function createInboxActions(context) {
     isOperationsHomeVisible,
     isMobileShell,
     isWorkspaceRouteFresh,
-    libraryTitle,
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,

@@ -5,10 +5,8 @@ import {
 
 export function createDeviceAuthSurface(context) {
   const {
-    clearSelectionButton,
     documentList,
     getActiveWorkspaceRoute,
-    libraryTitle,
     renderSurfaceHeader,
     request,
     setRouteTitle,
@@ -39,9 +37,7 @@ export function createDeviceAuthSurface(context) {
     primeFromRoute();
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    libraryTitle.textContent = "Authorize device";
     setRouteTitle("Authorize device");
-    clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-device";

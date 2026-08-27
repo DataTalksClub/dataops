@@ -1,11 +1,14 @@
+import { editorFeedbackFor } from "./feedback.js";
+
 export function createStructuredEditor(context, services, editorState) {
   const {
-    documentState, editor, renderedView, setStatus, showUndoToast,
+    documentState, editor, renderedView, showUndoToast,
   } = context;
   const {
     addScreenshot, applyProcedureRewrite, renderStepBlock, renumberProcedure,
     storeDraft, updateSaveState,
   } = services;
+  const showFeedback = editorFeedbackFor(context);
   const STEP_ACTIONS = [
     "navigate", "click", "type", "upload", "download", "copy",
     "paste", "submit", "verify", "wait", "other",
@@ -134,8 +137,9 @@ export function createStructuredEditor(context, services, editorState) {
       step.rendered_number ?? step.id,
     );
     if (updated == null) {
-      setStatus(
+      showFeedback(
         `Could not locate step ${step.id} in raw markdown; edit not saved.`,
+        { kind: "error" },
       );
       return;
     }

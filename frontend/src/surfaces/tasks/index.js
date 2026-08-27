@@ -11,7 +11,6 @@ export function createTasksSurface(context) {
     allWorkTasks,
     buildOperationsHomeModel,
     cardsHeaderViewModel,
-    clearSelectionButton,
     compareIsoDate,
     confirmDialog,
     countLabel,
@@ -35,7 +34,6 @@ export function createTasksSurface(context) {
     isTaskOverdue,
     isWaitingOrFollowUpTask,
     isWorkspaceRouteFresh,
-    libraryTitle,
     listDraftPaths,
     navigateCanonicalWorkspace,
     openDocument,
@@ -114,9 +112,7 @@ export function createTasksSurface(context) {
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
     const title = tasksSectionTitle(activeSection);
-    libraryTitle.textContent = title;
     setRouteTitle(title);
-    clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");
     wrap.className = `operations-home ops-surface ops-surface-${activeSection}`;

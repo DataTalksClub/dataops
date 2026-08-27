@@ -560,8 +560,10 @@ Canonical primitives: `do-banner`, `do-toast`, `do-dialog`, `do-drawer`,
 
 Usage rules:
 
-- Use banners for persistent page-level errors or warnings.
-- Use toasts for short-lived success/error/undo feedback.
+- Keep mutation success, validation, warning, and failure feedback in the
+  owning surface's live region so it stays next to the work being performed.
+- Reserve the shell toast for short-lived reversible actions such as Undo; do
+  not add a global mutation-feedback channel.
 - Dialogs require `role="dialog"`, `aria-modal="true"`, initial focus, Escape
   close, return focus, and scroll lock where content behind remains visible.
 - Drawers are modal on mobile. Side panels may be non-modal on wide desktop if
@@ -573,7 +575,7 @@ Current mapping:
 
 - Portal: `#confirm-modal`, `#diff-modal`, `#lint-modal`,
   `#git-commit-modal`, `.quick-form-overlay`, `.quick-nav-panel`,
-  `.undo-toast`, `.error-toast`, `.task-panel`, `.work-bell-panel`,
+  `.undo-toast`, `.editor-inline-status`, `.changes-status`, `.task-panel`, `.work-bell-panel`,
   `.doc-menu-popover`, `.custom-select-menu`.
 - Work-engine: notification dropdown, notification page, error banners,
   `confirm()` for deletion, empty state actions.
@@ -611,7 +613,7 @@ Current mapping:
 | Surface | Current source | Shared components |
 | --- | --- | --- |
 | Workspace sidebar and drawer | `frontend/index.html`, `.sidebar`, `.mobile-topbar` | `do-shell`, `do-sidebar`, `do-drawer`, `do-nav-row`. |
-| Library | `#library-view`, `.library-heading`, `.document-list` | `do-page-header`, `do-doc-row`, `do-empty-state`, `do-filter-group`. |
+| Library | `#library-view`, `.document-list-header`, `.document-list` | `do-page-header`, `do-doc-row`, `do-empty-state`, `do-filter-group`. |
 | Editor | `#editor-view`, `.document-title`, `.markdown-editor`, `.rendered-view` | `do-editor-canvas`, `do-process-block`, `do-save-state`. |
 | Create flow | `#create-view`, `.create-form`, `.scaffold-fieldset` | `do-field-group`, `do-radio-group`, `do-save-bar`. |
 | Operations Home | `renderOperationsHome`, `.operations-home`, `.ops-lane` | `do-ops-dashboard`, `do-task-row`, `do-workflow-card`, `do-reminder-chip`. |

@@ -336,14 +336,6 @@ describe("app shell coordinator characterization", () => {
       functionSource("showUndoToast", feedbackSource),
       /setTimeoutImpl\(hideUndoToast, 8000\)/,
     );
-    assert.match(
-      functionSource("showErrorToast", feedbackSource),
-      /}, 10000\)/,
-    );
-    assertInOrder(functionSource("reportError", feedbackSource), [
-      "setStatus(message)",
-      "showErrorToast(message)",
-    ]);
   });
 
   test("restores shell settings before bootstrap and does not gate hash routes on documents", () => {

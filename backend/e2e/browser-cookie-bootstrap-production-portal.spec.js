@@ -50,7 +50,7 @@ test.describe('production portal browser-cookie bootstrap', () => {
     expect(requestHeaders.authorization).toBeUndefined();
     expect(requestHeaders.cookie).toContain('dataops_session=');
     await expect(page).toHaveURL(`${server.baseURL}/#/`);
-    await expect(page.locator('#library-title')).toHaveText('Home');
+    await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
     const quickActions = page.locator('.home-quick-actions[aria-label="Quick actions"]');
     const creationActions = quickActions.getByRole('button');
     await expect(creationActions).toHaveCount(2);

@@ -49,9 +49,6 @@ const SELECTORS = Object.freeze({
   pageShell: ".page-shell",
   documentRowTemplate: "#document-row-template",
   mobileTitle: "#mobile-title",
-  statusText: "#status-text",
-  libraryTitle: "#library-title",
-  clearSelectionButton: "#clear-selection-button",
   editorInlineStatus: "#editor-inline-status",
   editorSaveState: "#editor-save-state",
   editorDiscardButton: "#editor-discard-button",
@@ -174,7 +171,6 @@ export function bindAppDomEvents(context) {
     "dataops:navigate-workspace",
     handlers.navigateWorkspaceEvent,
   );
-  dom.clearSelectionButton.addEventListener("click", handlers.clearSelection);
   dom.editorSaveButton.addEventListener("click", handlers.saveCurrentDocument);
   dom.editorDiscardButton.addEventListener("click", handlers.discardDraft);
   dom.viewToggleButton.addEventListener("click", handlers.toggleViewMode);

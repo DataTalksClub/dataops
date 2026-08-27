@@ -5,7 +5,6 @@ import { createIntakeCaptureSurface } from "./inbox-capture.js";
 export function createInboxSurface(context) {
   const {
     assistantJobsFromPayload,
-    clearSelectionButton,
     cssEscape,
     dedupeArtifacts,
     defaultNextFollowUpDate,
@@ -17,7 +16,6 @@ export function createInboxSurface(context) {
     isOperationsHomeVisible,
     isMobileShell,
     isWorkspaceRouteFresh,
-    libraryTitle,
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,
@@ -25,6 +23,7 @@ export function createInboxSurface(context) {
     refreshDocuments,
     renderEntityLoadState,
     renderHonestState,
+    renderSurfaceHeader,
     request,
     scheduleAnimationFrame,
     setRouteTitle,
@@ -447,12 +446,16 @@ export function createInboxSurface(context) {
     }
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    libraryTitle.textContent = "Inbox";
     setRouteTitle("Inbox");
-    clearSelectionButton.hidden = true;
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-inbox";
+    wrap.append(
+      renderSurfaceHeader(
+        "Inbox",
+        "Capture raw operational inputs, then triage them into executable work.",
+      ),
+    );
     const intro = document.createElement("p");
     intro.className = "ops-surface-intro";
     intro.textContent =

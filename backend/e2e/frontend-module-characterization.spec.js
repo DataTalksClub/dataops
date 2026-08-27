@@ -33,6 +33,21 @@ const FIXTURE_DOC = [
 let server;
 let baseURL;
 
+const VISIBLE_ROUTE_HEADINGS = {
+  Home: "Today",
+  "Tasks - Cards": "Cards",
+  Newsletter: "Newsletter planner",
+  Calendar: "Operations calendar",
+  "Mailing exports": "Mailing-list exports",
+};
+
+async function expectVisibleRouteHeading(page, routeTitle) {
+  const heading = VISIBLE_ROUTE_HEADINGS[routeTitle] || routeTitle;
+  await expect(
+    page.getByRole("heading", { name: heading, exact: true }).first(),
+  ).toBeVisible();
+}
+
 function observeErrors(page) {
   const errors = [];
   page.on("pageerror", (error) =>
@@ -219,7 +234,7 @@ test.describe("pre-refactor frontend module characterization", () => {
     for (const [route, title, marker] of routes) {
       await page.goto(`${baseURL}/#${route}`);
       await expect(page).toHaveURL(`${baseURL}/#${route}`);
-      await expect(page.locator("#library-title")).toHaveText(title);
+      await expectVisibleRouteHeading(page, title);
       await expect(page.locator(marker)).toBeVisible();
       if (route === "/processes") {
         // The docs surface must list the spec's own corpus. Without this the

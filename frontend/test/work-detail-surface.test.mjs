@@ -191,7 +191,6 @@ function createHarness(options = {}) {
       return marker;
     },
     renderTasksSurface() {},
-    reportError: (message) => errors.push(message),
     request,
     scheduleAnimationFrame:
       options.scheduleAnimationFrame || ((callback) => setTimeout(callback, 0)),

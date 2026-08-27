@@ -115,13 +115,6 @@
         </header>
 
         <section id="library-view" class="view library-view">
-          <div class="library-heading" hidden>
-            <div>
-              <p id="status-text" class="status-text">Loading documents...</p>
-              <h2 id="library-title">Documents</h2>
-            </div>
-            <button id="clear-selection-button" class="quiet-button" type="button" hidden>All docs</button>
-          </div>
           <div id="document-list" class="document-list" aria-label="Documents"></div>
           <section id="task-panel" class="task-modal diff-modal" aria-label="Task actions" hidden>
             <div class="task-modal-backdrop diff-backdrop" id="task-modal-backdrop"></div>
@@ -312,11 +305,6 @@
           <button id="confirm-ok" class="primary-button" type="button">Confirm</button>
         </div>
       </div>
-    </div>
-
-    <div id="error-toast" class="undo-toast error-toast" hidden>
-      <span id="error-toast-text"></span>
-      <button id="error-toast-close" class="quiet-button" type="button">Dismiss</button>
     </div>
 
     <div id="undo-toast" class="undo-toast" hidden>

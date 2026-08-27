@@ -141,7 +141,7 @@ async function portalPage(browser, server = servers.admin) {
   const context = await portalContext(browser, server);
   const page = await context.newPage();
   await page.goto('/#/');
-  await expect(page.locator('#library-title')).toHaveText('Home');
+  await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
   return { context, page };
 }
 
@@ -1104,7 +1104,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     expect(backlinks.status()).toBe(200);
 
     await page.goto('/#/processes');
-    await expect(page.locator('#library-title')).toHaveText('Docs');
+    await expect(page.getByRole('heading', { name: 'Docs', exact: true }).first()).toBeVisible();
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
 
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -1186,7 +1186,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await page.getByRole('button', { name: 'Process Docs', exact: true }).click();
     await expect(page).toHaveURL(/\/#\/processes$/);
     await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
-    await expect(page.locator('#library-title')).toHaveText('Docs');
+    await expect(page.getByRole('heading', { name: 'Docs', exact: true }).first()).toBeVisible();
     const createProcess = page.locator('.ops-docs-create');
     await expect(createProcess).toBeVisible();
     await createProcess.click();
@@ -1202,7 +1202,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     const createForm = page.locator('#new-doc-form');
     await createForm.getByLabel('Path').fill('');
     await createForm.getByRole('button', { name: 'Create and edit' }).click();
-    await expect(page.locator('#status-text')).toContainText('Path is required');
+    await expect(page.locator('#new-doc-form .create-status')).toContainText('Path is required');
     await createForm.getByLabel('Path').fill(createdPath);
     await createForm.getByLabel('Title', { exact: true }).fill(createdTitle);
     await createForm.getByLabel('Summary').fill('Synthetic browser-created process document.');
@@ -1222,7 +1222,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     });
     await page.keyboard.press('Control+s');
     expect((await failedSave).status()).toBe(503);
-    await expect(page.locator('#status-text')).toContainText('Synthetic route failure (503)');
+    await expect(page.locator('#editor-inline-status')).toContainText('Synthetic route failure (503)');
     await expect(page.locator('#document-title')).toHaveValue(updatedTitle);
     await clearFaults(context.request);
     const successfulSave = page.waitForResponse((response) => {
@@ -1555,7 +1555,7 @@ test.describe('issue 159 retained canonical capability behavior', () => {
     await clearFaults(context.request);
     await page.reload();
     await expect(page.getByText('Artifact review index not connected')).toHaveCount(0);
-    await expect(page.locator('#library-title')).toHaveText('Tasks - Artifacts');
+    await expect(page.getByRole('heading', { name: 'Tasks - Artifacts', exact: true }).first()).toBeVisible();
     await context.close();
     recordCapabilityEvidence(testInfo, [{
       route: '/#/notifications',

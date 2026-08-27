@@ -120,7 +120,7 @@ const test = baseTest.extend({
       page = await context.newPage();
       installServerExitDiagnostics(context, server, testInfo);
       await page.goto('/#/');
-      await expect(page.locator('#library-title')).toHaveText('Home');
+      await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
       await use({ context, page, server });
     } finally {
       if (context && !context.isClosed()) {

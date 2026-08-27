@@ -1222,10 +1222,6 @@ body[data-view="create"] .editor-view {
   padding: 32px;
 }
 
-.library-heading {
-  display: none;
-}
-
 .document-list {
   max-width: 760px;
   margin: 0 auto;
@@ -2339,8 +2335,7 @@ body[data-workspace-view="home"] #git-section {
   padding-top: 14px;
 }
 
-.undo-toast,
-.error-toast {
+.undo-toast {
   position: fixed;
   right: 16px;
   bottom: 16px;
@@ -2354,10 +2349,6 @@ body[data-workspace-view="home"] #git-section {
   background: var(--surface-bg);
   box-shadow: var(--shadow-overlay);
   padding: 10px 12px;
-}
-
-.error-toast {
-  border-color: var(--danger-text);
 }
 
 /* Bookkeeping and Sponsors: job-first operational surfaces. */

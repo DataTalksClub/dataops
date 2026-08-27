@@ -9,7 +9,6 @@ import { createAssistantCreateSurface } from "./assistants-create.js";
 export function createAssistantsSurface(context) {
   const {
     assistantJobsFromPayload,
-    clearSelectionButton,
     cssEscape,
     dedupeArtifacts,
     defaultNextFollowUpDate,
@@ -21,7 +20,6 @@ export function createAssistantsSurface(context) {
     isOperationsHomeVisible,
     isMobileShell,
     isWorkspaceRouteFresh,
-    libraryTitle,
     navigateCanonicalWorkspace,
     openCardPanel,
     openTaskPanel,

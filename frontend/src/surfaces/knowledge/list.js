@@ -1,29 +1,25 @@
 export function createKnowledgeList(context, services) {
   const {
     basename,
-    clearSelectionButton,
     documentList,
     documentRowTemplate,
     knowledgeState,
-    libraryTitle,
     searchInput,
   } = context;
-  const { openDocument, setHighlightedText } = services;
+  const { clearSelection, openDocument, setHighlightedText } = services;
 
   const LIST_LIMIT = 120;
 
   function renderDocuments(documents, folder) {
     documentList.classList.remove("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    setLibraryHeadingVisibility(true);
-    libraryTitle.textContent = folder;
-    clearSelectionButton.hidden = false;
+    const content = [renderFolderHeader(folder)];
 
     if (documents.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
       empty.textContent = "No documents in this folder yet.";
-      documentList.replaceChildren(empty);
+      documentList.replaceChildren(...content, empty);
       return;
     }
 
@@ -34,14 +30,31 @@ export function createKnowledgeList(context, services) {
       more.textContent = `Showing ${LIST_LIMIT} of ${documents.length}. Refine your search to see more.`;
       rows.push(more);
     }
-    documentList.replaceChildren(...rows);
+    documentList.replaceChildren(...content, ...rows);
   }
 
-  function setLibraryHeadingVisibility(visible) {
-    const heading = libraryTitle.parentElement?.parentElement;
-    if (!heading) return;
-    heading.hidden = !visible;
-    heading.classList.toggle("is-visible", visible);
+  function renderFolderHeader(folder) {
+    const header = document.createElement("header");
+    header.className = "section-header document-list-header";
+    header.setAttribute("aria-label", "Document folder");
+
+    const headingGroup = document.createElement("div");
+    const scope = document.createElement("p");
+    scope.className = "section-kicker";
+    scope.textContent = "Folder";
+    const heading = document.createElement("h3");
+    heading.textContent = folder;
+    headingGroup.append(scope, heading);
+
+    const allDocs = document.createElement("button");
+    allDocs.type = "button";
+    allDocs.className = "quiet-button";
+    allDocs.textContent = "All docs";
+    allDocs.setAttribute("aria-label", "Show all docs");
+    allDocs.addEventListener("click", () => clearSelection());
+
+    header.append(headingGroup, allDocs);
+    return header;
   }
 
   function renderDocumentRow(doc) {

@@ -1,5 +1,6 @@
 import { createEditorChanges } from "./changes.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import { writeEditorFeedback } from "./feedback.js";
 import { createEditorGit } from "./git.js";
 import { createEditorLifecycle } from "./lifecycle.js";
 import { createEditorMarkdown } from "./markdown.js";
@@ -12,10 +13,8 @@ export function createDocumentEditor(context) {
   const api = {};
   const editorContext = {
     ...context,
-    setStatus: (message) => {
-      context.setStatus(message);
-      writeEditorInlineStatus(context.editorInlineStatus, message);
-    },
+    showEditorFeedback: (message, options) =>
+      writeEditorFeedback(context.editorInlineStatus, message, options),
   };
   const editorState = {
     githubBase: "",
@@ -137,23 +136,4 @@ export function createDocumentEditor(context) {
     updateSaveState: api.updateSaveState,
     updateViewToggleAvailability: api.updateViewToggleAvailability,
   };
-}
-
-/**
- * Write the editor-owned inline status.
- *
- * The editor owns `#editor-inline-status` in the markup; nothing relocates
- * shell nodes at runtime.
- */
-function writeEditorInlineStatus(status, message) {
-  if (!status) return;
-  const text = String(message || "").trim();
-  status.textContent = text;
-  status.hidden = !text;
-  status.classList.toggle(
-    "is-error",
-    /(?:failed|error|unavailable|required|denied|conflict|could not|cannot|not found)/i.test(
-      text,
-    ),
-  );
 }

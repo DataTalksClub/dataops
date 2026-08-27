@@ -436,10 +436,6 @@ describe("app shared operations domain characterization", () => {
     assert.match(functions.surfaceDescription("queue"), /overdue, follow-up, waiting/);
     assert.equal(functions.referenceCountLabel("calendar", 1), "1 calendar item");
     assert.equal(functions.referenceCountLabel("cards", 2), "2 cards");
-    assert.equal(functions.surfaceStatusText("assistants"), "2 assistant jobs.");
-    assert.equal(functions.surfaceStatusText("artifacts"), "Artifact index not connected.");
-    assert.equal(functions.surfaceStatusText("processes"), "1 process quality finding.");
-    assert.equal(functions.surfaceStatusText("search"), "Unified operator search.");
   });
 
   test("renders accessible honest states, lanes, references, and quality actions", async () => {

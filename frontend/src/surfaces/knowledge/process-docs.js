@@ -3,14 +3,12 @@ export function createProcessDocsSurface(context, services) {
     buildOperationsHomeModel,
     buildOperationsReferenceLinks,
     buildProcessQualityModel,
-    clearSelectionButton,
     documentList,
     getDocsAvailability,
     getOperationsQualitySnapshot,
     getOperationsRecurringSnapshot,
     getOperationsWorkSnapshot,
     knowledgeState,
-    libraryTitle,
     listDraftPaths,
     qualityFiltersState,
     renderDocsAvailabilityState,
@@ -34,10 +32,7 @@ export function createProcessDocsSurface(context, services) {
     });
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    setLibraryHeadingVisibility(false);
-    libraryTitle.textContent = "Docs";
     setRouteTitle("Docs");
-    clearSelectionButton.hidden = true;
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
     const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
@@ -50,13 +45,6 @@ export function createProcessDocsSurface(context, services) {
     wrap.append(header);
     wrap.append(renderProcessesSurface(visibleDocuments, model));
     documentList.replaceChildren(wrap);
-  }
-
-  function setLibraryHeadingVisibility(visible) {
-    const heading = libraryTitle.parentElement?.parentElement;
-    if (!heading) return;
-    heading.hidden = !visible;
-    heading.classList.toggle("is-visible", visible);
   }
 
   function renderProcessesSurface(documents, model) {
