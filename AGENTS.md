@@ -49,6 +49,13 @@ Treat "continue where we stopped" as a prompt to check `docs/PROCESS.md`,
 inspect the current issue/worktree/process state, and resume the next pipeline
 step.
 
+Keep every Git worktree inside this repository. The canonical location is
+`.tmp/worktrees/<descriptive-name>` (for example,
+`.tmp/worktrees/issue-217-identity-stable`). Never create sibling worktrees in
+`../`, under `~/git`, in `/tmp`, or anywhere else outside the `dataops` project
+root. When launching an agent in a worktree, give it the exact project-local
+path. Audit and remove obsolete worktrees instead of leaving them behind.
+
 Interpret requests for a "todo list widget", "todo widget", or similar wording
 as a request to show or update the agent's in-chat task/plan widget. Do not file
 a product issue or implement repository UI for such a request unless the user

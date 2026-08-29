@@ -289,6 +289,12 @@ assistant/podcast boundaries, and list the expected tests or screenshots.
   `git status` and resolve the state before invoking the agent. Do not hide
   dirty work with an unapproved stash. Finish the current pipeline stage,
   commit approved work, or ask the human how to handle the dirty state.
+- Create every isolated worktree under the project-local
+  `.tmp/worktrees/<descriptive-name>` directory. For example, issue 217 uses
+  `.tmp/worktrees/issue-217-identity-stable`. Never create a sibling checkout
+  under `../`, `~/git`, `/tmp`, or any other path outside the `dataops` project
+  root. Pass the exact project-local path to every agent, and remove obsolete
+  worktrees after their useful commits are merged or otherwise preserved.
 - Launch Software Engineer with the issue number and clear ownership. When
   running multiple Software Engineers in parallel, give each one an isolated
   worktree so concurrent agents do not overwrite each other's files.
@@ -645,11 +651,12 @@ When an issue passes all agent reviews but has `[HUMAN]` criteria:
 ## Temporary Files
 
 All agents must use the project-local `.tmp/` directory for temporary files:
-screenshots, previews, downloads, scratch data, logs, draft issue bodies, and
-one-off exports. This directory is gitignored.
+screenshots, previews, downloads, scratch data, logs, draft issue bodies,
+one-off exports, and Git worktrees. This directory is gitignored.
 
 - Never write temp files to `/tmp`, `/data/tmp`, or any path outside the project
   root.
+- Put Git worktrees under `.tmp/worktrees/` and nowhere else.
 - Put screenshots under `.tmp/screenshots/`.
 - Put export and restore drill outputs under `.tmp/exports/` or another
   project-local `.tmp/` subdirectory.
