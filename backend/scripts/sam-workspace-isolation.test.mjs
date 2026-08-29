@@ -22,7 +22,7 @@ const artifactRoot = join(testRoot, 'artifact');
 const importProbe = [
   "require('tsx')",
   "require('esbuild')",
-  "require('js-yaml')",
+  "require('./backend/node_modules/js-yaml')",
   "process.stdout.write('imports-ok')",
 ].join(';');
 const requiredOverlapPhases = new Set(['install', 'compile', 'bundle']);
@@ -235,7 +235,7 @@ async function main() {
     join(repoRoot, 'node_modules', 'tsx', 'package.json'),
     join(repoRoot, 'node_modules', 'esbuild'),
     join(repoRoot, 'node_modules', 'esbuild', 'package.json'),
-    join(repoRoot, 'node_modules', 'js-yaml', 'package.json'),
+    join(repoRoot, 'backend', 'node_modules', 'js-yaml', 'package.json'),
   ];
   for (const path of dependencyPaths) {
     if (!existsSync(path)) throw new Error(`Root dependency baseline is missing; run npm ci first: ${path}`);
@@ -317,11 +317,24 @@ async function main() {
   const artifactDirectories = functionArtifacts.map((name) => join(artifactRoot, name));
   const inventories = artifactDirectories.map((directory) => fileInventory(directory));
   for (const inventory of inventories.slice(1)) assert.deepEqual(inventory, inventories[0]);
-  const manifest = JSON.parse(readFileSync(join(artifactDirectories[0], '.dataops-sam-bundle.json'), 'utf8'));
+  const cacheEntries = readdirSync(cacheRoot).filter((name) => !name.includes('.lock') && !name.includes('.building-'));
+  assert.equal(cacheEntries.length, 1);
+  const manifest = JSON.parse(readFileSync(join(cacheRoot, cacheEntries[0], 'build-metadata.json'), 'utf8'));
   assert.equal(manifest.target, 'node24');
-  assert.match(manifest.buildFormatVersion, /isolated-install/);
+  assert.match(manifest.buildFormatVersion, /external-sidecar/);
+  assert.deepEqual(manifest.toolchain, {
+    node: '20.20.2',
+    platform: process.platform,
+    architecture: process.arch,
+  });
   for (const directory of artifactDirectories) {
     assert.equal(existsSync(join(directory, 'dist', 'handler.js')), true);
+    assert.equal(existsSync(join(directory, 'build-metadata.json')), false);
+    const payloadMetadata = JSON.parse(readFileSync(join(directory, '.dataops-sam-bundle.json'), 'utf8'));
+    assert.deepEqual(Object.keys(payloadMetadata).sort(), ['bundledOutputs', 'format', 'inputs', 'schemaVersion']);
+    assert.equal(JSON.stringify(payloadMetadata).includes('20.20.2'), false);
+    assert.equal(JSON.stringify(payloadMetadata).includes(process.platform), false);
+    assert.equal(JSON.stringify(payloadMetadata).includes(process.arch), false);
   }
   const remaining = readdirSync(cacheRoot).filter((name) => name.includes('.lock') || name.includes('.building-'));
   assert.deepEqual(remaining, [], `owned lock/build state survived: ${remaining.join(', ')}`);

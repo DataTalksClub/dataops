@@ -39,3 +39,21 @@ test('runtime boundary rejects importer inputs in a SAM bundle manifest', () => 
     rmSync(artifact, { recursive: true, force: true });
   }
 });
+
+test('runtime boundary rejects host provenance in payload metadata', () => {
+  const artifact = mkdtempSync(join(tmpdir(), 'dataops-runtime-boundary-'));
+  try {
+    writeFileSync(join(artifact, '.dataops-sam-bundle.json'), JSON.stringify({
+      schemaVersion: 1,
+      format: 'dataops-sam-esbuild',
+      bundledOutputs: [],
+      inputs: [],
+      toolchain: { node: process.versions.node, platform: process.platform, architecture: process.arch },
+    }));
+    const result = verify(artifact);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /invalid SAM esbuild manifest/);
+  } finally {
+    rmSync(artifact, { recursive: true, force: true });
+  }
+});

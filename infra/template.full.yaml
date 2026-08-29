@@ -82,6 +82,15 @@ Parameters:
     Type: String
     Default: prod
     AllowedPattern: "^[a-zA-Z0-9_.-]+$"
+  ConversationalExecutionWorkerTargetFunctionName:
+    Type: String
+    AllowedPattern: "^[a-zA-Z0-9-_]{1,64}$"
+  ConversationalResultDispatcherTargetFunctionName:
+    Type: String
+    AllowedPattern: "^[a-zA-Z0-9-_]{1,64}$"
+  BackendTargetFunctionName:
+    Type: String
+    AllowedPattern: "^[a-zA-Z0-9-_]{1,64}$"
   ExportArchivePrefix:
     Type: String
     Default: execution-exports
@@ -1555,20 +1564,44 @@ Resources:
             FilterCriteria:
               Filters:
                 - Pattern: '{"eventName":["INSERT","MODIFY"],"dynamodb":{"NewImage":{"recordType":{"S":["execution_attempt"]},"status":{"S":["queued"]}}}}'
-        ExecutionRecovery:
-          Type: Schedule
-          Properties:
-            Description: Recover due conversational execution attempts through the indexed worker path.
-            Schedule: rate(2 minutes)
-            State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]
-            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}'
-        ExecutionHealthPulse:
-          Type: Schedule
-          Properties:
-            Description: Emit the idle-safe conversational execution worker health pulse.
-            Schedule: rate(2 minutes)
-            State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]
-            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-health-pulse"}}'
+
+  ConversationalExecutionWorkerFunctionExecutionRecovery:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Recover due conversational execution attempts through the indexed worker path.
+      ScheduleExpression: rate(2 minutes)
+      State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ConversationalExecutionWorkerTargetFunctionName}
+          Id: ConversationalExecutionWorkerFunctionExecutionRecoveLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}'
+
+  ConversationalExecutionWorkerFunctionExecutionRecoveryPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ConversationalExecutionWorkerTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ConversationalExecutionWorkerFunctionExecutionRecovery.Arn
+
+  ConversationalExecutionWorkerFunctionExecutionHealthPulse:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Emit the idle-safe conversational execution worker health pulse.
+      ScheduleExpression: rate(2 minutes)
+      State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ConversationalExecutionWorkerTargetFunctionName}
+          Id: ConversationalExecutionWorkerFunctionExecutionHealthLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-health-pulse"}}'
+
+  ConversationalExecutionWorkerFunctionExecutionHealthPulsePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ConversationalExecutionWorkerTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ConversationalExecutionWorkerFunctionExecutionHealthPulse.Arn
 
   SponsorCommunicationFailureQueue:
     Type: AWS::SQS::Queue
@@ -1866,13 +1899,24 @@ Resources:
               - secretsmanager:GetSecretValue
             Resource:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
-      Events:
-        ResultDelivery:
-          Type: Schedule
-          Properties:
-            Description: Deliver owner-bound conversational execution results through the shared Telegram channel.
-            Schedule: rate(1 minute)
-            State: !If [ConversationalIngressIsEnabled, ENABLED, DISABLED]
+
+  ConversationalResultDispatcherFunctionResultDelivery:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Deliver owner-bound conversational execution results through the shared Telegram channel.
+      ScheduleExpression: rate(1 minute)
+      State: !If [ConversationalIngressIsEnabled, ENABLED, DISABLED]
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ConversationalResultDispatcherTargetFunctionName}
+          Id: ConversationalResultDispatcherFunctionResultDeliveryLambdaTarget
+
+  ConversationalResultDispatcherFunctionResultDeliveryPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ConversationalResultDispatcherTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ConversationalResultDispatcherFunctionResultDelivery.Arn
 
   BackendFunction:
     Type: AWS::Serverless::Function
@@ -2110,27 +2154,62 @@ Resources:
             - DELETE
           AllowOrigins:
             - "*"
-      Events:
-        DailyBackendCron:
-          Type: Schedule
-          Properties:
-            Description: Run DataOps recurring task and automatic template generation once per day.
-            Schedule: cron(0 8 * * ? *)
-            Enabled: true
-        DailyBackendExport:
-          Type: Schedule
-          Properties:
-            Description: Export DataOps execution data to the retained offsite archive bucket once per day.
-            Schedule: cron(30 8 * * ? *)
-            Enabled: true
-            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}'
-        DailyMailingExport:
-          Type: Schedule
-          Properties:
-            Description: Request or advance configured mailing-list exports once per day.
-            Schedule: cron(0 9 * * ? *)
-            Enabled: true
-            Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
+
+  BackendFunctionDailyBackendCron:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Run DataOps recurring task and automatic template generation once per day.
+      ScheduleExpression: cron(0 8 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionDailyBackendCronLambdaTarget
+
+  BackendFunctionDailyBackendCronPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionDailyBackendCron.Arn
+
+  BackendFunctionDailyBackendExport:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Export DataOps execution data to the retained offsite archive bucket once per day.
+      ScheduleExpression: cron(30 8 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionDailyBackendExportLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}'
+
+  BackendFunctionDailyBackendExportPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionDailyBackendExport.Arn
+
+  BackendFunctionDailyMailingExport:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Request or advance configured mailing-list exports once per day.
+      ScheduleExpression: cron(0 9 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionDailyMailingExportLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
+
+  BackendFunctionDailyMailingExportPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionDailyMailingExport.Arn
 
 Outputs:
   ConversationalRolloutAlarmTopicArn:

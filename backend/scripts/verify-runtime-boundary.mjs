@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const artifact = path.resolve(process.argv[2] || 'dist');
-const bundleManifestPath = path.join(artifact, '.dataops-sam-bundle.json');
+const bundleManifestPath = process.argv[3]
+  ? path.resolve(process.argv[3])
+  : path.join(artifact, '.dataops-sam-bundle.json');
 const forbiddenPaths = [
   path.join(artifact, 'db', 'setup.js'),
   path.join(artifact, 'sponsorCrmMigration'),
@@ -38,7 +40,11 @@ let bundledOutputs = new Set();
 if (fs.existsSync(bundleManifestPath)) {
   try {
     const manifest = JSON.parse(fs.readFileSync(bundleManifestPath, 'utf8'));
-    if (manifest.schemaVersion !== 1 || manifest.format !== 'dataops-sam-esbuild') {
+    if (
+      manifest.schemaVersion !== 1
+      || manifest.format !== 'dataops-sam-esbuild'
+      || JSON.stringify(Object.keys(manifest).sort()) !== JSON.stringify(['bundledOutputs', 'format', 'inputs', 'schemaVersion'])
+    ) {
       failures.push('invalid SAM esbuild manifest');
     } else {
       bundledOutputs = new Set(manifest.bundledOutputs || []);

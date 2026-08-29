@@ -20,13 +20,33 @@ import { setTimeout as delay } from 'node:timers/promises';
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(scriptPath), '..', '..');
 const cacheRoot = join(repoRoot, '.tmp', 'sam-build-cache');
-const manifestName = '.dataops-sam-bundle.json';
+const payloadDirectoryName = 'payload';
+const payloadMetadataName = '.dataops-sam-bundle.json';
+const sidecarName = 'build-metadata.json';
+const nodeVersionFile = '.node-version';
 const lockTimeoutMs = 20 * 60 * 1000;
 const staleLockGraceMs = 10_000;
 const shutdownGraceMs = 2_000;
-const buildFormatVersion = 'dataops-sam-esbuild-v2-isolated-install';
+const buildFormatVersion = 'dataops-sam-esbuild-v3-external-sidecar';
 const esbuildTarget = 'node24';
 const samCacheEnv = 'DATAOPS_SAM_CACHE_ROOT';
+
+export function requiredNodeVersion(root = repoRoot) {
+  const version = readFileSync(join(root, nodeVersionFile), 'utf8').trim();
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`${nodeVersionFile} must contain one exact Node.js version`);
+  }
+  return version;
+}
+
+export function assertRequiredNodeVersion(actual = process.versions.node, root = repoRoot) {
+  const required = requiredNodeVersion(root);
+  const normalizedActual = actual.replace(/^v/, '');
+  if (normalizedActual !== required) {
+    throw new Error(`SAM artifact build requires Node.js ${required}; actual version is ${normalizedActual}`);
+  }
+  return required;
+}
 
 export const handlerEntries = Object.freeze({
   handler: 'backend/src/handler.ts',
@@ -51,6 +71,7 @@ const inputFiles = [
   'backend/scripts/verify-frontend-artifact.mjs',
   'backend/scripts/verify-runtime-boundary.mjs',
   'infra/sam-build/Makefile',
+  nodeVersionFile,
 ];
 
 function normalizedPath(path) {
@@ -76,7 +97,7 @@ export function buildInputPaths(root = repoRoot) {
 
 export function computeFingerprint(root = repoRoot) {
   const hash = createHash('sha256');
-  hash.update(`${buildFormatVersion}\0${process.platform}\0${process.arch}\0${process.version}\0${esbuildTarget}\0`);
+  hash.update(`${buildFormatVersion}\0${esbuildTarget}\0`);
   for (const path of buildInputPaths(root)) {
     hash.update(path);
     hash.update('\0');
@@ -92,7 +113,6 @@ function sha256(path) {
 
 export function artifactInventory(artifactRoot) {
   return walkFiles(artifactRoot, '.')
-    .filter((path) => path !== manifestName)
     .map((path) => {
       const cleanPath = path.startsWith('./') ? path.slice(2) : path;
       const absolute = join(artifactRoot, cleanPath);
@@ -100,8 +120,27 @@ export function artifactInventory(artifactRoot) {
     });
 }
 
-export function readValidManifest(artifactRoot) {
-  const manifestPath = join(artifactRoot, manifestName);
+function readPayloadMetadata(artifactRoot) {
+  const metadataPath = join(artifactRoot, payloadMetadataName);
+  if (!existsSync(metadataPath)) return null;
+  try {
+    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+    if (
+      metadata.schemaVersion !== 1
+      || metadata.format !== 'dataops-sam-esbuild'
+      || !Array.isArray(metadata.bundledOutputs)
+      || !Array.isArray(metadata.inputs)
+      || JSON.stringify(Object.keys(metadata).sort()) !== JSON.stringify(['bundledOutputs', 'format', 'inputs', 'schemaVersion'])
+    ) return null;
+    return metadata;
+  } catch {
+    return null;
+  }
+}
+
+export function readValidManifest(cacheEntry) {
+  const manifestPath = join(cacheEntry, sidecarName);
+  const artifactRoot = join(cacheEntry, payloadDirectoryName);
   if (!existsSync(manifestPath)) return null;
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -111,7 +150,8 @@ export function readValidManifest(artifactRoot) {
       || manifest.buildFormatVersion !== buildFormatVersion
       || manifest.target !== esbuildTarget
     ) return null;
-    if (!Array.isArray(manifest.files) || !Array.isArray(manifest.inputs)) return null;
+    if (!Array.isArray(manifest.files)) return null;
+    if (!readPayloadMetadata(artifactRoot)) return null;
     const declaredPaths = new Set();
     for (const file of manifest.files) {
       if (!file || typeof file.path !== 'string' || declaredPaths.has(file.path)) return null;
@@ -442,7 +482,8 @@ async function buildSharedArtifact(destination, fingerprint) {
     throwIfCancelled();
 
     const { build } = workspaceRequire(workspace, 'esbuild');
-    const dist = join(destination, 'dist');
+    const payload = join(destination, payloadDirectoryName);
+    const dist = join(payload, 'dist');
     mkdirSync(dist, { recursive: true });
     phaseMessage(fingerprint, 'bundle-start');
     const result = await build({
@@ -464,7 +505,7 @@ async function buildSharedArtifact(destination, fingerprint) {
       phase: 'canonical frontend copy',
       env: { ...process.env, NODE_PATH: '' },
     });
-    await runOwnedCommand(process.execPath, ['backend/scripts/verify-frontend-artifact.mjs', '--source', 'frontend', '--artifact', destination], {
+    await runOwnedCommand(process.execPath, ['backend/scripts/verify-frontend-artifact.mjs', '--source', 'frontend', '--artifact', payload], {
       cwd: workspace,
       phase: 'canonical frontend verification',
       env: { ...process.env, NODE_PATH: '' },
@@ -479,20 +520,28 @@ async function buildSharedArtifact(destination, fingerprint) {
       throw new Error(`SAM build inputs changed while the isolated artifact was being built: expected ${fingerprint}, found ${finalSourceFingerprint}`);
     }
     const bundledOutputs = Object.keys(handlerEntries).map((name) => `dist/${name}.js`).sort();
+    const payloadMetadata = {
+      schemaVersion: 1,
+      format: 'dataops-sam-esbuild',
+      bundledOutputs,
+      inputs: Object.keys(result.metafile.inputs).map(normalizedPath).sort(),
+    };
+    writeFileSync(join(payload, payloadMetadataName), `${JSON.stringify(payloadMetadata, null, 2)}\n`);
     const manifest = {
       schemaVersion: 1,
       format: 'dataops-sam-esbuild',
       fingerprint,
       buildFormatVersion,
       target: esbuildTarget,
-      bundledOutputs,
-      inputs: Object.keys(result.metafile.inputs).map(normalizedPath).sort(),
-      files: [],
+      toolchain: {
+        node: process.versions.node,
+        platform: process.platform,
+        architecture: process.arch,
+      },
+      files: artifactInventory(payload),
     };
-    writeFileSync(join(destination, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
-    manifest.files = artifactInventory(destination);
-    writeFileSync(join(destination, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
-    await runOwnedCommand(process.execPath, ['backend/scripts/verify-runtime-boundary.mjs', destination], {
+    writeFileSync(join(destination, sidecarName), `${JSON.stringify(manifest, null, 2)}\n`);
+    await runOwnedCommand(process.execPath, ['backend/scripts/verify-runtime-boundary.mjs', payload], {
       cwd: workspace,
       phase: 'runtime infrastructure boundary verification',
       env: { ...process.env, NODE_PATH: '' },
@@ -519,15 +568,20 @@ function emptyDirectory(directory, allowedBoundary) {
 
 export function copyIsolatedArtifact(source, destination, options = {}) {
   assertNoSymlinkTraversal(source, 'shared SAM artifact source');
-  if (!readValidManifest(source)) throw new Error(`Cannot copy invalid shared SAM artifact: ${source}`);
+  const manifest = readValidManifest(source);
+  if (!manifest) throw new Error(`Cannot copy invalid shared SAM artifact: ${source}`);
   const target = emptyDirectory(destination, options.allowedBoundary);
-  for (const entry of readdirSync(source)) cpSync(join(source, entry), join(target, entry), { recursive: true });
-  if (!readValidManifest(target)) throw new Error(`Copied SAM artifact failed integrity verification: ${target}`);
+  const payload = join(source, payloadDirectoryName);
+  for (const entry of readdirSync(payload)) cpSync(join(payload, entry), join(target, entry), { recursive: true });
+  if (JSON.stringify(artifactInventory(target)) !== JSON.stringify(manifest.files)) {
+    throw new Error(`Copied SAM artifact failed integrity verification: ${target}`);
+  }
 }
 
 async function main() {
   const artifactsDir = process.env.ARTIFACTS_DIR || process.argv[2];
   if (!artifactsDir) throw new Error('ARTIFACTS_DIR is required');
+  assertRequiredNodeVersion();
   const fingerprint = computeFingerprint();
   const configuredCacheRoot = resolve(process.env[samCacheEnv] || cacheRoot);
   assertOwnedDescendant(join(repoRoot, '.tmp'), configuredCacheRoot, samCacheEnv);

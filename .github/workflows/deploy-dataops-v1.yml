@@ -47,7 +47,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -148,7 +148,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -175,6 +175,39 @@ jobs:
             echo "AUTH_CLIENT_ID=$(auth_output DataOpsClientId)"
             echo "AUTH_ISSUER=$(auth_output IssuerUrl)"
             echo "AUTH_JWKS_URL=$(auth_output JwksUrl)"
+          } >> "$GITHUB_ENV"
+
+      - name: Resolve stable scheduled Lambda targets
+        run: |
+          set -euo pipefail
+          stack_name="dataops-v1"
+          caller_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          partition="${caller_arn#arn:}"
+          partition="${partition%%:*}"
+          stack_json="$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --region "$AWS_REGION" \
+            --query 'Stacks[0].{StackId:StackId,Outputs:Outputs}' \
+            --output json)"
+          stack_id="$(jq -er '.StackId' <<<"$stack_json")"
+          case "$stack_id" in
+            "arn:$partition:cloudformation:$AWS_REGION:$account_id:stack/$stack_name/"*) ;;
+            *) echo "Existing stack identity does not match the configured stack/account/region" >&2; exit 1 ;;
+          esac
+          stack_output() {
+            jq -er --arg key "$1" '
+              [.Outputs[] | select(.OutputKey == $key) | .OutputValue]
+              | if length == 1 and (.[0] | type == "string" and test("^[A-Za-z0-9-_]{1,64}$"))
+                then .[0]
+                else error("required Lambda-name output is missing, ambiguous, or invalid: " + $key)
+                end
+            ' <<<"$stack_json"
+          }
+          {
+            echo "CONVERSATIONAL_EXECUTION_WORKER_TARGET_FUNCTION_NAME=$(stack_output ConversationalExecutionWorkerFunctionName)"
+            echo "CONVERSATIONAL_RESULT_DISPATCHER_TARGET_FUNCTION_NAME=$(stack_output ConversationalResultDispatcherFunctionName)"
+            echo "BACKEND_TARGET_FUNCTION_NAME=$(stack_output BackendFunctionName)"
           } >> "$GITHUB_ENV"
 
       - name: Build SAM artifact
@@ -305,6 +338,9 @@ jobs:
               "ParameterKey=ConversationalTelegramIngressEnabled,ParameterValue=$CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED" \
               "ParameterKey=SponsorFinanceEnabled,ParameterValue=$SPONSOR_FINANCE_ENABLED" \
               "ParameterKey=ConversationalExecutionEnabled,ParameterValue=$CONVERSATIONAL_EXECUTION_ENABLED" \
+              "ParameterKey=ConversationalExecutionWorkerTargetFunctionName,ParameterValue=$CONVERSATIONAL_EXECUTION_WORKER_TARGET_FUNCTION_NAME" \
+              "ParameterKey=ConversationalResultDispatcherTargetFunctionName,ParameterValue=$CONVERSATIONAL_RESULT_DISPATCHER_TARGET_FUNCTION_NAME" \
+              "ParameterKey=BackendTargetFunctionName,ParameterValue=$BACKEND_TARGET_FUNCTION_NAME" \
               "ParameterKey=ConversationalEnabledPlugins,ParameterValue=$CONVERSATIONAL_ENABLED_PLUGINS" \
               "ParameterKey=ConversationalTypefullyExternalExecutionEnabled,ParameterValue=$CONVERSATIONAL_TYPEFULLY_EXTERNAL_EXECUTION_ENABLED" \
               "ParameterKey=ConversationalTypefullyAccountConfigDigest,ParameterValue=$CONVERSATIONAL_TYPEFULLY_ACCOUNT_CONFIG_DIGEST" \

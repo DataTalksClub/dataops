@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -129,6 +130,16 @@ def _translated_template_from_sam(sam_binary: str, template: Path, scratch_dir: 
     marker = " | Translated template is:\n"
     assert marker in output, "SAM CLI debug output did not include the translated template"
     return output.partition(marker)[2]
+
+
+def _load_translated_template(sam_binary: str, template: Path, scratch_dir: Path) -> dict:
+    translated = _translated_template_from_sam(sam_binary, template, scratch_dir)
+    yaml_lines = []
+    for line in translated.splitlines():
+        if re.match(r"^\d{4}-\d{2}-\d{2} .* \| ", line):
+            break
+        yaml_lines.append(line)
+    return yaml.load("\n".join(yaml_lines), Loader=_CloudFormationLoader)
 
 
 def _template_with_parameter_default(template: str, parameter_name: str, value: str) -> str:
@@ -270,13 +281,7 @@ def test_conversational_execution_worker_has_filtered_stream_recovery_pulse_and_
     assert '"status":{"S":["queued"]}' in worker
     assert "Type: SQS" in worker
     assert "!GetAtt ConversationalExecutionFailureQueue.Arn" in worker
-    assert worker.count("Type: Schedule") == 2
-    assert "conversational-execution-recovery" in worker
-    assert "conversational-execution-health-pulse" in worker
-    assert worker.count("Schedule: rate(2 minutes)") == 2
-    assert worker.count(
-        "State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]"
-    ) == 2
+    assert "Type: Schedule" not in worker
     assert "dynamodb:Query" in worker
     assert "dynamodb:Scan" not in worker
     assert "${DataOpsConversationalStateTable.Arn}/index/GSI2" in worker
@@ -316,7 +321,6 @@ def test_conversational_execution_worker_has_filtered_stream_recovery_pulse_and_
     assert "CONVERSATIONAL_EXECUTION_LEASE_SECONDS" not in backend
     assert "CONVERSATIONAL_EXECUTION_ENABLED: !Ref ConversationalExecutionEnabled" in worker
     assert "CONVERSATIONAL_ENABLED_PLUGINS: !Ref ConversationalEnabledPlugins" in worker
-    assert "State: !If [ConversationalExecutionIsEnabled, ENABLED, DISABLED]" in worker
 
 
 def test_conversational_result_dispatcher_is_private_scheduled_and_least_privilege():
@@ -329,10 +333,8 @@ def test_conversational_result_dispatcher_is_private_scheduled_and_least_privile
     assert "Handler: dist/result-notification-handler.handler" in dispatcher
     assert "DATAOPS_CONVERSATIONAL_STATE_TABLE: !Ref DataOpsConversationalStateTable" in dispatcher
     assert "TELEGRAM_INTEGRATION_SECRET_NAME: !Ref TelegramIntegrationSecretName" in dispatcher
-    assert "Type: Schedule" in dispatcher
-    assert "rate(1 minute)" in dispatcher
+    assert "Type: Schedule" not in dispatcher
     assert "CONVERSATIONAL_TELEGRAM_INGRESS_ENABLED: !Ref ConversationalTelegramIngressEnabled" in dispatcher
-    assert "State: !If [ConversationalIngressIsEnabled, ENABLED, DISABLED]" in dispatcher
     assert "dynamodb:GetItem" in dispatcher
     assert "dynamodb:Query" in dispatcher
     assert "dynamodb:UpdateItem" in dispatcher
@@ -404,8 +406,7 @@ def test_conversational_result_delivery_schedule_transforms_default_off_and_ingr
         assert "Type: AWS::Events::Rule" in rule
         assert "ScheduleExpression: rate(1 minute)" in rule
         assert expected_state in rule
-        assert "- ConversationalResultDispatcherFunction" in rule
-        assert "- Arn" in rule
+        assert "ConversationalResultDispatcherTargetFunctionName" in rule
         assert (
             "Id: ConversationalResultDispatcherFunctionResultDeliveryLambdaTarget"
             in rule
@@ -413,7 +414,7 @@ def test_conversational_result_delivery_schedule_transforms_default_off_and_ingr
         assert "Type: AWS::Lambda::Permission" in permission
         assert "Action: lambda:InvokeFunction" in permission
         assert "Principal: events.amazonaws.com" in permission
-        assert "Ref: ConversationalResultDispatcherFunction" in permission
+        assert "Ref: ConversationalResultDispatcherTargetFunctionName" in permission
         assert "- ConversationalResultDispatcherFunctionResultDelivery" in permission
         assert "- Arn" in permission
         assert expected_condition in _resource_block(
@@ -486,17 +487,244 @@ def test_conversational_execution_schedules_transform_with_exact_rules_permissio
             assert "Type: AWS::Events::Rule" in rule
             assert "ScheduleExpression: rate(2 minutes)" in rule
             assert expected_state in rule
-            assert "- ConversationalExecutionWorkerFunction" in rule
-            assert "- Arn" in rule
+            assert "ConversationalExecutionWorkerTargetFunctionName" in rule
             assert f"Id: {target_id}" in rule
             assert action in rule
             assert "Type: AWS::Lambda::Permission" in permission
             assert "Action: lambda:InvokeFunction" in permission
             assert "Principal: events.amazonaws.com" in permission
             assert "FunctionName:" in permission
-            assert "Ref: ConversationalExecutionWorkerFunction" in permission
+            assert "Ref: ConversationalExecutionWorkerTargetFunctionName" in permission
             assert f"- {rule_id}" in permission
             assert "- Arn" in permission
+
+
+def test_six_schedules_are_explicit_identity_stable_resources_with_exact_behavior():
+    template = _load_template()
+    parameters = template["Parameters"]
+    resources = template["Resources"]
+    target_parameters = {
+        "ConversationalExecutionWorkerTargetFunctionName",
+        "ConversationalResultDispatcherTargetFunctionName",
+        "BackendTargetFunctionName",
+    }
+    for parameter_name in target_parameters:
+        assert parameters[parameter_name] == {
+            "Type": "String",
+            "AllowedPattern": "^[a-zA-Z0-9-_]{1,64}$",
+        }
+
+    schedules = {
+        "ConversationalExecutionWorkerFunctionExecutionRecovery": {
+            "target": "ConversationalExecutionWorkerTargetFunctionName",
+            "description": "Recover due conversational execution attempts through the indexed worker path.",
+            "expression": "rate(2 minutes)",
+            "state": {"If": ["ConversationalExecutionIsEnabled", "ENABLED", "DISABLED"]},
+            "target_id": "ConversationalExecutionWorkerFunctionExecutionRecoveLambdaTarget",
+            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-recovery"}}',
+        },
+        "ConversationalExecutionWorkerFunctionExecutionHealthPulse": {
+            "target": "ConversationalExecutionWorkerTargetFunctionName",
+            "description": "Emit the idle-safe conversational execution worker health pulse.",
+            "expression": "rate(2 minutes)",
+            "state": {"If": ["ConversationalExecutionIsEnabled", "ENABLED", "DISABLED"]},
+            "target_id": "ConversationalExecutionWorkerFunctionExecutionHealthLambdaTarget",
+            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"conversational-execution-health-pulse"}}',
+        },
+        "ConversationalResultDispatcherFunctionResultDelivery": {
+            "target": "ConversationalResultDispatcherTargetFunctionName",
+            "description": "Deliver owner-bound conversational execution results through the shared Telegram channel.",
+            "expression": "rate(1 minute)",
+            "state": {"If": ["ConversationalIngressIsEnabled", "ENABLED", "DISABLED"]},
+            "target_id": "ConversationalResultDispatcherFunctionResultDeliveryLambdaTarget",
+            "input": None,
+        },
+        "BackendFunctionDailyBackendCron": {
+            "target": "BackendTargetFunctionName",
+            "description": "Run DataOps recurring task and automatic template generation once per day.",
+            "expression": "cron(0 8 * * ? *)",
+            "state": "ENABLED",
+            "target_id": "BackendFunctionDailyBackendCronLambdaTarget",
+            "input": None,
+        },
+        "BackendFunctionDailyBackendExport": {
+            "target": "BackendTargetFunctionName",
+            "description": "Export DataOps execution data to the retained offsite archive bucket once per day.",
+            "expression": "cron(30 8 * * ? *)",
+            "state": "ENABLED",
+            "target_id": "BackendFunctionDailyBackendExportLambdaTarget",
+            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"export"}}',
+        },
+        "BackendFunctionDailyMailingExport": {
+            "target": "BackendTargetFunctionName",
+            "description": "Request or advance configured mailing-list exports once per day.",
+            "expression": "cron(0 9 * * ? *)",
+            "state": "ENABLED",
+            "target_id": "BackendFunctionDailyMailingExportLambdaTarget",
+            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}',
+        },
+    }
+    for rule_id, expected in schedules.items():
+        target = {
+            "Arn": {"Sub": f"arn:${{AWS::Partition}}:lambda:${{AWS::Region}}:${{AWS::AccountId}}:function:${{{expected['target']}}}"},
+            "Id": expected["target_id"],
+        }
+        if expected["input"] is not None:
+            target["Input"] = expected["input"]
+        assert resources[rule_id] == {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Description": expected["description"],
+                "ScheduleExpression": expected["expression"],
+                "State": expected["state"],
+                "Targets": [target],
+            },
+        }
+        assert resources[f"{rule_id}Permission"] == {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "Action": "lambda:InvokeFunction",
+                "FunctionName": {"Ref": expected["target"]},
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {"GetAtt": f"{rule_id}.Arn"},
+            },
+        }
+
+    assert set(schedules) == {
+        name for name, resource in resources.items()
+        if resource["Type"] == "AWS::Events::Rule"
+        and name in schedules
+    }
+    for function_name in (
+        "ConversationalExecutionWorkerFunction",
+        "ConversationalResultDispatcherFunction",
+        "BackendFunction",
+    ):
+        events = resources[function_name]["Properties"].get("Events", {})
+        assert not any(event.get("Type") == "Schedule" for event in events.values())
+
+
+def test_processed_template_keeps_baseline_resource_identity_inventory():
+    sam_binary = shutil.which("sam")
+    assert sam_binary, "AWS SAM CLI is required for the transform contract test"
+    baseline_sha = "6236865e509c0e142d364e6c56f7856d8f932076"
+    baseline = subprocess.run(
+        ["git", "show", f"{baseline_sha}:infra/template.full.yaml"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    scratch_root = REPO_ROOT / ".tmp"
+    scratch_root.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="sam-identity-migration-", dir=scratch_root) as scratch_name:
+        scratch_dir = Path(scratch_name)
+        baseline_path = scratch_dir / "baseline.yaml"
+        candidate_path = scratch_dir / "candidate.yaml"
+        baseline_path.write_text(baseline, encoding="utf-8")
+        candidate_path.write_text(TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
+        baseline_processed = _load_translated_template(sam_binary, baseline_path, scratch_dir)
+        candidate_processed = _load_translated_template(sam_binary, candidate_path, scratch_dir)
+
+    assert set(candidate_processed["Resources"]) == set(baseline_processed["Resources"])
+    assert candidate_processed["Conditions"] == baseline_processed["Conditions"]
+    assert candidate_processed["Outputs"] == baseline_processed["Outputs"]
+    migrated = {
+        "ConversationalExecutionWorkerFunctionExecutionRecovery",
+        "ConversationalExecutionWorkerFunctionExecutionRecoveryPermission",
+        "ConversationalExecutionWorkerFunctionExecutionHealthPulse",
+        "ConversationalExecutionWorkerFunctionExecutionHealthPulsePermission",
+        "ConversationalResultDispatcherFunctionResultDelivery",
+        "ConversationalResultDispatcherFunctionResultDeliveryPermission",
+        "BackendFunctionDailyBackendCron",
+        "BackendFunctionDailyBackendCronPermission",
+        "BackendFunctionDailyBackendExport",
+        "BackendFunctionDailyBackendExportPermission",
+        "BackendFunctionDailyMailingExport",
+        "BackendFunctionDailyMailingExportPermission",
+    }
+    for logical_id in set(candidate_processed["Resources"]) - migrated:
+        assert candidate_processed["Resources"][logical_id] == baseline_processed["Resources"][logical_id], logical_id
+    rule_targets = {
+        "ConversationalExecutionWorkerFunctionExecutionRecovery": (
+            "ConversationalExecutionWorkerFunction",
+            "ConversationalExecutionWorkerTargetFunctionName",
+        ),
+        "ConversationalExecutionWorkerFunctionExecutionHealthPulse": (
+            "ConversationalExecutionWorkerFunction",
+            "ConversationalExecutionWorkerTargetFunctionName",
+        ),
+        "ConversationalResultDispatcherFunctionResultDelivery": (
+            "ConversationalResultDispatcherFunction",
+            "ConversationalResultDispatcherTargetFunctionName",
+        ),
+        "BackendFunctionDailyBackendCron": ("BackendFunction", "BackendTargetFunctionName"),
+        "BackendFunctionDailyBackendExport": ("BackendFunction", "BackendTargetFunctionName"),
+        "BackendFunctionDailyMailingExport": ("BackendFunction", "BackendTargetFunctionName"),
+    }
+    for rule_id, (function_id, target_parameter) in rule_targets.items():
+        before_rule = baseline_processed["Resources"][rule_id]
+        after_rule = candidate_processed["Resources"][rule_id]
+        assert before_rule["Type"] == after_rule["Type"] == "AWS::Events::Rule"
+        for property_name in ("Description", "ScheduleExpression", "State"):
+            assert after_rule["Properties"][property_name] == before_rule["Properties"][property_name]
+        before_target = before_rule["Properties"]["Targets"][0]
+        after_target = after_rule["Properties"]["Targets"][0]
+        assert {key: value for key, value in after_target.items() if key != "Arn"} == {
+            key: value for key, value in before_target.items() if key != "Arn"
+        }
+        assert function_id in str(before_target["Arn"])
+        assert target_parameter in str(after_target["Arn"])
+        assert function_id not in str(after_target["Arn"])
+
+        permission_id = f"{rule_id}Permission"
+        before_permission = baseline_processed["Resources"][permission_id]
+        after_permission = candidate_processed["Resources"][permission_id]
+        assert before_permission["Type"] == after_permission["Type"] == "AWS::Lambda::Permission"
+        assert {
+            key: value for key, value in after_permission["Properties"].items()
+            if key != "FunctionName"
+        } == {
+            key: value for key, value in before_permission["Properties"].items()
+            if key != "FunctionName"
+        }
+        assert function_id in str(before_permission["Properties"]["FunctionName"])
+        assert after_permission["Properties"]["FunctionName"] == {"Ref": target_parameter}
+
+
+def test_deploy_workflow_pins_toolchain_and_resolves_only_existing_schedule_targets():
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    assert (REPO_ROOT / ".node-version").read_text(encoding="utf-8") == "20.20.2\n"
+    assert workflow.count('node-version-file: ".node-version"') == 2
+    assert 'node-version: "20"' not in workflow
+    resolver = workflow.split("      - name: Resolve stable scheduled Lambda targets", 1)[1].split(
+        "      - name: Build SAM artifact", 1
+    )[0]
+    assert "Configure AWS credentials" in workflow.split("      - name: Resolve stable scheduled Lambda targets", 1)[0]
+    assert "aws cloudformation describe-stacks" in resolver
+    assert "aws lambda" not in resolver
+    assert "StackId:StackId,Outputs:Outputs" in resolver
+    for output, parameter, environment in (
+        ("ConversationalExecutionWorkerFunctionName", "ConversationalExecutionWorkerTargetFunctionName", "CONVERSATIONAL_EXECUTION_WORKER_TARGET_FUNCTION_NAME"),
+        ("ConversationalResultDispatcherFunctionName", "ConversationalResultDispatcherTargetFunctionName", "CONVERSATIONAL_RESULT_DISPATCHER_TARGET_FUNCTION_NAME"),
+        ("BackendFunctionName", "BackendTargetFunctionName", "BACKEND_TARGET_FUNCTION_NAME"),
+    ):
+        assert resolver.count(f"stack_output {output}") == 1
+        assert workflow.count(f"ParameterKey={parameter},ParameterValue=${environment}") == 1
+    assert "^[A-Za-z0-9-_]{1,64}$" in resolver
+    assert workflow.count("sam deploy \\") == 1
+
+
+def test_issue_217_candidate_preserves_baseline_environment_and_excludes_146_provenance():
+    template = _load_template()
+    workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    assert template["Parameters"]["DataOpsEnvironment"] == {
+        "Type": "String",
+        "Default": "prod",
+        "AllowedPattern": "^[a-zA-Z0-9_.-]+$",
+    }
+    assert "ParameterKey=DataOpsEnvironment" not in workflow
+    assert "DataOpsEnvironment=sandbox" not in workflow
 
 
 def test_conversational_observability_graph_is_exact_retained_and_conditioned():
@@ -620,17 +848,19 @@ def test_heartbeat_alarm_states_distinguish_idle_gap_stopped_disabled_and_errors
     for logical_id in non_heartbeat:
         assert resources[logical_id]["Properties"]["TreatMissingData"] == "notBreaching"
 
-    worker = resources["ConversationalExecutionWorkerFunction"]["Properties"]["Events"]
-    for event_name in ("ExecutionRecovery", "ExecutionHealthPulse"):
-        assert worker[event_name]["Properties"]["State"] == {
+    for rule_id in (
+        "ConversationalExecutionWorkerFunctionExecutionRecovery",
+        "ConversationalExecutionWorkerFunctionExecutionHealthPulse",
+    ):
+        assert resources[rule_id]["Properties"]["State"] == {
             "If": [
                 "ConversationalExecutionIsEnabled",
                 "ENABLED",
                 "DISABLED",
             ]
         }
-    dispatcher = resources["ConversationalResultDispatcherFunction"]["Properties"]["Events"]
-    assert dispatcher["ResultDelivery"]["Properties"]["State"] == {
+    dispatcher_rule = resources["ConversationalResultDispatcherFunctionResultDelivery"]
+    assert dispatcher_rule["Properties"]["State"] == {
         "If": ["ConversationalIngressIsEnabled", "ENABLED", "DISABLED"]
     }
 
@@ -971,8 +1201,8 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "secretsmanager:GetSecretValue" in backend
     assert "s3:PutObject" in backend
     assert "${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*" in backend
-    assert "DailyBackendExport" in backend
-    assert '"dataopsAction":"export"' in backend
+    backend_export = _resource_block(template, "BackendFunctionDailyBackendExport")
+    assert '"dataopsAction":"export"' in backend_export
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret" in backend
     assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
     assert "!Ref EmailDocumentIntakeSecretArn" in backend
@@ -1069,8 +1299,8 @@ def test_mailing_export_storage_schedule_and_dapier_credential_are_private_and_l
     assert "dynamodb:LeadingKeys: [mailchimp]" in backend
     assert "MailchimpSecretArn" not in template
     assert "HasMailchimpSecret" not in template
-    assert "DailyMailingExport" in backend
-    assert '"dataopsAction":"mailing-export"' in backend
+    mailing_export = _resource_block(template, "BackendFunctionDailyMailingExport")
+    assert '"dataopsAction":"mailing-export"' in mailing_export
     assert "DAPIER_CREDENTIALS_TABLE_NAME: ${{ vars.DAPIER_CREDENTIALS_TABLE_NAME }}" in workflow
     assert "DAPIER_CREDENTIALS_TABLE_ARN: ${{ vars.DAPIER_CREDENTIALS_TABLE_ARN }}" in workflow
     assert 'if [ -z "$DAPIER_CREDENTIALS_TABLE_NAME" ] || [ -z "$DAPIER_CREDENTIALS_TABLE_ARN" ]' in workflow
