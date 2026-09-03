@@ -5,6 +5,7 @@ export function createWorkspaceState(context) {
     emptyOperationsDocsSnapshot,
     emptyOperationsQualitySnapshot,
     emptyOperationsRecurringSnapshot,
+    emptyOperationsReviewSnapshot,
     emptyOperationsWorkSnapshot,
     getAccountIdentityState,
     getWorkspaceEntityState,
@@ -34,6 +35,7 @@ export function createWorkspaceState(context) {
   let artifactSnapshot = emptyOperationsArtifactSnapshot();
   let assistantSnapshot = emptyOperationsAssistantSnapshot();
   let qualitySnapshot = emptyOperationsQualitySnapshot();
+  let reviewSnapshot = emptyOperationsReviewSnapshot();
   // Docs availability starts as `loading`: the bootstrap `GET /docs` has not
   // answered yet, and a pending request is not an outage.
   let docsSnapshot = emptyOperationsDocsSnapshot();
@@ -202,6 +204,15 @@ export function createWorkspaceState(context) {
     },
   };
 
+  const reviewSurfaceState = {
+    get reviewSnapshot() {
+      return reviewSnapshot;
+    },
+    set reviewSnapshot(snapshot) {
+      reviewSnapshot = snapshot;
+    },
+  };
+
   return {
     documentState,
     homeSurfaceState,
@@ -209,6 +220,7 @@ export function createWorkspaceState(context) {
     operationsSurfaceState,
     overviewState,
     qualityFiltersState,
+    reviewSurfaceState,
     tasksSurfaceState,
     workDetailState,
     get activeTasksSection() {
@@ -276,6 +288,12 @@ export function createWorkspaceState(context) {
     },
     set qualitySnapshot(snapshot) {
       qualitySnapshot = snapshot;
+    },
+    get reviewSnapshot() {
+      return reviewSnapshot;
+    },
+    set reviewSnapshot(snapshot) {
+      reviewSnapshot = snapshot;
     },
     get recurringSnapshot() {
       return recurringSnapshot;

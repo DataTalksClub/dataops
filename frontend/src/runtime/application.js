@@ -17,6 +17,7 @@ import {
   currentOperatorIdFromPayload, emptyOperationsArtifactSnapshot,
   emptyOperationsAssistantSnapshot, emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot, emptyOperationsRecurringSnapshot,
+  emptyOperationsReviewSnapshot,
   emptyOperationsWorkSnapshot,
   labelizeWorkValue, normalizeTemplateMatchValue,
   recurringConfigsFromPayload, settledPayload, usersFromWorkPayload,
@@ -29,6 +30,7 @@ import { createTasksSurface } from "../surfaces/tasks/index.js";
 import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
+import { createReviewSurface } from "../surfaces/review/index.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
 import { createNavigationShell } from "../shell/navigation.js";
@@ -41,6 +43,7 @@ import { createWorkspaceState } from "../runtime/workspace-state.js";
 import { createSurfaceBridge, createSurfaceComposition } from "./surface-composition.js";
 let knowledgeSurface;
 let documentEditorSurface;
+let reviewSurface;
 let navigationShell;
 
 const surfaceBridge = createSurfaceBridge();
@@ -71,6 +74,7 @@ const workspaceState = createWorkspaceState({
   emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot,
   emptyOperationsRecurringSnapshot,
+  emptyOperationsReviewSnapshot,
   emptyOperationsWorkSnapshot,
   getAccountIdentityState: () => getAccountIdentityState(),
   getWorkspaceEntityState,
@@ -83,6 +87,7 @@ const {
   operationsSurfaceState,
   overviewState,
   qualityFiltersState,
+  reviewSurfaceState,
   tasksSurfaceState,
   workDetailState,
 } = workspaceState;
@@ -151,6 +156,8 @@ const {
   getRenderMailingExportsSurface: () => renderMailingExportsSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperationsHome: () => renderOperationsHome,
+  getRenderReviewSurface: () =>
+    reviewSurface?.renderReviewSurface || (() => undefined),
   getRenderSponsorCrmSurface: () => renderSponsorCrmSurface,
   getRenderTasksSurface: () => renderTasksSurface,
   getRenderDeviceSurfaceView: () => renderDeviceSurfaceView,
@@ -605,6 +612,21 @@ const {
 
 const customSelects = [];
 
+reviewSurface = createReviewSurface({
+  apiUrl,
+  documentList,
+  getActiveWorkspaceRoute,
+  getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,
+  getDocsAvailability: () => workspaceState.docsSnapshot,
+  navigateCanonicalWorkspace,
+  openDocument,
+  refreshDocuments,
+  renderHonestState,
+  request,
+  reviewState: reviewSurfaceState,
+  setRouteTitle,
+});
+
 knowledgeSurface = createKnowledgeSurface({
   apiUrl,
   assistantJobsFromPayload,
@@ -828,6 +850,7 @@ navigationShell = createNavigationShell({
   refreshDocuments,
   refreshOperationsArtifactSnapshot,
   refreshOperationsAssistantSnapshot,
+  refreshReviewSnapshot: (...args) => reviewSurface.refreshReviewSnapshot(...args),
   refreshUsersSurface,
   refreshWorkBell,
   restoreDocumentFilters,

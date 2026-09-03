@@ -41,6 +41,8 @@
     "src/surfaces/knowledge/navigation.js",
     "src/surfaces/knowledge/menus.js",
     "src/surfaces/knowledge/references.js",
+    "src/surfaces/review/index.js",
+    "src/surfaces/review/model.js",
     "src/surfaces/document-editor/index.js",
     "src/surfaces/document-editor/feedback.js",
     "src/surfaces/document-editor/lifecycle.js",

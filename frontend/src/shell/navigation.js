@@ -27,6 +27,7 @@ export function createNavigationShell(context) {
     refreshDocuments,
     refreshOperationsArtifactSnapshot,
     refreshOperationsAssistantSnapshot,
+    refreshReviewSnapshot,
     refreshUsersSurface,
     refreshWorkBell,
     restoreDocumentFilters,
@@ -291,6 +292,9 @@ export function createNavigationShell(context) {
     if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
     if (route.path === "/artifacts") {
       jobs.push(refreshOperationsArtifactSnapshot({ rerender: true }));
+    }
+    if (route.path === "/review" && typeof refreshReviewSnapshot === "function") {
+      jobs.push(refreshReviewSnapshot({ rerender: true, token }));
     }
     if (route.path === "/users") {
       jobs.push(refreshUsersSurface({ rerender: true }));

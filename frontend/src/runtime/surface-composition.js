@@ -130,6 +130,7 @@ export function createSurfaceComposition(context) {
     getRenderMailingExportsSurface,
     getRenderNewsletterSurface,
     getRenderOperationsHome,
+    getRenderReviewSurface,
     getRenderSponsorCrmSurface,
     getRenderTasksSurface,
     getSearchValue,
@@ -173,6 +174,7 @@ export function createSurfaceComposition(context) {
     if (view === "mailing-exports") {
       return getRenderMailingExportsSurface()();
     }
+    if (view === "review") return getRenderReviewSurface()(documents);
     return getRenderOperationsHome()(documents);
   }
 
