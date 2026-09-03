@@ -258,6 +258,14 @@ function observeBrowserErrors(page) {
   return entries;
 }
 
+async function expectNoHorizontalOverflow(page) {
+  const overflow = await page.evaluate(() => Math.max(
+    document.documentElement.scrollWidth,
+    document.body.scrollWidth,
+  ) - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+}
+
 function expectOnlyDeliberateCatalogFailures(entries) {
   const failures = entries.filter((entry) => entry.kind === 'response'
     && entry.method === 'GET'
@@ -1453,6 +1461,43 @@ test.describe('canonical frontend capability behavior', () => {
       { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.filters.url-reload-clear-search', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.draft-management', 'process-docs.partial-save-failure', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.git-failure'] },
       { route: '/#/admin', roleId: 'admin', stateIds: ['admin.loading', 'admin.empty', 'admin.ready-read-only', 'admin.failure'] },
     ]);
+  });
+
+  test('Document Review derives a queue from live docs and records safe feedback', async ({ browser }, testInfo) => {
+    const context = await portalContext(browser, servers.operator);
+    const page = await context.newPage();
+    const browserErrors = observeBrowserErrors(page);
+    await page.goto('/#/review');
+    await expect(page.getByRole('heading', { name: 'Document review', exact: true })).toBeVisible();
+    await expect(page.locator('.review-surface')).toBeVisible();
+    await expect(page.locator('.review-queue-item')).toHaveCount(1);
+    await expect(page.locator('.review-queue-item').first()).toContainText('Synthetic Capability Procedure');
+
+    await page.locator('.review-queue-item').first().click();
+    await expect(page).toHaveURL(/\/#\/review\?documentId=sop\.synthetic\.capability$/);
+    await expect(page.locator('.review-markdown-preview')).toContainText('Verify the synthetic capability.');
+    await expect(page.getByRole('heading', { name: 'Record review evidence', exact: true })).toBeVisible();
+
+    await page.getByLabel('Feedback').fill('Add the observable validation result and owner handoff.');
+    await page.getByRole('button', { name: 'Request changes' }).click();
+    await expect(page.locator('.review-notice')).toContainText('Review evidence saved. The document lifecycle remains unchanged.');
+    await expect(page.locator('.review-history')).toContainText('Add the observable validation result and owner handoff.');
+
+    const documentResponse = await context.request.get('/docs/resolve?ref=sop.synthetic.capability');
+    expect(documentResponse.status()).toBe(200);
+    expect((await json(documentResponse)).document.status).toBe('proposed');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectNoHorizontalOverflow(page, '/#/review');
+    await page.reload();
+    await expect(page).toHaveURL(/\/#\/review\?documentId=sop\.synthetic\.capability$/);
+    await expect(page.locator('.review-history')).toContainText('Add the observable validation result and owner handoff.');
+    expect(browserErrors).toEqual([]);
+    await context.close();
+    recordCapabilityEvidence(testInfo, [{
+      route: '/#/review',
+      roleId: 'operator',
+      stateIds: ['document-review.ready', 'document-review.feedback'],
+    }]);
   });
 
   test('Users derive controls from the server role and deny spoofed or operator mutations', async ({ browser }, testInfo) => {

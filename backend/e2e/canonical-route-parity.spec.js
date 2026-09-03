@@ -146,6 +146,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
       ['/#/calendar', 'Calendar'],
       ['/#/mailing-exports', 'Mailing exports'],
       ['/#/processes', 'Docs'],
+      ['/#/review', 'Document review'],
       ['/#/admin', 'Admin'],
       ['/#/users', 'Users'],
     ];

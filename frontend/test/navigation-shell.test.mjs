@@ -145,6 +145,7 @@ function createNavigationHarness(options = {}) {
     },
     refreshOperationsArtifactSnapshot: async (value) => calls.push(["artifacts", value]),
     refreshOperationsAssistantSnapshot: async (value) => calls.push(["assistants", value]),
+    refreshReviewSnapshot: async (value) => calls.push(["review", value]),
     refreshUsersSurface: async (value) => calls.push(["users", value]),
     refreshWorkBell: async (value) => calls.push(["refresh-bell", value]),
     renderWorkspaceNav: () => ({
@@ -234,6 +235,7 @@ describe("canonical navigation shell behavior", () => {
       ["/assistants", { assistantJobId: "job-1" }, "assistants"],
       ["/notifications", {}, "refresh-bell"],
       ["/artifacts", {}, "artifacts"],
+      ["/review", {}, "review"],
       ["/users", {}, "users"],
     ];
     for (const [path, params, expected] of cases) {

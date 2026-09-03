@@ -1398,6 +1398,38 @@
       ]
     },
     {
+      "id": "document-review",
+      "surface": "Document review workspace",
+      "route": "/#/review",
+      "apiBoundaries": [
+        "/api/document-reviews",
+        "/docs",
+        "/content/*"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
+      "states": [
+        {
+          "id": "document-review.ready",
+          "kind": "ready",
+          "description": "Review opens a live document queue with metadata, preview, checklist, and history controls.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "document-review.feedback",
+          "kind": "ready",
+          "description": "A reviewer can record feedback and a decision while the document lifecycle remains unchanged.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
+      ]
+    },
+    {
       "id": "admin",
       "surface": "Admin and process quality",
       "route": "/#/admin",

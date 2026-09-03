@@ -227,6 +227,7 @@ test.describe("pre-refactor frontend module characterization", () => {
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],
       ["/sponsors", "Sponsors", ".sponsor-crm-surface"],
       ["/mailing-exports", "Mailing exports", ".mailing-exports-surface"],
+      ["/review", "Document review", ".review-surface"],
       ["/processes", "Docs", ".ops-surface-docs"],
       ["/admin", "Admin", ".ops-surface-admin"],
       ["/users", "Users", ".ops-surface-users"],
@@ -308,6 +309,7 @@ test.describe("pre-refactor frontend module characterization", () => {
       "/sponsors",
       "/mailing-exports",
       "/processes",
+      "/review",
       "/admin",
       "/users",
     ];

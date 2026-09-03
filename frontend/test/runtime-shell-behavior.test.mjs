@@ -165,6 +165,7 @@ function createWorkspaceHarness() {
     docs: { source: "docs", state: "loading" },
     quality: { source: "quality", loaded: false },
     recurring: { source: "recurring", loaded: false },
+    review: { source: "review", loaded: false },
     work: { source: "work", loaded: false },
   };
   const state = createWorkspaceState({
@@ -173,6 +174,7 @@ function createWorkspaceHarness() {
     emptyOperationsDocsSnapshot: () => snapshots.docs,
     emptyOperationsQualitySnapshot: () => snapshots.quality,
     emptyOperationsRecurringSnapshot: () => snapshots.recurring,
+    emptyOperationsReviewSnapshot: () => snapshots.review,
     emptyOperationsWorkSnapshot: () => snapshots.work,
     getAccountIdentityState: () => account,
     getWorkspaceEntityState: () => entity,

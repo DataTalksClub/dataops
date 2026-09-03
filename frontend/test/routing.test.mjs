@@ -39,6 +39,7 @@ describe("canonical workspace routing", () => {
       "/calendar",
       "/mailing-exports",
       "/processes",
+      "/review",
       "/admin",
       "/users",
       "/device",

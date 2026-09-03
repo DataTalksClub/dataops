@@ -64,6 +64,7 @@ function createSurfaceHarness(options = {}) {
       "inbox",
       "mailing-exports",
       "newsletter",
+      "review",
       "sponsors",
       "tasks",
       "users",
@@ -99,6 +100,7 @@ function createSurfaceHarness(options = {}) {
     getRenderMailingExportsSurface: () => renders["mailing-exports"],
     getRenderNewsletterSurface: () => renders.newsletter,
     getRenderOperationsHome: () => renders.home,
+    getRenderReviewSurface: () => renders.review,
     getRenderSponsorCrmSurface: () => renders.sponsors,
     getRenderTasksSurface: () => renders.tasks,
     getRenderUsersSurfaceView: () => renders.users,
@@ -224,12 +226,13 @@ describe("runtime surface composition", () => {
       ["newsletter", "newsletter"],
       ["calendar", "calendar"],
       ["mailing-exports", "mailing-exports"],
+      ["review", "review"],
       ["unknown", "home"],
     ]) {
       harness.workspaceState.activeWorkspaceView = view;
       harness.composition.renderOperationsWorkspace(documents);
       assert.equal(harness.calls.at(-1)[0], `render:${expected}`);
-      if (["home", "tasks", "docs", "admin"].includes(view)) {
+      if (["home", "tasks", "docs", "admin", "review"].includes(view)) {
         assert.equal(harness.calls.at(-1)[1], documents);
       }
     }

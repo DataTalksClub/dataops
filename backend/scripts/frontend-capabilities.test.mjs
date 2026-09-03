@@ -92,6 +92,10 @@ const REQUIRED = {
       "unavailable",
     ],
   },
+  "document-review": {
+    route: "/#/review",
+    states: ["ready", "feedback"],
+  },
   admin: { route: "/#/admin", states: ["loading", "empty", "ready-read-only", "failure"] },
   users: {
     route: "/#/users",
@@ -118,6 +122,7 @@ const REQUIRED_APIS = {
   calendar: ["/api/calendar-items"],
   "mailing-exports": ["/api/mailing-exports"],
   "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks"],
+  "document-review": ["/api/document-reviews", "/docs", "/content/*"],
   admin: ["/docs/process-quality", "/git/status", "/git/log"],
   users: ["/api/users", "/api/me"],
 };
@@ -165,6 +170,7 @@ const REQUIRED_ROUTE_SET = [
   "/#/calendar",
   "/#/mailing-exports",
   "/#/processes",
+  "/#/review",
   "/#/admin",
   "/#/users",
 ];
@@ -230,7 +236,7 @@ test("frontend capability matrix has the canonical schema, routes, APIs, roles, 
   const retainedRoutes = matrix.capabilities
     .filter((capability) => capability.route.startsWith("/#/") && capability.id !== "settings")
     .map((capability) => capability.route);
-  assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 17 retained routes must be classified exactly once");
+  assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 18 retained routes must be classified exactly once");
   assert.ok(matrix.capabilities.find((capability) => capability.id === "home").states.some((state) => state.id === "home.ready"), "home.ready is the durable #161 evidence slot");
 });
 
