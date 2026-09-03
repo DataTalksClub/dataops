@@ -1252,6 +1252,35 @@ Resources:
         - Key: DataClass
           Value: ExecutionState
 
+  DataOpsDocumentReviewsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-document-reviews
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: DataOps
+        - Key: App
+          Value: DataOpsV1
+        - Key: DataClass
+          Value: DocumentReview
+
   DataOpsIntakeTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -1887,6 +1916,9 @@ Resources:
       LoggingConfig:
         LogFormat: JSON
         LogGroup: !Ref ConversationalBackendLogGroup
+      Environment:
+        Variables:
+          DATAOPS_DOCUMENT_REVIEWS_TABLE: !Ref DataOpsDocumentReviewsTable
       Policies:
         - Statement:
             Effect: Allow
@@ -1908,6 +1940,7 @@ Resources:
               - !GetAtt DataOpsArtifactsTable.Arn
               - !GetAtt DataOpsAssistantJobsTable.Arn
               - !GetAtt DataOpsAuditEventsTable.Arn
+              - !GetAtt DataOpsDocumentReviewsTable.Arn
               - !GetAtt DataOpsIntakeTable.Arn
               - !Sub ${DataOpsIntakeTable.Arn}/index/*
               - !GetAtt DataOpsNotificationsTable.Arn
@@ -1947,6 +1980,7 @@ Resources:
               - !GetAtt DataOpsCalendarTable.Arn
               - !GetAtt DataOpsConversationalStateTable.Arn
               - !GetAtt DataOpsUsersTable.Arn
+              - !GetAtt DataOpsDocumentReviewsTable.Arn
         - Statement:
             Effect: Allow
             Action:
@@ -2186,6 +2220,9 @@ Outputs:
   DataOpsAuditEventsTableName:
     Description: DynamoDB table for assistant job and workflow audit events
     Value: !Ref DataOpsAuditEventsTable
+  DataOpsDocumentReviewsTableName:
+    Description: DynamoDB table for document review decisions and history
+    Value: !Ref DataOpsDocumentReviewsTable
   DataOpsIntakeTableName:
     Description: DynamoDB table for raw operational intake metadata
     Value: !Ref DataOpsIntakeTable

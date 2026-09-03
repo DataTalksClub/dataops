@@ -28,6 +28,7 @@ import { handleCalendarRoutes } from './routes/calendar';
 import { handleConversationalExecutionRoutes } from './routes/conversationalExecution';
 import { handleConversationalIdentityBindingRoutes } from './routes/conversationalIdentityBindings';
 import { handleConversationalReadiness } from './routes/conversationalReadiness';
+import { handleDocumentReviewRoutes } from './routes/documentReviews';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
 import { resolveInteractiveActor, workAdminForbidden } from './identity/actor';
@@ -1473,6 +1474,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/assistant-social-drafts')) {
       const result = await handleSocialDraftAssistantRoutes(event, client);
+      if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/document-reviews')) {
+      const result = await handleDocumentReviewRoutes(event, client);
       if (result) return result;
     }
 

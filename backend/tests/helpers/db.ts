@@ -8,7 +8,7 @@
  * Nothing under `src/` may import this file.
  *
  * Node's test runner gives every test file its own process, so "once" here
- * means once per test-file process: the dynalite server and the 16 table
+ * means once per test-file process: the dynalite server and the 17 table
  * definitions are built at most one time no matter how many suites, hooks, or
  * helpers in that file ask for the database.
  *
@@ -37,6 +37,7 @@ import {
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
+  TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
@@ -56,6 +57,7 @@ const ALL_TABLES = [
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
+  TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,

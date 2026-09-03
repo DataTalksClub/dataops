@@ -49,7 +49,17 @@ export interface DocumentRecord {
   summary: string;
   tags: string[];
   systems: string[];
+  tools: string[];
   related_docs: string[];
+  department: string;
+  business_system: string;
+  owner_role: string;
+  status: string;
+  criticality: string;
+  confidentiality: string;
+  review_cycle_days: number | null;
+  last_reviewed_at: string;
+  next_review_at: string;
   updated_at: number;
   domain: string;
   id_source: 'frontmatter' | 'generated';
@@ -77,7 +87,17 @@ export function recordToDict(record: DocumentRecord): DocumentRecordDict {
     summary: record.summary,
     tags: record.tags,
     systems: record.systems,
+    tools: record.tools,
     related_docs: record.related_docs,
+    department: record.department,
+    business_system: record.business_system,
+    owner_role: record.owner_role,
+    status: record.status,
+    criticality: record.criticality,
+    confidentiality: record.confidentiality,
+    review_cycle_days: record.review_cycle_days,
+    last_reviewed_at: record.last_reviewed_at,
+    next_review_at: record.next_review_at,
     updated_at: record.updated_at,
     domain: record.domain,
     id_source: record.id_source,
@@ -267,7 +287,17 @@ function recordFromMetadata(
     summary: asString(metadata.summary),
     tags: asStrings(metadata.tags),
     systems: asStrings(metadata.systems),
+    tools: asStrings(metadata.tools),
     related_docs: asStrings(metadata.related_docs),
+    department: asString(metadata.department),
+    business_system: asString(metadata.business_system),
+    owner_role: asString(metadata.owner_role),
+    status: asString(metadata.status) || 'proposed',
+    criticality: asString(metadata.criticality) || 'supporting',
+    confidentiality: asString(metadata.confidentiality) || 'internal',
+    review_cycle_days: asNumber(metadata.review_cycle_days),
+    last_reviewed_at: nullableString(metadata.last_reviewed_at),
+    next_review_at: nullableString(metadata.next_review_at),
     updated_at: mtime,
     domain: inferDomain(repoPath),
     id_source: explicitId ? 'frontmatter' : 'generated',
@@ -357,6 +387,17 @@ function asStrings(value: unknown): string[] {
     return trimmed ? [stripQuotes(trimmed)] : [];
   }
   return [String(value).trim()];
+}
+
+function asNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function nullableString(value: unknown): string {
+  const text = asString(value);
+  return ['null', 'none', 'undefined'].includes(text.toLowerCase()) ? '' : text;
 }
 
 function stripQuotes(value: string): string {

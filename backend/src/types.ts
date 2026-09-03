@@ -621,6 +621,34 @@ export interface Notification {
   createdAt: string;
 }
 
+// --- Document review ---
+
+export type DocumentReviewDecision = 'approved' | 'changes_requested' | 'blocked' | 'deferred';
+export type DocumentReviewCheck = 'unreviewed' | 'pass' | 'needs_work' | 'na';
+
+export interface DocumentReviewChecklist {
+  purpose: DocumentReviewCheck;
+  procedure: DocumentReviewCheck;
+  validation: DocumentReviewCheck;
+  troubleshooting: DocumentReviewCheck;
+  references: DocumentReviewCheck;
+  ownership: DocumentReviewCheck;
+}
+
+export interface DocumentReviewRecord {
+  id: string;
+  documentId: string;
+  documentPath: string;
+  documentUpdatedAt: number;
+  decision: DocumentReviewDecision;
+  feedback: string;
+  checklist: DocumentReviewChecklist;
+  reviewerId: string;
+  reviewedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // --- Lambda ---
 
 export interface LambdaEvent {

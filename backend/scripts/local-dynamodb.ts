@@ -21,6 +21,7 @@ import {
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
+  TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
@@ -302,6 +303,18 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
     {
+      TableName: TABLE_DOCUMENT_REVIEWS,
+      KeySchema: [
+        { AttributeName: 'PK', KeyType: 'HASH' as const },
+        { AttributeName: 'SK', KeyType: 'RANGE' as const },
+      ],
+      AttributeDefinitions: [
+        { AttributeName: 'PK', AttributeType: 'S' as const },
+        { AttributeName: 'SK', AttributeType: 'S' as const },
+      ],
+      BillingMode: 'PAY_PER_REQUEST' as const,
+    },
+    {
       TableName: TABLE_INTAKE,
       KeySchema: [
         { AttributeName: 'PK', KeyType: 'HASH' as const },
@@ -414,6 +427,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_ARTIFACTS,
     TABLE_ASSISTANT_JOBS,
     TABLE_AUDIT_EVENTS,
+    TABLE_DOCUMENT_REVIEWS,
     TABLE_INTAKE,
     TABLE_NOTIFICATIONS,
     TABLE_SESSIONS,
@@ -458,6 +472,7 @@ export {
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
+  TABLE_DOCUMENT_REVIEWS,
   TABLE_INTAKE,
   TABLE_NOTIFICATIONS,
   TABLE_SESSIONS,
