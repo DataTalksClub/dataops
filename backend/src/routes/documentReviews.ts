@@ -6,6 +6,7 @@ import {
   listDocumentReviews,
   saveDocumentReview,
 } from '../db/documentReviews';
+import { resolveInteractiveActor } from '../identity/actor';
 import type {
   DocumentReviewCheck,
   DocumentReviewChecklist,
@@ -61,12 +62,6 @@ function parseBody(event: LambdaEvent): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function documentIdFromPath(path: string): string | null | undefined {
@@ -152,7 +147,7 @@ function validateApprovedChecklist(checklist: DocumentReviewChecklist, decision:
   if (incomplete.length > 0) throw new ReviewRequestError(`approved decisions require pass or na for: ${incomplete.join(', ')}`);
 }
 
-function reviewFromBody(event: LambdaEvent): DocumentReviewRecord {
+function reviewFromBody(event: LambdaEvent, reviewerId: string): DocumentReviewRecord {
   const body = parseBody(event);
   if (!body) throw new ReviewRequestError('Request body must be a JSON object');
   const documentId = validateDocumentId(requiredString(body, 'documentId', 200));
@@ -163,7 +158,6 @@ function reviewFromBody(event: LambdaEvent): DocumentReviewRecord {
   const feedback = validateFeedback(body.feedback, decision);
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
-  const reviewerId = headerValue(event.headers, 'x-user-id') || 'local-operator';
   return {
     id,
     documentId,
@@ -187,6 +181,10 @@ export async function handleDocumentReviewRoutes(
   if (path !== ROUTE_PREFIX && !path.startsWith(`${ROUTE_PREFIX}/`)) return null;
   const method = (event.httpMethod || 'GET').toUpperCase();
   try {
+    if (method !== 'GET' && method !== 'POST') return jsonResponse(405, { error: 'Method not allowed' });
+    const actor = await resolveInteractiveActor(client, event, method === 'POST' ? 'work-write' : 'work-read');
+    if (!actor.ok) return actor.response;
+    const reviewerId = actor.actor.id || 'local-operator';
     if (method === 'GET' && path === ROUTE_PREFIX) {
       return jsonResponse(200, { reviews: await listDocumentReviews(client) });
     }
@@ -202,15 +200,14 @@ export async function handleDocumentReviewRoutes(
       return jsonResponse(200, { review, history });
     }
     if (method === 'POST' && path === ROUTE_PREFIX) {
-      const review = reviewFromBody(event);
+      const review = reviewFromBody(event, reviewerId);
       await saveDocumentReview(client, review);
       return jsonResponse(201, { review });
     }
-    return jsonResponse(405, { error: 'Method not allowed' });
+    return jsonResponse(404, { error: 'Document review not found' });
   } catch (error) {
     if (error instanceof ReviewRequestError) return jsonResponse(400, { error: error.message });
     console.error('Document review API error:', error);
     return jsonResponse(500, { error: 'Internal server error' });
   }
 }
-

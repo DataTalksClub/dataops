@@ -127,5 +127,19 @@ describe('document review API', () => {
     );
     assert.equal(response?.statusCode, 404);
   });
-});
 
+  it('requires a verified interactive actor when the test bypass is disabled', async () => {
+    const previous = process.env.SKIP_AUTH;
+    process.env.SKIP_AUTH = 'false';
+    try {
+      const response = await handleDocumentReviewRoutes(
+        event('GET', '/api/document-reviews'),
+        client,
+      );
+      assert.equal(response?.statusCode, 401);
+    } finally {
+      if (previous === undefined) delete process.env.SKIP_AUTH;
+      else process.env.SKIP_AUTH = previous;
+    }
+  });
+});
