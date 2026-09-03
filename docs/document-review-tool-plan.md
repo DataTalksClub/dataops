@@ -1,6 +1,6 @@
 # Document review tool
 
-Status: implementation in progress
+Status: implementation complete; adoption evidence pending
 
 This plan turns the SYSTEMology audit backlog in the private `dataops-knowledge`
 repository into an operator workflow inside DataOps. The audit evidence remains
@@ -111,3 +111,15 @@ remaining owner-controlled work:
 
 These lanes must reuse the review evidence model or a clearly related model;
 they must not become another static report or silently inherit document status.
+
+## Verification status
+
+The document review lane is implemented and covered by unit, API, routing,
+capability, build, SAM validation, and responsive browser checks. The first
+real owner review remains intentionally pending: review evidence must be
+captured in DataOps before any document is promoted to `active`.
+
+The focused review checks pass. The repository-wide backend command still
+reports unrelated Telegram-conversational failures because its test command
+disables the conversational feature flags while those tests expect the enabled
+path; those failures are outside this review lane.
