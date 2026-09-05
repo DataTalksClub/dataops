@@ -36,6 +36,8 @@ Files that live here:
   runtime, data, and process boundaries.
 - `decisions/dataops-knowledge-repository.md` - ADR for the future private
   `DataTalksClub/dataops-knowledge` boundary and migration plan.
+- `decisions/operating-model-projection.md` - ADR for projecting private
+  operating-model definitions into personal execution Cards.
 - `local-development.md` - developer command plan for local checks, focused
   verification, handoff, and deployment-adjacent work.
 - `v1-runtime-architecture.md` - V1 runtime decision for the unified operations
