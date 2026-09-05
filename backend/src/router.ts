@@ -29,6 +29,7 @@ import { handleConversationalExecutionRoutes } from './routes/conversationalExec
 import { handleConversationalIdentityBindingRoutes } from './routes/conversationalIdentityBindings';
 import { handleConversationalReadiness } from './routes/conversationalReadiness';
 import { handleDocumentReviewRoutes } from './routes/documentReviews';
+import { handleOperatingModelRoutes } from './routes/operatingModel';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
 import { resolveInteractiveActor, workAdminForbidden } from './identity/actor';
@@ -1479,6 +1480,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/document-reviews')) {
       const result = await handleDocumentReviewRoutes(event, client);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/operating-model' || reqPath === '/api/my-plan') {
+      const result = await handleOperatingModelRoutes(event, client);
       if (result) return result;
     }
 
