@@ -31,6 +31,7 @@ import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
 import { createReviewSurface } from "../surfaces/review/index.js";
+import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
 import { createNavigationShell } from "../shell/navigation.js";
@@ -44,6 +45,7 @@ import { createSurfaceBridge, createSurfaceComposition } from "./surface-composi
 let knowledgeSurface;
 let documentEditorSurface;
 let reviewSurface;
+let operatingModelSurface;
 let navigationShell;
 
 const surfaceBridge = createSurfaceBridge();
@@ -156,6 +158,8 @@ const {
   getRenderMailingExportsSurface: () => renderMailingExportsSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperationsHome: () => renderOperationsHome,
+  getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
+  getRenderMyPlan: () => operatingModelSurface?.renderMyPlan || (() => undefined),
   getRenderReviewSurface: () =>
     reviewSurface?.renderReviewSurface || (() => undefined),
   getRenderSponsorCrmSurface: () => renderSponsorCrmSurface,
@@ -220,6 +224,16 @@ const { renderCalendarSurface, renderNewsletterSurface } =
     todayIsoDate,
     workApiUrl,
   });
+operatingModelSurface = createOperatingModelSurface({
+  apiUrl,
+  documentList,
+  getActiveWorkspaceRoute,
+  navigateCanonicalWorkspace,
+  openDocument: (...args) => openDocument(...args),
+  request,
+  resolveDocReference: (...args) => resolveDocReference(...args),
+  setRouteTitle,
+});
 const {
   account: {
     activeWorkOwner, activeWorkOwnerId, closeSettingsMenu,

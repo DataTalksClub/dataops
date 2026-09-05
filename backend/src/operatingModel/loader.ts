@@ -53,7 +53,7 @@ export function parseCsv(source: string): Row[] {
 }
 
 function functionDocumentId(slug: string): string {
-  return `reference.start-here.operating-model.functions.${slug}`;
+  return `reference.start-here.function.${slug}`;
 }
 
 function weekDocumentId(id: string, date: string): string {

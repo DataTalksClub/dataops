@@ -1,6 +1,7 @@
-// Canonical workspace routes and navigation vocabulary.
 export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
   home: "/",
+  "my-plan": "/my-plan",
+  "operating-model": "/operating-model",
   inbox: "/inbox",
   docs: "/processes",
   admin: "/admin",
@@ -16,6 +17,8 @@ export const WORKSPACE_HASH_BY_VIEW = Object.freeze({
 
 export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/": { view: "home", tasksSection: "queue", params: [] },
+  "/my-plan": { view: "my-plan", tasksSection: "queue", params: ["sessionId"] },
+  "/operating-model": { view: "operating-model", tasksSection: "queue", params: ["section", "entityId"] },
   "/inbox": { view: "inbox", tasksSection: "queue", params: ["intakeId"] },
   "/tasks": {
     view: "tasks",

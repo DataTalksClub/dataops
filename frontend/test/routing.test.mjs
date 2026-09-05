@@ -24,6 +24,8 @@ describe("canonical workspace routing", () => {
   test("retains every top-level and nested workspace route", () => {
     assert.deepEqual(Object.keys(WORKSPACE_ROUTE_DEFINITIONS), [
       "/",
+      "/my-plan",
+      "/operating-model",
       "/inbox",
       "/tasks",
       "/cards",

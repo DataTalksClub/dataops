@@ -130,6 +130,8 @@ export function createSurfaceComposition(context) {
     getRenderMailingExportsSurface,
     getRenderNewsletterSurface,
     getRenderOperationsHome,
+    getRenderOperatingModel,
+    getRenderMyPlan,
     getRenderReviewSurface,
     getRenderSponsorCrmSurface,
     getRenderTasksSurface,
@@ -156,6 +158,8 @@ export function createSurfaceComposition(context) {
     syncWorkspaceNav();
     const view = workspaceState.activeWorkspaceView;
     if (view === "home") return getRenderOperationsHome()(documents);
+    if (view === "my-plan") return getRenderMyPlan()();
+    if (view === "operating-model") return getRenderOperatingModel()();
     if (view === "tasks") {
       return getRenderTasksSurface()(
         documents,
