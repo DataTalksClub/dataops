@@ -57,6 +57,35 @@ export interface RoadmapSessionDefinition {
   documentId: string;
   templateType: string;
   targetPaths: string;
+  checklist: Array<{
+    id: string;
+    title: string;
+    phase: string;
+    proof: string;
+  }>;
+}
+
+export interface AssetDefinition {
+  id: string;
+  name: string;
+  type: string;
+  primaryUnitId: string;
+  secondaryUnitIds: string[];
+  owner: string;
+  sourceOfTruth: string;
+  status: string;
+  separationTreatment: string;
+  openDecision: string;
+}
+
+export interface DependencyDefinition {
+  id: string;
+  consumerUnitId: string;
+  provider: string;
+  name: string;
+  risk: string;
+  mitigation: string;
+  roadmap: string;
 }
 
 export interface OperatingModelSnapshot {
@@ -68,6 +97,8 @@ export interface OperatingModelSnapshot {
   functions: FunctionDefinition[];
   systems: SystemDefinition[];
   gaps: GapDefinition[];
+  assets: AssetDefinition[];
+  dependencies: DependencyDefinition[];
   lifecycles: Array<{ id: string; title: string; path: string }>;
   roadmap: { id: '2026-q4'; sessions: RoadmapSessionDefinition[] };
   downloads: Array<{ id: string; label: string; href: string }>;

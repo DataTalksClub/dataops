@@ -5,6 +5,8 @@ import { buildRegistry } from '../docs/docRegistry';
 import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../docs/githubStore';
 import type {
   BusinessUnitDefinition,
+  AssetDefinition,
+  DependencyDefinition,
   FunctionDefinition,
   GapDefinition,
   OperatingModelSnapshot,
@@ -23,6 +25,8 @@ const FILES = {
   systems: '_docs/operating-model/system-function-map.csv',
   gaps: '_docs/operating-model/system-gap-register.csv',
   roadmap: '_docs/operating-model/weekly-roadmap.csv',
+  assets: '_docs/operating-model/asset-register.csv',
+  dependencies: '_docs/operating-model/dependency-register.csv',
 } as const;
 
 function values(value: unknown): Dict[] {
@@ -76,6 +80,7 @@ export async function loadOperatingModelSnapshot(
       return `workflow-templates/${templateType}.yaml`;
     });
   const templateContent = await Promise.all(templatePaths.map((path) => store.readFile(path)));
+  const templateDocuments = templateContent.map((source) => (yaml.load(source) || {}) as Dict);
   const revision = createHash('sha256')
     .update([...content, ...templateContent].join('\n--- operating-model-definition ---\n'))
     .digest('hex');
@@ -110,13 +115,28 @@ export async function loadOperatingModelSnapshot(
   }));
   const sessions: RoadmapSessionDefinition[] = roadmapRows
     .filter((row) => row.work_status === 'systems-day')
-    .map((row) => ({
+    .map((row, index) => ({
       id: row.week, title: row.title, proposedDate: row.date, goal: row.goal, deliverables: row.outputs,
       decisionsNeeded: row.human_decisions, agentWork: row.agent_work, definitionOfDone: row.definition_of_done,
       documentId: row.document_id || weekDocumentId(row.week, row.date),
       templateType: row.template_type || `operating-model-${row.week.toLowerCase()}`,
       targetPaths: row.target_paths,
-    }));
+      checklist: values(templateDocuments[index].tasks).map((task) => ({
+        id: text(task.id), title: text(task.name), phase: text(task.phase_id),
+        proof: text((task.proof as Dict | undefined)?.label),
+      })),
+    }))
+    .sort((left, right) => left.proposedDate.localeCompare(right.proposedDate) || left.id.localeCompare(right.id));
+  const assets: AssetDefinition[] = parseCsv(content[5]).map((row) => ({
+    id: row.asset_id, name: row.asset, type: row.type, primaryUnitId: row.primary_unit,
+    secondaryUnitIds: row.secondary_units.split(',').map((item) => item.trim()).filter(Boolean),
+    owner: row.owner, sourceOfTruth: row.source_of_truth, status: row.status,
+    separationTreatment: row.separation_treatment, openDecision: row.open_decision,
+  }));
+  const dependencies: DependencyDefinition[] = parseCsv(content[6]).map((row) => ({
+    id: row.dependency_id, consumerUnitId: row.consumer_unit, provider: row.provider,
+    name: row.dependency, risk: row.risk, mitigation: row.mitigation, roadmap: row.roadmap,
+  }));
   const lifecycles = registry.documents
     .filter((doc) => doc.path.includes('/operating-model/reference/lifecycles/') && doc.path.endsWith('.md') && !doc.path.endsWith('/index.md'))
     .map((doc) => ({ id: doc.id, title: doc.title, path: doc.path }));
@@ -126,7 +146,7 @@ export async function loadOperatingModelSnapshot(
   return {
     revision, loadedAt: new Date().toISOString(), freshness: 'current',
     overviewDocumentId: 'system.start-here.operating-model',
-    businessUnits, functions, systems, gaps, lifecycles,
+    businessUnits, functions, systems, gaps, assets, dependencies, lifecycles,
     roadmap: { id: '2026-q4', sessions },
     downloads: Object.values(FILES).map((path) => ({
       id: path.split('/').pop() || path, label: path.split('/').pop() || path, href: `/knowledge-files/${path}`,

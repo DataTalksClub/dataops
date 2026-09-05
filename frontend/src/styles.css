@@ -10620,6 +10620,10 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
 .plan-session { border-left: 4px solid var(--accent, #2563eb); }
 .plan-session-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .plan-session-date { min-height: 38px; padding: 7px 10px; border: 1px solid var(--border, #dbe2ea); border-radius: 8px; background: var(--surface, #fff); color: inherit; }
+.plan-session-preview { margin: 16px 0; padding: 14px 16px; border-radius: 10px; background: var(--surface-subtle, #f8fafc); }
+.plan-session-preview h4 { margin: 0 0 8px; }
+.plan-session-preview li + li { margin-top: 8px; }
+.plan-session-preview li span { display: block; color: var(--muted-text, #64748b); font-size: .85rem; }
 @media (max-width: 768px) { .operating-model-surface { padding: 20px 16px; } .operating-model-grid { grid-template-columns: 1fr; } }
 
 

@@ -14,6 +14,7 @@ const session = {
   agentWork: "Prepare options",
   definitionOfDone: "Decision recorded",
   documentId: "reference.session.w01",
+  checklist: [{ id: "decide", title: "Record the decision", phase: "decide", proof: "Decision note" }],
 };
 
 function model() {
@@ -21,7 +22,7 @@ function model() {
     revision: "revision-1",
     freshness: "current",
     overviewDocumentId: "system.operating-model",
-    businessUnits: [], functions: [], systems: [], gaps: [], lifecycles: [],
+    businessUnits: [], functions: [], systems: [], gaps: [], assets: [], dependencies: [], lifecycles: [],
     roadmap: { sessions: [session] },
   };
 }

@@ -125,6 +125,8 @@ export function createOperatingModelSurface(context) {
       ["Systems", model.systems, "Current and draft systems connected to accountable functions."],
       ["Gaps", model.gaps, "Prioritized missing systems and their planned sessions."],
       ["Lifecycles", model.lifecycles, "Cross-functional journeys through the operating system."],
+      ["Assets", model.assets, "Ownership, source of truth, and separation treatment for key assets."],
+      ["Dependencies", model.dependencies, "Cross-unit and founder dependencies with risks and mitigations."],
       ["Roadmap", model.roadmap.sessions, "Thirteen proposed systems-day sessions with explicit decisions and outcomes."],
     ];
     for (const [label, values, body] of items) {
@@ -155,6 +157,12 @@ export function createOperatingModelSurface(context) {
       if (item.currentCoverage) meta.append(detail(documentRef, "Current coverage", item.currentCoverage));
       if (item.priority) meta.append(detail(documentRef, "Priority", item.priority));
       if (item.proposedDate) meta.append(detail(documentRef, "Proposed date", item.proposedDate));
+      if (item.primaryUnitId) meta.append(detail(documentRef, "Primary unit", item.primaryUnitId));
+      if (item.owner) meta.append(detail(documentRef, "Owner", item.owner));
+      if (item.consumerUnitId) meta.append(detail(documentRef, "Consumer unit", item.consumerUnitId));
+      if (item.provider) meta.append(detail(documentRef, "Provider", item.provider));
+      if (item.risk) meta.append(detail(documentRef, "Risk", item.risk));
+      if (item.mitigation) meta.append(detail(documentRef, "Mitigation", item.mitigation));
       card.append(meta);
       if (item.documentId || item.id?.includes(".")) card.append(openDocButton(item.documentId || item.id));
       list.append(card);
@@ -191,6 +199,19 @@ export function createOperatingModelSurface(context) {
         detail(documentRef, "Definition of done", session.definitionOfDone),
       );
       card.append(meta, openDocButton(session.documentId, "Open working session"));
+      if (selected && session.checklist?.length) {
+        const preview = el(documentRef, "section", "plan-session-preview");
+        preview.append(el(documentRef, "h4", "", "Checklist preview"));
+        const checklist = el(documentRef, "ol", "");
+        for (const task of session.checklist) {
+          const item = el(documentRef, "li", "");
+          item.append(el(documentRef, "strong", "", task.title));
+          if (task.proof) item.append(el(documentRef, "span", "", `Proof: ${task.proof}`));
+          checklist.append(item);
+        }
+        preview.append(checklist);
+        card.append(preview);
+      }
       const actions = el(documentRef, "div", "plan-session-actions");
       if (session.card) {
         const open = el(documentRef, "button", "primary-button", "Open card");

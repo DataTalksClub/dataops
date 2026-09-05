@@ -40,7 +40,9 @@ describe('operating model definition projection', () => {
     write(root, '_docs/operating-model/system-function-map.csv', 'system_id,title,function_id,recommended_manager_role,status,criticality,path\nsystem.example,Example,F01,example-manager,proposed,core,content/model/system-overview.md\n');
     write(root, '_docs/operating-model/system-gap-register.csv', 'gap_id,priority,function_id,title,outcome,reason,business_units,proposed_system_id,skeleton_included,proposed_path,roadmap_week,status\nG001,P0,F01,Gap,Outcome,Reason,x,system.example,yes,content/model/system-overview.md,W01,draft-gap\n');
     write(root, '_docs/operating-model/weekly-roadmap.csv', 'week,date,work_status,title,goal,outputs,human_decisions,agent_work,definition_of_done,target_paths\nW01,2026-09-10,systems-day,Session,Goal,Outputs,Decisions,Agent work,Done,content/model\nBREAK-1,2026-09-17,no-work,Break,None,None,None,None,None,—\n');
-    write(root, 'workflow-templates/operating-model-w01.yaml', 'type: operating-model-w01\nname: Session\ntasks:\n  - ref_id: decide\n    description: Decide\n    offset_days: 0\n');
+    write(root, '_docs/operating-model/asset-register.csv', 'asset_id,asset,type,primary_unit,secondary_units,owner,source_of_truth,status,separation_treatment,open_decision\nasset-1,Brand,brand,BU-X,,Owner,Registry,known,Transfer,\n');
+    write(root, '_docs/operating-model/dependency-register.csv', 'dependency_id,consumer_unit,provider,dependency,risk,mitigation,roadmap\nDEP-1,BU-X,Owner,Distribution,Risk,Mitigation,W01\n');
+    write(root, 'workflow-templates/operating-model-w01.yaml', 'type: operating-model-w01\nname: Session\ntasks:\n  - id: decide\n    name: Decide\n    schedule:\n      offset_days: 0\n');
     const store = new ContentsApiGithubStore({ owner: 'x', repo: 'x', token: '', cacheDir: root });
     const before = process.env.DTC_OFFLINE;
     process.env.DTC_OFFLINE = '1';
@@ -50,6 +52,9 @@ describe('operating model definition projection', () => {
       assert.equal(model.roadmap.sessions[0].id, 'W01');
       assert.equal(model.gaps[0].schedule.kind, 'session');
       assert.equal(model.lifecycles.length, 1);
+      assert.equal(model.assets.length, 1);
+      assert.equal(model.dependencies.length, 1);
+      assert.equal(model.roadmap.sessions[0].checklist[0].title, 'Decide');
     } finally {
       if (before === undefined) delete process.env.DTC_OFFLINE;
       else process.env.DTC_OFFLINE = before;
