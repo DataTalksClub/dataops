@@ -62,7 +62,7 @@ export interface RoadmapSessionDefinition {
 export interface OperatingModelSnapshot {
   revision: string;
   loadedAt: string;
-  freshness: 'current';
+  freshness: 'current' | 'stale';
   overviewDocumentId: string;
   businessUnits: BusinessUnitDefinition[];
   functions: FunctionDefinition[];

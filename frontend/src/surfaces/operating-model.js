@@ -74,6 +74,7 @@ export function createOperatingModelSurface(context) {
     const root = el(documentRef, "div", "operating-model-surface");
     header(root, "Company system", "Operating Model", "See how business units, accountable functions, systems, gaps, and lifecycles fit together.");
     if (!model) { unavailable(root); documentList.replaceChildren(root); load(); return; }
+    if (model.freshness === "stale") root.append(el(documentRef, "p", "status-text", "Showing the last valid model while definitions refresh."));
     const grid = el(documentRef, "section", "operating-model-grid");
     const items = [
       ["Business units", model.businessUnits, "Portfolio boundaries, economics, priorities, and separation rules."],
@@ -126,9 +127,14 @@ export function createOperatingModelSurface(context) {
     const selected = getActiveWorkspaceRoute()?.params?.get("sessionId");
     const sessions = selected ? model.roadmap.sessions.filter((item) => item.id === selected) : model.roadmap.sessions;
     const list = el(documentRef, "section", "operating-model-list");
-    for (const session of sessions) {
+    for (const [index, session] of sessions.entries()) {
       const card = el(documentRef, "article", "operating-model-row plan-session");
-      card.append(el(documentRef, "span", "review-badge", session.id), el(documentRef, "h3", "", session.title), el(documentRef, "p", "", session.goal));
+      const state = index === 0 && !selected ? "Next" : "Proposed";
+      card.append(
+        el(documentRef, "span", "review-badge", `${session.id} · ${state}`),
+        el(documentRef, "h3", "", session.title),
+        el(documentRef, "p", "", session.goal),
+      );
       const meta = el(documentRef, "dl", "operating-model-details");
       meta.append(
         detail(documentRef, "Proposed date", session.proposedDate),
