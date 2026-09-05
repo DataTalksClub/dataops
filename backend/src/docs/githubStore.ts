@@ -24,6 +24,8 @@ import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-sec
 export const CONTENT_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 
 const CONTENT_IMAGE_PREFIX = 'content/images/';
+const CONTENT_RASTER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const OPERATING_MODEL_DOWNLOAD_RE = /^_docs\/operating-model\/[a-z0-9][a-z0-9-]*\.(?:csv|ya?ml)$/;
 
 /** Raised when a GitHub API request fails. */
 export class GitHubError extends Error {
@@ -159,7 +161,8 @@ function contentExtension(path: string): string {
 
 /**
  * The repository's canonical public-safe knowledge assets: markdown anywhere
- * under content/ and supported images under content/images/. Hidden files,
+ * under content/, supported images under content/images/, and passive raster
+ * images nested beside authored documents. Hidden files,
  * empty segments, traversal, and uppercase extensions are not canonical.
  */
 export function isCanonicalContentAsset(path: string): boolean {
@@ -175,12 +178,28 @@ export function isCanonicalContentAsset(path: string): boolean {
 
   const extension = contentExtension(repoPath);
   if (extension === '.md') return true;
+  if (CONTENT_RASTER_EXTENSIONS.has(extension)) return true;
+  if (
+    extension === '.ics'
+    && repoPath.startsWith('content/00-start-here/operating-model/reference/roadmap/')
+  ) return true;
   return repoPath.startsWith(CONTENT_IMAGE_PREFIX) && CONTENT_IMAGE_EXTENSIONS.has(extension);
+}
+
+/** Exact private definition files that may be downloaded by an authenticated operator. */
+export function isOperatingModelDownload(path: string): boolean {
+  let repoPath: string;
+  try {
+    repoPath = normalizeRepoPath(path);
+  } catch {
+    return false;
+  }
+  return OPERATING_MODEL_DOWNLOAD_RE.test(repoPath);
 }
 
 /** True when a tree/tarball path should be hydrated into the cache. */
 export function shouldHydratePath(path: string): boolean {
-  return isCanonicalContentAsset(path);
+  return isCanonicalContentAsset(path) || isOperatingModelDownload(path);
 }
 
 /**

@@ -27,6 +27,25 @@ export function createEditorMarkdown(context, services) {
     return "/" + stack.join("/");
   }
 
+  function resolveLocalAssetHref(href) {
+    if (!href || /^(https?:|mailto:|#|\/)/i.test(href)) return href;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return "";
+    if (!documentState.currentDoc) return "";
+    const docDir = documentState.currentDoc.path.split("/").slice(0, -1);
+    const stack = [...docDir];
+    for (const part of href.split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") stack.pop();
+      else stack.push(part);
+    }
+    const resolved = stack.join("/");
+    if (resolved.startsWith("content/")) return `/${resolved}`;
+    if (resolved.startsWith("_docs/operating-model/")) {
+      return `/knowledge-files/${resolved}`;
+    }
+    return "";
+  }
+
   function stripFrontmatter(md) {
     if (!md.startsWith("---\n")) return md;
     const end = md.indexOf("\n---\n", 4);
@@ -190,11 +209,11 @@ export function createEditorMarkdown(context, services) {
       if (doc) {
         return `<a href="${visibleDocUrl(doc.path)}" data-doc-path="${escapeHtmlAttr(doc.path)}" title="${escapeHtmlAttr(doc.path)}">${escapeHtml(label)}</a>`;
       }
-      const safe = /^(https?:|mailto:|#|\/)/i.test(href) ? href : "#";
+      const safe = resolveLocalAssetHref(href) || "#";
       const target = /^(https?:|mailto:)/i.test(href)
         ? ' target="_blank" rel="noopener"'
         : "";
-      return `<a href="${safe}"${target}>${label}</a>`;
+      return `<a href="${escapeHtmlAttr(safe)}"${target}>${label}</a>`;
     });
     // Bold then italic
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -205,6 +224,6 @@ export function createEditorMarkdown(context, services) {
   }
 
   return {
-    renderMarkdown, resolveImageSrc, stripFrontmatter, stripLeadingHeading,
+    renderMarkdown, resolveImageSrc, resolveLocalAssetHref, stripFrontmatter, stripLeadingHeading,
   };
 }

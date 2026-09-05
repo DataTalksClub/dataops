@@ -28,6 +28,7 @@ import {
   createGithubStore,
   githubStoreConfigFromEnv,
   isCanonicalContentAsset,
+  isOperatingModelDownload,
   type ContentsApiGithubStore,
 } from './githubStore';
 
@@ -214,6 +215,29 @@ async function serveContent(path: string): Promise<LambdaResponse> {
   }
 }
 
+async function serveKnowledgeDownload(path: string): Promise<LambdaResponse> {
+  const repoPath = path.replace(/^\/knowledge-files\/+/, '');
+  if (!isOperatingModelDownload(repoPath)) {
+    return {
+      statusCode: 400,
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+      body: JSON.stringify({ error: 'Unsupported knowledge download' }),
+    };
+  }
+  try {
+    const bytes = await store().readBytes(repoPath);
+    const type = repoPath.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'application/yaml; charset=utf-8';
+    const response = fileResponse(Buffer.from(bytes), type);
+    response.headers = { ...(response.headers || {}), 'Cache-Control': 'no-store' };
+    return response;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return { statusCode: 404, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify({ error: 'Not found' }) };
+    }
+    throw err;
+  }
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 function isDataPath(path: string): boolean {
@@ -225,6 +249,7 @@ function isDataPath(path: string): boolean {
     path === '/work/health' ||
     isDocsRoute(path) ||
     path.startsWith('/content/')
+    || path.startsWith('/knowledge-files/')
   );
 }
 
@@ -293,6 +318,9 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   // Markdown / image content from the GitHub store cache.
   if (method === 'GET' && path.startsWith('/content/')) {
     return { response: await serveContent(path), authorized: true, userId: user?.id };
+  }
+  if (method === 'GET' && path.startsWith('/knowledge-files/')) {
+    return { response: await serveKnowledgeDownload(path), authorized: true, userId: user?.id };
   }
 
   // Work/API routes are handled by the router after this authentication pass;

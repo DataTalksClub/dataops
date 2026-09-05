@@ -19,6 +19,8 @@ VALID_DOC_TYPES = {
     "playbook",
     "prompt",
     "task-template",
+    "system-overview",
+    "process",
     "archive",
     "doc",
 }

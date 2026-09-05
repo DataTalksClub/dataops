@@ -11,6 +11,7 @@ import {
   normalizeRepoPath,
   quotePath,
   isCanonicalContentAsset,
+  isOperatingModelDownload,
   shouldHydratePath,
 } from '../src/docs/githubStore';
 
@@ -118,6 +119,10 @@ describe('githubStore - path helpers', () => {
   it('accepts the canonical markdown and image asset contract', () => {
     assert.ok(shouldHydratePath('content/x/a.md'));
     assert.ok(shouldHydratePath('content/images/x/pic.png'));
+    assert.ok(shouldHydratePath('content/00-start-here/operating-model/assets/chart.png'));
+    assert.ok(shouldHydratePath('content/00-start-here/operating-model/reference/roadmap/2026-q4/system-days.ics'));
+    assert.ok(shouldHydratePath('_docs/operating-model/weekly-roadmap.csv'));
+    assert.ok(isOperatingModelDownload('_docs/operating-model/function-registry.yaml'));
     for (const extension of ['.jpg', '.jpeg', '.gif', '.webp', '.svg']) {
       assert.ok(isCanonicalContentAsset(`content/images/x/pic${extension}`), extension);
     }
@@ -135,7 +140,7 @@ describe('githubStore - path helpers', () => {
       'content/guide.TXT',
       'content/guide',
       'content/x/data.json',
-      'content/assets/pic.png',
+      'content/assets/pic.svg',
       'content/images/pic.PNG',
       '../README.md',
     ];
@@ -143,6 +148,8 @@ describe('githubStore - path helpers', () => {
       assert.equal(isCanonicalContentAsset(path), false, path);
       assert.equal(shouldHydratePath(path), false, path);
     }
+    assert.equal(isOperatingModelDownload('_docs/audit/private.csv'), false);
+    assert.equal(isOperatingModelDownload('_docs/operating-model/private.json'), false);
   });
 });
 

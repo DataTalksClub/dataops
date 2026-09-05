@@ -23,6 +23,12 @@ function writeDoc(contentRoot: string, relPath: string, text: string): void {
 }
 
 describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
+  it('accepts canonical operating-model document types', () => {
+    writeDoc(contentRoot, 'model/system-overview.md', '---\nid: system.example\ndoc_type: system-overview\ntitle: Example\n---\n');
+    writeDoc(contentRoot, 'model/process.md', '---\nid: process.example\ndoc_type: process\ntitle: Process\n---\n');
+    const registry = buildRegistry(contentRoot);
+    assert.deepStrictEqual(registry.documents.map((doc) => doc.doc_type).sort(), ['process', 'system-overview']);
+  });
   let root: string;
   let contentRoot: string;
 

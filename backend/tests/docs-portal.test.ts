@@ -103,6 +103,8 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       'content/images/a/gif.gif': 'GIF',
       'content/images/a/webp.webp': 'WEBP',
       'content/images/a/svg.svg': 'SVG',
+      'content/00-start-here/operating-model/assets/chart.png': 'CHART',
+      '_docs/operating-model/weekly-roadmap.csv': 'week,title\nW01,Foundation\n',
     });
     const store = new ContentsApiGithubStore({
       owner: 'o',
@@ -203,6 +205,33 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       assert.strictEqual(image.isBase64Encoded, true, extension);
       assert.strictEqual(image.body, Buffer.from(extension.toUpperCase()).toString('base64'), extension);
     }
+  });
+
+  it('serves nested raster assets and only allowlisted model downloads to authenticated users', async () => {
+    const chart = await route(ev('GET', '/content/00-start-here/operating-model/assets/chart.png', {
+      headers: { cookie: browserCookie },
+    }), client);
+    assert.strictEqual(chart.statusCode, 200);
+    assert.strictEqual(chart.headers?.['Content-Type'], 'image/png');
+
+    const registry = await route(ev('GET', '/knowledge-files/_docs/operating-model/weekly-roadmap.csv', {
+      headers: { cookie: browserCookie },
+    }), client);
+    assert.strictEqual(registry.statusCode, 200);
+    assert.strictEqual(registry.headers?.['Content-Type'], 'text/csv; charset=utf-8');
+    assert.strictEqual(registry.headers?.['Cache-Control'], 'no-store');
+    assert.match(registry.body, /W01,Foundation/);
+
+    const unauthenticated = await route(
+      ev('GET', '/knowledge-files/_docs/operating-model/weekly-roadmap.csv'),
+      client,
+    );
+    assert.strictEqual(unauthenticated.statusCode, 401);
+
+    const rejected = await route(ev('GET', '/knowledge-files/_docs/audit/private.csv', {
+      headers: { cookie: browserCookie },
+    }), client);
+    assert.strictEqual(rejected.statusCode, 400);
   });
 
   it('rejects invalid content before missing roots, GitHub, cache, and filesystem reads', async () => {

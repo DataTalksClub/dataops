@@ -26,6 +26,8 @@ export const VALID_DOC_TYPES = new Set([
   'playbook',
   'prompt',
   'task-template',
+  'system-overview',
+  'process',
   'archive',
   'doc',
 ]);
