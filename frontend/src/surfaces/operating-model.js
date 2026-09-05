@@ -14,8 +14,12 @@ function detail(documentRef, label, value) {
 export function createOperatingModelSurface(context) {
   const { apiUrl, documentList, documentRef = document, getActiveWorkspaceRoute, navigateCanonicalWorkspace, openDocument, request, resolveDocReference, setRouteTitle } = context;
   let model = null;
+  let plan = null;
   let error = "";
+  let planError = "";
   let loading = false;
+  let planLoading = false;
+  const pendingSessions = new Set();
 
   async function load() {
     if (loading || model) return;
@@ -29,6 +33,45 @@ export function createOperatingModelSurface(context) {
       error = caught?.message || "Operating model is unavailable";
     } finally {
       loading = false;
+      renderActive();
+    }
+  }
+
+  async function loadPlan(force = false) {
+    if (planLoading || (plan && !force)) return;
+    planLoading = true;
+    planError = "";
+    try {
+      const payload = await request(apiUrl("/api/my-plan"));
+      plan = payload;
+      if (!Array.isArray(plan?.sessions)) throw new Error("My Plan response is incomplete");
+    } catch (caught) {
+      planError = caught?.message || "My Plan is unavailable";
+    } finally {
+      planLoading = false;
+      renderActive();
+    }
+  }
+
+  async function addSession(session, anchorDate) {
+    if (pendingSessions.has(session.id)) return;
+    pendingSessions.add(session.id);
+    planError = "";
+    renderActive();
+    try {
+      await request(apiUrl(`/api/my-plan/sessions/${session.id}`), {
+        method: "POST",
+        body: JSON.stringify({
+          expectedDefinitionRevision: plan?.revision || model?.revision,
+          anchorDate,
+        }),
+      });
+      await loadPlan(true);
+    } catch (caught) {
+      planError = caught?.message || "The session could not be added";
+      if (caught?.status === 409) plan = null;
+    } finally {
+      pendingSessions.delete(session.id);
       renderActive();
     }
   }
@@ -124,12 +167,16 @@ export function createOperatingModelSurface(context) {
     const root = el(documentRef, "div", "operating-model-surface my-plan-surface");
     header(root, "Personal systems work", "My Plan", "The proposed sequence for turning the operating model into real decisions and deliverables.");
     if (!model) { unavailable(root); documentList.replaceChildren(root); load(); return; }
+    if (!plan && !planLoading) loadPlan();
+    if (planError) root.append(el(documentRef, "p", "status-text", planError));
+    if (plan?.freshness === "stale") root.append(el(documentRef, "p", "status-text", "Showing your saved plan against the last valid operating model."));
     const selected = getActiveWorkspaceRoute()?.params?.get("sessionId");
-    const sessions = selected ? model.roadmap.sessions.filter((item) => item.id === selected) : model.roadmap.sessions;
+    const sourceSessions = plan?.sessions || model.roadmap.sessions.map((session) => ({ ...session, state: "proposed", card: null }));
+    const sessions = selected ? sourceSessions.filter((item) => item.id === selected) : sourceSessions;
     const list = el(documentRef, "section", "operating-model-list");
-    for (const [index, session] of sessions.entries()) {
+    for (const session of sessions) {
       const card = el(documentRef, "article", "operating-model-row plan-session");
-      const state = index === 0 && !selected ? "Next" : "Proposed";
+      const state = session.state === "completed" ? "Completed" : session.state === "active" ? "Active" : "Proposed";
       card.append(
         el(documentRef, "span", "review-badge", `${session.id} · ${state}`),
         el(documentRef, "h3", "", session.title),
@@ -144,11 +191,29 @@ export function createOperatingModelSurface(context) {
         detail(documentRef, "Definition of done", session.definitionOfDone),
       );
       card.append(meta, openDocButton(session.documentId, "Open working session"));
+      const actions = el(documentRef, "div", "plan-session-actions");
+      if (session.card) {
+        const open = el(documentRef, "button", "primary-button", "Open card");
+        open.type = "button";
+        open.addEventListener("click", () => navigateCanonicalWorkspace("/cards", { cardId: session.card.id }));
+        actions.append(open);
+      } else {
+        const date = el(documentRef, "input", "plan-session-date");
+        date.type = "date";
+        date.value = session.proposedDate;
+        date.setAttribute("aria-label", `Start date for ${session.id}`);
+        const add = el(documentRef, "button", "primary-button", pendingSessions.has(session.id) ? "Adding…" : "Add to my plan");
+        add.type = "button";
+        add.disabled = pendingSessions.has(session.id) || planLoading || !plan;
+        add.addEventListener("click", () => addSession(session, date.value));
+        actions.append(date, add);
+      }
       if (!selected) {
         const focus = el(documentRef, "button", "quiet-button", "Focus session");
         focus.type = "button"; focus.addEventListener("click", () => navigateCanonicalWorkspace("/my-plan", { sessionId: session.id }));
-        card.append(focus);
+        actions.append(focus);
       }
+      card.append(actions);
       list.append(card);
     }
     if (selected) {
