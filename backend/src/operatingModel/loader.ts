@@ -11,6 +11,8 @@ import type {
   RoadmapSessionDefinition,
   SystemDefinition,
 } from './types';
+import type { Template } from '../types';
+import { templateFromYaml } from '../templates/yamlTemplates';
 
 type Row = Record<string, string>;
 type Dict = Record<string, unknown>;
@@ -65,8 +67,17 @@ export async function loadOperatingModelSnapshot(
 ): Promise<OperatingModelSnapshot> {
   await store.sync();
   const content = await Promise.all(Object.values(FILES).map((path) => store.readFile(path)));
+  const roadmapRows = parseCsv(content[4]);
+  const templatePaths = roadmapRows
+    .filter((row) => row.work_status === 'systems-day')
+    .map((row) => row.template_type || `operating-model-${row.week.toLowerCase()}`)
+    .map((templateType) => {
+      if (!/^operating-model-w\d{2}$/.test(templateType)) throw new Error('Invalid roadmap template type');
+      return `workflow-templates/${templateType}.yaml`;
+    });
+  const templateContent = await Promise.all(templatePaths.map((path) => store.readFile(path)));
   const revision = createHash('sha256')
-    .update(content.join('\n--- operating-model-definition ---\n'))
+    .update([...content, ...templateContent].join('\n--- operating-model-definition ---\n'))
     .digest('hex');
   const unitsYaml = (yaml.load(content[0]) || {}) as Dict;
   const functionsYaml = (yaml.load(content[1]) || {}) as Dict;
@@ -97,7 +108,7 @@ export async function loadOperatingModelSnapshot(
       : { kind: 'deferred', label: row.roadmap_week },
     definitionStatus: row.status,
   }));
-  const sessions: RoadmapSessionDefinition[] = parseCsv(content[4])
+  const sessions: RoadmapSessionDefinition[] = roadmapRows
     .filter((row) => row.work_status === 'systems-day')
     .map((row) => ({
       id: row.week, title: row.title, proposedDate: row.date, goal: row.goal, deliverables: row.outputs,
@@ -121,4 +132,27 @@ export async function loadOperatingModelSnapshot(
       id: path.split('/').pop() || path, label: path.split('/').pop() || path, href: `/knowledge-files/${path}`,
     })),
   };
+}
+
+export async function loadRoadmapSessionTemplate(
+  templateType: string,
+  definitionRevision: string,
+  actorId: string,
+  store = new ContentsApiGithubStore(githubStoreConfigFromEnv()),
+): Promise<Template> {
+  if (!/^operating-model-w\d{2}$/.test(templateType)) throw new Error('Invalid roadmap template type');
+  const sourcePath = `workflow-templates/${templateType}.yaml`;
+  const document = yaml.load(await store.readFile(sourcePath));
+  if (!document || typeof document !== 'object' || Array.isArray(document)) throw new Error('Invalid roadmap template');
+  const runtime = templateFromYaml(document as Dict) as unknown as Template;
+  if (!runtime.taskDefinitions?.length || runtime.type !== templateType) throw new Error('Invalid roadmap template');
+  runtime.id = `workflow.${templateType}`;
+  runtime.version = 1;
+  runtime.createdAt = new Date().toISOString();
+  runtime.updatedAt = runtime.createdAt;
+  runtime.sourcePath = sourcePath;
+  runtime.sourceRevision = definitionRevision;
+  runtime.defaultAssigneeId = actorId;
+  runtime.taskDefinitions = runtime.taskDefinitions.map((task) => ({ ...task, assigneeId: actorId }));
+  return runtime;
 }

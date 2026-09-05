@@ -1483,7 +1483,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (result) return result;
     }
 
-    if (reqPath === '/api/operating-model' || reqPath === '/api/my-plan') {
+    if (reqPath === '/api/operating-model' || reqPath === '/api/my-plan' || reqPath.startsWith('/api/my-plan/sessions/')) {
       const result = await handleOperatingModelRoutes(event, client);
       if (result) return result;
     }

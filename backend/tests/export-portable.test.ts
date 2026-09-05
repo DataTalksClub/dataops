@@ -125,6 +125,10 @@ describe('portable execution data export', () => {
       anchorDate: '2026-06-27',
       templateId: template.id,
       sourceDocIds: ['workflow.definition.example'],
+      operatingModelSource: {
+        kind: 'roadmap-session', roadmapId: '2026-q4', sessionId: 'W01',
+        documentId: 'reference.session.w01', definitionRevision: 'revision-1',
+      },
       emoji: template.emoji,
       status: 'active',
       artifactRefs: [{ artifactId: 'artifact-card-ref', type: 'document' }],
@@ -453,6 +457,7 @@ describe('portable execution data export', () => {
     assert.match(cardsJsonl, /"action":"card-completed"/);
     assert.match(cardsJsonl, /"emoji":"🧭"/);
     assert.match(cardsJsonl, /"source_doc_ids":\["workflow.definition.example"\]/);
+    assert.match(cardsJsonl, /"operating_model_source":\{"kind":"roadmap-session","roadmapId":"2026-q4","sessionId":"W01"/);
 
     const templatesJsonl = await fs.readFile(path.join(exportDir, 'templates.jsonl'), 'utf8');
     assert.match(templatesJsonl, /"phases":\[\{"id":"preparation","name":"Preparation","stage":"preparation"\}\]/);

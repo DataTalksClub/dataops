@@ -397,6 +397,13 @@ export interface Card {
   templateDefinitionSnapshot?: TemplateCardDefinitionSnapshot;
   /** Source documents inherited from the runtime template at instantiation. */
   sourceDocIds?: string[];
+  operatingModelSource?: {
+    kind: 'roadmap-session';
+    roadmapId: string;
+    sessionId: string;
+    documentId: string;
+    definitionRevision: string;
+  };
   references?: CardLink[];
   cardLinks?: CardLink[];
   emoji?: string;

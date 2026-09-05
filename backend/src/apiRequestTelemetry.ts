@@ -23,6 +23,7 @@ export type ApiRouteFamily =
   | 'conversational_telegram'
   | 'email_documents'
   | 'docs_content_search'
+  | 'operating_model'
   | 'static_frontend'
   | 'other';
 
@@ -88,6 +89,8 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['sponsor_crm', '/api/sponsor-crm'],
   ['mailing_exports', '/api/mailing-exports'],
   ['conversational_telegram', '/api/conversational'],
+  ['operating_model', '/api/operating-model'],
+  ['operating_model', '/api/my-plan'],
 ];
 
 const ROUTE_FAMILY_VALUES = new Set<string>(

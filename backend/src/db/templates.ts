@@ -22,6 +22,13 @@ export class TemplateVersionConflictError extends Error {
   }
 }
 
+export class DefinitionCardConflictError extends Error {
+  constructor() {
+    super('Definition Card already exists');
+    this.name = 'DefinitionCardConflictError';
+  }
+}
+
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
  */
@@ -383,6 +390,54 @@ async function createCardFromTemplate(
   return { card, tasks };
 }
 
+/** Create a deterministic Git-definition Card and its Tasks as one aggregate. */
+async function createCardFromDefinition(
+  client: DynamoDBDocumentClient,
+  cardData: Record<string, unknown>,
+  template: Template,
+  anchorDate: string,
+  taskId: (ref: string) => string,
+): Promise<{ card: Card; tasks: Task[] }> {
+  const definitions = template.taskDefinitions || [];
+  const card = buildCard(cardData, { taskCount: definitions.length, openTaskCount: definitions.length });
+  const tasks = definitions.map((definition, order) => ({
+    id: taskId(definition.refId), version: 1, taskHistory: [], createdAt: card.createdAt, updatedAt: card.createdAt,
+    ...templateTaskProjection(template, definition, order, anchorDate, card.id),
+  }) as unknown as Task);
+  const writes = [
+    { table: TABLE_CARDS, key: cardKey(card.id), item: { ...cardKey(card.id), ...card } },
+    ...tasks.map((task) => ({ table: TABLE_TASKS, key: taskKey(task.id), item: { ...taskKey(task.id), ...task } })),
+  ];
+  if (usesLocalTransactionEmulation()) {
+    await withTemplateCreationLock(async () => {
+      for (const write of writes) {
+        const found = await client.send(new GetCommand({ TableName: write.table, Key: write.key, ConsistentRead: true }));
+        if (found.Item) throw new DefinitionCardConflictError();
+      }
+      const applied: typeof writes = [];
+      try {
+        for (const write of writes) {
+          await client.send(new PutCommand({ TableName: write.table, Item: compact(write.item) as Record<string, unknown> }));
+          applied.push(write);
+        }
+      } catch (error) {
+        for (const write of applied.reverse()) await client.send(new DeleteCommand({ TableName: write.table, Key: write.key }));
+        throw error;
+      }
+    });
+    return { card, tasks };
+  }
+  try {
+    await client.send(new TransactWriteCommand({ TransactItems: writes.map((write) => ({ Put: {
+      TableName: write.table, Item: compact(write.item) as Record<string, unknown>, ConditionExpression: 'attribute_not_exists(PK)',
+    } })) }));
+  } catch (error) {
+    if ((error as Error).name === 'TransactionCanceledException') throw new DefinitionCardConflictError();
+    throw error;
+  }
+  return { card, tasks };
+}
+
 export {
   createTemplate,
   getTemplate,
@@ -392,4 +447,5 @@ export {
   listTemplates,
   instantiateTemplate,
   createCardFromTemplate,
+  createCardFromDefinition,
 };

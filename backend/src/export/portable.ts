@@ -337,6 +337,7 @@ function mapCard(item: Record<string, unknown>): JsonRecord {
     anchor_date: optionalString(item.anchorDate),
     template_id: optionalString(item.templateId),
     source_doc_ids: stringArray(item.sourceDocIds),
+    operating_model_source: optionalJsonStringOrObject(item.operatingModelSource),
     status: optionalString(item.status),
     stage: optionalString(item.stage),
     task_count: optionalNumber(item.taskCount),
@@ -355,6 +356,24 @@ function mapCard(item: Record<string, unknown>): JsonRecord {
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),
   });
+}
+
+function validateOperatingModelSource(record: JsonRecord, errors: string[], context: string): void {
+  const value = record.operating_model_source;
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${context} field operating_model_source must be an object when present`);
+    return;
+  }
+  const source = value as JsonRecord;
+  const expected = ['definitionRevision', 'documentId', 'kind', 'roadmapId', 'sessionId'];
+  if (
+    Object.keys(source).sort().join(',') !== expected.sort().join(',')
+    || source.kind !== 'roadmap-session'
+    || expected.filter((field) => field !== 'kind').some((field) => typeof source[field] !== 'string' || String(source[field]).length === 0)
+  ) {
+    errors.push(`${context} field operating_model_source is malformed`);
+  }
 }
 
 function mapTemplate(item: Record<string, unknown>): JsonRecord {
@@ -1445,6 +1464,7 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     validateDateOrTimestampField(card, 'created_at', errors, context);
     validateDateOrTimestampField(card, 'updated_at', errors, context);
     optionalReference(card, 'template_id', templateIds, errors, context);
+    validateOperatingModelSource(card, errors, context);
     const completedBy = optionalStringField(card, 'completed_by', errors, context);
     optionalStringField(card, 'active_stage_before_completion', errors, context);
     const status = requiredEnum(card, 'status', new Set(['active', 'archived']), errors, context);
