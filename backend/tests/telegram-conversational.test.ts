@@ -4,6 +4,7 @@ import { mkdir, readdir, rm, symlink, utimes, writeFile } from 'fs/promises';
 import path from 'path';
 import { encode as encodeJpeg } from 'jpeg-js';
 import { PutCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { useFixedDate } from './helpers/fixed-date';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -188,6 +189,7 @@ class FakeCore implements TelegramCoreRuntime {
 }
 
 describe('private conversational Telegram adapter', () => {
+  useFixedDate(NOW);
   let client: Awaited<ReturnType<typeof getClient>>;
   let telegram: FakeTelegram;
   let core: FakeCore;
@@ -1138,9 +1140,9 @@ describe('private conversational Telegram adapter', () => {
       })
     )) as typeof fetch;
     const hangingTelegram = new HttpTelegramClient('fake', 100, 1024, hangingFetch);
-    const started = Date.now();
+    const started = performance.now();
     await assert.rejects(() => hangingTelegram.getFile('safe-file'));
-    assert.ok(Date.now() - started < 1_000);
+    assert.ok(performance.now() - started < 1_000);
 
     let telegramCalls = 0;
     const oversizedFetch = (async () => {

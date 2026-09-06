@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import {
   createSearchIndex,
@@ -13,10 +13,8 @@ import {
   type SearchDocument,
   type SearchResult,
 } from '../src/docs/searchIndex';
-import { extractDoc, iterContentDocs } from '../src/docs/search/extract';
-import { findContentRoot } from './helpers/content';
+import { extractDoc } from '../src/docs/search/extract';
 
-const CONTENT_DIR = findContentRoot();
 const paths = (results: SearchResult[]): string[] => results.map((r) => String(r.path));
 
 describe('docs search - field config (parity with docs_index.py)', () => {
@@ -144,51 +142,39 @@ describe('docs search - save/load round-trip (json-1)', () => {
   });
 });
 
-// Smoke fixtures updated for TF-IDF (minsearch) -> BM25-lite (zerosearch).
-// Captured against a minsearch top-k baseline: top-1 is identical for every
-// query below; ordering shifts inside the relevant set, recall stays on par
-// (see issue #85 notes). Each fixture asserts the BM25-lite top-1 plus a doc
-// that must remain in the top-5 (recall guard).
-const SMOKE: { query: string; top1: string; recall: string }[] = [
-  {
-    query: 'podcast intake',
-    top1: 'content/media/podcast/templates/podcast-share-the-podcast-page-template.md',
-    recall: 'content/tasks/templates/podcast.md',
-  },
-  {
-    query: 'newsletter sponsor',
-    top1: 'content/overview/reference/newsletter.md',
-    recall: 'content/newsletter/sponsorship/sops/creating-a-document-for-sponsored-content-for-a-newsletter.md',
-  },
-  {
-    query: 'course certificate',
-    top1: 'content/tasks/templates/course.md',
-    recall: 'content/courses/reference/course-guide.md',
-  },
-  {
-    query: 'youtube upload',
-    top1: 'content/media/open-source-spotlight/reference/for-update-download-open-source-spotlight-video-from-zoom-and-upload-it-to-youtube.md',
-    recall: 'content/media/video-youtube/sops/downloading-and-uploading-videos-from-loom-to-youtube.md',
-  },
+// Public synthetic relevance fixtures: title/summary matches should outrank
+// incidental single-word matches, while related body text remains discoverable.
+const SMOKE = [
+  { query: 'podcast intake', title: 'Podcast intake checklist', related: 'Recording preparation', distractor: 'Podcast audio settings' },
+  { query: 'newsletter sponsor', title: 'Newsletter sponsor overview', related: 'Publication planning', distractor: 'Newsletter typography' },
+  { query: 'course certificate', title: 'Course certificate guide', related: 'Completion records', distractor: 'Course exercises' },
+  { query: 'youtube upload', title: 'YouTube upload checklist', related: 'Video preparation', distractor: 'YouTube analytics' },
 ];
 
-describe('docs search - smoke query relevance over the document corpus (BM25-lite)', () => {
-  // The corpus lives in the private knowledge repository, so these rank real
-  // documents only when it is checked out.
-  let index: ReturnType<typeof createSearchIndex>;
-  before(() => {
-    if (!CONTENT_DIR) return;
-    const docs = iterContentDocs(CONTENT_DIR);
-    index = createSearchIndex().fit(docs);
-  });
+describe('docs search - smoke query relevance over a public synthetic corpus (BM25-lite)', () => {
+  const corpus: SearchDocument[] = SMOKE.flatMap(({ query, title, related, distractor }, index) => [
+    {
+      path: `synthetic/topic-${index}/overview.md`, id: `overview-${index}`,
+      title, summary: `A synthetic overview of ${query}.`,
+      body: 'Reference material for a test topic.',
+    },
+    {
+      path: `synthetic/topic-${index}/related.md`, id: `related-${index}`,
+      title: related, body: `This synthetic reference also discusses ${query}.`,
+    },
+    {
+      path: `synthetic/topic-${index}/incidental.md`, id: `incidental-${index}`,
+      title: distractor, body: 'A separate topic with only an incidental keyword match.',
+    },
+  ]);
+  const index = createSearchIndex().fit(corpus);
 
-  for (const { query, top1, recall } of SMOKE) {
-    it(`ranks the expected doc first and keeps recall for "${query}"`, (t) => {
-      if (!CONTENT_DIR) return t.skip('knowledge repository not checked out');
+  for (const [topic, { query }] of SMOKE.entries()) {
+    it(`ranks the expected doc first and keeps recall for "${query}"`, () => {
       const results = index.search(query, { numResults: 5 });
-      assert.ok(results.length > 0, 'expected at least one result');
-      assert.strictEqual(results[0].path, top1, `top-1 for "${query}"`);
-      assert.ok(paths(results).includes(recall), `"${recall}" should be in top-5 for "${query}"`);
+      assert.strictEqual(results[0]?.path, `synthetic/topic-${topic}/overview.md`, `top-1 for "${query}"`);
+      assert.ok(paths(results).includes(`synthetic/topic-${topic}/related.md`), 'related body-text match remains in top-5');
+      assert.ok(paths(results).includes(`synthetic/topic-${topic}/incidental.md`), 'a competing single-term document was also searched');
     });
   }
 });

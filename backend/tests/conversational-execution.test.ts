@@ -1,6 +1,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { GetCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { useFixedDate } from './helpers/fixed-date';
 
 import { getClient } from '../src/db/client';
 import {
@@ -112,6 +113,7 @@ function event(
 }
 
 describe('transactional conversational approval and durable execution', () => {
+  useFixedDate(NOW);
   let client: DynamoDBDocumentClient;
   let sequence = 0;
 
