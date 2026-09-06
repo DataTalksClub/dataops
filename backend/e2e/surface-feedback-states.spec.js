@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { setupPageWithAuth } = require('./helpers/auth');
+const { berlinBusinessDate } = require('./helpers/business-date');
 const {
   assertOwnedServerResponse,
   startOwnedTestServer,
@@ -77,16 +78,41 @@ test.describe('issue 204 owning-surface feedback', () => {
     const page = await context.newPage();
     await setupPageWithAuth(page);
 
+    let releaseTasks;
+    const tasksReady = new Promise((resolve) => { releaseTasks = resolve; });
+    await page.route('**/work/api/tasks*', async (route) => {
+      await tasksReady;
+      await route.continue();
+    });
     await page.goto(`${baseURL}/#/`);
     const homeSummary = page.locator('[data-summary-id="home"]');
-    await expect(homeSummary).toBeVisible();
+    await expect(homeSummary).toHaveAttribute('data-summary-state', 'loading');
+    releaseTasks();
     await expect(
       page.locator('.operations-home[data-operations-work-loaded="true"]'),
     ).toBeVisible();
-    await expect(homeSummary).toHaveAttribute('data-summary-state', /ready|empty/);
+    await expect(homeSummary).toHaveAttribute('data-summary-state', 'empty');
     await expect(homeSummary.locator('.surface-summary-state')).not.toBeEmpty();
     await expectNoHorizontalOverflow(page);
     await shot(page, 'home-ready-desktop-1440x900');
+    await page.unroute('**/work/api/tasks*');
+    const taskResponse = await context.request.post('/api/tasks', { data: {
+      description: 'Retained work during a source outage', date: berlinBusinessDate(Date.now()),
+      assigneeId: '00000000-0000-0000-0000-000000000001',
+    } });
+    expect(taskResponse.status()).toBe(201);
+    const retainedTask = await taskResponse.json();
+    await page.reload();
+    await expect(homeSummary).toHaveCount(0);
+    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 20 }]);
+    await page.reload();
+    await expect(homeSummary).toHaveAttribute('data-summary-state', 'partial');
+    await expect(homeSummary).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(page.locator('.home-status-today strong')).toHaveText('1');
+    await expect(page.locator('.home-task-content strong')).toHaveText('Retained work during a source outage');
+    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 loaded attention items');
+    await shot(page, 'home-partial-retained-work-desktop-1440x900');
 
     // Work sources fail: Home names the outage in the surface and offers retry.
     await setFaults(context.request, [
@@ -98,7 +124,10 @@ test.describe('issue 204 owning-surface feedback', () => {
     // sources answered; either way Home names the failure and offers recovery
     // in its own summary rather than reporting a clean count.
     await expect(homeSummary).toHaveAttribute('data-summary-state', /unavailable|partial/);
-    await expect(homeSummary.locator('.surface-summary-detail')).toContainText('Synthetic route failure (503)');
+    await expect(homeSummary).toContainText('Due-today tasks, Overdue tasks, Waiting tasks, Cards unavailable. Loaded work is still shown.');
+    await expect(homeSummary.locator('.surface-summary-detail')).toHaveCount(0);
+    await expect(page.locator('.home-status-item strong')).toHaveText(['—', '—', '—']);
+    await expect(page.locator('.home-attention-count')).toHaveText('0 of 0 loaded attention items');
     const retry = homeSummary.getByRole('button', { name: /Retry loading work/ });
     await expect(retry).toBeVisible();
     const retryBox = await retry.boundingBox();
@@ -115,8 +144,18 @@ test.describe('issue 204 owning-surface feedback', () => {
     expect(recovered.status()).toBe(503);
 
     await clearFaults(context.request);
-    await page.reload();
-    await expect(homeSummary).toHaveAttribute('data-summary-state', /ready|empty/);
+    await retry.focus();
+    await expect(retry).toBeFocused();
+    const [healthyResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes('/work/api/tasks')),
+      page.keyboard.press('Enter'),
+    ]);
+    expect(healthyResponse.status()).toBe(200);
+    await expect(homeSummary).toHaveCount(0);
+    await expect(page.locator('.home-status-today strong')).toHaveText('1');
+    await expect(page.locator('.home-task-content strong')).toHaveText('Retained work during a source outage');
+    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await shot(page, 'home-recovered-desktop-1440x900');
 
     await setFaults(context.request, [
       { method: 'GET', path: '/api/tasks', status: 503, remaining: 20 },
@@ -142,13 +181,21 @@ test.describe('issue 204 owning-surface feedback', () => {
 
     await page.setViewportSize(MOBILE);
     await page.goto(`${baseURL}/#/`);
-    await expect(homeSummary).toBeVisible();
+    // The prior Tasks outage snapshot remains in memory across hash routes.
+    // Reload after clearing faults to prove the fresh mobile work presentation.
+    await page.reload();
+    await expect(homeSummary).toHaveCount(0);
+    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
     await expectNoHorizontalOverflow(page);
     await shot(page, 'home-ready-mobile-390x844');
     await page.goto(`${baseURL}/#/tasks`);
     await expect(queueSummary).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await shot(page, 'tasks-queue-mobile-390x844');
+    const deleted = await context.request.delete(`/api/tasks/${retainedTask.id}`, {
+      data: { expectedVersion: retainedTask.version },
+    });
+    expect(deleted.ok()).toBe(true);
     await context.close();
   });
 
