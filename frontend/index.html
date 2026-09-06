@@ -22,7 +22,7 @@
     <main class="app-shell">
       <aside id="sidebar" class="sidebar" aria-label="Workspace navigation">
         <header class="workspace-header">
-          <button id="sidebar-close-button" class="icon-button mobile-only" type="button" aria-label="Close workspace">Close</button>
+          <button id="sidebar-close-button" class="icon-button mobile-only" type="button" aria-label="Close workspace"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
           <div class="workspace-mark" aria-hidden="true">D</div>
           <div class="workspace-title">
             <h1>DataOps</h1>
@@ -31,7 +31,13 @@
           <button id="sidebar-collapse-button" class="icon-button sidebar-toggle-button desktop-only" type="button" aria-label="Hide sidebar" title="Hide sidebar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg></button>
         </header>
 
+        <form id="search-form" class="search-form" role="search" aria-label="Workspace search">
+          <input id="search-input" type="search" autocomplete="off" aria-label="Search work and docs" aria-describedby="search-scope" placeholder="Search work and docs">
+          <span id="search-scope" class="search-scope">Tasks, cards and process docs</span>
+        </form>
+
         <nav class="workspace-nav" aria-label="DataOps workspace">
+          <h2 class="workspace-nav-label">Daily work</h2>
           <button id="operations-home-button" class="workspace-nav-button is-active" type="button" data-workspace-view="home"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg></span><span>Today</span></button>
           <button class="workspace-nav-button" type="button" data-workspace-view="my-plan"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="m8 9 2 2 5-5M8 16h8"/></svg></span><span>My Plan</span></button>
           <button id="inbox-nav-button" class="workspace-nav-button" type="button" data-workspace-view="inbox"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 5 2-2h12l2 2v15H4Z"/><path d="M4 14h5l2 3h2l2-3h5"/></svg></span><span>Inbox</span></button>
@@ -46,19 +52,17 @@
               <button class="workspace-subnav-button" type="button" data-tasks-section="artifacts">Artifacts</button>
             </div>
           </div>
+          <h2 class="workspace-nav-label">Operations</h2>
           <button id="newsletter-nav-button" class="workspace-nav-button" type="button" data-workspace-view="newsletter"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span>Newsletter</span></button>
           <button id="calendar-nav-button" class="workspace-nav-button" type="button" data-workspace-view="calendar"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/></svg></span><span>Calendar</span></button>
           <button id="sponsors-nav-button" class="workspace-nav-button" type="button" data-workspace-view="sponsors"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6m1-6c3 0 5 2 5 5"/></svg></span><span>Sponsors</span></button>
           <button id="bookkeeping-nav-button" class="workspace-nav-button" type="button" data-workspace-view="bookkeeping"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 3h14v18H5Z"/><path d="M8 7h8M8 11h8M8 15h3M15 15h1M8 18h3M15 18h1"/></svg></span><span>Bookkeeping</span></button>
           <button id="mailing-exports-nav-button" class="workspace-nav-button" type="button" data-workspace-view="mailing-exports"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 15v5h14v-5"/></svg></span><span>Mailing exports</span></button>
           <button id="review-nav-button" class="workspace-nav-button" type="button" data-workspace-view="review"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5Z"/><path d="m8 10 2 2 5-5M8 16h8"/></svg></span><span>Review</span></button>
+          <h2 class="workspace-nav-label">Knowledge</h2>
           <button class="workspace-nav-button" type="button" data-workspace-view="operating-model"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M12 7v4M6 16v-3h12v3"/></svg></span><span>Operating Model</span></button>
           <button id="docs-nav-button" class="workspace-nav-button" type="button" data-workspace-view="docs"><span class="workspace-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span><span>Process Docs</span></button>
         </nav>
-
-        <form id="search-form" class="search-form">
-          <input id="search-input" type="search" autocomplete="off" placeholder="Search work and docs">
-        </form>
 
         <details id="filters-section" class="sidebar-details filters-section">
           <summary>

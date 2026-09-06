@@ -572,7 +572,7 @@ test.describe('canonical frontend capability behavior', () => {
     const partialRender = page.evaluate(() => window.__dataopsRefreshWork());
     await partialWork;
     await partialRender;
-    await expect(page.locator('.ops-runtime-state')).toBeVisible();
+    await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Cards unavailable. Loaded work is still shown.');
     await expect(page.getByRole('region', { name: 'Needs your attention' }).getByText(title)).toBeVisible();
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-partial-failure-desktop-1440x900.png'),
@@ -583,7 +583,7 @@ test.describe('canonical frontend capability behavior', () => {
     const recoveredRender = page.evaluate(() => window.__dataopsRefreshWork());
     await recoveredWork;
     await recoveredRender;
-    await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
+    await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Needs your attention' }).locator('.home-attention-row', { hasText: title })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await closeMobileSidebar(page);

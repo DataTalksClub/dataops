@@ -287,8 +287,7 @@ export function createSurfaceComposition(context) {
   function syncWorkspaceNav() {
     const activeView = workspaceState.activeWorkspaceView;
     body.dataset.workspaceView = activeView;
-    searchInput.placeholder =
-      activeView === "home" ? "Search" : "Search work and docs";
+    searchInput.placeholder = "Search work and docs";
     for (const button of workspaceNavButtons) {
       const active =
         (button.dataset.workspaceView || "home") === activeView;

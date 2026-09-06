@@ -349,6 +349,17 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(fallback.routeHeading.tabIndex, -1);
   });
 
+  test("restores the Home task focus recorded on a browser history entry", async () => {
+    const harness = createNavigationHarness({ hash: "#/tasks" });
+    await harness.shell.navigateCanonicalWorkspace("/", {}, {
+      restoreFocus: { kind: "home-task", id: "home-task" },
+    }).ready;
+    assert.deepEqual(harness.history.state.restoreFocus, { kind: "home-task", id: "home-task" });
+    harness.homeTaskButton.focused = false;
+    await harness.shell.applyWorkspaceRoute(workspaceRouteFor("/", {}, harness.location));
+    assert.equal(harness.homeTaskButton.focused, true);
+  });
+
   test("starts document navigation by invalidating route work and closing overlays", () => {
     const harness = createNavigationHarness();
     harness.shell.navigateCanonicalWorkspace("/tasks", {}, { hydrate: false });

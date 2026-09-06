@@ -230,7 +230,7 @@
         {
           "id": "home.ready",
           "kind": "ready",
-          "description": "Home counts and links are derived from real task, workflow, notification, and quality records; #161 must update this durable state ID when Home changes.",
+          "description": "Today shows authoritative counts, a prioritized attention queue with shown/total counts and inline expansion, exact Task return focus, and contextual My Plan/Inbox/docs routes. Browser evidence: issue-223-workspace-redesign.spec.js and canonical-capability-behavior.spec.js.",
           "coverage": {
             "status": "runtime"
           }
