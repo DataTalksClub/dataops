@@ -1,6 +1,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { GetCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { useFixedDate } from './helpers/fixed-date';
 
 import { getClient } from '../src/db/client';
 import { createTables, TABLE_CONVERSATIONAL_STATE } from '../scripts/local-dynamodb';
@@ -76,6 +77,7 @@ function event(
 describe('Telegram production DynamoDB transactions', {
   skip: !process.env.DYNAMODB_ENDPOINT,
 }, () => {
+  useFixedDate(new Date(NOW));
   let client: DynamoDBDocumentClient;
 
   before(async () => {

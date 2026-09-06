@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
+import { useFixedDate } from './helpers/fixed-date';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import { encode as encodeJpeg } from 'jpeg-js';
@@ -152,6 +153,7 @@ class FakeTelegram implements TelegramClient {
 describe('confirmed Telegram media composes with the real todo core', {
   skip: !process.env.DYNAMODB_ENDPOINT,
 }, () => {
+  useFixedDate(NOW);
   let client: DynamoDBDocumentClient;
 
   before(async () => {

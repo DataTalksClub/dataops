@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
+import { useFixedDate } from './helpers/fixed-date';
 import {
   GetCommand,
   PutCommand,
@@ -262,6 +263,7 @@ describe('conversational todo plugin', () => {
 });
 
 describe('actor-owned todo writer transaction', { skip: !process.env.DYNAMODB_ENDPOINT }, () => {
+  useFixedDate(NOW);
   let client: DynamoDBDocumentClient;
 
   before(async () => {
