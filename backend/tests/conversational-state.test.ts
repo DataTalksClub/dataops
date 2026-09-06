@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import fs from 'fs/promises';
 import path from 'path';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { useFixedDate } from './helpers/fixed-date';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -163,6 +164,7 @@ function attempt(conversationId: string): ExecutionAttempt {
 }
 
 describe('conversational state persistence', () => {
+  useFixedDate(NOW_DATE);
   let client: DynamoDBDocumentClient;
   const generatedDirs: string[] = [];
 
