@@ -346,7 +346,11 @@ export function createNavigationShell(context) {
     const historyMode = options.history || "push";
     if (historyMode !== "none" && current !== visible) {
       historyRef[historyMode === "replace" ? "replaceState" : "pushState"](
-        { workspace: route.view, tasksSection: route.tasksSection },
+        {
+          workspace: route.view,
+          tasksSection: route.tasksSection,
+          ...(options.restoreFocus ? { restoreFocus: options.restoreFocus } : {}),
+        },
         "",
         visible,
       );
@@ -383,6 +387,7 @@ export function createNavigationShell(context) {
     await navigateCanonicalWorkspace(route.path, route.params, {
       route,
       history: "none",
+      restoreFocus: historyRef.state?.restoreFocus,
     }).ready;
   }
 

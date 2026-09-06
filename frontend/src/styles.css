@@ -823,6 +823,36 @@ body.sidebar-collapsed .sidebar {
   margin-bottom: 16px;
 }
 
+.workspace-nav-label {
+  margin: 18px 10px 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.workspace-nav-label:first-child {
+  margin-top: 0;
+}
+
+.search-scope {
+  display: block;
+  margin: 6px 2px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+#sidebar-close-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
 .workspace-nav-button {
   display: flex;
   align-items: center;
@@ -7610,11 +7640,21 @@ body[data-workspace-view="calendar"] .document-list {
 
 /* Today remains the scan-first operational overview. */
 body[data-workspace-view="home"] .operations-home-daily {
-  gap: 20px;
+  gap: 16px;
 }
 
 body[data-workspace-view="home"] .home-daily-header {
-  padding-bottom: 22px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 0;
+  padding-bottom: 4px;
+}
+
+.home-purpose {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 body[data-workspace-view="home"] .home-status-strip,
@@ -7623,19 +7663,179 @@ body[data-workspace-view="home"] .home-attention {
 }
 
 body[data-workspace-view="home"] .home-status-item {
-  min-height: 64px;
+  min-height: 48px;
 }
 
 body[data-workspace-view="home"] .home-attention > header {
-  min-height: 52px;
+  min-height: 60px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+body[data-workspace-view="home"] .home-attention > header h3 {
+  font-size: 16px;
+}
+
+.home-attention-count {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.home-attention > footer {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.home-attention > footer .home-view-all {
+  margin-left: auto;
 }
 
 body[data-workspace-view="home"] .home-attention-row {
-  min-height: 70px;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(120px, 170px) auto;
+  min-height: 82px;
+  padding: 14px 16px;
+}
+
+body[data-workspace-view="home"] .home-task-content {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+body[data-workspace-view="home"] .home-task-content strong {
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+body[data-workspace-view="home"] .home-task-workflow,
+body[data-workspace-view="home"] .home-task-state time {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.45;
 }
 
 body[data-workspace-view="home"] .home-attention-row:hover {
   background: var(--surface-hover);
+}
+
+.home-next-destinations {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: min(var(--content-width), 100%);
+  gap: 12px;
+}
+
+.home-next-destinations button {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 12px 4px;
+  text-align: left;
+  white-space: normal;
+}
+
+.home-next-destinations button:hover {
+  background: var(--surface-hover);
+}
+
+.home-next-destinations strong {
+  color: var(--link-color);
+  font-size: 13px;
+}
+
+.home-next-destinations strong::after {
+  content: " →";
+}
+
+.home-next-destinations span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+@media (max-width: 820px) {
+  #sidebar-close-button {
+    flex: 0 0 44px;
+    width: 44px;
+    min-height: 44px;
+    padding: 10px;
+  }
+
+  .workspace-subnav-button {
+    min-height: 44px;
+  }
+
+  .search-form input {
+    min-height: 44px;
+    background-position: 10px 50%, 21px 28px;
+  }
+
+  body[data-workspace-view="home"] .operations-home-daily {
+    gap: 12px;
+  }
+
+  body[data-workspace-view="home"] .home-daily-header {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding-bottom: 0;
+  }
+
+  body[data-workspace-view="home"] .home-daily-header time {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 400;
+  }
+
+  .home-purpose {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+
+  body[data-workspace-view="home"] .home-status-item {
+    display: flex;
+    gap: 6px;
+    padding: 8px 4px;
+    min-height: 44px;
+  }
+
+  .home-status-label svg {
+    display: none;
+  }
+
+  body[data-workspace-view="home"] .home-attention > header {
+    min-height: 60px;
+    align-content: center;
+  }
+
+  body[data-workspace-view="home"] .home-attention-row {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-areas: "marker title action" "marker timing action";
+    gap: 5px 8px;
+    padding: 14px 12px;
+  }
+
+  body[data-workspace-view="home"] .home-task-content {
+    display: contents;
+  }
+
+  .home-next-destinations {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .home-next-destinations button {
+    min-height: 56px;
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--border-muted);
+  }
 }
 
 /* Inbox and assistant/artifact lists share the same route framing when they

@@ -342,7 +342,7 @@ describe("runtime surface composition", () => {
 
     harness.workspaceState.activeWorkspaceView = "home";
     harness.composition.syncWorkspaceNav();
-    assert.equal(harness.searchInput.placeholder, "Search");
+    assert.equal(harness.searchInput.placeholder, "Search work and docs");
     assert.equal(harness.workspaceNavButtons[0].getAttribute("aria-current"), "page");
     assert.equal(harness.tasksNavButton.getAttribute("aria-current"), null);
     harness.composition.setTasksNavExpanded(false);

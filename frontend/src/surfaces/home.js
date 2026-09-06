@@ -1,4 +1,5 @@
 import { renderDataSummary } from "./operations-overview.js";
+import { createHomeAttentionView } from "./home-attention.js";
 import { createCollectionLoader } from "../core/collection-loader.js";
 import {
   compareQualityFindings,
@@ -18,7 +19,6 @@ export function createHomeSurface(context) {
     addDaysIso,
     allWorkTasks,
     apiUrl,
-    buildHomeAttentionItems,
     buildOperationsFutureSections,
     buildOperationsReferenceLinks,
     currentOperatorIdForTodayScope,
@@ -29,7 +29,6 @@ export function createHomeSurface(context) {
     emptyOperationsQualitySnapshot,
     emptyOperationsWorkSnapshot,
     formatHomeCalendarDate,
-    formatHomeTaskTiming,
     getActiveWorkspaceRouteToken,
     isActiveWorkCard,
     isOpenWorkTask,
@@ -43,7 +42,6 @@ export function createHomeSurface(context) {
     normalizeTemplateMatchValue,
     openQuickTaskForm,
     openQuickWorkflowForm,
-    openTaskPanel,
     operationItemFromCard,
     operationItemFromTask,
     operationItemFromTemplate,
@@ -52,10 +50,7 @@ export function createHomeSurface(context) {
     refreshDocuments,
     refreshWorkBell,
     renderDocsAvailabilityState,
-    renderHonestState,
-    renderOperationsRuntimeState,
     request,
-    resolveCardLabel,
     resolveDocReference,
     setRouteTitle,
     settledPayload,
@@ -72,6 +67,7 @@ export function createHomeSurface(context) {
 
   let cardsLoader;
   let lastGoodCardsPage;
+  const { renderHomeAttentionQueue } = createHomeAttentionView(context);
 
   function renderOperationsHome(documents) {
     const model = buildOperationsHomeModel(documents, {
@@ -102,7 +98,10 @@ export function createHomeSurface(context) {
     const date = document.createElement("time");
     date.dateTime = model.today;
     date.textContent = formatHomeCalendarDate(model.today);
-    heading.append(title, date);
+    const purpose = document.createElement("p");
+    purpose.className = "home-purpose";
+    purpose.textContent = "Focus on what needs your attention now.";
+    heading.append(title, date, purpose);
 
     const quickBar = document.createElement("div");
     quickBar.className = "home-quick-actions";
@@ -115,7 +114,7 @@ export function createHomeSurface(context) {
     quickTask.addEventListener("click", () => openQuickTaskForm());
     const quickWorkflow = document.createElement("button");
     quickWorkflow.type = "button";
-    quickWorkflow.className = "home-quick-action home-quick-action-primary";
+    quickWorkflow.className = "home-quick-action";
     quickWorkflow.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Create card</span>';
     quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
@@ -136,16 +135,13 @@ export function createHomeSurface(context) {
       }),
     );
 
-    const runtimeState = renderOperationsRuntimeState(model.runtime);
-    if (runtimeState) wrap.append(runtimeState);
-
-    // Home reports a docs outage next to the work runtime state, and stays
+    // Home reports a docs outage next to the work summary, and stays
     // silent while docs are loading or the corpus is merely empty: Home is not
     // where an operator looks for process documents.
     const docsState = renderDocsAvailabilityState(state.docsSnapshot);
     if (docsState) wrap.append(docsState);
 
-    wrap.append(renderHomeAttentionQueue(model));
+    wrap.append(renderHomeAttentionQueue(model), renderHomeNextDestinations());
 
     documentList.replaceChildren(wrap);
   }
@@ -154,7 +150,8 @@ export function createHomeSurface(context) {
     const summary = document.createElement("section");
     summary.className = "home-status-strip";
     summary.setAttribute("aria-label", "Daily work summary");
-    summary.append(renderHomeSummary(model, options));
+    const feedback = renderHomeSummary(model, options);
+    if (feedback.dataset.summaryState !== "ready") summary.append(feedback);
     const stats = [
       { id: "overdue", label: "Overdue", value: model.stats.overdueTasks, loaded: model.stats.overdueLoaded },
       { id: "today", label: "Due today", value: model.stats.todayTasks, loaded: model.stats.todayLoaded },
@@ -177,6 +174,28 @@ export function createHomeSurface(context) {
     return summary;
   }
 
+  function renderHomeNextDestinations() {
+    const nav = document.createElement("nav");
+    nav.className = "home-next-destinations";
+    nav.setAttribute("aria-label", "Plan and capture work");
+    for (const [label, description, route] of [
+      ["My Plan", "Choose what to work on next", "/my-plan"],
+      ["Inbox", "Triage incoming requests", "/inbox"],
+      ["Process Docs", "Find instructions for your work", "/processes"],
+    ]) {
+      const action = document.createElement("button");
+      action.type = "button";
+      const title = document.createElement("strong");
+      title.textContent = label;
+      const detail = document.createElement("span");
+      detail.textContent = description;
+      action.append(title, detail);
+      action.addEventListener("click", () => navigateCanonicalWorkspace(route).ready);
+      nav.append(action);
+    }
+    return nav;
+  }
+
   function renderHomeSummary(model, options) {
     const stats = model.stats;
     const errors = (model.stats.workErrors || []).filter(Boolean);
@@ -189,15 +208,14 @@ export function createHomeSurface(context) {
       stats.cardsComplete &&
       stats.cardTasksComplete;
     // A failed lane has no count, not a zero.
-    const counts = [
-      stats.todayLoaded ? `${countLabel(stats.todayTasks, "task")} due today` : "due today unknown",
-      stats.overdueLoaded ? `${countLabel(stats.overdueTasks, "task")} overdue` : "overdue unknown",
-      stats.waitingLoaded ? `${countLabel(stats.waitingTasks, "task")} waiting` : "waiting unknown",
-      stats.cardsComplete
-        ? countLabel(stats.activeCards, "active card")
-        : "active cards unknown",
-    ].join(" · ");
-    return renderDataSummary({
+    const unavailableSources = [
+      !stats.todayLoaded && "Due-today tasks",
+      !stats.overdueLoaded && "Overdue tasks",
+      !stats.waitingLoaded && "Waiting tasks",
+      !stats.cardsComplete && "Cards",
+      stats.cardsComplete && !stats.cardTasksComplete && "Card tasks",
+    ].filter(Boolean);
+    const feedback = renderDataSummary({
       id: "home",
       label: "Today",
       loaded: stats.liveLoaded,
@@ -207,16 +225,16 @@ export function createHomeSurface(context) {
         loading: "Loading today's tasks and cards…",
         unavailable: "Today's work could not be loaded, so no counts are shown.",
         empty: "Nothing is overdue, due today, or waiting, and no card is active.",
-        partial: `${counts}. Some work sources are unavailable.`,
-        ready: `${counts}.`,
+        partial: `${unavailableSources.join(", ") || "Some work sources"} unavailable. Loaded work is still shown.`,
+        ready: "Your work is up to date.",
       },
       retryLabel: "Retry loading work",
       onRetry: options.onRetryWork,
     });
-  }
-
-  function countLabel(count, singular) {
-    return `${count} ${count === 1 ? singular : `${singular}s`}`;
+    // The summary names the affected sources. Request URLs and runtime
+    // diagnostics do not help an operator decide what to do next.
+    feedback.querySelector(".surface-summary-detail")?.remove();
+    return feedback;
   }
 
   function homeStatusIcon(id) {
@@ -229,100 +247,6 @@ export function createHomeSurface(context) {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
   }
 
-  function renderHomeAttentionQueue(model) {
-    const section = document.createElement("section");
-    section.className = "home-attention";
-    section.setAttribute("aria-labelledby", "home-attention-title");
-
-    const header = document.createElement("header");
-    const title = document.createElement("h3");
-    title.id = "home-attention-title";
-    title.textContent = "Needs your attention";
-    header.append(title);
-    section.append(header);
-
-    const items = buildHomeAttentionItems(model);
-    if (items.length === 0) {
-      const empty = renderHonestState(
-        model.stats.missingProofLoaded
-          ? "No work needs your attention"
-          : "Action queue unavailable",
-        model.stats.missingProofLoaded
-          ? "Nothing is overdue, due for follow-up, due today, or waiting on proof."
-          : "Task data is still loading or unavailable; no false work items are shown.",
-      );
-      empty.classList.add("home-attention-empty");
-      section.append(empty);
-    } else {
-      const list = document.createElement("ul");
-      list.className = "home-attention-list";
-      for (const item of items.slice(0, 6))
-        list.append(renderHomeAttentionItem(item, model.today));
-      section.append(list);
-    }
-
-    const footer = document.createElement("footer");
-    const allTasks = document.createElement("button");
-    allTasks.type = "button";
-    allTasks.className = "home-view-all";
-    allTasks.textContent = "View all tasks";
-    allTasks.addEventListener(
-      "click",
-      () => navigateCanonicalWorkspace("/tasks").ready,
-    );
-    footer.append(allTasks);
-    section.append(footer);
-    return section;
-  }
-
-  function renderHomeAttentionItem(item, today) {
-    const row = document.createElement("li");
-    row.className = `home-attention-row home-attention-${item.priority}`;
-
-    const marker = document.createElement("span");
-    marker.className = "home-task-marker";
-    marker.setAttribute("aria-hidden", "true");
-
-    const content = document.createElement("div");
-    content.className = "home-task-content";
-    const title = document.createElement("strong");
-    title.textContent = item.title;
-    const workflow = document.createElement("span");
-    workflow.className = "home-task-workflow";
-    workflow.textContent = item.cardId
-      ? resolveCardLabel(item.cardId)
-      : "Independent task";
-    content.append(title, workflow);
-
-    const state = document.createElement("div");
-    state.className = "home-task-state";
-    const timing = document.createElement("time");
-    const timingDate =
-      item.priority === "follow-up"
-        ? item.followUpDate
-        : item.dueDate || item.followUpDate;
-    if (timingDate) timing.dateTime = timingDate;
-    timing.textContent = formatHomeTaskTiming(item, today);
-    state.append(timing);
-
-    const action = document.createElement("button");
-    action.type = "button";
-    action.className = "home-task-action";
-    action.dataset.taskId = item.taskId;
-    action.textContent = homeTaskActionLabel(item.nextAction);
-    action.setAttribute("aria-label", `${action.textContent}: ${item.title}`);
-    action.addEventListener("click", () => openTaskPanel(item.taskId));
-
-    row.append(marker, content, state, action);
-    return row;
-  }
-
-  function homeTaskActionLabel(value) {
-    const label = String(value || "Open").trim();
-    if (/^add /i.test(label)) return "Add proof";
-    if (/^mark (done|response received)$/i.test(label)) return "Open";
-    return label;
-  }
 
   // Builds the single Home "Needs your action" lane by merging overdue, today,
   // and missing-proof task items into one prioritized list (overdue first).

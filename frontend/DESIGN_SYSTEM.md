@@ -107,13 +107,14 @@ They intentionally follow the Course Management Platform names where practical.
 - Use a persistent 268px sidebar and one main page canvas.
 - The sidebar shows the product mark, workspace name, search, and a short
   primary navigation list.
-- Primary navigation is `Today`, `Inbox`, `Tasks`, `Newsletter`,
-  `Calendar`, `Sponsors`, `Bookkeeping`, `Mailing exports`, and `Process Docs`.
-  Every area remains visible as a first-level item with an icon. Do not add a
-  `More`, overflow, disclosure, or contextual navigation section to this
-  sidebar.
+- Navigation has three visible named groups: Daily work (`Today`, `My Plan`,
+  `Inbox`, `Tasks`), Operations (`Newsletter`, `Calendar`, `Sponsors`,
+  `Bookkeeping`, `Mailing exports`, `Review`), and Knowledge (`Operating Model`,
+  `Process Docs`). Keep every destination visible; do not add a More menu.
+- Global search precedes navigation in both DOM and visual order. Its persistent
+  accessible name and scope hint explain that it searches work and process docs.
 - Tasks is an expandable sidebar group for `Queue`, `Cards`, `Templates`,
-  `Assistants`, and `Artifacts`. Its child routes appear as indented sidebar
+  `Recurring`, `Assistants`, and `Artifacts`. Its child routes appear as indented sidebar
   items only while the group is expanded; do not repeat them as tabs or a
   selector above the page. Assistants and Artifacts remain in this group until
   their long-term top-level placement is decided.
@@ -201,12 +202,22 @@ Home is a scan-first daily queue and the first reference implementation of this
 system.
 
 - The page answers “What needs my attention now?”
-- Lead with the human calendar date and content-width `New task` / `Start
-  workflow` actions.
+- Lead with Today, a quiet human calendar date, and a short purpose statement.
+  Keep distinct `New task` and `Create card` actions compact and secondary to work.
 - Show Overdue, Due today, and Waiting as one compact segmented strip.
 - Center one CMP-standard `56rem` (896px) `Needs your attention` container in
   the main canvas, aligned with the daily header and summary strip.
-- Cap the visible queue at six rows and link to the complete work queue.
+- Initially show six attention rows with a shown/total count and inline expansion.
+  Qualify counts when only some sources loaded. Retain expansion for each owner
+  during the session so a returning task has a visible focus target. The separate
+  `View all tasks` route opens the complete work queue.
+- Do not repeat successful summary counts in a READY sentence. Preserve loading,
+  empty and failure feedback with useful retry actions.
+- A partial work outage has one concise warning naming the unavailable sources
+  and one retry action. Keep loaded work visible; omit request paths and duplicate
+  runtime diagnostics from the daily work experience.
+- Place quiet contextual links after the queue: My Plan chooses upcoming work,
+  Inbox triages incoming requests, and Process Docs provides instructions.
 - Order once by priority: overdue, follow-up due, due today, missing proof;
   then by applicable date and stable title.
 - A desktop row contains marker, task title, resolved workflow, human timing,

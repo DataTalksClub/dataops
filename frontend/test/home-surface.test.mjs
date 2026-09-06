@@ -358,12 +358,7 @@ describe("Home surface production behavior", () => {
     assert.equal(root.dataset.operationsWorkLoaded, "true");
     assert.deepEqual(harness.calls.routeTitles, ["Today"]);
     const summaryLine = root.querySelector(".surface-summary");
-    assert.equal(summaryLine.dataset.summaryState, "ready");
-    assert.match(
-      summaryLine.textContent,
-      /1 task due today · 1 task overdue · 1 task waiting · 1 active card\./,
-    );
-    assert.equal(summaryLine.querySelector(".surface-summary-retry"), null);
+    assert.equal(summaryLine, null, "successful counts do not repeat in a READY sentence");
 
     const summary = root.querySelector(".home-status-strip");
     assert.deepEqual(
@@ -392,6 +387,36 @@ describe("Home surface production behavior", () => {
     assert.equal(harness.calls.quickCards, 1);
     await findByText(root, "View all tasks", "button").click();
     assert.deepEqual(harness.calls.navigations, ["/tasks"]);
+  });
+
+  test("reveals the full deduplicated attention queue and keeps it available on task return", async () => {
+    const tasks = Array.from({ length: 8 }, (_, index) => ({
+      id: `task-${index}`, title: `Attention ${index}`, dueDate: "2026-08-12",
+    }));
+    const harness = createHomeHarness({ workSnapshot: {
+      loaded: true, overdueLoaded: true, todayLoaded: true, waitingLoaded: true,
+      cardsLoaded: true, cardsComplete: true, cardTasksComplete: true,
+      overdueTasks: tasks, todayTasks: [tasks[0]],
+    } });
+    harness.surface.renderOperationsHome([]);
+    let root = harness.documentList.children[0];
+    assert.equal(root.querySelectorAll(".home-attention-row").length, 6);
+    assert.equal(root.querySelector(".home-attention-count").textContent, "6 of 8 attention items");
+    const reveal = root.querySelector(".home-attention-expand");
+    await reveal.click();
+    assert.equal(reveal.getAttribute("aria-expanded"), "true");
+    assert.equal(root.querySelectorAll(".home-attention-row").length, 8);
+    assert.deepEqual(root.querySelectorAll(".home-task-action").map((action) => action.dataset.taskId), tasks.map((task) => task.id));
+    await root.querySelectorAll(".home-task-action")[7].click();
+    assert.deepEqual(harness.calls.openedTasks, ["task-7"]);
+    harness.surface.renderOperationsHome([]);
+    root = harness.documentList.children[0];
+    assert.equal(root.querySelectorAll(".home-attention-row").length, 8);
+    await root.querySelector(".home-attention-expand").click();
+    assert.equal(root.querySelectorAll(".home-attention-row").length, 6);
+    const destinations = root.querySelector(".home-next-destinations").querySelectorAll("button");
+    for (const destination of destinations) await destination.click();
+    assert.deepEqual(harness.calls.navigations, ["/my-plan", "/inbox", "/processes"]);
   });
 
   test("renders attention urgency with retained cues and no hidden badges", async () => {
@@ -551,10 +576,7 @@ describe("Home surface production behavior", () => {
       "alert",
     );
     assert.match(outage.textContent, /could not be loaded, so no counts are shown/);
-    assert.equal(
-      outage.querySelector(".surface-summary-detail").textContent,
-      "Work API unreachable",
-    );
+    assert.equal(outage.querySelector(".surface-summary-detail"), null);
     const retry = outage.querySelector(".surface-summary-retry");
     assert.equal(retry.textContent, "Retry loading work");
     await retry.click();
@@ -578,13 +600,14 @@ describe("Home surface production behavior", () => {
     const partialSummary =
       partial.documentList.children[0].querySelector(".surface-summary");
     assert.equal(partialSummary.dataset.summaryState, "partial");
-    assert.match(partialSummary.textContent, /1 task due today/);
+    assert.match(partialSummary.textContent, /Loaded work is still shown/);
     assert.match(
       partialSummary.textContent,
-      /waiting unknown/,
+      /Waiting tasks, Cards unavailable/,
       "a lane that did not load has no count, not a zero",
     );
-    assert.match(partialSummary.textContent, /Some work sources are unavailable/);
+    assert.equal(partial.documentList.children[0].querySelector(".ops-runtime-state"), null);
+    assert.equal(partialSummary.querySelector(".surface-summary-detail"), null);
     assert.ok(partialSummary.querySelector(".surface-summary-retry"));
 
     const empty = createHomeHarness({
