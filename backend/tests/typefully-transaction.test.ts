@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
+import { useFixedDate } from './helpers/fixed-date';
 import {
   GetCommand,
   PutCommand,
@@ -80,6 +81,7 @@ const SECRET_ARN = 'arn:aws:secretsmanager:eu-west-1:123456789012:secret:typeful
 describe('production Typefully proposal/approval/worker/outbox transaction', {
   skip: !process.env.DYNAMODB_ENDPOINT,
 }, () => {
+  useFixedDate(NOW);
   let client: DynamoDBDocumentClient;
   let modelCalls = 0;
   let clarificationOnce: string | null = null;
