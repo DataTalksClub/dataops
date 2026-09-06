@@ -1,12 +1,14 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { TEST_SERVER_PORT } = require('./test-server-port');
+const { berlinBusinessDate } = require('./helpers/business-date');
 
 const SHOT_ROOT = path.resolve(
   __dirname,
   '..',
   '..',
-  '.agent-runs',
+  '.tmp',
+  'screenshots',
   'issue-208-browser',
 );
 const DESKTOP = { width: 1440, height: 900 };
@@ -49,6 +51,20 @@ async function keyboardRetry(page, control, cursorResponse) {
 test.describe('issue 208 paginated collections', () => {
   test('Home reports retained Cards across a failed continuation and recovers without duplicates', async ({ page }) => {
     let continuationOnline = false;
+    let firstPageRequests = 0;
+    let continuationRequests = 0;
+    const task = {
+      id: 'pagination-retained-task', description: 'Review the retained card',
+      cardId: 'pagination-card-a', date: berlinBusinessDate(Date.now()),
+      assigneeId: '00000000-0000-0000-0000-000000000001', status: 'todo',
+      version: 1, taskHistory: [],
+    };
+    await page.route('**/work/api/tasks*', (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const empty = params.has('endDate') || params.get('status') === 'waiting' ||
+        params.get('cardId') === 'pagination-card-b';
+      return json(route, 200, { tasks: empty ? [] : [task] });
+    });
     const card = (id, title) => ({
       anchorDate: '2026-08-26',
       id,
@@ -62,6 +78,7 @@ test.describe('issue 208 paginated collections', () => {
     await page.route('**/work/api/cards*', async (route) => {
       const cursor = new URL(route.request().url()).searchParams.get('cursor');
       if (!cursor) {
+        firstPageRequests += 1;
         return json(route, 200, {
           cards: {
             items: [card('pagination-card-a', 'Card page one')],
@@ -69,6 +86,7 @@ test.describe('issue 208 paginated collections', () => {
           },
         });
       }
+      continuationRequests += 1;
       if (!continuationOnline) return json(route, 503, { error: 'Cards continuation offline' });
       return json(route, 200, {
         cards: {
@@ -83,11 +101,16 @@ test.describe('issue 208 paginated collections', () => {
     await page.goto(`${BASE_URL}/#/`);
     const summary = page.locator('[data-summary-id="home"]');
     await expect(summary).toHaveAttribute('data-summary-state', 'partial');
-    await expect(summary.locator('.surface-summary-detail')).toContainText(
-      'Cards continuation offline',
-    );
+    await expect(summary).toContainText('Cards unavailable. Loaded work is still shown.');
+    await expect(summary.locator('.surface-summary-detail')).toHaveCount(0);
+    await expect(page.locator('.home-status-today strong')).toHaveText('1');
+    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 loaded attention items');
+    await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
+    await expect(page.locator('.home-task-workflow')).toHaveText('Card page one');
     await captureDesktopAndMobile(page, 'cards-continuation-failure');
 
+    const retainedFirstPageRequests = firstPageRequests;
+    const failedContinuationRequests = continuationRequests;
     continuationOnline = true;
     await keyboardRetry(
       page,
@@ -96,10 +119,12 @@ test.describe('issue 208 paginated collections', () => {
         Boolean(new URL(response.url()).searchParams.get('cursor')),
       ),
     );
-    await expect(summary).toHaveAttribute('data-summary-state', 'ready');
-    await expect(summary.locator('.surface-summary-line')).toContainText(
-      '2 active cards',
-    );
+    await expect(summary).toHaveCount(0);
+    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
+    expect(firstPageRequests).toBe(retainedFirstPageRequests);
+    expect(continuationRequests).toBe(failedContinuationRequests + 1);
+    await captureDesktopAndMobile(page, 'cards-continuation-recovered-home');
     await page.goto(`${BASE_URL}/#/cards`);
     await expect(page.locator('.ops-workflows-board')).toBeVisible();
     await expect(page.locator('.workflow-card-title')).toHaveText([
