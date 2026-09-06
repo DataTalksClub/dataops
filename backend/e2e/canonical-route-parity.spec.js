@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const AxeBuilder = require('@axe-core/playwright').default;
 const path = require('path');
+const { offsetBusinessDate } = require('./helpers/business-date');
 
 const SHOTS = path.resolve(__dirname, '..', '..', '.tmp', 'screenshots', 'issue-156');
 
@@ -16,7 +17,7 @@ function berlinToday() {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-async function createFixtures(request) {
+async function createFixtures(request, referenceTime = Date.now()) {
   const id = suffix();
   const card = (await (await request.post('/api/cards', {
     data: { title: `Route workflow ${id}`, anchorDate: '2026-08-11' },
@@ -34,10 +35,10 @@ async function createFixtures(request) {
     data: { source: 'manual', title: `Blocked intake ${id}`, note: 'Waiting on a synthetic reply', dataClass: 'internal' },
   })).json()).item;
   await request.post(`/api/intake/${blocked.id}/block`, {
-    data: { reason: 'Need a response', waitingFor: 'Synthetic partner', followUpAt: '2026-08-01T09:00:00.000Z' },
+    data: { reason: 'Need a response', waitingFor: 'Synthetic partner', followUpAt: `${offsetBusinessDate(referenceTime, -2)}T09:00:00.000Z` },
   });
   await request.post(`/api/intake/${blocked.id}/follow-up-sent`, {
-    data: { note: 'Sent a synthetic reminder', nextFollowUpAt: '2026-08-10T09:00:00.000Z', channel: 'email' },
+    data: { note: 'Sent a synthetic reminder', nextFollowUpAt: `${offsetBusinessDate(referenceTime, -1)}T09:00:00.000Z`, channel: 'email' },
   });
   const filteredOut = (await (await request.post('/api/intake', {
     data: { source: 'manual', title: `Archived intake ${id}`, note: 'Genuinely outside the actionable filter', dataClass: 'internal' },
@@ -640,7 +641,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
   });
 
   test('provides mobile Inbox, dismissal, recurring delete, sign-out, a11y, and exact screenshot evidence', async ({ page, request }, testInfo) => {
-    const fixture = await createFixtures(request);
+    const referenceTime = Date.now();
+    const fixture = await createFixtures(request, referenceTime);
     const createStateIntake = async (label) => (await (await request.post('/api/intake', {
       data: { source: 'manual', title: `${label} ${fixture.id}`, note: `Synthetic ${label.toLowerCase()} context`, dataClass: 'internal' },
     })).json()).item;
@@ -662,7 +664,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     })).json()).item;
     const futureBlockedSource = await createStateIntake('Future blocked intake');
     const futureBlocked = (await (await request.post(`/api/intake/${futureBlockedSource.id}/block`, {
-      data: { reason: 'Future synthetic wait', waitingFor: 'Synthetic partner', followUpAt: '2026-09-01T09:00:00.000Z' },
+      data: { reason: 'Future synthetic wait', waitingFor: 'Synthetic partner', followUpAt: `${offsetBusinessDate(referenceTime, 2)}T09:00:00.000Z` },
     })).json()).item;
 
     await page.setViewportSize({ width: 1440, height: 900 });
