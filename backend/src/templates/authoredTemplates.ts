@@ -34,6 +34,19 @@ export interface TemplateReconciliationResult {
 }
 
 const AUTHORITATIVE_FIELDS = [
+  'authoredId',
+  'schemaVersion',
+  'department',
+  'businessSystem',
+  'ownerRole',
+  'status',
+  'criticality',
+  'outcome',
+  'tools',
+  'reviewCycleDays',
+  'lastReviewedAt',
+  'nextReviewAt',
+  'externalSourceDocuments',
   'name',
   'type',
   'emoji',
@@ -81,13 +94,19 @@ export function parseAuthoredTemplateFiles(files: AuthoredTemplateFile[]): Autho
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
     let document: unknown;
     try {
-      document = yaml.load(file.content);
+      // Authored review dates are date strings, not JavaScript Date objects.
+      document = yaml.load(file.content, { schema: yaml.JSON_SCHEMA });
     } catch {
       throw new Error(`${file.path}: invalid authored workflow template YAML`);
     }
     if (!isDict(document)) throw new Error(`${file.path}: authored workflow template must be an object`);
 
-    const issues = validateAuthoredTemplate(document);
+    let issues: ReturnType<typeof validateAuthoredTemplate>;
+    try {
+      issues = validateAuthoredTemplate(document);
+    } catch {
+      throw new Error(`${file.path}: invalid authored workflow template structure`);
+    }
     if (issues.length > 0) {
       throw new Error(`${file.path}: authored workflow template validation failed (${issues.length} issues)`);
     }
@@ -99,7 +118,12 @@ export function parseAuthoredTemplateFiles(files: AuthoredTemplateFile[]): Autho
     if (seenTypes.has(type)) throw new Error(`${file.path}: duplicate authored workflow template type`);
     seenTypes.add(type);
 
-    const runtime = templateFromYaml(document);
+    let runtime: Dict;
+    try {
+      runtime = templateFromYaml(document);
+    } catch {
+      throw new Error(`${file.path}: invalid authored workflow template structure`);
+    }
     if (!isDeepStrictEqual(templateToYaml(runtime), document)) {
       throw new Error(`${file.path}: authored workflow template mapping is not lossless`);
     }

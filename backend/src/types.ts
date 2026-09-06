@@ -22,6 +22,9 @@ export interface WorkflowPhase {
   id: string;
   name: string;
   stage?: WorkflowStage;
+  entryCriteria?: string[];
+  exitCriteria?: string[];
+  allowedNextPhaseIds?: string[];
 }
 
 export interface ArtifactRef {
@@ -443,10 +446,34 @@ export interface CardLinkDefinition {
   name: string;
 }
 
+export interface ExternalSourceDocument {
+  id: string;
+  location: string;
+  kind: 'external-process' | 'external-template' | 'external-assistant';
+  status: 'provenance-only' | 'pending-copy' | 'verified-external';
+  note: string;
+}
+
+export interface TaskClosure {
+  successCriteria: string;
+  followUp: 'none' | 'waiting' | 'handoff' | 'review';
+  closeCondition: string;
+  waitingFor?: string;
+  followUpAfterDays?: number;
+  recipientRole?: string;
+}
+
 export interface TaskDefinition {
   refId: string;
   description: string;
   offsetDays: number;
+  taskKind?: 'procedure' | 'communication' | 'milestone' | 'milestone-plus-publication'
+    | 'handoff' | 'waiting-input' | 'validation' | 'approval-gate' | 'checklist' | 'dynamic-slot';
+  ownerRole?: string;
+  tools?: string[];
+  instructionExemptReason?: string;
+  runtimeInstructionSource?: string;
+  closure?: TaskClosure;
   isMilestone?: boolean;
   stageOnComplete?: string;
   assigneeId?: string;
@@ -501,6 +528,20 @@ export interface TemplateTaskDefinitionSnapshot {
 
 export interface Template {
   id: string;
+  /** Authored identity and schema revision, separate from runtime id/version. */
+  authoredId?: string;
+  schemaVersion?: number;
+  department?: string;
+  businessSystem?: string;
+  ownerRole?: string;
+  status?: 'draft' | 'proposed' | 'active' | 'review-due' | 'blocked' | 'deprecated' | 'archived';
+  criticality?: 'core' | 'supporting' | 'historical';
+  outcome?: string;
+  tools?: string[];
+  reviewCycleDays?: number;
+  lastReviewedAt?: string | null;
+  nextReviewAt?: string | null;
+  externalSourceDocuments?: ExternalSourceDocument[];
   name: string;
   type?: string;
   emoji?: string;

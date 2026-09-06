@@ -12,8 +12,10 @@ import {
   setDeploymentTemplateLoaderForTest,
   USERS,
 } from '../src/deploymentSeeds';
-import { parseAuthoredTemplateFiles } from '../src/templates/authoredTemplates';
+import { loadAuthoredTemplatesFromGithub } from '../src/templates/authoredTemplates';
+import { templateToYaml } from '../src/templates/yamlTemplates';
 import { useTestDatabase } from './helpers/db';
+import { syntheticAuthoredFiles, syntheticAuthoredTemplate, syntheticGithubStore } from './helpers/authoredTemplates';
 
 describe('handler - IAM-only deployment seeds', () => {
   let client: DynamoDBDocumentClient;
@@ -70,30 +72,12 @@ describe('handler - IAM-only deployment seeds', () => {
       'detail-type': 'Runtime Seed',
       detail: { dataopsAction: 'sync-runtime-seeds' },
     };
-    const authored = parseAuthoredTemplateFiles(Array.from({ length: 11 }, (_, offset) => {
-      const index = offset + 1;
-      const type = `synthetic-${index}`;
-      return {
-        path: `workflow-templates/${type}.yaml`,
-        revision: `revision-${index}`,
-        content: [
-          `type: ${type}`,
-          `name: Synthetic ${index}`,
-          'trigger:',
-          '  mode: manual',
-          'tasks:',
-          '  - id: first',
-          '    name: Synthetic task',
-          '    schedule:',
-          '      offset_days: 0',
-          '',
-        ].join('\n'),
-      };
-    }));
+    const files = syntheticAuthoredFiles(11);
+    const { store, requests } = syntheticGithubStore(files);
     const loadTemplates = async () => {
       assert.strictEqual((await listUsers(client)).length, USERS.length, 'users must exist before template loading');
       assert.strictEqual((await listRecurringConfigs(client)).length, 0, 'recurring configs must wait for templates');
-      return authored;
+      return loadAuthoredTemplatesFromGithub(store);
     };
 
     setDeploymentTemplateLoaderForTest(loadTemplates);
@@ -112,8 +96,17 @@ describe('handler - IAM-only deployment seeds', () => {
         total: BASELINE_RECURRING_CONFIGS.length,
       },
     });
+    const firstTemplates = await listTemplates(client);
+    assert.strictEqual(firstTemplates.length, 11);
+    for (const template of firstTemplates) {
+      assert.deepStrictEqual(templateToYaml({ ...template }), syntheticAuthoredTemplate(template.type));
+      assert.notStrictEqual(template.id, template.authoredId);
+      assert.strictEqual(template.version, 1);
+      assert.strictEqual(template.schemaVersion, 2);
+      assert.strictEqual(template.sourceRevision, files.find((file) => file.path === template.sourcePath)!.revision);
+    }
 
-    setDeploymentTemplateLoaderForTest(async () => authored);
+    setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromGithub(store));
     const secondResponse = await handler(event);
     assert.ok('statusCode' in secondResponse);
     assert.strictEqual(secondResponse.statusCode, 200);
@@ -129,6 +122,13 @@ describe('handler - IAM-only deployment seeds', () => {
         total: BASELINE_RECURRING_CONFIGS.length,
       },
     });
+    assert.deepStrictEqual(
+      (await listTemplates(client)).sort((left, right) => left.id.localeCompare(right.id)),
+      firstTemplates.sort((left, right) => left.id.localeCompare(right.id)),
+      'idempotent seeding must preserve every stored definition, identity and version',
+    );
+    assert.strictEqual(requests.filter((request) => request.includes('/git/trees/')).length, 1);
+    assert.strictEqual(requests.filter((request) => request.includes('/git/blobs/')).length, 22);
 
     const body = JSON.stringify(second);
     for (const user of USERS) {
