@@ -158,9 +158,23 @@ export function createProcessDocsSurface(context, services) {
     title.textContent = "Quality Findings";
     const meta = document.createElement("span");
     meta.className = "ops-section-meta";
-    meta.textContent = quality.loaded
-      ? `${quality.totalFindings} findings · ${quality.summary?.blocking || 0} blocking in template/report data`
-      : "Report unavailable";
+    if (quality.loaded) {
+      // The counts are quantities, so they carry the mono accent.
+      const total = document.createElement("strong");
+      total.className = "ops-count";
+      total.textContent = String(quality.totalFindings);
+      const blocking = document.createElement("strong");
+      blocking.className = "ops-count";
+      blocking.textContent = String(quality.summary?.blocking || 0);
+      meta.append(
+        total,
+        " findings · ",
+        blocking,
+        " blocking in template/report data",
+      );
+    } else {
+      meta.textContent = "Report unavailable";
+    }
     header.append(title, meta);
     wrap.append(header);
 

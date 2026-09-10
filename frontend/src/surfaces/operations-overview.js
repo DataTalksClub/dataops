@@ -225,6 +225,7 @@ export function createOperationsOverview(context) {
     if (view === "inbox") return "Inbox";
     if (view === "tasks") return tasksSectionTitle(tasksSection, archiveVisible);
     if (view === "docs") return "Docs";
+    if (view === "admin") return "Admin";
     if (view === "users") return "Users";
     if (view === "bookkeeping") return "Bookkeeping";
     if (view === "sponsors") return "Sponsors";

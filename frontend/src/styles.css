@@ -13290,7 +13290,74 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   /* The sidebar's search-filter controls live in the mobile drawer on every
      route, so they meet the same 44px floor as the surfaces. */
   .custom-select-button,
-  .filter-clear {
+  .filter-clear,
+  .filter-row select {
     min-height: 44px;
+  }
+
+  /* The task panel's file control meets the floor like every other control. */
+  .task-panel-body input[type="file"] {
+    min-height: 44px;
+  }
+}
+
+/* ── Slice 5 review round 2 (#229): one knowledge header, mono counts ──── */
+
+/* Docs and Admin headers follow the family pattern exactly: left-aligned
+   eyebrow, H1, subtitle, no trailing rule. Docs keeps its one primary action
+   beside the text on desktop; the earlier flex-end alignment right-aligned
+   the whole stack. */
+.ops-surface-docs > .ops-surface-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: start;
+  gap: 4px 20px;
+  border-bottom: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.ops-surface-docs > .ops-surface-header > .section-kicker,
+.ops-surface-docs > .ops-surface-header > h1,
+.ops-surface-docs > .ops-surface-header > p {
+  grid-column: 1;
+}
+
+.ops-surface-docs > .ops-surface-header > .ops-docs-create {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+}
+
+.ops-surface-admin .ops-surface-header {
+  width: 100%;
+  border-bottom: 0;
+  padding: 0;
+}
+
+/* Admin cards hug their content instead of stretching to the tallest panel. */
+.ops-admin-grid {
+  align-items: start;
+}
+
+/* Inline counts inside sentences carry the mono accent. */
+.ops-count {
+  color: var(--text-heading);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+@media (max-width: 820px) {
+  /* On mobile the Docs action drops under the text. */
+  .ops-surface-docs > .ops-surface-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .ops-surface-docs > .ops-surface-header > .ops-docs-create {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 8px;
   }
 }
