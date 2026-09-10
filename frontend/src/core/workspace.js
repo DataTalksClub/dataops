@@ -817,7 +817,7 @@ export function cardsHeaderViewModel({
   archivedCount,
 }) {
   return {
-    title: "Cards",
+    title: "Tasks - Cards",
     eyebrow: "Task board",
     summary: archiveVisible
       ? `${countLabel(archivedCount, "archived card")} · completed work remains available`

@@ -12863,3 +12863,18 @@ body[data-workspace-view="tasks"] .assistant-job-row em.is-danger {
   font-family: var(--font-mono);
   font-size: 12px;
 }
+
+/* Overdue quantifiers in the overdue lane read red, matching the ramp. */
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="overdue"] .ops-queue-chip.is-attention {
+  color: var(--attention-overdue);
+}
+
+/* Cards uses the flat family header like every other route: no boxed
+   container, actions in a plain toolbar row. */
+body[data-workspace-view="tasks"] .workflow-board-header {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0 4px;
+}

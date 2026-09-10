@@ -29,9 +29,17 @@ export function createTaskQueue(context) {
   function renderWorkQueueSurface() {
     const taskRouteContext = getTaskRouteContext();
     const today = taskRouteContext.date || todayIsoDate();
-    const tasks = Array.isArray(taskRouteContext.tasks)
+    // The same task reaches this list through its lane query and its card's
+    // checklist; deduplicate by id so history lanes never double-count.
+    const seenTasks = new Set();
+    const tasks = (Array.isArray(taskRouteContext.tasks)
       ? taskRouteContext.tasks
-      : allWorkTasks(state.workSnapshot);
+      : allWorkTasks(state.workSnapshot)
+    ).filter((task) => {
+      if (seenTasks.has(task.id)) return false;
+      seenTasks.add(task.id);
+      return true;
+    });
     const groupLoaded = {
       Overdue: state.workSnapshot.overdueLoaded,
       "Follow-ups due": state.workSnapshot.waitingLoaded,
@@ -223,11 +231,13 @@ export function createTaskQueue(context) {
   }
 
   // Human due moments: relative words for today/yesterday/tomorrow, a short
-  // date otherwise — never a bare ISO quantity in the queue.
+  // date otherwise — never a bare ISO quantity in the queue. Timestamped
+  // values (followUpAt carries a time) are compared on their day.
   function queueDueLabel(date, today) {
-    const relative = formatTaskDateMeta(date, today);
-    if (relative !== date) return relative;
-    const parsed = new Date(`${String(date).slice(0, 10)}T00:00:00Z`);
+    const day = String(date || "").slice(0, 10);
+    const relative = formatTaskDateMeta(day, today);
+    if (relative !== day) return relative;
+    const parsed = new Date(`${day}T00:00:00Z`);
     return Number.isNaN(parsed.getTime())
       ? relative
       : new Intl.DateTimeFormat("en-GB", {

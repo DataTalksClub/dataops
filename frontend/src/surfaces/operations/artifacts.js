@@ -101,10 +101,12 @@ export function createArtifactsSurface(context) {
       (artifact.status || "draft")
         .replace(/[_-]+/g, " ")
         .replace(/^\w/, (char) => char.toUpperCase()),
-      artifact.type || artifact.sourceType || "",
-      artifact.cardId ? artifactContextLabel("card", artifact.cardId) : "",
-      artifact.taskId ? artifactContextLabel("task", artifact.taskId) : "",
-      artifact.storageUri ? "storage linked" : "storage missing",
+      artifact.sourceType === "assistant-output"
+        ? "Assistant output"
+        : artifact.type || "",
+      artifact.cardId ? `for ${artifactContextLabel("card", artifact.cardId) || "a card"}` : "",
+      artifact.taskId ? `for ${artifactContextLabel("task", artifact.taskId) || "a task"}` : "",
+      artifact.storageUri ? "saved to storage" : "no file saved yet",
     ]
       .filter(Boolean)
       .join(" · ");
