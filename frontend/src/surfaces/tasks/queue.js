@@ -55,12 +55,16 @@ export function createTaskQueue(context) {
         state.workSnapshot.overdueLoaded ||
         state.workSnapshot.waitingLoaded,
     };
+    // Contract order: overdue, follow-ups due, then the day's work; the
+    // proof/waiting lanes follow. Populated lanes must not bury the day's
+    // work under empty ones.
     const groups = [
       ["Overdue", tasks.filter((task) => isTaskOverdue(task, today))],
       [
         "Follow-ups due",
         tasks.filter((task) => isFollowUpDueTask(task, today)),
       ],
+      ["Today", tasks.filter((task) => isTaskDueToday(task, today))],
       [
         "Missing proof",
         tasks.filter(
@@ -74,7 +78,6 @@ export function createTaskQueue(context) {
             isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today),
         ),
       ],
-      ["Today", tasks.filter((task) => isTaskDueToday(task, today))],
       [
         "Done / history",
         tasks.filter(
@@ -126,9 +129,24 @@ export function createTaskQueue(context) {
       }
       section.append(routeContext);
     }
+    // Empty lanes explain what is absent and what would appear here, so a
+    // quiet lane reads as good news rather than a dead end.
+    const emptyCopy = {
+      Overdue: "Nothing is overdue. Work that passes its due date will surface here first.",
+      "Follow-ups due":
+        "No follow-ups are due. Tasks you promised to revisit will appear here.",
+      Today: "Nothing is due today. Work due later will appear here as its date arrives.",
+      "Missing proof":
+        "No missing proof work. Tasks that need a link or artifact will surface here.",
+      Waiting:
+        "No waiting work. Tasks blocked on other people will appear here.",
+      "Done / history": "No completed work yet.",
+    };
     for (const [groupIndex, [label, list]] of groups.entries()) {
       const group = document.createElement("article");
       group.className = "ops-queue-group";
+      const isEmpty = list.length === 0 && Boolean(groupLoaded[label]);
+      if (isEmpty) group.classList.add("is-empty");
       group.dataset.queueGroup = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const header = document.createElement("header");
       const title = document.createElement("h3");
@@ -158,7 +176,7 @@ export function createTaskQueue(context) {
         empty.className = "ops-empty";
         empty.dataset.state = groupLoaded[label] ? "empty" : "unavailable";
         empty.textContent = groupLoaded[label]
-          ? `No ${label.toLowerCase()} work.`
+          ? emptyCopy[label] || `No ${label.toLowerCase()} work.`
           : "Live work data unavailable.";
         rows.append(empty);
       } else {

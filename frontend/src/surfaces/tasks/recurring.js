@@ -107,6 +107,9 @@ export function createRecurringTasks(context) {
       const item = document.createElement("div");
       item.className = `recurring-summary-item recurring-summary-${stat.id}`;
       item.dataset.state = recurring?.loaded ? "ready" : "unavailable";
+      // Attention colors signal work, not absence: a zero never wears amber
+      // or blue, so "0 paused" cannot read as a warning.
+      item.dataset.nonzero = stat.value > 0 ? "true" : "false";
       const label = document.createElement("span");
       label.className = "recurring-summary-label";
       label.textContent = stat.label;

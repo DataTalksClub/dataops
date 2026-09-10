@@ -166,7 +166,9 @@ export function createCardsSurface(context) {
       if (stageItems.length === 0) {
         const empty = document.createElement("p");
         empty.className = "workflow-column-empty";
-        empty.textContent = "No cards";
+        // An empty column explains how cards reach it, so the quiet stage
+        // reads as board mechanics rather than a dead end.
+        empty.textContent = `No cards in ${label} yet. Cards move across the board as work progresses.`;
         list.append(empty);
       } else {
         for (const item of stageItems)
