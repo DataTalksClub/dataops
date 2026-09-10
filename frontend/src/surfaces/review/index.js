@@ -181,7 +181,7 @@ export function createReviewSurface(context) {
     const header = createElement(documentRef, "header", "review-header");
     const copy = createElement(documentRef, "div", "review-header-copy");
     appendText(documentRef, copy, "p", "section-kicker", "Knowledge operations");
-    appendText(documentRef, copy, "h2", "", "Document review");
+    appendText(documentRef, copy, "h1", "", "Document review");
     appendText(
       documentRef,
       copy,

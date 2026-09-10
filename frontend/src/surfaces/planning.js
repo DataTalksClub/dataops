@@ -23,6 +23,17 @@ export function createPlanningSurface(context) {
     return "";
   }
 
+  function formatShortPlanningDate(iso) {
+    const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime())
+      ? String(iso)
+      : new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }).format(parsed);
+  }
+
   function calendarAlertCopy(reasonCode) {
     return {
       "public-holiday-overlap": "Activity overlaps a public holiday",
@@ -59,7 +70,7 @@ export function createPlanningSurface(context) {
       <header class="planner-header">
         <div class="planner-heading">
           <p class="planner-eyebrow">Planning</p>
-          <h2 id="calendar-surface-title">Operations calendar</h2>
+          <h1 id="calendar-surface-title">Operations calendar</h2>
           <p>Coordinate public activities, holidays, and newsletter dates. Europe/Berlin · Monday–Sunday.</p>
         </div>
         <button class="primary-button" data-add>Add activity</button>
@@ -286,15 +297,28 @@ export function createPlanningSurface(context) {
         items = result.items || [];
         holidays = result.holidays || [];
         overlays = overlayResult.status === "fulfilled" ? overlayResult.value.items || [] : [];
-        alertsBox.innerHTML = (result.alerts || []).map((alert) => `
+        const itemById = new Map(
+          (result.items || []).map((item) => [item.id, item]),
+        );
+        alertsBox.innerHTML = (result.alerts || []).map((alert) => {
+          const named = (alert.affectedIds || [])
+            .map((id) => {
+              const item = itemById.get(id);
+              if (!item) return "";
+              const when = item.startKey ? item.startKey.slice(0, 10) : "";
+              return `${item.title}${when ? ` — ${formatShortPlanningDate(when)}` : ""}`;
+            })
+            .filter(Boolean)
+            .join(" · ");
+          return `
           <article class="calendar-alert planner-alert is-${escapeHtml(alert.severity || "warning")}">
             <div>
               <strong>${escapeHtml(calendarAlertCopy(alert.reasonCode))}</strong>
-              <p>${plannerLabel(alert.severity || "warning")} · Check the affected date before publishing.</p>
+              <p>${named ? `${escapeHtml(named)}. ` : ""}${plannerLabel(alert.severity || "warning")} · Check the affected date before publishing.</p>
             </div>
             <button data-dismiss="${encodeURIComponent(alert.fingerprint)}">Dismiss</button>
           </article>
-        `).join("");
+        `;}).join("");
         render();
         const holidayStaleMessage = result.holidayMetadata?.stale
           ? "Holiday information may be out of date. "
@@ -305,7 +329,7 @@ export function createPlanningSurface(context) {
         const newsletterMessage = overlayResult.status === "rejected"
           ? "Newsletter dates are temporarily unavailable. "
           : "";
-        status.textContent = `${holidayStaleMessage}${holidayHorizonMessage}${newsletterMessage}Calendar ready.`;
+        status.textContent = `${holidayStaleMessage}${holidayHorizonMessage}${newsletterMessage}`.trimEnd();
       } catch (error) {
         items = [];
         holidays = [];
@@ -393,7 +417,7 @@ export function createPlanningSurface(context) {
       <header class="planner-header">
         <div class="planner-heading">
           <p class="planner-eyebrow">Planning</p>
-          <h2 id="newsletter-surface-title">Newsletter planner</h2>
+          <h1 id="newsletter-surface-title">Newsletter planner</h2>
           <p>Plan campaign slots, booking readiness, and publication progress in Europe/Berlin.</p>
         </div>
         <button class="primary-button" data-newsletter-add>Add slot</button>
@@ -482,11 +506,15 @@ export function createPlanningSurface(context) {
         : isoWeekKey(item.publicationDate);
 
     function newsletterAlertMarkup(alert) {
+      const slot = (items || []).find((candidate) => candidate.id === alert.slotId);
+      const naming = slot
+        ? `${slot.campaignLabel || "Slot"}${slot.publicationDate ? ` — ${formatShortPlanningDate(slot.publicationDate)}` : ""}`
+        : "";
       return `
         <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
           <div>
             <strong>${escapeHtml(newsletterAlertCopy(alert.reasonCode))}</strong>
-            <p>${plannerLabel(alert.severity || "warning")} · Review the affected slot before scheduling.</p>
+            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${plannerLabel(alert.severity || "warning")} · Review the affected slot before scheduling.</p>
           </div>
         </article>
       `;
@@ -575,7 +603,12 @@ export function createPlanningSurface(context) {
           }),
           result = await api(`?${query}`);
         items = result.items || [];
-        surface.querySelector("[data-alerts]").innerHTML = (result.alerts || [])
+        // One banner per reason: the same warning about different slots
+        // reads as noise repeated, so identical reasons collapse.
+        const uniqueAlerts = [
+          ...new Map((result.alerts || []).map((alert) => [alert.reasonCode, alert])).values(),
+        ];
+        surface.querySelector("[data-alerts]").innerHTML = uniqueAlerts
           .map(newsletterAlertMarkup)
           .join("");
         const groups = {};
@@ -590,7 +623,7 @@ export function createPlanningSurface(context) {
               <p>Create the first slot or adjust the date, status, and booking filters.</p>
             </div>
           `;
-        status.textContent = "Newsletter schedule ready.";
+        status.textContent = "";
       } catch (error) {
         status.textContent = `Could not load newsletter schedule: ${error.message}`;
         surface.querySelector("[data-alerts]").replaceChildren();
