@@ -66,13 +66,6 @@ export function renderSponsorBookingAlerts({
           Retry alerts</button
         >
       </div>`;
-  } else if (
-    notificationState.complete &&
-    notificationState.items.length
-  ) {
-    continuation = html`<p class="honest-state">
-        All notification pages loaded.
-      </p>`;
   }
 
   surface.querySelector("[data-crm-alerts]").innerHTML =

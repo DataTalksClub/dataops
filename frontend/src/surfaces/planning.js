@@ -39,6 +39,8 @@ export function createPlanningSurface(context) {
       "public-holiday-overlap": "Activity overlaps a public holiday",
       "school-holiday-overlap": "Activity overlaps a school holiday",
       "school-free-day-overlap": "Activity overlaps a school-free day",
+      "activity-overlap": "Two activities overlap",
+      "missing-workflow-context": "Activity has no linked workflow",
     }[reasonCode] || "Calendar timing needs review";
   }
 
@@ -47,7 +49,21 @@ export function createPlanningSurface(context) {
       "near-term-open-unbooked": "An open slot needs booking soon",
       "duplicate-campaign-number": "Campaign numbers need review",
       "publication-date-overlap": "Multiple campaigns share a publication date",
+      "publication-missing-workflow": "Publication is missing its workflow card",
+      "reserved-missing-booker": "A reserved slot has no booker",
     }[reasonCode] || "Newsletter planning needs review";
+  }
+
+  // Advice is per reason: two alerts on one slot must read as two different
+  // facts, never the same sentence twice.
+  function newsletterAlertAdvice(reasonCode) {
+    return {
+      "near-term-open-unbooked": "Book an owner or move the date.",
+      "duplicate-campaign-number": "Renumber one of the campaigns.",
+      "publication-date-overlap": "Stagger the publication dates.",
+      "publication-missing-workflow": "Attach the issue's workflow card.",
+      "reserved-missing-booker": "Name the booker or release the slot.",
+    }[reasonCode] || "Open the slot and resolve it before it ships.";
   }
 
   async function renderCalendarSurface() {
@@ -193,7 +209,7 @@ export function createPlanningSurface(context) {
             <h3 class="calendar-period">${periodLabel}</h3>
             <p>${isWeek ? "Seven-day planning view" : "Month overview"} · ISO week numbers</p>
           </div>
-          <span>${visibleItems.length} ${visibleItems.length === 1 ? "activity" : "activities"}</span>
+          <span class="planner-count">${visibleItems.length} ${visibleItems.length === 1 ? "activity" : "activities"}</span>
         </div>
         <p class="calendar-mobile-hint">Swipe each week horizontally to see all seven days.</p>
       `;
@@ -514,7 +530,7 @@ export function createPlanningSurface(context) {
         <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
           <div>
             <strong>${escapeHtml(newsletterAlertCopy(alert.reasonCode))}</strong>
-            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${plannerLabel(alert.severity || "warning")} · Review the affected slot before scheduling.</p>
+            <p>${naming ? `${escapeHtml(naming)}. ` : ""}${plannerLabel(alert.severity || "warning")} · ${escapeHtml(newsletterAlertAdvice(alert.reasonCode))}</p>
           </div>
         </article>
       `;
@@ -583,7 +599,7 @@ export function createPlanningSurface(context) {
         <section class="newsletter-period">
           <header>
             <h3>${escapeHtml(periodLabel)}</h3>
-            <span>${slots.length} ${slots.length === 1 ? "slot" : "slots"}</span>
+            <span class="planner-count">${slots.length} ${slots.length === 1 ? "slot" : "slots"}</span>
           </header>
           <div class="newsletter-slot-list">
             ${slots.map(newsletterSlotMarkup).join("")}

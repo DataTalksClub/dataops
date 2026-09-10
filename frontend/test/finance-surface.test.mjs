@@ -468,7 +468,8 @@ describe("Finance surface boundary", () => {
     assert.match(alerts.innerHTML, /Third alert/);
     assert.doesNotMatch(alerts.innerHTML, /Duplicate alert/);
     assert.doesNotMatch(alerts.innerHTML, /loading failed|are unavailable/);
-    assert.match(alerts.innerHTML, /All notification pages loaded\./);
+    // A fully loaded alert panel states nothing: the alerts are the evidence.
+    assert.doesNotMatch(alerts.innerHTML, /All notification pages loaded/);
     const notificationUrls = requests
       ? []
       : [];

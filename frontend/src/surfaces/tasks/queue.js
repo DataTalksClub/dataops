@@ -350,7 +350,7 @@ export function createTaskQueue(context) {
     summary.textContent = task.status === "done"
       ? "Completed."
       : !proof.ok
-        ? `Proof needed: ${proof.label}`
+        ? `Proof needed: ${proof.label.replace(/^Missing proof:\s*/i, "")}`
         : task.waitingFor
           ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${queueShortDate(task.followUpAt)}` : ""}`
           : `Next: ${taskNextActionLabel(task, today)}`;
