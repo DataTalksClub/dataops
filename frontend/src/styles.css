@@ -19,9 +19,11 @@
   --success-bg: #e6f6ea;
   --success-text: #116329;
   --success-border: #b7dfc2;
-  --warning-bg: #fff6d7;
-  --warning-text: #7d4e00;
-  --warning-border: rgba(191, 135, 0, 0.32);
+  /* Operational-dashboard warning chip: #fff8c5 surface, #d4a72c border,
+     #7a5c00 text. */
+  --warning-bg: #fff8c5;
+  --warning-text: #7a5c00;
+  --warning-border: #d4a72c;
   --danger-bg: #fff0ee;
   --danger-text: #cf222e;
   --danger-border: rgba(207, 34, 46, 0.24);
@@ -29,6 +31,13 @@
   --info-text: #315f8f;
   --info-border: rgba(49, 95, 143, 0.22);
   --focus-ring: rgba(49, 95, 143, 0.4);
+
+  /* Operational-dashboard attention ramp: overdue pressure reads red, due
+     reads amber, waiting reads gray, and "on track" is quiet track gray. */
+  --attention-overdue: #cf222e;
+  --attention-due: #9a6700;
+  --attention-waiting: #8c959f;
+  --attention-ontrack: #d8dee4;
 
   /* Course Management Platform primary action and selected-state palette. */
   --accent: #315f8f;
@@ -42,6 +51,9 @@
   --control-hover-border: #d0d7de;
 
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Quantities, timings and IDs render in IBM Plex Mono so debt pressure
+     reads as data, not prose. */
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 6px;
   --shadow-overlay: 0 8px 24px rgba(15, 23, 42, 0.16);
   --sidebar-width: 268px;
@@ -1284,27 +1296,66 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-daily-header {
-  display: grid;
-  align-items: start;
-  gap: 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   border-bottom: 1px solid var(--border-muted);
   padding-bottom: 20px;
+}
+
+.home-daily-header > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .home-daily-header h2 {
   margin: 0;
   color: var(--text-heading);
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .home-daily-header time {
   display: block;
-  margin-top: 2px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.home-purpose {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Carried debt: quantified overdue pressure next to the day headline. */
+.home-debt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 6px 0 0;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.home-debt-chip strong {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .home-quick-actions {
@@ -1326,8 +1377,8 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   background: var(--control-bg);
   color: var(--text-primary);
   padding: 5px 12px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -1349,6 +1400,7 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   background: var(--primary-hover);
 }
 
+/* Segmented attention strip: three counted segments with status dots. */
 .home-status-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1360,11 +1412,11 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 
 .home-status-item {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-height: 58px;
-  padding: 10px 16px;
+  padding: 10px 14px;
 }
 
 .home-status-item + .home-status-item {
@@ -1372,45 +1424,50 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-status-item span {
-  color: var(--text-primary);
-  font-weight: 600;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .home-status-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  font-size: 12px;
 }
 
-.home-status-label svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.home-status-text {
+  display: inline-flex;
+  min-width: 0;
 }
 
-.home-status-overdue .home-status-label {
-  color: var(--danger-text);
+.home-status-text-short {
+  display: none;
 }
 
-.home-status-waiting .home-status-label {
-  color: var(--warning-text);
+.home-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.home-status-overdue .home-status-dot {
+  background: var(--attention-overdue);
+}
+
+.home-status-today .home-status-dot {
+  background: var(--attention-due);
+}
+
+.home-status-waiting .home-status-dot {
+  background: var(--attention-waiting);
 }
 
 .home-status-item strong {
-  color: var(--accent);
-  font-size: 16px;
-}
-
-.home-status-overdue strong {
-  color: var(--danger-text);
-}
-
-.home-status-waiting strong {
-  color: var(--warning-text);
+  color: var(--text-heading);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .home-status-item[data-state="unavailable"] span,
@@ -1458,13 +1515,15 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   list-style: none;
 }
 
+/* Attention rows: a 3px marker column, the work, its card, the honest
+   timing, and one action — the operator scans the marker edge first. */
 .home-attention-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1.45fr) minmax(130px, 0.7fr) minmax(112px, 0.65fr) auto;
-  gap: 12px;
+  grid-template-columns: 3px minmax(0, 1fr) minmax(150px, 190px) minmax(120px, 148px) 76px;
+  gap: 14px;
   align-items: center;
-  min-height: 64px;
-  padding: 8px 16px;
+  min-height: 56px;
+  padding: 12px 16px 12px 0;
 }
 
 .home-attention-row + .home-attention-row {
@@ -1476,58 +1535,29 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-task-marker {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.home-task-marker::before {
-  content: "·";
-  transform: translateY(-1px);
+  align-self: stretch;
+  width: 3px;
+  border-radius: 0;
+  background: var(--attention-waiting);
 }
 
 .home-attention-overdue .home-task-marker {
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
-  color: var(--danger-text);
-}
-
-.home-attention-overdue .home-task-marker::before {
-  content: "!";
-  transform: none;
+  background: var(--attention-overdue);
 }
 
 .home-attention-follow-up .home-task-marker {
-  border-color: var(--warning-border);
-  background: var(--warning-bg);
-  color: var(--warning-text);
-}
-
-.home-attention-follow-up .home-task-marker::before {
-  content: "↻";
-  transform: none;
+  background: var(--attention-due);
 }
 
 .home-attention-missing-proof .home-task-marker {
-  border-color: var(--info-border);
-  background: var(--info-bg);
-  color: var(--info-text);
+  background: var(--attention-due);
 }
 
-.home-attention-missing-proof .home-task-marker::before {
-  content: "+";
-  transform: none;
-}
-
-.home-task-content,
-.home-task-state {
-  display: contents;
+.home-task-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .home-task-content strong {
@@ -1535,14 +1565,23 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   color: var(--text-heading);
   display: -webkit-box;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.35;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.home-task-workflow,
+.home-task-context {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-task-card,
 .home-task-state time {
   overflow: hidden;
   color: var(--text-muted);
@@ -1551,17 +1590,28 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   white-space: nowrap;
 }
 
+/* Timings are quantities: overdue debt renders in the mono ramp. */
+.home-task-state time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .home-attention-overdue .home-task-state time,
 .home-attention-missing-proof .home-task-state time {
-  color: var(--danger-text);
+  color: var(--attention-overdue);
+  font-weight: 500;
 }
 
 .home-attention-follow-up .home-task-state time {
-  color: var(--warning-text);
+  color: var(--attention-due);
+  font-weight: 500;
 }
 
 .home-task-action {
-  min-width: 96px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px 10px;
+  font-size: 12px;
   background: var(--control-bg);
 }
 
@@ -5691,20 +5741,26 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     gap: 14px;
   }
 
+  /* Mobile triage deck (1d): one decision per card, honest counts up top,
+     and every control at the 44px target floor. */
   .home-daily-header {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
   }
 
   .home-daily-header h2 {
     display: block;
-    font-size: 26px;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
 
   .home-daily-header time {
-    color: var(--text-heading);
-    font-size: 22px;
-    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 400;
   }
 
   .home-quick-actions {
@@ -5722,19 +5778,24 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     gap: 2px;
     min-height: 60px;
     padding: 8px 4px;
+    text-align: center;
   }
 
   .home-status-item span {
-    font-size: 13px;
+    font-size: 12px;
   }
 
-  .home-status-label {
-    gap: 5px;
+  /* Short segment labels keep the three numerals on one baseline. */
+  .home-status-text-long {
+    display: none;
   }
 
-  .home-status-label svg {
-    width: 18px;
-    height: 18px;
+  .home-status-text-short {
+    display: inline;
+  }
+
+  .home-status-item strong {
+    font-size: 20px;
   }
 
   .home-attention {
@@ -5747,45 +5808,81 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     padding: 8px 14px;
   }
 
-  .home-attention-row {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    grid-template-areas:
-      "marker title action"
-      "marker timing action";
-    gap: 3px 10px;
-    min-height: 82px;
-    padding: 9px 12px;
+  .home-attention-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .home-attention-row,
+  .home-attention-row + .home-attention-row {
+    border: 1px solid var(--border-muted);
+    border-left-width: 3px;
+    border-left-color: var(--attention-waiting);
+    border-radius: var(--radius);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  .home-attention-row:hover {
+    background: var(--surface-bg);
+  }
+
+  .home-attention-overdue {
+    border-left-color: var(--attention-overdue);
+  }
+
+  .home-attention-follow-up,
+  .home-attention-missing-proof {
+    border-left-color: var(--attention-due);
   }
 
   .home-task-marker {
-    grid-area: marker;
-    width: 20px;
-    height: 20px;
-  }
-
-  .home-task-content {
-    display: contents;
-  }
-
-  .home-task-content strong {
-    grid-area: title;
-  }
-
-  .home-task-workflow {
     display: none;
   }
 
-  .home-task-state {
-    display: contents;
+  .home-task-content {
+    display: flex;
+    gap: 4px;
+  }
+
+  .home-task-content strong {
+    display: block;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    font-size: 15px;
+    line-height: 1.3;
+    -webkit-line-clamp: unset;
+  }
+
+  .home-task-context,
+  .home-task-card {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    line-height: 1.45;
   }
 
   .home-task-state time {
-    grid-area: timing;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    font-size: 13px;
   }
 
   .home-task-action {
-    grid-area: action;
-    min-width: 84px;
+    justify-self: stretch;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 18px;
+    font-size: 14px;
+  }
+
+  .home-attention-expand,
+  .home-view-all {
     min-height: 44px;
   }
 
@@ -7657,15 +7754,6 @@ body[data-workspace-view="home"] .home-daily-header {
   line-height: 1.5;
 }
 
-body[data-workspace-view="home"] .home-status-strip,
-body[data-workspace-view="home"] .home-attention {
-  border-radius: 8px;
-}
-
-body[data-workspace-view="home"] .home-status-item {
-  min-height: 48px;
-}
-
 body[data-workspace-view="home"] .home-attention > header {
   min-height: 60px;
   justify-content: space-between;
@@ -7693,25 +7781,16 @@ body[data-workspace-view="home"] .home-attention > header h3 {
   margin-left: auto;
 }
 
-body[data-workspace-view="home"] .home-attention-row {
-  grid-template-columns: 24px minmax(0, 1fr) minmax(120px, 170px) auto;
-  min-height: 82px;
-  padding: 14px 16px;
-}
-
-body[data-workspace-view="home"] .home-task-content {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-}
-
+/* Long titles and contexts wrap inside the queue columns instead of
+   clipping; the marker edge keeps the row scannable. */
 body[data-workspace-view="home"] .home-task-content strong {
   display: block;
   overflow: visible;
   overflow-wrap: anywhere;
 }
 
-body[data-workspace-view="home"] .home-task-workflow,
+body[data-workspace-view="home"] .home-task-context,
+body[data-workspace-view="home"] .home-task-card,
 body[data-workspace-view="home"] .home-task-state time {
   overflow: visible;
   overflow-wrap: anywhere;
@@ -7723,42 +7802,34 @@ body[data-workspace-view="home"] .home-attention-row:hover {
   background: var(--surface-hover);
 }
 
+/* Quiet contextual links after the queue (1a): a question and its answer. */
 .home-next-destinations {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
   width: min(var(--content-width), 100%);
-  gap: 12px;
 }
 
-.home-next-destinations button {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  padding: 12px 4px;
-  text-align: left;
-  white-space: normal;
-}
-
-.home-next-destinations button:hover {
-  background: var(--surface-hover);
-}
-
-.home-next-destinations strong {
-  color: var(--link-color);
+.home-next-destinations > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
-.home-next-destinations strong::after {
-  content: " →";
+.home-next-destinations button {
+  border: 0;
+  background: none;
+  padding: 4px 2px;
+  color: var(--link-color);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.home-next-destinations span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.5;
+.home-next-destinations button:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
 }
 
 @media (max-width: 820px) {
@@ -7782,32 +7853,9 @@ body[data-workspace-view="home"] .home-attention-row:hover {
     gap: 12px;
   }
 
-  body[data-workspace-view="home"] .home-daily-header {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    padding-bottom: 0;
-  }
-
-  body[data-workspace-view="home"] .home-daily-header time {
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 400;
-  }
-
   .home-purpose {
     margin-top: 6px;
     font-size: 13px;
-  }
-
-  body[data-workspace-view="home"] .home-status-item {
-    display: flex;
-    gap: 6px;
-    padding: 8px 4px;
-    min-height: 44px;
-  }
-
-  .home-status-label svg {
-    display: none;
   }
 
   body[data-workspace-view="home"] .home-attention > header {
@@ -7815,26 +7863,13 @@ body[data-workspace-view="home"] .home-attention-row:hover {
     align-content: center;
   }
 
-  body[data-workspace-view="home"] .home-attention-row {
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    grid-template-areas: "marker title action" "marker timing action";
-    gap: 5px 8px;
-    padding: 14px 12px;
-  }
-
-  body[data-workspace-view="home"] .home-task-content {
-    display: contents;
-  }
-
   .home-next-destinations {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     gap: 0;
   }
 
   .home-next-destinations button {
-    min-height: 56px;
-    padding: 10px 4px;
-    border-bottom: 1px solid var(--border-muted);
+    min-height: 44px;
   }
 }
 

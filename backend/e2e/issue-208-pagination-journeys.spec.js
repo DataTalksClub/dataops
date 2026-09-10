@@ -104,7 +104,7 @@ test.describe('issue 208 paginated collections', () => {
     await expect(summary).toContainText('Cards unavailable. Loaded work is still shown.');
     await expect(summary.locator('.surface-summary-detail')).toHaveCount(0);
     await expect(page.locator('.home-status-today strong')).toHaveText('1');
-    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 loaded attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1 loaded');
     await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
     await expect(page.locator('.home-task-workflow')).toHaveText('Card page one');
     await captureDesktopAndMobile(page, 'cards-continuation-failure');
@@ -120,7 +120,7 @@ test.describe('issue 208 paginated collections', () => {
       ),
     );
     await expect(summary).toHaveCount(0);
-    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1');
     await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
     expect(firstPageRequests).toBe(retainedFirstPageRequests);
     expect(continuationRequests).toBe(failedContinuationRequests + 1);

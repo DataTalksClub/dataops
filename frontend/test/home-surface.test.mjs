@@ -371,7 +371,7 @@ describe("Home surface production behavior", () => {
     assert.equal(rows.length, 3);
     assert.deepEqual(
       rows.map((row) => row.querySelector(".home-task-state time").textContent),
-      ["Due yesterday", "Follow up today", "Due today"],
+      ["■ 1 day overdue", "Follow up today", "Due today"],
     );
     assert.equal(root.querySelectorAll(".home-exception").length, 0);
     assert.equal(rows[0].textContent.includes("Review preparation"), true);
@@ -401,7 +401,7 @@ describe("Home surface production behavior", () => {
     harness.surface.renderOperationsHome([]);
     let root = harness.documentList.children[0];
     assert.equal(root.querySelectorAll(".home-attention-row").length, 6);
-    assert.equal(root.querySelector(".home-attention-count").textContent, "6 of 8 attention items");
+    assert.equal(root.querySelector(".home-attention-count").textContent, "Showing 6 of 8");
     const reveal = root.querySelector(".home-attention-expand");
     await reveal.click();
     assert.equal(reveal.getAttribute("aria-expanded"), "true");
@@ -477,7 +477,7 @@ describe("Home surface production behavior", () => {
         className: "home-attention-overdue",
         date: "2026-08-12",
         taskId: "task-overdue",
-        text: "Due yesterday",
+        text: "■ 1 day overdue",
         title: "Overdue work",
       },
       {
@@ -485,7 +485,7 @@ describe("Home surface production behavior", () => {
         className: "home-attention-follow-up",
         date: "2026-08-11",
         taskId: "task-follow-up",
-        text: "Follow-up 2 days overdue",
+        text: "■■ 2 days overdue",
         title: "Follow-up work",
       },
       {

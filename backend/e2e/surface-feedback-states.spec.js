@@ -104,14 +104,14 @@ test.describe('issue 204 owning-surface feedback', () => {
     const retainedTask = await taskResponse.json();
     await page.reload();
     await expect(homeSummary).toHaveCount(0);
-    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1');
     await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 20 }]);
     await page.reload();
     await expect(homeSummary).toHaveAttribute('data-summary-state', 'partial');
     await expect(homeSummary).toContainText('Cards unavailable. Loaded work is still shown.');
     await expect(page.locator('.home-status-today strong')).toHaveText('1');
     await expect(page.locator('.home-task-content strong')).toHaveText('Retained work during a source outage');
-    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 loaded attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1 loaded');
     await shot(page, 'home-partial-retained-work-desktop-1440x900');
 
     // Work sources fail: Home names the outage in the surface and offers retry.
@@ -127,7 +127,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(homeSummary).toContainText('Due-today tasks, Overdue tasks, Waiting tasks, Cards unavailable. Loaded work is still shown.');
     await expect(homeSummary.locator('.surface-summary-detail')).toHaveCount(0);
     await expect(page.locator('.home-status-item strong')).toHaveText(['—', '—', '—']);
-    await expect(page.locator('.home-attention-count')).toHaveText('0 of 0 loaded attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 0 of 0 loaded');
     const retry = homeSummary.getByRole('button', { name: /Retry loading work/ });
     await expect(retry).toBeVisible();
     const retryBox = await retry.boundingBox();
@@ -154,7 +154,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(homeSummary).toHaveCount(0);
     await expect(page.locator('.home-status-today strong')).toHaveText('1');
     await expect(page.locator('.home-task-content strong')).toHaveText('Retained work during a source outage');
-    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1');
     await shot(page, 'home-recovered-desktop-1440x900');
 
     await setFaults(context.request, [
@@ -185,7 +185,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     // Reload after clearing faults to prove the fresh mobile work presentation.
     await page.reload();
     await expect(homeSummary).toHaveCount(0);
-    await expect(page.locator('.home-attention-count')).toHaveText('1 of 1 attention items');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1');
     await expectNoHorizontalOverflow(page);
     await shot(page, 'home-ready-mobile-390x844');
     await page.goto(`${baseURL}/#/tasks`);

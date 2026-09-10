@@ -100,8 +100,10 @@ export function createHomeSurface(context) {
     date.textContent = formatHomeCalendarDate(model.today);
     const purpose = document.createElement("p");
     purpose.className = "home-purpose";
-    purpose.textContent = "Focus on what needs your attention now.";
+    purpose.textContent = homeHeadlineSentence(model);
     heading.append(title, date, purpose);
+    const debtChip = renderCarriedDebtChip(model);
+    if (debtChip) heading.append(debtChip);
 
     const quickBar = document.createElement("div");
     quickBar.className = "home-quick-actions";
@@ -146,6 +148,52 @@ export function createHomeSurface(context) {
     documentList.replaceChildren(wrap);
   }
 
+  // The headline counts what needs the operator before end of day — what
+  // changed the decision — instead of a motivational placeholder (1e).
+  function homeHeadlineSentence(model) {
+    const stats = model.stats;
+    if (!stats.liveLoaded) {
+      return "Counts appear once today's work data loads.";
+    }
+    const total =
+      stats.overdueTasks + stats.todayTasks + stats.waitingTasks;
+    if (total === 0) {
+      return "Nothing is overdue, due today, or waiting on others.";
+    }
+    return `${total} item${total === 1 ? "" : "s"} need${
+      total === 1 ? "s" : ""
+    } you before end of day`;
+  }
+
+  // Overdue work is carried debt: the chip quantifies the pile and its age so
+  // the pressure is visible before the queue is read (1b).
+  function renderCarriedDebtChip(model) {
+    const stats = model.stats;
+    if (!stats.overdueLoaded || stats.overdueTasks === 0) return null;
+    const overdueItems = model.lanes.find(
+      (lane) => lane.id === "overdue",
+    )?.items || [];
+    const oldest = overdueItems.reduce((maxDays, item) => {
+      const due = String(item.dueDate || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return maxDays;
+      const days = Math.round(
+        (Date.parse(`${model.today}T00:00:00Z`) -
+          Date.parse(`${due}T00:00:00Z`)) / 86400000,
+      );
+      return Math.max(maxDays, days);
+    }, 0);
+    const chip = document.createElement("p");
+    chip.className = "home-debt-chip";
+    const label = document.createElement("strong");
+    label.textContent = "Carried debt";
+    const detail = document.createElement("span");
+    detail.textContent =
+      `${stats.overdueTasks} item${stats.overdueTasks === 1 ? "" : "s"}` +
+      (oldest > 0 ? ` · oldest ${oldest} day${oldest === 1 ? "" : "s"}` : "");
+    chip.append(label, detail);
+    return chip;
+  }
+
   function renderHomeStatusStrip(model, options = {}) {
     const summary = document.createElement("section");
     summary.className = "home-status-strip";
@@ -153,9 +201,9 @@ export function createHomeSurface(context) {
     const feedback = renderHomeSummary(model, options);
     if (feedback.dataset.summaryState !== "ready") summary.append(feedback);
     const stats = [
-      { id: "overdue", label: "Overdue", value: model.stats.overdueTasks, loaded: model.stats.overdueLoaded },
-      { id: "today", label: "Due today", value: model.stats.todayTasks, loaded: model.stats.todayLoaded },
-      { id: "waiting", label: "Waiting", value: model.stats.waitingTasks, loaded: model.stats.waitingLoaded },
+      { id: "overdue", label: "Overdue", short: "Overdue", value: model.stats.overdueTasks, loaded: model.stats.overdueLoaded },
+      { id: "today", label: "Due today", short: "Due today", value: model.stats.todayTasks, loaded: model.stats.todayLoaded },
+      { id: "waiting", label: "Waiting on others", short: "Waiting", value: model.stats.waitingTasks, loaded: model.stats.waitingLoaded },
     ];
     for (const stat of stats) {
       const item = document.createElement("div");
@@ -163,7 +211,19 @@ export function createHomeSurface(context) {
       item.dataset.state = stat.loaded ? "ready" : "unavailable";
       const label = document.createElement("span");
       label.className = "home-status-label";
-      label.innerHTML = `${homeStatusIcon(stat.id)}<span>${stat.label}</span>`;
+      const dot = document.createElement("i");
+      dot.className = "home-status-dot";
+      dot.setAttribute("aria-hidden", "true");
+      const text = document.createElement("span");
+      text.className = "home-status-text";
+      const long = document.createElement("span");
+      long.className = "home-status-text-long";
+      long.textContent = stat.label;
+      const short = document.createElement("span");
+      short.className = "home-status-text-short";
+      short.textContent = stat.short;
+      text.append(long, short);
+      label.append(dot, text);
       const value = document.createElement("strong");
       value.textContent = stat.loaded ? String(stat.value) : "—";
       if (!stat.loaded)
@@ -178,20 +238,20 @@ export function createHomeSurface(context) {
     const nav = document.createElement("nav");
     nav.className = "home-next-destinations";
     nav.setAttribute("aria-label", "Plan and capture work");
-    for (const [label, description, route] of [
-      ["My Plan", "Choose what to work on next", "/my-plan"],
-      ["Inbox", "Triage incoming requests", "/inbox"],
-      ["Process Docs", "Find instructions for your work", "/processes"],
+    for (const [question, label, route] of [
+      ["Choosing what's next?", "My Plan", "/my-plan"],
+      ["Something new arrived?", "Inbox", "/inbox"],
+      ["Not sure how?", "Process Docs", "/processes"],
     ]) {
+      const part = document.createElement("span");
+      const questionText = document.createElement("span");
+      questionText.textContent = question;
       const action = document.createElement("button");
       action.type = "button";
-      const title = document.createElement("strong");
-      title.textContent = label;
-      const detail = document.createElement("span");
-      detail.textContent = description;
-      action.append(title, detail);
+      action.textContent = label;
       action.addEventListener("click", () => navigateCanonicalWorkspace(route).ready);
-      nav.append(action);
+      part.append(questionText, action);
+      nav.append(part);
     }
     return nav;
   }
@@ -235,16 +295,6 @@ export function createHomeSurface(context) {
     // diagnostics do not help an operator decide what to do next.
     feedback.querySelector(".surface-summary-detail")?.remove();
     return feedback;
-  }
-
-  function homeStatusIcon(id) {
-    if (id === "overdue") {
-      return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5M12 17h.01"/></svg>';
-    }
-    if (id === "waiting") {
-      return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9v6M14.5 9v6"/></svg>';
-    }
-    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
   }
 
 

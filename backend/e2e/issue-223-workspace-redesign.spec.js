@@ -57,7 +57,7 @@ test('attention expansion preserves priorities, exact task return and planning j
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await home(page);
   await expect(page.locator('.home-attention-row')).toHaveCount(6);
-  await expect(page.locator('.home-attention-count')).toHaveText('6 of 8 attention items');
+  await expect(page.locator('.home-attention-count')).toHaveText('Showing 6 of 8');
   await expect(page.locator('.home-status-strip .surface-summary')).toHaveCount(0);
   const firstSix = await page.locator('.home-task-action').evaluateAll((buttons) => buttons.map((button) => button.dataset.taskId));
   await page.getByRole('button', { name: 'Show 2 more' }).click();
@@ -152,7 +152,7 @@ test('empty and partial sources keep useful destinations and recover through ret
   await page.route('**/work/api/tasks**', (route) => route.fulfill({ json: { tasks: [] } }));
   await home(page);
   await expect(page.locator('.home-attention-empty')).toContainText('No work needs your attention');
-  await expect(page.locator('.home-attention-count')).toHaveText('0 of 0 attention items');
+  await expect(page.locator('.home-attention-count')).toHaveText('Showing 0 of 0');
   await accessible(page);
   await page.screenshot({ path: path.join(screenshots, 'empty-desktop.png') });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -164,7 +164,7 @@ test('empty and partial sources keep useful destinations and recover through ret
   await expect(page.locator('.surface-summary[data-summary-state="partial"]')).toContainText('Cards unavailable. Loaded work is still shown.');
   await expect(page.locator('.ops-runtime-state')).toHaveCount(0);
   await expect(page.locator('.surface-summary-detail')).toHaveCount(0);
-  await expect(page.locator('.home-attention-count')).toHaveText('6 of 8 loaded attention items');
+  await expect(page.locator('.home-attention-count')).toHaveText('Showing 6 of 8 loaded');
   await expect(page.locator('.home-attention-row')).toHaveCount(6);
   expect((await page.locator('.home-attention-row').first().boundingBox()).y).toBeLessThan(520);
   await page.screenshot({ path: path.join(screenshots, 'partial-mobile.png'), fullPage: true });
