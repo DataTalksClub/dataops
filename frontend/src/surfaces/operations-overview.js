@@ -218,12 +218,12 @@ export function createOperationsOverview(context) {
     tasksSectionTitle,
   } = context;
 
-  function operationsViewTitle(view, tasksSection) {
+  function operationsViewTitle(view, tasksSection, archiveVisible = false) {
     if (view === "home") return "Today";
     if (view === "my-plan") return "My Plan";
     if (view === "operating-model") return "Operating Model";
     if (view === "inbox") return "Inbox";
-    if (view === "tasks") return tasksSectionTitle(tasksSection);
+    if (view === "tasks") return tasksSectionTitle(tasksSection, archiveVisible);
     if (view === "docs") return "Docs";
     if (view === "users") return "Users";
     if (view === "bookkeeping") return "Bookkeeping";

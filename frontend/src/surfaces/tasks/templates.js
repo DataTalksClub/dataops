@@ -178,8 +178,9 @@ export function createTemplatesSurface(context) {
       ? `${template.emoji} ${template.name}`
       : template.name || "Unnamed template";
     const meta = document.createElement("span");
+    // Meta carries what an operator weighs (size and trigger mode); the
+    // machine type slug stays out of the row.
     meta.textContent = [
-      template.type || "untyped",
       countLabel((template.taskDefinitions || []).length, "task"),
       template.triggerType || "manual",
     ].join(" · ");

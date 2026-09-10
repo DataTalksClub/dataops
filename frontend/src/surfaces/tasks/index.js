@@ -111,7 +111,10 @@ export function createTasksSurface(context) {
     const activeSection = section || "queue";
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    const title = tasksSectionTitle(activeSection);
+    const title = tasksSectionTitle(
+      activeSection,
+      getActiveWorkspaceRoute()?.path === "/cards/archive",
+    );
     setRouteTitle(title);
 
     const wrap = document.createElement("div");

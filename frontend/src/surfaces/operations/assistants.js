@@ -4,7 +4,10 @@ import {
   reportFieldValidation,
   setFieldError,
 } from "../operations-overview.js";
-import { createAssistantCreateSurface } from "./assistants-create.js";
+import {
+  assistantTypeOptions,
+  createAssistantCreateSurface,
+} from "./assistants-create.js";
 
 export function createAssistantsSurface(context) {
   const {
@@ -721,7 +724,9 @@ export function createAssistantsSurface(context) {
           </label>
           <label>
             Assistant type
-            <input data-assistant-edit-type value="${escapeHtml(editValues.assistantType ?? job.assistantType ?? "")}">
+            <select data-assistant-edit-type>
+              ${assistantTypeOptions(editValues.assistantType ?? job.assistantType ?? "")}
+            </select>
           </label>
           <label>
             Approval required

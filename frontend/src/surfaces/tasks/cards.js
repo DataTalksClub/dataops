@@ -137,7 +137,11 @@ export function createCardsSurface(context) {
   function renderWorkflowBoard(items) {
     const board = document.createElement("div");
     board.className = "ops-workflows-grid";
+    // The board scrolls sideways on narrow screens; a focusable region lets
+    // keyboard users reach every stage column with the arrow keys.
+    board.setAttribute("role", "region");
     board.setAttribute("aria-label", "Active card board");
+    board.tabIndex = 0;
     const scrollHint = document.createElement("p");
     scrollHint.className = "workflow-board-scroll-hint";
     scrollHint.textContent = "Swipe horizontally to view each stage.";

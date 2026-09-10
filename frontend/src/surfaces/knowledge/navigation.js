@@ -21,6 +21,7 @@ export function createKnowledgeNavigation(context, services) {
     editorView,
     enterRenderedMode,
     getActiveTasksSection,
+    getActiveWorkspaceRoute,
     getActiveWorkspaceView,
     getDocsAvailability,
     historyAdapter,
@@ -517,8 +518,13 @@ export function createKnowledgeNavigation(context, services) {
   function syncLibraryRouteTitle() {
     if (body.dataset.view !== "library") return;
     if (!knowledgeState.selectedFolder && !searchInput.value.trim()) {
+      // The toolbar mirrors the page H1, so the archive route is named as such.
       setRouteTitle(
-        operationsViewTitle(getActiveWorkspaceView(), getActiveTasksSection()),
+        operationsViewTitle(
+          getActiveWorkspaceView(),
+          getActiveTasksSection(),
+          getActiveWorkspaceRoute?.()?.path === "/cards/archive",
+        ),
       );
       return;
     }

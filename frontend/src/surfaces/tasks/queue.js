@@ -323,7 +323,9 @@ export function createTaskQueue(context) {
         false,
         false,
       ],
-      [!proof.ok ? proof.label : "", true, false],
+      // The chip marks the state; the summary line below names the proof, so
+      // the row states the missing-proof fact once.
+      [!proof.ok ? "Missing proof" : "", true, false],
       [
         ["Ad hoc", "Manual"].includes(taskSourceLabel(task))
           ? ""
