@@ -112,6 +112,8 @@ export function createInboxSurface(context) {
       .join(" · ");
   }
 
+  // Only exceptional states earn a pill: "new" and resolved states are
+  // already carried by the row's marker edge, so a uniform pill is noise.
   function intakeStatusLabel(item) {
     return item?.assistantReadiness?.status === "ready"
       ? "assistant ready"
@@ -596,7 +598,9 @@ export function createInboxSurface(context) {
           <small>${escapeHtml(intakeMeta(item))}</small>
           <span>${escapeHtml(String(item.summary || "").slice(0, 180))}</span>
         </span>
-        <em>${escapeHtml(intakeStatusLabel(item))}</em>
+        ${["assistant ready", "blocked"].includes(intakeStatusLabel(item))
+          ? `<em>${escapeHtml(intakeStatusLabel(item))}</em>`
+          : ""}
       `;
       button.addEventListener("click", () => {
         navigateCanonicalWorkspace("/inbox", { intakeId: item.id });

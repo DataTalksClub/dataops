@@ -278,7 +278,7 @@ export function createOperationsOverview(context) {
   function renderSurfaceHeader(titleText, descriptionText) {
     const header = document.createElement("section");
     header.className = "ops-surface-header";
-    const title = document.createElement("h3");
+    const title = document.createElement("h1");
     title.textContent = titleText;
     const description = document.createElement("p");
     description.textContent = descriptionText;
@@ -405,9 +405,7 @@ export function createOperationsOverview(context) {
     header.className = "ops-section-header";
     const title = document.createElement("h3");
     title.textContent = "Incoming And Quality Signals";
-    const meta = document.createElement("span");
-    meta.textContent = "No fake data";
-    header.append(title, meta);
+    header.append(title);
     wrap.append(header);
 
     const grid = document.createElement("div");
@@ -578,9 +576,7 @@ export function createOperationsOverview(context) {
     header.className = "ops-section-header";
     const title = document.createElement("h3");
     title.textContent = "Assistant, Artifact, Inbox, And Search States";
-    const meta = document.createElement("span");
-    meta.textContent = "Honest availability";
-    header.append(title, meta);
+    header.append(title);
     wrap.append(header);
 
     const grid = document.createElement("div");

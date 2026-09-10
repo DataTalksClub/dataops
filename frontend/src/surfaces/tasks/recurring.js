@@ -305,12 +305,12 @@ export function createRecurringTasks(context) {
 
     const title = document.createElement("strong");
     title.textContent = template.title;
-    const summary = document.createElement("span");
-    summary.textContent = template.summary;
+    // Chips only for exceptional states and varying facets: the recurring or
+    // manual default is identical on every card and reads as noise, and the
+    // generated summary sentence repeats verbatim down the grid.
     const chips = document.createElement("div");
     chips.className = "ops-card-chips";
     const chipValues = [
-      template.recurring ? "Recurring" : "Manual",
       template.atRisk ? "Watch" : "",
       ...template.tags.slice(0, 2),
     ].filter(Boolean);
@@ -319,12 +319,15 @@ export function createRecurringTasks(context) {
       chip.textContent = value;
       chips.append(chip);
     }
+    if (!chipValues.length) chips.remove();
 
     const actions = document.createElement("div");
     actions.className = "ops-template-actions";
+    // Row-level actions stay quiet: the grid is a browsing surface, and the
+    // one primary "Create card" lives in the selected template's inspector.
     const start = document.createElement("button");
     start.type = "button";
-    start.className = "task-action-btn is-primary";
+    start.className = "task-action-btn";
     start.textContent = "Create card";
     start.addEventListener("click", () => openQuickWorkflowForm({ template }));
     const docs = document.createElement("button");
@@ -334,7 +337,7 @@ export function createRecurringTasks(context) {
     docs.addEventListener("click", () => openDocument(template.path));
     actions.append(start, docs);
 
-    card.append(title, summary, chips, actions);
+    card.append(title, chips, actions);
     return card;
   }
 

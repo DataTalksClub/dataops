@@ -237,7 +237,9 @@ export function createAssistantsSurface(context) {
         <strong>${escapeHtml(job.title || job.assistantType || job.id || "Assistant job")}</strong>
         <span>
           ${escapeHtml(job.assistantType || "assistant")}
-          · attempt ${Number(job.attemptCount || 0)}/${Number(job.maxAttempts || 1)}
+          · ${Number(job.attemptCount || 0) === 0
+            ? `no attempts yet · up to ${Number(job.maxAttempts || 1)}`
+            : `attempt ${Number(job.attemptCount || 0)} of ${Number(job.maxAttempts || 1)}`}
           ${context ? ` · ${escapeHtml(context)}` : ""}
         </span>
         <small>
@@ -288,7 +290,7 @@ export function createAssistantsSurface(context) {
         : "Retry limit reached";
     if (job.status === "queued") return "Run dry or wait for runner";
     if (job.status === "running") return "Watch timeline";
-    if (job.status === "draft") return "Submit or run dry";
+    if (job.status === "draft") return "Review and submit the draft";
     if (job.status === "retrying") return "Submit retry";
     if (job.status === "approved") return "Output approved";
     if (job.status === "succeeded") return "Output attached";

@@ -248,6 +248,16 @@ export function createTaskQueue(context) {
     return routeState;
   }
 
+  // Short human date for instants (follow-ups), independent of lane wording.
+  function queueShortDate(value) {
+    const parsed = new Date(String(value || ""));
+    if (Number.isNaN(parsed.getTime())) return String(value || "");
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+    }).format(parsed);
+  }
+
   // Human due moments: relative words for today/yesterday/tomorrow, a short
   // date otherwise — never a bare ISO quantity in the queue. Timestamped
   // values (followUpAt carries a time) are compared on their day.
@@ -334,13 +344,21 @@ export function createTaskQueue(context) {
       chip.textContent = value;
       meta.append(chip);
     }
+    // The summary names the real blocker: proof-blocked work never claims
+    // "Mark done" as its next step, and follow-up moments stay human.
     const summary = document.createElement("small");
     summary.textContent = task.status === "done"
       ? "Completed."
-      : task.waitingFor
-        ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${queueDueLabel(task.followUpAt, today)}` : ""}`
-        : `Next: ${taskNextActionLabel(task, today)}`;
-    button.append(title, meta, summary);
+      : !proof.ok
+        ? `Proof needed: ${proof.label}`
+        : task.waitingFor
+          ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${queueShortDate(task.followUpAt)}` : ""}`
+          : `Next: ${taskNextActionLabel(task, today)}`;
+    const open = document.createElement("span");
+    open.className = "ops-queue-row-open";
+    open.setAttribute("aria-hidden", "true");
+    open.textContent = "Open";
+    button.append(title, meta, summary, open);
     return button;
   }
 

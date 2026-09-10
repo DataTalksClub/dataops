@@ -93,7 +93,7 @@ export function createHomeSurface(context) {
     const header = document.createElement("header");
     header.className = "home-daily-header";
     const heading = document.createElement("div");
-    const title = document.createElement("h2");
+    const title = document.createElement("h1");
     title.textContent = "Today";
     const date = document.createElement("time");
     date.dateTime = model.today;

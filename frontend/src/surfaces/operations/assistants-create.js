@@ -60,7 +60,14 @@ export function createAssistantCreateSurface(context) {
           </label>
           <label>
             Assistant type
-            <input name="assistantType" data-assistant-type value="${escapeHtml(values.assistantType || "podcast")}">
+            <input name="assistantType" data-assistant-type list="assistant-type-options" value="${escapeHtml(values.assistantType || "podcast")}">
+            <datalist id="assistant-type-options">
+              <option value="newsletter"></option>
+              <option value="podcast"></option>
+              <option value="course"></option>
+              <option value="book-of-the-week"></option>
+              <option value="office-hours"></option>
+            </datalist>
           </label>
           <label>
             Title

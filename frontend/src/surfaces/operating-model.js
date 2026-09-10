@@ -88,7 +88,7 @@ export function createOperatingModelSurface(context) {
 
   function header(root, kicker, title, description) {
     const block = el(documentRef, "header", "operating-model-header");
-    block.append(el(documentRef, "p", "section-kicker", kicker), el(documentRef, "h2", "", title), el(documentRef, "p", "", description));
+    block.append(el(documentRef, "p", "section-kicker", kicker), el(documentRef, "h1", "", title), el(documentRef, "p", "", description));
     root.append(block);
   }
 
@@ -163,7 +163,7 @@ export function createOperatingModelSurface(context) {
       if (item.managerTitle) meta.append(detail(documentRef, "Accountable seat", item.managerTitle));
       if (item.currentCoverage) meta.append(detail(documentRef, "Current coverage", item.currentCoverage));
       if (item.priority) meta.append(detail(documentRef, "Priority", item.priority));
-      if (item.proposedDate) meta.append(detail(documentRef, "Proposed date", item.proposedDate));
+      if (item.proposedDate) meta.append(detail(documentRef, "Proposed date", humanModelDate(item.proposedDate)));
       if (item.primaryUnitId) meta.append(detail(documentRef, "Primary unit", item.primaryUnitId));
       if (item.owner) meta.append(detail(documentRef, "Owner", item.owner));
       if (item.consumerUnitId) meta.append(detail(documentRef, "Consumer unit", item.consumerUnitId));
@@ -175,6 +175,18 @@ export function createOperatingModelSurface(context) {
       list.append(card);
     }
     root.append(list); documentList.replaceChildren(root);
+  }
+
+  function humanModelDate(value) {
+    const parsed = new Date(`${String(value || "").slice(0, 10)}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime())
+      ? String(value || "")
+      : new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        }).format(parsed);
   }
 
   function renderMyPlan() {
@@ -190,7 +202,8 @@ export function createOperatingModelSurface(context) {
     const sessions = selected ? sourceSessions.filter((item) => item.id === selected) : sourceSessions;
     const list = el(documentRef, "section", "operating-model-list");
     for (const session of sessions) {
-      const card = el(documentRef, "article", "operating-model-row plan-session");
+      const cardClass = `operating-model-row plan-session plan-${session.state || "proposed"}`;
+      const card = el(documentRef, "article", cardClass);
       const state = session.state === "completed" ? "Completed" : session.state === "active" ? "Active" : "Proposed";
       card.append(
         el(documentRef, "span", "review-badge", state),
@@ -199,7 +212,7 @@ export function createOperatingModelSurface(context) {
       );
       const meta = el(documentRef, "dl", "operating-model-details");
       meta.append(
-        detail(documentRef, "Proposed date", session.proposedDate),
+        detail(documentRef, "Proposed date", humanModelDate(session.proposedDate)),
         detail(documentRef, "Deliverables", session.deliverables),
         detail(documentRef, "Decisions for you", session.decisionsNeeded),
         detail(documentRef, "Agent-preparable work", session.agentWork),

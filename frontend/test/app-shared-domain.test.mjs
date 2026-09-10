@@ -458,7 +458,7 @@ describe("app shared operations domain characterization", () => {
     });
     const header = functions.renderSurfaceHeader("Cards", "Open work");
     assert.equal(header.className, "ops-surface-header");
-    assert.equal(findByText(header, "Cards", "h3").textContent, "Cards");
+    assert.equal(findByText(header, "Cards", "h1").textContent, "Cards");
     assert.equal(functions.renderHonestState("Unavailable", "Retry later").textContent, "UnavailableRetry later");
 
     assert.equal(functions.renderOperationsRuntimeState({ connected: true, errors: [] }), null);
