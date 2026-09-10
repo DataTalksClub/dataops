@@ -30,7 +30,7 @@ describe("Cards renderer view models", () => {
       activeCount: 3,
       archivedCount: 1,
     }), {
-      title: "Cards",
+      title: "Card archive",
       eyebrow: "Task board",
       summary: "1 archived card · completed work remains available",
       archiveAction: "Back to board",

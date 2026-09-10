@@ -139,9 +139,9 @@ describe("canonical workspace routing", () => {
     assert.equal(workspaceHashPath("tasks", "workflows"), "/cards");
     assert.equal(workspaceHashPath("tasks", "templates"), "/templates");
     assert.equal(workspaceHashPath("tasks", "recurring"), "/recurring");
-    assert.equal(tasksSectionTitle("workflows"), "Tasks - Cards");
-    assert.equal(tasksSectionTitle("templates"), "Tasks - Templates");
-    assert.equal(tasksSectionTitle("recurring"), "Tasks - Recurring");
+    assert.equal(tasksSectionTitle("workflows"), "Cards");
+    assert.equal(tasksSectionTitle("templates"), "Templates");
+    assert.equal(tasksSectionTitle("recurring"), "Recurring");
   });
 
   test("constructs a route object from canonical path and entity parameters", () => {

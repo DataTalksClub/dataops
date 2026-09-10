@@ -91,16 +91,18 @@ export const ENTITY_VOCABULARY = Object.freeze({
   task: "Task",
 });
 
-export function tasksSectionTitle(section) {
+export function tasksSectionTitle(section, archiveVisible = false) {
+  // Bare human page titles: the sidebar already says "Tasks", so the H1 and
+  // the toolbar that mirrors it name only the page.
   const titles = {
-    queue: "Tasks - Work Queue",
-    workflows: "Tasks - Cards",
-    templates: "Tasks - Templates",
-    recurring: "Tasks - Recurring",
-    assistants: "Tasks - Assistants",
-    artifacts: "Tasks - Artifacts",
+    queue: "Work Queue",
+    workflows: archiveVisible ? "Card archive" : "Cards",
+    templates: "Templates",
+    recurring: "Recurring",
+    assistants: "Assistants",
+    artifacts: "Artifacts",
   };
-  return titles[section] || "Tasks - Work Queue";
+  return titles[section] || "Work Queue";
 }
 
 export function workspaceHashPath(view, tasksSection = "queue") {
@@ -814,7 +816,7 @@ export function cardsHeaderViewModel({
   archivedCount,
 }) {
   return {
-    title: "Cards",
+    title: tasksSectionTitle("workflows", archiveVisible),
     eyebrow: "Task board",
     summary: archiveVisible
       ? `${countLabel(archivedCount, "archived card")} · completed work remains available`
