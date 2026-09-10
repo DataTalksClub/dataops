@@ -292,6 +292,8 @@ export function createMailingExportsSurface(context) {
       drawConfigs();
       historyRoot.innerHTML =
         `${historyMarkup(runs)}${continuationMarkup()}`;
+      // With no configuration the honest-state card already explains the
+      // absence; a second banner saying the same thing is noise.
       status.textContent = exportState.failed && latestConfigs === null
         ? `Could not load mailing-list exports: ${exportState.error}`
         : configs.length
@@ -304,7 +306,8 @@ export function createMailingExportsSurface(context) {
                   ? " More export history is available."
                   : ""
             }`
-          : "No export configurations are enabled.";
+          : "";
+      status.hidden = !status.textContent;
     }
 
     surface.querySelector("[data-refresh]").addEventListener("click", load);

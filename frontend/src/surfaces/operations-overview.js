@@ -275,9 +275,15 @@ export function createOperationsOverview(context) {
     return countLabel(count, singular, category);
   }
 
-  function renderSurfaceHeader(titleText, descriptionText) {
+  function renderSurfaceHeader(titleText, descriptionText, kickerText = "") {
     const header = document.createElement("section");
     header.className = "ops-surface-header";
+    if (kickerText) {
+      const kicker = document.createElement("p");
+      kicker.className = "section-kicker";
+      kicker.textContent = kickerText;
+      header.append(kicker);
+    }
     const title = document.createElement("h1");
     title.textContent = titleText;
     const description = document.createElement("p");
@@ -503,40 +509,67 @@ export function createOperationsOverview(context) {
     return section;
   }
 
+  function humanizeFindingMessage(finding) {
+    const raw = String(finding.summary || finding.title || "").trim();
+    if (!raw) return "This process document needs attention";
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+
+  function elideDocPath(path) {
+    const value = String(path || "");
+    const segments = value.split("/").filter(Boolean);
+    if (segments.length <= 2) return value;
+    return `${segments[0]}/…/${segments[segments.length - 1]}`;
+  }
+
   function renderQualityFindingRow(finding) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = `ops-quality-row ops-quality-${finding.severity || "warning"}`;
     row.addEventListener("click", () => openQualityFinding(finding));
 
+    // The validator's message is what the operator reads; severity rides
+    // beside it as a chip, and the path stays quiet mono secondary text.
     const head = document.createElement("div");
     head.className = "ops-quality-row-head";
     const title = document.createElement("strong");
-    title.textContent = finding.title;
+    title.textContent = humanizeFindingMessage(finding);
     const severity = document.createElement("span");
     severity.textContent = labelizeWorkValue(finding.severity || "warning");
     head.append(title, severity);
+    row.append(head);
 
-    const summary = document.createElement("small");
-    summary.textContent =
-      finding.summary || finding.docPath || finding.instructionDocId || "";
+    const pathValue =
+      finding.docPath || finding.docId || finding.instructionDocId || "";
+    if (pathValue) {
+      const path = document.createElement("small");
+      path.className = "ops-quality-row-path";
+      path.textContent = elideDocPath(pathValue);
+      row.append(path);
+    }
 
     const meta = document.createElement("div");
     meta.className = "ops-queue-meta";
     for (const value of [
       finding.category,
       finding.workflowSlug || finding.templateId,
-      finding.taskId ? `task ${finding.taskId}` : "",
-      finding.docPath || finding.docId || finding.instructionDocId,
-      finding.nextAction,
-    ]
-      .filter(Boolean)
-      .slice(0, 5)) {
+    ].filter(Boolean)) {
       const chip = document.createElement("span");
       chip.textContent = value;
       meta.append(chip);
     }
-    row.append(head, summary, meta);
+    // One labeled affordance: the whole row opens the finding's destination.
+    const open = document.createElement("span");
+    open.className = "ops-queue-row-open";
+    open.textContent = finding.taskId
+      ? "Open task"
+      : finding.cardId
+        ? "Open card"
+        : pathValue
+          ? "Open doc"
+          : "Find template";
+    meta.append(open);
+    row.append(meta);
     return row;
   }
 

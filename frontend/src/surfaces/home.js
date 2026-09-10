@@ -461,7 +461,7 @@ export function createHomeSurface(context) {
           category: "template-doc-gap",
           severity: "blocking",
           title: "Task has no process instructions",
-          summary: `${title} has no instructionDocId or instructionsUrl, so the operator cannot open task instructions from the workflow.`,
+          summary: `${title} has no linked process doc yet; attach one so operators can open the instructions.`,
           source: "runtime task scan",
           nextAction: "open task",
           taskId: task.id,

@@ -914,10 +914,10 @@ describe("Finance surface boundary", () => {
       surface.querySelector("[data-history]").innerHTML,
       /data-export-state="empty"/,
     );
-    assert.equal(
-      surface.querySelector('[role="status"]').textContent,
-      "No export configurations are enabled.",
-    );
+    // The honest-state card explains the absence; no second banner repeats it.
+    const status = surface.querySelector('[role="status"]');
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
   });
 
   test("maps mailing runs and an absent run to stable next actions", async () => {

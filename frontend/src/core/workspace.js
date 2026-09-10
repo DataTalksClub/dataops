@@ -472,18 +472,15 @@ export function formatTaskDateMeta(value, today) {
   if (date === today) return "Today";
   if (date === addDaysIso(today, -1)) return "Yesterday";
   if (date === addDaysIso(today, 1)) return "Tomorrow";
-  return date;
-}
-
-export function formatCardAnchorLabel(value, today = todayIsoDate()) {
-  const date = String(value || "").slice(0, 10);
-  if (!date) return "";
-  const relative = formatTaskDateMeta(date, today);
-  if (relative !== date) return relative;
+  // Every surface shows human dates; the ISO input never leaks through.
   const short = formatHomeShortDate(date);
   return date.slice(0, 4) === String(today || "").slice(0, 4)
     ? short
     : `${short} ${date.slice(0, 4)}`;
+}
+
+export function formatCardAnchorLabel(value, today = todayIsoDate()) {
+  return formatTaskDateMeta(value, today);
 }
 
 export function cardAnchorTone(value, today = todayIsoDate()) {

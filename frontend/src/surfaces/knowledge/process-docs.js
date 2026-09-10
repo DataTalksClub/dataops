@@ -35,7 +35,11 @@ export function createProcessDocsSurface(context, services) {
     setRouteTitle("Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
+    const header = renderSurfaceHeader(
+      "Docs",
+      surfaceDescription("processes"),
+      "Knowledge operations",
+    );
     const createButton = document.createElement("button");
     createButton.type = "button";
     createButton.className = "primary-button ops-docs-create";
@@ -56,11 +60,6 @@ export function createProcessDocsSurface(context, services) {
         getOperationsQualitySnapshot(),
         getOperationsWorkSnapshot(),
       );
-    const note = renderHonestState(
-      "Processes support work",
-      "Use internal Process Docs from Task or Card context first. Findings below focus on runnable Template/Card risk and maintainer gaps.",
-    );
-    section.append(note);
 
     // Docs is the surface where an unreachable corpus is most easily mistaken
     // for an empty one, so the availability state sits above Quality Findings.

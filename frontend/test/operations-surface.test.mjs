@@ -805,12 +805,12 @@ describe("Operations surface boundary", () => {
     assert.match(diagnostics.innerHTML, /Read-only diagnostics/);
     assert.match(
       diagnostics.querySelector('[data-diagnostic="quality"] span').textContent,
-      /0 finding\(s\); 0 validation error/,
+      /0 quality findings; no validation errors/,
     );
     assert.equal(
       diagnostics.querySelector('[data-diagnostic="git-status"] span')
         .textContent,
-      "0 changed file(s) on main.",
+      "0 changed files on main.",
     );
     assert.equal(
       diagnostics.querySelector('[data-diagnostic="git-history"] span')
@@ -871,7 +871,10 @@ describe("Operations surface boundary", () => {
     assert.equal(summary.dataset.summaryState, "ready");
     assert.equal(summary.getAttribute("role"), "status");
     assert.equal(summary.getAttribute("aria-live"), "polite");
-    assert.match(summary.textContent, /3 of 3 read-only diagnostics answered/);
+    // All three answered: the answers speak for themselves, no mechanics
+    // sentence is shown.
+    assert.equal(summary.hidden, true);
+    assert.equal(summary.textContent, "");
     assert.equal(retry.hidden, true);
     assert.equal(retry.disabled, true);
   });

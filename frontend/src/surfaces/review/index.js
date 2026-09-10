@@ -74,6 +74,13 @@ function labelize(value) {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function elidePath(path) {
+  const value = String(path || "");
+  const segments = value.split("/").filter(Boolean);
+  if (segments.length <= 2) return value;
+  return `${segments[0]}/…/${segments[segments.length - 1]}`;
+}
+
 function makeStatusBadge(documentRef, value, className = "") {
   const badge = createElement(documentRef, "span", `review-badge ${className}`.trim());
   badge.textContent = labelize(value);
@@ -206,6 +213,9 @@ export function createReviewSurface(context) {
     ];
     for (const [label, value, className] of summaryCards) {
       const card = createElement(documentRef, "div", `review-summary-card ${className}`);
+      // A zero only tints when there is something behind it; muted zeros do
+      // not read as resolved alarms.
+      card.classList.toggle("is-zero", Number(value) === 0);
       appendText(documentRef, card, "strong", "review-summary-value", String(value));
       appendText(documentRef, card, "span", "review-summary-label", label);
       cards.append(card);
@@ -292,7 +302,8 @@ export function createReviewSurface(context) {
       const reason = createElement(documentRef, "span", "review-queue-reason");
       reason.textContent = item.reason;
       const path = createElement(documentRef, "small", "review-queue-path");
-      path.textContent = item.document.path;
+      path.textContent = elidePath(item.document.path);
+      path.title = item.document.path;
       button.append(title, meta, reason, path);
       button.addEventListener("click", () => selectDocument(item));
       list.append(button);
