@@ -13078,8 +13078,27 @@ body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
   .newsletter-surface button,
   .calendar-surface button,
   .mailing-exports-surface button,
-  .bookkeeping-surface button:not(.primary-button, .quiet-button, .danger-button, .danger-text-button),
-  .sponsor-crm-surface button:not(.primary-button, .quiet-button, .danger-button, .danger-text-button) {
+  .bookkeeping-surface button:not(.primary-button, .quiet-button, .danger-button),
+  .sponsor-crm-surface button:not(.primary-button, .quiet-button, .danger-button) {
+    min-height: 44px;
+  }
+
+  /* Mobile has no "text-sized control" exemption: the danger text action and
+     the filters disclosure become real ≥44px targets. */
+  .bookkeeping-surface .danger-text-button,
+  .sponsor-crm-surface .danger-text-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius);
+    background: var(--danger-bg);
+    padding: 8px 14px;
+  }
+
+  .bookkeeping-surface summary {
+    display: flex;
+    align-items: center;
     min-height: 44px;
   }
 
