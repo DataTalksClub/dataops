@@ -281,8 +281,8 @@ body[data-workspace-view="inbox"] .intake-row.is-selected {
 body[data-workspace-view="inbox"] .intake-row:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
 }
 
 body[data-workspace-view="inbox"] .intake-row > span {
@@ -13285,5 +13285,12 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
      label column of the collapsed table. */
   .bookkeeping-table-wrap td > small {
     grid-column: 2;
+  }
+
+  /* The sidebar's search-filter controls live in the mobile drawer on every
+     route, so they meet the same 44px floor as the surfaces. */
+  .custom-select-button,
+  .filter-clear {
+    min-height: 44px;
   }
 }
