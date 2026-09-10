@@ -12496,3 +12496,196 @@ body[data-workspace-view="tasks"] .ops-queue-row strong {
     flex: 1 1 140px;
   }
 }
+
+/* ── Operational dashboard redesign — Slice 2 (issue #228) ─────────────
+   My Plan session lanes and the Inbox triage queue in the shared
+   marker-edge language; honest copy and 44px mobile targets. */
+
+/* Inbox: marker edge answers "what needs triage" before the row is read. */
+body[data-workspace-view="inbox"] .intake-row {
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px 16px 12px 0;
+}
+
+body[data-workspace-view="inbox"] .intake-row-marker {
+  align-self: stretch;
+  width: 3px;
+  border-radius: 0;
+  background: var(--attention-waiting);
+}
+
+body[data-workspace-view="inbox"] .intake-new .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-new .intake-row-marker {
+  background: var(--attention-due);
+}
+
+body[data-workspace-view="inbox"] .intake-row.intake-blocked .intake-row-marker {
+  background: var(--attention-overdue);
+}
+
+body[data-workspace-view="inbox"] .intake-row.intake-attached .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-converted .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-ignored .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-duplicate .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-archived .intake-row-marker {
+  background: var(--border-muted);
+}
+
+body[data-workspace-view="inbox"] .intake-row small {
+  font-size: 12px;
+}
+
+/* Surface headers read as page hierarchy: left-aligned, 16px title.
+   The operations grid center-aligns children, so the header takes the
+   content width to read as a document column. */
+.ops-surface .ops-surface-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(var(--content-width), 100%);
+  text-align: left;
+  padding: 0;
+}
+
+.ops-surface .ops-surface-intro,
+.ops-inbox .intake-filter-bar,
+.ops-inbox > .intake-panel {
+  justify-self: start;
+  width: min(var(--content-width), 100%);
+  text-align: left;
+}
+
+.ops-inbox > .intake-panel summary {
+  justify-self: start;
+  width: fit-content;
+}
+
+.ops-surface .ops-surface-header h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ops-surface .ops-surface-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* My Plan: sessions read as plan lanes — marker edge for state, honest
+   copy, one primary action per session. */
+.my-plan-surface .operating-model-header,
+.my-plan-surface .operating-model-intro {
+  text-align: left;
+}
+
+.my-plan-surface .plan-session {
+  position: relative;
+  border: 1px solid var(--border-muted);
+  border-left: 3px solid var(--attention-waiting);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  padding: 14px 16px;
+}
+
+.my-plan-surface .plan-session:has(.review-badge) {
+  border-left-color: var(--attention-due);
+}
+
+.my-plan-surface .plan-session .review-badge {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 820px) {
+  body[data-workspace-view="inbox"] .intake-row {
+    grid-template-columns: 3px minmax(0, 1fr);
+  }
+
+  body[data-workspace-view="inbox"] .intake-row em {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .my-plan-surface .plan-session-actions .primary-button,
+  .my-plan-surface .plan-session-actions .quiet-button {
+    min-height: 44px;
+  }
+
+  .my-plan-surface .plan-session-date {
+    min-height: 44px;
+  }
+}
+
+/* Bell badge: a red attention badge with "0" is a false zero; the count
+   only shows when there is something to see (or a load failed). */
+.work-bell-count {
+  visibility: hidden;
+}
+
+.work-bell-count.is-visible {
+  visibility: visible;
+}
+
+/* My Plan: one anchored column for header, sessions, and honest states so
+   the page origin does not shift when data availability changes. */
+.my-plan-surface > * {
+  width: min(var(--content-width), 100%);
+  margin-inline: auto;
+}
+
+/* My Plan anchors to the same document column in every state, so the page
+   origin does not move when the operating model is unavailable. */
+body[data-workspace-view="my-plan"] #document-list {
+  width: min(896px, calc(100vw - 300px));
+  max-width: none;
+  margin-inline: auto;
+}
+
+@media (max-width: 820px) {
+  body[data-workspace-view="my-plan"] #document-list {
+    width: calc(100vw - 28px);
+  }
+}
+
+/* The unavailable-state box and the header share the session column's full
+   width — retrying never reshuffles the page frame. */
+body[data-workspace-view="my-plan"] .my-plan-surface > .review-empty-state,
+body[data-workspace-view="my-plan"] .my-plan-surface > .operating-model-header {
+  width: 100%;
+  max-width: none;
+}
+
+/* The unavailable-state box and the header share the session column's full
+   width — retrying never reshuffles the page frame. */
+body[data-workspace-view="my-plan"] .my-plan-surface > .review-empty-state,
+body[data-workspace-view="my-plan"] .my-plan-surface > .operating-model-header {
+  width: 100%;
+  max-width: none;
+}
+
+/* The my-plan surface itself must fill the document column: the column is
+   a shrink-wrapping grid, so an auto-width surface collapses to its content
+   and the header origin jumps between data states. */
+body[data-workspace-view="my-plan"] .my-plan-surface {
+  width: 100%;
+  max-width: none;
+}
+
+/* The my-plan surface itself must fill the document column: the column is
+   a shrink-wrapping grid, so an auto-width surface collapses to its content
+   and the header origin jumps between data states. */
+body[data-workspace-view="my-plan"] .my-plan-surface {
+  width: 100%;
+  max-width: none;
+}

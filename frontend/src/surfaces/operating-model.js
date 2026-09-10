@@ -95,7 +95,14 @@ export function createOperatingModelSurface(context) {
   function unavailable(root) {
     const state = el(documentRef, "section", "review-empty-state");
     state.append(el(documentRef, "strong", "", loading ? "Loading operating model…" : "Operating model unavailable"));
-    if (error) state.append(el(documentRef, "span", "", error));
+    // The body states the impact, not the same proposition as the heading.
+    state.append(
+      el(documentRef, "span", "",
+        loading
+          ? "Proposed sessions appear here once the model loads."
+          : "Proposed sessions and plan actions are hidden until the model reloads.",
+      ),
+    );
     if (!loading) {
       const retry = el(documentRef, "button", "quiet-button", "Retry");
       retry.type = "button";
@@ -186,7 +193,7 @@ export function createOperatingModelSurface(context) {
       const card = el(documentRef, "article", "operating-model-row plan-session");
       const state = session.state === "completed" ? "Completed" : session.state === "active" ? "Active" : "Proposed";
       card.append(
-        el(documentRef, "span", "review-badge", `${session.id} · ${state}`),
+        el(documentRef, "span", "review-badge", state),
         el(documentRef, "h3", "", session.title),
         el(documentRef, "p", "", session.goal),
       );
@@ -198,19 +205,22 @@ export function createOperatingModelSurface(context) {
         detail(documentRef, "Agent-preparable work", session.agentWork),
         detail(documentRef, "Definition of done", session.definitionOfDone),
       );
-      card.append(meta, openDocButton(session.documentId, "Open working session"));
-      if (selected && session.checklist?.length) {
-        const preview = el(documentRef, "section", "plan-session-preview");
-        preview.append(el(documentRef, "h4", "", "Checklist preview"));
-        const checklist = el(documentRef, "ol", "");
-        for (const task of session.checklist) {
-          const item = el(documentRef, "li", "");
-          item.append(el(documentRef, "strong", "", task.title));
-          if (task.proof) item.append(el(documentRef, "span", "", `Proof: ${task.proof}`));
-          checklist.append(item);
+      card.append(meta);
+      if (selected) {
+        card.append(openDocButton(session.documentId, "Open working session"));
+        if (session.checklist?.length) {
+          const preview = el(documentRef, "section", "plan-session-preview");
+          preview.append(el(documentRef, "h4", "", "Checklist preview"));
+          const checklist = el(documentRef, "ol", "");
+          for (const task of session.checklist) {
+            const item = el(documentRef, "li", "");
+            item.append(el(documentRef, "strong", "", task.title));
+            if (task.proof) item.append(el(documentRef, "span", "", `Proof: ${task.proof}`));
+            checklist.append(item);
+          }
+          preview.append(checklist);
+          card.append(preview);
         }
-        preview.append(checklist);
-        card.append(preview);
       }
       const actions = el(documentRef, "div", "plan-session-actions");
       if (session.card) {
@@ -228,11 +238,13 @@ export function createOperatingModelSurface(context) {
         add.disabled = pendingSessions.has(session.id) || planLoading || !plan;
         add.addEventListener("click", () => addSession(session, date.value));
         actions.append(date, add);
-      }
-      if (!selected) {
-        const focus = el(documentRef, "button", "quiet-button", "Focus session");
-        focus.type = "button"; focus.addEventListener("click", () => navigateCanonicalWorkspace("/my-plan", { sessionId: session.id }));
-        actions.append(focus);
+        if (!selected) {
+          // One quiet affordance opens the focused session (its document
+          // lives there); the card keeps a single primary decision action.
+          const focus = el(documentRef, "button", "quiet-button", "Open session");
+          focus.type = "button"; focus.addEventListener("click", () => navigateCanonicalWorkspace("/my-plan", { sessionId: session.id }));
+          actions.append(focus);
+        }
       }
       card.append(actions);
       list.append(card);

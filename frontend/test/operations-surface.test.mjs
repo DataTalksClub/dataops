@@ -1036,7 +1036,7 @@ describe("Operations surface boundary", () => {
     harness.api.renderInboxSurface();
     surface = harness.documentList;
     summary = surface.querySelector('[data-summary-id="inbox"]');
-    assert.equal(summary.dataset.summaryState, "ready");
+    assert.equal(summary, null, "successful loads do not repeat in a READY sentence");
     assert.ok(findByText(surface, "No matching intake", "strong"));
 
     harness.state.intake.filter = "actionable";
