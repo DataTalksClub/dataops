@@ -91,7 +91,9 @@ export function createTaskQueue(context) {
       heading.textContent = "Queue context";
       const summary = document.createElement("p");
       summary.textContent = [
-        taskRouteContext.date ? `Date ${taskRouteContext.date}` : "",
+        taskRouteContext.date
+          ? `Date ${queueDueLabel(taskRouteContext.date, today)}`
+          : "",
         taskRouteContext.cardId
           ? `Filtered to card ${taskRouteContext.filterCard?.title || taskRouteContext.cardId}`
           : "",
@@ -220,6 +222,32 @@ export function createTaskQueue(context) {
     return routeState;
   }
 
+  // Human due moments: relative words for today/yesterday/tomorrow, a short
+  // date otherwise — never a bare ISO quantity in the queue.
+  function queueDueLabel(date, today) {
+    const relative = formatTaskDateMeta(date, today);
+    if (relative !== date) return relative;
+    const parsed = new Date(`${String(date).slice(0, 10)}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime())
+      ? relative
+      : new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }).format(parsed);
+  }
+
+  // Overdue time reads as accumulated debt (mono day blocks + days), matching
+  // Home's attention queue — not a bare due date.
+  function overdueDays(due, today) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !/^\d{4}-\d{2}-\d{2}$/.test(today))
+      return 0;
+    return Math.round(
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${due}T00:00:00Z`)) /
+        86400000,
+    );
+  }
+
   function renderWorkQueueRow(task, today) {
     if (!isCanonicalWorkTask(task)) {
       throw new Error("Task payload is not in the canonical versioned shape");
@@ -234,25 +262,56 @@ export function createTaskQueue(context) {
     title.textContent = workTaskTitle(task);
     const meta = document.createElement("div");
     meta.className = "ops-queue-meta";
-    const status = task.status;
-    for (const value of [
-      status,
-      task.date ? `Due ${formatTaskDateMeta(task.date, today)}` : "",
-      task.assigneeId
-        ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
-        : "Unassigned",
-      task.cardId ? "Card task" : "Independent task",
-      taskSourceLabel(task),
-      taskProofState(task).label,
-    ].filter(Boolean)) {
+    // Meta says what changes the triage decision: the human due moment, the
+    // owner, and proof/waiting requirements. Defaults (todo, manual, no
+    // proof, card membership) stay quiet instead of pill-spamming every row.
+    const proof = taskProofState(task);
+    const due = String(task.date || "").slice(0, 10);
+    const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
+    for (const [value, attention, debtTiming] of [
+      [
+        debt > 0
+          ? `${"■".repeat(Math.min(debt, 5))} ${debt} day${debt === 1 ? "" : "s"} overdue`
+          : task.date
+            ? `Due ${queueDueLabel(task.date, today)}`
+            : "",
+        debt > 0,
+        debt > 0,
+      ],
+      [
+        task.assigneeId
+          ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
+          : "Unassigned",
+        false,
+        false,
+      ],
+      [!proof.ok ? proof.label : "", true, false],
+      [
+        ["Ad hoc", "Manual"].includes(taskSourceLabel(task))
+          ? ""
+          : taskSourceLabel(task),
+        false,
+        false,
+      ],
+    ]) {
+      if (!value) continue;
       const chip = document.createElement("span");
+      chip.className = [
+        "ops-queue-chip",
+        attention ? "is-attention" : "",
+        debtTiming ? "is-debt" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       chip.textContent = value;
       meta.append(chip);
     }
     const summary = document.createElement("small");
-    summary.textContent = task.waitingFor
-      ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${formatTaskDateMeta(task.followUpAt, today)}` : ""}`
-      : `Next: ${taskNextActionLabel(task, today)}`;
+    summary.textContent = task.status === "done"
+      ? "Completed."
+      : task.waitingFor
+        ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${queueDueLabel(task.followUpAt, today)}` : ""}`
+        : `Next: ${taskNextActionLabel(task, today)}`;
     button.append(title, meta, summary);
     return button;
   }

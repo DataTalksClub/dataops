@@ -493,7 +493,7 @@ describe("Operations surface boundary", () => {
     assert.equal(open.rel, "noopener");
     assert.equal(
       open.getAttribute("aria-label"),
-      "Open Approved issue for task task-1",
+      "Open Approved issue for task linked",
     );
     assert.equal(findAllByClass(list, "ops-data-row").length, 3);
     assert.equal(list.querySelectorAll("a").length, 2);

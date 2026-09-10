@@ -33,15 +33,12 @@ export function createCardsSurface(context) {
     const header = document.createElement("header");
     header.className = "workflow-board-header";
     const heading = document.createElement("div");
-    const eyebrow = document.createElement("span");
-    eyebrow.className = "workflow-board-eyebrow";
-    eyebrow.textContent = headerModel.eyebrow;
     const title = document.createElement("h2");
     title.id = "workflow-board-title";
     title.textContent = headerModel.title;
     const summary = document.createElement("p");
     summary.textContent = headerModel.summary;
-    heading.append(eyebrow, title, summary);
+    heading.append(title, summary);
     const actions = document.createElement("div");
     actions.className = "workflow-board-actions";
     const archive = document.createElement("button");
@@ -191,7 +188,7 @@ export function createCardsSurface(context) {
     if (!progress) return [];
     return [
       { count: progress.overdue, label: "overdue", tone: "danger" },
-      { count: progress.waiting, label: "waiting", tone: "info" },
+      { count: progress.waiting, label: "waiting", tone: "waiting" },
       { count: progress.missingProof, label: "missing proof", tone: "warning" },
     ].filter((flag) => Number(flag.count) > 0);
   }

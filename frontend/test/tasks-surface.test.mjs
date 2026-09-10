@@ -659,7 +659,7 @@ describe("Tasks surface boundary", () => {
       ]),
       [
         ["workflow-card-flag is-danger", "1 overdue"],
-        ["workflow-card-flag is-info", "1 waiting"],
+        ["workflow-card-flag is-waiting", "1 waiting"],
         ["workflow-card-flag is-warning", "1 missing proof"],
       ],
     );
@@ -1406,10 +1406,10 @@ describe("Tasks surface boundary", () => {
     });
     ready.api.renderTasksSurface([], "recurring");
     const readySummary = ready.documentList.querySelector(".surface-summary");
-    assert.equal(readySummary.dataset.summaryState, "ready");
-    assert.match(
-      readySummary.textContent,
-      /1 recurring schedule · 1 enabled · 0 paused/,
+    assert.equal(
+      readySummary,
+      null,
+      "successful loads do not repeat in a READY sentence",
     );
 
     const templates = createHarness({

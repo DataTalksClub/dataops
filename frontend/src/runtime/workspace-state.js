@@ -68,7 +68,7 @@ export function createWorkspaceState(context) {
     phase: "idle",
     routeToken: 0,
   };
-  let assistantQueue = { filter: "podcast", selectedJobId: null };
+  let assistantQueue = { filter: "all", selectedJobId: null };
   let qualityFilters = {
     severity: "",
     category: "",

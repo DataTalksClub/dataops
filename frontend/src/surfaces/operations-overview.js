@@ -238,14 +238,14 @@ export function createOperationsOverview(context) {
   function surfaceDescription(view) {
     const descriptions = {
       queue:
-        "Inspect tasks across cards by overdue, follow-up, waiting, missing proof, owner, source, and next action.",
+        "What needs you, grouped by urgency. Open a task to work it.",
       workflows:
-        "Open active cards by stage, then inspect their tasks, proof, waiting, artifacts, and process context.",
+        "Every active card by stage. Open a card to see its tasks.",
       templates: "Create cards from reusable Templates.",
       recurring:
         "Create, edit, pause, and delete the schedules that generate recurring tasks.",
       assistants:
-        "Card support jobs appear here only when the assistant job lifecycle is connected.",
+        "Review assistant jobs that prepare work for your cards.",
       artifacts:
         "Review proof and operational outputs linked to cards and tasks.",
       processes:
