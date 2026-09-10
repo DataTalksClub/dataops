@@ -220,6 +220,8 @@ export function createOperationsOverview(context) {
 
   function operationsViewTitle(view, tasksSection) {
     if (view === "home") return "Today";
+    if (view === "my-plan") return "My Plan";
+    if (view === "operating-model") return "Operating Model";
     if (view === "inbox") return "Inbox";
     if (view === "tasks") return tasksSectionTitle(tasksSection);
     if (view === "docs") return "Docs";
