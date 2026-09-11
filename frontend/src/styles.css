@@ -13464,6 +13464,14 @@ body:not([data-workspace-view="docs"]) #filters-section {
   .mailing-exports-surface .row-actions button {
     min-height: 44px;
   }
+
+  /* The upload file control keeps its own 32px rule (0,3,1 specificity),
+     which out-specifies the generic floor above; restate the floor at
+     matching specificity, and floor the native file-selector button too. */
+  .bookkeeping-upload .bookkeeping-file input[type="file"],
+  .bookkeeping-upload .bookkeeping-file input[type="file"]::file-selector-button {
+    min-height: 44px;
+  }
 }
 
 /* The My Plan date input uses the system input tokens so it carries dark
