@@ -216,10 +216,17 @@ export function createHomeSurface(context) {
     summary.setAttribute("aria-label", "Daily work summary");
     const feedback = renderHomeSummary(model, options);
     if (feedback.dataset.summaryState !== "ready") summary.append(feedback);
+    // The strip segments the same deduplicated queue the headline counts and
+    // the list below renders, so its four numbers always add up to the
+    // headline: a task counts once, under the first bucket it belongs to.
+    const queue = buildHomeAttentionItems(model);
+    const bucket = (priority) =>
+      queue.filter((item) => item.priority === priority).length;
     const stats = [
-      { id: "overdue", label: "Overdue", short: "Overdue", value: model.stats.overdueTasks, loaded: model.stats.overdueLoaded },
-      { id: "today", label: "Due today", short: "Due today", value: model.stats.todayTasks, loaded: model.stats.todayLoaded },
-      { id: "waiting", label: "Waiting on others", short: "Waiting", value: model.stats.waitingTasks, loaded: model.stats.waitingLoaded },
+      { id: "overdue", label: "Overdue", short: "Overdue", value: bucket("overdue"), loaded: model.stats.overdueLoaded },
+      { id: "today", label: "Due today", short: "Due today", value: bucket("today"), loaded: model.stats.todayLoaded },
+      { id: "waiting", label: "Follow-ups due", short: "Follow-ups", value: bucket("follow-up"), loaded: model.stats.waitingLoaded },
+      { id: "missing-proof", label: "Missing proof", short: "Proof", value: bucket("missing-proof"), loaded: model.stats.missingProofLoaded },
     ];
     for (const stat of stats) {
       const item = document.createElement("div");

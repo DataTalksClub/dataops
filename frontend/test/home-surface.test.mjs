@@ -361,11 +361,13 @@ describe("Home surface production behavior", () => {
     assert.equal(summaryLine, null, "successful counts do not repeat in a READY sentence");
 
     const summary = root.querySelector(".home-status-strip");
+    // Four segments mirror the queue buckets (overdue, due today, follow-ups
+    // due, missing proof) so the strip always adds up to the headline.
     assert.deepEqual(
       findAllByClass(summary, "home-status-item").map(
         (item) => item.querySelector("strong").textContent,
       ),
-      ["1", "1", "1"],
+      ["1", "1", "1", "0"],
     );
     const rows = findAllByClass(root, "home-attention-row");
     assert.equal(rows.length, 3);

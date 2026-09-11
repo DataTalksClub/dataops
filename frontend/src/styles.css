@@ -1407,7 +1407,7 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 /* Segmented attention strip: three counted segments with status dots. */
 .home-status-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--border-muted);
   border-radius: var(--radius);
@@ -1465,6 +1465,10 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 
 .home-status-waiting .home-status-dot {
   background: var(--attention-waiting);
+}
+
+.home-status-missing-proof .home-status-dot {
+  background: var(--attention-due);
 }
 
 .home-status-item strong {
