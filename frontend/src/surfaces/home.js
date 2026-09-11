@@ -1,6 +1,7 @@
 import { renderDataSummary } from "./operations-overview.js";
 import { createHomeAttentionView } from "./home-attention.js";
 import { createCollectionLoader } from "../core/collection-loader.js";
+import { buildHomeAttentionItems } from "../core/workspace.js";
 import {
   compareQualityFindings,
   dedupeQualityFindings,
@@ -150,25 +151,31 @@ export function createHomeSurface(context) {
 
   // The headline counts what needs the operator before end of day — what
   // changed the decision — instead of a motivational placeholder (1e). The
-  // count is the queue's own deduplicated item count, so the headline and the
-  // "Showing N of M" meta below it never disagree; work waiting on others is
-  // named separately because it is not in that queue.
+  // count is the attention queue's own deduplicated item list, so the
+  // headline and the "Showing N of M" meta below it never disagree; work
+  // waiting on others outside that queue is named separately.
   function homeHeadlineSentence(model) {
     const stats = model.stats;
     if (!stats.liveLoaded) {
       return "Counts appear once today's work data loads.";
     }
-    const total = buildNeedsActionLane(model).items.length;
-    const waiting = stats.waitingLoaded ? stats.waitingTasks : 0;
+    const queue = buildHomeAttentionItems(model);
+    const total = queue.length;
+    const queued = new Set(queue.map((item) => item.taskId).filter(Boolean));
+    const waiting = stats.waitingLoaded
+      ? (model.lanes.find((lane) => lane.id === "waiting")?.items || []).filter(
+          (item) => !queued.has(item.taskId),
+        ).length
+      : 0;
     if (total === 0 && waiting === 0) {
       return "Nothing is overdue, due today, missing proof, or waiting on others.";
     }
     const needs =
       total === 0
-        ? "Nothing needs your action before end of day"
+        ? "Nothing needs your attention before end of day"
         : `${total} item${total === 1 ? "" : "s"} need${
             total === 1 ? "s" : ""
-          } your action before end of day`;
+          } your attention before end of day`;
     return waiting > 0
       ? `${needs} · ${waiting} waiting on others`
       : needs;
@@ -231,6 +238,9 @@ export function createHomeSurface(context) {
       const short = document.createElement("span");
       short.className = "home-status-text-short";
       short.textContent = stat.short;
+      // Only one variant is visible per viewport; assistive tech reads the
+      // long label once instead of both.
+      short.setAttribute("aria-hidden", "true");
       text.append(long, short);
       label.append(dot, text);
       const value = document.createElement("strong");
