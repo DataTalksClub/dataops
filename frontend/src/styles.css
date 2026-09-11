@@ -1464,10 +1464,16 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-status-waiting .home-status-dot {
-  background: var(--attention-waiting);
+  background: var(--attention-due);
 }
 
 .home-status-missing-proof .home-status-dot {
+  background: var(--attention-due);
+}
+
+/* Dots mirror the row markers: red is overdue, amber is work that needs
+   you today (due, follow-up due, or blocked on proof). */
+.home-attention-today .home-task-marker {
   background: var(--attention-due);
 }
 
@@ -5846,7 +5852,8 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   }
 
   .home-attention-row.home-attention-follow-up,
-  .home-attention-row.home-attention-missing-proof {
+  .home-attention-row.home-attention-missing-proof,
+  .home-attention-row.home-attention-today {
     border-left-color: var(--attention-due);
   }
 

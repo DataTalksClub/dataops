@@ -245,9 +245,8 @@ export function createHomeSurface(context) {
       const short = document.createElement("span");
       short.className = "home-status-text-short";
       short.textContent = stat.short;
-      // Only one variant is visible per viewport; assistive tech reads the
-      // long label once instead of both.
-      short.setAttribute("aria-hidden", "true");
+      // Only one variant is visible per viewport; the hidden one is
+      // display:none, so assistive tech reads exactly the visible label.
       text.append(long, short);
       label.append(dot, text);
       const value = document.createElement("strong");
