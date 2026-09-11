@@ -13444,6 +13444,15 @@ body:not([data-workspace-view="docs"]) #filters-section {
   }
 }
 
+/* The My Plan date input uses the system input tokens so it carries dark
+   values like every other control; the legacy rule fell back to a white
+   surface on the dark theme. */
+.plan-session-date {
+  border-color: var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
 /* On desktop the Docs quality card carries its own filters; the sidebar
    filters section would be an empty husk there. Mobile keeps it in the
    drawer. */

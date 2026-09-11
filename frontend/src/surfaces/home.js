@@ -149,20 +149,29 @@ export function createHomeSurface(context) {
   }
 
   // The headline counts what needs the operator before end of day — what
-  // changed the decision — instead of a motivational placeholder (1e).
+  // changed the decision — instead of a motivational placeholder (1e). The
+  // count is the queue's own deduplicated item count, so the headline and the
+  // "Showing N of M" meta below it never disagree; work waiting on others is
+  // named separately because it is not in that queue.
   function homeHeadlineSentence(model) {
     const stats = model.stats;
     if (!stats.liveLoaded) {
       return "Counts appear once today's work data loads.";
     }
-    const total =
-      stats.overdueTasks + stats.todayTasks + stats.waitingTasks;
-    if (total === 0) {
-      return "Nothing is overdue, due today, or waiting on others.";
+    const total = buildNeedsActionLane(model).items.length;
+    const waiting = stats.waitingLoaded ? stats.waitingTasks : 0;
+    if (total === 0 && waiting === 0) {
+      return "Nothing is overdue, due today, missing proof, or waiting on others.";
     }
-    return `${total} item${total === 1 ? "" : "s"} need${
-      total === 1 ? "s" : ""
-    } you before end of day`;
+    const needs =
+      total === 0
+        ? "Nothing needs your action before end of day"
+        : `${total} item${total === 1 ? "" : "s"} need${
+            total === 1 ? "s" : ""
+          } your action before end of day`;
+    return waiting > 0
+      ? `${needs} · ${waiting} waiting on others`
+      : needs;
   }
 
   // Overdue work is carried debt: the chip quantifies the pile and its age so
