@@ -146,6 +146,7 @@ export function createSponsorFinance(context) {
         (error.outcome === "outcome_unknown" || error.status === 409)
       )
         surface.querySelector("dialog[open]")?.close();
+      message.hidden = false;
       message.textContent = `${label}: ${error.message}`;
       if (
         error.sponsorFinance &&
@@ -200,6 +201,7 @@ export function createSponsorFinance(context) {
     lastFinanceRetry = async () => {
       await attempt();
       await reopenBookingDetail(booking);
+      message.hidden = false;
       message.textContent =
         "Finance operation recovered with the original idempotency key.";
     };
