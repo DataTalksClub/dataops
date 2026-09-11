@@ -314,7 +314,7 @@ test.describe('production sponsor CRM communications portal', () => {
     await operatorPage.getByLabel('Plain-text message').fill(preview.body);
     await operatorPage.getByLabel('Public link').fill(preview.publicLinks[0]);
     await operatorPage.getByRole('button', { name: 'Save draft for admin review' }).click();
-    await expect(operatorPage.getByRole('status')).toContainText('Awaiting administrator review');
+    // The saved draft card is the feedback — no separate status region exists.
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft version 1');
     await expect(operatorPage.locator('[data-crm-communications]')).toContainText('Draft saved. Awaiting administrator review.');
     await expect(operatorPage.locator('[data-crm-communications]')).not.toContainText(preview.body);

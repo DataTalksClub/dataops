@@ -158,9 +158,9 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   });
   await page.goto(frontendBase);
   await page.getByRole("button", { name: "Calendar" }).click();
-  await expect(page.locator(".calendar-surface [role='status']")).toHaveText(
-    "Calendar ready.",
-  );
+  // The planner status line carries only warnings (stale holidays, holiday
+  // horizon, unavailable newsletter overlays); empty means loaded clean.
+  await expect(page.locator(".calendar-surface [role='status']")).toHaveText("");
   await expect(page.getByText("Synthetic Webinar").first()).toBeVisible();
   await expect(page.getByText("Synthetic Newsletter").first()).toBeVisible();
   await expect(page.getByText("Synthetic public holiday").first()).toBeVisible();
@@ -205,7 +205,7 @@ test("production portal calendar covers month/week, layers, overlay, dismiss/rea
   await surface.locator("[data-today]").click();
   await surface.locator('[data-layer="school"]').check();
   await surface.locator('[data-layer="overlay"]').check();
-  await expect(surface.getByText("Calendar ready.")).toBeVisible();
+  await expect(surface.locator("[role='status']")).toHaveText("");
   await surface.evaluate((element) => {
     element.querySelector(".calendar-controls").style.display = "none";
     element.querySelector('[role="status"]').style.display = "none";
@@ -253,9 +253,7 @@ test("production calendar renders cross-year ISO weeks and Berlin DST boundary d
   await page.goto(frontendBase);
   await page.getByRole("button", { name: "Calendar" }).click();
   const surface = page.locator(".calendar-surface");
-  await expect(surface.locator("[role='status']")).toHaveText(
-    "Calendar ready.",
-  );
+  await expect(surface.locator("[role='status']")).toHaveText("");
   await surface.locator("select[data-view]").selectOption("week");
   await expect(surface.getByText("Cross-year activity").first()).toBeVisible();
   await expect(surface.locator('time[datetime="2027-01-01"]')).toBeVisible();

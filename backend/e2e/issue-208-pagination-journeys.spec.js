@@ -106,7 +106,7 @@ test.describe('issue 208 paginated collections', () => {
     await expect(page.locator('.home-status-today strong')).toHaveText('1');
     await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1 loaded');
     await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
-    await expect(page.locator('.home-task-workflow')).toHaveText('Card page one');
+    await expect(page.locator('.home-task-card')).toHaveText('Card page one');
     await captureDesktopAndMobile(page, 'cards-continuation-failure');
 
     const retainedFirstPageRequests = firstPageRequests;
@@ -433,7 +433,10 @@ test.describe('issue 208 paginated collections', () => {
       'Sponsor alert two',
       'Sponsor alert three',
     ]);
-    await expect(alerts).toContainText('All notification pages loaded.');
+    // Completion states nothing once every page is loaded: the failure
+    // alert and the Load-more control are the evidence of incompleteness.
+    await expect(alerts.locator('strong[role="alert"]')).toHaveCount(0);
+    await expect(alerts.getByRole('button', { name: 'Load more alerts' })).toHaveCount(0);
     await captureDesktopAndMobile(page, 'sponsor-alerts-duplicate-free-recovery');
   });
 
@@ -513,7 +516,12 @@ test.describe('issue 208 paginated collections', () => {
     await expect(history.nth(0)).toContainText('History page two');
     await expect(history.nth(1)).toContainText('History page one newer');
     await expect(history.nth(2)).toContainText('Duplicate history page');
-    await expect(page.getByRole('status')).toContainText('All export history loaded.');
+    // Completion states nothing: no retry control and no failure alert
+    // remain once every history page is loaded.
+    const surface = page.locator('.mailing-exports-surface');
+    await expect(surface.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+    await expect(surface.getByRole('button', { name: 'Retry next page' })).toHaveCount(0);
+    await expect(surface.locator('strong[role="alert"]')).toHaveCount(0);
     await captureDesktopAndMobile(page, 'mailing-exports-duplicate-free-recovery');
   });
 });

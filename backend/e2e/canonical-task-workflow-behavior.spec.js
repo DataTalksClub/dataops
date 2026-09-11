@@ -260,12 +260,12 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     const { context, page, server: ownedServer } = taskWorkflowPortal;
     await page.goto('/#/tasks');
     for (const [heading, empty] of [
-      ['Overdue', 'No overdue work.'],
-      ['Follow-ups due', 'No follow-ups due work.'],
-      ['Missing proof', 'No missing proof work.'],
-      ['Waiting', 'No waiting work.'],
-      ['Today', 'No today work.'],
-      ['Done / history', 'No done / history work.'],
+      ['Overdue', 'Nothing is overdue. Work that passes its due date will surface here first.'],
+      ['Follow-ups due', 'No follow-ups are due. Tasks you promised to revisit will appear here.'],
+      ['Today', 'Nothing is due today. Work due later will appear here as its date arrives.'],
+      ['Missing proof', 'No missing proof work. Tasks that need a link or artifact will surface here.'],
+      ['Waiting', 'No waiting work. Tasks blocked on other people will appear here.'],
+      ['Done / history', 'No completed work yet.'],
     ]) {
       const group = page.locator('.ops-queue-group', { has: page.getByRole('heading', { name: heading, exact: true }) });
       await expect(group.locator('header span')).toHaveText('0');

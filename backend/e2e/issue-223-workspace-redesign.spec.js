@@ -117,7 +117,10 @@ test('grouped navigation and scoped search remain usable in both themes and resp
     await accessible(page);
     await page.screenshot({ path: path.join(screenshots, `home-mobile-${theme}.png`) });
     const firstRow = await page.locator('.home-attention-row').first().boundingBox();
-    expect(firstRow.y).toBeLessThan(370);
+    // The redesigned Home stacks the daily header, quick actions, and the
+    // summary strip above the queue; the first row must still sit above the
+    // fold on a 390x844 phone.
+    expect(firstRow.y).toBeLessThan(500);
     await page.getByRole('button', { name: 'Open workspace' }).click();
     await expect(page.getByRole('button', { name: 'Close workspace' })).toBeFocused();
     await page.keyboard.press('Tab');
@@ -166,7 +169,7 @@ test('empty and partial sources keep useful destinations and recover through ret
   await expect(page.locator('.surface-summary-detail')).toHaveCount(0);
   await expect(page.locator('.home-attention-count')).toHaveText('Showing 6 of 8 loaded');
   await expect(page.locator('.home-attention-row')).toHaveCount(6);
-  expect((await page.locator('.home-attention-row').first().boundingBox()).y).toBeLessThan(520);
+  expect((await page.locator('.home-attention-row').first().boundingBox()).y).toBeLessThan(600);
   await page.screenshot({ path: path.join(screenshots, 'partial-mobile.png'), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 900 });
   await accessible(page);

@@ -103,7 +103,6 @@ async function expectStableRouteFocus(page) {
 
 const VISIBLE_ROUTE_HEADINGS = {
   Home: 'Today',
-  'Tasks - Cards': 'Cards',
   Newsletter: 'Newsletter planner',
   Calendar: 'Operations calendar',
   'Mailing exports': 'Mailing-list exports',
@@ -134,12 +133,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const routes = [
       ['/#/', 'Home'],
       [`/#/inbox?intakeId=${encodeURIComponent(fixture.intake.id)}`, 'Inbox'],
-      [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Tasks - Work Queue'],
-      [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Tasks - Cards'],
-      [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Tasks - Assistants'],
-      [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Tasks - Templates'],
-      ['/#/recurring', 'Tasks - Recurring'],
-      ['/#/artifacts', 'Tasks - Artifacts'],
+      [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Work Queue'],
+      [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Cards'],
+      [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
+      [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
+      ['/#/recurring', 'Recurring'],
+      ['/#/artifacts', 'Artifacts'],
       ['/#/notifications', 'Home'],
       ['/#/bookkeeping', 'Bookkeeping'],
       [`/#/sponsors?bookingId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
@@ -226,7 +225,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     const encodedContext = encodeURIComponent(fixture.contextCard.id);
 
     await page.goto('/#/tasks?date=2026-08-11');
-    await expect(page.locator('.task-route-context')).toContainText('Date 2026-08-11');
+    await expect(page.locator('.task-route-context')).toContainText('Date 11 Aug');
     await expect(page.locator('.ops-queue-row', { hasText: fixture.task.description })).toBeVisible();
     await page.goto(`/#/tasks?cardId=${encodedCard}`);
     await expect(page.locator('.task-route-context')).toContainText(fixture.card.title);
@@ -554,7 +553,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#task-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/tasks$/);
-    await expectVisibleRouteHeading(page, 'Tasks - Work Queue');
+    await expectVisibleRouteHeading(page, 'Work Queue');
     await expectStableRouteFocus(page);
   });
 
@@ -615,7 +614,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('#card-panel .entity-route-not-found')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/\/#\/cards$/);
-    await expectVisibleRouteHeading(page, 'Tasks - Cards');
+    await expectVisibleRouteHeading(page, 'Cards');
     await expectStableRouteFocus(page);
   });
 
@@ -635,7 +634,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await staleCardResponse;
     await expect(page.locator('#card-panel')).toBeHidden();
-    await expectVisibleRouteHeading(page, 'Tasks - Assistants');
+    await expectVisibleRouteHeading(page, 'Assistants');
     await expect(page.locator('.assistant-detail h3')).toHaveText(fixture.assistant.title);
     await clearRouteFaults(request);
   });

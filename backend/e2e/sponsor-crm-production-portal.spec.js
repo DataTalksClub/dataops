@@ -473,7 +473,8 @@ test.describe("production sponsor CRM portal", () => {
     await expect(page.locator("[data-crm-communications]")).toContainText(
       "delivered",
     );
-    await expect(statusMessage).toHaveText("Sponsor CRM ready.");
+    // A clean, loaded CRM states nothing: the ready status stays hidden.
+    await expect(statusMessage).toBeHidden();
     await page
       .locator("[data-crm-detail]")
       .screenshot({ path: ".tmp/sponsor-crm-production-history.png" });

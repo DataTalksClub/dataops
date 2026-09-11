@@ -34,8 +34,6 @@ let server;
 let baseURL;
 
 const VISIBLE_ROUTE_HEADINGS = {
-  Home: "Today",
-  "Tasks - Cards": "Cards",
   Newsletter: "Newsletter planner",
   Calendar: "Operations calendar",
   "Mailing exports": "Mailing-list exports",
@@ -216,12 +214,12 @@ test.describe("pre-refactor frontend module characterization", () => {
     const page = await context.newPage();
     const errors = observeErrors(page);
     const routes = [
-      ["/tasks", "Tasks - Work Queue", ".ops-work-queue"],
-      ["/templates", "Tasks - Templates", ".runtime-template-inspector"],
-      ["/recurring", "Tasks - Recurring", ".ops-recurring-section"],
+      ["/tasks", "Work Queue", ".ops-work-queue"],
+      ["/templates", "Templates", ".runtime-template-inspector"],
+      ["/recurring", "Recurring", ".ops-recurring-section"],
       ["/inbox", "Inbox", ".ops-inbox"],
-      ["/assistants", "Tasks - Assistants", ".assistant-workspace"],
-      ["/artifacts", "Tasks - Artifacts", '[aria-label="Artifacts"]'],
+      ["/assistants", "Assistants", ".assistant-workspace"],
+      ["/artifacts", "Artifacts", '[aria-label="Artifacts"]'],
       ["/newsletter", "Newsletter", ".newsletter-surface"],
       ["/calendar", "Calendar", ".calendar-surface"],
       ["/bookkeeping", "Bookkeeping", ".bookkeeping-surface"],

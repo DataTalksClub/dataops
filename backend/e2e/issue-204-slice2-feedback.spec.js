@@ -91,10 +91,15 @@ async function keepWithinNestedViewport(page, viewport, locators) {
     const box = await locator.boundingBox();
     expect(box).toBeTruthy();
     if (!box) continue;
-    expect(box.y, `capture element above nested viewport: ${JSON.stringify(box)}`)
-      .toBeGreaterThanOrEqual(viewportTop);
+    // Fractional layout rounding can leave a sub-pixel sliver outside the
+    // frame; only a visible overhang (more than half a pixel) is a defect.
+    const epsilon = 0.5;
     expect(
-      box.y + box.height,
+      box.y + epsilon,
+      `capture element above nested viewport: ${JSON.stringify(box)}`,
+    ).toBeGreaterThanOrEqual(viewportTop);
+    expect(
+      box.y + box.height - epsilon,
       `capture element below nested viewport: ${JSON.stringify(box)}`,
     ).toBeLessThanOrEqual(viewportBottom);
   }
@@ -250,7 +255,9 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
 
     await page.setViewportSize(MOBILE);
     await page.goto(`${baseURL}/#/inbox`);
-    await expect(page.locator('[data-summary-id="inbox"]')).toBeVisible();
+    // A fully loaded Inbox states nothing: the summary only renders for
+    // loading/empty/partial/failure, so the queue itself proves readiness.
+    await expect(page.locator('.ops-inbox')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     const mobileCapture = page.locator('.intake-panel').filter({ hasText: 'Capture a new intake item' });
     await mobileCapture.locator('summary').click();
@@ -294,7 +301,7 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
     await expect(form.locator('[data-assistant-card]')).toBeFocused();
 
     await form.locator('[data-assistant-card]').selectOption(card.id);
-    await form.getByLabel('Assistant type').fill('podcast');
+    await form.getByLabel('Assistant type').selectOption('podcast');
     const assistantTitle = `Slice 2 retained assistant ${Date.now()}`;
     await form.getByLabel('Title').fill(assistantTitle);
     await setFaults(context.request, [{ method: 'POST', path: '/api/assistant-jobs', status: 503 }]);
@@ -357,7 +364,8 @@ test.describe('issue 204 slice 2 owning-surface feedback', () => {
 
     await page.setViewportSize(MOBILE);
     await page.goto(`${baseURL}/#/assistants`);
-    await expect(page.locator('[data-summary-id="assistants"]')).toBeVisible();
+    // A fully loaded queue states nothing: the job list itself is the evidence.
+    await expect(page.locator('.assistant-workspace')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectTouchTarget(page.locator('.assistant-filter-bar button').first());
     await expectTouchTarget(page.locator('[data-assistant-create]'));

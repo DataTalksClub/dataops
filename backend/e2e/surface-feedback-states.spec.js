@@ -126,7 +126,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(homeSummary).toHaveAttribute('data-summary-state', /unavailable|partial/);
     await expect(homeSummary).toContainText('Due-today tasks, Overdue tasks, Waiting tasks, Cards unavailable. Loaded work is still shown.');
     await expect(homeSummary.locator('.surface-summary-detail')).toHaveCount(0);
-    await expect(page.locator('.home-status-item strong')).toHaveText(['—', '—', '—']);
+    await expect(page.locator('.home-status-item strong')).toHaveText(['—', '—', '—', '—']);
     await expect(page.locator('.home-attention-count')).toHaveText('Showing 0 of 0 loaded');
     const retry = homeSummary.getByRole('button', { name: /Retry loading work/ });
     await expect(retry).toBeVisible();
@@ -189,7 +189,8 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expectNoHorizontalOverflow(page);
     await shot(page, 'home-ready-mobile-390x844');
     await page.goto(`${baseURL}/#/tasks`);
-    await expect(queueSummary).toBeVisible();
+    // A fully loaded queue states nothing: the lanes are the evidence.
+    await expect(page.locator('.ops-work-queue')).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await shot(page, 'tasks-queue-mobile-390x844');
     const deleted = await context.request.delete(`/api/tasks/${retainedTask.id}`, {

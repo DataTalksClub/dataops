@@ -136,7 +136,9 @@ async function expectAttentionRowsDoNotOverlap(page) {
             top: rect.top,
             width: rect.width,
           };
-        }),
+          // The aria-hidden marker glyph is decorative and hidden at mobile
+          // widths; only rendered or text-bearing controls are urgency cues.
+        }).filter((control) => control.height > 0 || control.width > 0 || control.text),
       }),
     );
     return { clientWidth, rows };

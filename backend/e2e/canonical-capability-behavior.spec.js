@@ -475,8 +475,8 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(attention.getByRole('button')).toBeEnabled();
     await expect(attention.getByRole('button', { name: 'View all tasks' })).toBeVisible();
     const dailySummary = page.getByRole('region', { name: 'Daily work summary' });
-    await expect(dailySummary.locator('.home-status-item[data-state="ready"]')).toHaveCount(3);
-    await expect(dailySummary.locator('.home-status-item > strong')).toHaveText(['0', '0', '0']);
+    await expect(dailySummary.locator('.home-status-item[data-state="ready"]')).toHaveCount(4);
+    await expect(dailySummary.locator('.home-status-item > strong')).toHaveText(['0', '0', '0', '0']);
     await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('0');
 
     await page.getByRole('button', { name: 'New task', exact: true }).click();
@@ -490,12 +490,12 @@ test.describe('canonical frontend capability behavior', () => {
 
     await attention.getByRole('button', { name: 'View all tasks' }).click();
     await expect(page).toHaveURL(/\/\#\/tasks$/);
-    await expect(page.getByRole('heading', { name: 'Tasks - Work Queue' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Work Queue' })).toBeVisible();
     await page.goto('/#/');
     await expect(page.locator('.operations-home[data-operations-work-loaded="true"]')).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await closeMobileSidebar(page);
-    await expect(page.locator('.home-daily-header h2')).toBeVisible();
+    await expect(page.locator('.home-daily-header h1')).toBeVisible();
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-empty-mobile-390x844.png'),
       fullPage: true,
@@ -535,7 +535,7 @@ test.describe('canonical frontend capability behavior', () => {
     const homeTaskRow = populatedAttention.locator('.home-attention-row', { hasText: title });
     await expect(homeTaskRow).toBeVisible();
     await expect(homeTaskRow.getByRole('button')).toHaveAttribute('aria-label', `Open: ${title}`);
-    await expect(page.getByRole('region', { name: 'Daily work summary' }).locator('.home-status-item > strong')).toHaveText(['1', '1', '1']);
+    await expect(page.getByRole('region', { name: 'Daily work summary' }).locator('.home-status-item > strong')).toHaveText(['1', '1', '0', '0']);
     await expect(page.locator('#work-bell-button .work-bell-count')).toHaveText('1');
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-home-ready-desktop-1440x900.png'),
@@ -597,7 +597,9 @@ test.describe('canonical frontend capability behavior', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/#/processes');
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
-    await expect(page.locator('#filters-section')).toBeVisible();
+    // Desktop Docs is content-first: the sidebar filter disclosure is
+    // intentionally hidden at desktop widths and lives in the mobile drawer.
+    await expect(page.locator('#filters-section')).toBeHidden();
     await page.screenshot({
       path: path.join(ISSUE_161_SCREENSHOTS, 'source-docs-controls-retained-desktop-1440x900.png'),
       fullPage: true,
@@ -728,7 +730,7 @@ test.describe('canonical frontend capability behavior', () => {
     expect(unavailableArtifactResponse.status()).toBe(201);
     await page.reload();
     const unavailableArtifact = page.locator('.ops-state-list .ops-data-row', { hasText: 'Unavailable proof artifact' });
-    await expect(unavailableArtifact).toContainText('needs-review · report · storage missing');
+    await expect(unavailableArtifact).toContainText('Needs review · report · no file saved yet');
     await expect(unavailableArtifact.getByRole('link')).toHaveCount(0);
 
     const id = unique('assistant-baseline');
@@ -752,7 +754,10 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.getByText('Loading job events and artifacts…')).toBeVisible();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
     await expect(page.locator('.assistant-queue .assistant-job-row', { hasText: `Synthetic assistant ${id}` })).toBeVisible();
-    await expect(page.locator('.assistant-ref-list')).toContainText(card.id);
+    // Input references are labeled in operator language, never as a raw
+    // UUID: until the work snapshot resolves the card title the ref degrades
+    // to the honest "Card: link" fallback.
+    await expect(page.locator('.assistant-ref-list')).toContainText('Card: link');
     await page.reload();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Synthetic assistant ${id}`);
     const after = await json(await context.request.get(`/api/assistant-jobs/${assistant.id}`));
@@ -764,8 +769,10 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(artifactSurface).toBeVisible();
     const artifactRow = artifactSurface.locator('.ops-data-row', { hasText: `Synthetic artifact ${id}` });
     await expect(artifactRow).toBeVisible();
-    await expect(artifactSurface.locator('.ops-data-row', { hasText: card.id })).toBeVisible();
-    const artifactLink = artifactRow.getByRole('link', { name: `Open Synthetic artifact ${id} for card ${card.id}` });
+    // The row names the related card in operator language — its title once
+    // the work snapshot resolves, or the honest fallback — never a raw UUID.
+    await expect(artifactRow).not.toContainText(card.id);
+    const artifactLink = artifactRow.getByRole('link');
     await expect(artifactLink).toHaveAttribute('href', 'https://example.invalid/synthetic-output');
     await expect(artifactLink).toHaveAttribute('rel', 'noopener');
     await page.goto('/#/assistants?assistantJobId=stale-synthetic-assistant');
@@ -1017,7 +1024,9 @@ test.describe('canonical frontend capability behavior', () => {
     expect(await calendarDialog.getByLabel('Title').evaluate((input) => input.validity.valid)).toBe(false);
     await calendarDialog.getByRole('button', { name: 'Cancel' }).click();
 
-    await page.getByText(`Updated calendar ${id}`).first().click();
+    // Only grid activity buttons open the editor; alerts and overlays echo
+    // item titles without carrying [data-edit].
+    await page.locator('.calendar-surface [data-edit]', { hasText: `Updated calendar ${id}` }).first().click();
     const currentCalendarPayload = await json(await context.request.get(`/api/calendar-items/${calendarItem.id}`));
     const currentCalendar = currentCalendarPayload.item || currentCalendarPayload;
     expect((await context.request.put(`/api/calendar-items/${calendarItem.id}`, { data: {
@@ -1031,7 +1040,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.reload();
     await page.clock.setFixedTime(new Date('2026-09-03T12:00:00Z'));
     await page.locator('[data-today]').click();
-    await page.getByText(`Server calendar ${id}`).first().click();
+    await page.locator('.calendar-surface [data-edit]', { hasText: `Server calendar ${id}` }).first().click();
     await page.locator('.calendar-surface dialog').getByLabel('Title').fill(`Browser calendar ${id}`);
     await page.locator('.calendar-surface dialog').getByRole('button', { name: 'Save activity' }).click();
     await expect(page.getByText(`Browser calendar ${id}`).first()).toBeVisible();
@@ -1053,8 +1062,9 @@ test.describe('canonical frontend capability behavior', () => {
     const noConfig = await portalContext(browser, servers.noMailingConfig);
     const noConfigPage = await noConfig.newPage();
     await noConfigPage.goto('/#/mailing-exports');
-    await expect(noConfigPage.locator('[data-export-state="no-config"]')).toContainText('No export configurations');
-    await expect(noConfigPage.getByRole('status')).toContainText('No export configurations are enabled');
+    const noConfigState = noConfigPage.locator('[data-export-state="no-config"]');
+    await expect(noConfigState).toContainText('No export configurations');
+    await expect(noConfigState).toContainText('No secret values belong in the portal.');
     await noConfig.close();
 
     const { context, page } = await portalPage(browser);
@@ -1184,7 +1194,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(emptyDiagnostics.locator('[data-diagnostic="quality"]')).toContainText('Loading local validation');
     await expect(emptyDiagnostics.locator('[data-diagnostic="git-status"]')).toContainText('Loading availability');
     await expect(emptyDiagnostics.locator('[data-diagnostic="git-history"]')).toContainText('Loading availability');
-    await expect(emptyDiagnostics.locator('[data-diagnostic="quality"]')).toContainText('0 finding(s); 0 validation error(s)');
+    await expect(emptyDiagnostics.locator('[data-diagnostic="quality"]')).toContainText('0 quality findings; no validation errors.');
     await expect(emptyDiagnostics.locator('[data-diagnostic="git-status"]')).toContainText(/unavailable/i);
     await expect(emptyDiagnostics.locator('[data-diagnostic="git-history"]')).toContainText(/unavailable/i);
     await clearFaults(empty.request);
@@ -1222,6 +1232,12 @@ test.describe('canonical frontend capability behavior', () => {
     await page.locator('#docs-nav-button').click();
     await expect(page.locator('body')).toHaveAttribute('data-view', 'library');
 
+    // The shell keeps document filters in the mobile drawer; desktop Docs is
+    // content-first and hides the sidebar disclosure entirely. Open the
+    // drawer once and filter inside it.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('#mobile-menu-button').click();
+    await expect(page.locator('#sidebar')).toBeVisible();
     await page.locator('#filters-section summary').click();
     const documentFilters = page.locator('#filter-row .custom-select');
     await expect(documentFilters).toHaveCount(4);
@@ -1239,14 +1255,15 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
     await expect(page.locator('#filter-count')).toHaveText('4');
     await captureIssue200Screenshot(page, 'process-docs-filtered');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await captureIssue200Screenshot(page, 'process-docs-filtered');
     await page.setViewportSize({ width: 1440, height: 900 });
 
     await page.reload();
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
     await expect(page).toHaveURL(canonicalFilterUrl);
     await expect(page.locator('#filter-count')).toHaveText('4');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('#mobile-menu-button').click();
+    await expect(page.locator('#sidebar')).toBeVisible();
     await page.locator('#filters-section summary').click();
     await page.locator('#clear-filters-button').click();
     await expect(page).toHaveURL(/\/#\/processes$/);
@@ -1261,6 +1278,7 @@ test.describe('canonical frontend capability behavior', () => {
     await chooseDocumentFilter(2, 'Dataops');
     await chooseDocumentFilter(3, 'Synthetic');
     await expect(page).toHaveURL(canonicalFilterUrl);
+    await page.setViewportSize({ width: 1440, height: 900 });
     const filteredSearch = page.waitForRequest((request) => {
       const url = new URL(request.url());
       return request.method() === 'GET' && url.pathname === '/search';
@@ -1442,7 +1460,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.ops-admin-card', { hasText: 'Diagnostics' })).toBeVisible();
     const diagnostics = page.getByRole('region', { name: 'Read-only diagnostics' });
     await expect(diagnostics).toContainText('No pull, commit, publish, or provider action is available here');
-    await expect(diagnostics.locator('[data-diagnostic="quality"]')).toContainText(/finding\(s\); \d+ validation error\(s\)/);
+    await expect(diagnostics.locator('[data-diagnostic="quality"]')).toContainText(/quality findings?; (no|\d+) validation errors?/);
     await expect(diagnostics.locator('[data-diagnostic="git-status"]')).toContainText('Git diagnostics are unavailable in the packaged runtime');
     await expect(diagnostics.locator('[data-diagnostic="git-history"]')).toContainText('Git history is unavailable in the packaged runtime');
 
@@ -1455,7 +1473,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.ops-admin-diagnostics')).toContainText('Unavailable: Synthetic route failure (503)');
     await clearFaults(context.request);
     await page.reload();
-    await expect(page.locator('[data-diagnostic="quality"]')).toContainText(/finding\(s\); \d+ validation error\(s\)/);
+    await expect(page.locator('[data-diagnostic="quality"]')).toContainText(/quality findings?; (no|\d+) validation errors?/);
     await context.close();
     recordCapabilityEvidence(testInfo, [
       { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.filters.url-reload-clear-search', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.draft-management', 'process-docs.partial-save-failure', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.git-failure'] },
@@ -1690,7 +1708,7 @@ test.describe('canonical frontend capability behavior', () => {
     await clearFaults(context.request);
     await page.reload();
     await expect(page.getByText('Artifact review index not connected')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Tasks - Artifacts', exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Artifacts', exact: true }).first()).toBeVisible();
     await context.close();
     recordCapabilityEvidence(testInfo, [{
       route: '/#/notifications',

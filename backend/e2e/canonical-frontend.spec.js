@@ -16,7 +16,7 @@ test.describe('canonical DataOps frontend', () => {
     await expect(page.locator('[data-tasks-section="workflows"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/recurring');
-    await expect(page.getByRole('heading', { name: 'Tasks - Recurring', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recurring', exact: true })).toBeVisible();
     await expect(page.locator('[data-tasks-section="recurring"]')).toHaveAttribute('aria-current', 'page');
 
     await page.goto('/#/notifications');
@@ -91,7 +91,7 @@ test.describe('canonical DataOps frontend', () => {
     const job = (await jobResponse.json()).job;
 
     await page.goto(`/#/assistants?assistantJobId=${job.id}`);
-    await expect(page.getByRole('heading', { name: 'Tasks - Assistants', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Assistants', exact: true })).toBeVisible();
     await expect(page.locator('.assistant-detail h3')).toHaveText(`Canonical assistant ${id}`);
     await expect(page.locator('[data-assistant-save]')).toBeVisible();
     await expect(page.locator('[data-assistant-lifecycle="submit"]')).toBeVisible();
