@@ -106,9 +106,12 @@ export function createTaskQueue(context) {
       const heading = document.createElement("h3");
       heading.textContent = "Queue context";
       const summary = document.createElement("p");
+      // The context chip names the filtered day relative to the operator's
+      // real today — the queue-local `today` above serves the lane
+      // grouping, not this label, or every filtered day would read "Today".
       summary.textContent = [
         taskRouteContext.date
-          ? `Date ${queueDueLabel(taskRouteContext.date, today)}`
+          ? `Date ${queueDueLabel(taskRouteContext.date, todayIsoDate())}`
           : "",
         taskRouteContext.cardId
           ? `Filtered to card ${taskRouteContext.filterCard?.title || taskRouteContext.cardId}`
