@@ -321,26 +321,35 @@ export function createAssistantsSurface(context) {
   // Resolve linked ids to operator-readable titles; an unresolved link stays
   // honest ("card linked") instead of showing a raw uuid.
   function assistantContextLabel(job) {
-    const work = state.workSnapshot || {};
     if (job.cardId) {
-      const card = (work.cards || []).find(
-        (candidate) => String(candidate.id) === String(job.cardId),
-      );
-      return card ? `card ${card.title || "linked"}` : "card linked";
+      return `card ${linkedWorkTitle("card", job.cardId) || "linked"}`;
     }
     if (job.taskId) {
-      const tasks = [
-        ...(work.todayTasks || []),
-        ...(work.overdueTasks || []),
-        ...(work.waitingTasks || []),
-        ...Object.values(work.cardTasks || {}).flat(),
-      ];
-      const task = tasks.find(
-        (candidate) => String(candidate.id) === String(job.taskId),
-      );
-      return task ? `task ${workTaskTitle(task)}` : "task linked";
+      return `task ${linkedWorkTitle("task", job.taskId) || "linked"}`;
     }
     return "";
+  }
+
+  // Title of a linked card or task from the work snapshot, or "" when the
+  // link cannot be resolved to anything human.
+  function linkedWorkTitle(kind, id) {
+    const work = state.workSnapshot || {};
+    const wanted = String(id || "");
+    if (!wanted) return "";
+    if (kind === "card") {
+      const card = (work.cards || []).find(
+        (candidate) => String(candidate.id) === wanted,
+      );
+      return card?.title || "";
+    }
+    const tasks = [
+      ...(work.todayTasks || []),
+      ...(work.overdueTasks || []),
+      ...(work.waitingTasks || []),
+      ...Object.values(work.cardTasks || {}).flat(),
+    ];
+    const task = tasks.find((candidate) => String(candidate.id) === wanted);
+    return task ? workTaskTitle(task) : "";
   }
 
   // Run-log moments read as operator time (Today 14:03, 10 Sep 16:20), never
@@ -658,15 +667,26 @@ export function createAssistantsSurface(context) {
           `;
         })
         .join("");
+      // References read as what they are, never as bare identifiers: a
+      // card/task ref resolves to its title, an unresolvable one stays
+      // honest ("Card link"), and a URI is the one case where the value
+      // itself is operator-meaningful.
       const inputReferences = (job.inputRefs || []).length
         ? job.inputRefs
-            .map(
-              (ref) => `
-                <code>
-                  ${escapeHtml(ref.title || ref.uri || ref.id || ref.type || "input")}
-                </code>
-              `,
-            )
+            .map((ref) => {
+              const kind = String(ref.type || "input");
+              const kindLabel =
+                kind.charAt(0).toUpperCase() + kind.slice(1);
+              const linked =
+                linkedWorkTitle(kind, ref.id) ||
+                (kind === "card" ? "link" : kind === "task" ? "link" : "");
+              const name =
+                ref.title ||
+                (linked ? `${kindLabel}: ${linked}` : "") ||
+                (/^https?:\/\//.test(String(ref.uri || "")) ? ref.uri : "") ||
+                `${kindLabel} link`;
+              return `<code>${escapeHtml(name)}</code>`;
+            })
             .join(" ")
         : "No input references recorded.";
       const artifactLinks = artifacts.length
