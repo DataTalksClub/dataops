@@ -352,6 +352,15 @@ export function createAssistantsSurface(context) {
     return task ? workTaskTitle(task) : "";
   }
 
+  // Storage providers are machine slugs ("external-url"); the detail speaks
+  // operator language, so the provider reads as where the artifact lives.
+  function humanStorageProvider(provider) {
+    const value = String(provider || "").trim();
+    if (!value) return "storage unknown";
+    if (value === "external-url") return "external link";
+    return value.replace(/[-_]+/g, " ");
+  }
+
   // Run-log moments read as operator time (Today 14:03, 10 Sep 16:20), never
   // a raw ISO timestamp.
   function assistantTimestampLabel(value) {
@@ -701,7 +710,7 @@ export function createAssistantsSurface(context) {
                   <strong>${escapeHtml(artifact.title || artifact.type || "Artifact")}</strong>
                   <span>
                     ${escapeHtml(assistantHumanState(artifact.status || "draft"))}
-                    · ${escapeHtml(artifact.storageProvider || "unknown")}
+                    · ${escapeHtml(humanStorageProvider(artifact.storageProvider))}
                   </span>
                 </a>
               `,
