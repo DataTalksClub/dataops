@@ -5,6 +5,7 @@ import {
   createAdminSurface,
   createOperationsSurface,
 } from "../src/surfaces/operations/index.js";
+import { formatTaskDateMeta } from "../src/core/workspace.js";
 import {
   FakeDocument,
   FakeElement,
@@ -289,6 +290,7 @@ function createOperationsHarness(options = {}) {
     defaultNextFollowUpDate: () => "2026-08-15",
     documentList,
     escapeHtml,
+    formatTaskDateMeta,
     getActiveWorkspaceRoute: () => route,
     getActiveWorkspaceRouteToken: () => activeRouteToken,
     getActiveWorkspaceView: () => route.path.slice(1),
@@ -1287,6 +1289,59 @@ describe("Operations surface boundary", () => {
     assert.deepEqual(harness.navigations.at(-1).options, { history: "none" });
     harness.entityStates.at(-1).returnToList();
     assert.equal(harness.navigations.at(-1).path, "/inbox");
+  });
+
+  test("renders Assistant run-log moments on the Berlin business day, not the UTC clock", async () => {
+    // 22:30Z on 12 Aug is 00:30 on 13 Aug in Berlin. The UTC formatter read
+    // this minute-old job as "Today 22:30"; the operator's clock says
+    // "Tomorrow 00:30". The morning event pins the ordinary same-day case.
+    const job = {
+      id: "job-clock",
+      title: "Clock job",
+      assistantType: "podcast",
+      status: "draft",
+      attemptCount: 0,
+      maxAttempts: 2,
+    };
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        assistantSnapshot: { loaded: true, jobs: [job], errors: [] },
+        assistantQueue: { filter: "all", selectedJobId: job.id },
+      },
+      request: async (url) => {
+        if (url === "/api/assistant-jobs") return { jobs: [job] };
+        return {
+          job,
+          artifacts: [],
+          events: [
+            {
+              action: "assistant-job-created",
+              createdAt: "2026-08-12T22:30:00.000Z",
+            },
+            {
+              action: "assistant-job-queued",
+              createdAt: "2026-08-12T09:10:00.000Z",
+            },
+          ],
+        };
+      },
+    });
+    const surface = harness.api.renderAssistantsSurface();
+    await nextTicks();
+    const detail = surface.querySelector("[data-assistant-detail]");
+    assert.match(
+      detail.innerHTML,
+      /assistant-job-created\s*<\/strong>\s*<span>\s*Tomorrow 00:30/,
+      "midnight-crossing event must read Berlin time",
+    );
+    assert.match(
+      detail.innerHTML,
+      /assistant-job-queued\s*<\/strong>\s*<span>\s*Today 11:10/,
+      "same-day event must read the Berlin clock",
+    );
+    assert.doesNotMatch(detail.innerHTML, /22:30/);
+    assert.doesNotMatch(detail.innerHTML, /09:10/);
   });
 
   test("renders Assistant status action hierarchy and records approval plus retry request shapes", async () => {

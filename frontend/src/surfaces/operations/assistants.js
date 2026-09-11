@@ -4,6 +4,7 @@ import {
   reportFieldValidation,
   setFieldError,
 } from "../operations-overview.js";
+import { berlinIsoDate } from "../../core/workspace.js";
 import {
   assistantTypeOptions,
   createAssistantCreateSurface,
@@ -362,23 +363,24 @@ export function createAssistantsSurface(context) {
   }
 
   // Run-log moments read as operator time (Today 14:03, 10 Sep 16:20), never
-  // a raw ISO timestamp.
+  // a raw ISO timestamp. Clock and day both follow the Berlin business day —
+  // the same day todayIsoDate() compares against — so a job created around
+  // midnight never borrows the UTC date or clock.
   function assistantTimestampLabel(value) {
     const parsed = new Date(String(value || ""));
     if (Number.isNaN(parsed.getTime())) return String(value || "");
-    const day = parsed.toISOString().slice(0, 10);
+    const day = berlinIsoDate(parsed);
     const time = new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
-      timeZone: "UTC",
+      timeZone: "Europe/Berlin",
     }).format(parsed);
-    const today = todayIsoDate();
-    const relative = formatTaskDateMeta(day, today);
+    const relative = formatTaskDateMeta(day, todayIsoDate());
     if (relative !== day) return `${relative} ${time}`;
     return `${new Intl.DateTimeFormat("en-GB", {
       day: "numeric",
       month: "short",
-      timeZone: "UTC",
+      timeZone: "Europe/Berlin",
     }).format(parsed)} ${time}`;
   }
 
