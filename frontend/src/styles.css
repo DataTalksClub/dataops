@@ -13453,6 +13453,17 @@ body:not([data-workspace-view="docs"]) #filters-section {
   .crm-directory .section-header select {
     min-height: 44px;
   }
+
+  /* Every finance control shape meets the floor: search boxes, the
+     statement month input, and the ledger row actions included. */
+  .bookkeeping-surface input:not([type="checkbox"], [type="radio"]),
+  .sponsor-crm-surface input:not([type="checkbox"], [type="radio"]),
+  .mailing-exports-surface input:not([type="checkbox"], [type="radio"]),
+  .bookkeeping-surface .row-actions button,
+  .sponsor-crm-surface .row-actions button,
+  .mailing-exports-surface .row-actions button {
+    min-height: 44px;
+  }
 }
 
 /* The My Plan date input uses the system input tokens so it carries dark
