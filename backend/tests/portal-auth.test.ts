@@ -495,4 +495,54 @@ describe('Portal broker authentication', () => {
     const generated = JSON.parse(generateRecurringResponse.body);
     assert.ok(generated.generated.some((task: { recurringConfigId?: string }) => task.recurringConfigId === recurringConfig.id));
   });
+
+  it('validates bearer sessions when the portal authorizes without an identity', async () => {
+    // Local development shape: docs-domain portal on, browser auth
+    // unconfigured, no portal broker headers. The portal authorizes with no
+    // identity, so the router must still validate bearer sessions (#227).
+    const savedDocsDomain = process.env.DATAOPS_DOCS_DOMAIN;
+    const savedAuthVars: Record<string, string | undefined> = {};
+    for (const key of ['AUTH_BASE_URL', 'AUTH_ISSUER', 'AUTH_CLIENT_ID', 'AUTH_CALLBACK_URL', 'AUTH_LOGOUT_URL']) {
+      savedAuthVars[key] = process.env[key];
+      delete process.env[key];
+    }
+    process.env.SKIP_AUTH = 'false';
+    delete process.env.WORK_ENGINE_AUTH_MODE;
+    delete process.env.WORK_ENGINE_PORTAL_SECRET;
+    process.env.DATAOPS_DOCS_DOMAIN = 'true';
+    try {
+      const client = await getClient();
+      const session = await createSession(client, 'ops-admin');
+
+      const anonymous = await handler(
+        {
+          httpMethod: 'GET',
+          path: '/api/tasks',
+          queryStringParameters: { date: '2028-10-04' },
+          headers: {},
+        },
+        {},
+      );
+      assert.strictEqual(anonymous.statusCode, 401);
+
+      const authenticated = await handler(
+        {
+          httpMethod: 'GET',
+          path: '/api/tasks',
+          queryStringParameters: { date: '2028-10-04' },
+          headers: { Authorization: `Bearer ${session.token}` },
+        },
+        {},
+      );
+      assert.strictEqual(authenticated.statusCode, 200);
+      assert.ok(Array.isArray(JSON.parse(authenticated.body).tasks));
+    } finally {
+      if (savedDocsDomain === undefined) delete process.env.DATAOPS_DOCS_DOMAIN;
+      else process.env.DATAOPS_DOCS_DOMAIN = savedDocsDomain;
+      for (const [key, value] of Object.entries(savedAuthVars)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
 });

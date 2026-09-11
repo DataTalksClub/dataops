@@ -741,7 +741,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // In test mode (NODE_ENV=test), auth can be bypassed with SKIP_AUTH=true.
     // Portal browser cookies and legacy bearer sessions are independent. The
     // generic bearer middleware below remains available in portal mode.
-    if (!skipAuth && !portalUserId && !portalAuthorized && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    // A portal pass without an identity (local development with browser auth
+    // unconfigured) must not skip bearer validation: without it no x-user-id
+    // is ever established and every interactive route fails closed.
+    if (!skipAuth && !verifiedInteractiveUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });
