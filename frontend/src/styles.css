@@ -13497,3 +13497,33 @@ body:not([data-workspace-view="docs"]) #filters-section {
 .mailing-export-history {
   padding: 0 16px 12px;
 }
+
+/* The queue footer's "View all tasks" is a 44px control on mobile, but its
+   transparent styling painted it as a bare text link. Give it the same quiet
+   bordered treatment as its "Show N more" sibling. */
+@media (max-width: 820px) {
+  .home-attention > footer .home-view-all {
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+  }
+
+  .ops-quality-row {
+    min-height: 44px;
+  }
+
+  .operating-model-card .quiet-button {
+    min-height: 44px;
+  }
+}
+
+/* Operating-model hub: stat cards are flex columns with the View CTA held
+   to the card bottom, so every View in a row shares one baseline. */
+.operating-model-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.operating-model-card .quiet-button {
+  margin-top: auto;
+  align-self: flex-start;
+}

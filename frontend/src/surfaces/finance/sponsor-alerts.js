@@ -31,6 +31,9 @@ export function renderSponsorBookingAlerts({
     : notificationState.complete && !notificationState.failed
       ? html`<div class="honest-state">
           <strong>No active sponsor booking alerts</strong>
+          <p>
+            Check the booking queue for bookings whose next action is not set.
+          </p>
         </div>`
       : "";
   let continuation = "";
