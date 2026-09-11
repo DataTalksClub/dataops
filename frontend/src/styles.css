@@ -13461,3 +13461,35 @@ body:not([data-workspace-view="docs"]) #filters-section {
     display: none;
   }
 }
+
+/* Money quantities carry the mono accent the design system gives every
+   quantity: ledger amounts and the totals sentence read as data. */
+.ledger-amount,
+.bookkeeping-totals {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* The booking card is narrow on the sponsors desktop grid: let the text take
+   the line and the actions wrap below instead of squeezing the copy into
+   mid-phrase breaks. */
+.crm-booking-row {
+  flex-wrap: wrap;
+}
+
+.crm-booking-row > div:first-child {
+  flex: 1 1 170px;
+  min-width: 0;
+}
+
+.crm-booking-row .row-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Run history entries sit inside the card's padded body, aligned with the
+   header copy above them. */
+.mailing-export-history {
+  padding: 0 16px 12px;
+}
