@@ -355,6 +355,17 @@ describe('isolated SAM handler frontend runtime', () => {
         const requestPath = `/${asset}`;
         const response = responseFor(requestPath);
         assert.equal(response.statusCode, 200, `${requestPath}: unexpected asset status`);
+        if (asset.endsWith('.woff2')) {
+          // Fonts are binary: the packaged handler must base64-encode them.
+          assert.match(response.contentType, /^font\/woff2/, `${requestPath}: unexpected font content type`);
+          assert.equal(response.isBase64Encoded, true, `${requestPath}: font asset must be base64 encoded`);
+          assert.equal(
+            response.body,
+            readFileSync(join(isolated, 'dist/frontend', asset), 'base64'),
+            `${requestPath}: packaged asset bytes differ from source`,
+          );
+          continue;
+        }
         assert.match(response.contentType, asset.endsWith('.css') ? /text\/css/ : asset.endsWith('.html') ? /text\/html/ : /javascript/, `${requestPath}: unexpected asset content type`);
         assert.equal(response.isBase64Encoded, false, `${requestPath}: asset must not be base64 encoded`);
         assert.equal(response.body, readFileSync(join(isolated, 'dist/frontend', asset), 'utf8'), `${requestPath}: packaged asset bytes differ from source`);
@@ -365,11 +376,17 @@ describe('isolated SAM handler frontend runtime', () => {
         assert.equal(response.isBase64Encoded, false, `${path}: error response must not be base64 encoded`);
         assert.doesNotMatch(response.body, /<html/i, `${path}: forbidden or missing asset path must not fall back to HTML`);
       }
+      // The probe runs the identity-less docs-domain portal shape, so
+      // unauthenticated API requests fail closed with 401 before route
+      // matching ever sees them (#227) — 404 is reserved for identified
+      // requests pointing at nothing.
       const api = responseFor('/api/not-a-route');
-      assert.equal(api.statusCode, 404, '/api/not-a-route: unknown API route must return 404');
+      assert.equal(api.statusCode, 401, '/api/not-a-route: unauthenticated API request must fail closed with 401');
       assert.match(api.contentType, /application\/json/, '/api/not-a-route: API error must be JSON');
       assert.equal(api.isBase64Encoded, false, '/api/not-a-route: API error must not be base64 encoded');
       assert.doesNotMatch(api.body, /<html/i, '/api/not-a-route: API error must not fall back to HTML');
+      // Exact /work/api is outside the /work/api/* rewrite and the /api/*
+      // middleware scope, so it still falls through to the route 404.
       const exactWorkApi = responseFor('/work/api');
       assert.equal(exactWorkApi.statusCode, 404, '/work/api: exact work API root must return 404');
       assert.match(exactWorkApi.contentType, /application\/json/, '/work/api: work API error must be JSON');
