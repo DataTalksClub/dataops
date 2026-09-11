@@ -4,6 +4,30 @@ import {
   setFieldError,
 } from "../operations-overview.js";
 
+// The assistant types the portal knows how to run or route. The value is the
+// stored token; the label is what an operator reads.
+export const ASSISTANT_TYPES = Object.freeze([
+  ["newsletter", "Newsletter"],
+  ["podcast", "Podcast"],
+  ["course", "Course"],
+  ["book-of-the-week", "Book of the week"],
+  ["office-hours", "Office hours"],
+]);
+
+export function assistantTypeOptions(selected) {
+  const current = String(selected || "");
+  const known = ASSISTANT_TYPES.some(([value]) => value === current);
+  const options = known || !current
+    ? ASSISTANT_TYPES
+    : [...ASSISTANT_TYPES, [current, current]];
+  return options
+    .map(
+      ([value, label]) =>
+        `<option value="${value}"${value === current ? " selected" : ""}>${label}</option>`,
+    )
+    .join("");
+}
+
 export function createAssistantCreateSurface(context) {
   const {
     assistantMutation,
@@ -60,7 +84,9 @@ export function createAssistantCreateSurface(context) {
           </label>
           <label>
             Assistant type
-            <input name="assistantType" data-assistant-type value="${escapeHtml(values.assistantType || "podcast")}">
+            <select name="assistantType" data-assistant-type>
+              ${assistantTypeOptions(values.assistantType || "podcast")}
+            </select>
           </label>
           <label>
             Title

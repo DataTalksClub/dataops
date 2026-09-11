@@ -65,6 +65,28 @@ export function createArtifactsSurface(context) {
     return section;
   }
 
+  // Resolve linked ids to operator-readable titles; an unresolved link stays
+  // honest ("card linked") instead of showing a raw uuid.
+  function artifactContextLabel(kind, id) {
+    const wanted = String(id || "");
+    if (!wanted) return "";
+    const work = state.workSnapshot || {};
+    if (kind === "card") {
+      const card = (work.cards || []).find(
+        (candidate) => String(candidate.id) === wanted,
+      );
+      return card ? workTaskTitle({ ...card, description: card.title }) : "card linked";
+    }
+    const tasks = [
+      ...(work.todayTasks || []),
+      ...(work.overdueTasks || []),
+      ...(work.waitingTasks || []),
+      ...Object.values(work.cardTasks || {}).flat(),
+    ];
+    const task = tasks.find((candidate) => String(candidate.id) === wanted);
+    return task ? workTaskTitle(task) : "task linked";
+  }
+
   function renderArtifactSurfaceRow(artifact) {
     const row = document.createElement("article");
     row.className = "ops-data-row";
@@ -75,11 +97,16 @@ export function createArtifactsSurface(context) {
     title.textContent = artifactLabel;
     const meta = document.createElement("span");
     meta.textContent = [
-      artifact.status || "draft",
-      artifact.type || artifact.sourceType || "",
-      artifact.cardId ? `card ${artifact.cardId}` : "",
-      artifact.taskId ? `task ${artifact.taskId}` : "",
-      artifact.storageUri ? "storage linked" : "storage missing",
+      // States read as words, not raw enums ("Draft", not "draft").
+      (artifact.status || "draft")
+        .replace(/[_-]+/g, " ")
+        .replace(/^\w/, (char) => char.toUpperCase()),
+      artifact.sourceType === "assistant-output"
+        ? "Assistant output"
+        : artifact.type || "",
+      artifact.cardId ? `for ${artifactContextLabel("card", artifact.cardId) || "a card"}` : "",
+      artifact.taskId ? `for ${artifactContextLabel("task", artifact.taskId) || "a task"}` : "",
+      artifact.storageUri ? "saved to storage" : "no file saved yet",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -91,8 +118,12 @@ export function createArtifactsSurface(context) {
       link.rel = "noopener";
       link.textContent = "Open artifact";
       const linkContext = [
-        artifact.cardId ? `card ${artifact.cardId}` : "",
-        artifact.taskId ? `task ${artifact.taskId}` : "",
+        artifact.cardId
+          ? artifactContextLabel("card", artifact.cardId)
+          : "",
+        artifact.taskId
+          ? artifactContextLabel("task", artifact.taskId)
+          : "",
       ]
         .filter(Boolean)
         .join(", ");

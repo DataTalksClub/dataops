@@ -57,7 +57,9 @@ export function createAdminSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-admin";
-    wrap.append(renderSurfaceHeader("Admin", surfaceDescription("admin")));
+    wrap.append(
+      renderSurfaceHeader("Admin", surfaceDescription("admin"), "Platform administration"),
+    );
     wrap.append(renderAdminSurface(model));
 
     documentList.replaceChildren(wrap);
@@ -484,15 +486,17 @@ export function createAdminSurface(context) {
   function renderAdminSurface(model) {
     const section = document.createElement("section");
     section.className = "ops-admin-grid";
+    const recurringCount = model.recurring.configs.length;
     const cards = [
       [
         "Recurring config",
-        `${model.recurring.configs.length} configs loaded. Generated tasks appear in Home and Work Queue.`,
+        `${recurringCount} recurring ${recurringCount === 1 ? "configuration" : "configurations"} loaded; ` +
+          "generated tasks appear in Home and the Work Queue.",
         () => showWorkspaceSurface("templates"),
       ],
       [
         "Diagnostics",
-        "Inspect local process quality and runtime availability without a mutation action.",
+        "Check process quality, Git status, and commit history. Nothing here changes the repository.",
         () => section.querySelector(".ops-admin-diagnostics h3")?.focus(),
       ],
     ];
@@ -595,36 +599,49 @@ export function createAdminSurface(context) {
         "aria-live",
         answered === 3 ? "polite" : "assertive",
       );
-      diagnosticsSummary.textContent =
-        answered === 3
-          ? "3 of 3 read-only diagnostics answered."
-          : `${answered} of 3 read-only diagnostics answered; the rest are unavailable.`;
+      // When every diagnostic answered, the summary says nothing: "all fine"
+      // is carried by the answers themselves, not by a mechanics sentence.
+      if (answered === 3) {
+        diagnosticsSummary.hidden = true;
+        diagnosticsSummary.textContent = "";
+      } else {
+        diagnosticsSummary.hidden = false;
+        diagnosticsSummary.textContent = `${answered} of 3 read-only diagnostics answered; the rest are unavailable.`;
+      }
       retryDiagnostics.hidden = answered === 3;
       if (answered < 3) {
         retryDiagnostics.disabled = false;
         retryDiagnostics.removeAttribute("aria-busy");
         retryDiagnostics.textContent = "Retry diagnostics";
       }
+      const qualityTotal = Number(quality.value?.summary?.total || 0);
+      const qualityErrors = Number(
+        quality.value?.validationErrors?.length || 0,
+      );
+      const findingsLabel = qualityTotal === 1 ? "finding" : "findings";
+      const errorsLabel = qualityErrors === 1 ? "error" : "errors";
       diagnosticText(
         "quality",
         quality.status === "fulfilled"
-          ? `${quality.value.summary?.total || 0} finding(s); ${quality.value.validationErrors?.length || 0} validation error(s).`
+          ? `${qualityTotal} quality ${findingsLabel}; ${qualityErrors === 0 ? "no" : qualityErrors} validation ${errorsLabel}.`
           : `Unavailable: ${quality.reason?.message || "request failed"}`,
       );
+      const changedFiles = Number(gitStatus.value?.count || 0);
       diagnosticText(
         "git-status",
         gitStatus.status === "fulfilled"
           ? gitStatus.value.ok
-            ? `${gitStatus.value.count || 0} changed file(s) on ${gitStatus.value.branch || "unknown"}.`
+            ? `${changedFiles} changed ${changedFiles === 1 ? "file" : "files"} on ${gitStatus.value.branch || "an unknown branch"}.`
             : gitStatus.value.error || "Unavailable in this runtime."
           : `Unavailable: ${gitStatus.reason?.message || "request failed"}`,
       );
+      const commitCount = Number(gitHistory.value?.commits?.length || 0);
       diagnosticText(
         "git-history",
         gitHistory.status === "fulfilled"
           ? gitHistory.value.available === false
             ? gitHistory.value.error || "Unavailable in this runtime."
-            : `${gitHistory.value.commits?.length || 0} commit(s) returned.`
+            : `${commitCount} ${commitCount === 1 ? "commit" : "commits"} returned.`
           : `Unavailable: ${gitHistory.reason?.message || "request failed"}`,
       );
     }

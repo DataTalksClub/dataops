@@ -89,8 +89,14 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function surfaceHeader(title, description) {
+function surfaceHeader(title, description, kicker = "") {
   const header = new FakeElement("header");
+  if (kicker) {
+    const eyebrow = new FakeElement("p");
+    eyebrow.className = "section-kicker";
+    eyebrow.textContent = kicker;
+    header.append(eyebrow);
+  }
   const heading = new FakeElement("h3");
   heading.textContent = title;
   const detail = new FakeElement("p");
@@ -618,7 +624,6 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(
       surface.children.map((child) => child.className),
       [
-        "ops-honest-state",
         "ops-honest-state ops-docs-state",
         "ops-section ops-quality-drilldown",
         "ops-reference-grid",
@@ -783,12 +788,18 @@ describe("Knowledge surface boundary", () => {
       true,
     );
     assert.equal(harness.routeTitles.at(-1), "Docs");
-    assert.ok(
+    // The header subtitle already says that processes support work; the
+    // surface does not repeat the same idea as a banner.
+    assert.equal(
       findByText(
         harness.elements.documentList,
         "Processes support work",
         "strong",
       ),
+      undefined,
+    );
+    assert.ok(
+      findByText(harness.elements.documentList, "Knowledge operations", "p"),
     );
     assert.ok(
       findByText(harness.elements.documentList, "Process catalog", "a"),

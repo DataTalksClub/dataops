@@ -204,13 +204,13 @@ test.describe('issue 201 Home attention urgency', () => {
         action: 'Open',
         className: 'overdue',
         task: fixtures.overdue,
-        text: 'Due yesterday',
+        text: '■ 1 day overdue',
       },
       {
         action: 'Follow up',
         className: 'follow-up',
         task: fixtures.followUp,
-        text: 'Follow-up 2 days overdue',
+        text: '■■ 2 days overdue',
       },
       {
         action: 'Open',

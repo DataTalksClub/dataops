@@ -600,6 +600,7 @@ const {
   defaultNextFollowUpDate,
   documentList,
   escapeHtml,
+  formatTaskDateMeta,
   getActiveWorkspaceRoute,
   getActiveWorkspaceRouteToken,
   getActiveWorkspaceView: () => workspaceState.activeWorkspaceView,

@@ -218,11 +218,14 @@ export function createOperationsOverview(context) {
     tasksSectionTitle,
   } = context;
 
-  function operationsViewTitle(view, tasksSection) {
+  function operationsViewTitle(view, tasksSection, archiveVisible = false) {
     if (view === "home") return "Today";
+    if (view === "my-plan") return "My Plan";
+    if (view === "operating-model") return "Operating Model";
     if (view === "inbox") return "Inbox";
-    if (view === "tasks") return tasksSectionTitle(tasksSection);
+    if (view === "tasks") return tasksSectionTitle(tasksSection, archiveVisible);
     if (view === "docs") return "Docs";
+    if (view === "admin") return "Admin";
     if (view === "users") return "Users";
     if (view === "bookkeeping") return "Bookkeeping";
     if (view === "sponsors") return "Sponsors";
@@ -236,14 +239,14 @@ export function createOperationsOverview(context) {
   function surfaceDescription(view) {
     const descriptions = {
       queue:
-        "Inspect tasks across cards by overdue, follow-up, waiting, missing proof, owner, source, and next action.",
+        "What needs you, grouped by urgency. Open a task to work it.",
       workflows:
-        "Open active cards by stage, then inspect their tasks, proof, waiting, artifacts, and process context.",
+        "Every active card by stage. Open a card to see its tasks.",
       templates: "Create cards from reusable Templates.",
       recurring:
         "Create, edit, pause, and delete the schedules that generate recurring tasks.",
       assistants:
-        "Card support jobs appear here only when the assistant job lifecycle is connected.",
+        "Review assistant jobs that prepare work for your cards.",
       artifacts:
         "Review proof and operational outputs linked to cards and tasks.",
       processes:
@@ -273,10 +276,16 @@ export function createOperationsOverview(context) {
     return countLabel(count, singular, category);
   }
 
-  function renderSurfaceHeader(titleText, descriptionText) {
+  function renderSurfaceHeader(titleText, descriptionText, kickerText = "") {
     const header = document.createElement("section");
     header.className = "ops-surface-header";
-    const title = document.createElement("h3");
+    if (kickerText) {
+      const kicker = document.createElement("p");
+      kicker.className = "section-kicker";
+      kicker.textContent = kickerText;
+      header.append(kicker);
+    }
+    const title = document.createElement("h1");
     title.textContent = titleText;
     const description = document.createElement("p");
     description.textContent = descriptionText;
@@ -403,9 +412,7 @@ export function createOperationsOverview(context) {
     header.className = "ops-section-header";
     const title = document.createElement("h3");
     title.textContent = "Incoming And Quality Signals";
-    const meta = document.createElement("span");
-    meta.textContent = "No fake data";
-    header.append(title, meta);
+    header.append(title);
     wrap.append(header);
 
     const grid = document.createElement("div");
@@ -503,40 +510,71 @@ export function createOperationsOverview(context) {
     return section;
   }
 
+  function humanizeFindingMessage(finding) {
+    const raw = String(finding.summary || finding.title || "").trim();
+    if (!raw) return "This process document needs attention";
+    // Validators speak in field names; operators read sentences.
+    const humanized = raw
+      .replace(/^doc_type\b/i, "Document type")
+      .replace(/\(got '([^']*)'\)/, "— found '$1'");
+    return humanized.charAt(0).toUpperCase() + humanized.slice(1);
+  }
+
+  function elideDocPath(path) {
+    const value = String(path || "");
+    const segments = value.split("/").filter(Boolean);
+    if (segments.length <= 2) return value;
+    return `${segments[0]}/…/${segments[segments.length - 1]}`;
+  }
+
   function renderQualityFindingRow(finding) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = `ops-quality-row ops-quality-${finding.severity || "warning"}`;
     row.addEventListener("click", () => openQualityFinding(finding));
 
+    // The validator's message is what the operator reads; severity rides
+    // beside it as a chip, and the path stays quiet mono secondary text.
     const head = document.createElement("div");
     head.className = "ops-quality-row-head";
     const title = document.createElement("strong");
-    title.textContent = finding.title;
+    title.textContent = humanizeFindingMessage(finding);
     const severity = document.createElement("span");
     severity.textContent = labelizeWorkValue(finding.severity || "warning");
     head.append(title, severity);
+    row.append(head);
 
-    const summary = document.createElement("small");
-    summary.textContent =
-      finding.summary || finding.docPath || finding.instructionDocId || "";
+    const pathValue =
+      finding.docPath || finding.docId || finding.instructionDocId || "";
+    if (pathValue) {
+      const path = document.createElement("small");
+      path.className = "ops-quality-row-path";
+      path.textContent = elideDocPath(pathValue);
+      row.append(path);
+    }
 
     const meta = document.createElement("div");
     meta.className = "ops-queue-meta";
     for (const value of [
       finding.category,
       finding.workflowSlug || finding.templateId,
-      finding.taskId ? `task ${finding.taskId}` : "",
-      finding.docPath || finding.docId || finding.instructionDocId,
-      finding.nextAction,
-    ]
-      .filter(Boolean)
-      .slice(0, 5)) {
+    ].filter(Boolean)) {
       const chip = document.createElement("span");
       chip.textContent = value;
       meta.append(chip);
     }
-    row.append(head, summary, meta);
+    // One labeled affordance: the whole row opens the finding's destination.
+    const open = document.createElement("span");
+    open.className = "ops-queue-row-open";
+    open.textContent = finding.taskId
+      ? "Open task"
+      : finding.cardId
+        ? "Open card"
+        : pathValue
+          ? "Open doc"
+          : "Find template";
+    meta.append(open);
+    row.append(meta);
     return row;
   }
 
@@ -576,9 +614,7 @@ export function createOperationsOverview(context) {
     header.className = "ops-section-header";
     const title = document.createElement("h3");
     title.textContent = "Assistant, Artifact, Inbox, And Search States";
-    const meta = document.createElement("span");
-    meta.textContent = "Honest availability";
-    header.append(title, meta);
+    header.append(title);
     wrap.append(header);
 
     const grid = document.createElement("div");

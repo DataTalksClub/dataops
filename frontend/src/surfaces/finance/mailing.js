@@ -10,7 +10,8 @@ export function createMailingExportsSurface(context) {
     surface.className = "mailing-exports-surface";
     surface.innerHTML = html`<header>
         <div>
-          <h2>Mailing-list exports</h2>
+          <p class="surface-eyebrow">Operations</p>
+          <h1>Mailing-list exports</h1>
           <p>
             Private account-wide audiences archives. Mailchimp permits one
             export at a time and one completed export per 24 hours.
@@ -248,7 +249,7 @@ export function createMailingExportsSurface(context) {
             >
           </div>`;
       }
-      return html`<p class="honest-state">All export history loaded.</p>`;
+      return "";
     }
 
     function drawConfigs() {
@@ -291,6 +292,8 @@ export function createMailingExportsSurface(context) {
       drawConfigs();
       historyRoot.innerHTML =
         `${historyMarkup(runs)}${continuationMarkup()}`;
+      // With no configuration the honest-state card already explains the
+      // absence; a second banner saying the same thing is noise.
       status.textContent = exportState.failed && latestConfigs === null
         ? `Could not load mailing-list exports: ${exportState.error}`
         : configs.length
@@ -301,9 +304,10 @@ export function createMailingExportsSurface(context) {
                 ? ` Export history is incomplete: ${exportState.error}`
                 : exportState.moreAvailable
                   ? " More export history is available."
-                  : " All export history loaded."
+                  : ""
             }`
-          : "No export configurations are enabled.";
+          : "";
+      status.hidden = !status.textContent;
     }
 
     surface.querySelector("[data-refresh]").addEventListener("click", load);

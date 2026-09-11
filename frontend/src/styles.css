@@ -19,16 +19,25 @@
   --success-bg: #e6f6ea;
   --success-text: #116329;
   --success-border: #b7dfc2;
-  --warning-bg: #fff6d7;
-  --warning-text: #7d4e00;
-  --warning-border: rgba(191, 135, 0, 0.32);
+  /* Operational-dashboard warning chip: #fff8c5 surface, #d4a72c border,
+     #7a5c00 text. */
+  --warning-bg: #fff8c5;
+  --warning-text: #7a5c00;
+  --warning-border: #d4a72c;
   --danger-bg: #fff0ee;
   --danger-text: #cf222e;
   --danger-border: rgba(207, 34, 46, 0.24);
   --info-bg: #edf5ff;
   --info-text: #315f8f;
   --info-border: rgba(49, 95, 143, 0.22);
-  --focus-ring: rgba(49, 95, 143, 0.4);
+  --focus-ring: rgba(49, 95, 143, 0.6);
+
+  /* Operational-dashboard attention ramp: overdue pressure reads red, due
+     reads amber, waiting reads gray, and "on track" is quiet track gray. */
+  --attention-overdue: #cf222e;
+  --attention-due: #9a6700;
+  --attention-waiting: #8c959f;
+  --attention-ontrack: #d8dee4;
 
   /* Course Management Platform primary action and selected-state palette. */
   --accent: #315f8f;
@@ -42,6 +51,9 @@
   --control-hover-border: #d0d7de;
 
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Quantities, timings and IDs render in IBM Plex Mono so debt pressure
+     reads as data, not prose. */
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 6px;
   --shadow-overlay: 0 8px 24px rgba(15, 23, 42, 0.16);
   --sidebar-width: 268px;
@@ -269,8 +281,8 @@ body[data-workspace-view="inbox"] .intake-row.is-selected {
 body[data-workspace-view="inbox"] .intake-row:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
 }
 
 body[data-workspace-view="inbox"] .intake-row > span {
@@ -585,9 +597,13 @@ body.dark {
   --danger-text: #ff7b72;
   --danger-border: rgba(218, 54, 51, 0.4);
   --info-bg: rgba(77, 127, 168, 0.22);
+  /* Dark ramp: the light-mode attention reds/ambers fail contrast on the
+     dark surface, so the ramp re-points at the dark danger/warning values. */
+  --attention-overdue: #ff7b72;
+  --attention-due: #d4a72c;
   --info-text: #8bb7df;
   --info-border: rgba(77, 127, 168, 0.42);
-  --focus-ring: rgba(139, 183, 223, 0.4);
+  --focus-ring: rgba(139, 183, 223, 0.6);
   --accent: #8bb7df;
   --accent-hover: #a7cbed;
   --accent-soft: rgba(77, 127, 168, 0.22);
@@ -646,7 +662,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1284,27 +1300,66 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-daily-header {
-  display: grid;
-  align-items: start;
-  gap: 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   border-bottom: 1px solid var(--border-muted);
   padding-bottom: 20px;
 }
 
-.home-daily-header h2 {
+.home-daily-header > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.home-daily-header h1 {
   margin: 0;
   color: var(--text-heading);
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .home-daily-header time {
   display: block;
-  margin-top: 2px;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.home-purpose {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Carried debt: quantified overdue pressure next to the day headline. */
+.home-debt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 6px 0 0;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.home-debt-chip strong {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .home-quick-actions {
@@ -1326,8 +1381,8 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   background: var(--control-bg);
   color: var(--text-primary);
   padding: 5px 12px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -1349,9 +1404,10 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   background: var(--primary-hover);
 }
 
+/* Segmented attention strip: three counted segments with status dots. */
 .home-status-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--border-muted);
   border-radius: var(--radius);
@@ -1360,11 +1416,11 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 
 .home-status-item {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-height: 58px;
-  padding: 10px 16px;
+  padding: 10px 14px;
 }
 
 .home-status-item + .home-status-item {
@@ -1372,45 +1428,61 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-status-item span {
-  color: var(--text-primary);
-  font-weight: 600;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .home-status-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  font-size: 12px;
 }
 
-.home-status-label svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.home-status-text {
+  display: inline-flex;
+  min-width: 0;
 }
 
-.home-status-overdue .home-status-label {
-  color: var(--danger-text);
+.home-status-text-short {
+  display: none;
 }
 
-.home-status-waiting .home-status-label {
-  color: var(--warning-text);
+.home-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.home-status-overdue .home-status-dot {
+  background: var(--attention-overdue);
+}
+
+.home-status-today .home-status-dot {
+  background: var(--attention-due);
+}
+
+.home-status-waiting .home-status-dot {
+  background: var(--attention-due);
+}
+
+.home-status-missing-proof .home-status-dot {
+  background: var(--attention-due);
+}
+
+/* Dots mirror the row markers: red is overdue, amber is work that needs
+   you today (due, follow-up due, or blocked on proof). */
+.home-attention-today .home-task-marker {
+  background: var(--attention-due);
 }
 
 .home-status-item strong {
-  color: var(--accent);
-  font-size: 16px;
-}
-
-.home-status-overdue strong {
-  color: var(--danger-text);
-}
-
-.home-status-waiting strong {
-  color: var(--warning-text);
+  color: var(--text-heading);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .home-status-item[data-state="unavailable"] span,
@@ -1458,13 +1530,15 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   list-style: none;
 }
 
+/* Attention rows: a 3px marker column, the work, its card, the honest
+   timing, and one action — the operator scans the marker edge first. */
 .home-attention-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1.45fr) minmax(130px, 0.7fr) minmax(112px, 0.65fr) auto;
-  gap: 12px;
+  grid-template-columns: 3px minmax(0, 1fr) minmax(150px, 190px) minmax(120px, 148px) 76px;
+  gap: 14px;
   align-items: center;
-  min-height: 64px;
-  padding: 8px 16px;
+  min-height: 56px;
+  padding: 12px 16px 12px 0;
 }
 
 .home-attention-row + .home-attention-row {
@@ -1476,58 +1550,29 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-task-marker {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.home-task-marker::before {
-  content: "·";
-  transform: translateY(-1px);
+  align-self: stretch;
+  width: 3px;
+  border-radius: 0;
+  background: var(--attention-waiting);
 }
 
 .home-attention-overdue .home-task-marker {
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
-  color: var(--danger-text);
-}
-
-.home-attention-overdue .home-task-marker::before {
-  content: "!";
-  transform: none;
+  background: var(--attention-overdue);
 }
 
 .home-attention-follow-up .home-task-marker {
-  border-color: var(--warning-border);
-  background: var(--warning-bg);
-  color: var(--warning-text);
-}
-
-.home-attention-follow-up .home-task-marker::before {
-  content: "↻";
-  transform: none;
+  background: var(--attention-due);
 }
 
 .home-attention-missing-proof .home-task-marker {
-  border-color: var(--info-border);
-  background: var(--info-bg);
-  color: var(--info-text);
+  background: var(--attention-due);
 }
 
-.home-attention-missing-proof .home-task-marker::before {
-  content: "+";
-  transform: none;
-}
-
-.home-task-content,
-.home-task-state {
-  display: contents;
+.home-task-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .home-task-content strong {
@@ -1535,14 +1580,23 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   color: var(--text-heading);
   display: -webkit-box;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.35;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.home-task-workflow,
+.home-task-context {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-task-card,
 .home-task-state time {
   overflow: hidden;
   color: var(--text-muted);
@@ -1551,17 +1605,28 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   white-space: nowrap;
 }
 
+/* Timings are quantities: overdue debt renders in the mono ramp. */
+.home-task-state time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .home-attention-overdue .home-task-state time,
 .home-attention-missing-proof .home-task-state time {
-  color: var(--danger-text);
+  color: var(--attention-overdue);
+  font-weight: 500;
 }
 
 .home-attention-follow-up .home-task-state time {
-  color: var(--warning-text);
+  color: var(--attention-due);
+  font-weight: 500;
 }
 
 .home-task-action {
-  min-width: 96px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px 10px;
+  font-size: 12px;
   background: var(--control-bg);
 }
 
@@ -3906,7 +3971,7 @@ body.dark .danger-button {
   text-align: left;
 }
 
-.ops-surface-recurring .ops-surface-header h3 {
+.ops-surface-recurring .ops-surface-header h1 {
   margin: 0;
   color: var(--text-heading);
   font-size: 22px;
@@ -4004,11 +4069,12 @@ body.dark .danger-button {
   font-size: 18px;
 }
 
-.recurring-summary-paused[data-state="ready"] strong {
+/* Attention colors signal work, not absence: zeros stay neutral. */
+.recurring-summary-paused[data-state="ready"][data-nonzero="true"] strong {
   color: var(--warning-text);
 }
 
-.recurring-summary-today[data-state="ready"] strong {
+.recurring-summary-today[data-state="ready"][data-nonzero="true"] strong {
   color: var(--accent);
 }
 
@@ -4276,12 +4342,12 @@ body.dark .danger-button {
   text-transform: uppercase;
 }
 
-.workflow-board-header h2,
+.workflow-board-header h1,
 .workflow-board-header p {
   margin: 0;
 }
 
-.workflow-board-header h2 {
+.workflow-board-header h1 {
   color: var(--text-heading);
   font-size: 30px;
   line-height: 1.25;
@@ -5160,7 +5226,7 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
 
 .planner-heading { min-width: 0; }
 .planner-eyebrow,
-.planner-heading h2,
+.planner-heading h1,
 .planner-heading p,
 .calendar-content-header h3,
 .calendar-content-header p,
@@ -5179,7 +5245,7 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   text-transform: uppercase;
 }
 
-.planner-heading h2 {
+.planner-heading h1 {
   margin-top: 2px;
   color: var(--text-heading);
   font-size: 32px;
@@ -5556,7 +5622,7 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   .calendar-surface { gap: 16px; }
 
   .planner-header { display: grid; gap: 12px; padding-bottom: 16px; }
-  .planner-heading h2 { font-size: 22px; }
+  .planner-heading h1 { font-size: 22px; }
   .planner-heading > p:last-child { margin-top: 4px; font-size: 13px; }
   .planner-header > .primary-button,
   .calendar-period-actions button,
@@ -5620,7 +5686,7 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     align-items: flex-start;
   }
 
-  .workflow-board-header h2 {
+  .workflow-board-header h1 {
     font-size: 22px;
   }
 
@@ -5691,20 +5757,26 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     gap: 14px;
   }
 
+  /* Mobile triage deck (1d): one decision per card, honest counts up top,
+     and every control at the 44px target floor. */
   .home-daily-header {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
   }
 
-  .home-daily-header h2 {
+  .home-daily-header h1 {
     display: block;
-    font-size: 26px;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
 
   .home-daily-header time {
-    color: var(--text-heading);
-    font-size: 22px;
-    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 400;
   }
 
   .home-quick-actions {
@@ -5722,19 +5794,24 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     gap: 2px;
     min-height: 60px;
     padding: 8px 4px;
+    text-align: center;
   }
 
   .home-status-item span {
-    font-size: 13px;
+    font-size: 12px;
   }
 
-  .home-status-label {
-    gap: 5px;
+  /* Short segment labels keep the three numerals on one baseline. */
+  .home-status-text-long {
+    display: none;
   }
 
-  .home-status-label svg {
-    width: 18px;
-    height: 18px;
+  .home-status-text-short {
+    display: inline;
+  }
+
+  .home-status-item strong {
+    font-size: 20px;
   }
 
   .home-attention {
@@ -5747,45 +5824,82 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     padding: 8px 14px;
   }
 
-  .home-attention-row {
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    grid-template-areas:
-      "marker title action"
-      "marker timing action";
-    gap: 3px 10px;
-    min-height: 82px;
-    padding: 9px 12px;
+  .home-attention-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .home-attention-row,
+  .home-attention-row + .home-attention-row {
+    border: 1px solid var(--border-muted);
+    border-left-width: 3px;
+    border-left-color: var(--attention-waiting);
+    border-radius: var(--radius);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  .home-attention-row:hover {
+    background: var(--surface-bg);
+  }
+
+  .home-attention-row.home-attention-overdue {
+    border-left-color: var(--attention-overdue);
+  }
+
+  .home-attention-row.home-attention-follow-up,
+  .home-attention-row.home-attention-missing-proof,
+  .home-attention-row.home-attention-today {
+    border-left-color: var(--attention-due);
   }
 
   .home-task-marker {
-    grid-area: marker;
-    width: 20px;
-    height: 20px;
-  }
-
-  .home-task-content {
-    display: contents;
-  }
-
-  .home-task-content strong {
-    grid-area: title;
-  }
-
-  .home-task-workflow {
     display: none;
   }
 
-  .home-task-state {
-    display: contents;
+  .home-task-content {
+    display: flex;
+    gap: 4px;
+  }
+
+  .home-task-content strong {
+    display: block;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    font-size: 15px;
+    line-height: 1.3;
+    -webkit-line-clamp: unset;
+  }
+
+  .home-task-context,
+  .home-task-card {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    line-height: 1.45;
   }
 
   .home-task-state time {
-    grid-area: timing;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    font-size: 13px;
   }
 
   .home-task-action {
-    grid-area: action;
-    min-width: 84px;
+    justify-self: stretch;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 18px;
+    font-size: 14px;
+  }
+
+  .home-attention-expand,
+  .home-view-all {
     min-height: 44px;
   }
 
@@ -6178,10 +6292,10 @@ body[data-workspace-view="calendar"] .document-list {
 .bookkeeping-header h2,
 .crm-header h2,
 .mailing-exports-surface > header h2,
-.planner-heading h2,
-.ops-surface-admin .ops-surface-header h3,
-.ops-surface-users .ops-surface-header h3,
-.ops-surface-device .ops-surface-header h3 {
+.planner-heading h1,
+.ops-surface-admin .ops-surface-header h1,
+.ops-surface-users .ops-surface-header h1,
+.ops-surface-device .ops-surface-header h1 {
   color: var(--text-heading);
   font-weight: 650;
   letter-spacing: -0.025em;
@@ -6869,7 +6983,7 @@ body[data-workspace-view="calendar"] .document-list {
   padding-bottom: 22px;
 }
 
-.planner-heading h2 {
+.planner-heading h1 {
   font-size: 34px;
 }
 
@@ -7060,9 +7174,9 @@ body[data-workspace-view="calendar"] .document-list {
   text-align: left;
 }
 
-.ops-surface-admin .ops-surface-header h3,
-.ops-surface-users .ops-surface-header h3,
-.ops-surface-device .ops-surface-header h3 {
+.ops-surface-admin .ops-surface-header h1,
+.ops-surface-users .ops-surface-header h1,
+.ops-surface-device .ops-surface-header h1 {
   margin: 0;
   font-size: 30px;
   line-height: 1.2;
@@ -7657,15 +7771,6 @@ body[data-workspace-view="home"] .home-daily-header {
   line-height: 1.5;
 }
 
-body[data-workspace-view="home"] .home-status-strip,
-body[data-workspace-view="home"] .home-attention {
-  border-radius: 8px;
-}
-
-body[data-workspace-view="home"] .home-status-item {
-  min-height: 48px;
-}
-
 body[data-workspace-view="home"] .home-attention > header {
   min-height: 60px;
   justify-content: space-between;
@@ -7693,25 +7798,16 @@ body[data-workspace-view="home"] .home-attention > header h3 {
   margin-left: auto;
 }
 
-body[data-workspace-view="home"] .home-attention-row {
-  grid-template-columns: 24px minmax(0, 1fr) minmax(120px, 170px) auto;
-  min-height: 82px;
-  padding: 14px 16px;
-}
-
-body[data-workspace-view="home"] .home-task-content {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-}
-
+/* Long titles and contexts wrap inside the queue columns instead of
+   clipping; the marker edge keeps the row scannable. */
 body[data-workspace-view="home"] .home-task-content strong {
   display: block;
   overflow: visible;
   overflow-wrap: anywhere;
 }
 
-body[data-workspace-view="home"] .home-task-workflow,
+body[data-workspace-view="home"] .home-task-context,
+body[data-workspace-view="home"] .home-task-card,
 body[data-workspace-view="home"] .home-task-state time {
   overflow: visible;
   overflow-wrap: anywhere;
@@ -7723,42 +7819,34 @@ body[data-workspace-view="home"] .home-attention-row:hover {
   background: var(--surface-hover);
 }
 
+/* Quiet contextual links after the queue (1a): a question and its answer. */
 .home-next-destinations {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
   width: min(var(--content-width), 100%);
-  gap: 12px;
 }
 
-.home-next-destinations button {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  padding: 12px 4px;
-  text-align: left;
-  white-space: normal;
-}
-
-.home-next-destinations button:hover {
-  background: var(--surface-hover);
-}
-
-.home-next-destinations strong {
-  color: var(--link-color);
+.home-next-destinations > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
-.home-next-destinations strong::after {
-  content: " →";
+.home-next-destinations button {
+  border: 0;
+  background: none;
+  padding: 4px 2px;
+  color: var(--link-color);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.home-next-destinations span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.5;
+.home-next-destinations button:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
 }
 
 @media (max-width: 820px) {
@@ -7782,32 +7870,9 @@ body[data-workspace-view="home"] .home-attention-row:hover {
     gap: 12px;
   }
 
-  body[data-workspace-view="home"] .home-daily-header {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    padding-bottom: 0;
-  }
-
-  body[data-workspace-view="home"] .home-daily-header time {
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 400;
-  }
-
   .home-purpose {
     margin-top: 6px;
     font-size: 13px;
-  }
-
-  body[data-workspace-view="home"] .home-status-item {
-    display: flex;
-    gap: 6px;
-    padding: 8px 4px;
-    min-height: 44px;
-  }
-
-  .home-status-label svg {
-    display: none;
   }
 
   body[data-workspace-view="home"] .home-attention > header {
@@ -7815,26 +7880,13 @@ body[data-workspace-view="home"] .home-attention-row:hover {
     align-content: center;
   }
 
-  body[data-workspace-view="home"] .home-attention-row {
-    grid-template-columns: 20px minmax(0, 1fr) auto;
-    grid-template-areas: "marker title action" "marker timing action";
-    gap: 5px 8px;
-    padding: 14px 12px;
-  }
-
-  body[data-workspace-view="home"] .home-task-content {
-    display: contents;
-  }
-
   .home-next-destinations {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     gap: 0;
   }
 
   .home-next-destinations button {
-    min-height: 56px;
-    padding: 10px 4px;
-    border-bottom: 1px solid var(--border-muted);
+    min-height: 44px;
   }
 }
 
@@ -7925,7 +7977,7 @@ body[data-workspace-view="home"] .home-attention-row:hover {
   .bookkeeping-header h2,
   .crm-header h2,
   .mailing-exports-surface > header h2,
-  .planner-heading h2 {
+  .planner-heading h1 {
     font-size: 24px;
   }
 
@@ -8332,7 +8384,7 @@ body[data-workspace-view="tasks"] .operations-home .ops-surface-header {
   text-align: left;
 }
 
-body[data-workspace-view="tasks"] .operations-home .ops-surface-header h3 {
+body[data-workspace-view="tasks"] .operations-home .ops-surface-header h1 {
   margin: 0;
   color: var(--text-heading);
   font-size: clamp(24px, 3vw, 32px);
@@ -8645,7 +8697,7 @@ body[data-workspace-view="tasks"] .workflow-board-header {
   padding: 16px 18px;
 }
 
-body[data-workspace-view="tasks"] .workflow-board-header h2 {
+body[data-workspace-view="tasks"] .workflow-board-header h1 {
   font-size: clamp(24px, 3vw, 32px);
   letter-spacing: -0.025em;
 }
@@ -8711,7 +8763,7 @@ body[data-workspace-view="tasks"] .ops-workflow-card.workflow-board-card:focus-v
 body[data-workspace-view="tasks"] .runtime-template-row:focus-visible,
 body[data-workspace-view="tasks"] .ops-queue-row:focus-visible,
 body[data-workspace-view="tasks"] .assistant-job-row:focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -10304,8 +10356,8 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
 }
 
 @media (max-width: 480px) {
-  body[data-workspace-view="tasks"] .operations-home .ops-surface-header h3,
-  body[data-workspace-view="tasks"] .workflow-board-header h2 {
+  body[data-workspace-view="tasks"] .operations-home .ops-surface-header h1,
+  body[data-workspace-view="tasks"] .workflow-board-header h1 {
     font-size: 23px;
   }
 
@@ -10425,7 +10477,7 @@ body[data-workspace-view="docs"] .document-list {
   text-align: left;
 }
 
-.ops-surface-docs > .ops-surface-header h3 {
+.ops-surface-docs > .ops-surface-header h1 {
   margin: 0;
   color: var(--text-heading);
   font-size: 32px;
@@ -12460,4 +12512,1044 @@ body[data-workspace-view="tasks"] .ops-queue-row strong {
   body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     flex: 1 1 140px;
   }
+}
+
+/* ── Operational dashboard redesign — Slice 2 (issue #229) ─────────────
+   My Plan session lanes and the Inbox triage queue in the shared
+   marker-edge language; honest copy and 44px mobile targets. */
+
+/* Inbox: marker edge answers "what needs triage" before the row is read. */
+body[data-workspace-view="inbox"] .intake-row {
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px 16px 12px 0;
+}
+
+body[data-workspace-view="inbox"] .intake-row-marker {
+  align-self: stretch;
+  width: 3px;
+  border-radius: 0;
+  background: var(--attention-waiting);
+}
+
+body[data-workspace-view="inbox"] .intake-new .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-new .intake-row-marker {
+  background: var(--attention-due);
+}
+
+body[data-workspace-view="inbox"] .intake-row.intake-blocked .intake-row-marker {
+  background: var(--attention-overdue);
+}
+
+body[data-workspace-view="inbox"] .intake-row.intake-attached .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-converted .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-ignored .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-duplicate .intake-row-marker,
+body[data-workspace-view="inbox"] .intake-row.intake-archived .intake-row-marker {
+  background: var(--border-muted);
+}
+
+body[data-workspace-view="inbox"] .intake-row small {
+  font-size: 12px;
+}
+
+/* Surface headers read as page hierarchy: left-aligned, 16px title.
+   The operations grid center-aligns children, so the header takes the
+   content width to read as a document column. */
+.ops-surface .ops-surface-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(var(--content-width), 100%);
+  text-align: left;
+  padding: 0;
+}
+
+.ops-surface .ops-surface-intro,
+.ops-inbox .intake-filter-bar,
+.ops-inbox > .intake-panel {
+  justify-self: start;
+  width: min(var(--content-width), 100%);
+  text-align: left;
+}
+
+.ops-inbox > .intake-panel summary {
+  justify-self: start;
+  width: fit-content;
+}
+
+.ops-surface .ops-surface-header h1 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ops-surface .ops-surface-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* My Plan: sessions read as plan lanes — marker edge for state, honest
+   copy, one primary action per session. */
+.my-plan-surface .operating-model-header,
+.my-plan-surface .operating-model-intro {
+  text-align: left;
+}
+
+.my-plan-surface .plan-session {
+  position: relative;
+  border: 1px solid var(--border-muted);
+  border-left: 3px solid var(--attention-waiting);
+  border-radius: var(--radius);
+  background: var(--surface-bg);
+  padding: 14px 16px;
+}
+
+.my-plan-surface .plan-session.plan-active {
+  border-left-color: var(--attention-due);
+}
+
+.my-plan-surface .plan-session.plan-completed {
+  border-left-color: var(--border-muted);
+}
+
+.my-plan-surface .plan-session .review-badge {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 820px) {
+  body[data-workspace-view="inbox"] .intake-row {
+    grid-template-columns: 3px minmax(0, 1fr);
+  }
+
+  body[data-workspace-view="inbox"] .intake-row em {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .my-plan-surface .plan-session-actions .primary-button,
+  .my-plan-surface .plan-session-actions .quiet-button {
+    min-height: 44px;
+  }
+
+  .my-plan-surface .plan-session-date {
+    min-height: 44px;
+  }
+}
+
+/* Bell badge: a red attention badge with "0" is a false zero; the count
+   only shows when there is something to see (or a load failed). */
+.work-bell-count {
+  visibility: hidden;
+}
+
+.work-bell-count.is-visible {
+  visibility: visible;
+}
+
+/* My Plan: one anchored column for header, sessions, and honest states so
+   the page origin does not shift when data availability changes. */
+.my-plan-surface > * {
+  width: min(var(--content-width), 100%);
+  margin-inline: auto;
+}
+
+/* My Plan anchors to the same document column in every state, so the page
+   origin does not move when the operating model is unavailable. */
+body[data-workspace-view="my-plan"] #document-list {
+  width: min(896px, calc(100vw - 300px));
+  max-width: none;
+  margin-inline: auto;
+}
+
+@media (max-width: 820px) {
+  body[data-workspace-view="my-plan"] #document-list {
+    width: calc(100vw - 28px);
+  }
+}
+
+/* The unavailable-state box and the header share the session column's full
+   width — retrying never reshuffles the page frame. */
+body[data-workspace-view="my-plan"] .my-plan-surface > .review-empty-state,
+body[data-workspace-view="my-plan"] .my-plan-surface > .operating-model-header {
+  width: 100%;
+  max-width: none;
+}
+
+/* The unavailable-state box and the header share the session column's full
+   width — retrying never reshuffles the page frame. */
+body[data-workspace-view="my-plan"] .my-plan-surface > .review-empty-state,
+body[data-workspace-view="my-plan"] .my-plan-surface > .operating-model-header {
+  width: 100%;
+  max-width: none;
+}
+
+/* The my-plan surface itself must fill the document column: the column is
+   a shrink-wrapping grid, so an auto-width surface collapses to its content
+   and the header origin jumps between data states. */
+body[data-workspace-view="my-plan"] .my-plan-surface {
+  width: 100%;
+  max-width: none;
+}
+
+/* The my-plan surface itself must fill the document column: the column is
+   a shrink-wrapping grid, so an auto-width surface collapses to its content
+   and the header origin jumps between data states. */
+body[data-workspace-view="my-plan"] .my-plan-surface {
+  width: 100%;
+  max-width: none;
+}
+
+/* Queue meta reads as quiet context, not pill spam: plain muted facts
+   separated by dots, with proof requirements as the only attention chip. */
+.ops-queue-meta .ops-queue-chip {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ops-queue-meta .ops-queue-chip + .ops-queue-chip::before {
+  content: "· ";
+  color: var(--text-faint);
+}
+
+.ops-queue-meta .ops-queue-chip.is-attention {
+  color: var(--attention-due);
+  font-weight: 500;
+}
+
+/* Tasks-view queue meta: the quiet fact style must win over the legacy
+   tasks-view pill rules. */
+body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-attention {
+  color: var(--attention-due);
+  font-weight: 500;
+}
+
+/* Attention ramp for queue lanes: waiting is quiet gray, not amber; missing
+   proof reads as due-attention (amber), not information blue. */
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="waiting"] {
+  border-top-color: var(--attention-waiting);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="missing-proof"] {
+  border-top-color: var(--attention-due);
+}
+
+/* Waiting chips on the cards board follow the same gray. */
+.ops-card-meta [data-status="waiting"],
+[data-status="waiting"].planner-status,
+.planner-status.is-waiting {
+  border-color: rgba(140, 149, 159, 0.4);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+/* Mobile control floor for the Tasks family: templates/artifacts actions and
+   assistants tabs meet the 44px target. */
+@media (max-width: 820px) {
+  .ops-surface .primary-button,
+  .ops-surface .quiet-button,
+  .assistant-filter-bar .ops-subnav-tab,
+  .assistant-panel button,
+  .artifacts-panel a[href] {
+    min-height: 44px;
+  }
+}
+
+/* Waiting chips on the cards board follow the gray attention ramp. */
+.workflow-card-flag.is-waiting {
+  border-color: rgba(140, 149, 159, 0.4);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+/* Overdue debt timing in the queue reads as mono pressure in the ramp red,
+   matching Home's attention rows. */
+.ops-queue-meta .ops-queue-chip.is-debt {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--attention-overdue);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-debt {
+  color: var(--attention-overdue);
+}
+
+/* Assistant queue rows: status text stays quiet context; only a state that
+   demands a decision earns a chip (amber approval, red recovery). */
+body[data-workspace-view="tasks"] .assistant-job-row em {
+  align-self: start;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 3px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row em.is-attention {
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 3px 8px;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row em.is-danger {
+  border: 1px solid var(--danger-border);
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  padding: 3px 8px;
+}
+
+/* Git-authored template revisions are machine quantities: mono accent. */
+.runtime-template-definition dd.runtime-template-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Overdue debt timing in the queue reads as mono pressure in the ramp red,
+   matching Home's attention rows. */
+.ops-queue-meta .ops-queue-chip.is-debt {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--attention-overdue);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-debt {
+  color: var(--attention-overdue);
+}
+
+/* Assistant queue rows: status text stays quiet context; only a state that
+   demands a decision earns a chip (amber approval, red recovery). */
+body[data-workspace-view="tasks"] .assistant-job-row em {
+  align-self: start;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 3px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row em.is-attention {
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 3px 8px;
+}
+
+body[data-workspace-view="tasks"] .assistant-job-row em.is-danger {
+  border: 1px solid var(--danger-border);
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  padding: 3px 8px;
+}
+
+/* Git-authored template revisions are machine quantities: mono accent. */
+.runtime-template-definition dd.runtime-template-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* Overdue quantifiers in the overdue lane read red, matching the ramp. */
+body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="overdue"] .ops-queue-chip.is-attention {
+  color: var(--attention-overdue);
+}
+
+/* Cards uses the flat family header like every other route: no boxed
+   container, actions in a plain toolbar row. */
+body[data-workspace-view="tasks"] .workflow-board-header {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0 4px;
+}
+
+/* Empty queue lanes demote: no accent bar, muted header — good news must
+   not wear the attention ramp or push real work down the page. */
+body[data-workspace-view="tasks"] .ops-queue-group.is-empty {
+  border-top-color: var(--border-muted);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group.is-empty > header h3 {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
+  padding: 10px 16px 12px;
+}
+
+/* Adversarial round 2 (390px): the Git-authored template list must not clip
+   behind an internal scroll now that the layout stacks; the board actions
+   and artifact links meet the 44px mobile target. */
+@media (max-width: 820px) {
+  body[data-workspace-view="tasks"] .runtime-template-list {
+    max-height: none;
+    overflow: visible;
+    border-right: 0;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-board-actions > button {
+    min-height: 44px;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list .ops-data-row a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* Empty queue lanes demote: no accent bar, muted header — good news must
+   not wear the attention ramp or push real work down the page. */
+body[data-workspace-view="tasks"] .ops-queue-group.is-empty {
+  border-top-color: var(--border-muted);
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group.is-empty > header h3 {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
+  padding: 10px 16px 12px;
+}
+
+/* Adversarial round 2 (390px): the Git-authored template list must not clip
+   behind an internal scroll now that the layout stacks; the board actions
+   and artifact links meet the 44px mobile target. */
+@media (max-width: 820px) {
+  body[data-workspace-view="tasks"] .runtime-template-list {
+    max-height: none;
+    overflow: visible;
+    border-right: 0;
+  }
+
+  body[data-workspace-view="tasks"] .workflow-board-actions > button {
+    min-height: 44px;
+  }
+
+  body[data-workspace-view="tasks"] .ops-state-list .ops-data-row a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* Planner surfaces on mobile: the primary content (alerts, slots, calendar)
+   precedes the filter forms, which fold to the bottom of the page. */
+@media (max-width: 820px) {
+  .newsletter-surface,
+  .calendar-surface {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .newsletter-surface .newsletter-filters,
+  .calendar-surface .calendar-controls {
+    order: 9;
+  }
+}
+
+/* Planner surfaces on mobile: the primary content (alerts, slots, calendar)
+   precedes the filter forms, which fold to the bottom of the page. */
+@media (max-width: 820px) {
+  .newsletter-surface,
+  .calendar-surface {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .newsletter-surface .newsletter-filters,
+  .calendar-surface .calendar-controls {
+    order: 9;
+  }
+}
+
+/* Planner surfaces on mobile: the primary content (alerts, slots, calendar)
+   precedes the filter forms, which fold to the bottom of the page. */
+@media (max-width: 820px) {
+  .newsletter-surface,
+  .calendar-surface {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .newsletter-surface .newsletter-filters,
+  .calendar-surface .calendar-controls {
+    order: 9;
+  }
+}
+
+/* Every queue row shows its one affordance: the whole row opens the task. */
+.ops-queue-row-open {
+  margin-left: auto;
+  color: var(--link-color);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ops-queue-row:hover .ops-queue-row-open,
+.ops-queue-row:focus-visible .ops-queue-row-open {
+  text-decoration: underline;
+}
+
+/* Every queue row shows its one affordance: the whole row opens the task. */
+.ops-queue-row-open {
+  margin-left: auto;
+  color: var(--link-color);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ops-queue-row:hover .ops-queue-row-open,
+.ops-queue-row:focus-visible .ops-queue-row-open {
+  text-decoration: underline;
+}
+
+/* Page titles are the document H1 on every surface (SCOPE: one clear H1
+   per page); the eyebrow carries the section, the H1 the page name. */
+.operating-model-header h1,
+.bookkeeping-header h1,
+.mailing-exports-surface > header h1,
+.crm-header h1,
+.review-header-copy h1 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+/* ── Slice 4 review round 3 (#229): quantities, ramps, mobile floors ──── */
+
+/* Quantities on the finance surfaces render in the mono ramp. */
+.newsletter-period header span,
+.calendar-period ~ span,
+.planner-count,
+.section-count,
+.bookkeeping-totals,
+.ledger-amount {
+  font-family: var(--font-mono);
+}
+
+/* Calendar attention banners follow the severity ramps: warnings in the
+   warning chip ramp, info notes calm. */
+.calendar-alert.is-warning {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.calendar-alert.is-warning strong {
+  color: var(--warning-text);
+}
+
+/* Mobile: secondary actions on the finance surfaces meet the 44px floor.
+   The :not() chain mirrors the 34px control rule's specificity so the floor
+   wins without !important. */
+@media (max-width: 820px) {
+  .newsletter-surface button,
+  .calendar-surface button,
+  .mailing-exports-surface button,
+  .bookkeeping-surface button:not(.primary-button, .quiet-button, .danger-button),
+  .sponsor-crm-surface button:not(.primary-button, .quiet-button, .danger-button) {
+    min-height: 44px;
+  }
+
+  /* Mobile has no "text-sized control" exemption: the danger text action and
+     the filters disclosure become real ≥44px targets. */
+  .bookkeeping-surface .danger-text-button,
+  .sponsor-crm-surface .danger-text-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius);
+    background: var(--danger-bg);
+    padding: 8px 14px;
+  }
+
+  .bookkeeping-surface summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  /* Primary content (ledger, bookings) precedes the filter controls. The
+     filters sit inside their section (bookkeeping) or the two-pane master
+     (sponsors), so those become the flex boxes. */
+  .bookkeeping-surface .bookkeeping-ledger-section,
+  .sponsor-crm-surface .crm-master {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .bookkeeping-surface .bookkeeping-filters,
+  .sponsor-crm-surface .crm-master .crm-filters {
+    order: 9;
+  }
+}
+
+/* ── Slice 5 review round 1 (#229): knowledge family, panels, finance r2 ── */
+
+/* Docs and Admin share the knowledge-family header: eyebrow, H1, subtitle on
+   the normal content column, left-aligned like Review. */
+.operations-home .ops-surface-header,
+.operations-home .ops-processes-surface {
+  width: min(var(--content-width), 100%);
+}
+
+.operations-home .ops-surface-header .section-kicker {
+  margin: 0 0 2px;
+}
+
+/* Operating Model and Review use the same container as Docs instead of the
+   760px reading column, so the knowledge family shares one content width. */
+body[data-view="library"][data-workspace-view="operating-model"] .document-list:not(.is-operations-home),
+body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-operations-home) {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* Operating Model moves onto the operational-dashboard surface language.
+   My Plan reuses the same markup and keeps its accepted layout. */
+.operating-model-surface:not(.my-plan-surface) {
+  width: min(1180px, 100%);
+  max-width: none;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-card,
+.operating-model-surface:not(.my-plan-surface) .operating-model-row {
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  padding: 16px 18px;
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-grid {
+  gap: 12px;
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-count {
+  color: var(--text-heading);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-card h3,
+.operating-model-surface:not(.my-plan-surface) .operating-model-row h3 {
+  color: var(--text-heading);
+  font-size: 15px;
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-card p,
+.operating-model-surface:not(.my-plan-surface) .operating-model-row p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Quantities across the knowledge family and card detail use the mono ramp,
+   the same decision finance took in round 3. */
+.operating-model-count,
+.review-summary-value,
+.workflow-card-count {
+  font-family: var(--font-mono);
+}
+
+/* Quality rows: the message leads, the path is quiet mono, chips wrap. */
+.ops-quality-row-head {
+  flex-wrap: wrap;
+}
+
+.ops-quality-row-head strong,
+.ops-queue-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ops-quality-row-path {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* Review stat cards only alarm when the count is non-zero. */
+.review-summary-card.is-zero {
+  border-color: var(--border-muted);
+  background: var(--surface-bg);
+}
+
+.review-summary-card.is-zero .review-summary-value {
+  color: var(--text-muted);
+}
+
+/* Review queue paths: quiet mono with middle elision (full path in title). */
+.review-queue-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Task panel file control follows the system controls, not the native box. */
+.task-panel-body input[type="file"] {
+  max-width: 100%;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+/* Mailing exports: honest states inside the panels carry the same inset as
+   the panel header instead of sitting flush against the border. */
+.mailing-exports-surface .honest-state {
+  display: grid;
+  gap: 3px;
+  padding: 12px 18px;
+}
+
+.mailing-exports-surface .honest-state p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Sponsors: the booking queue column is narrow on desktop, so the row
+   stacks its actions under the text instead of squeezing the meta line. */
+@media (min-width: 821px) {
+  .crm-booking-list .crm-booking-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .crm-booking-list .crm-booking-row .row-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 820px) {
+  /* Knowledge-family controls meet the 44px floor on mobile. */
+  .operating-model-surface button,
+  .review-surface button,
+  .review-surface select,
+  .ops-quality-filters select,
+  #clear-filters-button {
+    min-height: 44px;
+  }
+
+  /* The quality filters sit in a disclosure under the section header on
+     mobile (see the round-3 block below), so no reordering is needed here. */
+
+  /* The ledger sub-description belongs under the entry value, not in the
+     label column of the collapsed table. */
+  .bookkeeping-table-wrap td > small {
+    grid-column: 2;
+  }
+
+  /* The sidebar's search-filter controls live in the mobile drawer on every
+     route, so they meet the same 44px floor as the surfaces. */
+  .custom-select-button,
+  .filter-clear,
+  .filter-row select {
+    min-height: 44px;
+  }
+
+  /* Every panel control meets the floor: the tasks-view input rules and the
+     quiet close buttons otherwise sit at 40px and 32px. The selector carries
+     the view attribute so it out-specifies those per-row rules. */
+  body[data-workspace-view] .task-modal-panel input:not([type="checkbox"]):not([type="radio"]),
+  body[data-workspace-view] .task-modal-panel select,
+  body[data-workspace-view] .task-modal-panel textarea,
+  body[data-workspace-view] .task-modal-panel button,
+  .task-panel-body input[type="file"] {
+    min-height: 44px;
+  }
+
+  .task-modal-panel .task-instruction-doc-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* ── Slice 5 review round 2 (#229): one knowledge header, mono counts ──── */
+
+/* Docs and Admin headers follow the family pattern exactly: left-aligned
+   eyebrow, H1, subtitle, no trailing rule. Docs keeps its one primary action
+   beside the text on desktop; the earlier flex-end alignment right-aligned
+   the whole stack. */
+.ops-surface-docs > .ops-surface-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: start;
+  gap: 4px 20px;
+  border-bottom: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.ops-surface-docs > .ops-surface-header > .section-kicker,
+.ops-surface-docs > .ops-surface-header > h1,
+.ops-surface-docs > .ops-surface-header > p {
+  grid-column: 1;
+}
+
+.ops-surface-docs > .ops-surface-header > .ops-docs-create {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+}
+
+.ops-surface-admin .ops-surface-header {
+  width: 100%;
+  border-bottom: 0;
+  padding: 0;
+}
+
+/* Admin cards hug their content instead of stretching to the tallest panel. */
+.ops-admin-grid {
+  align-items: start;
+}
+
+/* Inline counts inside sentences carry the mono accent. */
+.ops-count {
+  color: var(--text-heading);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+@media (max-width: 820px) {
+  /* On mobile the Docs action drops under the text. */
+  .ops-surface-docs > .ops-surface-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .ops-surface-docs > .ops-surface-header > .ops-docs-create {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 8px;
+  }
+}
+
+/* The sidebar Search filters belong to Process Docs only (DESIGN.md keeps
+   docs filters in the sidebar/drawer); other routes show no empty husk. */
+body:not([data-workspace-view="docs"]) #filters-section {
+  display: none;
+}
+
+/* Mobile: the row-hint affordance is itself a touch-sized element. */
+@media (max-width: 820px) {
+  .ops-queue-row-open {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* ── Slice 5 review round 3 (#229): reachable quality filters on mobile ── */
+
+/* Desktop keeps the filter row always visible; the disclosure affordance
+   only exists on mobile, where it sits under the section header so the
+   narrowing controls stay within the first viewport instead of after the
+   capped findings feed. */
+.ops-quality-filters-disclosure > summary {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .ops-quality-filters-disclosure {
+    border-bottom: 1px solid var(--border-muted);
+    background: var(--surface-muted);
+  }
+
+  .ops-quality-filters-disclosure > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    color: var(--text-heading);
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .ops-quality-filters-disclosure > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .ops-quality-filters-disclosure > summary::after {
+    content: "▾";
+    margin-left: auto;
+    color: var(--text-muted);
+  }
+
+  .ops-quality-filters-disclosure[open] > summary::after {
+    content: "▴";
+  }
+
+  .ops-quality-filters-disclosure > .ops-quality-filters {
+    padding-top: 0;
+  }
+
+  /* A 44px row hint must not stretch the non-interactive chips beside it. */
+  .ops-queue-meta {
+    align-items: center;
+  }
+
+  /* Finance filter selects share the 44px floor with every other control;
+     the knowledge family's selects already do. */
+  .bookkeeping-filters select,
+  .bookkeeping-upload select,
+  .crm-filters select,
+  .crm-directory .section-header select {
+    min-height: 44px;
+  }
+
+  /* Every finance control shape meets the floor: search boxes, the
+     statement month input, and the ledger row actions included. */
+  .bookkeeping-surface input:not([type="checkbox"], [type="radio"]),
+  .sponsor-crm-surface input:not([type="checkbox"], [type="radio"]),
+  .mailing-exports-surface input:not([type="checkbox"], [type="radio"]),
+  .bookkeeping-surface .row-actions button,
+  .sponsor-crm-surface .row-actions button,
+  .mailing-exports-surface .row-actions button {
+    min-height: 44px;
+  }
+
+  /* The upload file control keeps its own 32px rule (0,3,1 specificity),
+     which out-specifies the generic floor above; restate the floor at
+     matching specificity, and floor the native file-selector button too. */
+  .bookkeeping-upload .bookkeeping-file input[type="file"],
+  .bookkeeping-upload .bookkeeping-file input[type="file"]::file-selector-button {
+    min-height: 44px;
+  }
+}
+
+/* The My Plan date input uses the system input tokens so it carries dark
+   values like every other control; the legacy rule fell back to a white
+   surface on the dark theme. */
+.plan-session-date {
+  border-color: var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
+/* On desktop the Docs quality card carries its own filters; the sidebar
+   filters section would be an empty husk there. Mobile keeps it in the
+   drawer. */
+@media (min-width: 821px) {
+  #filters-section {
+    display: none;
+  }
+}
+
+/* Money quantities carry the mono accent the design system gives every
+   quantity: ledger amounts and the totals sentence read as data. */
+.ledger-amount,
+.bookkeeping-totals {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* The booking card is narrow on the sponsors desktop grid: let the text take
+   the line and the actions wrap below instead of squeezing the copy into
+   mid-phrase breaks. */
+.crm-booking-row {
+  flex-wrap: wrap;
+}
+
+.crm-booking-row > div:first-child {
+  flex: 1 1 170px;
+  min-width: 0;
+}
+
+.crm-booking-row .row-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Run history entries sit inside the card's padded body, aligned with the
+   header copy above them. */
+.mailing-export-history {
+  padding: 0 16px 12px;
+}
+
+/* The queue footer's "View all tasks" is a 44px control on mobile, but its
+   transparent styling painted it as a bare text link. Give it the same quiet
+   bordered treatment as its "Show N more" sibling. */
+@media (max-width: 820px) {
+  .home-attention > footer .home-view-all {
+    border: 1px solid var(--control-border);
+    background: var(--control-bg);
+  }
+
+  .ops-quality-row {
+    min-height: 44px;
+  }
+
+  .operating-model-card .quiet-button {
+    min-height: 44px;
+  }
+}
+
+/* Operating-model hub: stat cards are flex columns with the View CTA held
+   to the card bottom, so every View in a row shares one baseline. */
+.operating-model-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.operating-model-card .quiet-button {
+  margin-top: auto;
+  align-self: flex-start;
 }

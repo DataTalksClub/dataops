@@ -35,7 +35,11 @@ export function createProcessDocsSurface(context, services) {
     setRouteTitle("Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
+    const header = renderSurfaceHeader(
+      "Docs",
+      surfaceDescription("processes"),
+      "Knowledge operations",
+    );
     const createButton = document.createElement("button");
     createButton.type = "button";
     createButton.className = "primary-button ops-docs-create";
@@ -56,11 +60,6 @@ export function createProcessDocsSurface(context, services) {
         getOperationsQualitySnapshot(),
         getOperationsWorkSnapshot(),
       );
-    const note = renderHonestState(
-      "Processes support work",
-      "Use internal Process Docs from Task or Card context first. Findings below focus on runnable Template/Card risk and maintainer gaps.",
-    );
-    section.append(note);
 
     // Docs is the surface where an unreachable corpus is most easily mistaken
     // for an empty one, so the availability state sits above Quality Findings.
@@ -159,9 +158,23 @@ export function createProcessDocsSurface(context, services) {
     title.textContent = "Quality Findings";
     const meta = document.createElement("span");
     meta.className = "ops-section-meta";
-    meta.textContent = quality.loaded
-      ? `${quality.totalFindings} findings · ${quality.summary?.blocking || 0} blocking in template/report data`
-      : "Report unavailable";
+    if (quality.loaded) {
+      // The counts are quantities, so they carry the mono accent.
+      const total = document.createElement("strong");
+      total.className = "ops-count";
+      total.textContent = String(quality.totalFindings);
+      const blocking = document.createElement("strong");
+      blocking.className = "ops-count";
+      blocking.textContent = String(quality.summary?.blocking || 0);
+      meta.append(
+        total,
+        " findings · ",
+        blocking,
+        " blocking in template/report data",
+      );
+    } else {
+      meta.textContent = "Report unavailable";
+    }
     header.append(title, meta);
     wrap.append(header);
 
@@ -249,7 +262,28 @@ export function createProcessDocsSurface(context, services) {
       label.append(select);
       filters.append(label);
     }
-    wrap.append(filters);
+    // Mobile keeps the whole capped findings feed between the operator and a
+    // trailing filter row, so the form becomes a disclosure anchored under
+    // the section header; desktop keeps the always-visible filter row. The
+    // surface rebuilds on every filter change, so the open state lives in
+    // the filter state and the summary names how many filters are active.
+    const disclosure = document.createElement("details");
+    disclosure.className = "ops-quality-filters-disclosure";
+    const compact = isCompactViewport();
+    disclosure.open = !compact || qualityFiltersState.disclosureOpen === true;
+    disclosure.addEventListener("toggle", () => {
+      if (isCompactViewport()) {
+        qualityFiltersState.disclosureOpen = disclosure.open;
+      }
+    });
+    const activeFilterCount = Object.values(qualityFiltersState.value || {})
+      .filter(Boolean).length;
+    const disclosureSummary = document.createElement("summary");
+    disclosureSummary.textContent = activeFilterCount
+      ? `Filter findings · ${activeFilterCount} active`
+      : "Filter findings";
+    disclosure.append(disclosureSummary, filters);
+    wrap.append(disclosure);
 
     const filtered = filterQualityFindings(findings, qualityFiltersState.value);
     const list = document.createElement("div");
@@ -298,6 +332,12 @@ export function createProcessDocsSurface(context, services) {
   function uniqueSorted(values) {
     return [...new Set(values.filter(Boolean).map(String))].sort((a, b) =>
       a.localeCompare(b),
+    );
+  }
+
+  function isCompactViewport() {
+    return Boolean(
+      document.defaultView?.matchMedia?.("(max-width: 820px)")?.matches,
     );
   }
 

@@ -28,6 +28,21 @@ export function createBookkeepingSurface(context) {
     workApiUrl,
   } = context;
 
+  // Ledger dates read as short human dates; the year is kept when it is not
+  // the current one, since a finance ledger spans years.
+  function ledgerDate(value) {
+    const iso = String(value || "").slice(0, 10);
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return value || "";
+    const sameYear = iso.slice(0, 4) === String(new Date().getFullYear());
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+      ...(sameYear ? {} : { year: "numeric" }),
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+
   async function renderBookkeepingSurface() {
     documentList.replaceChildren();
     const surface = document.createElement("section");
@@ -35,7 +50,7 @@ export function createBookkeepingSurface(context) {
     surface.innerHTML = html` <header class="bookkeeping-header">
         <div>
           <p class="surface-eyebrow">Monthly close</p>
-          <h2>Bookkeeping</h2>
+          <h1>Bookkeeping</h1>
           <p>
             Record the ledger, match private evidence, and prepare a reviewable
             monthly package.
@@ -327,10 +342,10 @@ export function createBookkeepingSurface(context) {
                     (e) =>
                       html`<tr>
                         <td data-label="Transaction date">
-                          ${escapeHtml(e.transactionDate)}
+                          ${escapeHtml(ledgerDate(e.transactionDate))}
                         </td>
                         <td data-label="Paid">
-                          ${escapeHtml(e.paidDate || "Unpaid")}
+                          ${escapeHtml(e.paidDate ? ledgerDate(e.paidDate) : "Unpaid")}
                         </td>
                         <td data-label="Entry">
                           <strong>${escapeHtml(e.counterparty)}</strong

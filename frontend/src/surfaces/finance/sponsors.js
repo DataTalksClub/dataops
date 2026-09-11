@@ -406,9 +406,13 @@ export function createSponsorCrmSurface(context) {
                     >${escapeHtml(humanizeOptionLabel(item.status))}</span
                   >
                   <p>
-                    ${escapeHtml(item.plannedPublicationDate || "Publication not set")}
+                    ${escapeHtml(
+                      item.plannedPublicationDate
+                        ? `Publication ${humanSponsorDate(item.plannedPublicationDate)}`
+                        : "Publication not set",
+                    )}
                     · next action
-                    ${escapeHtml(item.nextActionDate || "not set")}
+                    ${escapeHtml(item.nextActionDate ? humanSponsorDate(item.nextActionDate) : "not set")}
                   </p>
                 </div>
                 <div class="row-actions">
@@ -426,7 +430,18 @@ export function createSponsorCrmSurface(context) {
             <p>Create a booking or adjust filters.</p>
           </div>`;
     }
-    async function refresh() {
+    function humanSponsorDate(value) {
+    const iso = String(value || "").slice(0, 10);
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return value || "";
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+
+  async function refresh() {
       message.textContent = "Loading sponsor CRM…";
       const pendingAlertPage = notificationLoader.load();
       notificationState = notificationLoader.getSnapshot();
@@ -445,7 +460,9 @@ export function createSponsorCrmSurface(context) {
       drawAlerts();
       orgOptions();
       draw();
-      message.textContent = "Sponsor CRM ready.";
+      // A loaded CRM states nothing: the bookings themselves are the evidence.
+      message.textContent = "";
+      message.hidden = true;
     }
 
     function drawAlerts() {

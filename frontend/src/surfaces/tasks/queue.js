@@ -29,9 +29,17 @@ export function createTaskQueue(context) {
   function renderWorkQueueSurface() {
     const taskRouteContext = getTaskRouteContext();
     const today = taskRouteContext.date || todayIsoDate();
-    const tasks = Array.isArray(taskRouteContext.tasks)
+    // The same task reaches this list through its lane query and its card's
+    // checklist; deduplicate by id so history lanes never double-count.
+    const seenTasks = new Set();
+    const tasks = (Array.isArray(taskRouteContext.tasks)
       ? taskRouteContext.tasks
-      : allWorkTasks(state.workSnapshot);
+      : allWorkTasks(state.workSnapshot)
+    ).filter((task) => {
+      if (seenTasks.has(task.id)) return false;
+      seenTasks.add(task.id);
+      return true;
+    });
     const groupLoaded = {
       Overdue: state.workSnapshot.overdueLoaded,
       "Follow-ups due": state.workSnapshot.waitingLoaded,
@@ -47,26 +55,34 @@ export function createTaskQueue(context) {
         state.workSnapshot.overdueLoaded ||
         state.workSnapshot.waitingLoaded,
     };
+    // Contract order: overdue, follow-ups due, then the day's work; the
+    // proof/waiting lanes follow. Populated lanes must not bury the day's
+    // work under empty ones. A task lives in exactly one lane — the first it
+    // qualifies for — so an overdue proof-blocked task is counted once, in
+    // Overdue, with its "Proof needed" line rather than listed twice.
+    const placed = new Set();
+    const lane = (predicate) => {
+      const members = tasks.filter(
+        (task) => !placed.has(task.id) && predicate(task),
+      );
+      for (const task of members) placed.add(task.id);
+      return members;
+    };
     const groups = [
-      ["Overdue", tasks.filter((task) => isTaskOverdue(task, today))],
-      [
-        "Follow-ups due",
-        tasks.filter((task) => isFollowUpDueTask(task, today)),
-      ],
+      ["Overdue", lane((task) => isTaskOverdue(task, today))],
+      ["Follow-ups due", lane((task) => isFollowUpDueTask(task, today))],
+      ["Today", lane((task) => isTaskDueToday(task, today))],
       [
         "Missing proof",
-        tasks.filter(
-          (task) => isOpenWorkTask(task) && !taskProofState(task).ok,
-        ),
+        lane((task) => isOpenWorkTask(task) && !taskProofState(task).ok),
       ],
       [
         "Waiting",
-        tasks.filter(
+        lane(
           (task) =>
             isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today),
         ),
       ],
-      ["Today", tasks.filter((task) => isTaskDueToday(task, today))],
       [
         "Done / history",
         tasks.filter(
@@ -91,7 +107,9 @@ export function createTaskQueue(context) {
       heading.textContent = "Queue context";
       const summary = document.createElement("p");
       summary.textContent = [
-        taskRouteContext.date ? `Date ${taskRouteContext.date}` : "",
+        taskRouteContext.date
+          ? `Date ${queueDueLabel(taskRouteContext.date, today)}`
+          : "",
         taskRouteContext.cardId
           ? `Filtered to card ${taskRouteContext.filterCard?.title || taskRouteContext.cardId}`
           : "",
@@ -116,9 +134,24 @@ export function createTaskQueue(context) {
       }
       section.append(routeContext);
     }
+    // Empty lanes explain what is absent and what would appear here, so a
+    // quiet lane reads as good news rather than a dead end.
+    const emptyCopy = {
+      Overdue: "Nothing is overdue. Work that passes its due date will surface here first.",
+      "Follow-ups due":
+        "No follow-ups are due. Tasks you promised to revisit will appear here.",
+      Today: "Nothing is due today. Work due later will appear here as its date arrives.",
+      "Missing proof":
+        "No missing proof work. Tasks that need a link or artifact will surface here.",
+      Waiting:
+        "No waiting work. Tasks blocked on other people will appear here.",
+      "Done / history": "No completed work yet.",
+    };
     for (const [groupIndex, [label, list]] of groups.entries()) {
       const group = document.createElement("article");
       group.className = "ops-queue-group";
+      const isEmpty = list.length === 0 && Boolean(groupLoaded[label]);
+      if (isEmpty) group.classList.add("is-empty");
       group.dataset.queueGroup = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       const header = document.createElement("header");
       const title = document.createElement("h3");
@@ -148,7 +181,7 @@ export function createTaskQueue(context) {
         empty.className = "ops-empty";
         empty.dataset.state = groupLoaded[label] ? "empty" : "unavailable";
         empty.textContent = groupLoaded[label]
-          ? `No ${label.toLowerCase()} work.`
+          ? emptyCopy[label] || `No ${label.toLowerCase()} work.`
           : "Live work data unavailable.";
         rows.append(empty);
       } else {
@@ -220,6 +253,44 @@ export function createTaskQueue(context) {
     return routeState;
   }
 
+  // Short human date for instants (follow-ups), independent of lane wording.
+  function queueShortDate(value) {
+    const parsed = new Date(String(value || ""));
+    if (Number.isNaN(parsed.getTime())) return String(value || "");
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+    }).format(parsed);
+  }
+
+  // Human due moments: relative words for today/yesterday/tomorrow, a short
+  // date otherwise — never a bare ISO quantity in the queue. Timestamped
+  // values (followUpAt carries a time) are compared on their day.
+  function queueDueLabel(date, today) {
+    const day = String(date || "").slice(0, 10);
+    const relative = formatTaskDateMeta(day, today);
+    if (relative !== day) return relative;
+    const parsed = new Date(`${day}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime())
+      ? relative
+      : new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }).format(parsed);
+  }
+
+  // Overdue time reads as accumulated debt (mono day blocks + days), matching
+  // Home's attention queue — not a bare due date.
+  function overdueDays(due, today) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !/^\d{4}-\d{2}-\d{2}$/.test(today))
+      return 0;
+    return Math.round(
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${due}T00:00:00Z`)) /
+        86400000,
+    );
+  }
+
   function renderWorkQueueRow(task, today) {
     if (!isCanonicalWorkTask(task)) {
       throw new Error("Task payload is not in the canonical versioned shape");
@@ -234,26 +305,67 @@ export function createTaskQueue(context) {
     title.textContent = workTaskTitle(task);
     const meta = document.createElement("div");
     meta.className = "ops-queue-meta";
-    const status = task.status;
-    for (const value of [
-      status,
-      task.date ? `Due ${formatTaskDateMeta(task.date, today)}` : "",
-      task.assigneeId
-        ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
-        : "Unassigned",
-      task.cardId ? "Card task" : "Independent task",
-      taskSourceLabel(task),
-      taskProofState(task).label,
-    ].filter(Boolean)) {
+    // Meta says what changes the triage decision: the human due moment, the
+    // owner, and proof/waiting requirements. Defaults (todo, manual, no
+    // proof, card membership) stay quiet instead of pill-spamming every row.
+    const proof = taskProofState(task);
+    const due = String(task.date || "").slice(0, 10);
+    const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
+    for (const [value, attention, debtTiming] of [
+      [
+        debt > 0
+          ? `${"■".repeat(Math.min(debt, 5))} ${debt} day${debt === 1 ? "" : "s"} overdue`
+          : task.date
+            ? `Due ${queueDueLabel(task.date, today)}`
+            : "",
+        debt > 0,
+        debt > 0,
+      ],
+      [
+        task.assigneeId
+          ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
+          : "Unassigned",
+        false,
+        false,
+      ],
+      // The summary line names the proof and the lane marker carries the
+      // color, so the row states the missing-proof fact exactly once.
+      ["", false, false],
+      [
+        ["Ad hoc", "Manual"].includes(taskSourceLabel(task))
+          ? ""
+          : taskSourceLabel(task),
+        false,
+        false,
+      ],
+    ]) {
+      if (!value) continue;
       const chip = document.createElement("span");
+      chip.className = [
+        "ops-queue-chip",
+        attention ? "is-attention" : "",
+        debtTiming ? "is-debt" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       chip.textContent = value;
       meta.append(chip);
     }
+    // The summary names the real blocker: proof-blocked work never claims
+    // "Mark done" as its next step, and follow-up moments stay human.
     const summary = document.createElement("small");
-    summary.textContent = task.waitingFor
-      ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${formatTaskDateMeta(task.followUpAt, today)}` : ""}`
-      : `Next: ${taskNextActionLabel(task, today)}`;
-    button.append(title, meta, summary);
+    summary.textContent = task.status === "done"
+      ? "Completed."
+      : !proof.ok
+        ? `Proof needed: ${proof.label.replace(/^Missing proof:\s*/i, "")}`
+        : task.waitingFor
+          ? `Waiting for ${task.waitingFor}${task.followUpAt ? ` · follow up ${queueShortDate(task.followUpAt)}` : ""}`
+          : `Next: ${taskNextActionLabel(task, today)}`;
+    const open = document.createElement("span");
+    open.className = "ops-queue-row-open";
+    open.setAttribute("aria-hidden", "true");
+    open.textContent = "Open";
+    button.append(title, meta, summary, open);
     return button;
   }
 

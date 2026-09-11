@@ -91,16 +91,18 @@ export const ENTITY_VOCABULARY = Object.freeze({
   task: "Task",
 });
 
-export function tasksSectionTitle(section) {
+export function tasksSectionTitle(section, archiveVisible = false) {
+  // Bare human page titles: the sidebar already says "Tasks", so the H1 and
+  // the toolbar that mirrors it name only the page.
   const titles = {
-    queue: "Tasks - Work Queue",
-    workflows: "Tasks - Cards",
-    templates: "Tasks - Templates",
-    recurring: "Tasks - Recurring",
-    assistants: "Tasks - Assistants",
-    artifacts: "Tasks - Artifacts",
+    queue: "Work Queue",
+    workflows: archiveVisible ? "Card archive" : "Cards",
+    templates: "Templates",
+    recurring: "Recurring",
+    assistants: "Assistants",
+    artifacts: "Artifacts",
   };
-  return titles[section] || "Tasks - Work Queue";
+  return titles[section] || "Work Queue";
 }
 
 export function workspaceHashPath(view, tasksSection = "queue") {
@@ -472,18 +474,15 @@ export function formatTaskDateMeta(value, today) {
   if (date === today) return "Today";
   if (date === addDaysIso(today, -1)) return "Yesterday";
   if (date === addDaysIso(today, 1)) return "Tomorrow";
-  return date;
-}
-
-export function formatCardAnchorLabel(value, today = todayIsoDate()) {
-  const date = String(value || "").slice(0, 10);
-  if (!date) return "";
-  const relative = formatTaskDateMeta(date, today);
-  if (relative !== date) return relative;
+  // Every surface shows human dates; the ISO input never leaks through.
   const short = formatHomeShortDate(date);
   return date.slice(0, 4) === String(today || "").slice(0, 4)
     ? short
     : `${short} ${date.slice(0, 4)}`;
+}
+
+export function formatCardAnchorLabel(value, today = todayIsoDate()) {
+  return formatTaskDateMeta(value, today);
 }
 
 export function cardAnchorTone(value, today = todayIsoDate()) {
@@ -817,7 +816,7 @@ export function cardsHeaderViewModel({
   archivedCount,
 }) {
   return {
-    title: "Cards",
+    title: tasksSectionTitle("workflows", archiveVisible),
     eyebrow: "Task board",
     summary: archiveVisible
       ? `${countLabel(archivedCount, "archived card")} · completed work remains available`

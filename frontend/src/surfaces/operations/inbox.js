@@ -1,4 +1,5 @@
 import { createCollectionLoader } from "../../core/collection-loader.js";
+import { berlinIsoDate } from "../../core/workspace.js";
 import { renderDataSummary } from "../operations-overview.js";
 import { createIntakeCaptureSurface } from "./inbox-capture.js";
 
@@ -78,23 +79,47 @@ export function createInboxSurface(context) {
     return status === "new" || status === "blocked" || assistantReady;
   }
 
+  function formatIntakeDate(value) {
+    // Captured moments are full timestamps whose business day is Berlin, not
+    // the UTC date a raw slice would read (00:00–02:00 local borrows the
+    // previous day); followUpAt is already a plain date and passes through
+    // the same formatting unchanged.
+    const day = berlinIsoDate(value) || String(value).slice(0, 10);
+    const date = new Date(`${day}T00:00:00Z`);
+    return Number.isNaN(date.getTime())
+      ? ""
+      : new Intl.DateTimeFormat("en-GB", {
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        }).format(date);
+  }
+
+  // Meta says what changes the triage decision. Defaults (manual, normal,
+  // internal) are quiet; only the exceptional facts and the captured date stay.
   function intakeMeta(item) {
     return [
-      item.source,
-      item.priority,
-      item.dataClass,
+      item.source && item.source !== "manual" ? item.source : "",
+      item.priority && item.priority !== "normal"
+        ? `${item.priority} priority`
+        : "",
+      item.dataClass && item.dataClass !== "internal" ? item.dataClass : "",
       item.status === "blocked" && item.waitingFor
         ? `waiting for ${item.waitingFor}`
         : "",
       item.status === "blocked" && item.followUpAt
-        ? `follow up ${String(item.followUpAt).slice(0, 10)}`
+        ? `follow up ${formatIntakeDate(item.followUpAt)}`
         : "",
-      item.sourceReceivedAt ? String(item.sourceReceivedAt).slice(0, 10) : "",
+      item.sourceReceivedAt
+        ? `Captured ${formatIntakeDate(item.sourceReceivedAt)}`
+        : "",
     ]
       .filter(Boolean)
       .join(" · ");
   }
 
+  // Only exceptional states earn a pill: "new" and resolved states are
+  // already carried by the row's marker edge, so a uniform pill is noise.
   function intakeStatusLabel(item) {
     return item?.assistantReadiness?.status === "ready"
       ? "assistant ready"
@@ -456,11 +481,6 @@ export function createInboxSurface(context) {
         "Capture raw operational inputs, then triage them into executable work.",
       ),
     );
-    const intro = document.createElement("p");
-    intro.className = "ops-surface-intro";
-    intro.textContent =
-      "Capture raw operational inputs, then attach, convert, defer, resolve, or prepare them for an assistant.";
-    wrap.append(intro);
     const inboxErrors = [
       state.intake.error,
       state.intake.cardsError &&
@@ -477,24 +497,25 @@ export function createInboxSurface(context) {
       }
       if (routeIsFresh(token)) renderInboxSurface();
     };
-    wrap.append(
-      renderDataSummary({
-        id: "inbox",
-        label: "Inbox",
-        loaded: state.intake.loaded,
-        errors: inboxErrors,
-        empty: state.intake.loaded && state.intake.items.length === 0,
-        messages: {
-          loading: "Fetching intake items and Card relationships.",
-          unavailable: "Inbox is unavailable; no intake rows are shown until it reloads.",
-          partial: "Inbox items are loaded, but some Card relationships are unavailable.",
-          empty: "No intake items have been captured yet.",
-          ready: `${state.intake.items.length} intake item${state.intake.items.length === 1 ? "" : "s"} loaded.`,
-        },
-        retryLabel: "Retry loading Inbox",
-        onRetry: retryInbox,
-      }),
-    );
+    // A fully loaded Inbox states nothing: the queue itself is the evidence.
+    // Only loading, empty, partial, and failure states earn a sentence (1e).
+    const inboxSummary = renderDataSummary({
+      id: "inbox",
+      label: "Inbox",
+      loaded: state.intake.loaded,
+      errors: inboxErrors,
+      empty: state.intake.loaded && state.intake.items.length === 0,
+      messages: {
+        loading: "Fetching intake items and Card relationships.",
+        unavailable: "Inbox is unavailable; no intake rows are shown until it reloads.",
+        partial: "Inbox items are loaded, but some Card relationships are unavailable.",
+        empty: "No intake items have been captured yet.",
+        ready: `${state.intake.items.length} intake item${state.intake.items.length === 1 ? "" : "s"} loaded.`,
+      },
+      retryLabel: "Retry loading Inbox",
+      onRetry: retryInbox,
+    });
+    if (inboxSummary.dataset.summaryState !== "ready") wrap.append(inboxSummary);
     wrap.append(renderManualIntakeForm());
 
     const filters = document.createElement("nav");
@@ -575,14 +596,17 @@ export function createInboxSurface(context) {
     for (const item of items) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `intake-row ${item.id === state.intake.selectedId ? "is-selected" : ""}`;
+      button.className = `intake-row intake-${item.status || "new"} ${item.id === state.intake.selectedId ? "is-selected" : ""}`;
       button.innerHTML = `
+        <span aria-hidden="true" class="intake-row-marker"></span>
         <span>
           <strong>${escapeHtml(item.title || "Untitled intake")}</strong>
           <small>${escapeHtml(intakeMeta(item))}</small>
           <span>${escapeHtml(String(item.summary || "").slice(0, 180))}</span>
         </span>
-        <em>${escapeHtml(intakeStatusLabel(item))}</em>
+        ${["assistant ready", "blocked"].includes(intakeStatusLabel(item))
+          ? `<em>${escapeHtml(intakeStatusLabel(item))}</em>`
+          : ""}
       `;
       button.addEventListener("click", () => {
         navigateCanonicalWorkspace("/inbox", { intakeId: item.id });

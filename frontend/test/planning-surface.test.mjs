@@ -513,7 +513,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderNewsletterSurface();
     assert.deepEqual(harness.routeTitles, ["Newsletter"]);
-    assert.equal(dom.status.textContent, "Newsletter schedule ready.");
+    assert.equal(dom.status.textContent, "");
     assert.match(dom.alerts.innerHTML, /An open slot needs booking soon/);
     assert.match(dom.slots.innerHTML, /Community Newsletter/);
     assert.match(dom.slots.innerHTML, /Example Sponsor/);

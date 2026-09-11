@@ -5,6 +5,7 @@ import {
   createAdminSurface,
   createOperationsSurface,
 } from "../src/surfaces/operations/index.js";
+import { formatTaskDateMeta } from "../src/core/workspace.js";
 import {
   FakeDocument,
   FakeElement,
@@ -289,6 +290,7 @@ function createOperationsHarness(options = {}) {
     defaultNextFollowUpDate: () => "2026-08-15",
     documentList,
     escapeHtml,
+    formatTaskDateMeta,
     getActiveWorkspaceRoute: () => route,
     getActiveWorkspaceRouteToken: () => activeRouteToken,
     getActiveWorkspaceView: () => route.path.slice(1),
@@ -493,7 +495,7 @@ describe("Operations surface boundary", () => {
     assert.equal(open.rel, "noopener");
     assert.equal(
       open.getAttribute("aria-label"),
-      "Open Approved issue for task task-1",
+      "Open Approved issue for task linked",
     );
     assert.equal(findAllByClass(list, "ops-data-row").length, 3);
     assert.equal(list.querySelectorAll("a").length, 2);
@@ -805,12 +807,12 @@ describe("Operations surface boundary", () => {
     assert.match(diagnostics.innerHTML, /Read-only diagnostics/);
     assert.match(
       diagnostics.querySelector('[data-diagnostic="quality"] span').textContent,
-      /0 finding\(s\); 0 validation error/,
+      /0 quality findings; no validation errors/,
     );
     assert.equal(
       diagnostics.querySelector('[data-diagnostic="git-status"] span')
         .textContent,
-      "0 changed file(s) on main.",
+      "0 changed files on main.",
     );
     assert.equal(
       diagnostics.querySelector('[data-diagnostic="git-history"] span')
@@ -871,7 +873,10 @@ describe("Operations surface boundary", () => {
     assert.equal(summary.dataset.summaryState, "ready");
     assert.equal(summary.getAttribute("role"), "status");
     assert.equal(summary.getAttribute("aria-live"), "polite");
-    assert.match(summary.textContent, /3 of 3 read-only diagnostics answered/);
+    // All three answered: the answers speak for themselves, no mechanics
+    // sentence is shown.
+    assert.equal(summary.hidden, true);
+    assert.equal(summary.textContent, "");
     assert.equal(retry.hidden, true);
     assert.equal(retry.disabled, true);
   });
@@ -920,6 +925,43 @@ describe("Operations surface boundary", () => {
     assert.match(detail.innerHTML, /This item is archived and read-only/);
     assert.match(detail.innerHTML, /Historical/);
     assert.doesNotMatch(detail.innerHTML, /Convert to task/);
+  });
+
+  test("reads Inbox captured moments on the Berlin business day, not the UTC date", async () => {
+    // 22:30Z on 12 Aug is already 13 Aug in Berlin, so "Captured 12 Aug"
+    // would read a day behind the operator's calendar.
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        intake: {
+          ...operationState().intake,
+          items: [
+            {
+              id: "captured-1",
+              title: "Late capture",
+              status: "new",
+              source: "email",
+              sourceReceivedAt: "2026-08-12T22:30:00.000Z",
+            },
+            {
+              id: "blocked-2",
+              title: "Waiting request",
+              status: "blocked",
+              waitingFor: "Sponsor",
+              followUpAt: "2026-08-15",
+            },
+          ],
+          filter: "all",
+        },
+      },
+    });
+    harness.api.renderInboxSurface();
+    const rows = findAllByClass(harness.documentList, "intake-row")
+      .map((row) => row.innerHTML)
+      .join("\n");
+    assert.match(rows, /Captured 13 Aug/);
+    assert.doesNotMatch(rows, /Captured 12 Aug/);
+    assert.match(rows, /follow up 15 Aug/);
   });
 
   test("validates manual Inbox capture and preserves its canonical mutation payload", async () => {
@@ -1036,7 +1078,7 @@ describe("Operations surface boundary", () => {
     harness.api.renderInboxSurface();
     surface = harness.documentList;
     summary = surface.querySelector('[data-summary-id="inbox"]');
-    assert.equal(summary.dataset.summaryState, "ready");
+    assert.equal(summary, null, "successful loads do not repeat in a READY sentence");
     assert.ok(findByText(surface, "No matching intake", "strong"));
 
     harness.state.intake.filter = "actionable";
@@ -1284,6 +1326,59 @@ describe("Operations surface boundary", () => {
     assert.deepEqual(harness.navigations.at(-1).options, { history: "none" });
     harness.entityStates.at(-1).returnToList();
     assert.equal(harness.navigations.at(-1).path, "/inbox");
+  });
+
+  test("renders Assistant run-log moments on the Berlin business day, not the UTC clock", async () => {
+    // 22:30Z on 12 Aug is 00:30 on 13 Aug in Berlin. The UTC formatter read
+    // this minute-old job as "Today 22:30"; the operator's clock says
+    // "Tomorrow 00:30". The morning event pins the ordinary same-day case.
+    const job = {
+      id: "job-clock",
+      title: "Clock job",
+      assistantType: "podcast",
+      status: "draft",
+      attemptCount: 0,
+      maxAttempts: 2,
+    };
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        assistantSnapshot: { loaded: true, jobs: [job], errors: [] },
+        assistantQueue: { filter: "all", selectedJobId: job.id },
+      },
+      request: async (url) => {
+        if (url === "/api/assistant-jobs") return { jobs: [job] };
+        return {
+          job,
+          artifacts: [],
+          events: [
+            {
+              action: "assistant-job-created",
+              createdAt: "2026-08-12T22:30:00.000Z",
+            },
+            {
+              action: "assistant-job-queued",
+              createdAt: "2026-08-12T09:10:00.000Z",
+            },
+          ],
+        };
+      },
+    });
+    const surface = harness.api.renderAssistantsSurface();
+    await nextTicks();
+    const detail = surface.querySelector("[data-assistant-detail]");
+    assert.match(
+      detail.innerHTML,
+      /assistant-job-created\s*<\/strong>\s*<span>\s*Tomorrow 00:30/,
+      "midnight-crossing event must read Berlin time",
+    );
+    assert.match(
+      detail.innerHTML,
+      /assistant-job-queued\s*<\/strong>\s*<span>\s*Today 11:10/,
+      "same-day event must read the Berlin clock",
+    );
+    assert.doesNotMatch(detail.innerHTML, /22:30/);
+    assert.doesNotMatch(detail.innerHTML, /09:10/);
   });
 
   test("renders Assistant status action hierarchy and records approval plus retry request shapes", async () => {

@@ -4,7 +4,11 @@ import {
   reportFieldValidation,
   setFieldError,
 } from "../operations-overview.js";
-import { createAssistantCreateSurface } from "./assistants-create.js";
+import { berlinIsoDate } from "../../core/workspace.js";
+import {
+  assistantTypeOptions,
+  createAssistantCreateSurface,
+} from "./assistants-create.js";
 
 export function createAssistantsSurface(context) {
   const {
@@ -14,6 +18,7 @@ export function createAssistantsSurface(context) {
     defaultNextFollowUpDate,
     documentList,
     escapeHtml,
+    formatTaskDateMeta,
     getActiveWorkspaceRoute,
     getActiveWorkspaceRouteToken = () => undefined,
     getActiveWorkspaceView,
@@ -117,27 +122,28 @@ export function createAssistantsSurface(context) {
     section.className = "assistant-workspace";
     section.setAttribute("aria-label", "Assistant jobs");
     const snapshot = state.assistantSnapshot;
-    section.append(
-      renderDataSummary({
-        id: "assistants",
-        label: "Assistants",
-        loaded: snapshot.loaded,
-        errors: snapshot.errors,
-        empty: snapshot.loaded && snapshot.jobs.length === 0,
-        messages: {
-          loading: "Loading assistant jobs from the work API.",
-          unavailable: "Assistant jobs unavailable; no lifecycle state is being invented.",
-          partial: "Assistant jobs are only partially available.",
-          empty: "No assistant jobs have been created yet.",
-          ready: `${snapshot.jobs.length} assistant job${snapshot.jobs.length === 1 ? "" : "s"} loaded.`,
-        },
-        retryLabel: "Retry loading assistants",
-        onRetry: async () => {
-          const token = getActiveWorkspaceRouteToken();
-          await refreshOperationsAssistantSnapshot({ rerender: true, token });
-        },
-      }),
-    );
+    // A fully loaded queue states nothing: the job list itself is the
+    // evidence. Only loading, empty, partial, and failure earn a sentence.
+    const summary = renderDataSummary({
+      id: "assistants",
+      label: "Assistants",
+      loaded: snapshot.loaded,
+      errors: snapshot.errors,
+      empty: snapshot.loaded && snapshot.jobs.length === 0,
+      messages: {
+        loading: "Loading assistant jobs from the work API.",
+        unavailable: "Assistant jobs unavailable; no lifecycle state is being invented.",
+        partial: "Assistant jobs are only partially available.",
+        empty: "No assistant jobs have been created yet.",
+        ready: `${snapshot.jobs.length} assistant job${snapshot.jobs.length === 1 ? "" : "s"} loaded.`,
+      },
+      retryLabel: "Retry loading assistants",
+      onRetry: async () => {
+        const token = getActiveWorkspaceRouteToken();
+        await refreshOperationsAssistantSnapshot({ rerender: true, token });
+      },
+    });
+    if (summary.dataset.summaryState !== "ready") section.append(summary);
     if (!state.assistantSnapshot.loaded) {
       return section;
     }
@@ -211,6 +217,14 @@ export function createAssistantsSurface(context) {
     return section;
   }
 
+  // Status text stays quiet context; only a state that demands a decision
+  // (approval or recovery) earns an attention chip, matching the Inbox rule.
+  function assistantStatusTone(job) {
+    if (job.status === "waiting_approval") return "is-attention";
+    if (["failed", "rejected"].includes(job.status)) return "is-danger";
+    return "";
+  }
+
   function renderAssistantJobRow(job) {
     const row = document.createElement("article");
     row.className = `assistant-job-row ${job.id === state.assistantQueue.selectedJobId ? "is-selected" : ""}`;
@@ -221,12 +235,15 @@ export function createAssistantsSurface(context) {
       `Open assistant job ${job.title || job.assistantType || job.id || "job"}`,
     );
     const context = assistantContextLabel(job);
+    const statusTone = assistantStatusTone(job);
     row.innerHTML = `
       <div>
         <strong>${escapeHtml(job.title || job.assistantType || job.id || "Assistant job")}</strong>
         <span>
           ${escapeHtml(job.assistantType || "assistant")}
-          · attempt ${Number(job.attemptCount || 0)}/${Number(job.maxAttempts || 1)}
+          · ${Number(job.attemptCount || 0) === 0
+            ? `no attempts yet · up to ${Number(job.maxAttempts || 1)}`
+            : `attempt ${Number(job.attemptCount || 0)} of ${Number(job.maxAttempts || 1)}`}
           ${context ? ` · ${escapeHtml(context)}` : ""}
         </span>
         <small>
@@ -234,7 +251,7 @@ export function createAssistantsSurface(context) {
           ${job.lastError ? ` · Error: ${escapeHtml(job.lastError.summary || job.lastError.code || "failed")}` : ""}
         </small>
       </div>
-      <em>${escapeHtml(String(job.status || "draft").replace(/_/g, " "))}</em>
+      <em${statusTone ? ` class="${statusTone}"` : ""}>${escapeHtml(String(job.status || "draft").replace(/_/g, " "))}</em>
     `;
     const openJob = () => {
       navigateCanonicalWorkspace("/assistants", { assistantJobId: job.id });
@@ -277,7 +294,7 @@ export function createAssistantsSurface(context) {
         : "Retry limit reached";
     if (job.status === "queued") return "Run dry or wait for runner";
     if (job.status === "running") return "Watch timeline";
-    if (job.status === "draft") return "Submit or run dry";
+    if (job.status === "draft") return "Review and submit the draft";
     if (job.status === "retrying") return "Submit retry";
     if (job.status === "approved") return "Output approved";
     if (job.status === "succeeded") return "Output attached";
@@ -302,14 +319,77 @@ export function createAssistantsSurface(context) {
     ].includes(job?.status);
   }
 
+  // Resolve linked ids to operator-readable titles; an unresolved link stays
+  // honest ("card linked") instead of showing a raw uuid.
   function assistantContextLabel(job) {
-    const card = (state.workSnapshot.cards || []).find(
-      (candidate) => candidate.id === job.cardId,
-    );
-    if (card) return `card ${card.title || card.id}`;
-    if (job.cardId) return `card ${job.cardId}`;
-    if (job.taskId) return `task ${job.taskId}`;
+    if (job.cardId) {
+      return `card ${linkedWorkTitle("card", job.cardId) || "linked"}`;
+    }
+    if (job.taskId) {
+      return `task ${linkedWorkTitle("task", job.taskId) || "linked"}`;
+    }
     return "";
+  }
+
+  // Title of a linked card or task from the work snapshot, or "" when the
+  // link cannot be resolved to anything human.
+  function linkedWorkTitle(kind, id) {
+    const work = state.workSnapshot || {};
+    const wanted = String(id || "");
+    if (!wanted) return "";
+    if (kind === "card") {
+      const card = (work.cards || []).find(
+        (candidate) => String(candidate.id) === wanted,
+      );
+      return card?.title || "";
+    }
+    const tasks = [
+      ...(work.todayTasks || []),
+      ...(work.overdueTasks || []),
+      ...(work.waitingTasks || []),
+      ...Object.values(work.cardTasks || {}).flat(),
+    ];
+    const task = tasks.find((candidate) => String(candidate.id) === wanted);
+    return task ? workTaskTitle(task) : "";
+  }
+
+  // Storage providers are machine slugs ("external-url"); the detail speaks
+  // operator language, so the provider reads as where the artifact lives.
+  function humanStorageProvider(provider) {
+    const value = String(provider || "").trim();
+    if (!value) return "storage unknown";
+    if (value === "external-url") return "external link";
+    return value.replace(/[-_]+/g, " ");
+  }
+
+  // Run-log moments read as operator time (Today 14:03, 10 Sep 16:20), never
+  // a raw ISO timestamp. Clock and day both follow the Berlin business day —
+  // the same day todayIsoDate() compares against — so a job created around
+  // midnight never borrows the UTC date or clock.
+  function assistantTimestampLabel(value) {
+    const parsed = new Date(String(value || ""));
+    if (Number.isNaN(parsed.getTime())) return String(value || "");
+    const day = berlinIsoDate(parsed);
+    const time = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Europe/Berlin",
+    }).format(parsed);
+    const relative = formatTaskDateMeta(day, todayIsoDate());
+    if (relative !== day) return `${relative} ${time}`;
+    return `${new Intl.DateTimeFormat("en-GB", {
+      day: "numeric",
+      month: "short",
+      timeZone: "Europe/Berlin",
+    }).format(parsed)} ${time}`;
+  }
+
+  function assistantHumanState(value) {
+    const text = String(value || "").trim();
+    if (!text) return "Draft";
+    return text
+      .replace(/[_-]+/g, " ")
+      .replace(/^\w/, (char) => char.toUpperCase());
   }
 
 
@@ -598,15 +678,26 @@ export function createAssistantsSurface(context) {
           `;
         })
         .join("");
+      // References read as what they are, never as bare identifiers: a
+      // card/task ref resolves to its title, an unresolvable one stays
+      // honest ("Card link"), and a URI is the one case where the value
+      // itself is operator-meaningful.
       const inputReferences = (job.inputRefs || []).length
         ? job.inputRefs
-            .map(
-              (ref) => `
-                <code>
-                  ${escapeHtml(ref.title || ref.uri || ref.id || ref.type || "input")}
-                </code>
-              `,
-            )
+            .map((ref) => {
+              const kind = String(ref.type || "input");
+              const kindLabel =
+                kind.charAt(0).toUpperCase() + kind.slice(1);
+              const linked =
+                linkedWorkTitle(kind, ref.id) ||
+                (kind === "card" ? "link" : kind === "task" ? "link" : "");
+              const name =
+                ref.title ||
+                (linked ? `${kindLabel}: ${linked}` : "") ||
+                (/^https?:\/\//.test(String(ref.uri || "")) ? ref.uri : "") ||
+                `${kindLabel} link`;
+              return `<code>${escapeHtml(name)}</code>`;
+            })
             .join(" ")
         : "No input references recorded.";
       const artifactLinks = artifacts.length
@@ -620,8 +711,8 @@ export function createAssistantsSurface(context) {
                 >
                   <strong>${escapeHtml(artifact.title || artifact.type || "Artifact")}</strong>
                   <span>
-                    ${escapeHtml(artifact.status || "draft")}
-                    · ${escapeHtml(artifact.storageProvider || "unknown")}
+                    ${escapeHtml(assistantHumanState(artifact.status || "draft"))}
+                    · ${escapeHtml(humanStorageProvider(artifact.storageProvider))}
                   </span>
                 </a>
               `,
@@ -639,7 +730,7 @@ export function createAssistantsSurface(context) {
                     ${escapeHtml(String(event.action || "event").replace(/_/g, " "))}
                   </strong>
                   <span>
-                    ${escapeHtml(event.createdAt || "")}
+                    ${escapeHtml(assistantTimestampLabel(event.createdAt))}
                     ${event.summary ? ` · ${escapeHtml(event.summary)}` : ""}
                   </span>
                 </li>
@@ -664,7 +755,9 @@ export function createAssistantsSurface(context) {
           </label>
           <label>
             Assistant type
-            <input data-assistant-edit-type value="${escapeHtml(editValues.assistantType ?? job.assistantType ?? "")}">
+            <select data-assistant-edit-type>
+              ${assistantTypeOptions(editValues.assistantType ?? job.assistantType ?? "")}
+            </select>
           </label>
           <label>
             Approval required

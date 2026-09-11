@@ -4,7 +4,7 @@ export function sponsorSurfaceMarkup(bookingStatusOptions) {
   return html`<header class="crm-header">
       <div>
         <p class="surface-eyebrow">Partner operations</p>
-        <h2>Sponsors</h2>
+        <h1>Sponsors</h1>
         <p>
           Move each booking from agreement through publication, payment, and
           reviewed follow-up.

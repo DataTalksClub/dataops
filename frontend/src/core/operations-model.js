@@ -647,6 +647,10 @@ export function createOperationsModel({
       meta: meta.join(" - "),
       taskId: task.id,
       cardId: task.cardId,
+      assigneeId: task.assigneeId || "",
+      assigneeLabel: task.assigneeId
+        ? resolveAssigneeLabel(task.assigneeId)
+        : "",
       dueDate: taskDate(task),
       followUpDate: String(task.followUpAt || "").slice(0, 10),
       nextAction: taskNextActionLabel(task, today),

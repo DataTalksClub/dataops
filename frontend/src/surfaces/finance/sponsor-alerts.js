@@ -31,6 +31,9 @@ export function renderSponsorBookingAlerts({
     : notificationState.complete && !notificationState.failed
       ? html`<div class="honest-state">
           <strong>No active sponsor booking alerts</strong>
+          <p>
+            Check the booking queue for bookings whose next action is not set.
+          </p>
         </div>`
       : "";
   let continuation = "";
@@ -66,13 +69,6 @@ export function renderSponsorBookingAlerts({
           Retry alerts</button
         >
       </div>`;
-  } else if (
-    notificationState.complete &&
-    notificationState.items.length
-  ) {
-    continuation = html`<p class="honest-state">
-        All notification pages loaded.
-      </p>`;
   }
 
   surface.querySelector("[data-crm-alerts]").innerHTML =

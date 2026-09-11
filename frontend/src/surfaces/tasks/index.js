@@ -111,7 +111,10 @@ export function createTasksSurface(context) {
     const activeSection = section || "queue";
     documentList.classList.add("is-operations-home");
     documentList.classList.remove("is-unified-search");
-    const title = tasksSectionTitle(activeSection);
+    const title = tasksSectionTitle(
+      activeSection,
+      getActiveWorkspaceRoute()?.path === "/cards/archive",
+    );
     setRouteTitle(title);
 
     const wrap = document.createElement("div");
@@ -122,7 +125,8 @@ export function createTasksSurface(context) {
       );
     }
     const summary = renderTasksSummary(activeSection, model, documents);
-    if (summary) wrap.append(summary);
+    // A fully loaded surface states nothing: its own content is the evidence.
+    if (summary && summary.dataset.summaryState !== "ready") wrap.append(summary);
     const runtimeStatus = renderOperationsRuntimeState(model.runtime);
     if (runtimeStatus && ["queue", "workflows"].includes(activeSection)) {
       wrap.append(runtimeStatus);
@@ -179,7 +183,9 @@ export function createTasksSurface(context) {
           ? `${countLabel(model.stats.missingProofTasks, "item")} missing proof`
           : "missing proof unknown",
       ].join(" · ");
-      return renderDataSummary({
+      // A fully loaded queue states nothing: the lanes themselves are the
+      // evidence. Only loading, empty, partial, and failure earn a sentence.
+      const summary = renderDataSummary({
         id: "tasks-queue",
         label: "Work Queue",
         loaded: model.stats.liveLoaded,
@@ -195,6 +201,7 @@ export function createTasksSurface(context) {
         retryLabel: "Retry loading tasks",
         onRetry: retryWork,
       });
+      return summary.dataset.summaryState === "ready" ? null : summary;
     }
     if (view === "workflows") {
       // The board renders from the snapshot, so the summary counts the same

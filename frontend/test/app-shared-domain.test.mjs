@@ -432,8 +432,8 @@ describe("app shared operations domain characterization", () => {
       tasksSectionTitle: workspace.tasksSectionTitle,
     });
     assert.equal(functions.operationsViewTitle("home"), "Today");
-    assert.equal(functions.operationsViewTitle("tasks", "templates"), "Tasks - Templates");
-    assert.match(functions.surfaceDescription("queue"), /overdue, follow-up, waiting/);
+    assert.equal(functions.operationsViewTitle("tasks", "templates"), "Templates");
+    assert.match(functions.surfaceDescription("queue"), /What needs you, grouped by urgency/);
     assert.equal(functions.referenceCountLabel("calendar", 1), "1 calendar item");
     assert.equal(functions.referenceCountLabel("cards", 2), "2 cards");
   });
@@ -458,7 +458,7 @@ describe("app shared operations domain characterization", () => {
     });
     const header = functions.renderSurfaceHeader("Cards", "Open work");
     assert.equal(header.className, "ops-surface-header");
-    assert.equal(findByText(header, "Cards", "h3").textContent, "Cards");
+    assert.equal(findByText(header, "Cards", "h1").textContent, "Cards");
     assert.equal(functions.renderHonestState("Unavailable", "Retry later").textContent, "UnavailableRetry later");
 
     assert.equal(functions.renderOperationsRuntimeState({ connected: true, errors: [] }), null);

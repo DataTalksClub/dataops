@@ -178,8 +178,9 @@ export function createTemplatesSurface(context) {
       ? `${template.emoji} ${template.name}`
       : template.name || "Unnamed template";
     const meta = document.createElement("span");
+    // Meta carries what an operator weighs (size and trigger mode); the
+    // machine type slug stays out of the row.
     meta.textContent = [
-      template.type || "untyped",
       countLabel((template.taskDefinitions || []).length, "task"),
       template.triggerType || "manual",
     ].join(" · ");
@@ -242,6 +243,7 @@ export function createTemplatesSurface(context) {
       definition,
       "Revision",
       selected.sourceRevision ? String(selected.sourceRevision).slice(0, 12) : "Unavailable",
+      selected.sourceRevision ? "runtime-template-mono" : "",
     );
     const cardUpdates = renderTemplateCardUpdates(selected);
 
@@ -462,11 +464,12 @@ export function createTemplatesSurface(context) {
     }
   }
 
-  function appendDefinition(list, label, value) {
+  function appendDefinition(list, label, value, valueClass) {
     const term = document.createElement("dt");
     term.textContent = label;
     const definition = document.createElement("dd");
     definition.textContent = value || "None";
+    if (valueClass) definition.className = valueClass;
     list.append(term, definition);
   }
 
