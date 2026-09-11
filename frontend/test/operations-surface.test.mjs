@@ -927,6 +927,43 @@ describe("Operations surface boundary", () => {
     assert.doesNotMatch(detail.innerHTML, /Convert to task/);
   });
 
+  test("reads Inbox captured moments on the Berlin business day, not the UTC date", async () => {
+    // 22:30Z on 12 Aug is already 13 Aug in Berlin, so "Captured 12 Aug"
+    // would read a day behind the operator's calendar.
+    const harness = createOperationsHarness({
+      state: {
+        ...operationState(),
+        intake: {
+          ...operationState().intake,
+          items: [
+            {
+              id: "captured-1",
+              title: "Late capture",
+              status: "new",
+              source: "email",
+              sourceReceivedAt: "2026-08-12T22:30:00.000Z",
+            },
+            {
+              id: "blocked-2",
+              title: "Waiting request",
+              status: "blocked",
+              waitingFor: "Sponsor",
+              followUpAt: "2026-08-15",
+            },
+          ],
+          filter: "all",
+        },
+      },
+    });
+    harness.api.renderInboxSurface();
+    const rows = findAllByClass(harness.documentList, "intake-row")
+      .map((row) => row.innerHTML)
+      .join("\n");
+    assert.match(rows, /Captured 13 Aug/);
+    assert.doesNotMatch(rows, /Captured 12 Aug/);
+    assert.match(rows, /follow up 15 Aug/);
+  });
+
   test("validates manual Inbox capture and preserves its canonical mutation payload", async () => {
     const harness = createOperationsHarness({
       request: async (url, requestOptions = {}) => {

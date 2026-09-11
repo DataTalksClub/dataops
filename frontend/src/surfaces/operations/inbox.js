@@ -1,4 +1,5 @@
 import { createCollectionLoader } from "../../core/collection-loader.js";
+import { berlinIsoDate } from "../../core/workspace.js";
 import { renderDataSummary } from "../operations-overview.js";
 import { createIntakeCaptureSurface } from "./inbox-capture.js";
 
@@ -79,7 +80,12 @@ export function createInboxSurface(context) {
   }
 
   function formatIntakeDate(value) {
-    const date = new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
+    // Captured moments are full timestamps whose business day is Berlin, not
+    // the UTC date a raw slice would read (00:00–02:00 local borrows the
+    // previous day); followUpAt is already a plain date and passes through
+    // the same formatting unchanged.
+    const day = berlinIsoDate(value) || String(value).slice(0, 10);
+    const date = new Date(`${day}T00:00:00Z`);
     return Number.isNaN(date.getTime())
       ? ""
       : new Intl.DateTimeFormat("en-GB", {
