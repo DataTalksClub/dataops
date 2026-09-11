@@ -202,6 +202,9 @@ export function createWorkspaceState(context) {
     set value(filters) {
       qualityFilters = filters;
     },
+    // Mobile keeps the quality filters in a disclosure; the surface rebuilds
+    // on every filter change, so the open state survives here.
+    disclosureOpen: false,
   };
 
   const reviewSurfaceState = {

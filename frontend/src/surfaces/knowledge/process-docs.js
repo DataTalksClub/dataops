@@ -264,12 +264,24 @@ export function createProcessDocsSurface(context, services) {
     }
     // Mobile keeps the whole capped findings feed between the operator and a
     // trailing filter row, so the form becomes a disclosure anchored under
-    // the section header; desktop keeps the always-visible filter row.
+    // the section header; desktop keeps the always-visible filter row. The
+    // surface rebuilds on every filter change, so the open state lives in
+    // the filter state and the summary names how many filters are active.
     const disclosure = document.createElement("details");
     disclosure.className = "ops-quality-filters-disclosure";
-    disclosure.open = !isCompactViewport();
+    const compact = isCompactViewport();
+    disclosure.open = !compact || qualityFiltersState.disclosureOpen === true;
+    disclosure.addEventListener("toggle", () => {
+      if (isCompactViewport()) {
+        qualityFiltersState.disclosureOpen = disclosure.open;
+      }
+    });
+    const activeFilterCount = Object.values(qualityFiltersState.value || {})
+      .filter(Boolean).length;
     const disclosureSummary = document.createElement("summary");
-    disclosureSummary.textContent = "Filter findings";
+    disclosureSummary.textContent = activeFilterCount
+      ? `Filter findings · ${activeFilterCount} active`
+      : "Filter findings";
     disclosure.append(disclosureSummary, filters);
     wrap.append(disclosure);
 
