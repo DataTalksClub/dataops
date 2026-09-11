@@ -323,9 +323,9 @@ export function createTaskQueue(context) {
         false,
         false,
       ],
-      // The chip marks the state; the summary line below names the proof, so
-      // the row states the missing-proof fact once.
-      [!proof.ok ? "Missing proof" : "", true, false],
+      // The summary line names the proof and the lane marker carries the
+      // color, so the row states the missing-proof fact exactly once.
+      ["", false, false],
       [
         ["Ad hoc", "Manual"].includes(taskSourceLabel(task))
           ? ""
