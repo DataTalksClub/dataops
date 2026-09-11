@@ -56,7 +56,9 @@ import type { LambdaEvent } from '../src/types';
 const NOW = new Date('2026-07-30T12:00:00.000Z');
 const ACTOR_ID = 'actor-media-composed';
 const CHAT_ID = '9201';
-const ROOT = path.resolve('..', '.tmp', 'todo-media-composed');
+// Pid suffix: see telegram-conversational.test.ts — concurrent suite runs
+// must not share one fixture directory.
+const ROOT = path.resolve('..', '.tmp', `todo-media-composed-${process.pid}`);
 
 function validOgg(): Buffer {
   const body = Buffer.concat([Buffer.from('OpusHead'), Buffer.alloc(11)]);

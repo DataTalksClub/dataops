@@ -44,7 +44,10 @@ import { conversationalRolloutSnapshot } from '../src/conversation/rollout';
 import type { LambdaEvent } from '../src/types';
 
 const NOW = new Date('2026-07-30T12:00:00.000Z');
-const ROOT = path.resolve('..', '.tmp', 'telegram-conversational-tests');
+// The pid suffix keeps concurrent suite invocations of this checkout from
+// racing on one fixture directory: another process's beforeEach wipes ROOT,
+// which surfaced as a spurious ENOENT on the voice fixture mid-test.
+const ROOT = path.resolve('..', '.tmp', `telegram-conversational-tests-${process.pid}`);
 
 function apiEvent(
   method: string,
