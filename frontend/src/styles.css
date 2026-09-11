@@ -13434,3 +13434,12 @@ body:not([data-workspace-view="docs"]) #filters-section {
     align-items: center;
   }
 }
+
+/* On desktop the Docs quality card carries its own filters; the sidebar
+   filters section would be an empty husk there. Mobile keeps it in the
+   drawer. */
+@media (min-width: 821px) {
+  #filters-section {
+    display: none;
+  }
+}

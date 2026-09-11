@@ -515,8 +515,8 @@ export function createOperationsOverview(context) {
     if (!raw) return "This process document needs attention";
     // Validators speak in field names; operators read sentences.
     const humanized = raw
-      .replace(/^Doc_type\b/, "Document type")
-      .replace(/\(got '/, "— found '");
+      .replace(/^doc_type\b/i, "Document type")
+      .replace(/\(got '([^']*)'\)/, "— found '$1'");
     return humanized.charAt(0).toUpperCase() + humanized.slice(1);
   }
 
