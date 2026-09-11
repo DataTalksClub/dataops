@@ -1,3 +1,28 @@
+/* Self-hosted fonts (SIL OFL): the portal must not make third-party
+   requests, so Inter (variable, 400-700) and IBM Plex Mono ship from src/.
+   Glyphs missing from the latin subset fall through the stacks below. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("./assets/fonts/inter-var.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light;
 
@@ -11,7 +36,8 @@
   --text-primary: #24292f;
   --text-heading: #0f172a;
   --text-muted: #57606a;
-  --text-faint: #8c959f;
+  /* 4.59:1 on white — WCAG AA; the earlier #8c959f measured 3.03:1. */
+  --text-faint: #6e7681;
   --link-color: #315f8f;
   --link-hover: #244d78;
   --input-bg: #ffffff;

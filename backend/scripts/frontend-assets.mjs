@@ -10,7 +10,7 @@ export const FRONTEND_ASSET_MANIFEST_PATH = resolve(
   'frontend-assets.json',
 );
 
-const ALLOWED_EXTENSIONS = new Set(['.css', '.html', '.js']);
+const ALLOWED_EXTENSIONS = new Set(['.css', '.html', '.js', '.woff2']);
 const REQUIRED_FILES = ['index.html', 'src/app.js', 'src/styles.css'];
 
 export function readFrontendAssetManifest(path = FRONTEND_ASSET_MANIFEST_PATH) {

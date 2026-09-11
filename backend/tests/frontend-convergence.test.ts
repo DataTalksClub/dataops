@@ -13,6 +13,7 @@ function expectedContentType(assetPath: string): RegExp {
   if (assetPath.endsWith('.html')) return /text\/html/;
   if (assetPath.endsWith('.css')) return /text\/css/;
   if (assetPath.endsWith('.js')) return /application\/javascript/;
+  if (assetPath.endsWith('.woff2')) return /font\/woff2/;
   throw new Error(`Unhandled canonical frontend asset type: ${assetPath}`);
 }
 

@@ -1,6 +1,6 @@
 import manifest from './frontend-assets.json';
 
-const ALLOWED_EXTENSIONS = new Set(['.css', '.html', '.js']);
+const ALLOWED_EXTENSIONS = new Set(['.css', '.html', '.js', '.woff2']);
 const REQUIRED_FILES = ['index.html', 'src/app.js', 'src/styles.css'];
 
 function extensionOf(path: string): string {
