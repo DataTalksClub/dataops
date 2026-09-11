@@ -57,23 +57,28 @@ export function createTaskQueue(context) {
     };
     // Contract order: overdue, follow-ups due, then the day's work; the
     // proof/waiting lanes follow. Populated lanes must not bury the day's
-    // work under empty ones.
+    // work under empty ones. A task lives in exactly one lane — the first it
+    // qualifies for — so an overdue proof-blocked task is counted once, in
+    // Overdue, with its "Proof needed" line rather than listed twice.
+    const placed = new Set();
+    const lane = (predicate) => {
+      const members = tasks.filter(
+        (task) => !placed.has(task.id) && predicate(task),
+      );
+      for (const task of members) placed.add(task.id);
+      return members;
+    };
     const groups = [
-      ["Overdue", tasks.filter((task) => isTaskOverdue(task, today))],
-      [
-        "Follow-ups due",
-        tasks.filter((task) => isFollowUpDueTask(task, today)),
-      ],
-      ["Today", tasks.filter((task) => isTaskDueToday(task, today))],
+      ["Overdue", lane((task) => isTaskOverdue(task, today))],
+      ["Follow-ups due", lane((task) => isFollowUpDueTask(task, today))],
+      ["Today", lane((task) => isTaskDueToday(task, today))],
       [
         "Missing proof",
-        tasks.filter(
-          (task) => isOpenWorkTask(task) && !taskProofState(task).ok,
-        ),
+        lane((task) => isOpenWorkTask(task) && !taskProofState(task).ok),
       ],
       [
         "Waiting",
-        tasks.filter(
+        lane(
           (task) =>
             isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today),
         ),
