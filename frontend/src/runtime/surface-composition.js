@@ -302,6 +302,9 @@ export function createSurfaceComposition(context) {
       setTasksNavExpanded(true);
     } else {
       tasksNavButton?.removeAttribute("aria-current");
+      // Accordion behavior: the Tasks group follows the active route instead
+      // of leaking expansion state across unrelated routes.
+      setTasksNavExpanded(false);
     }
     for (const button of tasksNavSectionButtons) {
       const active =

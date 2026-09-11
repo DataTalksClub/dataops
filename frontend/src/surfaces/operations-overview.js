@@ -513,7 +513,11 @@ export function createOperationsOverview(context) {
   function humanizeFindingMessage(finding) {
     const raw = String(finding.summary || finding.title || "").trim();
     if (!raw) return "This process document needs attention";
-    return raw.charAt(0).toUpperCase() + raw.slice(1);
+    // Validators speak in field names; operators read sentences.
+    const humanized = raw
+      .replace(/^Doc_type\b/, "Document type")
+      .replace(/\(got '/, "— found '");
+    return humanized.charAt(0).toUpperCase() + humanized.slice(1);
   }
 
   function elideDocPath(path) {

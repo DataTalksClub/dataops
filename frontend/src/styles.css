@@ -13361,3 +13361,18 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
     margin-top: 8px;
   }
 }
+
+/* The sidebar Search filters belong to Process Docs only (DESIGN.md keeps
+   docs filters in the sidebar/drawer); other routes show no empty husk. */
+body:not([data-workspace-view="docs"]) #filters-section {
+  display: none;
+}
+
+/* Mobile: the row-hint affordance is itself a touch-sized element. */
+@media (max-width: 820px) {
+  .ops-queue-row-open {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
