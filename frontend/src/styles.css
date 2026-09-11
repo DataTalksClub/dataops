@@ -13271,15 +13271,8 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
     min-height: 44px;
   }
 
-  /* Findings precede their filters on mobile. */
-  .ops-quality-drilldown {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .ops-quality-drilldown .ops-quality-filters {
-    order: 9;
-  }
+  /* The quality filters sit in a disclosure under the section header on
+     mobile (see the round-3 block below), so no reordering is needed here. */
 
   /* The ledger sub-description belongs under the entry value, not in the
      label column of the collapsed table. */
@@ -13295,8 +13288,21 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
     min-height: 44px;
   }
 
-  /* The task panel's file control meets the floor like every other control. */
+  /* Every panel control meets the floor: the tasks-view input rules and the
+     quiet close buttons otherwise sit at 40px and 32px. */
+  body[data-workspace-view="tasks"] .task-required-link input[type="url"],
+  body[data-workspace-view="tasks"] .task-required-link input[type="file"],
   .task-panel-body input[type="file"] {
+    min-height: 44px;
+  }
+
+  .task-modal-panel > header button {
+    min-height: 44px;
+  }
+
+  .task-modal-panel .task-instruction-doc-link {
+    display: inline-flex;
+    align-items: center;
     min-height: 44px;
   }
 }
@@ -13374,5 +13380,39 @@ body:not([data-workspace-view="docs"]) #filters-section {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
+  }
+}
+
+/* ── Slice 5 review round 3 (#229): reachable quality filters on mobile ── */
+
+/* Desktop keeps the filter row always visible; the disclosure affordance
+   only exists on mobile, where it sits under the section header so the
+   narrowing controls stay within the first viewport instead of after the
+   capped findings feed. */
+.ops-quality-filters-disclosure > summary {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .ops-quality-filters-disclosure {
+    border-bottom: 1px solid var(--border-muted);
+    background: var(--surface-muted);
+  }
+
+  .ops-quality-filters-disclosure > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    color: var(--text-heading);
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style-position: inside;
+  }
+
+  .ops-quality-filters-disclosure > .ops-quality-filters {
+    padding-top: 0;
   }
 }

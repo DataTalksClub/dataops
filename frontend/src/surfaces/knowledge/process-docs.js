@@ -262,7 +262,16 @@ export function createProcessDocsSurface(context, services) {
       label.append(select);
       filters.append(label);
     }
-    wrap.append(filters);
+    // Mobile keeps the whole capped findings feed between the operator and a
+    // trailing filter row, so the form becomes a disclosure anchored under
+    // the section header; desktop keeps the always-visible filter row.
+    const disclosure = document.createElement("details");
+    disclosure.className = "ops-quality-filters-disclosure";
+    disclosure.open = !isCompactViewport();
+    const disclosureSummary = document.createElement("summary");
+    disclosureSummary.textContent = "Filter findings";
+    disclosure.append(disclosureSummary, filters);
+    wrap.append(disclosure);
 
     const filtered = filterQualityFindings(findings, qualityFiltersState.value);
     const list = document.createElement("div");
@@ -311,6 +320,12 @@ export function createProcessDocsSurface(context, services) {
   function uniqueSorted(values) {
     return [...new Set(values.filter(Boolean).map(String))].sort((a, b) =>
       a.localeCompare(b),
+    );
+  }
+
+  function isCompactViewport() {
+    return Boolean(
+      document.defaultView?.matchMedia?.("(max-width: 820px)")?.matches,
     );
   }
 
