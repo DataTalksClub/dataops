@@ -13433,6 +13433,15 @@ body:not([data-workspace-view="docs"]) #filters-section {
   .ops-queue-meta {
     align-items: center;
   }
+
+  /* Finance filter selects share the 44px floor with every other control;
+     the knowledge family's selects already do. */
+  .bookkeeping-filters select,
+  .bookkeeping-upload select,
+  .crm-filters select,
+  .crm-directory .section-header select {
+    min-height: 44px;
+  }
 }
 
 /* On desktop the Docs quality card carries its own filters; the sidebar
