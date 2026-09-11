@@ -13289,14 +13289,13 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   }
 
   /* Every panel control meets the floor: the tasks-view input rules and the
-     quiet close buttons otherwise sit at 40px and 32px. */
-  body[data-workspace-view="tasks"] .task-required-link input[type="url"],
-  body[data-workspace-view="tasks"] .task-required-link input[type="file"],
+     quiet close buttons otherwise sit at 40px and 32px. The selector carries
+     the view attribute so it out-specifies those per-row rules. */
+  body[data-workspace-view] .task-modal-panel input:not([type="checkbox"]):not([type="radio"]),
+  body[data-workspace-view] .task-modal-panel select,
+  body[data-workspace-view] .task-modal-panel textarea,
+  body[data-workspace-view] .task-modal-panel button,
   .task-panel-body input[type="file"] {
-    min-height: 44px;
-  }
-
-  .task-modal-panel > header button {
     min-height: 44px;
   }
 
@@ -13409,10 +13408,29 @@ body:not([data-workspace-view="docs"]) #filters-section {
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    list-style-position: inside;
+    list-style: none;
+  }
+
+  .ops-quality-filters-disclosure > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .ops-quality-filters-disclosure > summary::after {
+    content: "▾";
+    margin-left: auto;
+    color: var(--text-muted);
+  }
+
+  .ops-quality-filters-disclosure[open] > summary::after {
+    content: "▴";
   }
 
   .ops-quality-filters-disclosure > .ops-quality-filters {
     padding-top: 0;
+  }
+
+  /* A 44px row hint must not stretch the non-interactive chips beside it. */
+  .ops-queue-meta {
+    align-items: center;
   }
 }
