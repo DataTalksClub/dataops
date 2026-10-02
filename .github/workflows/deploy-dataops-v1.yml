@@ -97,6 +97,7 @@ jobs:
       AUTH_CALLBACK_URL: https://ops.dtcdev.click/auth/callback
       AUTH_LOGOUT_URL: https://ops.dtcdev.click/
       AUTH_SESSION_LIFETIME_SECONDS: 28800
+      INVOICE_PUBLICATION_CONFIG: ${{ secrets.INVOICE_PUBLICATION_CONFIG }}
       EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
@@ -280,6 +281,8 @@ jobs:
             echo "Sponsor reviewed sending cannot be enabled without separate template and HMAC secret ARNs" >&2
             exit 1
           fi
+          INVOICE_PUBLICATION_CONFIG_ENCODED="$(python3 -c 'import base64, os; print(base64.b64encode(os.environ.get("INVOICE_PUBLICATION_CONFIG", "").encode()).decode())')"
+          if [ -n "$INVOICE_PUBLICATION_CONFIG_ENCODED" ]; then echo "::add-mask::$INVOICE_PUBLICATION_CONFIG_ENCODED"; fi
           sam deploy \
             --config-env full-sandbox \
             --parameter-overrides \
@@ -295,6 +298,7 @@ jobs:
               "ParameterKey=AuthCallbackUrl,ParameterValue=$AUTH_CALLBACK_URL" \
               "ParameterKey=AuthLogoutUrl,ParameterValue=$AUTH_LOGOUT_URL" \
               "ParameterKey=AuthSessionLifetimeSeconds,ParameterValue=$AUTH_SESSION_LIFETIME_SECONDS" \
+              "ParameterKey=InvoicePublicationConfig,ParameterValue=$INVOICE_PUBLICATION_CONFIG_ENCODED" \
               "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" \
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \

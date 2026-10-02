@@ -12,6 +12,7 @@ transaction_suites=(
   'test:task-card-transaction'
   'test:todo-transaction'
   'test:typefully-transaction'
+  'test:invoice-publication'
 )
 
 active_suite=''

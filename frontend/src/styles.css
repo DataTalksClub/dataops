@@ -13579,3 +13579,19 @@ body:not([data-workspace-view="docs"]) #filters-section {
   margin-top: auto;
   align-self: flex-start;
 }
+
+.invoice-review-section { margin-bottom: 2rem; }
+.invoice-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+.invoice-fields label { display: flex; flex-direction: column; gap: .35rem; }
+.invoice-fields input, .invoice-fields select { width: 100%; min-height: 2.5rem; padding: .5rem; }
+.invoice-destinations { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; padding: 0; list-style: none; }
+.invoice-destinations li { border: 1px solid var(--border-color, #ddd); padding: 1rem; overflow-wrap: anywhere; }
+[data-invoice-detail] { padding-top: 1.5rem; }
+[data-invoice-detail] details, [data-invoice-process] { margin: 1rem 0; }
+[data-invoice-detail] fieldset { margin-top: 1rem; }
+[data-invoice-detail] small { display: block; }
+
+.invoice-review-section > :not(header) { margin-left: 1rem; margin-right: 1rem; }
+.invoice-review-section > [data-invoice-detail] { padding-bottom: 1rem; }
+.invoice-review-section input { min-height: 2.5rem; }
+.invoice-review-section [data-invoice-list] small { display: block; }

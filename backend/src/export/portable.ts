@@ -5,6 +5,7 @@ import path from 'path';
 import { ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {
+  TABLE_BOOKKEEPING,
   TABLE_CARDS,
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
@@ -64,6 +65,10 @@ interface ValidationResult {
 }
 
 type ExportEntityName =
+  | 'invoice_records'
+  | 'invoice_claims'
+  | 'invoice_cursors'
+  | 'bookkeeping_records'
   | 'users'
   | 'tasks'
   | 'cards'
@@ -148,6 +153,12 @@ const SIGNED_URL_EXPORT_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Secur
 const RFC3339_INSTANT_PATTERN = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})[Tt](?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.(?<fraction>\d{1,3}))?(?:(?<utcZone>[Zz])|(?<offsetSign>[+-])(?<offsetHours>\d{2}):(?<offsetMinutes>\d{2}))$/;
 
 const ENTITY_SPECS: EntitySpec[] = [
+  ...(['invoice_records','invoice_claims','invoice_cursors','bookkeeping_records'] as const).map((name, index) => ({
+    name, filename: `${name}.jsonl`, tableName: TABLE_BOOKKEEPING,
+    prefix: ['INVOICE#','INVOICE_IDENTITY#','INVOICE_CURSOR#','BOOKKEEPING#'][index],
+    map: (item: Record<string, unknown>) => JSON.parse(JSON.stringify(item)) as JsonRecord,
+    sortKey: (record: JsonRecord) => String(record.PK),
+  })),
   {
     name: 'users',
     filename: 'users.jsonl',
@@ -1359,6 +1370,15 @@ async function validatePortableExport(exportDir: string): Promise<ValidationResu
     } catch (err) {
       errors.push((err as Error).message);
     }
+  }
+
+  for (const [index, record] of (recordsByEntity.invoice_records || []).entries()) {
+    const context = `invoice_records[${index}]`;
+    requireString(record, 'id', errors, context);
+    requiredIntegerField(record, 'revision', errors, context, 1);
+    requiredEnum(record, 'status', new Set(['pending','confirmed','rejected']), errors, context);
+    if (record.PK !== `INVOICE#${record.id}` || record.SK !== record.PK) errors.push(`${context} invalid storage identity`);
+    if (!record.source || !record.destinations || !Array.isArray(record.audit)) errors.push(`${context} missing publication provenance or audit`);
   }
 
   const userIds = collectIds(recordsByEntity.users || [], 'user_id', 'users', errors);

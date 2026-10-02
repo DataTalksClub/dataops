@@ -54,13 +54,37 @@ dataops recurring pause <id>
 dataops recurring resume <id>
 dataops recurring delete <id>
 dataops recurring generate [--date YYYY-MM-DD]
+
+dataops invoices list | readiness
+dataops invoices detail <id> | document <id>
+dataops invoices process --intake-item-id ID
+dataops invoices edit <id> --revision N --paid-date YYYY-MM-DD --amount-eur N --payment-evidence NOTE
+dataops invoices confirm <id> --revision N
+dataops invoices reject <id> --revision N [--reason NOTE]
+dataops invoices retry <id> --revision N
 ```
 
 Every command accepts `--json` and prints the raw API response, so the CLI
 composes with `jq` and scripts.
 
+Invoice details include original-document provenance, extraction method and evidence,
+missing payment evidence, review revision, audit history, and separate Dropbox and
+spreadsheet results. Review actual payment values before confirming the current
+revision. A confirmed response can still contain incomplete publication; inspect
+both destination states and use `retry` to reconcile unfinished work. Reprocessing
+an intake stages drafts and does not approve them. `readiness` reports configuration
+checks without exposing credentials. `document` returns a short-lived private PDF
+URL; treat it as sensitive.
+
+`invoices edit` accepts `--transaction-date`, `--paid-date`, `--counterparty`,
+`--description`, `--amount`, `--currency`, `--amount-eur`, `--statement-ref`,
+`--quantity`, `--subtype`, `--period`, `--category`, `--comment`, `--payment-evidence`,
+`--account-context`, `--invoice-number`, `--archive-required true|false`, and
+`--archive-exception-reason`. Supply empty strings to clear a field. The API owns
+validation, revision checks, confirmation, and provider reconciliation.
+
 ## Adding commands
 
-The CLI deliberately covers less than the web UI. To wrap another route, add a
-module under `src/commands/` and register it in `src/commands/index.mjs`; the
+To wrap another route, add a module under `src/commands/` and register it in
+`src/cli.mjs`; the
 client in `src/api.mjs` already handles auth, errors, and the `/work/api` seam.

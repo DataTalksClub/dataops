@@ -8,6 +8,7 @@ import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import {
+  TABLE_BOOKKEEPING,
   TABLE_ARTIFACTS,
   TABLE_ASSISTANT_JOBS,
   TABLE_AUDIT_EVENTS,
@@ -1161,10 +1162,11 @@ describe('portable export timestamp anchoring', () => {
       'manifest.json',
       ...ENTITY_SPECS.map((spec) => spec.filename),
     ];
-    assert.strictEqual(ENTITY_SPECS.length, 24);
+    assert.strictEqual(ENTITY_SPECS.length, 28);
     assert.strictEqual(new Set(expectedFiles).size, expectedFiles.length);
 
     const durableTableSuffixBySourceName = new Map<string, string>([
+      [TABLE_BOOKKEEPING, 'bookkeeping'],
       [TABLE_TASKS, 'tasks'],
       [TABLE_CARDS, 'cards'],
       [TABLE_TEMPLATES, 'templates'],
@@ -1178,6 +1180,7 @@ describe('portable export timestamp anchoring', () => {
       [TABLE_CONVERSATIONAL_STATE, 'conversational-state'],
     ]);
     const expectedDurableTables = [
+      'bookkeeping',
       'tasks',
       'cards',
       'templates',

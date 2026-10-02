@@ -40,7 +40,7 @@ function writeFixtureArtifact(destination, contents = 'handler bytes') {
   const manifest = {
     schemaVersion: 1,
     format: 'dataops-sam-esbuild',
-    buildFormatVersion: 'dataops-sam-esbuild-v2-isolated-install',
+    buildFormatVersion: 'dataops-sam-esbuild-v3-invoice-pdf',
     target: 'node24',
     fingerprint: 'fixture',
     bundledOutputs: ['dist/handler.js'],

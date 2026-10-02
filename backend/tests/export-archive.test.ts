@@ -645,7 +645,7 @@ describe('offsite portable export archives', () => {
       maxAggregatePayloadBytes: aggregateSize + 1,
     };
 
-    assert.strictEqual(filenames.length, 25);
+    assert.strictEqual(filenames.length, 29);
     assert.ok(limits.maxCompressedArchiveBytes < DEFAULT_ARCHIVE_EXTRACTION_LIMITS.maxCompressedArchiveBytes);
     assert.ok(limits.maxInflatedArchiveBytes < DEFAULT_ARCHIVE_EXTRACTION_LIMITS.maxInflatedArchiveBytes);
     assert.ok(limits.maxMembers < DEFAULT_ARCHIVE_EXTRACTION_LIMITS.maxMembers);
@@ -669,7 +669,7 @@ describe('offsite portable export archives', () => {
     assert.strictEqual(evidence.report.dry_run_import.totalRecords, 1);
     assert.strictEqual(evidence.report.dry_run_import.wouldWrite.tasks, 1);
     assert.strictEqual(evidence.report.target_environment, 'Below Ceiling Drill');
-    assert.strictEqual((await fs.readdir(evidence.extractedDir)).length, 25);
+    assert.strictEqual((await fs.readdir(evidence.extractedDir)).length, 29);
     await fs.access(evidence.evidencePath);
   });
 });

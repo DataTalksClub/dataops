@@ -29,6 +29,7 @@ Before any restore, make sure both layers are active:
 1. **DynamoDB PITR** - point-in-time recovery is enabled on all durable
    execution tables:
 
+   - `<stack>-bookkeeping`
    - `<stack>-tasks`
    - `<stack>-cards`
    - `<stack>-templates`
@@ -42,7 +43,7 @@ Before any restore, make sure both layers are active:
    - `<stack>-conversational-state`
 
    This protects against accidental deletes and bad updates. Ephemeral session
-   state is excluded. Separately governed bookkeeping, sponsor-CRM, calendar,
+   state is excluded. Separately governed sponsor-CRM, calendar,
    and newsletter-slot domains are outside the portable execution boundary.
 2. **Portable export archive** - an application-level JSONL snapshot bundled as
    a retained offsite archive that does not depend on DynamoDB internals. This
@@ -61,6 +62,7 @@ aws dynamodb create-backup \
 
 Repeat for each durable execution table:
 
+- `<stack>-bookkeeping`
 - `<stack>-tasks`
 - `<stack>-cards`
 - `<stack>-templates`
@@ -95,6 +97,10 @@ The export produces:
 
 ```text
 manifest.json
+invoice_records.jsonl
+invoice_claims.jsonl
+invoice_cursors.jsonl
+bookkeeping_records.jsonl
 users.jsonl
 tasks.jsonl
 cards.jsonl
@@ -121,7 +127,7 @@ result_notifications.jsonl
 conversational_private_payloads.jsonl
 ```
 
-All 24 JSONL families are required even when a snapshot contains zero records,
+All 28 JSONL families are required even when a snapshot contains zero records,
 so an empty JSONL file is valid. Password hashes and session tokens are redacted.
 The portable export excludes file and artifact binaries; it contains metadata
 only.
@@ -283,3 +289,5 @@ Run this sequence end-to-end before production data becomes critical:
 - Production restore/import/write behavior is human-gated. Automated cron
   export, admin export, validation, and dry-run evidence paths are read-only
   with respect to production execution tables.
+
+Invoice draft, approval/audit, destination outcomes, identity claims, row reservations, and confirmed transaction projections are included in these encrypted private exports. On restore, clear publication leases and set `restoredNeedsReconciliation`; keep verified external references. There is no automatic publication replay. An authenticated explicit retry reconciles provider records before any incomplete effect. Preserve invoice identity claims and sheet cursors with their invoices. PDF binaries remain protected by their managed storage backup boundary.

@@ -143,6 +143,10 @@ Required archive layout:
 
 ```text
 manifest.json
+invoice_records.jsonl
+invoice_claims.jsonl
+invoice_cursors.jsonl
+bookkeeping_records.jsonl
 users.jsonl
 tasks.jsonl
 cards.jsonl
@@ -169,7 +173,7 @@ result_notifications.jsonl
 conversational_private_payloads.jsonl
 ```
 
-All 24 JSONL files are required, including when they are empty. The manifest's
+All 28 JSONL files are required, including when they are empty. The manifest's
 `omitted_entities` list describes intentionally excluded categories such as live
 sessions and binary payloads; it is not a way to omit implemented entity files.
 
@@ -332,6 +336,10 @@ This is the safety check before using an export for migration or restore.
 
 The export structure should map cleanly to relational tables:
 
+- `invoice_records.jsonl` to `invoice_records`
+- `invoice_claims.jsonl` to `invoice_claims`
+- `invoice_cursors.jsonl` to `invoice_cursors`
+- `bookkeeping_records.jsonl` to `bookkeeping_records`
 - `users.jsonl` to `users`
 - `tasks.jsonl` to `tasks`
 - `cards.jsonl` to `cards`
@@ -408,3 +416,5 @@ Use this checklist when implementing data safety.
 - Add restore validator.
 - Add dry-run import.
 - Add tests for export structure and validation failures.
+
+Invoice draft, approval/audit, destination outcomes, identity claims, row reservations, and confirmed transaction projections are included in these encrypted private exports. On restore, clear publication leases and set `restoredNeedsReconciliation`; keep verified external references. There is no automatic publication replay. An authenticated explicit retry reconciles provider records before any incomplete effect. Preserve invoice identity claims and sheet cursors with their invoices. PDF binaries remain protected by their managed storage backup boundary.

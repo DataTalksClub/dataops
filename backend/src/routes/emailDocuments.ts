@@ -1,3 +1,4 @@
+import { processInvoiceIntake } from '../invoices/service';
 import { createHash, timingSafeEqual } from 'crypto';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
@@ -442,6 +443,10 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
   if (failures.length) {
     audit('partial-failure', credential, correlation, documents.length, failures.length);
     return response(207, { status: 'partial-failure', intakeItemId: item.id, artifacts: publicArtifacts(refs), failures });
+  }
+  if (['invoice','receipts','invoice-attachment','invoice-pdf'].includes(recipientRoute)) {
+    try { await processInvoiceIntake(client, item.id); }
+    catch { /* Import acknowledgement remains distinct from review/publication. Reprocess from Finance. */ }
   }
   audit(reservation.created ? 'accepted' : 'resumed', credential, correlation, documents.length);
   return response(reservation.created ? 202 : 200, { status: reservation.created ? 'accepted' : 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(refs) });

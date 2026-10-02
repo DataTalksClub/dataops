@@ -7,6 +7,8 @@ import {
 } from "./commands/auth.mjs";
 import * as recurring from "./commands/recurring.mjs";
 
+import * as invoices from "./commands/invoices.mjs";
+
 const USAGE = `dataops - command line client for the DataOps portal API
 
 Usage
@@ -28,6 +30,19 @@ Recurring schedules
   recurring delete <id>
   recurring generate [--date YYYY-MM-DD] [--until YYYY-MM-DD]
 
+Invoices (review before publication)
+  invoices list | readiness
+  invoices detail <id> | document <id>
+  invoices edit <id> --revision N [--paid-date YYYY-MM-DD] [--amount-eur N]
+    [--payment-evidence NOTE] [--counterparty NAME] [--invoice-number REF]
+    [--account-context CONTEXT] [--archive-required true|false]
+    Other fields: transaction-date, description, amount, currency, statement-ref,
+    quantity, subtype, period, category, comment, archive-exception-reason.
+  invoices confirm <id> --revision N
+  invoices reject <id> --revision N [--reason NOTE]
+  invoices retry <id> --revision N
+  invoices process --intake-item-id ID
+
 Global options
   --url URL     Portal to talk to (default: the profile from the last login)
   --json        Print the raw API response
@@ -44,6 +59,7 @@ const COMMANDS = {
   tokens: {
     subcommands: { list: tokensList, revoke: tokensRevoke },
   },
+  invoices: { subcommands: { list: invoices.list, detail: invoices.detail, document: invoices.document, readiness: invoices.readiness, edit: invoices.edit, confirm: invoices.confirm, reject: invoices.reject, retry: invoices.retry, process: invoices.processIntake } },
   recurring: {
     subcommands: {
       list: recurring.list,

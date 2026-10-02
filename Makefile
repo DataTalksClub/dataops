@@ -17,7 +17,7 @@ help:
 	@printf '%-28s %s\n' 'make test-frontend-unit' 'Run fast frontend routing and work-model unit tests.'
 	@printf '%-28s %s\n' 'make test-frontend-coverage' 'Run frontend unit tests with all production modules in coverage.'
 	@printf '%-28s %s\n' 'make test-backend' 'Run backend unit tests.'
-	@printf '%-36s %s\n' 'make test-backend-transactions' 'Run all seven blocking DynamoDB transaction suites.'
+	@printf '%-36s %s\n' 'make test-backend-transactions' 'Run all eight blocking DynamoDB transaction suites.'
 	@printf '%-28s %s\n' 'make typecheck-backend' 'Run backend TypeScript checks.'
 	@printf '%-28s %s\n' 'make build-backend' 'Build backend TypeScript/package assets.'
 	@printf '%-28s %s\n' 'make test-backend-e2e' 'Run backend Playwright E2E tests; browsers must be installed.'

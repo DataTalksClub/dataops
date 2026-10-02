@@ -1,3 +1,4 @@
+import { handleInvoiceRoutes } from "./invoices";
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -251,6 +252,7 @@ export async function handleBookkeepingRoutes(
   sessionAuthorized: boolean,
 ): Promise<LambdaResponse> {
   if (!sessionAuthorized) return json(401, { error: "Unauthorized" });
+  if (path.startsWith("/api/bookkeeping/invoices")) return handleInvoiceRoutes(path, method, event, client, sessionAuthorized);
   const match = path.match(/^\/api\/bookkeeping\/transactions(?:\/([^/]+))?$/);
   if (match) {
     if (method === "GET" && !match[1])

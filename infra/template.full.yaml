@@ -96,6 +96,11 @@ Parameters:
   TypefullySocialSetDataTalksClub:
     Type: Number
     Default: 0
+  InvoicePublicationConfig:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Optional base64-encoded private JSON broker and invoice destination configuration
   EmailDocumentIntakeSecretArn:
     Type: String
     Description: ARN of the pre-created email document intake secret
@@ -347,6 +352,7 @@ Rules:
               - !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
         AssertDescription: Sponsor sending requires separate pre-created template and HMAC secret ARNs
 Conditions:
+  HasInvoicePublicationConfig: !Not [!Equals [!Ref InvoicePublicationConfig, ""]]
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
   HasZaiConversationalSecret: !Not [!Equals [!Ref ZaiConversationalApiKeySecretArn, ""]]
@@ -377,6 +383,13 @@ Globals:
       - x86_64
 
 Resources:
+  InvoicePublicationSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: HasInvoicePublicationConfig
+    Properties:
+      Name: !Sub ${AWS::StackName}/invoice-publication
+      Description: Scoped broker credential and private invoice destinations
+      SecretString: !Ref InvoicePublicationConfig
   ConversationalRolloutAlarmTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -1911,7 +1924,7 @@ Resources:
       CodeUri: sam-build
       Runtime: nodejs24.x
       Handler: dist/handler.handler
-      Timeout: 30
+      Timeout: 120
       MemorySize: 1024
       LoggingConfig:
         LogFormat: JSON
@@ -1986,6 +1999,7 @@ Resources:
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
               - !Ref WorkEnginePortalSecret
               - !Ref EmailDocumentIntakeSecretArn
+              - !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, !Ref AWS::NoValue]
               - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${TelegramIntegrationSecretName}-*
               - !If
                 - HasZaiConversationalSecret
@@ -2080,6 +2094,7 @@ Resources:
           DATAOPS_DOCS_DOMAIN: "1"
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret
+          INVOICE_PUBLICATION_SECRET_NAME: !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, ""]
           EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn
           EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket
           EMAIL_DOCUMENTS_KMS_KEY: !Ref EmailDocumentsKey

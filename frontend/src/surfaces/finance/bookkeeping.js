@@ -1,3 +1,4 @@
+import { mountInvoiceReview } from "./invoices.js";
 import { html } from "./shared.js";
 
 function focusFirstUsableControl(dialog) {
@@ -58,6 +59,7 @@ export function createBookkeepingSurface(context) {
         </div>
         <button class="primary-button" data-bookkeeping-add>Add entry</button>
       </header>
+      <section class="bookkeeping-section invoice-review-section" data-invoice-review></section>
       <nav class="bookkeeping-job-nav" aria-label="Bookkeeping jobs">
         <a href="#bookkeeping-ledger"
           ><span>1</span><strong>Record ledger</strong
@@ -254,6 +256,8 @@ export function createBookkeepingSurface(context) {
       </dialog>`;
     documentList.append(surface);
     setRouteTitle("Bookkeeping");
+    await mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context);
+
     let entries = [],
       documents = [],
       links = [];

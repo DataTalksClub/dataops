@@ -418,6 +418,10 @@ function validateProposalConversation(
 }
 
 function restoredRecord(entity: string, record: JsonRecord): JsonRecord {
+  if (entity === 'invoice_records') {
+    const { leaseOwner: _owner, leaseUntil: _until, ...safe } = record;
+    return { ...safe, restoredNeedsReconciliation: true };
+  }
   if (entity === 'proposal_presentations') {
     return { ...record, status: 'revoked', restoreDisposition: 'unusable_without_token_material' };
   }
