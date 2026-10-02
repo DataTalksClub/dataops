@@ -13467,7 +13467,7 @@ body:not([data-workspace-view="docs"]) #filters-section {
 .invoice-fields label { display: flex; flex-direction: column; gap: .35rem; }
 .invoice-fields input, .invoice-fields select { width: 100%; min-height: 2.5rem; padding: .5rem; }
 .invoice-destinations { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; padding: 0; list-style: none; }
-.invoice-destinations li { border: 1px solid var(--border-color, #ddd); padding: 1rem; overflow-wrap: anywhere; }
+.invoice-destinations li { border: 1px solid var(--dk-border-default); padding: 1rem; overflow-wrap: anywhere; }
 [data-invoice-detail] { padding-top: 1.5rem; }
 [data-invoice-detail] details, [data-invoice-process] { margin: 1rem 0; }
 [data-invoice-detail] fieldset { margin-top: 1rem; }
