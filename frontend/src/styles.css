@@ -33,9 +33,6 @@
 
   /* Operational-dashboard attention ramp: overdue pressure reads red (it
      rides dakit's danger role so both themes stay in sync), due reads
-     amber, waiting reads gray. */
-  /* Operational-dashboard attention ramp: overdue pressure reads red (it
-     rides dakit's danger role so both themes stay in sync), due reads
      amber, waiting reads gray. Aliased to dakit's primitive ramps so both
      themes stay in sync through the shared build. */
   --attention-due: var(--dk-amber-500);
@@ -2699,7 +2696,7 @@ body[data-workspace-view="review"] .document-list {
   background: var(--dk-bg-muted);
 }
 
-body[data-workspace-view="home"] #git-section {
+body[data-workspace-view="home"] #knowledge-section {
   display: none;
 }
 
@@ -13458,6 +13455,7 @@ body:not([data-workspace-view="docs"]) #filters-section {
 #history-comparison:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 20px; overflow: auto; }
 #history-comparison section { min-width: 0; }
 #history-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }
+#lint-section { display: flex; align-items: center; gap: 12px; padding: 12px 20px 0; }
 @media (max-width: 600px) {
   .history-search-form { flex-direction: column; align-items: stretch; }
   #history-comparison:not([hidden]) { grid-template-columns: 1fr; }
