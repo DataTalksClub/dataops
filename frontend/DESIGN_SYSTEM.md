@@ -51,8 +51,19 @@ Keep the object model visible in the UI:
 
 ## Foundation tokens
 
-The tokens in `frontend/src/styles.css` are the implementation source of truth.
-They intentionally follow the Course Management Platform names where practical.
+Shared roles — every color, font, radius, control size, and shadow — come from
+**dakit**, the internal design system shared with dapier, dataqna, and relay.
+The portal vendors dakit's generated token file at
+`frontend/src/dakit/tokens.css` (refresh it by running `node build.mjs` in
+`../dakit` and copying `dist/tokens.css`), and styles resolve to `--dk-*`
+roles (`--dk-bg-page`, `--dk-text-muted`, `--dk-accent-default`, `--dk-*`
+status triplets) directly. Do not hardcode hex values or introduce a second
+token vocabulary.
+
+`frontend/src/styles.css` defines only DataOps-local roles dakit does not
+have yet (the `attention-*` ramp, `--control-hover-border`, layout metrics,
+card alignment). The table below keeps the old portal names for reference;
+each role's values now live in dakit and are identical in meaning.
 
 ### Neutral palette
 
@@ -337,8 +348,8 @@ operator's decision. Do not add a pill to every row by default.
 - Migrate one coherent surface at a time; Home is first.
 - During migration, legacy classes may receive minimal structural rules so a
   route remains usable. They are not a second design system.
-- New styles must use foundation tokens rather than hard-coded one-off colors,
-  radii, shadows, or control sizes.
+- New styles must use dakit `--dk-*` tokens rather than hard-coded one-off
+  colors, radii, shadows, or control sizes.
 - Do not reintroduce the retired frontend, a second router, or a second token
   vocabulary.
 - Visual screenshots support review but do not prove routing, focus, state,
@@ -347,9 +358,8 @@ operator's decision. Do not add a pill to every row by default.
 
 ## Sources of truth
 
-- DataOps implementation: `frontend/src/styles.css`
+- Shared tokens and components (dakit): `../dakit` — `tokens/`,
+  `css/`, `docs/`; vendored build output: `frontend/src/dakit/tokens.css`
+- DataOps implementation: `frontend/src/styles.css` (local roles and rules only)
 - DataOps product behavior: `PORTAL_ANALYSIS.md` and `PROJECT_PLAN.md`
-- Primary design reference: `../course-management-platform/docs/design-system.md`
-- Reference implementation tokens/components:
-  `../course-management-platform/courses/static/courses.css`
 - Interaction baseline: GitHub Primer, without GitHub branding

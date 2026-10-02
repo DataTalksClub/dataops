@@ -18,6 +18,15 @@ related_docs:
 
 # DataOps Design System
 
+> **Status: historical spec.** Shared tokens are now owned by **dakit**
+> (`../dakit`), the design system shared with dapier, dataqna, and relay. The
+> portal vendors dakit's generated tokens at `frontend/src/dakit/tokens.css`
+> and styles resolve to `--dk-*` roles; the teal `--do-*` namespace below was
+> retired and never shipped in this palette. The component vocabulary, state,
+> accessibility, and responsive rules remain useful guidance; the token tables
+> describe a superseded proposal. See `frontend/DESIGN_SYSTEM.md` for the
+> current system.
+
 ## Purpose
 
 This is the internal V1 design-system specification for the DataOps operations
@@ -82,9 +91,13 @@ Follow-up implementation issue:
 
 ## Token Namespace
 
-Use `--do-*` for canonical DataOps tokens. Existing `frontend/` and
-`work-engine/` variables may remain as compatibility aliases during migration,
-but new shared components should consume `--do-*`.
+Shared roles live in dakit and are consumed as `--dk-*` tokens
+(`frontend/src/dakit/tokens.css`; refresh via `node build.mjs` in `../dakit`).
+New shared components must use `--dk-*` roles — surfacing, text, borders,
+accent, status triplets, focus, type, space, radius, and control sizes — and
+must not introduce a project-local color vocabulary. DataOps-local roles
+(the `attention-*` ramp and layout metrics) live in the `:root` block of
+`frontend/src/styles.css` until promoted into dakit.
 
 ### Color Tokens
 
