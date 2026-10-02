@@ -2325,7 +2325,7 @@ body[data-workspace-view="review"] .document-list {
   max-height: calc(100vh - 80px);
   overflow: auto;
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   box-shadow: var(--dk-shadow-overlay);
 }
@@ -2734,7 +2734,7 @@ body[data-workspace-view="home"] #filters-section {
   margin: 24px auto;
   overflow: auto;
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   box-shadow: var(--dk-shadow-overlay);
 }
@@ -2883,7 +2883,7 @@ body[data-workspace-view="home"] #filters-section {
   gap: 12px;
   max-width: min(480px, calc(100vw - 32px));
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   box-shadow: var(--dk-shadow-overlay);
   padding: 10px 12px;
@@ -3201,7 +3201,7 @@ body[data-workspace-view="sponsors"] .document-list {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   box-shadow: var(--dk-shadow-overlay);
   padding: 12px;
@@ -3582,7 +3582,7 @@ body[data-workspace-view="sponsors"] .document-list {
   margin: 24px auto;
   overflow: hidden;
   border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   box-shadow: var(--dk-shadow-overlay);
@@ -5389,7 +5389,7 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   max-height: min(760px, calc(100vh - 48px));
   overflow: hidden;
   border: 1px solid var(--dk-border-strong);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
   box-shadow: var(--dk-shadow-overlay);
@@ -10896,7 +10896,7 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
   max-height: 260px;
   overflow-y: auto;
   border: 1px solid var(--dk-border-strong);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   box-shadow: var(--dk-shadow-overlay);
   padding: 4px;
@@ -11642,7 +11642,7 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
   min-width: 150px;
   gap: 2px;
   border: 1px solid var(--dk-border-strong);
-  border-radius: var(--dk-radius-md);
+  border-radius: var(--dk-radius-lg);
   background: var(--dk-bg-surface);
   box-shadow: var(--dk-shadow-overlay);
   padding: 4px;
