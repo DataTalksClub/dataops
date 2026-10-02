@@ -167,6 +167,8 @@ describe('githubStore - path helpers', () => {
     assert.ok(shouldHydratePath('content/00-start-here/operating-model/assets/chart.png'));
     assert.ok(shouldHydratePath('content/00-start-here/operating-model/reference/roadmap/2026-q4/system-days.ics'));
     assert.ok(shouldHydratePath('_docs/operating-model/weekly-roadmap.csv'));
+    assert.ok(shouldHydratePath('workflow-templates/operating-model-w04.yaml'));
+    assert.ok(shouldHydratePath('workflow-templates/webinars.YML'));
     assert.ok(isOperatingModelDownload('_docs/operating-model/function-registry.yaml'));
     for (const extension of ['.jpg', '.jpeg', '.gif', '.webp', '.svg']) {
       assert.ok(isCanonicalContentAsset(`content/images/x/pic${extension}`), extension);
@@ -195,6 +197,9 @@ describe('githubStore - path helpers', () => {
     }
     assert.equal(isOperatingModelDownload('_docs/audit/private.csv'), false);
     assert.equal(isOperatingModelDownload('_docs/operating-model/private.json'), false);
+    assert.equal(shouldHydratePath('workflow-templates/nested/extra.yaml'), false);
+    assert.equal(shouldHydratePath('workflow-templates/template.txt'), false);
+    assert.equal(shouldHydratePath('workflow-templates/.hidden.yaml'), false);
   });
 });
 
@@ -211,6 +216,7 @@ describe('githubStore - read/list/commit (GitHub mocked)', () => {
       'content/images/a/pic.png': 'PNGDATA',
       '_docs/operating-model/weekly-roadmap.csv': 'week,theme',
       'content/x/data.json': '{"canonical":false}',
+      'workflow-templates/operating-model-w04.yaml': 'id: operating-model-w04',
       'README.md': 'ignored',
     });
     store = makeStore(github, dir);
@@ -251,6 +257,7 @@ describe('githubStore - read/list/commit (GitHub mocked)', () => {
     assert.ok(existsSync(store.localPath('content/sub/b.md')));
     assert.ok(existsSync(store.localPath('content/images/a/pic.png')));
     assert.ok(existsSync(store.localPath('_docs/operating-model/weekly-roadmap.csv')));
+    assert.ok(existsSync(store.localPath('workflow-templates/operating-model-w04.yaml')));
     assert.ok(!existsSync(store.localPath('README.md')));
     assert.ok(!existsSync(store.localPath('content/x/data.json')));
     // The archive carries the bytes quota free; the single REST call left is

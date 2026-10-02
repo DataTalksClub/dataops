@@ -206,7 +206,14 @@ export function isOperatingModelDownload(path: string): boolean {
 
 /** True when a tree/tarball path should be hydrated into the cache. */
 export function shouldHydratePath(path: string): boolean {
-  return isCanonicalContentAsset(path) || isOperatingModelDownload(path);
+  // workflow-templates YAMLs are read by the operating-model loader and the
+  // deployment seeds on every cold container; hydrating them keeps the whole
+  // read path off the rate-limited REST API.
+  return (
+    isCanonicalContentAsset(path)
+    || isOperatingModelDownload(path)
+    || /^workflow-templates\/[^.][^/]*\.ya?ml$/i.test(path)
+  );
 }
 
 /**
