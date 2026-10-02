@@ -71,13 +71,21 @@ export async function readiness() {
   return {ready:checks.every(x=>x.ready),checks};
 }
 function identity(record:Invoice) {const f=record.fields;return sha(`${f.counterparty?.toLowerCase().trim()}\n${f.accountContext?.toLowerCase().trim()}\n${f.invoiceNumber?.toLowerCase().trim()}`);}
-export async function confirmInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string):Promise<Invoice> {
+export async function verifyInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string):Promise<Invoice> {
+  if(record.status==='rejected') throw new Error('rejected-invoice');
+  if(missingEvidence(record.fields).length) throw new Error('payment-or-invoice-evidence-required');
+  // Explicit authenticated verification attests actual reviewed values. PDF
+  // extraction alone never supplies this attestation or a bank conversion.
+  await artifactBytes(record.source.artifactId,client);
+  return confirmInvoice(client,record,actor,true);
+}
+export async function confirmInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string,automatically=false):Promise<Invoice> {
   if(record.status==='rejected') throw new Error('rejected-invoice');
   if(record.status==='pending') {
     if(missingEvidence(record.fields).length) throw new Error('payment-or-invoice-evidence-required');
     const duplicates=(await listInvoices(client)).filter(x=>x.id!==record.id && x.status!=='rejected' && identity(x)===identity(record));
     if(duplicates.length) throw new Error('ambiguous-invoice-identity-review-and-reject-duplicate');
-    const next=structuredClone(record);next.status='confirmed';next.confirmedRevision=record.revision;next.audit.push({action:'confirmed',actor,at:new Date().toISOString(),revision:record.revision});
+    const next=structuredClone(record);const at=new Date().toISOString();next.status='confirmed';next.confirmedRevision=record.revision;next.verification={revision:record.revision,actor,at,method:'operator'};next.audit.push({action:'fields-verified',actor,at,revision:record.revision},{action:automatically?'automatically-confirmed':'confirmed',actor,at,revision:record.revision});
     record=await approveInvoice(client,next,record,identity(record));
   }
   return publishInvoice(client,record,actor);

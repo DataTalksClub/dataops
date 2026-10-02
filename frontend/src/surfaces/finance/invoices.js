@@ -36,6 +36,7 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     <h4>${e(record.fields?.counterparty || "Invoice review")}</h4>
     <p>${e(record.status)} · Revision ${e(record.revision)} · Publication ${e(record.publicationStatus)}</p>
     </header>
+    ${record.verification ? `<p>Fields verified by ${e(record.verification.actor)} · Revision ${e(record.verification.revision)} · ${e(record.verification.at)}</p>` : ""}
     <p>Extraction: ${e(record.extraction?.method || "Manual completion required")}</p>
     <ul>${[
       ...(record.extraction?.issues || []),
@@ -69,11 +70,14 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </div>
     </fieldset>
     <p>Enter the actual bank EUR amount and payment evidence. Invoice tax conversion is not bank payment evidence.</p>
-    ${pending ? '<button type="submit" class="quiet-button">Save corrections</button>' : ""}</form>
+    ${pending ? `<label class="checkbox-label">
+    <input type="checkbox" name="verified" />
+    <span>I verified invoice and actual payment values. Publish automatically when I save.</span>
+    </label><button type="submit" class="quiet-button">Save corrections</button>` : ""}</form>
     <ul class="invoice-destinations">${destinations}</ul>
     <div class="row-actions">${
       pending
-        ? `<button type="button" class="primary-button" data-invoice-action="confirm">Confirm reviewed revision and publish</button>
+        ? `<button type="button" class="primary-button" data-invoice-action="verify" ${record.missingEvidence?.length ? "disabled" : ""}>Verify and publish automatically</button>
     <button type="button" class="danger-text-button" data-invoice-action="reject">Reject invoice</button>`
         : record.status === "confirmed" &&
             record.publicationStatus !== "complete"
@@ -98,8 +102,8 @@ export async function mountInvoiceReview(host, context) {
   host.innerHTML = `<header class="section-header">
     <div>
     <p class="section-kicker">Forwarded invoices</p>
-    <h3>Review before publication</h3>
-    <p>Confirm each expense before adding it to the spreadsheet and archive. Each destination is verified separately.</p>
+    <h3>Verify fields for automatic publication</h3>
+    <p>Verify invoice and actual payment values to publish automatically to the spreadsheet and archive. Each destination is checked separately.</p>
     </div>
     <button type="button" data-invoice-refresh>Refresh invoices</button>
     </header>
@@ -163,7 +167,7 @@ export async function mountInvoiceReview(host, context) {
     } else list.textContent = `Cannot load invoices: ${queue.reason.message}`;
     host.querySelector("[data-invoice-readiness]").innerHTML =
       readiness.status === "fulfilled"
-        ? `<p>${readiness.value.ready ? "Ready for publication after review." : "Publication blocked. Resolve the checks below."}</p>
+        ? `<p>${readiness.value.ready ? "Ready for automatic publication after fields are verified." : "Publication blocked. Resolve the checks below."}</p>
     <ul>${(readiness.value.checks || []).map((check) => `<li>${e(check.name)}: ${check.ready ? "Ready" : "Needs attention"} — ${e(check.message)}</li>`).join("")}</ul>`
         : `Cannot check readiness: ${e(readiness.reason.message)}`;
   }
@@ -190,12 +194,14 @@ export async function mountInvoiceReview(host, context) {
       detail.querySelectorAll("[data-invoice-action]").forEach((button) => {
         button.disabled = true;
       });
-      status.textContent = "Save corrections before confirming this revision.";
+      status.textContent = "Save corrected values before verifying this revision.";
     });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       safe(async () => {
         const values = Object.fromEntries(new FormData(form));
+        const verified = values.verified === "on";
+        delete values.verified;
         for (const key of ["amount", "amountEur"])
           values[key] = values[key].trim() || null;
         values.quantity =
@@ -203,12 +209,16 @@ export async function mountInvoiceReview(host, context) {
         values.archiveRequired = values.archiveRequired === "true";
         const result = await api(
           `/${encodeURIComponent(selected.id)}`,
-          json("PUT", { revision: selected.revision, fields: values }),
+          json("PUT", { revision: selected.revision, fields: values, ...(verified ? { verified: true } : {}) }),
         );
         await show(result);
         await refresh();
         status.textContent =
-          "Corrections saved. Review the new revision before confirming.";
+          result.publicationStatus === "complete"
+            ? "Fields verified. Publication verified in each required destination."
+            : result.status === "confirmed"
+              ? `Fields verified. Publication ${result.publicationStatus}; inspect each destination below.`
+              : "Corrections saved. Verify the new revision to publish automatically.";
       });
     });
     detail.querySelectorAll("[data-invoice-action]").forEach((button) =>
@@ -251,7 +261,7 @@ export async function mountInvoiceReview(host, context) {
         await refresh();
         status.textContent =
           (result.issues || []).join("; ") ||
-          `${result.items?.length || 0} invoice draft(s) available for review. Ingestion does not confirm publication.`;
+          `${result.items?.length || 0} invoice draft(s) available for review. Ingestion does not verify fields or publish.`;
       });
     });
   await refresh();

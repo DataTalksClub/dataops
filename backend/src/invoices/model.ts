@@ -17,6 +17,7 @@ export interface Invoice {
   destinations: { dropbox: Destination; sheets: Destination };
   audit: Array<{ action: string; actor: string; at: string; revision: number }>;
   createdAt: string; updatedAt: string; confirmedRevision?: number;
+  verification?: { revision: number; actor: string; at: string; method: 'operator' };
   publicationBinding?: string; publicationError?: string; leaseOwner?: string; leaseUntil?: number; restoredNeedsReconciliation?: boolean;
 }
 const fields = new Set(['transactionDate','paidDate','counterparty','description','amount','currency','amountEur','statementRef','comment','quantity','subtype','period','category','paymentEvidence','accountContext','invoiceNumber','archiveRequired','archiveExceptionReason']);
@@ -51,5 +52,5 @@ export function missingEvidence(f: InvoiceFields): string[] {
 }
 export function publicInvoice(record: Invoice) {
   const { leaseOwner: _owner, leaseUntil: _until, ...safe } = record;
-  return { ...safe, missingEvidence: missingEvidence(record.fields), publicationStatus: record.status !== 'confirmed' ? 'not-confirmed' : record.publicationError ? 'incomplete' : ['verified','skipped'].includes(record.destinations.dropbox.state) && record.destinations.sheets.state === 'verified' ? 'complete' : 'incomplete' };
+  return { ...safe, publicationPolicy: 'automatic-when-verified', verifiedRevision: record.verification?.revision, missingEvidence: missingEvidence(record.fields), publicationStatus: record.status !== 'confirmed' ? 'not-confirmed' : record.publicationError ? 'incomplete' : ['verified','skipped'].includes(record.destinations.dropbox.state) && record.destinations.sheets.state === 'verified' ? 'complete' : 'incomplete' };
 }

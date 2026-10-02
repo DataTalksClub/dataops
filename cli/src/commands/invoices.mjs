@@ -51,11 +51,15 @@ export async function edit(args, io) {
     fields[name] = value;
   }
   if (!Object.keys(fields).length) throw new Error("Pass at least one invoice field to correct.");
-  return show(await client(args).put(`${base}/${id(args)}`, { revision: revision(args), fields }), args, io);
+  if (args.verified !== undefined && ![true, "true", "false"].includes(args.verified))
+    throw new Error("--verified must be true or false.");
+  const verified = args.verified === true || args.verified === "true";
+  return show(await client(args).put(`${base}/${id(args)}`, { revision: revision(args), fields, ...(verified ? { verified: true } : {}) }), args, io);
 }
 async function action(name, args, io) {
   return show(await client(args).post(`${base}/${id(args)}/${name}`, { revision: revision(args), ...(args.reason ? { reason: String(args.reason) } : {}) }), args, io);
 }
+export const verify = (args, io) => action("verify", args, io);
 export const confirm = (args, io) => action("confirm", args, io);
 export const reject = (args, io) => action("reject", args, io);
 export const retry = (args, io) => action("retry", args, io);

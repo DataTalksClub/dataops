@@ -59,7 +59,7 @@ dataops invoices list | readiness
 dataops invoices detail <id> | document <id>
 dataops invoices process --intake-item-id ID
 dataops invoices edit <id> --revision N --paid-date YYYY-MM-DD --amount-eur N --payment-evidence NOTE
-dataops invoices confirm <id> --revision N
+dataops invoices verify <id> --revision N
 dataops invoices reject <id> --revision N [--reason NOTE]
 dataops invoices retry <id> --revision N
 ```
@@ -69,10 +69,12 @@ composes with `jq` and scripts.
 
 Invoice details include original-document provenance, extraction method and evidence,
 missing payment evidence, review revision, audit history, and separate Dropbox and
-spreadsheet results. Review actual payment values before confirming the current
-revision. A confirmed response can still contain incomplete publication; inspect
+spreadsheet results. Verify invoice and actual payment values for the current revision to publish
+automatically. Use `edit --verified` to save corrected values and verify the new
+revision in one action, or `verify` to verify an unchanged reviewed revision.
+Extraction alone never marks values verified. A verified/confirmed response can still contain incomplete publication; inspect
 both destination states and use `retry` to reconcile unfinished work. Reprocessing
-an intake stages drafts and does not approve them. `readiness` reports configuration
+an intake stages drafts and does not verify fields or publish. `readiness` reports configuration
 checks without exposing credentials. `document` returns a short-lived private PDF
 URL; treat it as sensitive.
 
@@ -81,7 +83,10 @@ URL; treat it as sensitive.
 `--quantity`, `--subtype`, `--period`, `--category`, `--comment`, `--payment-evidence`,
 `--account-context`, `--invoice-number`, `--archive-required true|false`, and
 `--archive-exception-reason`. Supply empty strings to clear a field. The API owns
-validation, revision checks, confirmation, and provider reconciliation.
+validation, revision checks, verification, and provider reconciliation.
+`--verified` is an explicit declaration that you checked the invoice and actual
+payment evidence; it triggers automatic publication only if required evidence
+is complete.
 
 ## Adding commands
 

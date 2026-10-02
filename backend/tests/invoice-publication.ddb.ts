@@ -51,3 +51,30 @@ test('EUR equivalent decimal formats and evidenced distinct actual bank payment 
   const pending=await saveInvoice(client,equivalent,record);const published=await confirmInvoice(client,pending,'operator');assert.equal(publicInvoice(published).publicationStatus,'complete');
   const {record:other}=await stage('eur-mismatch');const mismatch=structuredClone(other);mismatch.fields.amount='10.00';mismatch.fields.amountEur='11';mismatch.fields.paymentEvidence='Explicit actual bank debit includes reviewed fee';const pendingActual=await saveInvoice(client,mismatch,other);const distinct=await confirmInvoice(client,pendingActual,'operator');assert.equal(publicInvoice(distinct).publicationStatus,'complete');assert.equal(distinct.fields.amount,'10.00');assert.equal(distinct.fields.amountEur,'11');assert.equal(rows.get(distinct.destinations.sheets.reservedRow!)![5],'-11');
 });
+test('complete but unverified drafts stay pending, explicit verification automatically publishes current revision',async()=>{
+  const {record,intakeId}=await stage('auto-verified');const count=writes;
+  const importedAgain=await processInvoiceIntake(client,intakeId);assert.equal(importedAgain.items[0].status,'pending');assert.equal(writes,count);
+  const response=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{'x-user-id':'verified-operator'},body:JSON.stringify({revision:record.revision})},client,true);
+  assert.equal(response.statusCode,200);const result=JSON.parse(response.body);assert.equal(result.publicationPolicy,'automatic-when-verified');assert.equal(result.publicationStatus,'complete');assert.equal(result.verifiedRevision,record.revision);assert.equal(result.verification.actor,'verified-operator');assert.ok(result.audit.some((event:{action:string})=>event.action==='automatically-confirmed'));
+  const repeated=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{'x-user-id':'verified-operator'},body:JSON.stringify({revision:record.revision})},client,true);assert.equal(repeated.statusCode,200);assert.equal(writes,count+2);
+});
+test('verified edit publishes the resulting revision; ordinary corrections never attest verification',async()=>{
+  const {record}=await stage('auto-edit');const count=writes;
+  const edited=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}`,'PUT',{headers:{'x-user-id':'editor'},body:JSON.stringify({revision:record.revision,fields:{description:'Reviewed corrected service'}})},client,true);
+  const pending=JSON.parse(edited.body);assert.equal(pending.status,'pending');assert.equal(pending.verification,undefined);assert.equal(writes,count);
+  const stale=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{},body:JSON.stringify({revision:record.revision})},client,true);assert.equal(stale.statusCode,409);assert.equal(writes,count);
+  const verified=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}`,'PUT',{headers:{'x-user-id':'editor'},body:JSON.stringify({revision:pending.revision,fields:{comment:'Actual values checked'},verified:true})},client,true);
+  assert.equal(verified.statusCode,200);const result=JSON.parse(verified.body);assert.equal(result.publicationStatus,'complete');assert.equal(result.verification.revision,result.revision);assert.equal(result.revision,pending.revision+1);assert.equal(result.fields.description,'Reviewed corrected service');
+});
+test('verification cannot bypass missing payment evidence, source integrity or authentication',async()=>{
+  const {record,artifactId}=await stage('auto-integrity');const count=writes;
+  const unauthorized=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{},body:JSON.stringify({revision:record.revision})},client,false);assert.equal(unauthorized.statusCode,401);
+  const missing=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}`,'PUT',{headers:{},body:JSON.stringify({revision:record.revision,fields:{amountEur:null},verified:true})},client,true);assert.equal(missing.statusCode,409);
+  objects.set(`artifacts/${artifactId}`,Buffer.from('corrupt'));
+  const tampered=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{},body:JSON.stringify({revision:record.revision})},client,true);assert.equal(tampered.statusCode,503);assert.equal(writes,count);assert.equal((await getInvoice(client,record.id))!.status,'pending');
+});
+test('simultaneous verified requests use the atomic revision and identity claim',async()=>{
+  const {record}=await stage('auto-concurrent');const count=writes;const event={headers:{'x-user-id':'operator'},body:JSON.stringify({revision:record.revision})};
+  const responses=await Promise.all([handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',event,client,true),handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',event,client,true)]);
+  assert.equal(responses.filter(result=>result.statusCode===200).length,1);assert.equal(responses.filter(result=>result.statusCode===409).length,1);assert.equal(writes,count+2);
+});

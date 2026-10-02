@@ -30,6 +30,8 @@ try {
   await page.evaluate(async () => {
     const { createFinanceSurface } = await import("/src/surfaces/finance/index.js");
     let record = { id: "invoice-demo", revision: 1, status: "pending", fields: { transactionDate: "2026-10-01", counterparty: "Synthetic Cloud Vendor", description: "Cloud hosting", amount: "12.00", currency: "USD", invoiceNumber: "SYN-001", accountContext: "Synthetic business account", quantity: 1, archiveRequired: true }, extraction: { method: "deterministic-pdf-text", evidence: ["Invoice date and total labels"], issues: [] }, source: { intakeItemIds: ["intake-demo"], artifactId: "artifact-demo", checksum: "sanitized-document-checksum" }, missingEvidence: ["paidDate", "amountEur", "paymentEvidence"], publicationStatus: "not-confirmed", destinations: { dropbox: { state: "pending", operationId: "archive-demo" }, sheets: { state: "pending", operationId: "sheet-demo" } }, audit: [] };
+    const initial = structuredClone(record);
+    window.resetInvoiceFixture = () => { record = structuredClone(initial); window.invoiceCalls = []; };
     window.invoiceCalls = [];
     const request = async (url, options = {}) => {
       const body = options.body && JSON.parse(options.body);
@@ -38,7 +40,7 @@ try {
       if (url.endsWith("/readiness")) return record.publicationStatus === "complete" ? { ready: true, checks: [{ name: "Spreadsheet headers", ready: true, message: "Writable header mapping verified" }] } : { ready: false, checks: [{ name: "Spreadsheet headers", ready: false, message: "Configure the writable header mapping" }] };
       if (url.endsWith("/process")) return { items: [record], issues: [] };
       if (options.method === "PUT") record = { ...record, revision: 2, fields: body.fields, missingEvidence: [] };
-      if (url.endsWith("/confirm")) record = { ...record, status: "confirmed", publicationStatus: "incomplete", destinations: { dropbox: { state: "verified", operationId: "archive-demo", reference: "synthetic-file" }, sheets: { state: "blocked", operationId: "sheet-demo", error: "Configured header mapping is incompatible" } }, audit: [{ action: "confirmed", actor: "Synthetic Operator", revision: 2, at: "2026-10-02T10:00:00Z" }] };
+      if (url.endsWith("/verify") || (options.method === "PUT" && body.verified === true)) record = { ...record, status: "confirmed", publicationStatus: "incomplete", destinations: { dropbox: { state: "verified", operationId: "archive-demo", reference: "synthetic-file" }, sheets: { state: "blocked", operationId: "sheet-demo", error: "Configured header mapping is incompatible" } }, audit: [{ action: "confirmed", actor: "Synthetic Operator", revision: 2, at: "2026-10-02T10:00:00Z" }] };
       if (url.endsWith("/retry")) record = { ...record, publicationStatus: "complete", destinations: { ...record.destinations, sheets: { state: "verified", operationId: "sheet-demo", reference: "synthetic-row" } } };
       return url.endsWith("/invoices") ? { items: [record] } : record;
     };
@@ -52,10 +54,10 @@ try {
   await detail.getByLabel("Actual date paid", { exact: true }).fill("2026-10-01");
   await detail.getByLabel("Actual EUR paid (positive)", { exact: true }).fill("10.50");
   await detail.getByLabel("Payment evidence / operator attestation", { exact: true }).fill("Operator verified synthetic bank payment");
-  assert.equal(await detail.getByRole("button", { name: "Confirm reviewed revision and publish" }).isDisabled(), true);
+  assert.equal(await detail.getByRole("button", { name: "Verify and publish automatically" }).isDisabled(), true);
   await detail.getByRole("button", { name: "Save corrections" }).click();
   await page.waitForFunction(() => document.querySelector("[data-invoice-detail]").textContent.includes("Revision 2"));
-  await detail.getByRole("button", { name: "Confirm reviewed revision and publish" }).click();
+  await detail.getByRole("button", { name: "Verify and publish automatically" }).click();
   await page.waitForFunction(() => document.querySelector("[data-invoice-detail]").textContent.includes("Spreadsheet: blocked"));
   await page.screenshot({ path: ".tmp/screenshots/invoice-partial.png", fullPage: true });
   assert.match(await detail.innerText(), /Dropbox: verified/);
@@ -68,5 +70,21 @@ try {
   assert.equal(mutations[0].body.fields.amountEur, "10.50");
   assert.equal(mutations[0].body.fields.quantity, 1);
   assert.deepEqual(mutations.map(call => [call.method, call.body.revision]), [["PUT", 1], ["POST", 2], ["POST", 2]]);
-  console.log("PASS: integrated Finance pending → payment correction → reviewed confirmation → independent partial failure → verified retry. Screenshots in .tmp/screenshots/.");
+  await page.evaluate(() => window.resetInvoiceFixture());
+  await page.getByRole("button", { name: "Refresh invoices", exact: true }).click();
+  await page.getByRole("button", { name: "Review invoice", exact: true }).click();
+  await detail.getByLabel("Actual date paid", { exact: true }).fill("2026-10-01");
+  await detail.getByLabel("Actual EUR paid (positive)", { exact: true }).fill("10.50");
+  await detail.getByLabel("Payment evidence / operator attestation", { exact: true }).fill("Operator verified synthetic bank payment");
+  await detail.getByRole("checkbox", { name: "I verified invoice and actual payment values." }).check();
+  await detail.getByRole("button", { name: "Save corrections" }).click();
+  await page.waitForFunction(() => document.querySelector("[data-invoice-detail]").textContent.includes("Spreadsheet: blocked"));
+  const savedVerified = await page.evaluate(() => window.invoiceCalls.filter(call => call.method !== "GET"));
+  assert.equal(savedVerified.length, 1, "saving verified fields publishes without another approval request");
+  assert.equal(savedVerified[0].method, "PUT");
+  assert.equal(savedVerified[0].body.verified, true);
+  assert.equal(savedVerified[0].body.fields.verified, undefined);
+  assert.equal(savedVerified[0].body.fields.amountEur, "10.50");
+  await page.screenshot({ path: ".tmp/screenshots/invoice-save-verified.png", fullPage: true });
+  console.log("PASS: integrated Finance pending → payment correction → explicit field verification → independent partial failure → verified retry. Screenshots in .tmp/screenshots/.");
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
