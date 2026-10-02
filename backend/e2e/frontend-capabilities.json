@@ -605,7 +605,7 @@
         {
           "id": "templates.read-only",
           "kind": "ready",
-          "description": "Operators and admins inspect the same read-only Git-authored runtime projection.",
+          "description": "Operators and admins inspect the same read-only authored runtime projection.",
           "coverage": {
             "status": "runtime"
           }
@@ -1380,9 +1380,9 @@
           }
         },
         {
-          "id": "process-docs.git-failure",
+          "id": "process-docs.storage-failure",
           "kind": "error",
-          "description": "A local Git-store failure remains safe and recoverable.",
+          "description": "A knowledge-storage failure remains safe and recoverable.",
           "coverage": {
             "status": "runtime"
           }
@@ -1435,8 +1435,8 @@
       "route": "/#/admin",
       "apiBoundaries": [
         "/docs/process-quality",
-        "/git/status",
-        "/git/log"
+        "/knowledge/status",
+        "/knowledge/publication"
       ],
       "roleIds": [
         "operator",

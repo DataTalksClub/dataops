@@ -83,8 +83,8 @@ function createAccountHarness(options = {}) {
   const actorName = dataElement("data-account-actor-name");
   const accountMeta = dataElement("data-account-meta");
   const themeToggleButton = createElement("theme-toggle-button", "button");
-  const gitPullButton = createElement("git-pull-button", "button");
-  const gitCommitButton = createElement("git-commit-button", "button");
+  const knowledgeStatusButton = createElement("knowledge-status-button", "button");
+  const historyButton = createElement("history-button", "button");
   settingsMenu.append(
     settingsMenuClose,
     settingsAdminButton,
@@ -98,8 +98,8 @@ function createAccountHarness(options = {}) {
     actorName,
     accountMeta,
     themeToggleButton,
-    gitPullButton,
-    gitCommitButton,
+    knowledgeStatusButton,
+    historyButton,
   );
   body.append(settingsButton, mobileSettingsButton, settingsMenu);
   addContainment(body);
@@ -133,8 +133,8 @@ function createAccountHarness(options = {}) {
       };
     },
     getActiveWorkspaceView: () => options.activeView || "home",
-    gitCommitButton,
-    gitPullButton,
+    historyButton,
+    knowledgeStatusButton,
     HTMLElementClass: FakeElement,
     isOperationsHomeVisible: () => options.homeVisible ?? true,
     locationRef,
@@ -152,7 +152,7 @@ function createAccountHarness(options = {}) {
     assigned,
     document,
     fetchCalls,
-    gitPullButton,
+    knowledgeStatusButton,
     menuAvatar,
     menuName,
     mobileSettingsButton,

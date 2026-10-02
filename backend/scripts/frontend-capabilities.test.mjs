@@ -88,7 +88,7 @@ const REQUIRED = {
       "partial-save-failure",
       "backlinks",
       "validation",
-      "git-failure",
+      "storage-failure",
       "unavailable",
     ],
   },
@@ -123,7 +123,7 @@ const REQUIRED_APIS = {
   "mailing-exports": ["/api/mailing-exports"],
   "process-docs": ["/docs", "/search", "/content/*", "/docs/registry", "/docs/backlinks"],
   "document-review": ["/api/document-reviews", "/docs", "/content/*"],
-  admin: ["/docs/process-quality", "/git/status", "/git/log"],
+  admin: ["/docs/process-quality", "/knowledge/status", "/knowledge/publication"],
   users: ["/api/users", "/api/me"],
 };
 const REQUIRED_STATE_ROLE_OVERRIDES = {

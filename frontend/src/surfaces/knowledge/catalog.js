@@ -27,7 +27,7 @@ export function createKnowledgeCatalog(context, services) {
     const requestId = ++catalogRequestId;
     setDocsAvailability(emptyOperationsDocsSnapshot());
 
-    // Work APIs are independent of the Git-backed docs API. Start their
+    // Work APIs are independent of the knowledge docs API. Start their
     // bootstrap requests before awaiting docs so Home, Inbox, assistants,
     // artifacts, and recurring work remain operational during a docs outage.
     refreshOperationsWorkSnapshot({ rerender: true });

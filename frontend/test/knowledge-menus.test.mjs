@@ -86,6 +86,7 @@ function createHarness(options = {}) {
       value.textContent = message;
       return value;
     },
+    openHistory: () => calls.push(["open-history"]),
     renameCurrentDoc: () => calls.push(["rename-current-doc"]),
     request: async (url) => {
       requests.push(String(url));
@@ -126,40 +127,12 @@ describe("Knowledge menu behavior", () => {
     ]);
   });
 
-  test("loads document history and exposes empty and failed states", async () => {
-    const harness = createHarness({
-      commits: [
-        {
-          sha: "abc123",
-          date: "2026-08-13",
-          author: "Operator",
-          subject: "Update process",
-        },
-      ],
-    });
+  test("opens the shared version history from the document menu", async () => {
+    const harness = createHarness();
     harness.menu.openDocMenu();
     await clickMenuItem(harness, "History");
-    assert.equal(
-      harness.diffTitle.textContent,
-      "History · content/process.md",
-    );
-    assert.equal(harness.diffModal.hidden, false);
-    assert.equal(harness.diffClose.focused, true);
-    assert.equal(harness.requests[0], "https://portal.test/git/log?path=content%2Fprocess.md");
-    assert.equal(
-      harness.diffBody.textContent,
-      "abc123  2026-08-13  Operator  Update process",
-    );
-
-    const empty = createHarness({ commits: [] });
-    empty.menu.openDocMenu();
-    await clickMenuItem(empty, "History");
-    assert.equal(empty.diffBody.textContent, "No commits found.");
-
-    const failed = createHarness({ requestError: "offline" });
-    failed.menu.openDocMenu();
-    await clickMenuItem(failed, "History");
-    assert.equal(failed.diffBody.textContent, "History failed: offline");
+    assert.deepEqual(harness.calls, [["open-history"]]);
+    assert.equal(harness.requests.length, 0);
   });
 
   test("does not open document actions without a selected document", () => {

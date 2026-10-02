@@ -165,6 +165,7 @@ export function bindApplicationEvents(context) {
           event.preventDefault();
           callbacks.closeSettingsMenu();
         }
+        if (event.key === "Escape" && !dom.historyModal.hidden) callbacks.closeHistory();
         if (event.key === "Escape" && !diffModal.hidden) {
           event.stopPropagation();
           callbacks.closeDiff();

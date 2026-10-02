@@ -38,8 +38,8 @@ export function createAccountShell({
   documentRef,
   fetchImpl,
   getActiveWorkspaceView,
-  gitCommitButton,
-  gitPullButton,
+  historyButton,
+  knowledgeStatusButton,
   HTMLElementClass,
   isOperationsHomeVisible,
   locationRef,
@@ -328,7 +328,7 @@ export function createAccountShell({
       "Ending this browser session…";
     locationRef.assign("/logout");
   });
-  for (const element of [themeToggleButton, gitPullButton, gitCommitButton]) {
+  for (const element of [themeToggleButton, knowledgeStatusButton, historyButton]) {
     element.addEventListener("click", (event) => {
       event.stopPropagation();
       closeSettingsMenu();

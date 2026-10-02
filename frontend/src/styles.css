@@ -2427,7 +2427,7 @@ body[data-workspace-view="review"] .document-list {
 }
 
 .work-bell-item-actions,
-.git-actions-row {
+.knowledge-actions-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -2704,7 +2704,7 @@ body[data-workspace-view="review"] .document-list {
   color: var(--dk-danger-text);
 }
 
-.git-section.settings-menu-item {
+.knowledge-section.settings-menu-item {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
@@ -12737,7 +12737,7 @@ body[data-workspace-view="tasks"] .assistant-job-row em.is-danger {
   padding: 3px 8px;
 }
 
-/* Git-authored template revisions are machine quantities: mono accent. */
+/* Authored template revisions are machine quantities: mono accent. */
 .runtime-template-definition dd.runtime-template-mono {
   font-family: var(--dk-font-mono);
   font-size: 12px;
@@ -12786,7 +12786,7 @@ body[data-workspace-view="tasks"] .assistant-job-row em.is-danger {
   padding: 3px 8px;
 }
 
-/* Git-authored template revisions are machine quantities: mono accent. */
+/* Authored template revisions are machine quantities: mono accent. */
 .runtime-template-definition dd.runtime-template-mono {
   font-family: var(--dk-font-mono);
   font-size: 12px;
@@ -12822,7 +12822,7 @@ body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
   padding: 10px 16px 12px;
 }
 
-/* Adversarial round 2 (390px): the Git-authored template list must not clip
+/* Adversarial round 2 (390px): the Authored template list must not clip
    behind an internal scroll now that the layout stacks; the board actions
    and artifact links meet the 44px mobile target. */
 @media (max-width: 820px) {
@@ -12858,7 +12858,7 @@ body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
   padding: 10px 16px 12px;
 }
 
-/* Adversarial round 2 (390px): the Git-authored template list must not clip
+/* Adversarial round 2 (390px): the Authored template list must not clip
    behind an internal scroll now that the layout stacks; the board actions
    and artifact links meet the 44px mobile target. */
 @media (max-width: 820px) {
@@ -13477,3 +13477,24 @@ body:not([data-workspace-view="docs"]) #filters-section {
 .invoice-review-section > [data-invoice-detail] { padding-bottom: 1rem; }
 .invoice-review-section input { min-height: 2.5rem; }
 .invoice-review-section [data-invoice-list] small { display: block; }
+
+.knowledge-history-panel { max-width: 1100px; padding-bottom: 20px; }
+.history-search-form { display: flex; gap: 12px; align-items: end; padding: 16px 20px; }
+.history-search-form label { display: grid; gap: 6px; flex: 1; }
+.history-search-form input { width: 100%; min-width: 0; }
+#history-status { padding: 0 20px; }
+#history-versions { overflow: auto; padding: 0 20px; max-height: 32vh; }
+.history-version { padding: 12px 0; border-bottom: 1px solid var(--dk-border-default); }
+.history-version p { margin: 6px 0; }
+.history-version code { display: block; overflow-wrap: anywhere; font-size: 12px; margin-bottom: 8px; }
+.history-version button { margin-right: 8px; }
+#history-comparison:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 20px; overflow: auto; }
+#history-comparison section { min-width: 0; }
+#history-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }
+@media (max-width: 600px) {
+  .history-search-form { flex-direction: column; align-items: stretch; }
+  #history-comparison:not([hidden]) { grid-template-columns: 1fr; }
+}
+
+/* Restoring a historical version confirms above the history dialog. */
+#confirm-modal { z-index: 90; }

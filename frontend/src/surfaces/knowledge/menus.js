@@ -1,18 +1,5 @@
 export function createKnowledgeMenus(context) {
-  const {
-    apiUrl,
-    diffBody,
-    diffClose,
-    diffModal,
-    diffTitle,
-    deleteCurrentDoc,
-    docMenuButton,
-    documentState,
-    emptyNote,
-    renameCurrentDoc,
-    request,
-    viewportWidth,
-  } = context;
+  const { deleteCurrentDoc, docMenuButton, documentState, openHistory, renameCurrentDoc, viewportWidth } = context;
 
   function openDocMenu() {
     if (!documentState.currentDoc) return;
@@ -42,7 +29,7 @@ export function createKnowledgeMenus(context) {
     historyBtn.textContent = "History";
     historyBtn.addEventListener("click", () => {
       popover.remove();
-      showDocHistory(documentState.currentDoc.path);
+      openHistory();
     });
     popover.append(historyBtn);
 
@@ -70,35 +57,6 @@ export function createKnowledgeMenus(context) {
     setTimeout(() => {
       document.addEventListener("click", closeOnOutside, true);
     }, 0);
-  }
-
-  async function showDocHistory(path) {
-    diffTitle.textContent = `History · ${path}`;
-    diffBody.replaceChildren();
-    diffBody.append(emptyNote("Loading…"));
-    diffModal.hidden = false;
-    diffClose?.focus?.();
-
-    try {
-      const url = apiUrl("/git/log");
-      url.searchParams.set("path", path);
-      const payload = await request(url);
-      const commits = payload.commits || [];
-      if (commits.length === 0) {
-        diffBody.replaceChildren(emptyNote("No commits found."));
-        return;
-      }
-
-      const rows = commits.map((commit) => {
-        const row = document.createElement("div");
-        row.className = "diff-line diff-ctx";
-        row.textContent = `${commit.sha}  ${commit.date}  ${commit.author}  ${commit.subject}`;
-        return row;
-      });
-      diffBody.replaceChildren(...rows);
-    } catch (error) {
-      diffBody.replaceChildren(emptyNote(`History failed: ${error.message}`));
-    }
   }
 
   return { openDocMenu };

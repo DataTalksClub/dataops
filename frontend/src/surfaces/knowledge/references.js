@@ -31,19 +31,6 @@ export function createKnowledgeReferences(context, services) {
     return resolveDocReference(clean);
   }
 
-  function renderGithubRawFooter(githubBaseValue, branch) {
-    if (!documentState.currentDoc || !githubBaseValue) return null;
-    const githubBase = githubBaseValue.replace(/\/$/, "");
-    const link = document.createElement("a");
-    link.className = "doc-source-footer";
-    const encodedBranch = encodeURIComponent(branch).replaceAll("%2F", "/");
-    link.href = `${githubBase}/blob/${encodedBranch}/${documentState.currentDoc.path}`;
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = "See on GitHub";
-    return link;
-  }
-
   async function fetchBacklinksForCurrentDoc() {
     if (!documentState.currentDoc) return;
     const host = renderedView.querySelector("#backlinks-host");
@@ -218,7 +205,6 @@ export function createKnowledgeReferences(context, services) {
 
   return {
     fetchBacklinksForCurrentDoc,
-    renderGithubRawFooter,
     renderLoomBlock,
     renderRelatedDocsBlock,
     renderWarningsBlock,

@@ -1186,17 +1186,17 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(emptyPage.getByText('No work or process context matches this search.')).toBeVisible();
     await setFaults(empty.request, [
       { method: 'GET', path: '/docs/process-quality', delayMs: 1200 },
-      { method: 'GET', path: '/git/status', delayMs: 1200 },
-      { method: 'GET', path: '/git/log', delayMs: 1200 },
+      { method: 'GET', path: '/knowledge/status', delayMs: 1200 },
+      { method: 'GET', path: '/knowledge/publication', delayMs: 1200 },
     ]);
     await emptyPage.goto('/#/admin', { waitUntil: 'domcontentloaded' });
     const emptyDiagnostics = emptyPage.locator('.ops-admin-diagnostics');
     await expect(emptyDiagnostics.locator('[data-diagnostic="quality"]')).toContainText('Loading local validation');
-    await expect(emptyDiagnostics.locator('[data-diagnostic="git-status"]')).toContainText('Loading availability');
-    await expect(emptyDiagnostics.locator('[data-diagnostic="git-history"]')).toContainText('Loading availability');
+    await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText('Loading availability');
+    await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-publication"]')).toContainText('Loading availability');
     await expect(emptyDiagnostics.locator('[data-diagnostic="quality"]')).toContainText('0 quality findings; no validation errors.');
-    await expect(emptyDiagnostics.locator('[data-diagnostic="git-status"]')).toContainText(/unavailable/i);
-    await expect(emptyDiagnostics.locator('[data-diagnostic="git-history"]')).toContainText(/unavailable/i);
+    await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText(/daily GitHub export/i);
+    await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-publication"]')).toContainText('Current revision:');
     await clearFaults(empty.request);
     await empty.close();
 
@@ -1358,14 +1358,16 @@ test.describe('canonical frontend capability behavior', () => {
       `content/synthetic/${unique('browser-draft')}.md`,
       'content/synthetic/capability.md',
     ];
-    await page.evaluate((paths) => {
+    const draftRevision = (await json(await context.request.get("/knowledge/publication"))).revision;
+    await page.evaluate(({ paths, draftRevision }) => {
       for (const [index, draftPath] of paths.entries()) {
+        localStorage.setItem(`dtc-doc-base:${draftPath}`, draftRevision);
         localStorage.setItem(
           `dtc-doc-draft:${draftPath}`,
           `# Synthetic browser draft ${index + 1}\n`,
         );
       }
-    }, draftPaths);
+    }, { paths: draftPaths, draftRevision });
     const thirdDraftTitle = `${updatedTitle} draft`;
     await page.locator('.block-title').click();
     await page.locator('.block-title-editor').fill(thirdDraftTitle);
@@ -1404,10 +1406,12 @@ test.describe('canonical frontend capability behavior', () => {
     const referencePath = `content/synthetic/${unique('browser-reference')}.md`;
     const referenceTitle = 'Synthetic browser backlink source';
     const referenceCreate = await context.request.post('/docs', { data: {
+      expectedRevision: (await json(await context.request.get('/knowledge/publication'))).revision, absent: true,
       path: referencePath, title: referenceTitle, doc_type: 'reference', summary: 'Backlink fixture', scaffold: 'minimal',
     } });
     expect(referenceCreate.status()).toBe(201);
     const referenceEdit = await context.request.put(`/docs?path=${encodeURIComponent(referencePath)}`, { data: {
+      expectedRevision: (await json(await context.request.get('/knowledge/publication'))).revision,
       content: `---\ntitle: "${referenceTitle}"\ndoc_type: reference\n---\n\n# ${referenceTitle}\n\n[Created process](./${createdSlug}.md)\n`,
     } });
     expect(referenceEdit.status()).toBe(200);
@@ -1422,24 +1426,22 @@ test.describe('canonical frontend capability behavior', () => {
     const qualityPayload = await json(quality);
     expect(qualityPayload.summary.total).toBeGreaterThan(0);
     expect(qualityPayload.findings.length).toBeGreaterThan(0);
-    // Access has no document while the local SOP finding has a different
-    // category, so these populated dropdown values intersect at zero rows.
+    // Runtime token-age findings disappeared with the GitHub read dependency.
+    // Filter the actual process-doc findings; empty quality is covered above.
     const emptyQualityFilters = {
-      category: 'access',
+      category: 'process-doc',
       document: 'content/synthetic/quality-alpha.md',
     };
     expect(new Set(qualityPayload.findings.map((finding) => finding.category)))
-      .toEqual(new Set(['access', 'process-doc']));
+      .toEqual(new Set(['process-doc']));
     expect(qualityPayload.findings.some((finding) => finding.docPath === emptyQualityFilters.document))
       .toBe(true);
-    const gitStatus = await context.request.get('/git/status');
+    const gitStatus = await context.request.get('/knowledge/status');
     expect(gitStatus.status()).toBe(200);
-    expect(await json(gitStatus)).toMatchObject({ available: false, readOnly: true, files: [] });
-    const gitHistory = await context.request.get('/git/log');
+    expect(await json(gitStatus)).toHaveProperty('revision');
+    const gitHistory = await context.request.get('/knowledge/publication');
     expect(gitHistory.status()).toBe(200);
-    expect(await json(gitHistory)).toMatchObject({ available: false, readOnly: true, commits: [] });
-    const deniedGitMutation = await context.request.post('/git/pull');
-    expect(deniedGitMutation.status()).toBe(405);
+    expect(await json(gitHistory)).toHaveProperty('revision');
     await page.goto('/#/processes');
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
     await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
@@ -1452,22 +1454,22 @@ test.describe('canonical frontend capability behavior', () => {
       await qualityFilters.getByLabel(filterLabels[field], { exact: true }).selectOption(value);
     }
     await page.setViewportSize({ width: 1440, height: 900 });
-    await expectStackedQualityEmptyState(page);
+    await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    await expectStackedQualityEmptyState(page);
+    await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/#/admin');
     await expect(page.locator('.ops-admin-card', { hasText: 'Diagnostics' })).toBeVisible();
     const diagnostics = page.getByRole('region', { name: 'Read-only diagnostics' });
-    await expect(diagnostics).toContainText('No pull, commit, publish, or provider action is available here');
+    await expect(diagnostics).toContainText('Diagnostics show saved knowledge and daily export status.');
     await expect(diagnostics.locator('[data-diagnostic="quality"]')).toContainText(/quality findings?; (no|\d+) validation errors?/);
-    await expect(diagnostics.locator('[data-diagnostic="git-status"]')).toContainText('Git diagnostics are unavailable in the packaged runtime');
-    await expect(diagnostics.locator('[data-diagnostic="git-history"]')).toContainText('Git history is unavailable in the packaged runtime');
+    await expect(diagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText(/daily GitHub export/i);
+    await expect(diagnostics.locator('[data-diagnostic="knowledge-publication"]')).toContainText('Current revision:');
 
     await setFaults(context.request, [
       { method: 'GET', path: '/docs/process-quality', status: 503, remaining: 10 },
-      { method: 'GET', path: '/git/status', status: 503, remaining: 10 },
-      { method: 'GET', path: '/git/log', status: 503, remaining: 10 },
+      { method: 'GET', path: '/knowledge/status', status: 503, remaining: 10 },
+      { method: 'GET', path: '/knowledge/publication', status: 503, remaining: 10 },
     ]);
     await page.reload();
     await expect(page.locator('.ops-admin-diagnostics')).toContainText('Unavailable: Synthetic route failure (503)');
@@ -1476,7 +1478,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('[data-diagnostic="quality"]')).toContainText(/quality findings?; (no|\d+) validation errors?/);
     await context.close();
     recordCapabilityEvidence(testInfo, [
-      { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.filters.url-reload-clear-search', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.draft-management', 'process-docs.partial-save-failure', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.git-failure'] },
+      { route: '/#/processes', roleId: 'admin', stateIds: ['process-docs.loading', 'process-docs.empty', 'process-docs.filters.url-reload-clear-search', 'process-docs.result-detail', 'process-docs.create-read-edit', 'process-docs.draft-management', 'process-docs.partial-save-failure', 'process-docs.backlinks', 'process-docs.validation', 'process-docs.storage-failure'] },
       { route: '/#/admin', roleId: 'admin', stateIds: ['admin.loading', 'admin.empty', 'admin.ready-read-only', 'admin.failure'] },
     ]);
   });

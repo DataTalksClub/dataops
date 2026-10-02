@@ -372,7 +372,7 @@ function createBindingDom() {
     "lintOpenButton",
     "lintBackdrop",
     "lintModalClose",
-    "gitPullButton",
+    "knowledgeStatusButton",
     "helpBackdrop",
     "helpClose",
     "helpButton",
@@ -388,11 +388,9 @@ function createBindingDom() {
     "themeToggleButton",
     "changesSaveAll",
     "changesDiscardAll",
-    "gitCommitButton",
-    "gitCommitCancel",
-    "gitCommitBackdrop",
-    "cancelCommitButton",
-    "gitCommitForm",
+    "historyButton",
+    "historyClose",
+    "historyBackdrop",
     "tasksNavButton",
     "clearFiltersButton",
     "editorSaveButton",
@@ -584,7 +582,7 @@ describe("runtime and shell production behavior", () => {
         },
       },
       refreshChangesPanel: () => calls.push("changes"),
-      refreshGitStatus: () => calls.push("git"),
+      refreshKnowledgeStatus: () => calls.push("git"),
       refreshOperationsWorkSnapshot: async (options) => {
         calls.push(`work:${options.rerender}`);
         return "refreshed";

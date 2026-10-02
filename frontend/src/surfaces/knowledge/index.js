@@ -104,7 +104,6 @@ export function createKnowledgeSurface(context) {
     populateFilterOptions: api.populateFilterOptions,
     refreshDocuments: api.refreshDocuments,
     renderDocsSurface: api.renderDocsSurface,
-    renderGithubRawFooter: api.renderGithubRawFooter,
     renderLoomBlock: api.renderLoomBlock,
     renderProcessesSurface: api.renderProcessesSurface,
     renderRelatedDocsBlock: api.renderRelatedDocsBlock,

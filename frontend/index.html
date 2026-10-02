@@ -187,6 +187,7 @@
             <div id="editor-save-state" class="document-editor-save-state" tabindex="-1"></div>
             <div class="document-editor-actions">
               <button id="editor-discard-button" class="quiet-button" type="button" disabled>Discard</button>
+              <button id="editor-history-button" class="quiet-button" type="button">History</button>
               <button id="editor-save-button" class="primary-button" type="button" disabled>Save</button>
             </div>
           </footer>
@@ -308,16 +309,12 @@
           <span class="settings-menu-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></svg></span>
           <span><strong>Sign out</strong><small>End this browser session.</small></span>
         </button>
-        <section id="git-section" class="git-section settings-menu-item" aria-label="Git">
-          <div class="git-status-line">
-            <span class="git-status-dot" aria-hidden="true"></span>
-            <span id="git-status-text">Checking git…</span>
+        <section id="knowledge-section" class="settings-menu-item" aria-label="Knowledge storage">
+          <p id="knowledge-status-text" role="status">Checking daily GitHub export…</p>
+          <div class="knowledge-actions-row">
+            <button id="knowledge-status-button" class="quiet-button" type="button">Refresh export status</button>
+            <button id="history-button" class="quiet-button" type="button">File history</button>
           </div>
-          <div class="git-actions-row">
-            <button id="git-pull-button" class="quiet-button" type="button" title="Pull latest from origin">⟲ Pull</button>
-            <button id="git-commit-button" class="primary-button" type="button">Review</button>
-          </div>
-          <div id="git-result" class="git-result" hidden></div>
         </section>
       </div>
     </div>
@@ -349,28 +346,24 @@
       </div>
     </div>
 
-    <div id="git-commit-modal" class="diff-modal" hidden>
-      <div class="diff-backdrop" id="git-commit-backdrop"></div>
-      <div class="diff-panel git-commit-panel" role="dialog" aria-modal="true" aria-labelledby="git-commit-title">
+    <div id="history-modal" class="diff-modal" hidden>
+      <div class="diff-backdrop" id="history-backdrop"></div>
+      <div class="diff-panel knowledge-history-panel" role="dialog" aria-modal="true" aria-labelledby="history-title">
         <header class="diff-header">
-          <strong id="git-commit-title">Review and publish</strong>
-          <button id="git-commit-cancel" class="quiet-button" type="button">Close</button>
+          <strong id="history-title">File history</strong>
+          <button id="history-close" class="quiet-button" type="button">Close</button>
         </header>
-        <form id="git-commit-form" class="git-commit-form">
-          <section id="lint-section" class="lint-section" aria-label="Lint">
-            <button id="lint-open" class="quiet-button" type="button">Lint corpus</button>
-            <span id="lint-summary" class="lint-summary"></span>
-          </section>
-          <div class="git-commit-files" id="git-commit-files"></div>
-          <label class="git-commit-label">
-            Commit message
-            <textarea id="git-commit-message" rows="3" placeholder="Update docs"></textarea>
-          </label>
-          <div class="git-commit-actions">
-            <button class="quiet-button" type="button" data-action="cancel-commit">Cancel</button>
-            <button id="git-commit-submit" class="primary-button" type="submit">Commit &amp; push</button>
-          </div>
+        <form id="history-search-form" class="history-search-form">
+          <label>File path (including deleted files)<input id="history-path" required placeholder="content/example.md"></label>
+          <button type="submit" class="quiet-button">Load history</button>
         </form>
+        <p id="history-status" role="status" aria-live="polite"></p>
+        <div id="history-versions"></div>
+        <div id="history-comparison" hidden></div>
+        <section id="lint-section" class="lint-section" aria-label="Lint">
+          <button id="lint-open" class="quiet-button" type="button">Lint corpus</button>
+          <span id="lint-summary" class="lint-summary"></span>
+        </section>
       </div>
     </div>
 

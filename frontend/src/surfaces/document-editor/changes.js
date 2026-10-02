@@ -11,11 +11,11 @@ export function createEditorChanges(context, services) {
     changesStatus, documentPath, documentState, documentTitle, editor,
     editorView,
     labelForPath, loadDocuments, openDocument, promptUser,
-    refreshGitStatus: refreshGitStatusContext, request,
+    refreshKnowledgeStatus: refreshKnowledgeStatusContext, request,
     setRouteTitle, showLibrary, storage,
   } = context;
   const {
-    draftKey, listDraftPaths, refreshGitStatus, refreshParsedFromApi, renderParsedDocument,
+    draftKey, listDraftPaths, recordPublication, showRevisionConflict, refreshKnowledgeStatus, refreshParsedFromApi, renderParsedDocument,
     showDiffForDraft, titleFromMarkdown, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
@@ -127,6 +127,7 @@ export function createEditorChanges(context, services) {
         });
         if (!ok) return;
         storage.removeItem(draftKey(path));
+        storage.removeItem(`dtc-doc-base:${path}`);
         if (documentState.currentDoc && documentState.currentDoc.path === path) {
           documentState.hasDraft = false;
           editor.value = documentState.lastSavedContent;
@@ -169,11 +170,14 @@ export function createEditorChanges(context, services) {
       try {
         const url = apiUrl("/docs");
         url.searchParams.set("path", path);
-        await request(url, {
+        const expectedRevision = storage.getItem(`dtc-doc-base:${path}`);
+        const result = await request(url, {
           method: "PUT",
-          body: JSON.stringify({ content: draft }),
+          body: JSON.stringify({ content: draft, expectedRevision }),
         });
+        recordPublication(expectedRevision, result.revision);
         storage.removeItem(draftKey(path));
+        storage.removeItem(`dtc-doc-base:${path}`);
         savedCount += 1;
         if (documentState.currentDoc && documentState.currentDoc.path === path) {
           documentState.lastSavedContent = draft;
@@ -203,7 +207,7 @@ export function createEditorChanges(context, services) {
       );
     }
     await loadDocuments();
-    refreshGitStatus();
+    refreshKnowledgeStatus();
   }
 
   async function discardAllDrafts() {
@@ -214,7 +218,10 @@ export function createEditorChanges(context, services) {
       { okText: "Discard all", danger: true },
     );
     if (!ok) return;
-    for (const path of paths) storage.removeItem(draftKey(path));
+    for (const path of paths) {
+      storage.removeItem(draftKey(path));
+      storage.removeItem(`dtc-doc-base:${path}`);
+    }
     if (documentState.currentDoc) {
       documentState.hasDraft = false;
       editor.value = documentState.lastSavedContent;
@@ -243,25 +250,30 @@ export function createEditorChanges(context, services) {
       }
       const payload = await request(apiUrl("/docs/rename"), {
         method: "POST",
-        body: JSON.stringify({ old_path: oldPath, new_path: newPath }),
+        body: JSON.stringify({ old_path: oldPath, new_path: newPath, expectedRevision: documentState.currentDoc.revision }),
       });
       if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
+      recordPublication(documentState.currentDoc.revision, payload.revision);
       // Move any local draft over to the new key.
       const draft = storage.getItem(draftKey(oldPath));
       if (draft !== null) {
         storage.setItem(draftKey(newPath), draft);
+        const base = storage.getItem(`dtc-doc-base:${oldPath}`);
+        if (base) storage.setItem(`dtc-doc-base:${newPath}`, base);
+        storage.removeItem(`dtc-doc-base:${oldPath}`);
         storage.removeItem(draftKey(oldPath));
       }
       documentState.currentDoc.path = payload.new_path;
       documentPath.textContent = payload.new_path;
       setRouteTitle(documentTitle.value);
       refreshChangesPanel();
-      refreshGitStatus();
+      refreshKnowledgeStatus();
       await loadDocuments();
       if (!isFresh() || documentState.currentDoc?.path !== payload.new_path) return;
       showFeedback(`Renamed to ${payload.new_path}.`);
     } catch (err) {
       if (!isFresh() || documentState.currentDoc?.path !== oldPath) return;
+      if (err.status === 409) { showRevisionConflict(); return; }
       showFeedback(`Rename failed: ${err.message}`, {
         kind: feedbackKindForError(err),
       });
@@ -276,15 +288,18 @@ export function createEditorChanges(context, services) {
     const isFresh = editorMutationGuard(context);
     try {
       const ok = await confirmDialog(
-        `Delete ${path}? You can recover it from git if needed.`,
+        `Delete ${path}? You can restore an older version from File history.`,
         { okText: "Delete", danger: true },
       );
       if (!ok || !isFresh() || documentState.currentDoc?.path !== path) return;
-      await request(`${apiUrl("/docs")}?path=${encodeURIComponent(path)}`, {
+      const payload = await request(`${apiUrl("/docs")}?path=${encodeURIComponent(path)}`, {
         method: "DELETE",
+        body: JSON.stringify({ expectedRevision: documentState.currentDoc.revision }),
       });
       if (!isFresh() || documentState.currentDoc?.path !== path) return;
+      recordPublication(documentState.currentDoc.revision, payload.revision);
       storage.removeItem(draftKey(path));
+      storage.removeItem(`dtc-doc-base:${path}`);
       documentState.currentDoc = null;
       documentState.currentParsed = null;
       documentState.lastSavedContent = "";
@@ -295,7 +310,7 @@ export function createEditorChanges(context, services) {
       editor.value = "";
       editor.disabled = true;
       refreshChangesPanel();
-      refreshGitStatus();
+      refreshKnowledgeStatus();
       await loadDocuments();
       if (!isFresh()) return;
       showLibrary();
@@ -303,6 +318,7 @@ export function createEditorChanges(context, services) {
       showChangesStatus(`Deleted ${path}.`);
     } catch (err) {
       if (!isFresh() || documentState.currentDoc?.path !== path) return;
+      if (err.status === 409) { showRevisionConflict(); return; }
       showFeedback(`Delete failed: ${err.message}`, {
         kind: feedbackKindForError(err),
       });

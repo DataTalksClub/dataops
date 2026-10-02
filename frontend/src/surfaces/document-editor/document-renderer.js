@@ -1,9 +1,9 @@
 import { editorFeedbackFor, editorMutationGuard } from "./feedback.js";
 
-export function createDocumentRenderer(context, services, editorState) {
+export function createDocumentRenderer(context, services) {
   const {
     apiUrl, basename, documentState, documentTitle, editor, editorView,
-    fetchBacklinksForCurrentDoc, renderGithubRawFooter, renderLoomBlock,
+    fetchBacklinksForCurrentDoc, renderLoomBlock,
     renderRelatedDocsBlock, renderWarningsBlock, renderedView, request,
     setRouteTitle, viewToggleButton,
   } = context;
@@ -102,7 +102,6 @@ export function createDocumentRenderer(context, services, editorState) {
       wrap.append(renderMarkdown(stripLeadingHeading(body)));
       blocks.push(wrap);
       blocks.push(loomBlock);
-      blocks.push(renderGithubRawFooter(editorState.githubBase, editorState.gitBranch));
       renderedView.replaceChildren(...blocks.filter(Boolean));
       return;
     }
@@ -132,7 +131,6 @@ export function createDocumentRenderer(context, services, editorState) {
     backlinksHost.id = "backlinks-host";
     blocks.push(backlinksHost);
     blocks.push(loomBlock);
-    blocks.push(renderGithubRawFooter(editorState.githubBase, editorState.gitBranch));
 
     renderedView.replaceChildren(...blocks.filter(Boolean));
     // Async-fetch backlinks separately so the main render isn't blocked.

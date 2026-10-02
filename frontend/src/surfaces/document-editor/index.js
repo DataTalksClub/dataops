@@ -1,7 +1,7 @@
 import { createEditorChanges } from "./changes.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import { writeEditorFeedback } from "./feedback.js";
-import { createEditorGit } from "./git.js";
+import { createEditorHistory } from "./history.js";
 import { createEditorLifecycle } from "./lifecycle.js";
 import { createEditorMarkdown } from "./markdown.js";
 import { createProcedureMarkdown } from "./procedure-markdown.js";
@@ -17,8 +17,6 @@ export function createDocumentEditor(context) {
       writeEditorFeedback(context.editorInlineStatus, message, options),
   };
   const editorState = {
-    githubBase: "",
-    gitBranch: "main",
     dragStep: null,
     lastFocusedStep: null,
     lastFocusedProcedure: null,
@@ -67,7 +65,9 @@ export function createDocumentEditor(context) {
     patchSectionInMarkdown: invoke("patchSectionInMarkdown"),
     pill: invoke("pill"),
     refreshChangesPanel: invoke("refreshChangesPanel"),
-    refreshGitStatus: invoke("refreshGitStatus"),
+    refreshKnowledgeStatus: invoke("refreshKnowledgeStatus"),
+    recordPublication: invoke("recordPublication"),
+    showRevisionConflict: invoke("showRevisionConflict"),
     refreshParsedFromApi: invoke("refreshParsedFromApi"),
     showChangesStatus: invoke("showChangesStatus"),
     renderMarkdown: invoke("renderMarkdown"),
@@ -93,8 +93,8 @@ export function createDocumentEditor(context) {
 
   Object.assign(api, createEditorLifecycle(editorContext, services));
   Object.assign(api, createEditorChanges(editorContext, services));
-  Object.assign(api, createEditorGit(editorContext, services, editorState));
-  Object.assign(api, createDocumentRenderer(editorContext, services, editorState));
+  Object.assign(api, createEditorHistory(editorContext, services));
+  Object.assign(api, createDocumentRenderer(editorContext, services));
   Object.assign(api, createProcedureRenderer(editorContext, services, editorState));
   Object.assign(api, createEditorReviewMedia(editorContext, services, editorState));
   Object.assign(api, createStructuredEditor(editorContext, services, editorState));
@@ -105,7 +105,7 @@ export function createDocumentEditor(context) {
     canLeaveDocumentEditor: api.canLeaveDocumentEditor,
     closeDiff: api.closeDiff,
     closeLightbox: api.closeLightbox,
-    closeCommitForm: api.closeCommitForm,
+    closeHistory: api.closeHistory,
     createDocument: api.createDocument,
     deleteCurrentDoc: api.deleteCurrentDoc,
     draftKey: api.draftKey,
@@ -114,13 +114,12 @@ export function createDocumentEditor(context) {
     emptyNote: api.emptyNote,
     escapeRegex: api.escapeRegex,
     enterRenderedMode: api.enterRenderedMode,
-    gitPull: api.gitPull,
     handleClipboardPaste: api.handleClipboardPaste,
     listDraftPaths: api.listDraftPaths,
-    openCommitForm: api.openCommitForm,
+    openHistory: api.openHistory,
     openLintReport: api.openLintReport,
     refreshChangesPanel: api.refreshChangesPanel,
-    refreshGitStatus: api.refreshGitStatus,
+    refreshKnowledgeStatus: api.refreshKnowledgeStatus,
     renameCurrentDoc: api.renameCurrentDoc,
     resizeDocumentTitle: api.resizeDocumentTitle,
     saveAllDrafts: api.saveAllDrafts,
@@ -128,11 +127,9 @@ export function createDocumentEditor(context) {
     setSaveState: api.setSaveState,
     showCreate: api.showCreate,
     storeDraft: api.storeDraft,
-    submitCommitForm: api.submitCommitForm,
     syncTitleToMarkdown: api.syncTitleToMarkdown,
     titleFromMarkdown: api.titleFromMarkdown,
     toggleViewMode: api.toggleViewMode,
-    updateGithubLink: api.updateGithubLink,
     updateSaveState: api.updateSaveState,
     updateViewToggleAvailability: api.updateViewToggleAvailability,
   };

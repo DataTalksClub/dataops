@@ -75,7 +75,7 @@ export function createTemplatesSurface(context) {
     if (!grid.children.length) {
       grid.append(renderHonestState(
         "No template process docs indexed",
-        "Runtime projections remain available in the Git-authored template inspector.",
+        "Runtime projections remain available in the Authored template inspector.",
       ));
     }
     section.append(grid);
@@ -92,7 +92,7 @@ export function createTemplatesSurface(context) {
     header.className = "ops-section-header";
     const heading = document.createElement("div");
     const title = document.createElement("h3");
-    title.textContent = "Git-authored templates";
+    title.textContent = "Authored templates";
     const guidance = document.createElement("span");
     guidance.textContent =
       "Read-only runtime projections. Maintainers edit YAML in the private knowledge repository.";
@@ -126,7 +126,7 @@ export function createTemplatesSurface(context) {
     }
     if (!runtimeState.loaded) {
       section.append(renderHonestState(
-        "Loading Git-authored templates",
+        "Loading Authored templates",
         "Fetching the current deployed projections.",
       ));
       return section;
@@ -135,8 +135,8 @@ export function createTemplatesSurface(context) {
     const search = document.createElement("input");
     search.type = "search";
     search.className = "runtime-template-search";
-    search.setAttribute("aria-label", "Search Git-authored templates");
-    search.placeholder = "Search Git-authored templates";
+    search.setAttribute("aria-label", "Search Authored templates");
+    search.placeholder = "Search Authored templates";
     search.value = runtimeState.search;
     search.addEventListener("input", debounce(() => {
       runtimeState.search = search.value.trim().toLowerCase();
@@ -158,7 +158,7 @@ export function createTemplatesSurface(context) {
     });
     if (!templates.length) {
       list.append(renderHonestState(
-        "No Git-authored templates match",
+        "No Authored templates match",
         "Broaden the search or verify the deployment projection.",
       ));
     }
@@ -198,7 +198,7 @@ export function createTemplatesSurface(context) {
       const empty = document.createElement("div");
       empty.className = "runtime-template-projection runtime-template-readonly";
       empty.append(renderHonestState(
-        "Select a Git-authored template",
+        "Select an authored template",
         "Inspect its deployed definition or create a Card from it.",
       ));
       return empty;
@@ -238,7 +238,7 @@ export function createTemplatesSurface(context) {
     appendDefinition(definition, "Type", selected.type);
     appendDefinition(definition, "Trigger", selected.triggerType || "manual");
     appendDefinition(definition, "Tasks", String((selected.taskDefinitions || []).length));
-    appendDefinition(definition, "Source", selected.sourcePath || "Git-authored workflow template");
+    appendDefinition(definition, "Source", selected.sourcePath || "Authored workflow template");
     appendDefinition(
       definition,
       "Revision",
@@ -294,7 +294,7 @@ export function createTemplatesSurface(context) {
     if (!cards.length) {
       section.append(renderHonestState(
         "No active Cards use this Template",
-        "New Cards will start at the current Git-authored revision.",
+        "New Cards will start at the current Authored revision.",
       ));
       return section;
     }

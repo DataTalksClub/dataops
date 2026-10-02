@@ -273,7 +273,7 @@ export function createTasksSurface(context) {
         errors: runtimeState.error ? [runtimeState.error] : [],
         empty: count === 0,
         messages: {
-          loading: "Loading Git-authored templates…",
+          loading: "Loading Authored templates…",
           unavailable: "Runtime templates could not be loaded.",
           empty: "No runtime templates are deployed.",
           partial: `${countLabel(count, "runtime template")}. Some template data is unavailable.`,

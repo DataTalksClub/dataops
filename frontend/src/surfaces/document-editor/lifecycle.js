@@ -12,7 +12,7 @@ export function createEditorLifecycle(context, services) {
     storage,
   } = context;
   const {
-    refreshChangesPanel, refreshGitStatus, refreshParsedFromApi,
+    refreshChangesPanel, refreshKnowledgeStatus, refreshParsedFromApi,
     renderParsedDocument, showChangesStatus, updateViewToggleAvailability,
   } = services;
 
@@ -41,6 +41,7 @@ export function createEditorLifecycle(context, services) {
     const isCurrentDocument = () =>
       isFresh() && documentState.currentDoc?.path === path;
     const content = editor.value;
+    const expectedRevision = documentState.currentDoc.revision;
     const url = apiUrl("/docs");
     url.searchParams.set("path", path);
     editorSaveButton.disabled = true;
@@ -50,14 +51,20 @@ export function createEditorLifecycle(context, services) {
     try {
       const payload = await request(url, {
         method: "PUT",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, expectedRevision }),
       });
       if (!isCurrentDocument()) return;
 
+      recordPublication(expectedRevision, payload.revision);
       documentState.currentDoc.updated = payload.updated;
       documentState.lastSavedContent = content;
-      storage.removeItem(draftKey(path));
-      documentState.hasDraft = false;
+      if (editor.value === content) {
+        storage.removeItem(draftKey(path));
+        storage.removeItem(draftRevisionKey(path));
+        documentState.hasDraft = false;
+      } else {
+        storeDraft();
+      }
       documentState.currentParsed = null;
       updateViewToggleAvailability();
       if (editorView.dataset.mode === "rendered") {
@@ -83,13 +90,14 @@ export function createEditorLifecycle(context, services) {
       }
       if (editorView.dataset.mode === "rendered") renderParsedDocument();
       refreshChangesPanel();
-      refreshGitStatus();
+      refreshKnowledgeStatus();
       await loadDocuments();
       if (!isCurrentDocument()) return;
       restoreMutationFocus();
     } catch (error) {
       if (!isCurrentDocument()) return;
-      showEditorFeedback(error.message, { kind: feedbackKindForError(error) });
+      if (error.status === 409) showRevisionConflict();
+      else showEditorFeedback(error.message, { kind: feedbackKindForError(error) });
       updateSaveState();
       restoreMutationFocus();
     } finally {
@@ -107,6 +115,7 @@ export function createEditorLifecycle(context, services) {
     if (!confirmed) return;
 
     storage.removeItem(draftKey(documentState.currentDoc.path));
+    storage.removeItem(draftRevisionKey(documentState.currentDoc.path));
     documentState.hasDraft = false;
     editor.value = documentState.lastSavedContent;
     documentTitle.value =
@@ -144,10 +153,13 @@ export function createEditorLifecycle(context, services) {
     setCreateBusy(true);
     setCreateStatus("Creating…", "pending");
     try {
+      const publication = await request(apiUrl("/knowledge/publication"));
       const payload = await request(apiUrl("/docs"), {
         method: "POST",
         body: JSON.stringify({
           path,
+          expectedRevision: publication.revision,
+          absent: true,
           title,
           doc_type: docType,
           summary,
@@ -228,7 +240,9 @@ export function createEditorLifecycle(context, services) {
 
   function storeDraft() {
     const wasDraft = documentState.hasDraft;
-    storage.setItem(draftKey(documentState.currentDoc.path), editor.value);
+    const path = documentState.currentDoc.path;
+    if (documentState.currentDoc.revision) storage.setItem(draftRevisionKey(path), documentState.currentDoc.revision);
+    storage.setItem(draftKey(path), editor.value);
     documentState.hasDraft = true;
     if (!wasDraft) refreshChangesPanel();
   }
@@ -289,7 +303,7 @@ export function createEditorLifecycle(context, services) {
     const state = message ? kind || "success" : "idle";
     status.classList.toggle("is-error", assertive);
     status.classList.toggle("is-warning", kind === "warning");
-    status.textContent = message || "Create a Markdown document in this repository.";
+    status.textContent = message || "Create a Markdown document in private knowledge storage.";
     status.hidden = false;
     status.dataset.feedbackState = state;
     status.setAttribute("role", assertive ? "alert" : "status");
@@ -318,6 +332,31 @@ export function createEditorLifecycle(context, services) {
     return `dtc-doc-draft:${path}`;
   }
 
+  function draftRevisionKey(path) { return `dtc-doc-base:${path}`; }
+
+  function recordPublication(previous, next) {
+    if (!next) return;
+    // Advance bases only across our own successful publication. External saves
+    // remain conflicts, including drafts reopened in a later browser session.
+    for (const path of listDraftPaths()) {
+      if (storage.getItem(draftRevisionKey(path)) === previous) storage.setItem(draftRevisionKey(path), next);
+    }
+    if (documentState.currentDoc?.revision === previous) documentState.currentDoc.revision = next;
+  }
+
+  function showRevisionConflict() {
+    const path = documentState.currentDoc?.path;
+    showEditorFeedback("A newer save exists. Your unsaved draft is preserved. Reload the saved file before trying again.", { kind: "conflict" });
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "quiet-button"; button.textContent = "Reload saved file";
+    button.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Reload the latest saved file? Your draft remains in Pending changes until you discard it.", { okText: "Reload saved file" });
+      if (!confirmed || documentState.currentDoc?.path !== path) return;
+      await openDocument(path, { ignoreDraft: true, confirmedLeave: true });
+    });
+    context.editorInlineStatus.append(button);
+  }
+
   // ---------- Pending changes panel ----------
 
   function listDraftPaths() {
@@ -337,6 +376,7 @@ export function createEditorLifecycle(context, services) {
 
   return {
     canLeaveDocumentEditor, createDocument, discardDraft, draftKey,
+    draftRevisionKey, recordPublication, showRevisionConflict,
     listDraftPaths, resizeDocumentTitle, saveCurrentDocument, setMarkdownTitle,
     setSaveState,
     showCreate, storeDraft, syncTitleToMarkdown, titleFromMarkdown,

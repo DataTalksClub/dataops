@@ -300,7 +300,7 @@ function createKnowledgeHarness(options = {}) {
     promptUser: () => "",
     qualityFiltersState,
     refreshChangesPanel() {},
-    refreshGitStatus() {},
+    refreshKnowledgeStatus() {},
     refreshOperationsArtifactSnapshot: refresh("artifacts"),
     refreshOperationsAssistantSnapshot: refresh("assistants"),
     refreshOperationsQualitySnapshot: refresh("quality"),
@@ -409,7 +409,6 @@ describe("Knowledge surface boundary", () => {
       "populateFilterOptions",
       "refreshDocuments",
       "renderDocsSurface",
-      "renderGithubRawFooter",
       "renderLoomBlock",
       "renderProcessesSurface",
       "renderRelatedDocsBlock",
@@ -1504,7 +1503,7 @@ describe("Knowledge surface boundary", () => {
     secondResponse.resolve({
       path: "content/second.md",
       content: "# Second document",
-      updated: 2,
+      updated: 2, revision: "r2",
     });
     await second;
     firstResponse.resolve({
@@ -1516,7 +1515,7 @@ describe("Knowledge surface boundary", () => {
 
     assert.deepEqual(harness.documentState.currentDoc, {
       path: "content/second.md",
-      updated: 2,
+      updated: 2, revision: "r2",
     });
     assert.equal(harness.elements.editor.value, "# Second document");
     assert.equal(harness.history.at(-1).url, "/second.md");
@@ -1530,7 +1529,7 @@ describe("Knowledge surface boundary", () => {
         assert.equal(parsed.searchParams.get("path"), "content/runbook.md");
         return {
           path: "content/runbook.md",
-          updated: 123,
+          updated: 123, revision: "r1",
           content: "# Runbook\n\nDo the work.",
           parsed: { sections: [] },
         };
@@ -1552,7 +1551,7 @@ describe("Knowledge surface boundary", () => {
     });
     assert.deepEqual(loaded.documentState.currentDoc, {
       path: "content/runbook.md",
-      updated: 123,
+      updated: 123, revision: "r1",
     });
     assert.equal(loaded.elements.editor.value, "# Runbook\n\nDo the work.");
     assert.equal(loaded.body.dataset.view, "editor");

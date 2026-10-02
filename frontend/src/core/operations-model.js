@@ -742,7 +742,7 @@ export function createOperationsModel({
         /\s+Task Template$/i,
         "",
       ),
-      summary: doc.summary || "Git-backed Card template.",
+      summary: doc.summary || "Knowledge-backed Card template.",
       path: doc.path,
       slug,
       tags,

@@ -496,7 +496,7 @@ export function createAdminSurface(context) {
       ],
       [
         "Diagnostics",
-        "Check process quality, Git status, and commit history. Nothing here changes the repository.",
+        "Check process quality, daily export status, and the current knowledge revision.",
         () => section.querySelector(".ops-admin-diagnostics h3")?.focus(),
       ],
     ];
@@ -518,18 +518,18 @@ export function createAdminSurface(context) {
     diagnostics.innerHTML = `
       <header>
         <h3>Read-only diagnostics</h3>
-        <span>No pull, commit, publish, or provider action is available here.</span>
+        <span>Diagnostics show saved knowledge and daily export status.</span>
       </header>
       <article data-diagnostic="quality">
         <strong>Process quality</strong>
         <span>Loading local validation…</span>
       </article>
-      <article data-diagnostic="git-status">
-        <strong>Git status</strong>
+      <article data-diagnostic="knowledge-status">
+        <strong>Daily GitHub export</strong>
         <span>Loading availability…</span>
       </article>
-      <article data-diagnostic="git-history">
-        <strong>Git history</strong>
+      <article data-diagnostic="knowledge-publication">
+        <strong>Knowledge revision</strong>
         <span>Loading availability…</span>
       </article>
     `;
@@ -572,20 +572,20 @@ export function createAdminSurface(context) {
       diagnosticsSummary.setAttribute("aria-live", "polite");
       diagnosticsSummary.textContent =
         "Loading 3 read-only diagnostics…";
-      for (const name of ["quality", "git-status", "git-history"])
+      for (const name of ["quality", "knowledge-status", "knowledge-publication"])
         diagnosticText(name, "Loading availability…");
       diagnosticText("quality", "Loading local validation…");
 
-      const [quality, gitStatus, gitHistory] = await Promise.allSettled([
+      const [quality, knowledgeStatus, publication] = await Promise.allSettled([
         request(apiUrl("/docs/process-quality")),
-        request(apiUrl("/git/status")),
-        request(apiUrl("/git/log")),
+        request(apiUrl("/knowledge/status")),
+        request(apiUrl("/knowledge/publication")),
       ]);
       // A retry that finishes after another retry or after leaving Admin must
       // not overwrite the newer run or a surface it no longer owns.
       if (runId !== diagnosticsRunId || !diagnostics.isConnected) return;
 
-      const results = [quality, gitStatus, gitHistory];
+      const results = [quality, knowledgeStatus, publication];
       const answered = results.filter(
         (result) => result.status === "fulfilled",
       ).length;
@@ -626,23 +626,17 @@ export function createAdminSurface(context) {
           ? `${qualityTotal} quality ${findingsLabel}; ${qualityErrors === 0 ? "no" : qualityErrors} validation ${errorsLabel}.`
           : `Unavailable: ${quality.reason?.message || "request failed"}`,
       );
-      const changedFiles = Number(gitStatus.value?.count || 0);
       diagnosticText(
-        "git-status",
-        gitStatus.status === "fulfilled"
-          ? gitStatus.value.ok
-            ? `${changedFiles} changed ${changedFiles === 1 ? "file" : "files"} on ${gitStatus.value.branch || "an unknown branch"}.`
-            : gitStatus.value.error || "Unavailable in this runtime."
-          : `Unavailable: ${gitStatus.reason?.message || "request failed"}`,
+        "knowledge-status",
+        knowledgeStatus.status === "fulfilled"
+          ? knowledgeStatus.value.exportLag ? "Newer saves await the daily GitHub export." : "Daily GitHub export is current."
+          : `Export status unavailable: ${knowledgeStatus.reason?.message || "request failed"}. Saved knowledge is independent of GitHub.`,
       );
-      const commitCount = Number(gitHistory.value?.commits?.length || 0);
       diagnosticText(
-        "git-history",
-        gitHistory.status === "fulfilled"
-          ? gitHistory.value.available === false
-            ? gitHistory.value.error || "Unavailable in this runtime."
-            : `${commitCount} ${commitCount === 1 ? "commit" : "commits"} returned.`
-          : `Unavailable: ${gitHistory.reason?.message || "request failed"}`,
+        "knowledge-publication",
+        publication.status === "fulfilled"
+          ? `Current revision: ${publication.value.revision || "not published"}.`
+          : `Unavailable: ${publication.reason?.message || "request failed"}`,
       );
     }
 

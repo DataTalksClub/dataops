@@ -4,7 +4,7 @@ export function initializeAppShell({
   loadDocuments,
   navigationShell,
   refreshChangesPanel,
-  refreshGitStatus,
+  refreshKnowledgeStatus,
   refreshOperationsWorkSnapshot,
   restoreDarkMode,
   restoreSidebarCollapsed,
@@ -23,7 +23,7 @@ export function initializeAppShell({
   updateSaveState();
   const documentsReady = loadDocuments();
   navigationShell.initializeRouting(documentsReady);
-  refreshGitStatus();
+  refreshKnowledgeStatus();
 
   windowRef.__dataopsRefreshWork = function refreshOperationsWorkForTests() {
     return refreshOperationsWorkSnapshot({ rerender: true });

@@ -717,7 +717,7 @@ describe("Tasks surface boundary", () => {
     });
   });
 
-  test("renders Git-authored Template projections read-only for every role", async () => {
+  test("renders Authored Template projections read-only for every role", async () => {
     const template = {
       id: "template-1",
       name: "Newsletter",
@@ -745,7 +745,7 @@ describe("Tasks surface boundary", () => {
     );
     harness.api.renderTasksSurface([], "templates");
 
-    assert.match(harness.documentList.textContent, /Git-authored templates/);
+    assert.match(harness.documentList.textContent, /Authored templates/);
     assert.match(
       harness.documentList.textContent,
       /private knowledge repository/,

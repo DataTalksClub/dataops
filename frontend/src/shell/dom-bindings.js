@@ -18,19 +18,19 @@ const SELECTORS = Object.freeze({
   lintBackdrop: "#lint-backdrop",
   lintModalBody: "#lint-modal-body",
   lintModalClose: "#lint-modal-close",
-  gitSection: "#git-section",
-  gitStatusText: "#git-status-text",
-  gitCommitButton: "#git-commit-button",
-  gitPullButton: "#git-pull-button",
-  gitCommitModal: "#git-commit-modal",
-  gitCommitBackdrop: "#git-commit-backdrop",
-  gitCommitForm: "#git-commit-form",
-  gitCommitFiles: "#git-commit-files",
-  gitCommitMessage: "#git-commit-message",
-  gitCommitCancel: "#git-commit-cancel",
-  gitCommitSubmit: "#git-commit-submit",
-  cancelCommitButton: "[data-action='cancel-commit']",
-  gitResult: "#git-result",
+  knowledgeSection: "#knowledge-section",
+  knowledgeStatusText: "#knowledge-status-text",
+  historyButton: "#history-button",
+  knowledgeStatusButton: "#knowledge-status-button",
+  historyModal: "#history-modal",
+  historyBackdrop: "#history-backdrop",
+  historyClose: "#history-close",
+  historyPath: "#history-path",
+  historySearchForm: "#history-search-form",
+  historyStatus: "#history-status",
+  historyVersions: "#history-versions",
+  historyComparison: "#history-comparison",
+  editorHistoryButton: "#editor-history-button",
   operationsHomeButton: "#operations-home-button",
   searchForm: "#search-form",
   searchInput: "#search-input",
@@ -115,7 +115,7 @@ export function bindAppDomEvents(context) {
   dom.lintOpenButton.addEventListener("click", handlers.openLintReport);
   dom.lintBackdrop.addEventListener("click", handlers.hideLintModal);
   dom.lintModalClose.addEventListener("click", handlers.hideLintModal);
-  dom.gitPullButton.addEventListener("click", handlers.gitPull);
+  dom.knowledgeStatusButton.addEventListener("click", handlers.refreshKnowledgeStatus);
   dom.helpBackdrop.addEventListener("click", handlers.hideHelpModal);
   dom.helpClose.addEventListener("click", handlers.hideHelpModal);
   dom.helpButton?.addEventListener("click", handlers.showHelpModal);
@@ -150,14 +150,10 @@ export function bindAppDomEvents(context) {
   dom.themeToggleButton.addEventListener("click", handlers.toggleDarkMode);
   dom.changesSaveAll.addEventListener("click", handlers.saveAllDrafts);
   dom.changesDiscardAll.addEventListener("click", handlers.discardAllDrafts);
-  dom.gitCommitButton.addEventListener("click", handlers.openCommitForm);
-  dom.gitCommitCancel.addEventListener("click", handlers.closeCommitForm);
-  dom.gitCommitBackdrop.addEventListener("click", handlers.closeCommitForm);
-  dom.cancelCommitButton.addEventListener(
-    "click",
-    handlers.closeCommitForm,
-  );
-  dom.gitCommitForm.addEventListener("submit", handlers.submitCommitForm);
+  dom.editorHistoryButton?.addEventListener("click", handlers.openHistory);
+  dom.historyButton.addEventListener("click", handlers.openHistory);
+  dom.historyClose.addEventListener("click", handlers.closeHistory);
+  dom.historyBackdrop.addEventListener("click", handlers.closeHistory);
   for (const button of dom.workspaceNavButtons) {
     button.addEventListener("click", () => handlers.workspaceButton(button));
   }
