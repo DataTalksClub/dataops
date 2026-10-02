@@ -61,24 +61,25 @@ status triplets) directly. Do not hardcode hex values or introduce a second
 token vocabulary.
 
 `frontend/src/styles.css` defines only DataOps-local roles dakit does not
-have yet (the `attention-*` ramp, `--control-hover-border`, layout metrics,
-card alignment). The table below keeps the old portal names for reference;
-each role's values now live in dakit and are identical in meaning.
+have yet (the `attention-*` ramp, layout metrics, card alignment). The table
+below keeps the old portal names for reference; each role's values now live in
+dakit and are identical in meaning.
 
 ### Neutral palette
 
-| Token | Light | Dark | Use |
-| --- | --- | --- | --- |
-| `--page-bg` | `#ffffff` | `#0d1117` | page canvas |
-| `--surface-bg` | `#ffffff` | `#161b22` | cards, panels, rows |
-| `--surface-muted` | `#f6f8fa` | `#0d1117` | headers, footers, secondary controls |
-| `--surface-hover` | `#eef1f4` | `#21262d` | row and control hover |
-| `--border-muted` | `#d0d7de` | `#30363d` | normal dividers and containers |
-| `--border-strong` | `#afb8c1` | `#484f58` | controls and active boundaries |
-| `--text-primary` | `#24292f` | `#e6edf3` | body copy |
-| `--text-heading` | `#0f172a` | `#e6edf3` | headings and important values |
-| `--text-muted` | `#57606a` | `#8b949e` | metadata and helper copy |
-| `--text-faint` | `#8c959f` | `#6e7681` | unavailable and disabled content |
+| Role | dakit token | Light | Dark | Use |
+| --- | --- | --- | --- | --- |
+| Page canvas | `--dk-bg-page` | `#ffffff` | `#0d1117` | page canvas |
+| Surface | `--dk-bg-surface` | `#ffffff` | `#161b22` | cards, panels, rows |
+| Muted surface | `--dk-bg-muted` | `#f6f8fa` | `#21262d` | headers, footers, secondary controls, sidebar |
+| Hover | `--dk-bg-hover` | `#eef1f4` | `#293038` | row and control hover |
+| Normal border | `--dk-border-default` | `#d0d7de` | `#30363d` | normal dividers and containers |
+| Strong border | `--dk-border-strong` | `#afb8c1` | `#6e7681` | controls and active boundaries |
+| Control hover border | `--dk-border-control-hover` | `#d0d7de` | `#8b949e` | the hover border quiet controls gain |
+| Primary text | `--dk-text-primary` | `#24292f` | `#e6edf3` | body copy |
+| Heading text | `--dk-text-heading` | `#0f172a` | `#f0f6fc` | headings and important values |
+| Muted text | `--dk-text-muted` | `#57606a` | `#9198a1` | metadata and helper copy |
+| Faint text | `--dk-text-faint` | `#6e7681` | `#8b949e` | unavailable and disabled content |
 
 ### Product and semantic colors
 
@@ -92,24 +93,29 @@ each role's values now live in dakit and are identical in meaning.
 - Red is reserved for overdue, destructive, failed, or blocking states.
 - Never use color alone. Pair it with text, an icon, position, or accessible
   state.
-- In dark mode, keep CMP's roles separate: links and selected text use
-  `#8bb7df`, while filled primary controls use `#4d7fa8` and hover at
-  `#6d99c2`. Secondary controls use `#21262d`, hover at `#30363d`, and gain
-  a `#8b949e` hover border. Dark canvas and surfaces use `#0d1117` / `#161b22`
-  with normal `#30363d` borders; do not synthesize these colors by inverting
-  the light theme.
+- Dark mode has no separate portal palette: every value comes from dakit's
+  dark theme (vendored `frontend/src/dakit/tokens.css`). Links and selected
+  text use `--dk-text-link`; filled primary controls pair
+  `--dk-text-on-accent` with `--dk-accent-default` and `--dk-accent-hover` on
+  hover; secondary controls use `--dk-bg-muted` and gain a
+  `--dk-border-control-hover` hover border; canvas and surfaces are
+  `--dk-bg-page` / `--dk-bg-surface` with `--dk-border-default` borders. Do
+  not synthesize dark values by inverting the light theme, and do not
+  hardcode any of these hex values in styles.
 
 ### Type, spacing, and shape
 
 - Use the system sans-serif stack with Inter when available.
-- Page titles are 32–36px desktop and 22px mobile, semibold, with tight leading.
+- Page titles are 32–36px desktop and 22px mobile, semibold, with tight leading
+  (`--dk-text-page` / `--dk-text-xl`).
 - Section headings are 16px semibold.
 - Body and row titles are 14px; metadata is 12–13px.
 - Use a 4px base rhythm. Normal component gaps are 8, 12, 16, or 24px.
-- The shared component radius is 6px. A larger radius is reserved for avatars,
+- The shared component radius is 6px (`--dk-radius-md`); floating overlay
+  panels use `--dk-radius-lg` (10px). A larger radius is reserved for avatars,
   circular controls, or product marks.
 - Normal surfaces have no shadow. Shadows indicate overlays, drawers, and
-  modals only.
+  modals only (`--dk-shadow-overlay`).
 
 ## Shell and navigation
 
@@ -258,8 +264,9 @@ system.
 - Secondary buttons use the muted surface, neutral border, and primary text.
 - Content-width is the default. Use wrapping action rows instead of stretching
   controls full width.
-- Default desktop control height is 32–36px; interactive mobile controls are at
-  least 44px.
+- Default desktop control height is 32–36px (`--dk-size-control-md`, 34px, is
+  the shared default); interactive mobile controls are at least 44px
+  (`--dk-size-touch`).
 - Put the primary action first. Destructive actions must be explicitly labelled
   and visually separated from routine actions.
 - Icon-only buttons need a stable icon plus `aria-label` and `title` where
