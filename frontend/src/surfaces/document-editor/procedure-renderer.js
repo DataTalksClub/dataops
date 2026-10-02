@@ -422,12 +422,14 @@ export function createProcedureRenderer(context, services, editorState) {
       const payload = await request(apiUrl("/images"), {
         method: "POST",
         body: JSON.stringify({
+          expectedRevision: documentState.currentDoc.revision,
           doc_path: path,
           filename: file.name,
           data,
         }),
       });
       if (!isCurrentDocument()) return;
+      services.recordPublication(documentState.currentDoc.revision, payload.revision);
       step.screenshots = step.screenshots || [];
       step.screenshots.push({ src: payload.absolute_path, alt: "", caption: "" });
       applyProcedureRewrite(procedure, null);

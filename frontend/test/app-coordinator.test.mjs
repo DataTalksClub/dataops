@@ -352,7 +352,7 @@ describe("app shell coordinator characterization", () => {
       "updateSaveState();",
       "const documentsReady = loadDocuments();",
       "navigationShell.initializeRouting(documentsReady);",
-      "refreshGitStatus();",
+      "refreshKnowledgeStatus();",
     ]);
     const initialize = functionSource("initializeRouting", navigationSource);
     assert.match(

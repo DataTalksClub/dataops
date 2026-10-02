@@ -118,16 +118,17 @@ function createEditorHarness(options = {}) {
     "editorSaveButton",
     "editorSaveState",
     "editorView",
-    "gitCommitButton",
-    "gitCommitCancel",
-    "gitCommitFiles",
-    "gitCommitMessage",
-    "gitCommitModal",
-    "gitCommitSubmit",
-    "gitPullButton",
-    "gitResult",
-    "gitSection",
-    "gitStatusText",
+    "historyButton",
+    "historyClose",
+    "historyPath",
+    "historySearchForm",
+    "historyStatus",
+    "historyVersions",
+    "historyComparison",
+    "historyModal",
+    "knowledgeStatusButton",
+    "knowledgeSection",
+    "knowledgeStatusText",
     "lightbox",
     "lightboxCaption",
     "lightboxImg",
@@ -152,7 +153,6 @@ function createEditorHarness(options = {}) {
   for (const name of [
     "documentTitle",
     "editor",
-    "gitCommitMessage",
     "newDocPath",
     "newDocSummary",
     "newDocTitle",
@@ -203,7 +203,7 @@ function createEditorHarness(options = {}) {
   const documentState = {
     currentDoc:
       options.currentDoc === undefined
-        ? { path: "content/processes/existing.md", updated: 10 }
+        ? { path: "content/processes/existing.md", updated: 10, revision: "r1" }
         : options.currentDoc,
     currentParsed: options.parsed || null,
     currentWarnings: options.warnings || [],
@@ -234,6 +234,7 @@ function createEditorHarness(options = {}) {
   const request = async (url, requestOptions = {}) => {
     const entry = { url: String(url), options: requestOptions };
     requests.push(entry);
+    if (new URL(url).pathname === "/knowledge/publication") return { revision: "r1" };
     if (options.request) return options.request(url, requestOptions, entry);
     if (requestOptions.method === "PUT") return { updated: 20, warnings: [] };
     if (new URL(url).pathname === "/parse") {
@@ -280,7 +281,6 @@ function createEditorHarness(options = {}) {
     operationsViewTitle: (view) => view,
     promptUser: options.promptUser || (() => "content/processes/renamed.md"),
     refreshDocuments() {},
-    renderGithubRawFooter: nullableBlock,
     renderLoomBlock: nullableBlock,
     renderRelatedDocsBlock: nullableBlock,
     renderWarningsBlock: nullableBlock,
@@ -347,8 +347,8 @@ describe("Document Editor surface boundary", () => {
   test("directly imports the production factory and exposes the stable editor facade", () => {
     assert.deepEqual(Object.keys(createEditorHarness().api).sort(), [
       "canLeaveDocumentEditor",
-      "closeCommitForm",
       "closeDiff",
+      "closeHistory",
       "closeLightbox",
       "createDocument",
       "deleteCurrentDoc",
@@ -358,13 +358,12 @@ describe("Document Editor surface boundary", () => {
       "emptyNote",
       "enterRenderedMode",
       "escapeRegex",
-      "gitPull",
-      "handleClipboardPaste",
+        "handleClipboardPaste",
       "listDraftPaths",
-      "openCommitForm",
+      "openHistory",
       "openLintReport",
       "refreshChangesPanel",
-      "refreshGitStatus",
+      "refreshKnowledgeStatus",
       "renameCurrentDoc",
       "resizeDocumentTitle",
       "saveAllDrafts",
@@ -372,12 +371,10 @@ describe("Document Editor surface boundary", () => {
       "setSaveState",
       "showCreate",
       "storeDraft",
-      "submitCommitForm",
-      "syncTitleToMarkdown",
+        "syncTitleToMarkdown",
       "titleFromMarkdown",
       "toggleViewMode",
-      "updateGithubLink",
-      "updateSaveState",
+        "updateSaveState",
       "updateViewToggleAvailability",
     ]);
   });
@@ -410,6 +407,7 @@ describe("Document Editor surface boundary", () => {
     assert.equal(new URL(create.url).pathname, "/docs");
     assert.deepEqual(bodyOf(create), {
       path: "content/operations/new-process.md",
+      expectedRevision: "r1", absent: true,
       title: "New process",
       doc_type: "sop",
       summary: "Run it safely",
@@ -721,14 +719,14 @@ describe("Document Editor surface boundary", () => {
           return { updated: 42, warnings: ["summary is missing"] };
         }
         if (pathname === "/docs") return { parsed: null };
-        if (pathname === "/git/status") return { ok: true, count: 0, branch: "main" };
+        if (pathname === "/knowledge/status") return { ok: true, count: 0, branch: "main" };
         return {};
       },
     });
 
     await harness.api.saveCurrentDocument();
     const save = harness.requests.find((entry) => entry.options.method === "PUT");
-    assert.deepEqual(bodyOf(save), { content: "# Updated\n" });
+    assert.deepEqual(bodyOf(save), { content: "# Updated\n", expectedRevision: "r1" });
     assert.equal(
       new URL(save.url).searchParams.get("path"),
       "content/processes/existing.md",
@@ -802,7 +800,7 @@ describe("Document Editor surface boundary", () => {
         if (pathname === "/docs" && requestOptions.method === "DELETE") {
           return {};
         }
-        if (pathname === "/git/status") return { ok: true, count: 0 };
+        if (pathname === "/knowledge/status") return { ok: true, count: 0 };
         return {};
       },
     });
@@ -813,6 +811,7 @@ describe("Document Editor surface boundary", () => {
     );
     assert.deepEqual(bodyOf(rename), {
       old_path: oldPath,
+      expectedRevision: "r1",
       new_path: renamedPath,
     });
     assert.equal(harness.documentState.currentDoc.path, renamedPath);
@@ -884,66 +883,20 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.elements.changesStatus.hidden, false);
   });
 
-  test("reviews Git status and submits an explicit commit-and-push action", async () => {
-    let statusCalls = 0;
-    const harness = createEditorHarness({
-      request: async (url, requestOptions) => {
-        const pathname = new URL(url).pathname;
-        if (pathname === "/git/status") {
-          statusCalls += 1;
-          return {
-            ok: true,
-            branch: "main",
-            count: 1,
-            github: "https://github.com/DataTalksClub/dataops-knowledge",
-            files: [{ status: "M", path: "content/processes/existing.md" }],
-          };
-        }
-        if (pathname === "/git/commit" && requestOptions.method === "POST") {
-          return {
-            ok: true,
-            committed: true,
-            pushed: true,
-            message: bodyOf({ options: requestOptions }).message,
-          };
-        }
-        return {};
-      },
-    });
-
-    await harness.api.refreshGitStatus();
-    assert.equal(
-      harness.elements.gitStatusText.textContent,
-      "On main · 1 file changed",
-    );
-    assert.equal(harness.elements.gitCommitButton.disabled, false);
-    assert.equal(harness.elements.gitSection.classList.contains("git-ok"), true);
-
-    await harness.api.openCommitForm();
-    assert.equal(harness.elements.gitCommitModal.hidden, false);
-    assert.equal(
-      harness.elements.gitCommitMessage.value,
-      "Update existing",
-    );
-    assert.equal(harness.elements.gitCommitMessage.focused, true);
-    assert.equal(harness.elements.gitCommitMessage.selected, true);
-    assert.equal(
-      findAllByClass(harness.elements.gitCommitFiles, "git-commit-file").length,
-      1,
-    );
-
-    harness.elements.gitCommitMessage.value = "Update onboarding process";
-    await harness.api.submitCommitForm({ preventDefault() {} });
-    const commit = harness.requests.find(
-      (entry) => new URL(entry.url).pathname === "/git/commit",
-    );
-    assert.deepEqual(bodyOf(commit), {
-      message: "Update onboarding process",
-      push: true,
-    });
-    assert.match(harness.elements.gitResult.textContent, /Committed and pushed/);
-    assert.equal(harness.elements.gitCommitModal.hidden, true);
-    assert.ok(statusCalls >= 3);
+  test("reports delayed export independently and lists recoverable deleted-file history", async () => {
+    const harness = createEditorHarness({ request: async (url) => {
+      const path = new URL(url).pathname;
+      if (path === "/knowledge/status") return { exported: { at: "2026-10-02T10:00:00Z" }, exportLag: true };
+      if (path === "/knowledge/history") return { versions: [{ revision: "r0", actor: "Grace", time: "2026-10-01T10:00:00Z", operation: "delete", deleted: true }] };
+      return {};
+    } });
+    await harness.api.refreshKnowledgeStatus();
+    assert.match(harness.elements.knowledgeStatusText.textContent, /newer saves await daily export/);
+    await harness.api.openHistory();
+    assert.equal(harness.elements.historyModal.hidden, false);
+    assert.match(harness.elements.historyVersions.textContent, /delete · deleted/);
+    assert.match(harness.elements.historyVersions.textContent, /Grace/);
+    assert.equal(findByText(harness.elements.historyVersions, "Restore version"), undefined);
   });
 
   test("renders structured SOP frontmatter, ordered sections, and procedure steps", async () => {
@@ -1072,6 +1025,7 @@ describe("Document Editor surface boundary", () => {
       {
         applyProcedureRewrite: (rewrittenProcedure, focusStepId) =>
           rewrites.push([rewrittenProcedure, focusStepId]),
+        recordPublication() {},
         fileToBase64: async () => "YWJj",
       },
       {},
@@ -1086,7 +1040,7 @@ describe("Document Editor surface boundary", () => {
     );
   });
 
-  test("keeps dirty-leave and parse or Git failures recoverable", async () => {
+  test("keeps dirty-leave and export status failures recoverable", async () => {
     const harness = createEditorHarness({
       confirm: false,
       content: "# Saved\n",
@@ -1094,7 +1048,7 @@ describe("Document Editor surface boundary", () => {
       request: async (url) => {
         const pathname = new URL(url).pathname;
         if (pathname === "/parse") throw new Error("Parser offline");
-        if (pathname === "/git/status") throw new Error("Git offline");
+        if (pathname === "/knowledge/status") throw new Error("Git offline");
         return {};
       },
     });
@@ -1105,9 +1059,92 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.elements.editorView.dataset.mode, "rendered");
     assert.ok(harness.elements.renderedView.children.length > 0);
 
-    await harness.api.refreshGitStatus();
-    assert.equal(harness.elements.gitSection.classList.contains("git-unavailable"), true);
-    assert.equal(harness.elements.gitStatusText.textContent, "Git offline");
-    assert.equal(harness.elements.gitCommitButton.disabled, true);
+    await harness.api.refreshKnowledgeStatus();
+    assert.match(harness.elements.knowledgeStatusText.textContent, /File saves and history are independent of GitHub/);
   });
+  test("compares authenticated versions and restores with a revision precondition", async () => {
+    const harness = createEditorHarness({ request: async (url, options) => {
+      const path = new URL(url).pathname;
+      if (path === "/knowledge/history") return { versions: [{ revision: "r0", actor: "Grace", time: "2026-10-01T10:00:00Z", operation: "edit" }] };
+      if (path === "/knowledge/version") return new Blob([new URL(url).searchParams.get("revision") === "r0" ? "# Older" : "# Current"]);
+      if (path === "/knowledge/restore") return { revision: "r2" };
+      return {};
+    } });
+    await harness.api.openHistory();
+    await findByText(harness.elements.historyVersions, "Compare version", "button").click();
+    assert.match(harness.elements.historyComparison.textContent, /Selected version# OlderCurrent saved file# Current/);
+    const versionRequests = harness.requests.filter((entry) => new URL(entry.url).pathname === "/knowledge/version");
+    assert.equal(versionRequests.length, 2);
+    assert.equal(versionRequests[0].options.responseType, "blob");
+    await findByText(harness.elements.historyVersions, "Restore version", "button").click();
+    const restore = harness.requests.find((entry) => new URL(entry.url).pathname === "/knowledge/restore");
+    assert.deepEqual(bodyOf(restore), { version: "r0", expectedRevision: "r1" });
+    assert.equal(harness.confirmations[0].options.okText, "Restore version");
+    assert.equal(harness.elements.historyModal.hidden, true);
+    assert.deepEqual(harness.openedDocuments, ["content/processes/existing.md"]);
+  });
+
+  test("a stale save keeps the draft and offers a confirmed saved-file reload", async () => {
+    const path = "content/processes/existing.md";
+    const harness = createEditorHarness({ editorValue: "# My unsaved draft", request: async () => { throw Object.assign(new Error("Conflict"), { status: 409 }); } });
+    harness.api.storeDraft();
+    await harness.api.saveCurrentDocument();
+    assert.equal(harness.elements.editor.value, "# My unsaved draft");
+    assert.equal(harness.storageValues.get(`dtc-doc-draft:${path}`), "# My unsaved draft");
+    assert.equal(harness.storageValues.get(`dtc-doc-base:${path}`), "r1");
+    assert.match(harness.elements.editorInlineStatus.textContent, /draft is preserved/);
+    await findByText(harness.elements.editorInlineStatus, "Reload saved file", "button").click();
+    assert.deepEqual(harness.openedDocuments, [path]);
+    assert.equal(harness.storageValues.get(`dtc-doc-draft:${path}`), "# My unsaved draft");
+  });
+
+  test("restore conflict preserves draft and offers fresh history", async () => {
+    const harness = createEditorHarness({ editorValue: "# Unsaved", request: async (url) => {
+      const path = new URL(url).pathname;
+      if (path === "/knowledge/history") return { versions: [{ revision: "r0", actor: "Grace", time: "2026-10-01T10:00:00Z", operation: "edit" }] };
+      if (path === "/knowledge/restore") throw Object.assign(new Error("Conflict"), { status: 409 });
+      return {};
+    } });
+    harness.api.storeDraft();
+    await harness.api.openHistory();
+    await findByText(harness.elements.historyVersions, "Restore version", "button").click();
+    assert.match(harness.elements.historyStatus.textContent, /newer save exists/);
+    assert.equal(harness.elements.editor.value, "# Unsaved");
+    assert.ok(findByText(harness.elements.historyVersions, "Reload history", "button"));
+    assert.match(harness.confirmations[0].message, /unsaved draft stays/);
+  });
+
+  test("our own publications advance other local draft bases without bypassing external conflicts", async () => {
+    let revision = "r1";
+    const seen = [];
+    const harness = createEditorHarness({ storage: {
+      "dtc-doc-draft:content/a.md": "# A", "dtc-doc-base:content/a.md": "r1",
+      "dtc-doc-draft:content/b.md": "# B", "dtc-doc-base:content/b.md": "r1",
+      "dtc-doc-draft:content/stale.md": "# Stale", "dtc-doc-base:content/stale.md": "r0",
+    }, request: async (url, options) => {
+      if (options.method !== "PUT") return {};
+      const body = JSON.parse(options.body); seen.push(body.expectedRevision);
+      if (body.expectedRevision !== revision) throw Object.assign(new Error("Conflict"), { status: 409 });
+      revision = revision === "r1" ? "r2" : "r3";
+      return { revision };
+    } });
+    await harness.api.saveAllDrafts();
+    assert.deepEqual(seen, ["r1", "r2", "r0"]);
+    assert.equal(harness.storageValues.get("dtc-doc-draft:content/stale.md"), "# Stale");
+    assert.match(harness.elements.changesStatus.textContent, /Saved 2, 1 failed/);
+  });
+
+  test("typing during a successful save keeps the newer draft at the new revision", async () => {
+    const response = deferred();
+    const harness = createEditorHarness({ editorValue: "# First edit", request: async (_url, options) => options.method === "PUT" ? response.promise : {} });
+    harness.api.storeDraft();
+    const saving = harness.api.saveCurrentDocument();
+    harness.elements.editor.value = "# Typed while saving"; harness.api.storeDraft();
+    response.resolve({ revision: "r2", updated: 20 }); await saving;
+    const path = "content/processes/existing.md";
+    assert.equal(harness.documentState.lastSavedContent, "# First edit");
+    assert.equal(harness.storageValues.get(`dtc-doc-draft:${path}`), "# Typed while saving");
+    assert.equal(harness.storageValues.get(`dtc-doc-base:${path}`), "r2");
+  });
+
 });

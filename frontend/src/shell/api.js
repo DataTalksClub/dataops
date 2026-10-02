@@ -29,11 +29,13 @@ export function createApiClient({ apiBase, fetchImpl, storage }) {
     if (token && !headers.Authorization && !headers.authorization) {
       headers.Authorization = `Bearer ${token}`;
     }
+    const { responseType, ...fetchOptions } = options;
     const response = await fetchImpl(url, {
-      ...options,
+      ...fetchOptions,
       headers,
     });
 
+    if (response.ok && responseType === "blob") return response.blob();
     const text = await response.text();
     let payload = null;
     let parsedJson = false;

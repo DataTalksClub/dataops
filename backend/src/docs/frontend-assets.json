@@ -27,7 +27,7 @@
     "src/surfaces/document-editor/changes.js",
     "src/surfaces/document-editor/document-renderer.js",
     "src/surfaces/document-editor/feedback.js",
-    "src/surfaces/document-editor/git.js",
+    "src/surfaces/document-editor/history.js",
     "src/surfaces/document-editor/index.js",
     "src/surfaces/document-editor/lifecycle.js",
     "src/surfaces/document-editor/markdown.js",

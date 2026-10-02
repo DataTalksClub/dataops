@@ -430,7 +430,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
     expect(Array.isArray(docs.body.documents)).toBe(true);
     const search = await browserJson(page, '/search?q=synthetic');
     expect(search.status).toBe(200);
-    const gitStatus = await browserJson(page, '/git/status');
+    const gitStatus = await browserJson(page, '/knowledge/status');
     expect(gitStatus.status).toBe(200);
     const content = await browserJson(page, '/content/testing/synthetic-vite-development.md');
     expect(content.status).toBe(200);

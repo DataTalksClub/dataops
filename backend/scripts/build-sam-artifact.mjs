@@ -30,6 +30,7 @@ const samCacheEnv = 'DATAOPS_SAM_CACHE_ROOT';
 
 export const handlerEntries = Object.freeze({
   handler: 'backend/src/handler.ts',
+  'knowledge-worker-handler': 'backend/src/knowledge/worker.ts',
   'execution-worker-handler': 'backend/src/execution-worker-handler.ts',
   'result-notification-handler': 'backend/src/result-notification-handler.ts',
   'sponsor-send-worker-handler': 'backend/src/sponsor-send-worker-handler.ts',

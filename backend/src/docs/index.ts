@@ -8,7 +8,7 @@
  *
  * - search index   -> issue #85 (`zerosearch-node`)
  * - SOP engine      -> issue #86 (`work-engine/src/docs/sop/`)
- * - GitHub store    -> issue #87
+ * - S3 knowledge store    -> issue #87
  * - content API     -> issue #87
  */
 
@@ -17,7 +17,7 @@ export * from './searchIndex';
 export * from './search/extract';
 export * from './search/sopExtract';
 export * from './sopEngine';
-export * from './githubStore';
+export * from './knowledgeStore';
 export * from './docRegistry';
 export * from './contentApi';
 export * from './portal';

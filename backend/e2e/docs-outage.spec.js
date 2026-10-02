@@ -93,7 +93,7 @@ async function stopServer(server) {
 function isDocsUrl(url) {
   try {
     const { pathname } = new URL(url);
-    return pathname === '/docs' || pathname.startsWith('/docs/') || pathname === '/search';
+    return pathname === '/docs' || pathname.startsWith('/docs/') || pathname === '/search' || pathname.startsWith('/knowledge/');
   } catch {
     return false;
   }

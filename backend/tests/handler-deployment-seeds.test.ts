@@ -1,3 +1,4 @@
+import {checksum} from '../src/docs/knowledgeStore';
 import assert from 'node:assert';
 import { after, before, describe, it } from 'node:test';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -12,10 +13,10 @@ import {
   setDeploymentTemplateLoaderForTest,
   USERS,
 } from '../src/deploymentSeeds';
-import { loadAuthoredTemplatesFromGithub } from '../src/templates/authoredTemplates';
+import { loadAuthoredTemplatesFromKnowledge } from '../src/templates/authoredTemplates';
 import { templateToYaml } from '../src/templates/yamlTemplates';
 import { useTestDatabase } from './helpers/db';
-import { syntheticAuthoredFiles, syntheticAuthoredTemplate, syntheticGithubStore } from './helpers/authoredTemplates';
+import { syntheticAuthoredFiles, syntheticAuthoredTemplate, syntheticKnowledgeStore } from './helpers/authoredTemplates';
 
 describe('handler - IAM-only deployment seeds', () => {
   let client: DynamoDBDocumentClient;
@@ -73,11 +74,11 @@ describe('handler - IAM-only deployment seeds', () => {
       detail: { dataopsAction: 'sync-runtime-seeds' },
     };
     const files = syntheticAuthoredFiles(11);
-    const { store, requests } = syntheticGithubStore(files);
+    const { store, requests } = syntheticKnowledgeStore(files);
     const loadTemplates = async () => {
       assert.strictEqual((await listUsers(client)).length, USERS.length, 'users must exist before template loading');
       assert.strictEqual((await listRecurringConfigs(client)).length, 0, 'recurring configs must wait for templates');
-      return loadAuthoredTemplatesFromGithub(store);
+      return loadAuthoredTemplatesFromKnowledge(store);
     };
 
     setDeploymentTemplateLoaderForTest(loadTemplates);
@@ -103,10 +104,10 @@ describe('handler - IAM-only deployment seeds', () => {
       assert.notStrictEqual(template.id, template.authoredId);
       assert.strictEqual(template.version, 1);
       assert.strictEqual(template.schemaVersion, 2);
-      assert.strictEqual(template.sourceRevision, files.find((file) => file.path === template.sourcePath)!.revision);
+      assert.strictEqual(template.sourceRevision, checksum(files.find((file) => file.path === template.sourcePath)!.content));
     }
 
-    setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromGithub(store));
+    setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromKnowledge(store));
     const secondResponse = await handler(event);
     assert.ok('statusCode' in secondResponse);
     assert.strictEqual(secondResponse.statusCode, 200);
@@ -127,8 +128,8 @@ describe('handler - IAM-only deployment seeds', () => {
       firstTemplates.sort((left, right) => left.id.localeCompare(right.id)),
       'idempotent seeding must preserve every stored definition, identity and version',
     );
-    assert.strictEqual(requests.filter((request) => request.includes('/git/trees/')).length, 1);
-    assert.strictEqual(requests.filter((request) => request.includes('/git/blobs/')).length, 22);
+    assert.strictEqual(requests.filter((request) => request === 'active.json').length, 1);
+    assert.strictEqual(requests.filter((request) => request.startsWith('objects/')).length, 22);
 
     const body = JSON.stringify(second);
     for (const user of USERS) {

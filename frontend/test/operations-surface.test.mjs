@@ -787,10 +787,10 @@ describe("Operations surface boundary", () => {
         if (url === "/docs/process-quality") {
           return { summary: { total: 0 }, validationErrors: [] };
         }
-        if (url === "/git/status") {
+        if (url === "/knowledge/status") {
           return { ok: true, count: 0, branch: "main" };
         }
-        if (url === "/git/log") throw new Error("History offline");
+        if (url === "/knowledge/publication") throw new Error("History offline");
         return {};
       },
     });
@@ -810,12 +810,12 @@ describe("Operations surface boundary", () => {
       /0 quality findings; no validation errors/,
     );
     assert.equal(
-      diagnostics.querySelector('[data-diagnostic="git-status"] span')
+      diagnostics.querySelector('[data-diagnostic="knowledge-status"] span')
         .textContent,
-      "0 changed files on main.",
+      "Daily GitHub export is current.",
     );
     assert.equal(
-      diagnostics.querySelector('[data-diagnostic="git-history"] span')
+      diagnostics.querySelector('[data-diagnostic="knowledge-publication"] span')
         .textContent,
       "Unavailable: History offline",
     );

@@ -506,12 +506,12 @@ test.describe('issue 156 canonical route and operator parity', () => {
     await cleanBack.click();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-projection')).toContainText('Select a Git-authored template');
+    await expect(page.locator('.runtime-template-projection')).toContainText('Select an authored template');
     await expect(page.locator('.runtime-template-search')).toBeFocused();
     await page.reload();
     await expect(page).toHaveURL(/\/#\/templates$/);
     await expect(page.locator('.runtime-template-list')).toBeVisible();
-    await expect(page.locator('.runtime-template-projection')).toContainText('Select a Git-authored template');
+    await expect(page.locator('.runtime-template-projection')).toContainText('Select an authored template');
     await page.goBack();
     await expect(page).toHaveURL(exactRoute);
     await expect(page.locator('.runtime-template-projection')).toContainText(fixture.template.name);

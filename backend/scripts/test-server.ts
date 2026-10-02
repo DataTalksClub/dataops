@@ -6,7 +6,7 @@ process.env.IS_LOCAL = 'true';
 import http from 'http';
 import { URL } from 'url';
 import { Readable } from 'stream';
-import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, rmSync, writeFileSync, readdirSync, readFileSync, existsSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { randomBytes } from 'crypto';
 import { handler } from '../src/handler';
@@ -20,7 +20,9 @@ import {
 } from '../src/routes/bookkeeping';
 import { setMailingExportDependenciesForTests } from '../src/routes/mailingExports';
 import { MailingExportProviderError } from '../src/mailingExports/mailchimp';
-import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../src/docs/githubStore';
+import { KnowledgeStore, knowledgeStoreConfigFromEnv } from '../src/docs/knowledgeStore';
+import {configureOperatingModelStoreForTests} from '../src/routes/operatingModel';
+import {MemoryS3} from '../tests/helpers/knowledge';
 import { configureDocsRuntime } from '../src/docs/contentApi';
 import { configurePortalStore } from '../src/docs/portal';
 import { seed as seedUsers } from './seed-users';
@@ -127,31 +129,25 @@ setMailingExportDependenciesForTests({
 
 function configureOfflineDocsStore(): void {
   if (process.env.DTC_OFFLINE !== '1') return;
-  const store = new ContentsApiGithubStore(githubStoreConfigFromEnv());
-  // Offline mode skips authenticated GitHub responses, so tests that need the
-  // observed token-age finding must inject it explicitly.
-  const contentTokenDaysRemaining =
-    process.env.DTC_CONTENT_TOKEN_DAYS_REMAINING_FOR_TESTS;
-  const parsedTokenDaysRemaining = Number(contentTokenDaysRemaining);
-  if (
-    contentTokenDaysRemaining !== undefined
-    && Number.isFinite(parsedTokenDaysRemaining)
-  ) {
-    Object.defineProperty(store, 'contentTokenDaysRemaining', {
-      value: parsedTokenDaysRemaining,
-      configurable: true,
-    });
+  const config=knowledgeStoreConfigFromEnv();
+  const source=resolve(config.cacheDir || '/tmp/dataops-knowledge');
+  const files:Record<string,Uint8Array>={};
+  function collect(root:string,prefix=''):void {
+    for(const entry of readdirSync(root,{withFileTypes:true})) {
+      const path=prefix+entry.name;
+      if(entry.isDirectory()) collect(resolve(root,entry.name),path+'/');
+      else if(entry.isFile()) files[path]=readFileSync(resolve(root,entry.name));
+    }
   }
-  store.writeFile = async (repoPath, content) => {
-    const target = store.localPath(repoPath);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content);
-  };
-  store.deleteFile = async (repoPath) => {
-    rmSync(store.localPath(repoPath), { force: true });
-  };
-  store.commitLocalFile = async () => {};
-  store.deleteRepoFile = async () => {};
+  if(!existsSync(source)) {
+    const unavailable=new KnowledgeStore({cacheDir:source,offline:true});
+    configureDocsRuntime(unavailable);configurePortalStore(unavailable);
+    configureOperatingModelStoreForTests(()=>new KnowledgeStore({cacheDir:source,offline:true}));return;
+  }
+  collect(source);
+  const s3=new MemoryS3();s3.seed(files);
+  const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false});
+  configureOperatingModelStoreForTests(()=>new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false}));
   configureDocsRuntime(store);
   configurePortalStore(store);
 }

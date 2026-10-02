@@ -1,3 +1,4 @@
+import {KnowledgeStore} from '../docs/knowledgeStore';
 import { resolveInteractiveActor } from '../identity/actor';
 import { createHash } from 'node:crypto';
 import { loadOperatingModelSnapshot, loadRoadmapSessionTemplate } from '../operatingModel/loader';
@@ -8,21 +9,17 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' };
-const SNAPSHOT_TTL_MS = 5 * 60 * 1000;
 let cached: Awaited<ReturnType<typeof loadOperatingModelSnapshot>> | null = null;
-let cachedAt = 0;
-
-async function snapshot() {
-  if (cached && Date.now() - cachedAt < SNAPSHOT_TTL_MS) return cached;
+let cachedPublication = '';
+let storeFactory=()=>new KnowledgeStore();
+export function configureOperatingModelStoreForTests(factory:(()=>KnowledgeStore)|null):void {storeFactory=factory||(()=>new KnowledgeStore());cached=null;cachedPublication='';}
+async function snapshot(store:KnowledgeStore) {
   try {
-    const loaded = await loadOperatingModelSnapshot();
-    cached = loaded;
-    cachedAt = Date.now();
-    return loaded;
-  } catch (error) {
-    if (cached) return { ...cached, freshness: 'stale' as const };
-    throw error;
-  }
+    if(!store.offline) await store.pin();
+    if(!store.offline && cached && cachedPublication===store.revision)return cached;
+    const loaded=await loadOperatingModelSnapshot(store);
+    cached=loaded;cachedPublication=store.revision;return loaded;
+  } catch(error) {if(cached)return {...cached,freshness:'stale' as const};throw error;}
 }
 
 function identity(actorId: string, sessionId: string, suffix = ''): string {
@@ -55,7 +52,8 @@ export async function handleOperatingModelRoutes(
   const actor = await resolveInteractiveActor(client, event, method === 'POST' ? 'work-write' : 'work-read');
   if (!actor.ok) return actor.response;
   try {
-    const model = await snapshot();
+    const store=storeFactory();
+    const model = await snapshot(store);
     if (event.path === '/api/my-plan') {
       const actorId = actor.actor.id || 'local-operator';
       const sessions = await Promise.all(model.roadmap.sessions.map(async (session) => {
@@ -89,7 +87,7 @@ export async function handleOperatingModelRoutes(
         }
         return { statusCode: 200, headers, body: JSON.stringify({ card: existing, tasks: await listTasksByCard(client, cardId), replayed: true }) };
       }
-      const template = await loadRoadmapSessionTemplate(session.templateType, model.revision, actorId);
+      const template = await loadRoadmapSessionTemplate(session.templateType, model.revision, actorId, store);
       try {
         const created = await createCardFromDefinition(client, {
           id: cardId, title: `${session.id}: ${session.title}`, description: session.goal,

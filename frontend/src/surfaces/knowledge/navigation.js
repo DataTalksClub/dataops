@@ -47,7 +47,6 @@ export function createKnowledgeNavigation(context, services) {
     showOperationsHome,
     storage,
     titleFromMarkdown,
-    updateGithubLink,
     updateSaveState,
     updateViewToggleAvailability,
   } = context;
@@ -177,7 +176,7 @@ export function createKnowledgeNavigation(context, services) {
   }
 
   async function openDocument(path, options = {}) {
-    if (!(await canLeaveCurrentDocument())) return;
+    if (!options.confirmedLeave && !(await canLeaveCurrentDocument())) return;
     beginDocumentNavigation();
     const requestId = ++documentRequestId;
     captureScrollPosition();
@@ -209,17 +208,17 @@ export function createKnowledgeNavigation(context, services) {
       if (!isCurrentDocumentRequest(requestId)) return;
       clearDocumentStateNotice();
 
-      documentState.currentDoc = { path: payload.path, updated: payload.updated };
+      documentState.currentDoc = { path: payload.path, updated: payload.updated, revision: payload.revision };
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
       documentState.currentParsed = payload.parsed || null;
       documentState.currentWarnings = [];
       documentState.lastSavedContent = payload.content;
       docMenuButton.hidden = false;
-      updateGithubLink();
       const draft = storage.getItem(draftKey(payload.path));
       documentState.hasDraft = draft !== null;
       refreshChangesPanel();
-      editor.value = draft ?? payload.content;
+      if (draft !== null && !options.ignoreDraft) documentState.currentDoc.revision = storage.getItem(`dtc-doc-base:${payload.path}`);
+      editor.value = options.ignoreDraft ? payload.content : (draft ?? payload.content);
       editor.disabled = false;
       documentTitle.disabled = false;
       documentTitle.value =

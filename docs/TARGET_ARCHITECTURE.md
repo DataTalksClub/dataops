@@ -56,28 +56,32 @@ Lambda, and the search migration is a clean swap rather than a heavy port.
 
 ```mermaid
 flowchart TB
-  Browser[Browser] -->|one origin, Basic auth| Backend
+  Browser[Browser] -->|one origin, browser session| Backend
 
   subgraph Backend[Portal backend — single TypeScript Lambda]
-    Docs[docs domain<br/>content API · GitHub store · SOP engine · search]
+    Docs[docs domain<br/>content API · S3 knowledge store · SOP engine · search]
     Work[work domain<br/>tasks · cards · templates · recurring · artifacts · files]
     Asst[assistant domain<br/>job orchestration]
     Plat[platform<br/>auth · notifications · cron · http · db · secrets]
   end
 
   Backend --> Frontend[Static vanilla-JS shell]
-  Docs -->|Contents API| GitHub[(GitHub: content/ markdown)]
+  Docs -->|Pinned publication| Knowledge[(Private S3 knowledge)]
+  Knowledge --> Backup[(Protected S3 recovery snapshots)]
+  Knowledge --> Mirror[Daily AWS mirror worker]
+  Mirror --> GitHub[(Private GitHub history mirror)]
   Docs -->|read/write index| Index[/zerosearch-node index<br/>portable format/]
   Work --> Dynamo[(DynamoDB: execution state)]
   Asst -->|enqueue / track jobs| Podcast[Podcast assistant<br/>Python worker]
-  Podcast --> GitHub
+  Podcast --> Knowledge
   Backend --> Secrets[(AWS Secrets Manager)]
 ```
 
 Unchanged from today:
 
-- **GitHub markdown is the source of truth for content.** UI edits commit
-  directly via the GitHub Contents API; the Lambda keeps a `/tmp` cache.
+- **Private S3 holds authoritative knowledge.** UI edits publish
+  through immutable S3 manifests and a conditional publication pointer. The Lambda
+  caches text by revision; assets are fetched lazily. GitHub is a daily mirror.
 - **DynamoDB holds execution state** (tasks, cards, templates, recurring,
   artifacts, files, sessions, notifications).
 - **The frontend stays static vanilla JS**, served by the backend. No framework.
@@ -94,7 +98,7 @@ through assistant-job records.
 ```
 backend/                 # single TS Lambda app  ←  work-engine/ + lambda-functions/ merged
   src/
-    docs/                #   content API, GitHub store, SOP parse/lint, search wiring
+    docs/                #   content API, S3 knowledge store, SOP parse/lint, search wiring
     work/                #   tasks, cards, templates, recurring, artifacts, files
     assistant/           #   assistant-job orchestration (enqueue, status, review)
     platform/            #   auth, sessions, notifications, cron, http, db, secrets
@@ -103,8 +107,8 @@ backend/                 # single TS Lambda app  ←  work-engine/ + lambda-func
   tests/   e2e/          # node:test + Playwright
 frontend/                # static vanilla-JS shell                  (unchanged)
 assistants/podcast/      # Python assistant worker                  (unchanged)
-content/                 # SOPs & markdown — GitHub source of truth  (unchanged)
-infra/                   # SAM/CloudFormation, OIDC, secrets         ←  moved from lambda-functions/
+content/                 # Transitional public-sensitive migration debt; private S3 is authoritative
+infra/                   # Application SAM; external infrastructure belongs in aws-infra
 docs/  docs/            # repo-meta + planning/process docs
 ```
 
