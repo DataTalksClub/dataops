@@ -18,6 +18,7 @@
   --dk-blue-500: #315f8f;
   --dk-blue-600: #244d78;
   --dk-blue-700: #1c3d5e;
+  --dk-blue-900: #10233c;
   --dk-green-50: #e1e9dd;
   --dk-green-300: #aac3ae;
   --dk-green-400: #49b981;
@@ -71,6 +72,7 @@
   --dk-bg-surface: #ffffff;
   --dk-bg-muted: #f6f8fa;
   --dk-bg-hover: #eef1f4;
+  --dk-bg-raised: #ffffff;
   --dk-bg-inset: rgba(36, 41, 47, 0.06);
   --dk-bg-backdrop: rgba(15, 23, 42, 0.5);
   --dk-text-primary: #24292f;
@@ -80,12 +82,15 @@
   --dk-text-link: #315f8f;
   --dk-text-link-hover: #244d78;
   --dk-text-on-accent: #ffffff;
+  --dk-text-on-deep: #ffffff;
   --dk-border-default: #d0d7de;
   --dk-border-strong: #afb8c1;
   --dk-accent-default: #315f8f;
   --dk-accent-hover: #244d78;
   --dk-accent-soft: #edf5ff;
   --dk-accent-border: rgba(49, 95, 143, 0.4);
+  --dk-accent-deep: #244d78;
+  --dk-accent-deeper: #1c3d5e;
   --dk-focus-ring: rgba(49, 95, 143, 0.6);
   --dk-selection: #dde9f7;
   --dk-success-text: #116329;
@@ -109,6 +114,7 @@
   --dk-bg-surface: #161b22;
   --dk-bg-muted: #21262d;
   --dk-bg-hover: #293038;
+  --dk-bg-raised: #32383f;
   --dk-bg-inset: rgba(230, 237, 243, 0.07);
   --dk-bg-backdrop: rgba(1, 4, 9, 0.7);
   --dk-text-primary: #e6edf3;
@@ -118,12 +124,15 @@
   --dk-text-link: #58a6ff;
   --dk-text-link-hover: #79b8ff;
   --dk-text-on-accent: #0d1117;
+  --dk-text-on-deep: #ffffff;
   --dk-border-default: #30363d;
   --dk-border-strong: #6e7681;
   --dk-accent-default: #58a6ff;
   --dk-accent-hover: #79b8ff;
   --dk-accent-soft: rgba(88, 166, 255, 0.14);
   --dk-accent-border: rgba(88, 166, 255, 0.4);
+  --dk-accent-deep: #1c3d5e;
+  --dk-accent-deeper: #10233c;
   --dk-focus-ring: rgba(88, 166, 255, 0.55);
   --dk-selection: rgba(88, 166, 255, 0.35);
   --dk-success-text: #56d364;
