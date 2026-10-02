@@ -1916,9 +1916,6 @@ Resources:
       LoggingConfig:
         LogFormat: JSON
         LogGroup: !Ref ConversationalBackendLogGroup
-      Environment:
-        Variables:
-          DATAOPS_DOCUMENT_REVIEWS_TABLE: !Ref DataOpsDocumentReviewsTable
       Policies:
         - Statement:
             Effect: Allow
@@ -2059,6 +2056,7 @@ Resources:
           - !Ref AWS::NoValue
       Environment:
         Variables:
+          DATAOPS_DOCUMENT_REVIEWS_TABLE: !Ref DataOpsDocumentReviewsTable
           DATAOPS_ENV: !Ref DataOpsEnvironment
           DATAOPS_TABLE_PREFIX: !Ref AWS::StackName
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
