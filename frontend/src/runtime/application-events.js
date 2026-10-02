@@ -51,7 +51,9 @@ export function bindApplicationEvents(context) {
       scheduleCurrentBrowserLocation:
         navigationShell.scheduleCurrentBrowserLocation,
       toggleDarkMode: () =>
-        callbacks.setDarkMode(!dom.body.classList.contains("dark")),
+        callbacks.setDarkMode(
+          documentRef.documentElement.dataset.theme !== "dark",
+        ),
       workspaceButton: (button) =>
         documentRef.dispatchEvent(
           new CustomEvent("dataops:navigate-workspace", {

@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="api-base" content="">
     <title>DataOps</title>
+    <script>
+      // Dakit theme boot: resolve the theme before first paint so a dark
+      // choice never flashes light. Falls back to the pre-dakit key once.
+      (function () {
+        var stored = null;
+        try {
+          stored =
+            localStorage.getItem("dakit-theme") ||
+            localStorage.getItem("dtc-theme");
+        } catch {}
+        document.documentElement.dataset.theme =
+          stored === "dark" || stored === "light"
+            ? stored
+            : matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+      })();
+    </script>
+    <link rel="stylesheet" href="/src/dakit/tokens.css">
     <link rel="stylesheet" href="/src/styles.css">
   </head>
   <body data-view="library">

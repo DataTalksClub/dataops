@@ -26,63 +26,65 @@
 :root {
   color-scheme: light;
 
-  /* Course Management Platform / Primer foundation */
-  --page-bg: #ffffff;
-  --surface-bg: #ffffff;
-  --surface-muted: #f6f8fa;
-  --surface-hover: #eef1f4;
-  --border-muted: #d0d7de;
-  --border-strong: #afb8c1;
-  --text-primary: #24292f;
-  --text-heading: #0f172a;
-  --text-muted: #57606a;
-  /* 4.59:1 on white — WCAG AA; the earlier #8c959f measured 3.03:1. */
-  --text-faint: #6e7681;
-  --link-color: #315f8f;
-  --link-hover: #244d78;
-  --input-bg: #ffffff;
-  --input-border: #d0d7de;
-  --success-bg: #e6f6ea;
-  --success-text: #116329;
-  --success-border: #b7dfc2;
-  /* Operational-dashboard warning chip: #fff8c5 surface, #d4a72c border,
-     #7a5c00 text. */
-  --warning-bg: #fff8c5;
-  --warning-text: #7a5c00;
-  --warning-border: #d4a72c;
-  --danger-bg: #fff0ee;
-  --danger-text: #cf222e;
-  --danger-border: rgba(207, 34, 46, 0.24);
-  --info-bg: #edf5ff;
-  --info-text: #315f8f;
-  --info-border: rgba(49, 95, 143, 0.22);
-  --focus-ring: rgba(49, 95, 143, 0.6);
+  /* Dakit compatibility shim: the portal's token names now resolve to the
+     shared dakit roles loaded from src/dakit/tokens.css (the generated
+     output of ../dakit). Migrate rules to the --dk-* tokens directly, then
+     delete the matching alias. DataOps-local roles without a dakit
+     counterpart (attention ramp, control hover border, layout metrics) keep
+     their values until promoted into dakit's semantic layer. */
+  --page-bg: var(--dk-bg-page);
+  --surface-bg: var(--dk-bg-surface);
+  --surface-muted: var(--dk-bg-muted);
+  --surface-hover: var(--dk-bg-hover);
+  --border-muted: var(--dk-border-default);
+  --border-strong: var(--dk-border-strong);
+  --text-primary: var(--dk-text-primary);
+  --text-heading: var(--dk-text-heading);
+  --text-muted: var(--dk-text-muted);
+  --text-faint: var(--dk-text-faint);
+  --link-color: var(--dk-text-link);
+  --link-hover: var(--dk-text-link-hover);
+  --input-bg: var(--dk-bg-page);
+  --input-border: var(--dk-border-default);
+  --success-bg: var(--dk-success-bg);
+  --success-text: var(--dk-success-text);
+  --success-border: var(--dk-success-border);
+  --warning-bg: var(--dk-warning-bg);
+  --warning-text: var(--dk-warning-text);
+  --warning-border: var(--dk-warning-border);
+  --danger-bg: var(--dk-danger-bg);
+  --danger-text: var(--dk-danger-text);
+  --danger-border: var(--dk-danger-border);
+  --info-bg: var(--dk-info-bg);
+  --info-text: var(--dk-info-text);
+  --info-border: var(--dk-info-border);
+  --focus-ring: var(--dk-focus-ring);
 
   /* Operational-dashboard attention ramp: overdue pressure reads red, due
-     reads amber, waiting reads gray, and "on track" is quiet track gray. */
-  --attention-overdue: #cf222e;
+     reads amber, waiting reads gray. The reds ride dakit's danger role so
+     both themes stay in sync. */
+  --attention-overdue: var(--dk-danger-text);
   --attention-due: #9a6700;
   --attention-waiting: #8c959f;
-  --attention-ontrack: #d8dee4;
 
   /* Course Management Platform primary action and selected-state palette. */
-  --accent: #315f8f;
-  --accent-hover: #244d78;
-  --accent-soft: #edf5ff;
-  --primary-bg: #315f8f;
-  --primary-hover: #244d78;
-  --control-bg: #f6f8fa;
-  --control-hover-bg: #eef1f4;
-  --control-border: #d0d7de;
+  --accent: var(--dk-accent-default);
+  --accent-hover: var(--dk-accent-hover);
+  --accent-soft: var(--dk-accent-soft);
+  --primary-bg: var(--dk-accent-default);
+  --primary-hover: var(--dk-accent-hover);
+  --control-bg: var(--dk-bg-muted);
+  --control-hover-bg: var(--dk-bg-hover);
+  --control-border: var(--dk-border-default);
   --control-hover-border: #d0d7de;
 
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: var(--dk-font-sans);
   /* Quantities, timings and IDs render in IBM Plex Mono so debt pressure
      reads as data, not prose. */
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --radius: 6px;
-  --shadow-overlay: 0 8px 24px rgba(15, 23, 42, 0.16);
-  --sidebar-width: 268px;
+  --font-mono: var(--dk-font-mono);
+  --radius: var(--dk-radius-md);
+  --shadow-overlay: var(--dk-shadow-overlay);
+  --sidebar-width: var(--dk-size-sidebar);
   --content-width: 56rem;
   --mobile-header-height: 64px;
 
@@ -597,49 +599,13 @@ body[data-workspace-view="inbox"] .intake-history li::marker {
   }
 }
 
-body.dark {
+/* The dakit tokens remap every shared role under [data-theme="dark"]; the
+   inline boot script sets that attribute before first paint. Only the
+   DataOps-local roles still need a hand dark value here. */
+:root[data-theme="dark"] {
   color-scheme: dark;
-  --page-bg: #0d1117;
-  --surface-bg: #161b22;
-  --surface-muted: #0d1117;
-  --surface-hover: #21262d;
-  --border-muted: #30363d;
-  --border-strong: #484f58;
-  --text-primary: #e6edf3;
-  --text-heading: #e6edf3;
-  --text-muted: #8b949e;
-  --text-faint: #6e7681;
-  --link-color: #8bb7df;
-  --link-hover: #a7cbed;
-  --input-bg: #0d1117;
-  --input-border: #30363d;
-  --success-bg: rgba(31, 111, 59, 0.3);
-  --success-text: #7ee787;
-  --success-border: rgba(35, 134, 54, 0.4);
-  --warning-bg: #2d2516;
-  --warning-text: #f0d98c;
-  --warning-border: rgba(187, 128, 9, 0.5);
-  --danger-bg: rgba(218, 54, 51, 0.2);
-  --danger-text: #ff7b72;
-  --danger-border: rgba(218, 54, 51, 0.4);
-  --info-bg: rgba(77, 127, 168, 0.22);
-  /* Dark ramp: the light-mode attention reds/ambers fail contrast on the
-     dark surface, so the ramp re-points at the dark danger/warning values. */
-  --attention-overdue: #ff7b72;
   --attention-due: #d4a72c;
-  --info-text: #8bb7df;
-  --info-border: rgba(77, 127, 168, 0.42);
-  --focus-ring: rgba(139, 183, 223, 0.6);
-  --accent: #8bb7df;
-  --accent-hover: #a7cbed;
-  --accent-soft: rgba(77, 127, 168, 0.22);
-  --primary-bg: #4d7fa8;
-  --primary-hover: #6d99c2;
-  --control-bg: #21262d;
-  --control-hover-bg: #30363d;
-  --control-border: #30363d;
   --control-hover-border: #8b949e;
-  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.48);
 }
 
 * {
@@ -715,11 +681,11 @@ textarea:focus {
   box-shadow: inset 0 1px 0 rgba(208, 215, 222, 0.2), 0 0 0 3px rgba(49, 95, 143, 0.16);
 }
 
-body.dark input:focus,
-body.dark select:focus,
-body.dark textarea:focus {
-  border-color: #8bb7df;
-  box-shadow: 0 0 0 3px rgba(139, 183, 223, 0.18);
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus {
+  border-color: var(--dk-accent-default);
+  box-shadow: 0 0 0 3px var(--dk-focus-ring);
 }
 
 a {
@@ -1242,7 +1208,7 @@ body.sidebar-collapsed #sidebar-expand-button {
 .primary-button {
   border: 1px solid var(--primary-bg);
   background: var(--primary-bg);
-  color: #fff;
+  color: var(--dk-text-on-accent);
 }
 
 .primary-button:hover {
@@ -1250,11 +1216,11 @@ body.sidebar-collapsed #sidebar-expand-button {
   background: var(--primary-hover);
 }
 
-body.dark .primary-button:disabled,
-body.dark .primary-button[aria-disabled="true"] {
-  border-color: #30363d;
-  background: #21262d;
-  color: #8b949e;
+:root[data-theme="dark"] .primary-button:disabled,
+:root[data-theme="dark"] .primary-button[aria-disabled="true"] {
+  border-color: var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
   opacity: 1;
 }
 
@@ -3076,7 +3042,7 @@ body[data-workspace-view="sponsors"] .document-list {
   font-weight: 600;
 }
 
-body.dark .danger-button {
+:root[data-theme="dark"] .danger-button {
   background: var(--danger-bg);
   color: var(--danger-text);
 }

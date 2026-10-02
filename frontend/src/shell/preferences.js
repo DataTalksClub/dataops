@@ -18,14 +18,16 @@ export function createPreferencesShell({
   let lastSidebarOpener = null;
 
   function setDarkMode(on) {
-    body.classList.toggle("dark", on);
+    documentRef.documentElement.dataset.theme = on ? "dark" : "light";
     syncThemeToggleLabel(on);
     try {
-      storage.setItem("dtc-theme", on ? "dark" : "light");
+      storage.setItem("dakit-theme", on ? "dark" : "light");
     } catch {}
   }
 
-  function syncThemeToggleLabel(on = body.classList.contains("dark")) {
+  function syncThemeToggleLabel(
+    on = documentRef.documentElement.dataset.theme === "dark",
+  ) {
     themeToggleButton.title = on
       ? "Switch to light mode"
       : "Switch to dark mode";
@@ -37,11 +39,10 @@ export function createPreferencesShell({
   }
 
   function restoreDarkMode() {
-    try {
-      setDarkMode(storage.getItem("dtc-theme") === "dark");
-    } catch {
-      setDarkMode(false);
-    }
+    // The inline boot script resolved the theme before first paint (from
+    // dakit-theme, the legacy dtc-theme, or the OS preference); here we only
+    // sync the toggle to it.
+    syncThemeToggleLabel();
   }
 
   function setSidebarCollapsed(collapsed) {

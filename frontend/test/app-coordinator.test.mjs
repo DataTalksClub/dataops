@@ -225,8 +225,8 @@ describe("app shell coordinator characterization", () => {
   });
 
   test("persists theme and sidebar visibility while deleting custom resize state", () => {
-    assert.match(functionSource("setDarkMode", preferencesSource), /storage\.setItem\("dtc-theme", on \? "dark" : "light"\)/);
-    assert.match(functionSource("restoreDarkMode", preferencesSource), /storage\.getItem\("dtc-theme"\)/);
+    assert.match(functionSource("setDarkMode", preferencesSource), /storage\.setItem\("dakit-theme", on \? "dark" : "light"\)/);
+    assert.match(functionSource("restoreDarkMode", preferencesSource), /syncThemeToggleLabel\(\)/);
     assert.match(functionSource("setSidebarCollapsed", preferencesSource), /storage\.setItem\("dtc-sidebar-collapsed", collapsed \? "1" : "0"\)/);
     assert.match(functionSource("restoreSidebarCollapsed", preferencesSource), /storage\.getItem\("dtc-sidebar-collapsed"\) === "1"/);
     assert.doesNotMatch(preferencesSource, /\b(?:attachSidebarResize|restoreSidebarWidth|setSidebarWidth)\b/);

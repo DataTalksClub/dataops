@@ -72,6 +72,7 @@ class TestDocument extends FakeDocument {
     this.body = roots.find((root) => root.tagName === "BODY") || roots[0];
     const properties = new Map();
     this.documentElement = {
+      dataset: {},
       style: {
         getPropertyValue: (name) => properties.get(name) || "",
         setProperty: (name, value) => properties.set(name, String(value)),
@@ -614,16 +615,19 @@ describe("runtime and shell production behavior", () => {
     const harness = createPreferenceHarness({
       storage: {
         "dtc-sidebar-collapsed": "1",
-        "dtc-theme": "dark",
       },
     });
     const { shell } = harness;
+    // The inline boot script resolves the theme before first paint and sets
+    // the dakit attribute; restoreDarkMode only syncs the toggle to it.
+    harness.document.documentElement.dataset.theme = "dark";
     shell.restoreDarkMode();
-    assert.equal(harness.body.classList.contains("dark"), true);
+    assert.equal(harness.document.documentElement.dataset.theme, "dark");
     assert.equal(harness.themeLabel.textContent, "Light mode");
     assert.equal(harness.themeToggleButton.getAttribute("aria-pressed"), "true");
     shell.setDarkMode(false);
-    assert.equal(harness.store.values.get("dtc-theme"), "light");
+    assert.equal(harness.document.documentElement.dataset.theme, "light");
+    assert.equal(harness.store.values.get("dakit-theme"), "light");
 
     shell.restoreSidebarCollapsed();
     assert.equal(harness.body.classList.contains("sidebar-collapsed"), true);
