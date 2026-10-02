@@ -1,7 +1,7 @@
-import assert from 'node:assert/strict';
+import {syntheticKnowledge} from './knowledge';
 import yaml from 'js-yaml';
 
-import { ContentsApiGithubStore } from '../../src/docs/githubStore';
+import { KnowledgeStore } from '../../src/docs/knowledgeStore';
 import type { AuthoredTemplateFile } from '../../src/templates/authoredTemplates';
 
 /** Public-safe definitions invented for mapper and deployment regression tests. */
@@ -58,28 +58,9 @@ export function syntheticAuthoredFiles(count = 11): AuthoredTemplateFile[] {
   });
 }
 
-/** Real Contents API adapter, but every tree/blob response is synthetic and offline. */
-export function syntheticGithubStore(files: AuthoredTemplateFile[]) {
-  const requests: string[] = [];
-  const store = new ContentsApiGithubStore({
-    owner: 'synthetic-owner', repo: 'synthetic-repo', token: 'synthetic-test-token',
-    fetchImpl: async (input, init) => {
-      const url = new URL(String(input));
-      assert.equal(init?.method, 'GET', 'template loading must be read-only');
-      requests.push(`${url.pathname}${url.search}`);
-      if (url.pathname.endsWith('/git/trees/main')) {
-        assert.equal(url.search, '?recursive=1');
-        return Response.json({ tree: [
-          ...[...files].reverse().map((file) => ({ path: file.path, sha: file.revision, type: 'blob' })),
-          { path: 'workflow-templates', sha: 'directory', type: 'tree' },
-          { path: 'workflow-templates/README.md', sha: 'readme', type: 'blob' },
-          { path: 'other/ignored.yaml', sha: 'ignored', type: 'blob' },
-        ] });
-      }
-      const file = files.find((candidate) => url.pathname.endsWith(`/git/blobs/${candidate.revision}`));
-      assert.ok(file, 'unexpected synthetic GitHub request');
-      return Response.json({ content: Buffer.from(file.content).toString('base64') });
-    },
-  });
-  return { store, requests };
+export function syntheticKnowledgeStore(files: AuthoredTemplateFile[]) {
+  const {store,s3}=syntheticKnowledge(Object.fromEntries(files.map(file=>[file.path,file.content])));
+  const requests:string[]=[];const send=s3.send;
+  s3.send=async(command:any)=>{requests.push(command.input.Key);return send(command);};
+  return {store,requests};
 }

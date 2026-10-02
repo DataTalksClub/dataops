@@ -10,7 +10,7 @@ import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleAssistantJobRoutes } from './routes/assistantJobs';
 import { handleSocialDraftAssistantRoutes } from './assistant/socialDraftAssistant';
-import { handleDocsRoutes, isDocsDomainEnabled } from './docs';
+import { handleDocsRoutes, isDocsDomainEnabled, isDocsRoute } from './docs';
 import { handlePortal, serveCanonicalFrontend } from './docs/portal';
 import { handleIntakeRoutes } from './routes/intake';
 import { handleTelegramWebhook } from './routes/telegram';
@@ -744,7 +744,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // A portal pass without an identity (local development with browser auth
     // unconfigured) must not skip bearer validation: without it no x-user-id
     // is ever established and every interactive route fails closed.
-    if (!skipAuth && !verifiedInteractiveUserId && reqPath.startsWith('/api/') && !isAuthExempt(method, reqPath)) {
+    if (!skipAuth && !verifiedInteractiveUserId && (reqPath.startsWith('/api/') || isDocsRoute(reqPath)) && !isAuthExempt(method, reqPath)) {
       const token = extractToken(event);
       if (!token) {
         return jsonResponse(401, { error: 'Unauthorized' });
@@ -1561,8 +1561,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // seam is stub-only it stays behind DATAOPS_DOCS_DOMAIN so existing routes
     // and tests are unaffected. Handlers currently return 501.
     if (isDocsDomainEnabled()) {
-      const result = await handleDocsRoutes(event);
-      if (result) return result;
+      if (isDocsRoute(reqPath)) {
+        const resolved=await resolveInteractiveActor(client,event,method==='GET'?'work-read':'work-write');
+        if(!resolved.ok)return resolved.response;
+        const result=await handleDocsRoutes(event,resolved.actor.id || (resolved.actor.testBypass?'local-test-operator':''));
+        if(result)return result;
+      }
     }
 
     // Anything else — 404

@@ -3,6 +3,12 @@ Transform: AWS::Serverless-2016-10-31
 Description: DataTalksClub DataOps v1 protected Lambda app
 
 Parameters:
+  KnowledgeBucketName:
+    Type: String
+    Default: dataops-knowledge-source-817685572750-eu-west-1
+  KnowledgeBackupBucketName:
+    Type: String
+    Default: dataops-knowledge-protected-817685572750-eu-west-1
   GitHubOwner:
     Type: String
     Default: DataTalksClub
@@ -10,9 +16,7 @@ Parameters:
     Type: String
     Default: dataops-knowledge
     Description: >-
-      Private repository holding process documents and workflow templates. The
-      portal reads and writes it through the Contents API using the token named
-      by GitHubTokenSecretName.
+      Private daily mirror repository. Application knowledge is authoritative in S3.
   GitHubBranch:
     Type: String
     Default: main
@@ -20,9 +24,7 @@ Parameters:
     Type: String
     Default: dataops-v1/knowledge/github-token
     Description: >-
-      Secrets Manager secret holding a token with Contents read and write on the
-      knowledge repository. Read and write, because the document editor writes
-      back through the Contents API.
+      Secrets Manager token used exclusively by the daily knowledge mirror worker.
   AuthBaseUrl:
     Type: String
     Default: https://auth.dtcdev.click
@@ -1932,6 +1934,21 @@ Resources:
       Policies:
         - Statement:
             Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:PutObject]
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/objects/*
+              - !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/publications/*
+              - !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/active.json
+        - Statement:
+            Effect: Allow
             Action:
               - dynamodb:DeleteItem
               - dynamodb:GetItem
@@ -1996,7 +2013,6 @@ Resources:
             Action:
               - secretsmanager:GetSecretValue
             Resource:
-              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
               - !Ref WorkEnginePortalSecret
               - !Ref EmailDocumentIntakeSecretArn
               - !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, !Ref AWS::NoValue]
@@ -2080,10 +2096,7 @@ Resources:
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !Ref BookkeepingDocumentsKey
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
-          GITHUB_OWNER: !Ref GitHubOwner
-          GITHUB_REPO: !Ref GitHubRepo
-          GITHUB_BRANCH: !Ref GitHubBranch
-          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
+          KNOWLEDGE_BUCKET: !Ref KnowledgeBucketName
           AUTH_BASE_URL: !Ref AuthBaseUrl
           AUTH_ISSUER: !Ref AuthIssuer
           AUTH_JWKS_URL: !Ref AuthJwksUrl
@@ -2178,6 +2191,108 @@ Resources:
             Schedule: cron(0 9 * * ? *)
             Enabled: true
             Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"mailing-export"}}'
+
+  KnowledgeWorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: sam-build
+      Runtime: nodejs24.x
+      Handler: dist/knowledge-worker-handler.handler
+      Timeout: 900
+      MemorySize: 1024
+      EphemeralStorage: {Size: 1024}
+      Environment:
+        Variables:
+          KNOWLEDGE_BUCKET: !Ref KnowledgeBucketName
+          KNOWLEDGE_BACKUP_BUCKET: !Ref KnowledgeBackupBucketName
+          GITHUB_OWNER: !Ref GitHubOwner
+          GITHUB_REPO: !Ref GitHubRepo
+          GITHUB_BRANCH: !Ref GitHubBranch
+          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}
+        - Statement:
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBackupBucketName}
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject, s3:PutObject]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBackupBucketName}/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:PutObject]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
+        - Statement:
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
+      Events:
+        DailyKnowledgeBackup:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 3 * * ? *)
+            Enabled: true
+            Input: '{"detail":{"dataopsAction":"knowledge-backup"}}'
+        DailyKnowledgeMirror:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 4 * * ? *)
+            Enabled: true
+            Input: '{"detail":{"dataopsAction":"knowledge-mirror"}}'
+  KnowledgeWorkerFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-knowledge-worker-failure
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref KnowledgeWorkerFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+  KnowledgeBackupStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-knowledge-backup-stale
+      Namespace: DataOps/Knowledge
+      MetricName: Success
+      Dimensions: [{Name: Job, Value: knowledge-backup}]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+  KnowledgeMirrorStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-knowledge-mirror-stale
+      Namespace: DataOps/Knowledge
+      MetricName: Success
+      Dimensions: [{Name: Job, Value: knowledge-mirror}]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
 Outputs:
   ConversationalRolloutAlarmTopicArn:

@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import yaml from 'js-yaml';
 
-import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../docs/githubStore';
+import { KnowledgeStore, knowledgeStoreConfigFromEnv } from '../docs/knowledgeStore';
 import { createTemplate, listTemplates, replaceTemplate } from '../db/templates';
 import type { Template } from '../types';
 import { templateFromYaml, templateToYaml, validateAuthoredTemplate } from './yamlTemplates';
@@ -181,8 +181,8 @@ export function findAuthoredTemplatesRoot(repoRoot: string): string {
  * Load the exact branch tree from the private repository. Blob reads use the
  * tree's content SHA, so a warm Lambda cannot serve a stale `/tmp` copy.
  */
-export async function loadAuthoredTemplatesFromGithub(
-  store = new ContentsApiGithubStore(githubStoreConfigFromEnv()),
+export async function loadAuthoredTemplatesFromKnowledge(
+  store = new KnowledgeStore(knowledgeStoreConfigFromEnv()),
 ): Promise<AuthoredTemplateDefinition[]> {
   const tree = await store.tree();
   const entries = Object.values(tree)

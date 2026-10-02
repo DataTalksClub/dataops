@@ -1,12 +1,12 @@
 import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
+const scratch=resolve(__dirname,'../../.tmp/portal-tests');
+function tmpdir():string {mkdirSync(scratch,{recursive:true});return scratch;}
+import { join, resolve } from 'node:path';
 
 import { route } from '../src/router';
-import { ContentsApiGithubStore, contentRootUnavailableMessage } from '../src/docs/githubStore';
+import { KnowledgeStore, contentRootUnavailableMessage } from '../src/docs/knowledgeStore';
 import { configureDocsRuntime, resetDocsRuntime } from '../src/docs/contentApi';
 import { configurePortalStore } from '../src/docs/portal';
 import { getClient } from '../src/db/client';
@@ -17,64 +17,10 @@ import { createUserWithId } from '../src/db/users';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent } from '../src/types';
 
-// Minimal in-memory GitHub for the docs store.
-interface RecordedCall {
-  method: string;
-  path: string;
+import {MemoryS3} from './helpers/knowledge';
+class FakeKnowledge extends MemoryS3 {
+  constructor(files:Record<string,string>={}) {super();this.seed(files);}
 }
-
-/** One ustar member with a hand-built header, mirroring codeload archives. */
-function ustarEntry(path: string, content: Buffer): Buffer {
-  const header = Buffer.alloc(512, 0);
-  header.write(path.slice(0, 100), 0, 'utf8');
-  header.write(`${content.length.toString(8).padStart(11, '0')}\0`, 124, 'utf8');
-  header.write('0', 156, 'utf8');
-  header.write('ustar\0', 257, 'utf8');
-  header.write('00', 263, 'utf8');
-  header.fill(' ', 148, 156);
-  let checksum = 0;
-  for (const byte of header) checksum += byte;
-  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'utf8');
-  return Buffer.concat([header, content, Buffer.alloc((512 - (content.length % 512)) % 512, 0)]);
-}
-
-/** A codeload branch archive: every blob lives under the `<repo>-<sha>/` root. */
-function tarGzResponse(blobs: Map<string, string>): Response {
-  const members = [...blobs.entries()].map(([p, c]) => ustarEntry(`dataops-main/${p}`, Buffer.from(c, 'utf-8')));
-  return new Response(gzipSync(Buffer.concat([...members, Buffer.alloc(1024, 0)])), { status: 200 });
-}
-
-class FakeGitHub {
-  blobs = new Map<string, string>();
-  calls: RecordedCall[] = [];
-  constructor(seed: Record<string, string> = {}) {
-    for (const [p, c] of Object.entries(seed)) this.blobs.set(p, c);
-  }
-  fetch = async (url: string, init?: RequestInit): Promise<Response> => {
-    const u = new URL(url);
-
-    // codeload branch archive: the quota-free hydration path, not an API call
-    if (u.hostname === 'codeload.github.com') return tarGzResponse(this.blobs);
-
-    const method = (init?.method || 'GET').toUpperCase();
-    this.calls.push({ method, path: u.pathname });
-    if (method === 'GET' && u.pathname.includes('/git/trees/')) {
-      const tree = [...this.blobs.entries()].map(([p, c]) => ({ path: p, sha: `sha-${p}`, type: 'blob', size: Buffer.byteLength(c) }));
-      return json(200, { tree });
-    }
-    if (method === 'GET' && u.pathname.includes('/git/blobs/')) {
-      const path = decodeURIComponent(u.pathname.split('/git/blobs/')[1]).replace(/^sha-/, '');
-      const content = this.blobs.get(path);
-      if (content === undefined) return json(404, {});
-      return json(200, { content: Buffer.from(content, 'utf-8').toString('base64') });
-    }
-    return json(404, {});
-  };
-}
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
 function ev(httpMethod: string, path: string, opts: { headers?: Record<string, string>; query?: Record<string, string>; body?: string } = {}): LambdaEvent {
   return { httpMethod, path, headers: opts.headers || {}, queryStringParameters: opts.query || null, body: opts.body || null };
 }
@@ -84,7 +30,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   let cacheDir: string;
   let client: DynamoDBDocumentClient;
   let browserCookie: string;
-  let portalGithub: FakeGitHub;
+  let portalStorage: FakeKnowledge;
   const saved: Record<string, string | undefined> = {};
 
   before(async () => {
@@ -121,7 +67,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
 
   beforeEach(() => {
     cacheDir = mkdtempSync(join(tmpdir(), 'portal-cache-'));
-    portalGithub = new FakeGitHub({
+    portalStorage = new FakeKnowledge({
       'content/a/reference/guide.md': '---\nid: ref.guide\ntitle: Guide\ndoc_type: reference\n---\n\n# Guide\nbody',
       'content/images/a/png.png': 'PNG',
       'content/images/a/jpg.jpg': 'JPG',
@@ -132,14 +78,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       'content/00-start-here/operating-model/assets/chart.png': 'CHART',
       '_docs/operating-model/weekly-roadmap.csv': 'week,title\nW01,Foundation\n',
     });
-    const store = new ContentsApiGithubStore({
-      owner: 'o',
-      repo: 'r',
-      branch: 'main',
-      token: 't',
-      cacheDir,
-      fetchImpl: portalGithub.fetch as unknown as typeof fetch,
-    });
+    const store = new KnowledgeStore({bucket:'test-knowledge',client:portalStorage as any,cacheDir,signer:async()=> 'https://example.invalid/synthetic-download'});
     configureDocsRuntime(store);
     configurePortalStore(store);
   });
@@ -206,7 +145,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
     assert.ok(body.documents.some((d: any) => d.id === 'ref.guide'));
   });
 
-  it('serves /content/* from the GitHub store cache', async () => {
+  it('serves /content/* from the pinned S3 store cache', async () => {
     const res = await route(ev('GET', '/content/a/reference/guide.md', { headers: { cookie: browserCookie } }), client);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.headers?.['Content-Type'], 'text/markdown; charset=utf-8');
@@ -231,6 +170,45 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       assert.strictEqual(image.isBase64Encoded, true, extension);
       assert.strictEqual(image.body, Buffer.from(extension.toUpperCase()).toString('base64'), extension);
     }
+  });
+
+  it('authenticates history/version/mutations at the router and ignores spoofed actor fields', async()=>{
+    const path='content/a/reference/guide.md';
+    const unauthorized=await route(ev('GET','/knowledge/history',{query:{path}}),client);
+    assert.strictEqual(unauthorized.statusCode,401);
+    for(const routePath of ['/knowledge/version','/knowledge/publication','/knowledge/status']) {
+      const unsignedRead=await route(ev('GET',routePath,{query:{path,revision:'unknown'}}),client);
+      assert.strictEqual(unsignedRead.statusCode,401);
+    }
+    const unsignedWrite=await route(ev('POST','/knowledge/publish',{body:JSON.stringify({expectedRevision:'unknown',mutations:[{path,content:'malicious'}]})}),client);
+    assert.strictEqual(unsignedWrite.statusCode,401);
+
+    const loaded=await route(ev('GET','/docs',{headers:{cookie:browserCookie},query:{path}}),client);
+    const doc=JSON.parse(loaded.body);
+    const saved=await route(ev('PUT','/docs',{headers:{cookie:browserCookie,'x-user-id':'spoofed'},query:{path},body:JSON.stringify({content:doc.content+'\nAuthenticated edit',expectedRevision:doc.revision,actor:'spoofed'})}),client);
+    assert.strictEqual(saved.statusCode,200);
+    const history=await route(ev('GET','/knowledge/history',{headers:{cookie:browserCookie},query:{path}}),client);
+    assert.strictEqual(JSON.parse(history.body).versions[0].actor,'docs-operator');
+    const version=await route(ev('GET','/knowledge/version',{headers:{cookie:browserCookie},query:{path,revision:doc.revision}}),client);
+    assert.strictEqual(version.statusCode,200);assert.strictEqual(version.isBase64Encoded,true);
+    assert.strictEqual(Buffer.from(version.body,'base64').toString(),doc.content);
+    const conflict=await route(ev('PUT','/docs',{headers:{cookie:browserCookie},query:{path},body:JSON.stringify({content:'stale',expectedRevision:doc.revision})}),client);
+    assert.strictEqual(conflict.statusCode,409);
+    const unsigned=await route(ev('GET','/knowledge/download',{query:{path,revision:doc.revision}}),client);assert.strictEqual(unsigned.statusCode,401);
+    const signed=await route(ev('GET','/knowledge/download',{headers:{cookie:browserCookie},query:{path,revision:doc.revision}}),client);assert.strictEqual(signed.statusCode,200);assert.strictEqual(JSON.parse(signed.body).url,'https://example.invalid/synthetic-download');assert.strictEqual(JSON.parse(signed.body).expiresIn,300);
+
+  });
+
+  it('rejects an authenticated actor with no supported workspace role before knowledge reads or writes', async()=>{
+    await createUserWithId(client,'docs-no-role',{name:'No workspace role',email:'synthetic-no-role@example.invalid'});
+    const session=await createBrowserSession(client,'docs-no-role',{lifetimeSeconds:3600});
+    const headers={cookie:`dataops_session=${session.token}`};
+    const path='content/a/reference/guide.md';
+    for(const routePath of ['/knowledge/history','/knowledge/version','/knowledge/download','/knowledge/status']) {
+      const response=await route(ev('GET',routePath,{headers,query:{path,revision:'unknown'}}),client);assert.strictEqual(response.statusCode,403);
+    }
+    const response=await route(ev('POST','/knowledge/publish',{headers,body:JSON.stringify({expectedRevision:'unknown',mutations:[{path,content:'refused'}]})}),client);
+    assert.strictEqual(response.statusCode,403);
   });
 
   it('serves nested raster assets and only allowlisted model downloads to authenticated users', async () => {
@@ -272,7 +250,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       assert.strictEqual(unsupported.statusCode, 400);
       assert.match(unsupported.headers?.['content-type'] || '', /application\/json/);
       assert.deepStrictEqual(JSON.parse(unsupported.body), { error: 'Unsupported content asset' });
-      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(portalStorage.calls.length, 0);
       assert.strictEqual(existsSync(contentRoot), false);
 
       const traversal = await route(
@@ -281,7 +259,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       );
       assert.strictEqual(traversal.statusCode, 400);
       assert.deepStrictEqual(JSON.parse(traversal.body), { error: 'Unsupported content asset' });
-      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(portalStorage.calls.length, 0);
 
       const outage = await route(
         ev('GET', '/content/a/reference/guide.md', { headers: { cookie: browserCookie } }),
@@ -294,7 +272,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       );
 
       mkdirSync(contentRoot, { recursive: true });
-      portalGithub.calls.length = 0;
+      portalStorage.calls.length = 0;
       const markdownMiss = await route(
         ev('GET', '/content/a/reference/missing.md', { headers: { cookie: browserCookie } }),
         client,
@@ -308,7 +286,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       );
       assert.strictEqual(imageMiss.statusCode, 404);
       assert.deepStrictEqual(JSON.parse(imageMiss.body), { error: 'Not found' });
-      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(portalStorage.calls.length, 0);
     } finally {
       if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
       else process.env.DTC_OFFLINE = offlineBefore;
@@ -329,18 +307,18 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
         JSON.parse(outage.body),
         { error: contentRootUnavailableMessage(contentRoot) },
       );
-      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(portalStorage.calls.length, 0);
       assert.strictEqual(existsSync(contentRoot), false);
 
       mkdirSync(contentRoot, { recursive: true });
-      portalGithub.calls.length = 0;
+      portalStorage.calls.length = 0;
       const miss = await route(
         ev('GET', '/content/images/missing.png', { headers: { cookie: browserCookie } }),
         client,
       );
       assert.strictEqual(miss.statusCode, 404);
       assert.deepStrictEqual(JSON.parse(miss.body), { error: 'Not found' });
-      assert.strictEqual(portalGithub.calls.length, 0);
+      assert.strictEqual(portalStorage.calls.length, 0);
     } finally {
       if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
       else process.env.DTC_OFFLINE = offlineBefore;

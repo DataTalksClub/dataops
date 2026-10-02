@@ -1,3 +1,4 @@
+import {checksum} from '../src/docs/knowledgeStore';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -13,12 +14,12 @@ import { createTables } from '../scripts/local-dynamodb';
 import { createTemplate, listTemplates } from '../src/db/templates';
 import {
   loadAuthoredTemplatesFromDirectory,
-  loadAuthoredTemplatesFromGithub,
+  loadAuthoredTemplatesFromKnowledge,
   parseAuthoredTemplateFiles,
   reconcileAuthoredTemplates,
 } from '../src/templates/authoredTemplates';
 import { templateToYaml } from '../src/templates/yamlTemplates';
-import { syntheticAuthoredTemplate, syntheticAuthoredFiles, syntheticGithubStore } from './helpers/authoredTemplates';
+import { syntheticAuthoredTemplate, syntheticAuthoredFiles, syntheticKnowledgeStore } from './helpers/authoredTemplates';
 
 function authored(type: string, name = `Synthetic ${type}`): string {
   return [
@@ -89,20 +90,20 @@ describe('Git-authored template projection', () => {
     // Date-shaped YAML scalars must stay strings, including when unquoted.
     files[0].content = files[0].content.replace(/next_review_at: ['"]2030-06-15['"]/, 'next_review_at: 2030-06-15');
     assert.match(files[0].content, /next_review_at: 2030-06-15/);
-    const { store, requests } = syntheticGithubStore(files);
-    const definitions = await loadAuthoredTemplatesFromGithub(store);
+    const { store, requests } = syntheticKnowledgeStore(files);
+    const definitions = await loadAuthoredTemplatesFromKnowledge(store);
     assert.strictEqual(definitions.length, 11);
     assert.deepStrictEqual(definitions.map((definition) => definition.type),
       files.map((file) => file.path.split('/').at(-1)!.replace('.yaml', '')).sort());
     for (const definition of definitions) {
       const file = files.find((candidate) => candidate.path === definition.sourcePath)!;
       assert.ok(file);
-      assert.strictEqual(definition.sourceRevision, file.revision);
+      assert.strictEqual(definition.sourceRevision, checksum(file.content));
       assert.deepStrictEqual(templateToYaml(definition), syntheticAuthoredTemplate(definition.type));
       assert.strictEqual(typeof definition.nextReviewAt, 'string');
     }
-    assert.strictEqual(requests.length, 12, 'one tree and exactly eleven authored blobs');
-    assert.strictEqual(requests.filter((request) => request.includes('/git/blobs/')).length, 11);
+    assert.strictEqual(requests.length, 13, 'one tree and exactly eleven authored blobs');
+    assert.strictEqual(requests.filter((request) => request.startsWith('objects/')).length, 11);
   });
 
   it('rejects unsupported nested metadata and invalid structures without leaking source values', () => {

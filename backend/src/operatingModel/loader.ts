@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import yaml from 'js-yaml';
 
 import { buildRegistry } from '../docs/docRegistry';
-import { ContentsApiGithubStore, githubStoreConfigFromEnv } from '../docs/githubStore';
+import { KnowledgeStore, knowledgeStoreConfigFromEnv } from '../docs/knowledgeStore';
 import type {
   BusinessUnitDefinition,
   AssetDefinition,
@@ -67,7 +67,7 @@ function weekDocumentId(id: string, date: string): string {
 }
 
 export async function loadOperatingModelSnapshot(
-  store = new ContentsApiGithubStore(githubStoreConfigFromEnv()),
+  store = new KnowledgeStore(knowledgeStoreConfigFromEnv()),
 ): Promise<OperatingModelSnapshot> {
   await store.sync();
   const content = await Promise.all(Object.values(FILES).map((path) => store.readFile(path)));
@@ -158,7 +158,7 @@ export async function loadRoadmapSessionTemplate(
   templateType: string,
   definitionRevision: string,
   actorId: string,
-  store = new ContentsApiGithubStore(githubStoreConfigFromEnv()),
+  store = new KnowledgeStore(knowledgeStoreConfigFromEnv()),
 ): Promise<Template> {
   if (!/^operating-model-w\d{2}$/.test(templateType)) throw new Error('Invalid roadmap template type');
   const sourcePath = `workflow-templates/${templateType}.yaml`;

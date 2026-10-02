@@ -12,7 +12,7 @@ import { updateTask } from './db/tasks';
 import { createUserWithId, getUser, getUserByEmail } from './db/users';
 import {
   type AuthoredTemplateDefinition,
-  loadAuthoredTemplatesFromGithub,
+  loadAuthoredTemplatesFromKnowledge,
   reconcileAuthoredTemplates,
 } from './templates/authoredTemplates';
 import type { RecurringConfig, Task } from './types';
@@ -90,7 +90,7 @@ export interface DeploymentSeedReport {
 }
 
 type AuthoredTemplateLoader = () => Promise<AuthoredTemplateDefinition[]>;
-const canonicalDeploymentTemplateLoader: AuthoredTemplateLoader = loadAuthoredTemplatesFromGithub;
+const canonicalDeploymentTemplateLoader: AuthoredTemplateLoader = loadAuthoredTemplatesFromKnowledge;
 let deploymentTemplateLoader: AuthoredTemplateLoader = canonicalDeploymentTemplateLoader;
 
 export function setDeploymentTemplateLoaderForTest(loader: AuthoredTemplateLoader | null): void {

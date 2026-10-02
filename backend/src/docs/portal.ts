@@ -17,6 +17,7 @@ import { resolve, sep } from 'node:path';
 
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import {resolveInteractiveActor} from '../identity/actor';
 import { authErrorPage, browserAuthConfigured, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -25,12 +26,12 @@ import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
 import {
   ContentRootUnavailableError,
   contentRootUnavailableMessage,
-  createGithubStore,
-  githubStoreConfigFromEnv,
+  createKnowledgeStore,
+  knowledgeStoreConfigFromEnv,
   isCanonicalContentAsset,
   isOperatingModelDownload,
-  type ContentsApiGithubStore,
-} from './githubStore';
+  type KnowledgeStore,
+} from './knowledgeStore';
 
 /** Result of the portal pre-processing pass. */
 export interface PortalOutcome {
@@ -60,7 +61,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
-let contentStore: ContentsApiGithubStore | null = null;
+let contentStore: KnowledgeStore | null = null;
 
 function frontendRoot(): string {
   if (process.env.FRONTEND_ROOT) return resolve(process.env.FRONTEND_ROOT);
@@ -69,13 +70,12 @@ function frontendRoot(): string {
   return resolve(RUNTIME_ROOT, 'frontend');
 }
 
-function store(): ContentsApiGithubStore {
-  if (contentStore === null) contentStore = createGithubStore(githubStoreConfigFromEnv());
-  return contentStore;
+function store(): KnowledgeStore {
+  return contentStore || createKnowledgeStore(knowledgeStoreConfigFromEnv());
 }
 
 /** Inject a content store (tests). */
-export function configurePortalStore(s: ContentsApiGithubStore | null): void {
+export function configurePortalStore(s: KnowledgeStore | null): void {
   contentStore = s;
 }
 
@@ -199,7 +199,11 @@ async function serveContent(path: string): Promise<LambdaResponse> {
     };
   }
   try {
-    const bytes = await store().readBytes(repoPath);
+    const contentStore=store();
+    if(!contentStore.offline && (await contentStore.tree())[repoPath]?.size>4_000_000) {
+      return {statusCode:303,headers:{location:await contentStore.assetUrl(repoPath,guessType(repoPath)),'cache-control':'no-store'},body:''};
+    }
+    const bytes = await contentStore.readBytes(repoPath);
     return fileResponse(Buffer.from(bytes), guessType(repoPath));
   } catch (err) {
     if (err instanceof ContentRootUnavailableError) {
@@ -310,13 +314,22 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     return { response: serveIndex(), authorized: true, userId: user?.id };
   }
 
+  // Every private file endpoint uses the same verified actor/role gate.
+  let knowledgeActor='';
+  if (isDocsRoute(path) || path.startsWith('/content/') || path.startsWith('/knowledge-files/')) {
+    if(user?.id) event.headers={...event.headers,'x-user-id':user.id};
+    else if(authEnabled) return {response:unauthenticatedApi(),authorized:false};
+    const resolved=await resolveInteractiveActor(client,event,method==='GET'?'work-read':'work-write');
+    if(!resolved.ok)return {response:resolved.response,authorized:false};
+    knowledgeActor=resolved.actor.id || (resolved.actor.testBypass?'local-test-operator':'');
+  }
   // Docs content API.
   if (isDocsRoute(path)) {
-    const result = await handleDocsRoutes(event);
+    const result = await handleDocsRoutes(event, knowledgeActor);
     if (result) return { response: result, authorized: true, userId: user?.id };
   }
 
-  // Markdown / image content from the GitHub store cache.
+  // Markdown / image content from the knowledge publication cache.
   if (method === 'GET' && path.startsWith('/content/')) {
     return { response: await serveContent(path), authorized: true, userId: user?.id };
   }

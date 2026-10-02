@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, describe, it } from 'node:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+const scratch=resolve(__dirname,'../../.tmp/model-tests');
+function tmpdir():string {mkdirSync(scratch,{recursive:true});return scratch;}
+import {syntheticKnowledge} from './helpers/knowledge';
+import {configureOperatingModelStoreForTests,handleOperatingModelRoutes} from '../src/routes/operatingModel';
 
-import { ContentsApiGithubStore } from '../src/docs/githubStore';
+import { KnowledgeStore } from '../src/docs/knowledgeStore';
 import { loadOperatingModelSnapshot, parseCsv } from '../src/operatingModel/loader';
 import { createCardFromDefinition, DefinitionCardConflictError } from '../src/db/templates';
 import { getClient } from '../src/db/client';
@@ -24,7 +27,7 @@ describe('operating model definition projection', () => {
   let client: DynamoDBDocumentClient;
   before(async () => { client = await getClient(await startLocal()); await createTables(client); });
   after(async () => { await stopLocal(); });
-  afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
+  afterEach(() => { configureOperatingModelStoreForTests(null);while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
   it('parses quoted CSV fields without splitting authored display text', () => {
     assert.deepStrictEqual(parseCsv('id,title\nW01,"One, two"\n'), [{ id: 'W01', title: 'One, two' }]);
@@ -43,7 +46,7 @@ describe('operating model definition projection', () => {
     write(root, '_docs/operating-model/asset-register.csv', 'asset_id,asset,type,primary_unit,secondary_units,owner,source_of_truth,status,separation_treatment,open_decision\nasset-1,Brand,brand,BU-X,,Owner,Registry,known,Transfer,\n');
     write(root, '_docs/operating-model/dependency-register.csv', 'dependency_id,consumer_unit,provider,dependency,risk,mitigation,roadmap\nDEP-1,BU-X,Owner,Distribution,Risk,Mitigation,W01\n');
     write(root, 'workflow-templates/operating-model-w01.yaml', 'type: operating-model-w01\nname: Session\ntasks:\n  - id: decide\n    name: Decide\n    schedule:\n      offset_days: 0\n');
-    const store = new ContentsApiGithubStore({ owner: 'x', repo: 'x', token: '', cacheDir: root });
+    const store = new KnowledgeStore({cacheDir:root});
     const before = process.env.DTC_OFFLINE;
     process.env.DTC_OFFLINE = '1';
     try {
@@ -55,6 +58,44 @@ describe('operating model definition projection', () => {
       assert.equal(model.assets.length, 1);
       assert.equal(model.dependencies.length, 1);
       assert.equal(model.roadmap.sessions[0].checklist[0].title, 'Decide');
+      const files:Record<string,Uint8Array>={};
+      function collect(dir:string,prefix=''):void {for(const e of readdirSync(dir,{withFileTypes:true})) {
+        if(e.isDirectory())collect(join(dir,e.name),prefix+e.name+'/');else files[prefix+e.name]=readFileSync(join(dir,e.name));
+      }}
+      collect(root);
+      const fixture=syntheticKnowledge(files,join(root,'cache'));
+      configureOperatingModelStoreForTests(()=>new KnowledgeStore({bucket:fixture.store.bucket,client:fixture.s3 as any,cacheDir:join(root,'cache'),offline:false}));
+      const first=await handleOperatingModelRoutes({path:'/api/operating-model',httpMethod:'GET'},client);
+      assert.equal(first?.statusCode,200);const previous=JSON.parse(first!.body).model;
+      const templatePath='workflow-templates/operating-model-w01.yaml';
+      await fixture.store.pin();
+      const pinned=new KnowledgeStore({bucket:fixture.store.bucket,client:fixture.s3 as any,cacheDir:join(root,'cache'),offline:false});await pinned.pin();
+      await fixture.store.publish([{path:templatePath,bytes:Buffer.from(files[templatePath]).toString().replace('Decide','Updated decision')}],fixture.publication.revision,'actor','Update model template');
+      const fresh=await handleOperatingModelRoutes({path:'/api/operating-model',httpMethod:'GET'},client);
+      const next=JSON.parse(fresh!.body).model;assert.notEqual(next.revision,previous.revision);assert.equal(next.roadmap.sessions[0].checklist[0].title,'Updated decision');
+      assert.match(await pinned.readFile(templatePath),/name: Decide/);
+      const stale=await handleOperatingModelRoutes({path:'/api/my-plan/sessions/W01',httpMethod:'POST',body:JSON.stringify({expectedDefinitionRevision:previous.revision,anchorDate:'2026-09-10'})},client);
+      assert.equal(stale?.statusCode,409);
+      let injected=false;
+      configureOperatingModelStoreForTests(()=>{
+        const requestStore=new KnowledgeStore({bucket:fixture.store.bucket,client:fixture.s3 as any,cacheDir:join(root,'cache'),offline:false});
+        const originalPin=requestStore.pin.bind(requestStore);
+        requestStore.pin=async()=>{
+          const publication=await originalPin();
+          if(!injected) {injected=true;await fixture.store.publish([{path:templatePath,bytes:Buffer.from(files[templatePath]).toString().replace('Decide','Concurrent next decision')}],fixture.store.revision,'actor','Mid-request publication');}
+          return publication;
+        };
+        return requestStore;
+      });
+      const coherent=await handleOperatingModelRoutes({path:'/api/my-plan/sessions/W01',httpMethod:'POST',body:JSON.stringify({expectedDefinitionRevision:next.revision,anchorDate:'2026-09-10'})},client);
+      assert.equal(coherent?.statusCode,201);
+      const created=JSON.parse(coherent!.body);
+      assert.equal(created.card.operatingModelSource.definitionRevision,next.revision);
+      assert.equal(created.tasks[0].description,'Updated decision');
+      const subsequent=await handleOperatingModelRoutes({path:'/api/operating-model',httpMethod:'GET'},client);
+      assert.equal(JSON.parse(subsequent!.body).model.roadmap.sessions[0].checklist[0].title,'Concurrent next decision');
+
+
     } finally {
       if (before === undefined) delete process.env.DTC_OFFLINE;
       else process.env.DTC_OFFLINE = before;
