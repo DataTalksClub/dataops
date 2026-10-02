@@ -20,15 +20,20 @@ export function createOperatingModelSurface(context) {
   let loading = false;
   let planLoading = false;
   const pendingSessions = new Set();
+  let lastFailureRender = null;
 
-  async function load() {
-    if (loading || model) return;
+  async function load(force = false) {
+    if (loading || model || (error && !force)) return;
     loading = true;
     error = "";
     try {
       const payload = await request(apiUrl("/api/operating-model"));
-      model = payload?.model || null;
-      if (!model) throw new Error("Operating model response is incomplete");
+      const loaded = payload?.model;
+      if (!loaded || !Array.isArray(loaded.roadmap?.sessions) ||
+          !["businessUnits", "functions", "systems", "gaps", "lifecycles", "assets", "dependencies"].every((key) => Array.isArray(loaded[key]))) {
+        throw new Error("Operating model response is incomplete");
+      }
+      model = loaded;
     } catch (caught) {
       error = caught?.message || "Operating model is unavailable";
     } finally {
@@ -38,13 +43,13 @@ export function createOperatingModelSurface(context) {
   }
 
   async function loadPlan(force = false) {
-    if (planLoading || (plan && !force)) return;
+    if (planLoading || ((plan || planError) && !force)) return;
     planLoading = true;
     planError = "";
     try {
       const payload = await request(apiUrl("/api/my-plan"));
+      if (!Array.isArray(payload?.sessions)) throw new Error("My Plan response is incomplete");
       plan = payload;
-      if (!Array.isArray(plan?.sessions)) throw new Error("My Plan response is incomplete");
     } catch (caught) {
       planError = caught?.message || "My Plan is unavailable";
     } finally {
@@ -69,7 +74,10 @@ export function createOperatingModelSurface(context) {
       await loadPlan(true);
     } catch (caught) {
       planError = caught?.message || "The session could not be added";
-      if (caught?.status === 409) plan = null;
+      if (caught?.status === 409) {
+        plan = null;
+        await loadPlan(true);
+      }
     } finally {
       pendingSessions.delete(session.id);
       renderActive();
@@ -106,7 +114,7 @@ export function createOperatingModelSurface(context) {
     if (!loading) {
       const retry = el(documentRef, "button", "quiet-button", "Retry");
       retry.type = "button";
-      retry.addEventListener("click", () => { model = null; load(); });
+      retry.addEventListener("click", () => { load(true); renderActive(); });
       state.append(retry);
     }
     root.append(state);
@@ -119,11 +127,31 @@ export function createOperatingModelSurface(context) {
     return card;
   }
 
+  // Shell refreshes must preserve selected text on an unchanged failure screen.
+  function keepFailureDOM(view, section = "") {
+    if ((!error && !planError) || loading || planLoading || pendingSessions.size) {
+      lastFailureRender = null;
+      return false;
+    }
+    const key = JSON.stringify([view, section, error, planError, getActiveWorkspaceRoute()?.params?.toString()]);
+    if (lastFailureRender?.key === key && lastFailureRender.model === model && lastFailureRender.plan === plan && documentList.children[0] === lastFailureRender.root) return true;
+    lastFailureRender = { key, model, plan };
+    return false;
+  }
+
+  function replaceSurface(root) {
+    documentList.replaceChildren(root);
+    if (lastFailureRender) lastFailureRender.root = root;
+  }
+
   function renderOperatingModel() {
+    const section = getActiveWorkspaceRoute()?.params?.get("section");
+    if (section) { renderSection(section); return; }
+    if (keepFailureDOM("operating-model")) return;
     setRouteTitle("Operating Model");
     const root = el(documentRef, "div", "operating-model-surface");
     header(root, "Company system", "Operating Model", "See how business units, accountable functions, systems, gaps, and lifecycles fit together.");
-    if (!model) { unavailable(root); documentList.replaceChildren(root); load(); return; }
+    if (!model) { load(); unavailable(root); replaceSurface(root); return; }
     if (model.freshness === "stale") root.append(el(documentRef, "p", "status-text", "Showing the last valid model while definitions refresh."));
     const grid = el(documentRef, "section", "operating-model-grid");
     const items = [
@@ -143,15 +171,20 @@ export function createOperatingModelSurface(context) {
       grid.append(summaryCard(label, values.length, body, button));
     }
     root.append(grid, openDocButton(model.overviewDocumentId, "Open full operating-model guide"));
-    documentList.replaceChildren(root);
+    replaceSurface(root);
   }
 
   function renderSection(section) {
+    if (keepFailureDOM("operating-model", section)) return;
     setRouteTitle("Operating Model");
     const root = el(documentRef, "div", "operating-model-surface");
     const back = el(documentRef, "button", "quiet-button", "← Overview");
     back.type = "button"; back.addEventListener("click", () => navigateCanonicalWorkspace("/operating-model"));
     root.append(back);
+    if (!model) {
+      header(root, "Operating model", section.replaceAll("-", " "), "Current definitions");
+      load(); unavailable(root); replaceSurface(root); return;
+    }
     const key = section === "business-units" ? "businessUnits" : section === "roadmap" ? "roadmap" : section;
     const values = key === "roadmap" ? model?.roadmap?.sessions : model?.[key];
     header(root, "Operating model", section.replaceAll("-", " "), `${values?.length || 0} current definitions`);
@@ -174,7 +207,7 @@ export function createOperatingModelSurface(context) {
       if (item.documentId || item.id?.includes(".")) card.append(openDocButton(item.documentId || item.id));
       list.append(card);
     }
-    root.append(list); documentList.replaceChildren(root);
+    root.append(list); replaceSurface(root);
   }
 
   function humanModelDate(value) {
@@ -190,12 +223,23 @@ export function createOperatingModelSurface(context) {
   }
 
   function renderMyPlan() {
+    if (keepFailureDOM("my-plan")) return;
     setRouteTitle("My Plan");
     const root = el(documentRef, "div", "operating-model-surface my-plan-surface");
     header(root, "Personal systems work", "My Plan", "The proposed sequence for turning the operating model into real decisions and deliverables.");
-    if (!model) { unavailable(root); documentList.replaceChildren(root); load(); return; }
+    if (!model) { load(); unavailable(root); replaceSurface(root); return; }
     if (!plan && !planLoading) loadPlan();
-    if (planError) root.append(el(documentRef, "p", "status-text", planError));
+    if (planLoading) root.append(el(documentRef, "p", "status-text", "Loading My Plan…"));
+    if (planError) {
+      const state = el(documentRef, "section", "review-empty-state");
+      state.append(el(documentRef, "strong", "", "My Plan unavailable"), el(documentRef, "span", "", planError));
+      if (!plan) state.append(el(documentRef, "span", "", "Proposed sessions remain visible. Load your plan before adding sessions."));
+      const retry = el(documentRef, "button", "quiet-button", "Retry");
+      retry.type = "button";
+      retry.addEventListener("click", () => { loadPlan(true); renderActive(); });
+      state.append(retry);
+      root.append(state);
+    }
     if (plan?.freshness === "stale") root.append(el(documentRef, "p", "status-text", "Showing your saved plan against the last valid operating model."));
     const selected = getActiveWorkspaceRoute()?.params?.get("sessionId");
     const sourceSessions = plan?.sessions || model.roadmap.sessions.map((session) => ({ ...session, state: "proposed", card: null }));
@@ -266,7 +310,7 @@ export function createOperatingModelSurface(context) {
       const all = el(documentRef, "button", "quiet-button", "← All sessions");
       all.type = "button"; all.addEventListener("click", () => navigateCanonicalWorkspace("/my-plan")); root.append(all);
     }
-    root.append(list); documentList.replaceChildren(root);
+    root.append(list); replaceSurface(root);
   }
 
   function renderActive() {
