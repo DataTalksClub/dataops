@@ -3,22 +3,29 @@
  *
  * Ports `lambda-functions/src/lambda_functions/github_store.py` to TypeScript.
  * GitHub markdown remains the source of truth for content
- * (`docs/TARGET_ARCHITECTURE.md`); this store reads the repo tree/files through
- * the GitHub Contents/Git Data API, keeps a `/tmp` working copy as a cache, and
- * commits on save/delete through the Contents API.
+ * (`docs/TARGET_ARCHITECTURE.md`); this store reads the repository through a
+ * codeload branch archive plus the GitHub Contents/Git Data API, keeps a
+ * `/tmp` working copy as a cache, and commits on save/delete through the
+ * Contents API.
  *
- * Difference from the Python original: hydration uses the recursive Git Trees
- * API plus per-blob fetches (cached to `/tmp`) instead of a single tarball
- * download, so the store has no third-party tar dependency. The cache location,
- * source-of-truth semantics, and commit-on-save behavior are unchanged. (A
- * batch tarball download is a possible future perf optimization.)
+ * Hydration downloads the branch tarball from codeload.github.com and extracts
+ * it locally with the small zero-dependency tar reader in `./tarball.ts`.
+ * Archive downloads are authenticated but do not count against the REST API
+ * rate limit, so a cold container hydrates without spending quota; the
+ * per-blob Git Data crawl it replaced burned one API call per hydrated file
+ * (~2,200) per cold container and exhausted the shared hourly limit after
+ * every deploy. The cache location, source-of-truth semantics, and
+ * commit-on-save behavior are unchanged.
  */
 
 import { Buffer } from 'node:buffer';
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+
+import { extractTarGz } from './tarball';
 
 /** Image extensions hydrated from `content/images/` into the cache. */
 export const CONTENT_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
@@ -282,13 +289,49 @@ export class ContentsApiGithubStore implements GithubStore {
     }
     mkdirSync(this.root, { recursive: true });
     mkdirSync(this.contentRoot, { recursive: true });
-    const tree = await this.tree();
-    for (const entry of Object.values(tree)) {
-      if (entry.type !== 'blob' || !shouldHydratePath(entry.path)) continue;
-      if (existsSync(this.localPath(entry.path))) continue;
-      this.writeRepoFile(entry.path, await this.blobBytes(entry.sha));
-    }
+    await this.hydrateFromBranchTarball();
     this.hydrated = true;
+  }
+
+  /**
+   * Hydrate the working copy from the branch archive served by
+   * codeload.github.com. Codeload archive downloads are authenticated like API
+   * calls but do not consume the REST rate limit, so hydration stays quota
+   * free no matter how large the repository grows.
+   */
+  private async hydrateFromBranchTarball(): Promise<void> {
+    const token = await this.token();
+    if (!token) throw new GitHubError('GITHUB_TOKEN is not configured');
+    const url =
+      `https://codeload.github.com/${this.owner}/${this.repo}` +
+      `/tar.gz/refs/heads/${encodeURIComponent(this.branch)}`;
+    let resp: Response;
+    try {
+      resp = await this.fetchImpl(url, {
+        headers: { authorization: `Bearer ${token}`, 'user-agent': 'dataops-backend' },
+      });
+    } catch (err) {
+      throw new GitHubError(`Branch tarball download failed: ${(err as Error).message}`);
+    }
+    if (!resp.ok || !resp.body) {
+      const detail = (await resp.text()).slice(0, 200);
+      throw new GitHubError(`Branch tarball download failed: HTTP ${resp.status}: ${detail}`);
+    }
+    try {
+      await extractTarGz(resp.body as unknown as NodeReadableStream<Uint8Array>, {
+        include: shouldHydratePath,
+        onFile: (repoPath, bytes) => this.writeRepoFile(repoPath, bytes),
+      });
+    } catch (err) {
+      throw new GitHubError(`Branch tarball extraction failed: ${(err as Error).message}`);
+    }
+    // Archive responses carry no API headers, so keep the content token expiry
+    // observed through one cheap tree call (then cached for later consumers).
+    try {
+      await this.tree();
+    } catch {
+      // Observation only; the next API call re-observes the expiry.
+    }
   }
 
   /** Ensure a single file is present in the cache, hydrating it if needed. */

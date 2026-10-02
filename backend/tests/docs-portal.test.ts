@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import { route } from '../src/router';
 import { ContentsApiGithubStore, contentRootUnavailableMessage } from '../src/docs/githubStore';
@@ -22,6 +23,27 @@ interface RecordedCall {
   path: string;
 }
 
+/** One ustar member with a hand-built header, mirroring codeload archives. */
+function ustarEntry(path: string, content: Buffer): Buffer {
+  const header = Buffer.alloc(512, 0);
+  header.write(path.slice(0, 100), 0, 'utf8');
+  header.write(`${content.length.toString(8).padStart(11, '0')}\0`, 124, 'utf8');
+  header.write('0', 156, 'utf8');
+  header.write('ustar\0', 257, 'utf8');
+  header.write('00', 263, 'utf8');
+  header.fill(' ', 148, 156);
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'utf8');
+  return Buffer.concat([header, content, Buffer.alloc((512 - (content.length % 512)) % 512, 0)]);
+}
+
+/** A codeload branch archive: every blob lives under the `<repo>-<sha>/` root. */
+function tarGzResponse(blobs: Map<string, string>): Response {
+  const members = [...blobs.entries()].map(([p, c]) => ustarEntry(`dataops-main/${p}`, Buffer.from(c, 'utf-8')));
+  return new Response(gzipSync(Buffer.concat([...members, Buffer.alloc(1024, 0)])), { status: 200 });
+}
+
 class FakeGitHub {
   blobs = new Map<string, string>();
   calls: RecordedCall[] = [];
@@ -30,6 +52,10 @@ class FakeGitHub {
   }
   fetch = async (url: string, init?: RequestInit): Promise<Response> => {
     const u = new URL(url);
+
+    // codeload branch archive: the quota-free hydration path, not an API call
+    if (u.hostname === 'codeload.github.com') return tarGzResponse(this.blobs);
+
     const method = (init?.method || 'GET').toUpperCase();
     this.calls.push({ method, path: u.pathname });
     if (method === 'GET' && u.pathname.includes('/git/trees/')) {

@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import {
   ContentsApiGithubStore,
@@ -14,6 +15,37 @@ import {
   isOperatingModelDownload,
   shouldHydratePath,
 } from '../src/docs/githubStore';
+
+// ── tar.gz fixtures ───────────────────────────────────────────────────────────
+/** One ustar member: 512-byte header plus content padded to a block. */
+function ustarEntry(path: string, content: Buffer, type = '0'): Buffer {
+  const header = Buffer.alloc(512, 0);
+  header.write(path.slice(0, 100), 0, 'utf8');
+  header.write(`${content.length.toString(8).padStart(11, '0')}\0`, 124, 'utf8');
+  header.write(type, 156, 'utf8');
+  header.write('ustar\0', 257, 'utf8');
+  header.write('00', 263, 'utf8');
+  header.fill(' ', 148, 156);
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 'utf8');
+  const padding = Buffer.alloc((512 - (content.length % 512)) % 512, 0);
+  return Buffer.concat([header, content, padding]);
+}
+
+function buildTar(entries: { path: string; content: Buffer; type?: string }[]): Buffer {
+  return Buffer.concat([...entries.map((e) => ustarEntry(e.path, e.content, e.type ?? '0')), Buffer.alloc(1024, 0)]);
+}
+
+/** A codeload archive of the fake repo: members live under the `<repo>-<sha>/` root. */
+function tarballOf(blobs: Map<string, FakeBlob>): Buffer {
+  return gzipSync(buildTar(
+    [...blobs.entries()].map(([path, blob]) => ({
+      path: `dataops-main/${path}`,
+      content: Buffer.from(blob.content, 'utf-8'),
+    })),
+  ));
+}
 
 // ── A tiny in-memory GitHub the store talks to via injected fetch ──────────────
 interface FakeBlob {
@@ -30,6 +62,9 @@ interface RecordedCall {
 class FakeGitHub {
   blobs = new Map<string, FakeBlob>(); // repoPath -> blob
   calls: RecordedCall[] = [];
+  tarballRequests = 0;
+  /** When set, codeload serves this instead of the archive. */
+  tarballFailure: { status: number; body: Buffer } | null = null;
   private shaCounter = 0;
 
   constructor(seed: Record<string, string> = {}) {
@@ -44,6 +79,16 @@ class FakeGitHub {
 
   fetch = async (url: string, init?: RequestInit): Promise<Response> => {
     const u = new URL(url);
+
+    // codeload branch archive: the quota-free hydration path
+    if (u.hostname === 'codeload.github.com') {
+      this.tarballRequests++;
+      if (this.tarballFailure) {
+        return new Response(this.tarballFailure.body, { status: this.tarballFailure.status });
+      }
+      return new Response(tarballOf(this.blobs), { status: 200 });
+    }
+
     const path = u.pathname + (u.search || '');
     const method = (init?.method || 'GET').toUpperCase();
     const body = init?.body ? (JSON.parse(init.body as string) as Record<string, unknown>) : null;
@@ -57,7 +102,7 @@ class FakeGitHub {
         type: 'blob',
         size: Buffer.byteLength(b.content),
       }));
-      return jsonResponse(200, { tree });
+      return jsonResponse(200, { tree }, { 'github-authentication-token-expiration': '2027-08-14 06:23:04 UTC' });
     }
     // git/blobs/<sha>
     if (method === 'GET' && u.pathname.includes('/git/blobs/')) {
@@ -89,8 +134,8 @@ class FakeGitHub {
   };
 }
 
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
 function makeStore(github: FakeGitHub, cacheDir: string): ContentsApiGithubStore {
@@ -164,6 +209,8 @@ describe('githubStore - read/list/commit (GitHub mocked)', () => {
       'content/a.md': '# A\nalpha',
       'content/sub/b.md': '# B\nbeta',
       'content/images/a/pic.png': 'PNGDATA',
+      '_docs/operating-model/weekly-roadmap.csv': 'week,theme',
+      'content/x/data.json': '{"canonical":false}',
       'README.md': 'ignored',
     });
     store = makeStore(github, dir);
@@ -198,12 +245,34 @@ describe('githubStore - read/list/commit (GitHub mocked)', () => {
     await assert.rejects(() => store.readFile('content/missing.md'), /missing\.md/);
   });
 
-  it('sync hydrates only markdown + content images', async () => {
+  it('sync hydrates canonical assets from one codeload archive, not per-blob API calls', async () => {
     await store.sync();
     assert.ok(existsSync(store.localPath('content/a.md')));
     assert.ok(existsSync(store.localPath('content/sub/b.md')));
     assert.ok(existsSync(store.localPath('content/images/a/pic.png')));
+    assert.ok(existsSync(store.localPath('_docs/operating-model/weekly-roadmap.csv')));
     assert.ok(!existsSync(store.localPath('README.md')));
+    assert.ok(!existsSync(store.localPath('content/x/data.json')));
+    // The archive carries the bytes quota free; the single REST call left is
+    // the cached tree fetch that keeps the token expiry observed.
+    assert.strictEqual(github.tarballRequests, 1);
+    assert.strictEqual(github.calls.filter((c) => c.path.includes('/git/blobs/')).length, 0);
+    assert.strictEqual(github.calls.filter((c) => c.path.includes('/git/trees/')).length, 1);
+  });
+
+  it('sync surfaces archive download failures as GitHubError', async () => {
+    github.tarballFailure = { status: 500, body: Buffer.from('boom') };
+    await assert.rejects(() => store.sync(), GitHubError);
+  });
+
+  it('sync surfaces a non-archive body as GitHubError', async () => {
+    github.tarballFailure = { status: 200, body: Buffer.from('<html>sign in</html>') };
+    await assert.rejects(() => store.sync(), GitHubError);
+  });
+
+  it('sync keeps the content token expiry observed', async () => {
+    await store.sync();
+    assert.strictEqual(store.contentTokenExpiry?.toISOString(), '2027-08-14T06:23:04.000Z');
   });
 
   it('commits on writeFile with a base64 PUT and a sha for updates', async () => {
