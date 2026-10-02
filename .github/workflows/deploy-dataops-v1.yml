@@ -375,16 +375,28 @@ jobs:
               and ([$body.users.created, $body.users.updated, $body.users.unchanged] | all(.[]; nonnegative_integer))
               and ($body.users.created + $body.users.updated + $body.users.unchanged == 3)
               and ($body.templates | keys == ["created", "total", "unchanged", "updated"])
-              and ($body.templates.total == 11)
+              # Authored templates come from the private knowledge branch, whose
+              # valid template count changes independently of application code.
+              and ($body.templates.total | nonnegative_integer and . > 0)
               and ([$body.templates.created, $body.templates.updated, $body.templates.unchanged] | all(.[]; nonnegative_integer))
-              and ($body.templates.created + $body.templates.updated + $body.templates.unchanged == 11)
+              and ($body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total)
               and ($body.recurring | keys == ["created", "repairedTasks", "skipped", "total", "updated"])
               and ($body.recurring.total == 7)
               and ([$body.recurring.created, $body.recurring.updated, $body.recurring.skipped, $body.recurring.repairedTasks] | all(.[]; nonnegative_integer))
               and ($body.recurring.created + $body.recurring.updated + $body.recurring.skipped == 7)
             )
           ' "$seed_response" >/dev/null; then
-            echo "Runtime seed did not confirm the exact users, Templates, and recurring-config contract" >&2
+            echo "Runtime seed did not confirm the users, authored-template reconciliation, and recurring-config contract" >&2
+            # Emit only numeric counts, never raw runtime or private knowledge data.
+            jq -c '
+              def safe_count: if type == "number" then . else null end;
+              try ((.body | fromjson) as $body | {
+                status: (.statusCode | safe_count),
+                users: ($body.users.processed | safe_count),
+                templates: ($body.templates.total | safe_count),
+                recurring: ($body.recurring.total | safe_count)
+              }) catch {error: "malformed-seed-response"}
+            ' "$seed_response" >&2 || true
             exit 1
           fi
           echo "Runtime users, workflow templates, and recurring configs synchronized."
