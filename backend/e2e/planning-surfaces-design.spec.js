@@ -52,8 +52,8 @@ async function mockPlanningApis(page) {
 
 async function useTheme(page, dark) {
   await page.evaluate((on) => {
-    document.body.classList.toggle("dark", on);
-    localStorage.setItem("dtc-theme", on ? "dark" : "light");
+    document.documentElement.dataset.theme = on ? "dark" : "light";
+    localStorage.setItem("dakit-theme", on ? "dark" : "light");
   }, dark);
 }
 
@@ -74,7 +74,9 @@ async function expectExactPalette(page, dark) {
     };
   });
   expect(palette).toEqual(dark
-    ? { page: "#0d1117", surface: "#161b22", muted: "#0d1117", border: "#30363d", text: "#e6edf3", heading: "#e6edf3" }
+    // Dark values are dakit's remap (src/dakit/tokens.css): bg-muted and
+    // text-heading moved to #21262d and #f0f6fc.
+    ? { page: "#0d1117", surface: "#161b22", muted: "#21262d", border: "#30363d", text: "#e6edf3", heading: "#f0f6fc" }
     : { page: "#ffffff", surface: "#ffffff", muted: "#f6f8fa", border: "#d0d7de", text: "#24292f", heading: "#0f172a" });
 }
 
@@ -113,8 +115,9 @@ test("Newsletter is a readable, responsive planning queue in light and dark them
 
   await useTheme(page, true);
   await expectExactPalette(page, true);
-  // The exact CMP dark primary pair is fixed at #4d7fa8/white; audit the
-  // redesigned surface around that inherited shared-control contrast debt.
+  // Primary buttons now use dakit's AA-verified dark accent pair
+  // (--dk-accent-default on --dk-text-on-accent); the exclusion below is the
+  // old shared-control contrast debt and can go once the audit is re-run.
   const darkAccessibility = await new AxeBuilder({ page }).include(".newsletter-surface").exclude(".primary-button").analyze();
   expect(darkAccessibility.violations.filter((violation) => ["critical", "serious"].includes(violation.impact))).toEqual([]);
   await page.screenshot({ path: path.join(screenshots, "newsletter-1440-dark.png"), animations: "disabled" });

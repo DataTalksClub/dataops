@@ -21,8 +21,8 @@ let server;
 
 async function setTheme(page, dark) {
   await page.evaluate((enabled) => {
-    localStorage.setItem("dtc-theme", enabled ? "dark" : "light");
-    document.body.classList.toggle("dark", enabled);
+    document.documentElement.dataset.theme = enabled ? "dark" : "light";
+    localStorage.setItem("dakit-theme", enabled ? "dark" : "light");
   }, dark);
 }
 
