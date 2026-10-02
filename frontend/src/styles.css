@@ -41,6 +41,11 @@
      has no role for it yet. */
   --control-hover-border: #d0d7de;
 
+  /* Dakit's dropdown chevron (dakit css/base.css). The glyph is an image
+     and cannot read a token, so the ink is baked to match --dk-text-muted
+     per theme; the dark value flips in the dark block below. */
+  --dk-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2357606a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
   --content-width: 56rem;
   --mobile-header-height: 64px;
 
@@ -504,6 +509,7 @@ body[data-workspace-view="inbox"] .intake-history li::marker {
   color-scheme: dark;
   --attention-due: #d4a72c;
   --control-hover-border: #8b949e;
+  --dk-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239198a1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 * {
@@ -564,6 +570,18 @@ textarea {
   background: var(--dk-bg-page);
   color: var(--dk-text-primary);
   padding: 7px 10px;
+}
+
+/* Dakit's shared dropdown (css/base.css), copied because this app vendors
+   dakit's tokens only — keep these declarations mirroring the base layer. */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: calc(2 * var(--dk-space-3) + 10px);
+  background-image: var(--dk-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--dk-space-3) center;
+  cursor: pointer;
 }
 
 input::placeholder,
