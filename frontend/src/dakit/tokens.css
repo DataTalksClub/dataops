@@ -90,6 +90,7 @@
   --dk-accent-soft: #edf5ff;
   --dk-accent-border: rgba(49, 95, 143, 0.4);
   --dk-accent-deep: #244d78;
+  --dk-accent-deep-hover: #244d78;
   --dk-accent-deeper: #1c3d5e;
   --dk-focus-ring: rgba(49, 95, 143, 0.6);
   --dk-selection: #dde9f7;
@@ -132,6 +133,7 @@
   --dk-accent-soft: rgba(88, 166, 255, 0.14);
   --dk-accent-border: rgba(88, 166, 255, 0.4);
   --dk-accent-deep: #1c3d5e;
+  --dk-accent-deep-hover: #244d78;
   --dk-accent-deeper: #10233c;
   --dk-focus-ring: rgba(88, 166, 255, 0.55);
   --dk-selection: rgba(88, 166, 255, 0.35);
