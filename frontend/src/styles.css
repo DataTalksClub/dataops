@@ -2180,7 +2180,7 @@ body[data-workspace-view="review"] .document-list {
   min-height: 32px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-page);
+  background-color: var(--dk-bg-page);
   color: var(--dk-text-primary);
   padding: 5px 7px;
   font: inherit;
@@ -6334,7 +6334,7 @@ body[data-workspace-view="calendar"] .document-list {
 .bookkeeping-upload select,
 .crm-filters input,
 .crm-filters select {
-  background: var(--dk-bg-surface);
+  background-color: var(--dk-bg-surface);
 }
 
 .bookkeeping-filters input[type="search"] {
@@ -6461,7 +6461,7 @@ body[data-workspace-view="calendar"] .document-list {
 .dialog-fields label input,
 .dialog-fields label select,
 .dialog-fields label textarea {
-  background: var(--dk-bg-surface);
+  background-color: var(--dk-bg-surface);
 }
 
 .bookkeeping-actions,
@@ -6914,7 +6914,7 @@ body[data-workspace-view="calendar"] .document-list {
 
 .planner-filter-fields input,
 .planner-filter-fields select {
-  background: var(--dk-bg-surface);
+  background-color: var(--dk-bg-surface);
 }
 
 .calendar-period-actions {
