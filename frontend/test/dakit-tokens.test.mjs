@@ -13,7 +13,7 @@ function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-describe("dakit token adoption contract", () => {
+describe("dakit adoption contract", () => {
   test("the vendored tokens are a byte-copy of the dakit build output", (t) => {
     const upstream = path.join(repoRoot, "../dakit/dist/tokens.css");
     if (!existsSync(upstream)) return t.skip("no ../dakit checkout beside this repo");
@@ -25,18 +25,36 @@ describe("dakit token adoption contract", () => {
     );
   });
 
-  test("every entry surface loads the vendored tokens and the manifest serves them", () => {
-    assert.match(
-      read("frontend/index.html"),
-      /<link rel="stylesheet" href="\/src\/dakit\/tokens\.css">/,
-      "index.html must load the dakit tokens before the app stylesheet",
+  test("the vendored bundle is the dakit build output with fonts re-pathed", (t) => {
+    const upstream = path.join(repoRoot, "../dakit/dist/dakit.css");
+    if (!existsSync(upstream)) return t.skip("no ../dakit checkout beside this repo");
+    const rebased = readFileSync(upstream, "utf8")
+      .replaceAll("../fonts/", "../assets/fonts/");
+    assert.equal(
+      read("frontend/src/dakit/dakit.css"),
+      rebased,
+      "frontend/src/dakit/dakit.css drifted from ../dakit/dist/dakit.css;"
+        + " regenerate it: scripts/sync_dakit.sh",
+    );
+  });
+
+  test("the entry surface loads tokens, bundle, and app styles in that order", () => {
+    const head = read("frontend/index.html");
+    const links = [...head.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)]
+      .map((match) => match[1]);
+    assert.deepEqual(
+      links,
+      ["/src/dakit/tokens.css", "/src/dakit/dakit.css", "/src/styles.css"],
+      "index.html must load the dakit tokens, then the dakit bundle, then the app stylesheet",
     );
 
     const manifest = JSON.parse(read("backend/src/docs/frontend-assets.json"));
-    assert.ok(
-      manifest.files.includes("src/dakit/tokens.css"),
-      "backend/src/docs/frontend-assets.json must serve src/dakit/tokens.css;"
-        + " the deployed handler 404s anything the manifest does not list",
-    );
+    for (const asset of ["src/dakit/tokens.css", "src/dakit/dakit.css"]) {
+      assert.ok(
+        manifest.files.includes(asset),
+        `backend/src/docs/frontend-assets.json must serve ${asset};`
+          + " the deployed handler 404s anything the manifest does not list",
+      );
+    }
   });
 });
