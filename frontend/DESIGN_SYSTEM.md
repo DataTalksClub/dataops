@@ -338,6 +338,34 @@ operator's decision. Do not add a pill to every row by default.
 - Keep semantic machine values, such as `datetime`, when rendering human copy.
 - Changed states should have no critical or serious WCAG A/AA findings.
 
+## Redundancy and template tells (banned)
+
+An adversarial review pass (2026-10) found the interface credible but
+generic in specific, repeatable ways. These are banned; a code change that
+reintroduces one is a defect even when the surface works.
+
+- One empty surface states its emptiness once. Do not restate the same
+  absence in a title sub-line, a summary strip, and per-group sentences.
+  Groups and columns show a name and a count; the surface's single honest
+  state carries the sentence.
+- No uppercase absence pill ("EMPTY") over a sentence that already says it.
+- No page-level eyebrow kicker above a page title; the sidebar already names
+  the destination. Drawer group labels keep the iOS convention.
+- One page-title scale: 32px desktop, 22px mobile, on every surface. Two
+  competing title scales in one shell is a bug.
+- Reference lists, entry rows, and diagnostics render as one bordered
+  container with divided rows — not a grid of identical cards, and no
+  decorative arrow glyphs. Cards are for repeated items, never for four
+  copies of one placeholder.
+- Operator copy speaks operator language. No service-health voice
+  ("the docs service answered"), no implementation vocabulary ("runtime
+  projections", "indexed"), no raw multi-line IDs — shorten a revision to
+  its first 8 characters.
+- Counts are for non-zero or decision-relevant values. A region that states
+  its emptiness does not also print "0 of 0".
+- One selection signal per navigation decision: the active leaf row carries
+  the accent tint and `aria-current`; a parent row uses its expanded chevron.
+
 ## Responsive rules
 
 - Baseline mobile viewport is 390×844; desktop evidence uses 1440×900.
