@@ -30,6 +30,26 @@ export function createTemplatesSurface(context) {
     batchApplyResults: null,
   };
 
+  // One icon language: authored emoji stay in the data, but rows render the
+  // family doc glyph (24-grid path at 20px, stroke 1.8) like every other row.
+  function templateIcon() {
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24");
+    icon.setAttribute("width", "20");
+    icon.setAttribute("height", "20");
+    icon.setAttribute("fill", "none");
+    icon.setAttribute("stroke", "currentColor");
+    icon.setAttribute("stroke-width", "1.8");
+    icon.setAttribute("stroke-linecap", "round");
+    icon.setAttribute("stroke-linejoin", "round");
+    icon.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M6 3h9l4 4v14H6ZM14 3v5h5M9 12h7M9 16h7");
+    icon.append(path);
+    icon.classList.add("runtime-template-icon");
+    return icon;
+  }
+
   async function refreshRuntimeTemplates(options = {}) {
     const token = options.token;
     try {
@@ -66,7 +86,7 @@ export function createTemplatesSurface(context) {
     title.textContent = "Template process docs";
     const meta = document.createElement("span");
     const templates = model.templates.filter((template) => !template.recurring);
-    meta.textContent = `${countLabel(templates.length, "template")} indexed`;
+    if (templates.length) meta.textContent = countLabel(templates.length, "template");
     header.append(title, meta);
     section.append(header);
     const grid = document.createElement("div");
@@ -74,8 +94,8 @@ export function createTemplatesSurface(context) {
     for (const template of templates) grid.append(renderWorkflowTemplateCard(template));
     if (!grid.children.length) {
       grid.append(renderHonestState(
-        "No template process docs indexed",
-        "Runtime projections remain available in the Authored template inspector.",
+        "No template process docs yet",
+        "Publish a template process doc and it will appear here.",
       ));
     }
     section.append(grid);
@@ -94,8 +114,9 @@ export function createTemplatesSurface(context) {
     const title = document.createElement("h3");
     title.textContent = "Authored templates";
     const guidance = document.createElement("span");
-    guidance.textContent =
-      "Read-only runtime projections. Maintainers edit YAML in the private knowledge repository.";
+    // Operator language; where the source of truth lives is maintainer
+    // detail, not something the Templates page needs to explain.
+    guidance.textContent = "Read-only copies of the templates maintainers publish.";
     heading.append(title, guidance);
     header.append(heading);
     section.append(header);
@@ -174,9 +195,8 @@ export function createTemplatesSurface(context) {
     button.className = `runtime-template-row ${template.id === runtimeState.selectedId ? "is-selected" : ""}`;
     button.setAttribute("aria-pressed", String(template.id === runtimeState.selectedId));
     const name = document.createElement("strong");
-    name.textContent = template.emoji
-      ? `${template.emoji} ${template.name}`
-      : template.name || "Unnamed template";
+    if (template.emoji) name.appendChild(templateIcon());
+    name.append(document.createTextNode(template.name || "Unnamed template"));
     const meta = document.createElement("span");
     // Meta carries what an operator weighs (size and trigger mode); the
     // machine type slug stays out of the row.
@@ -220,9 +240,8 @@ export function createTemplatesSurface(context) {
     const header = document.createElement("header");
     const title = document.createElement("div");
     const heading = document.createElement("h4");
-    heading.textContent = selected.emoji
-      ? `${selected.emoji} ${selected.name}`
-      : selected.name || selected.id;
+    if (selected.emoji) heading.appendChild(templateIcon());
+    heading.append(document.createTextNode(selected.name || selected.id));
     const guidance = document.createElement("p");
     guidance.textContent =
       "This definition is projected from reviewed YAML. Changes take effect through the deployment workflow.";

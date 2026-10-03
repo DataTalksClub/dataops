@@ -157,19 +157,20 @@ export function createProcessDocsSurface(context, services) {
     const meta = document.createElement("span");
     meta.className = "ops-section-meta";
     if (quality.loaded) {
-      // The counts are quantities, so they carry the mono accent.
-      const total = document.createElement("strong");
-      total.className = "ops-count";
-      total.textContent = String(quality.totalFindings);
-      const blocking = document.createElement("strong");
-      blocking.className = "ops-count";
-      blocking.textContent = String(quality.summary?.blocking || 0);
-      meta.append(
-        total,
-        " findings · ",
-        blocking,
-        " blocking in template/report data",
-      );
+      if (quality.totalFindings === 0) {
+        // A clean report needs no counts; the drill-down below already
+        // renders the single honest empty row.
+        meta.textContent = "Process docs pass validation";
+      } else {
+        // The counts are quantities, so they carry the mono accent.
+        const total = document.createElement("strong");
+        total.className = "ops-count";
+        total.textContent = String(quality.totalFindings);
+        const blocking = document.createElement("strong");
+        blocking.className = "ops-count";
+        blocking.textContent = String(quality.summary?.blocking || 0);
+        meta.append(total, " findings · ", blocking, " blocking");
+      }
     } else {
       meta.textContent = "Report unavailable";
     }
@@ -289,8 +290,12 @@ export function createProcessDocsSurface(context, services) {
     if (filtered.length === 0) {
       list.append(
         markLiveState(renderHonestState(
-          "No findings match filters",
-          "Change filters to inspect other process quality findings.",
+          findings.length === 0
+            ? "No findings"
+            : "No findings match filters",
+          findings.length === 0
+            ? "Published process docs pass validation."
+            : "Change filters to inspect other process quality findings.",
         ), "empty"),
       );
     } else {

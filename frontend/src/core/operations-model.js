@@ -95,9 +95,9 @@ const DOCS_UNAVAILABLE_FALLBACK_MESSAGE =
 const DOCS_UNAVAILABLE_GUIDANCE =
   "Work, Cards, and Tasks are unaffected. Reload this page once the docs service is restored.";
 const DOCS_EMPTY_BODY =
-  "The docs service answered and the process-document corpus contains no documents.";
+  "No process documents have been published yet.";
 const DOCS_EMPTY_GUIDANCE =
-  "Publish a process document to fill this surface. Nothing is being hidden by an error.";
+  "Publish a process document and it will appear here.";
 
 export function emptyOperationsDocsSnapshot() {
   return { state: "loading", documentCount: 0, error: "", status: 0 };

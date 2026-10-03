@@ -635,7 +635,11 @@ export function createAdminSurface(context) {
       diagnosticText(
         "knowledge-publication",
         publication.status === "fulfilled"
-          ? `Current revision: ${publication.value.revision || "not published"}.`
+          ? publication.value.revision
+            // A 36-char UUID wraps into a diagnostic dump; the first group
+            // identifies the revision, and the full id stays in the API.
+            ? `Current revision: ${String(publication.value.revision).slice(0, 8)}…`
+            : "Not published yet."
           : `Unavailable: ${publication.reason?.message || "request failed"}`,
       );
     }

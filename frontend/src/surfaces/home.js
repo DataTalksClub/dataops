@@ -270,20 +270,18 @@ export function createHomeSurface(context) {
     const nav = document.createElement("nav");
     nav.className = "home-next-destinations";
     nav.setAttribute("aria-label", "Plan and capture work");
-    for (const [question, label, route] of [
-      ["Choosing what's next?", "My Plan", "/my-plan"],
-      ["Something new arrived?", "Inbox", "/inbox"],
-      ["Not sure how?", "Process Docs", "/processes"],
+    // Plain quiet links: rhetorical questions were hand-holding copy, and
+    // three of them stacked on mobile pushed the work down a full screen.
+    for (const [label, route] of [
+      ["My Plan", "/my-plan"],
+      ["Inbox", "/inbox"],
+      ["Process Docs", "/processes"],
     ]) {
-      const part = document.createElement("span");
-      const questionText = document.createElement("span");
-      questionText.textContent = question;
       const action = document.createElement("button");
       action.type = "button";
       action.textContent = label;
       action.addEventListener("click", () => navigateCanonicalWorkspace(route).ready);
-      part.append(questionText, action);
-      nav.append(part);
+      nav.append(action);
     }
     return nav;
   }
