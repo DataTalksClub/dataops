@@ -98,6 +98,34 @@ body[data-workspace-view="inbox"] .intake-panel > summary {
   font-weight: 700;
 }
 
+/* The capture disclosure uses the family chevron like every other summary,
+   not the browser's filled triangle. */
+body[data-workspace-view="inbox"] .intake-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+}
+
+body[data-workspace-view="inbox"] .intake-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+body[data-workspace-view="inbox"] .intake-panel > summary::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentcolor;
+  color: var(--dk-text-muted);
+  transition: transform 120ms ease;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 18 6-6-6-6' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+body[data-workspace-view="inbox"] .intake-panel[open] > summary::before {
+  transform: rotate(90deg);
+}
+
 body[data-workspace-view="inbox"] .intake-panel > summary:hover {
   background: var(--dk-bg-hover);
 }
@@ -1481,7 +1509,12 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
 }
 
 .home-view-all::after {
-  content: "\2192";
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentcolor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .home-view-all:hover {
@@ -1735,25 +1768,38 @@ body[data-workspace-view="review"] .document-list {
   gap: 8px;
 }
 
+/* Review summary speaks the family status-strip language: one bordered
+   container, hairline dividers, a status dot and a mono count per cell.
+   Tinted dashboard cards are the Home strip's banned opposite. */
 .review-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.review-summary-card {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
+  overflow: hidden;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
-  padding: 12px 14px;
+}
+
+.review-summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 2px;
+  min-height: 58px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 10px 14px;
+}
+
+.review-summary-card + .review-summary-card {
+  border-left: 1px solid var(--dk-border-default);
 }
 
 .review-summary-value {
   color: var(--dk-text-heading);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 650;
 }
 
@@ -1765,20 +1811,34 @@ body[data-workspace-view="review"] .document-list {
   font-size: 12px;
 }
 
-.review-summary-attention {
-  border-color: var(--dk-warning-border);
-  background: var(--dk-warning-bg);
+.review-summary-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
-.review-summary-changes,
-.review-summary-blocked {
-  border-color: var(--dk-danger-border);
-  background: var(--dk-danger-bg);
+/* The dot carries the status; the cell stays on the surface. Zeros demote
+   below (.is-zero) exactly like the Home strip's muted zeros. */
+.review-summary-label::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dk-text-faint);
 }
 
-.review-summary-complete {
-  border-color: var(--dk-success-border);
-  background: var(--dk-success-bg);
+.review-summary-attention .review-summary-label::before {
+  background: var(--dk-warning-text);
+}
+
+.review-summary-changes .review-summary-label::before,
+.review-summary-blocked .review-summary-label::before {
+  background: var(--dk-danger-text);
+}
+
+.review-summary-complete .review-summary-label::before {
+  background: var(--dk-success-text);
 }
 
 .review-controls {
@@ -2172,8 +2232,16 @@ body[data-workspace-view="review"] .document-list {
     grid-template-columns: minmax(240px, 0.85fr) minmax(0, 1.15fr);
   }
 
-  .review-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* The summary keeps the Home strip's four-up rhythm on small screens. */
+  .review-summary-card {
+    min-height: 60px;
+    padding: 8px 10px;
+    text-align: center;
+    align-items: center;
+  }
+
+  .review-summary-value {
+    font-size: 20px;
   }
 }
 
@@ -2206,7 +2274,10 @@ body[data-workspace-view="review"] .document-list {
 }
 
 @media (max-width: 480px) {
-  .review-summary,
+  .review-summary-card {
+    padding: 8px 4px;
+  }
+
   .review-meta-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3127,6 +3198,9 @@ body[data-workspace-view="sponsors"] .document-list {
 }
 
 .bookkeeping-filters summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 36px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
@@ -3135,6 +3209,54 @@ body[data-workspace-view="sponsors"] .document-list {
   cursor: pointer;
   font-weight: 600;
   list-style-position: inside;
+}
+
+/* Disclosures use the family chevron, never the UA triangle or text glyphs:
+   one stroke language for every disclosure in the app. */
+.bookkeeping-surface summary,
+.ops-quality-filters-disclosure > summary {
+  list-style: none;
+}
+
+.bookkeeping-surface summary::-webkit-details-marker,
+.ops-quality-filters-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bookkeeping-surface details > summary::before,
+.bookkeeping-filters summary::after,
+.ops-quality-filters-disclosure > summary::after {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentcolor;
+  color: var(--dk-text-muted);
+  transition: transform 120ms ease;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 18 6-6-6-6' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Button-like filter rows carry the chevron on the right; heading-style
+   disclosures carry it before the label, where the UA triangle used to sit. */
+.bookkeeping-surface details > summary::before {
+  display: inline-block;
+  vertical-align: -3px;
+  margin-right: 8px;
+}
+
+.bookkeeping-surface .bookkeeping-filters summary::before {
+  display: none;
+}
+
+.bookkeeping-filters summary::after,
+.ops-quality-filters-disclosure > summary::after {
+  margin-left: auto;
+}
+
+.bookkeeping-surface details[open] > summary::before,
+.bookkeeping-filters details[open] summary::after,
+.ops-quality-filters-disclosure[open] > summary::after {
+  transform: rotate(90deg);
 }
 
 .bookkeeping-filter-more {
@@ -5390,6 +5512,24 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     width: 44px;
   }
 
+  /* The bell holds the 44px control grid on mobile: the count rides as an
+     overlay badge instead of stretching the button wide next to the avatar. */
+  .mobile-work-bell-button {
+    position: relative;
+    width: 44px;
+    justify-content: center;
+  }
+
+  .mobile-topbar .mobile-work-bell-button .work-bell-count {
+    position: absolute;
+    top: 3px;
+    right: 1px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
+
   #mobile-title {
     overflow: hidden;
     color: var(--dk-text-heading);
@@ -5615,6 +5755,9 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   .home-quick-actions {
     display: flex;
     flex-wrap: wrap;
+    /* Left-aligned with the content column: centered creation controls
+       floated in no-man's land between the intro and the queue. */
+    justify-content: flex-start;
   }
 
   .home-quick-action {
@@ -8782,8 +8925,18 @@ body[data-workspace-view="tasks"] .runtime-template-row span {
 }
 
 body[data-workspace-view="tasks"] .runtime-template-row strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
   color: var(--dk-text-heading);
   font-size: 13px;
+}
+
+/* The row glyph is a stroke icon, not a character: it must not join the
+   inline text layout (inline SVG next to ellipsised text paints unreliably). */
+body[data-workspace-view="tasks"] .runtime-template-row strong svg {
+  flex: none;
 }
 
 body[data-workspace-view="tasks"] .runtime-template-row span {
@@ -9572,8 +9725,7 @@ body[data-workspace-view="tasks"] .task-required-link label {
   font-weight: 650;
 }
 
-body[data-workspace-view="tasks"] .task-required-link input[type="url"],
-body[data-workspace-view="tasks"] .task-required-link input[type="file"] {
+body[data-workspace-view="tasks"] .task-required-link input[type="url"] {
   width: 100%;
   min-height: 40px;
 }
@@ -10742,7 +10894,66 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
 .operating-model-header { margin-bottom: 24px; }
 .operating-model-header h2 { margin: 4px 0 8px; font-size: clamp(1.8rem, 3vw, 2.6rem); }
 .operating-model-header p:last-child { max-width: 760px; color: var(--dk-text-muted); }
-.operating-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-bottom: 24px; }
+/* The hub is the family container+row recipe: one bordered container of
+   divided rows (name, description, mono count, one chevron) — never a grid
+   of equal stat cards. Rows only; sections and My Plan keep their cards. */
+.operating-model-surface:not(.my-plan-surface) .operating-model-grid {
+  overflow: hidden;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+}
+.operating-model-surface:not(.my-plan-surface) .operating-model-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 14px;
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  padding: 12px 16px;
+}
+.operating-model-surface:not(.my-plan-surface) .operating-model-card + .operating-model-card {
+  border-top: 1px solid var(--dk-border-default);
+}
+.operating-model-surface:not(.my-plan-surface) .operating-model-card h3 {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  font-size: 15px;
+}
+.operating-model-surface:not(.my-plan-surface) .operating-model-card p {
+  grid-column: 1;
+  grid-row: 2;
+}
+.operating-model-surface:not(.my-plan-surface) .operating-model-card .operating-model-count,
+.operating-model-surface:not(.my-plan-surface) .operating-model-card .operating-model-open {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.operating-model-surface:not(.my-plan-surface) .operating-model-card .operating-model-open {
+  grid-column: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  color: var(--dk-text-primary);
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-card .operating-model-open svg {
+  width: 20px;
+  height: 20px;
+}
+
+.operating-model-surface:not(.my-plan-surface) .operating-model-card .operating-model-open:hover {
+  border-color: var(--dk-border-control-hover);
+  background: var(--dk-bg-hover);
+  color: var(--dk-accent-default);
+}
+.operating-model-grid { margin-bottom: 24px; }
 .operating-model-card, .operating-model-row { border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-lg); background: var(--dk-bg-surface); padding: 20px; }
 .operating-model-count { display: block; color: var(--dk-accent-default); font-size: 1.8rem; font-weight: 700; }
 .operating-model-card h3, .operating-model-row h3 { margin: 6px 0 8px; }
@@ -13052,7 +13263,14 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   padding: 0;
 }
 
-.operating-model-surface:not(.my-plan-surface) .operating-model-card,
+/* Hub rows flatten into the container; section detail rows and My Plan
+   session cards stay self-contained cards. */
+.operating-model-surface:not(.my-plan-surface) .operating-model-card {
+  border: 0;
+  border-radius: 0;
+  padding: 12px 16px;
+}
+
 .operating-model-surface:not(.my-plan-surface) .operating-model-row {
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
@@ -13060,15 +13278,11 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   padding: 16px 18px;
 }
 
-.operating-model-surface:not(.my-plan-surface) .operating-model-grid {
-  gap: 12px;
-}
-
 .operating-model-surface:not(.my-plan-surface) .operating-model-count {
   color: var(--dk-text-heading);
-  font-size: 24px;
+  font-family: var(--dk-font-mono);
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: -0.01em;
 }
 
 .operating-model-surface:not(.my-plan-surface) .operating-model-card h3,
@@ -13110,10 +13324,10 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   overflow-wrap: anywhere;
 }
 
-/* Review stat cards only alarm when the count is non-zero. */
-.review-summary-card.is-zero {
-  border-color: var(--dk-border-default);
-  background: var(--dk-bg-surface);
+/* Review stat cells only alarm when the count is non-zero: a zero demotes
+   to a muted dot and numeral, never a filled alarm. */
+.review-summary-card.is-zero .review-summary-label::before {
+  background: var(--dk-text-faint);
 }
 
 .review-summary-card.is-zero .review-summary-value {
@@ -13126,16 +13340,40 @@ body[data-view="library"][data-workspace-view="review"] .document-list:not(.is-o
   font-size: 11px;
 }
 
-/* Task panel file control follows the system controls, not the native box. */
+/* Task panel file control follows the system controls, not the native box:
+   the input is a family control and the native picker button takes the
+   quiet-control recipe. Tests dispatch change on the input itself. */
 .task-panel-body input[type="file"] {
+  width: 100%;
   max-width: 100%;
+  min-height: 34px;
   border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-muted);
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.task-panel-body input[type="file"]::file-selector-button {
+  min-height: 26px;
+  margin-right: 10px;
+  border: 1px solid var(--dk-border-strong);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   color: var(--dk-text-primary);
-  padding: 7px 10px;
+  padding: 2px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-panel-body input[type="file"]::file-selector-button:hover {
+  border-color: var(--dk-border-control-hover);
+  background: var(--dk-bg-hover);
 }
 
 /* Mailing exports: honest states inside the panels carry the same inset as
@@ -13319,14 +13557,11 @@ body:not([data-workspace-view="docs"]) #filters-section {
     display: none;
   }
 
+  /* The chevron rides the shared disclosure recipe (mask, rotates when open);
+     only the mobile row's sizing lives here. */
   .ops-quality-filters-disclosure > summary::after {
-    content: "▾";
-    margin-left: auto;
-    color: var(--dk-text-muted);
-  }
-
-  .ops-quality-filters-disclosure[open] > summary::after {
-    content: "▴";
+    width: 18px;
+    height: 18px;
   }
 
   .ops-quality-filters-disclosure > .ops-quality-filters {

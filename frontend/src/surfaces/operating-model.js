@@ -120,11 +120,28 @@ export function createOperatingModelSurface(context) {
     root.append(state);
   }
 
-  function summaryCard(label, count, body, action) {
-    const card = el(documentRef, "article", "operating-model-card");
-    card.append(el(documentRef, "span", "operating-model-count", String(count)), el(documentRef, "h3", "", label), el(documentRef, "p", "", body));
-    if (action) card.append(action);
-    return card;
+  function summaryCard(label, count, body, onOpen) {
+    // Family row, not a stat card: the name leads, the description follows as
+    // quiet metadata, the mono count is the quantity, and one chevron opens
+    // the section. Eight identical "View" buttons would be filler.
+    const row = el(documentRef, "article", "operating-model-card");
+    row.append(
+      el(documentRef, "h3", "", label),
+      el(documentRef, "span", "operating-model-count", String(count)),
+      el(documentRef, "p", "", body),
+    );
+    if (onOpen) {
+      const open = el(documentRef, "button", "quiet-button operating-model-open");
+      open.type = "button";
+      open.setAttribute("aria-label", `Open ${label}`);
+      open.innerHTML =
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"'
+        + ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="m9 18 6-6-6-6"/></svg>';
+      open.addEventListener("click", onOpen);
+      row.append(open);
+    }
+    return row;
   }
 
   // Shell refreshes must preserve selected text on an unchanged failure screen.
@@ -165,10 +182,8 @@ export function createOperatingModelSurface(context) {
       ["Roadmap", model.roadmap.sessions, "Thirteen proposed systems-day sessions with explicit decisions and outcomes."],
     ];
     for (const [label, values, body] of items) {
-      const button = el(documentRef, "button", "quiet-button", "View");
-      button.type = "button";
-      button.addEventListener("click", () => navigateCanonicalWorkspace("/operating-model", { section: String(label).toLowerCase().replace(" ", "-") }));
-      grid.append(summaryCard(label, values.length, body, button));
+      grid.append(summaryCard(label, values.length, body, () =>
+        navigateCanonicalWorkspace("/operating-model", { section: String(label).toLowerCase().replace(" ", "-") })));
     }
     root.append(grid, openDocButton(model.overviewDocumentId, "Open full operating-model guide"));
     replaceSurface(root);

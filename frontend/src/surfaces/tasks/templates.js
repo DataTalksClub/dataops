@@ -32,8 +32,14 @@ export function createTemplatesSurface(context) {
 
   // One icon language: authored emoji stay in the data, but rows render the
   // family doc glyph (24-grid path at 20px, stroke 1.8) like every other row.
+  // Namespaces degrade gracefully for DOM shims without createElementNS.
   function templateIcon() {
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const svgNs = "http://www.w3.org/2000/svg";
+    const make = (tag) =>
+      typeof document.createElementNS === "function"
+        ? document.createElementNS(svgNs, tag)
+        : document.createElement(tag);
+    const icon = make("svg");
     icon.setAttribute("viewBox", "0 0 24 24");
     icon.setAttribute("width", "20");
     icon.setAttribute("height", "20");
@@ -43,7 +49,7 @@ export function createTemplatesSurface(context) {
     icon.setAttribute("stroke-linecap", "round");
     icon.setAttribute("stroke-linejoin", "round");
     icon.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const path = make("path");
     path.setAttribute("d", "M6 3h9l4 4v14H6ZM14 3v5h5M9 12h7M9 16h7");
     icon.append(path);
     icon.classList.add("runtime-template-icon");
@@ -195,7 +201,9 @@ export function createTemplatesSurface(context) {
     button.className = `runtime-template-row ${template.id === runtimeState.selectedId ? "is-selected" : ""}`;
     button.setAttribute("aria-pressed", String(template.id === runtimeState.selectedId));
     const name = document.createElement("strong");
-    if (template.emoji) name.appendChild(templateIcon());
+    // Every row carries the same doc glyph so the list reads as one set;
+    // authored emoji stay in the data and out of the operator UI.
+    name.appendChild(templateIcon());
     name.append(document.createTextNode(template.name || "Unnamed template"));
     const meta = document.createElement("span");
     // Meta carries what an operator weighs (size and trigger mode); the
@@ -240,7 +248,7 @@ export function createTemplatesSurface(context) {
     const header = document.createElement("header");
     const title = document.createElement("div");
     const heading = document.createElement("h4");
-    if (selected.emoji) heading.appendChild(templateIcon());
+    heading.appendChild(templateIcon());
     heading.append(document.createTextNode(selected.name || selected.id));
     const guidance = document.createElement("p");
     guidance.textContent =
