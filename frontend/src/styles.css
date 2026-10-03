@@ -1154,8 +1154,8 @@ body[data-workspace-view="tasks"] .document-list.is-operations-home {
   margin: 0;
   color: var(--dk-text-heading);
   font-size: var(--dk-text-page);
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 650;
+  letter-spacing: -0.025em;
   line-height: 1.15;
 }
 
@@ -3801,13 +3801,6 @@ body[data-workspace-view="sponsors"] .document-list {
   text-align: left;
 }
 
-.ops-surface-recurring .ops-surface-header h1 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: 22px;
-  font-weight: 700;
-}
-
 .ops-surface-recurring .ops-surface-header p {
   margin: 0;
   color: var(--dk-text-muted);
@@ -4179,8 +4172,10 @@ body[data-workspace-view="sponsors"] .document-list {
 
 .workflow-board-header h1 {
   color: var(--dk-text-heading);
-  font-size: 30px;
-  line-height: 1.25;
+  font-size: var(--dk-text-page);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
 }
 
 .workflow-board-header p {
@@ -6122,10 +6117,7 @@ body[data-workspace-view="calendar"] .document-list {
 .bookkeeping-header h2,
 .crm-header h2,
 .mailing-exports-surface > header h2,
-.planner-heading h1,
-.ops-surface-admin .ops-surface-header h1,
-.ops-surface-users .ops-surface-header h1,
-.ops-surface-device .ops-surface-header h1 {
+.planner-heading h1 {
   color: var(--dk-text-heading);
   font-weight: 650;
   letter-spacing: -0.025em;
@@ -7002,14 +6994,6 @@ body[data-workspace-view="calendar"] .document-list {
   gap: 5px;
   background: transparent;
   text-align: left;
-}
-
-.ops-surface-admin .ops-surface-header h1,
-.ops-surface-users .ops-surface-header h1,
-.ops-surface-device .ops-surface-header h1 {
-  margin: 0;
-  font-size: 30px;
-  line-height: 1.2;
 }
 
 .ops-surface-admin .ops-surface-header p,
@@ -8213,15 +8197,6 @@ body[data-workspace-view="tasks"] .operations-home .ops-surface-header {
   text-align: left;
 }
 
-body[data-workspace-view="tasks"] .operations-home .ops-surface-header h1 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: clamp(24px, 3vw, 32px);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-}
-
 body[data-workspace-view="tasks"] .operations-home .ops-surface-header p {
   max-width: 680px;
   margin: 0;
@@ -8521,11 +8496,6 @@ body[data-workspace-view="tasks"] .workflow-board-header {
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);
   padding: 16px 18px;
-}
-
-body[data-workspace-view="tasks"] .workflow-board-header h1 {
-  font-size: clamp(24px, 3vw, 32px);
-  letter-spacing: -0.025em;
 }
 
 body[data-workspace-view="tasks"] .workflow-board-header p {
@@ -10167,11 +10137,6 @@ body[data-workspace-view="tasks"] .recurring-form-footer button {
 }
 
 @media (max-width: 480px) {
-  body[data-workspace-view="tasks"] .operations-home .ops-surface-header h1,
-  body[data-workspace-view="tasks"] .workflow-board-header h1 {
-    font-size: 23px;
-  }
-
   body[data-workspace-view="tasks"] .ops-queue-row {
     min-height: 100px;
     padding-inline: 12px;
@@ -10286,15 +10251,6 @@ body[data-workspace-view="docs"] .document-list {
   background: transparent;
   padding: 0 0 20px;
   text-align: left;
-}
-
-.ops-surface-docs > .ops-surface-header h1 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-page);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
 }
 
 .ops-surface-docs > .ops-surface-header p {
@@ -12391,9 +12347,17 @@ body[data-workspace-view="inbox"] .intake-row small {
 .ops-surface .ops-surface-header h1 {
   margin: 0;
   color: var(--dk-text-heading);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--dk-text-page);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+/* One mobile page-title scale: every surface drops to 22px together. */
+@media (max-width: 820px) {
+  .ops-surface .ops-surface-header h1 {
+    font-size: 22px;
+  }
 }
 
 .ops-surface .ops-surface-header p {
