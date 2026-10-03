@@ -35,11 +35,9 @@ export function createProcessDocsSurface(context, services) {
     setRouteTitle("Docs");
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-docs";
-    const header = renderSurfaceHeader(
-      "Docs",
-      surfaceDescription("processes"),
-      "Knowledge operations",
-    );
+    // No page eyebrow: the sidebar already names the destination, and an
+    // uppercase kicker over the title is the admin-template tell.
+    const header = renderSurfaceHeader("Docs", surfaceDescription("processes"));
     const createButton = document.createElement("button");
     createButton.type = "button";
     createButton.className = "primary-button ops-docs-create";

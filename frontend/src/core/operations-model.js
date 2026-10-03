@@ -863,27 +863,33 @@ export function createOperationsModel({
         path: doc.path,
       }));
 
+    // Each reference says what it is: four copies of one generic label read
+    // as a placeholder grid, not a curated reading list.
     const repoReferences = [
       [
         "DataOps V1 Goal",
         "https://github.com/DataTalksClub/dataops/blob/main/.goal-v1.md",
+        "What V1 must deliver for the operations team",
       ],
       [
         "Project Plan",
         "https://github.com/DataTalksClub/dataops/blob/main/PROJECT_PLAN.md",
+        "Sequenced delivery plan for V1",
       ],
       [
         "Portal Analysis",
         "https://github.com/DataTalksClub/dataops/blob/main/PORTAL_ANALYSIS.md",
+        "Review of the current portal surfaces",
       ],
       [
         "Merge Plan",
         "https://github.com/DataTalksClub/dataops/blob/main/docs/MERGE_PLAN.md",
+        "How work-engine merges into the portal",
       ],
-    ].map(([title, href]) => ({
+    ].map(([title, href, summary]) => ({
       title,
       href,
-      summary: "Planning reference",
+      summary,
     }));
 
     return [...indexed, ...repoReferences];

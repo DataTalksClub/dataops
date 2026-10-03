@@ -412,7 +412,16 @@ describe("app shared operations domain characterization", () => {
     assert.equal(references.length, 6);
     assert.equal(references[2].title, "DataOps V1 Goal");
     assert.equal(references.at(-1).title, "Merge Plan");
-    assert.ok(references.slice(2).every((reference) => reference.summary === "Planning reference"));
+    // Each curated reference names what it is; one shared placeholder label
+    // reads as an unedited grid.
+    assert.ok(
+      references.slice(2).every(
+        (reference) =>
+          typeof reference.summary === "string" &&
+          reference.summary.length > 0 &&
+          reference.summary !== reference.title,
+      ),
+    );
   });
 
   test("keeps surface titles, descriptions, counts, and connection status honest", () => {

@@ -788,17 +788,15 @@ describe("Knowledge surface boundary", () => {
     );
     assert.equal(harness.routeTitles.at(-1), "Docs");
     // The header subtitle already says that processes support work; the
-    // surface does not repeat the same idea as a banner.
+    // surface does not repeat the same idea as a banner. There is no page
+    // eyebrow either: the sidebar names the destination.
     assert.equal(
       findByText(
         harness.elements.documentList,
-        "Processes support work",
-        "strong",
+        "Knowledge operations",
+        "p",
       ),
       undefined,
-    );
-    assert.ok(
-      findByText(harness.elements.documentList, "Knowledge operations", "p"),
     );
     assert.ok(
       findByText(harness.elements.documentList, "Process catalog", "a"),

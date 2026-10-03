@@ -7010,53 +7010,68 @@ body[data-workspace-view="calendar"] .document-list {
   margin: 0;
 }
 
+/* Admin reads as one bordered panel with divided rows: the two entry rows
+   and the diagnostics table share the container instead of a three-card
+   grid with uneven bottoms and arrow glyphs. */
 .ops-admin-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.ops-admin-card {
-  display: grid;
-  position: relative;
-  min-width: 0;
-  min-height: 132px;
-  align-content: start;
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 0;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
+  overflow: hidden;
+}
+
+.ops-admin-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  position: static;
+  min-width: 0;
+  min-height: 0;
+  gap: 2px 12px;
+  border: 0;
+  border-top: 1px solid var(--dk-border-default);
+  border-radius: 0;
+  background: transparent;
   color: var(--dk-text-primary);
-  padding: 16px;
+  padding: 12px 16px;
   text-align: left;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: background-color 120ms ease;
+}
+
+.ops-admin-card:first-child {
+  border-top: 0;
 }
 
 .ops-admin-card::after {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
-  color: var(--dk-accent-default);
-  content: "→";
-  font-size: 18px;
+  content: none;
 }
 
 .ops-admin-card:hover,
 .ops-admin-card:focus-visible {
-  border-color: var(--dk-accent-default);
-  background: var(--dk-accent-soft);
+  border-color: var(--dk-border-default);
+  background: var(--dk-bg-hover);
 }
 
 .ops-admin-card strong {
   color: var(--dk-text-heading);
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .ops-admin-card span {
-  max-width: 30ch;
+  max-width: none;
   color: var(--dk-text-muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
+}
+
+.ops-admin-grid .ops-admin-diagnostics {
+  border: 0;
+  border-top: 1px solid var(--dk-border-default);
+  border-radius: 0;
+  padding: 0;
 }
 
 .ops-admin-diagnostics {
@@ -7967,10 +7982,6 @@ body[data-workspace-view="home"] .home-attention-row:hover {
 
   .ops-admin-grid {
     grid-template-columns: 1fr;
-  }
-
-  .ops-admin-card {
-    min-height: 104px;
   }
 
   .ops-admin-diagnostics > header {
@@ -10513,31 +10524,43 @@ body[data-workspace-view="docs"] .document-list {
   color: var(--dk-danger-text);
 }
 
+/* Reference links read as one bordered list with divided rows — the
+   contract's row-list preference — not a grid of four identical cards. */
 .ops-reference-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 0;
   min-width: 0;
-}
-
-.ops-reference-link {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-  min-height: 96px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
+  overflow: hidden;
+}
+
+.ops-reference-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  gap: 2px 12px;
+  border: 0;
+  border-top: 1px solid var(--dk-border-default);
+  border-radius: 0;
+  background: transparent;
   color: var(--dk-text-primary);
-  padding: 14px;
+  padding: 10px 14px;
   text-align: left;
   text-decoration: none;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color 120ms ease;
+}
+
+.ops-reference-link:first-child {
+  border-top: 0;
 }
 
 .ops-reference-link:hover,
 .ops-reference-link:focus-visible {
-  border-color: var(--dk-border-strong);
+  border-color: var(--dk-border-default);
   background: var(--dk-bg-hover);
 }
 
@@ -11751,8 +11774,7 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
     width: fit-content;
   }
 
-  .ops-quality-filters,
-  .ops-reference-grid {
+  .ops-quality-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -11786,8 +11808,7 @@ body[data-view="library"] .document-list:not(.is-operations-home):not(.is-unifie
     padding: 14px;
   }
 
-  .ops-quality-filters,
-  .ops-reference-grid {
+  .ops-quality-filters {
     grid-template-columns: 1fr;
   }
 

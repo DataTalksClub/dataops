@@ -57,9 +57,9 @@ export function createAdminSurface(context) {
 
     const wrap = document.createElement("div");
     wrap.className = "operations-home ops-surface ops-surface-admin";
-    wrap.append(
-      renderSurfaceHeader("Admin", surfaceDescription("admin"), "Platform administration"),
-    );
+    // No page eyebrow: the sidebar already names the destination, and an
+    // uppercase kicker over the title is the admin-template tell.
+    wrap.append(renderSurfaceHeader("Admin", surfaceDescription("admin")));
     wrap.append(renderAdminSurface(model));
 
     documentList.replaceChildren(wrap);
