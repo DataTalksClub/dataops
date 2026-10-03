@@ -215,7 +215,14 @@ export function createHomeSurface(context) {
     summary.className = "home-status-strip";
     summary.setAttribute("aria-label", "Daily work summary");
     const feedback = renderHomeSummary(model, options);
-    if (feedback.dataset.summaryState !== "ready") summary.append(feedback);
+    // Loaded-and-empty is already the headline sentence under the title and
+    // the attention lane's quiet row; a third strip restating it is noise.
+    if (
+      feedback.dataset.summaryState !== "ready" &&
+      feedback.dataset.summaryState !== "empty"
+    ) {
+      summary.append(feedback);
+    }
     // The strip segments the same deduplicated queue the headline counts and
     // the list below renders, so its four numbers always add up to the
     // headline: a task counts once, under the first bucket it belongs to.

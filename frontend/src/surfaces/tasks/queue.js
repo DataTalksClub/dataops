@@ -91,8 +91,16 @@ export function createTaskQueue(context) {
       ],
     ];
 
+    // A fully loaded empty queue renders as one quiet container of divided
+    // group rows rather than six chrome-heavy cards saying "empty".
+    const loadedGroups = groups.filter(([label]) => groupLoaded[label]);
+    const allQueueGroupsEmpty =
+      loadedGroups.length > 0 &&
+      loadedGroups.every(([, list]) => list.length === 0);
+
     const section = document.createElement("section");
     section.className = "ops-work-queue";
+    section.classList.toggle("is-all-empty", allQueueGroupsEmpty);
     section.setAttribute("aria-label", "Work queue");
     if (
       taskRouteContext.date ||
@@ -137,19 +145,6 @@ export function createTaskQueue(context) {
       }
       section.append(routeContext);
     }
-    // Empty lanes explain what is absent and what would appear here, so a
-    // quiet lane reads as good news rather than a dead end.
-    const emptyCopy = {
-      Overdue: "Nothing is overdue. Work that passes its due date will surface here first.",
-      "Follow-ups due":
-        "No follow-ups are due. Tasks you promised to revisit will appear here.",
-      Today: "Nothing is due today. Work due later will appear here as its date arrives.",
-      "Missing proof":
-        "No missing proof work. Tasks that need a link or artifact will surface here.",
-      Waiting:
-        "No waiting work. Tasks blocked on other people will appear here.",
-      "Done / history": "No completed work yet.",
-    };
     for (const [groupIndex, [label, list]] of groups.entries()) {
       const group = document.createElement("article");
       group.className = "ops-queue-group";
@@ -180,13 +175,16 @@ export function createTaskQueue(context) {
       rows.className = "ops-queue-rows";
       rows.dataset.loadState = groupLoaded[label] ? "ready" : "unavailable";
       if (list.length === 0) {
-        const empty = document.createElement("p");
-        empty.className = "ops-empty";
-        empty.dataset.state = groupLoaded[label] ? "empty" : "unavailable";
-        empty.textContent = groupLoaded[label]
-          ? emptyCopy[label] || `No ${label.toLowerCase()} work.`
-          : "Live work data unavailable.";
-        rows.append(empty);
+        // An empty group shows as a quiet header row (title + count). The
+        // page summary already states the queue-level fact once; six
+        // hand-written absence sentences restate it into noise.
+        if (!groupLoaded[label]) {
+          const empty = document.createElement("p");
+          empty.className = "ops-empty";
+          empty.dataset.state = "unavailable";
+          empty.textContent = "Live work data unavailable.";
+          rows.append(empty);
+        }
       } else {
         const visible =
           label === "Done / history"

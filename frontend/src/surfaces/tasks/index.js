@@ -213,7 +213,8 @@ export function createTasksSurface(context) {
       const counts = complete
         ? `${countLabel(active, "active card")}, at-risk first`
         : `${countLabel(active, "loaded active card")}s; total unknown`;
-      return renderDataSummary({
+      // The board's own honest state is the one empty statement.
+      const summary = renderDataSummary({
         id: "tasks-workflows",
         label: "Cards",
         loaded: complete
@@ -231,6 +232,7 @@ export function createTasksSurface(context) {
         retryLabel: "Retry loading cards",
         onRetry: retryWork,
       });
+      return summary.dataset.summaryState === "empty" ? null : summary;
     }
     if (view === "recurring") {
       const recurring = model.recurring;

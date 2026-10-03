@@ -196,7 +196,8 @@ export function createTemplatesSurface(context) {
     const selected = runtimeState.templates.find((template) => template.id === runtimeState.selectedId);
     if (!selected) {
       const empty = document.createElement("div");
-      empty.className = "runtime-template-projection runtime-template-readonly";
+      empty.className =
+        "runtime-template-projection runtime-template-readonly runtime-template-empty";
       empty.append(renderHonestState(
         "Select an authored template",
         "Inspect its deployed definition or create a Card from it.",

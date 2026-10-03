@@ -31,11 +31,15 @@ export function createHomeAttentionView({
     const complete = model.stats.todayLoaded && model.stats.overdueLoaded &&
       model.stats.waitingLoaded && model.stats.missingProofLoaded;
     // Honest shown/total: the operator sees how much of the queue is on
-    // screen, and an incomplete queue never reads as the whole queue.
+    // screen, and an incomplete queue never reads as the whole queue. An
+    // empty queue states its emptiness once, below — a 0-of-0 count adds
+    // nothing the honest state does not already say.
     const updateCount = (shown) => {
-      count.textContent = `Showing ${shown} of ${items.length}${
-        complete ? "" : " loaded"
-      }`;
+      count.textContent = items.length
+        ? `Showing ${shown} of ${items.length}${
+            complete ? "" : " loaded"
+          }`
+        : "";
     };
     updateCount(expanded ? items.length : Math.min(items.length, COLLAPSED_ROW_COUNT));
     header.append(count);
@@ -47,7 +51,7 @@ export function createHomeAttentionView({
           ? "No work needs your attention"
           : "Action queue unavailable",
         model.stats.missingProofLoaded
-          ? "Nothing is overdue, due for follow-up, due today, or waiting on proof."
+          ? "New work appears here as it arrives."
           : "Task data is still loading or unavailable; no false work items are shown.",
       );
       empty.classList.add("home-attention-empty");

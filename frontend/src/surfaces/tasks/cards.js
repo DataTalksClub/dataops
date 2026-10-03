@@ -36,9 +36,14 @@ export function createCardsSurface(context) {
     const title = document.createElement("h1");
     title.id = "workflow-board-title";
     title.textContent = headerModel.title;
-    const summary = document.createElement("p");
-    summary.textContent = headerModel.summary;
-    heading.append(title, summary);
+    heading.append(title);
+    // An empty board states its emptiness once, in the panel below; a
+    // "0 active cards" meta line would only restate it.
+    if (archiveVisible || cards.length > 0) {
+      const summary = document.createElement("p");
+      summary.textContent = headerModel.summary;
+      heading.append(summary);
+    }
     const actions = document.createElement("div");
     actions.className = "workflow-board-actions";
     const archive = document.createElement("button");
@@ -73,6 +78,8 @@ export function createCardsSurface(context) {
         );
       } else {
         const loaded = Boolean(state.workSnapshot.cardsLoaded);
+        // The honest state is the board's one empty statement; empty stage
+        // columns would only restate it per column.
         section.append(
           renderHonestState(
             sourceComplete ? "No active cards" : "Card availability is unknown",
@@ -82,7 +89,6 @@ export function createCardsSurface(context) {
                 ? "The loaded page has no active Cards, but remaining pages have not been evaluated."
                 : "Live card data is unavailable.",
           ),
-          renderWorkflowBoard([]),
         );
       }
       return section;
@@ -167,12 +173,9 @@ export function createCardsSurface(context) {
       columnHeader.append(columnTitle, columnCount);
       const list = document.createElement("div");
       list.className = "workflow-board-list";
-      if (stageItems.length === 0) {
-        const empty = document.createElement("p");
-        empty.className = "workflow-column-empty";
-        empty.textContent = `No cards in ${label} yet.`;
-        list.append(empty);
-      } else {
+      // The column count in the header already says zero; a sentence per
+      // empty column restates the board-level empty state six times.
+      if (stageItems.length > 0) {
         for (const item of stageItems)
           list.append(renderWorkflowSurfaceCard(item));
       }

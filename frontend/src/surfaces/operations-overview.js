@@ -32,13 +32,18 @@ export function renderSurfaceSummary(view = {}) {
     state === "unavailable" ? "assertive" : "polite",
   );
   line.setAttribute("aria-atomic", "true");
-  const badge = document.createElement("span");
-  badge.className = "surface-summary-state";
-  badge.textContent = SUMMARY_LABELS[state];
+  // Emptiness is stated by the sentence alone: an uppercase absence pill is
+  // decoration over a fact the operator just read.
+  if (state !== "empty") {
+    const badge = document.createElement("span");
+    badge.className = "surface-summary-state";
+    badge.textContent = SUMMARY_LABELS[state];
+    line.append(badge);
+  }
   const message = document.createElement("span");
   message.className = "surface-summary-message";
   message.textContent = String(view.message || "");
-  line.append(badge, message);
+  line.append(message);
   summary.append(line);
 
   if (view.detail) {

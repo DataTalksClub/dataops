@@ -624,15 +624,16 @@ describe("Home surface production behavior", () => {
       },
     });
     empty.surface.renderOperationsHome([]);
+    // A loaded-and-empty Home states the fact once, in the headline sentence
+    // under the title; the summary strip would be a second copy of it.
     const emptySummary =
       empty.documentList.children[0].querySelector(".surface-summary");
-    assert.equal(emptySummary.dataset.summaryState, "empty");
-    assert.equal(
-      emptySummary.querySelector(".surface-summary-state").textContent,
-      "Empty",
+    assert.equal(emptySummary, null);
+    assert.match(
+      empty.documentList.children[0].querySelector(".home-purpose").textContent,
+      /Nothing is overdue, due today, missing proof, or waiting on others/,
+      "the headline sentence is the one empty statement",
     );
-    assert.match(emptySummary.textContent, /Nothing is overdue, due today, or waiting/);
-    assert.equal(emptySummary.querySelector(".surface-summary-retry"), null);
   });
 
   test("reports a docs outage on Home without hiding work or inventing a docs banner", () => {

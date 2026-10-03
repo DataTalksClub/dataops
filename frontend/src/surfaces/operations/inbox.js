@@ -646,6 +646,7 @@ export function createInboxSurface(context) {
   function renderIntakeDetail(item) {
     const panel = document.createElement("section");
     panel.className = "intake-panel intake-detail";
+    if (!item) panel.classList.add("intake-detail-empty");
     if (!item) {
       if (
         state.workspaceEntity?.kind === "intake" &&
