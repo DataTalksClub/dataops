@@ -112,14 +112,14 @@ export function createHomeSurface(context) {
     const quickTask = document.createElement("button");
     quickTask.type = "button";
     quickTask.className = "home-quick-action";
-    quickTask.innerHTML =
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>New task</span>';
+    // Text-only: a plus- or play-icon on every creation button was residual
+    // template behavior, and a play triangle reads as "run", not "create".
+    quickTask.textContent = "New task";
     quickTask.addEventListener("click", () => openQuickTaskForm());
     const quickWorkflow = document.createElement("button");
     quickWorkflow.type = "button";
     quickWorkflow.className = "home-quick-action";
-    quickWorkflow.innerHTML =
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Create card</span>';
+    quickWorkflow.textContent = "Create card";
     quickWorkflow.addEventListener("click", () => openQuickWorkflowForm());
     quickBar.append(quickTask, quickWorkflow);
     header.append(heading, quickBar);

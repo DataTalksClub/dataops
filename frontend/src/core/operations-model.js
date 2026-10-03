@@ -95,7 +95,7 @@ const DOCS_UNAVAILABLE_FALLBACK_MESSAGE =
 const DOCS_UNAVAILABLE_GUIDANCE =
   "Work, Cards, and Tasks are unaffected. Reload this page once the docs service is restored.";
 const DOCS_EMPTY_BODY =
-  "No process documents have been published yet.";
+  "Publish one and it will appear here.";
 const DOCS_EMPTY_GUIDANCE =
   "Publish a process document and it will appear here.";
 

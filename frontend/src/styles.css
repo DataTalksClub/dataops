@@ -7124,6 +7124,15 @@ body[data-workspace-view="calendar"] .document-list {
   padding: 13px 16px;
 }
 
+/* Narrow canvases stack label above value: two columns at 390px wrapped
+   every value to two or three lines against a shrugging label. */
+@media (max-width: 820px) {
+  .ops-admin-diagnostics article {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 .ops-admin-diagnostics article:last-child {
   border-bottom: 0;
 }
@@ -7622,6 +7631,14 @@ body[data-workspace-view="home"] .home-daily-header {
   line-height: 1.5;
 }
 
+/* The desktop header centers its two columns; on one mobile column that
+   would center the title and creation controls in no-man's land. */
+@media (max-width: 820px) {
+  body[data-workspace-view="home"] .home-daily-header {
+    align-items: stretch;
+  }
+}
+
 body[data-workspace-view="home"] .home-attention > header {
   min-height: 60px;
   justify-content: space-between;
@@ -7734,10 +7751,12 @@ body[data-workspace-view="home"] .home-attention-row:hover {
   .home-next-destinations {
     flex-direction: column;
     gap: 0;
+    width: min(var(--content-width), 100%);
   }
 
   .home-next-destinations button {
     min-height: 44px;
+    text-align: left;
   }
 }
 
@@ -8266,6 +8285,15 @@ body[data-workspace-view="tasks"] .operations-home .ops-honest-state strong {
   font-size: 14px;
 }
 
+/* An honest state inside an already-bordered section is a quiet row of
+   that section, not a wireframe box nested in a card. */
+body[data-workspace-view="tasks"] .operations-home .ops-section .ops-honest-state {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 0 0;
+}
+
 body[data-workspace-view="tasks"] .operations-home .ops-honest-state span {
   min-width: 0;
   line-height: 1.55;
@@ -8300,6 +8328,7 @@ body[data-workspace-view="tasks"] .ops-work-queue {
 body[data-workspace-view="tasks"] .ops-work-queue.is-all-empty {
   grid-template-columns: 1fr;
   gap: 0;
+  width: min(820px, 100%);
   border: 1px solid var(--dk-border-default);
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);

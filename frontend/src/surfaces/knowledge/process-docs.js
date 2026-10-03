@@ -158,9 +158,9 @@ export function createProcessDocsSurface(context, services) {
     meta.className = "ops-section-meta";
     if (quality.loaded) {
       if (quality.totalFindings === 0) {
-        // A clean report needs no counts; the drill-down below already
-        // renders the single honest empty row.
-        meta.textContent = "Process docs pass validation";
+        // A clean report states it once — in the drill-down's honest row —
+        // so the header meta stays quiet instead of echoing it.
+        meta.textContent = "";
       } else {
         // The counts are quantities, so they carry the mono accent.
         const total = document.createElement("strong");
