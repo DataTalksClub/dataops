@@ -5647,6 +5647,20 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     font-size: 20px;
   }
 
+  /* Four segments across 390px squeeze labels against the dividers; a 2x2
+     grid keeps the strip's segmented language with room to breathe. */
+  .home-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-status-item:nth-child(2n + 1) {
+    border-left: 0;
+  }
+
+  .home-status-item:nth-child(n + 3) {
+    border-top: 1px solid var(--dk-border-default);
+  }
+
   .home-attention {
     width: 100%;
   }
@@ -8688,7 +8702,9 @@ body[data-workspace-view="tasks"] .runtime-template-support .ops-section-header 
 
 body[data-workspace-view="tasks"] .runtime-template-search {
   display: block;
-  width: calc(100% - 32px);
+  /* A search input filters one list; full-container width read as a
+     second primary bar. */
+  width: min(400px, calc(100% - 32px));
   min-height: 42px;
   margin: 16px;
 }
@@ -12399,10 +12415,17 @@ body[data-workspace-view="inbox"] .intake-row small {
 }
 
 .ops-surface .ops-surface-intro,
-.ops-inbox .intake-filter-bar,
-.ops-inbox > .intake-panel {
+.ops-inbox .intake-filter-bar {
   justify-self: start;
   width: min(var(--content-width), 100%);
+  text-align: left;
+}
+
+.ops-inbox > .intake-panel {
+  justify-self: start;
+  /* A full-canvas disclosure reads as a stretched button; the capture
+     trigger keeps to a readable column even when the form opens. */
+  width: min(720px, 100%);
   text-align: left;
 }
 

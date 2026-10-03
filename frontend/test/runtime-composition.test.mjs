@@ -331,14 +331,26 @@ describe("runtime surface composition", () => {
     harness.composition.syncWorkspaceNav();
     assert.equal(harness.body.dataset.workspaceView, "tasks");
     assert.equal(harness.searchInput.placeholder, "Search work and docs");
-    assert.equal(harness.tasksNavButton.classList.contains("is-active"), true);
-    assert.equal(harness.tasksNavButton.getAttribute("aria-current"), "page");
+    // One selection signal: the leaf row carries is-active and aria-current;
+    // the parent Tasks row speaks through its expanded chevron only.
+    assert.equal(harness.tasksNavButton.classList.contains("is-active"), false);
+    assert.equal(harness.tasksNavButton.getAttribute("aria-current"), null);
     assert.equal(harness.tasksNavButton.getAttribute("aria-expanded"), "true");
     assert.equal(harness.tasksNavSubmenu.hidden, false);
     assert.equal(
       harness.tasksNavSectionButtons[1].getAttribute("aria-current"),
       "page",
     );
+    assert.equal(
+      harness.tasksNavSectionButtons[1].classList.contains("is-active"),
+      true,
+    );
+
+    // A tasks route with no matching section falls back to the parent row.
+    harness.workspaceState.activeTasksSection = "unknown-section";
+    harness.composition.syncWorkspaceNav();
+    assert.equal(harness.tasksNavButton.classList.contains("is-active"), true);
+    assert.equal(harness.tasksNavButton.getAttribute("aria-current"), "page");
 
     harness.workspaceState.activeWorkspaceView = "home";
     harness.composition.syncWorkspaceNav();

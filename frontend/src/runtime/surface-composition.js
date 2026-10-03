@@ -293,23 +293,35 @@ export function createSurfaceComposition(context) {
       else button.removeAttribute("aria-current");
     }
     const tasksActive = activeView === "tasks";
-    tasksNavButton?.classList.toggle("is-active", tasksActive);
-    if (tasksActive) {
-      tasksNavButton?.setAttribute("aria-current", "page");
-      setTasksNavExpanded(true);
-    } else {
-      tasksNavButton?.removeAttribute("aria-current");
-      // Accordion behavior: the Tasks group follows the active route instead
-      // of leaking expansion state across unrelated routes.
-      setTasksNavExpanded(false);
-    }
+    let tasksSectionActive = false;
     for (const button of tasksNavSectionButtons) {
       const active =
         tasksActive &&
         button.dataset.tasksSection === workspaceState.activeTasksSection;
       button.classList.toggle("is-active", active);
-      if (active) button.setAttribute("aria-current", "page");
-      else button.removeAttribute("aria-current");
+      if (active) {
+        button.setAttribute("aria-current", "page");
+        tasksSectionActive = true;
+      } else {
+        button.removeAttribute("aria-current");
+      }
+    }
+    // One selection signal: the leaf row carries the tint and aria-current;
+    // the parent Tasks row speaks through its expanded chevron instead of
+    // lighting up beside its own child.
+    const tasksParentActive = tasksActive && !tasksSectionActive;
+    tasksNavButton?.classList.toggle("is-active", tasksParentActive);
+    if (tasksParentActive) {
+      tasksNavButton?.setAttribute("aria-current", "page");
+    } else {
+      tasksNavButton?.removeAttribute("aria-current");
+    }
+    if (tasksActive) {
+      setTasksNavExpanded(true);
+    } else {
+      // Accordion behavior: the Tasks group follows the active route instead
+      // of leaking expansion state across unrelated routes.
+      setTasksNavExpanded(false);
     }
   }
 
