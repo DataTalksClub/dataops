@@ -20,7 +20,7 @@ function revision(args) {
 function show(result, args, io) {
   if (args.json) return result;
   if (result.items) {
-    for (const record of result.items) io.print(`${record.id}  revision ${record.revision}  ${record.status}  ${record.fields?.counterparty || "Unidentified provider"}  ${record.publicationStatus}`);
+    for (const record of result.items) io.print(`${record.id}  revision ${record.revision}  ${record.status}  ${record.fields?.counterparty || "(provider not extracted)"}  ${record.publicationStatus}`);
     if (!result.items.length) io.print("No invoice drafts.");
     for (const issue of result.issues || []) io.print(`Needs attention: ${issue}`);
   } else io.print(JSON.stringify(result, null, 2));
@@ -63,3 +63,4 @@ export const verify = (args, io) => action("verify", args, io);
 export const confirm = (args, io) => action("confirm", args, io);
 export const reject = (args, io) => action("reject", args, io);
 export const retry = (args, io) => action("retry", args, io);
+export const reextract = (args, io) => action("reextract", args, io);

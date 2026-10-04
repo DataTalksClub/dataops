@@ -29,7 +29,9 @@ test("invoice CLI follows reviewed revisions and exposes partial and verified de
       ["process", "--intake-item-id", "intake-demo"],
       ["edit", "invoice-demo", "--revision", "1", "--paid-date", "2026-10-01", "--amount", "12.00", "--amount-eur", "9.50", "--quantity", "1", "--payment-evidence", "Operator verified bank entry", "--archive-required", "true"],
       ["verify", "invoice-demo", "--revision", "2"], ["retry", "invoice-demo", "--revision", "2"],
+      ["reextract", "invoice-demo", "--revision", "2"],
     ]) assert.equal(await run(["invoices", ...args, "--json"], io), 0);
+    assert.ok(calls.some(call => call.url.endsWith("/reextract") && call.body.revision === 2));
     assert.equal(record.fields.amountEur, "9.50");
     assert.equal(record.fields.amount, "12.00");
     assert.equal(record.fields.archiveRequired, true);

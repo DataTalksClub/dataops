@@ -13698,6 +13698,33 @@ body:not([data-workspace-view="docs"]) #filters-section {
 .invoice-review-section input { min-height: 2.5rem; }
 .invoice-review-section [data-invoice-list] small { display: block; }
 
+/* Dense invoice ledger: mirrors the published expense sheet, one light row
+   per invoice instead of a heavy per-row action table. */
+.invoice-ledger-summary { margin: 0 0 .5rem; color: var(--dk-text-muted); font-size: 12px; }
+.invoice-ledger-wrap { width: 100%; min-width: 0; overflow-x: auto; border: 1px solid var(--dk-border-default); }
+.invoice-ledger { width: 100%; border-collapse: collapse; font-size: 13px; }
+.invoice-ledger th, .invoice-ledger td { border-bottom: 1px solid var(--dk-border-default); padding: 6px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+.invoice-ledger th { background: var(--dk-bg-muted); color: var(--dk-text-muted); font-size: 12px; font-weight: 600; }
+.invoice-ledger tbody tr:last-child td { border-bottom: 0; }
+.invoice-ledger th.num, .invoice-ledger td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.invoice-ledger td:first-child { color: var(--dk-text-muted); }
+.invoice-ledger td strong { font-weight: 600; }
+.invoice-ledger .invoice-what { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+.invoice-ledger .invoice-statement { max-width: 100px; overflow: hidden; text-overflow: ellipsis; color: var(--dk-text-muted); }
+.invoice-ledger tbody tr { cursor: pointer; }
+.invoice-ledger tbody tr:hover { background: var(--dk-bg-muted); }
+.invoice-ledger tbody tr:focus-visible { outline: 3px solid var(--dk-focus-ring); outline-offset: -3px; }
+.invoice-state { display: inline-flex; width: fit-content; align-items: center; border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-full); background: var(--dk-bg-muted); color: var(--dk-text-muted); padding: 2px 8px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.invoice-state.is-pending { border-color: var(--dk-warning-border); background: var(--dk-warning-bg); color: var(--dk-warning-text); }
+.invoice-state.is-confirmed { border-color: var(--dk-success-border); background: var(--dk-success-bg); color: var(--dk-success-text); }
+@media (max-width: 820px) {
+  /* Rows are the tap targets here: keep every ledger row above the 44px
+     mobile control floor while staying a scannable table. */
+  .invoice-ledger th { padding: 8px 10px; }
+  .invoice-ledger td { padding: 14px 10px; }
+  .invoice-ledger .invoice-what { max-width: 220px; }
+}
+
 .knowledge-history-panel { max-width: 1100px; padding-bottom: 20px; }
 .history-search-form { display: flex; gap: 12px; align-items: end; padding: 16px 20px; }
 .history-search-form label { display: grid; gap: 6px; flex: 1; }

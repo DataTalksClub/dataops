@@ -5,8 +5,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getIntakeItem, updateIntakeItem } from '../db/intake';
 import { getArtifact } from '../db/artifacts';
 import { putBookkeepingItem, updateBookkeepingTransaction } from '../db/bookkeeping';
-import { extractInvoiceText, pdfText } from './extract';
-import { missingEvidence, type Invoice } from './model';
+import { extractInvoiceText, pdfText, type InvoiceHints } from './extract';
+import { missingEvidence, type Invoice, type InvoiceFields } from './model';
 import { createInvoice, getInvoice, listInvoices, saveInvoice, claimInvoice, reserveSheetRow, approveInvoice } from './store';
 import { officialProviders, publicationConfig, marker, sheetValues, type Providers } from './providers';
 let s3 = new S3Client({});
@@ -32,6 +32,44 @@ export async function documentUrl(client:DynamoDBDocumentClient,record:Invoice) 
   if(!match || match[1]!==process.env.EMAIL_DOCUMENTS_BUCKET) throw new Error('source-document-unavailable');
   return {url:await getSignedUrl(s3,new GetObjectCommand({Bucket:match[1],Key:match[2],ResponseContentDisposition:'inline'}),{expiresIn:300}),expiresIn:300};
 }
+function intakeHints(item:{title?:string; sourceActor?:{email?:string}}|null|undefined):InvoiceHints {
+  return { subject:String(item?.title || ''), sender:String(item?.sourceActor?.email || '') };
+}
+// Untouched drafts (never operator-corrected or re-extracted) may be upgraded
+// in place when a duplicate arrives or an operator asks for re-extraction.
+// Operator-corrected or published records are never rewritten by parsing.
+function draftIsUntouched(record:Invoice):boolean {
+  return record.status==='pending' && !record.audit.some(item=>['corrected','re-extracted'].includes(item.action));
+}
+async function linkedHints(client:DynamoDBDocumentClient,record:Invoice):Promise<InvoiceHints> {
+  for(const id of record.source.intakeItemIds) {
+    const item=await getIntakeItem(client,id);
+    if(item?.title) return intakeHints(item);
+  }
+  return {};
+}
+async function upgradeDraft(client:DynamoDBDocumentClient,record:Invoice,hints:InvoiceHints,actor:string):Promise<Invoice> {
+  if(!draftIsUntouched(record)) return record;
+  let parsed:ReturnType<typeof extractInvoiceText>;
+  try { parsed=extractInvoiceText(await textExtractor(await artifactBytes(record.source.artifactId,client)),hints); }
+  catch { return record; }
+  if(parsed.extraction.method==='manual') return record;
+  const found=Object.entries(parsed.fields).filter(([,value])=>value!==undefined) as Array<[keyof InvoiceFields, unknown]>;
+  if(!found.some(([key])=>key==='counterparty'||key==='amount')) return record;
+  const next=structuredClone(record);
+  for(const [key,value] of found) (next.fields as Record<string,unknown>)[key]=value;
+  next.extraction=parsed.extraction;
+  next.revision+=1;
+  next.audit.push({action:'re-extracted',actor,at:new Date().toISOString(),revision:next.revision});
+  try { return await saveInvoice(client,next,record); } catch { return (await getInvoice(client,record.id)) || record; }
+}
+export async function reextractInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string):Promise<Invoice> {
+  if(record.status!=='pending') throw new Error('only-pending-drafts-reextract');
+  if(!draftIsUntouched(record)) throw new Error('operator-corrected-draft-edit-fields-manually');
+  const upgraded=await upgradeDraft(client,record,await linkedHints(client,record),actor);
+  if(upgraded===record) throw new Error('reextract-found-no-new-fields');
+  return upgraded;
+}
 export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeItemId:string) {
   const intake=await getIntakeItem(client,intakeItemId);
   if(!intake) throw new Error('intake-not-found');
@@ -49,12 +87,12 @@ export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeI
         const next=structuredClone(existing);next.source.intakeItemIds.push(intake.id);
         try {existing=await saveInvoice(client,next,existing);} catch {existing=(await getInvoice(client,id))!;}
       }
-      items.push(existing);continue;
+      items.push(await upgradeDraft(client,existing,intakeHints(intake),'email-intake'));continue;
     }
     let bytes:Buffer;
     try { bytes=await artifactBytes(artifact.id,client); } catch { issues.push('Source integrity verification failed: reimport the original document'); continue; }
     let parsed:ReturnType<typeof extractInvoiceText>;
-    try {parsed=extractInvoiceText(await textExtractor(bytes));}
+    try {parsed=extractInvoiceText(await textExtractor(bytes),intakeHints(intake));}
     catch {parsed={fields:{archiveRequired:true,quantity:1},extraction:{method:'manual',evidence:[],issues:['PDF extraction unavailable: inspect original and complete manually']}};}
     const now=new Date().toISOString();
     const record:Invoice={id,revision:1,status:'pending',...parsed,source:{intakeItemIds:[intake.id],artifactId:artifact.id,checksum},destinations:{dropbox:{state:'pending',operationId:`dropbox-${id}`},sheets:{state:'pending',operationId:`sheets-${id}`}},audit:[{action:'staged',actor:'email-intake',at:now,revision:1}],createdAt:now,updatedAt:now};

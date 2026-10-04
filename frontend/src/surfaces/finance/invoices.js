@@ -18,6 +18,102 @@ const fields = [
   ["comment", "Comment"],
 ];
 
+// Ledger dates read as short human dates in UTC, like the published sheet.
+function shortDate(value) {
+  const iso = String(value || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const sameYear = iso.slice(0, 4) === String(new Date().getFullYear());
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(sameYear ? {} : { year: "numeric" }),
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+// Sheet-sign convention: expenses are negative; only the invoice currency
+// column carries the invoice amount, EUR stays blank until the actual bank
+// payment is reviewed.
+function ledgerMoney(record) {
+  const amount = String(record.fields?.amount || "");
+  const amountEur = String(record.fields?.amountEur || "");
+  return {
+    usd: record.fields?.currency === "USD" && amount ? `-${amount}` : "",
+    eur: amountEur ? `-${amountEur}` : "",
+  };
+}
+
+function ledgerRow(record, position, escapeHtml) {
+  const e = (value) => escapeHtml(String(value ?? ""));
+  const money = ledgerMoney(record);
+  const description = String(record.fields?.description || "").trim();
+  const label = record.fields?.counterparty || description || "unidentified provider";
+  return `<tr data-review-invoice="${e(record.id)}" tabindex="0" aria-label="Review invoice ${position}: ${e(label)}">
+<td class="num">${position}</td>
+<td>${e(shortDate(record.fields?.transactionDate))}</td>
+<td>${e(shortDate(record.fields?.paidDate))}</td>
+<td><strong>${e(record.fields?.counterparty || "—")}</strong></td>
+<td class="invoice-what">${e(description || "—")}</td>
+<td class="num">${e(money.usd)}</td>
+<td class="num">${e(money.eur)}</td>
+<td class="invoice-statement">${e(String(record.fields?.statementRef || "").trim())}</td>
+<td class="num">${e(String(record.fields?.quantity || 1))}</td>
+<td><span class="invoice-state is-${e(record.status)}">${e(record.status)}</span></td>
+</tr>`;
+}
+
+// Dense ledger matching the published expense sheet: one row per invoice,
+// pending drafts first, oldest first inside each group.
+export function invoiceLedgerMarkup(items, escapeHtml) {
+  const rank = { pending: 0, confirmed: 1, rejected: 2 };
+  const ordered = [...items].sort(
+    (a, b) =>
+      (rank[a.status] ?? 3) - (rank[b.status] ?? 3) ||
+      String(a.fields?.transactionDate || "9999").localeCompare(
+        String(b.fields?.transactionDate || "9999"),
+      ),
+  );
+  const pending = ordered.filter((record) => record.status === "pending").length;
+  const summary = `<p class="invoice-ledger-summary">${ordered.length} invoice${ordered.length === 1 ? "" : "s"} · ${pending} pending review</p>`;
+  if (!ordered.length) {
+    const empty = `<div class="honest-state"><strong>No invoice drafts received.</strong>`
+      + `<p>Forward an invoice PDF to the intake address and it appears here with extracted values.</p></div>`;
+    return `${summary}${empty}`;
+  }
+  return `${summary}<div class="invoice-ledger-wrap">
+<table class="invoice-ledger">
+<thead>
+<tr>
+<th class="num">#</th>
+<th>Date sent</th>
+<th>Date paid</th>
+<th>Provider</th>
+<th>What</th>
+<th class="num">Price, $</th>
+<th class="num">Price, EUR</th>
+<th>Statement</th>
+<th class="num">Count</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>${ordered
+    .map((record, index) => ledgerRow(record, index + 1, escapeHtml))
+    .join("")}</tbody>
+</table>
+</div>`;
+}
+
+function reextractEligible(record) {
+  return (
+    record.status === "pending" &&
+    !(record.audit || []).some((item) =>
+      ["corrected", "re-extracted"].includes(item.action),
+    )
+  );
+}
+
 export function invoiceDetailMarkup(record, escapeHtml) {
   const e = (value) => escapeHtml(String(value ?? ""));
   const pending = record.status === "pending";
@@ -78,6 +174,7 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     <div class="row-actions">${
       pending
         ? `<button type="button" class="primary-button" data-invoice-action="verify" ${record.missingEvidence?.length ? "disabled" : ""}>Verify and publish automatically</button>
+    ${reextractEligible(record) ? '<button type="button" class="quiet-button" data-invoice-action="reextract">Re-extract from document</button>' : ""}
     <button type="button" class="danger-text-button" data-invoice-action="reject">Reject invoice</button>`
         : record.status === "confirmed" &&
             record.publicationStatus !== "complete"
@@ -102,8 +199,8 @@ export async function mountInvoiceReview(host, context) {
   host.innerHTML = `<header class="section-header">
     <div>
     <p class="section-kicker">Forwarded invoices</p>
-    <h3>Verify fields for automatic publication</h3>
-    <p>Verify invoice and actual payment values to publish automatically to the spreadsheet and archive. Each destination is checked separately.</p>
+    <h3>Invoice ledger</h3>
+    <p>Forwarded invoices land here with extracted provider, description and price. Open a row to confirm values; verified rows publish automatically.</p>
     </div>
     <button type="button" data-invoice-refresh>Refresh invoices</button>
     </header>
@@ -113,11 +210,14 @@ export async function mountInvoiceReview(host, context) {
     <summary>Publication readiness</summary>
     <div data-invoice-readiness>Checking configuration…</div>
     </details>
+    <details>
+    <summary>Process a received intake</summary>
     <form data-invoice-process>
     <label>Received intake ID <input name="intakeItemId" required />
     </label>
     <button type="submit">Process / reprocess received intake</button>
     </form>
+    </details>
     <div data-invoice-list>Loading invoices…</div>
     <article data-invoice-detail hidden>
     </article>`;
@@ -136,34 +236,7 @@ export async function mountInvoiceReview(host, context) {
     const results = await Promise.allSettled([api(), api("/readiness")]);
     const [queue, readiness] = results;
     if (queue.status === "fulfilled") {
-      const items = queue.value.items || [];
-      list.innerHTML = items.length
-        ? `<div class="bookkeeping-table-wrap">
-    <table>
-    <thead>
-    <tr>
-    <th>Provider / reference</th>
-    <th>Review</th>
-    <th>Publication</th>
-    <th>Actions</th>
-    </tr>
-    </thead>
-    <tbody>${items
-      .map(
-        (record) => `<tr>
-    <td>${e(record.fields?.counterparty || "Unidentified provider")}<small>${e(record.fields?.invoiceNumber)}</small>
-    </td>
-    <td>${e(record.status)}</td>
-    <td>${e(record.publicationStatus)}</td>
-    <td>
-    <button type="button" data-review-invoice="${e(record.id)}">Review invoice</button>
-    </td>
-    </tr>`,
-      )
-      .join("")}</tbody>
-    </table>
-    </div>`
-        : "No invoice drafts received.";
+      list.innerHTML = invoiceLedgerMarkup(queue.value.items || [], escapeHtml);
     } else list.textContent = `Cannot load invoices: ${queue.reason.message}`;
     host.querySelector("[data-invoice-readiness]").innerHTML =
       readiness.status === "fulfilled"
@@ -233,9 +306,11 @@ export async function mountInvoiceReview(host, context) {
             await show(result);
             await refresh();
             status.textContent =
-              result.publicationStatus === "complete"
-                ? "Publication verified in each required destination."
-                : `Review ${result.status}. Publication ${result.publicationStatus}; inspect each destination below.`;
+              button.dataset.invoiceAction === "reextract"
+                ? `Fields re-extracted (${result.extraction?.method || "unknown method"}). Confirm the values to publish.`
+                : result.publicationStatus === "complete"
+                  ? "Publication verified in each required destination."
+                  : `Review ${result.status}. Publication ${result.publicationStatus}; inspect each destination below.`;
           } finally {
             button.disabled = false;
           }
@@ -243,10 +318,20 @@ export async function mountInvoiceReview(host, context) {
       ),
     );
   }
-  list.addEventListener("click", (event) => {
-    const id = event.target.closest("[data-review-invoice]")?.dataset
-      .reviewInvoice;
+  function openRow(row) {
+    const id = row?.dataset?.reviewInvoice;
     if (id) safe(async () => show(await api(`/${encodeURIComponent(id)}`)));
+  }
+  list.addEventListener("click", (event) => {
+    openRow(event.target.closest("[data-review-invoice]"));
+  });
+  list.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest("[data-review-invoice]");
+    if (row) {
+      event.preventDefault();
+      openRow(row);
+    }
   });
   host
     .querySelector("[data-invoice-refresh]")

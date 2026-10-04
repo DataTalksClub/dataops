@@ -42,6 +42,7 @@ Invoices (automatic publication after field verification)
   invoices confirm <id> --revision N  Existing explicit verification action
   invoices reject <id> --revision N [--reason NOTE]
   invoices retry <id> --revision N
+  invoices reextract <id> --revision N  Re-run extraction on an untouched draft
   invoices process --intake-item-id ID
 
 Global options
@@ -60,7 +61,7 @@ const COMMANDS = {
   tokens: {
     subcommands: { list: tokensList, revoke: tokensRevoke },
   },
-  invoices: { subcommands: { list: invoices.list, detail: invoices.detail, document: invoices.document, readiness: invoices.readiness, edit: invoices.edit, verify: invoices.verify, confirm: invoices.confirm, reject: invoices.reject, retry: invoices.retry, process: invoices.processIntake } },
+  invoices: { subcommands: { list: invoices.list, detail: invoices.detail, document: invoices.document, readiness: invoices.readiness, edit: invoices.edit, verify: invoices.verify, confirm: invoices.confirm, reject: invoices.reject, retry: invoices.retry, reextract: invoices.reextract, process: invoices.processIntake } },
   recurring: {
     subcommands: {
       list: recurring.list,

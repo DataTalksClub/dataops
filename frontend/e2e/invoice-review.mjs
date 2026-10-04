@@ -46,10 +46,12 @@ try {
     };
     await createFinanceSurface({ documentList: document.querySelector("#finance"), request, workApiUrl: url => url, escapeHtml: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"), humanizeOptionLabel: value => value, setRouteTitle: () => {} }).renderBookkeepingSurface();
   });
-  await page.getByRole("button", { name: "Review invoice", exact: true }).click();
+  assert.match(await page.locator("[data-invoice-list]").innerText(), /1 invoice · 1 pending review/);
+  const detail = page.locator("[data-invoice-detail]");
+  await page.locator(".invoice-ledger tbody tr").first().click();
+  assert.ok(await detail.getByRole("button", { name: "Re-extract from document" }).isVisible());
   await page.getByText("Publication readiness", { exact: true }).click();
   await page.screenshot({ path: ".tmp/screenshots/invoice-pending.png", fullPage: true });
-  const detail = page.locator("[data-invoice-detail]");
   assert.match(await detail.innerText(), /Missing evidence: amountEur/);
   await detail.getByLabel("Actual date paid", { exact: true }).fill("2026-10-01");
   await detail.getByLabel("Actual EUR paid (positive)", { exact: true }).fill("10.50");
@@ -72,7 +74,8 @@ try {
   assert.deepEqual(mutations.map(call => [call.method, call.body.revision]), [["PUT", 1], ["POST", 2], ["POST", 2]]);
   await page.evaluate(() => window.resetInvoiceFixture());
   await page.getByRole("button", { name: "Refresh invoices", exact: true }).click();
-  await page.getByRole("button", { name: "Review invoice", exact: true }).click();
+  assert.match(await page.locator("[data-invoice-list]").innerText(), /1 invoice · 1 pending review/);
+  await page.locator("[data-review-invoice]").first().click();
   await detail.getByLabel("Actual date paid", { exact: true }).fill("2026-10-01");
   await detail.getByLabel("Actual EUR paid (positive)", { exact: true }).fill("10.50");
   await detail.getByLabel("Payment evidence / operator attestation", { exact: true }).fill("Operator verified synthetic bank payment");
