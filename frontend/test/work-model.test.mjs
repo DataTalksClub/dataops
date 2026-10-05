@@ -3,11 +3,14 @@ import { describe, test } from "node:test";
 
 import {
   addDaysIso,
+  buildHomeAttentionItems,
   berlinIsoDate,
   compareIsoDate,
-  deriveScopedWorkState,
+  deriveHomeWorkState,
   formatCardMonthLabel,
-  formatShortDate,
+  formatHomeCalendarDate,
+  formatHomeShortDate,
+  formatHomeTaskTiming,
   groupCardItemsByStage,
   isActiveWorkCard,
   isArchivedWorkCard,
@@ -34,8 +37,17 @@ const canonicalTask = (task) => ({ version: 1, taskHistory: [], status: "todo", 
 
 describe("frontend work model", () => {
   test("directly imports the work model from the production workspace module", () => {
+    assert.equal(typeof buildHomeAttentionItems, "function");
     assert.equal(typeof summarizeCardProgress, "function");
-    assert.equal(typeof deriveScopedWorkState, "function");
+  });
+
+  test("compares dates and formats operator timing deterministically", () => {
+    assert.equal(compareIsoDate("2026-08-11", "2026-08-12"), -1);
+    assert.equal(compareIsoDate("", "2026-08-12"), 1);
+    assert.equal(formatHomeTaskTiming({ priority: "overdue", dueDate: "2026-08-11" }, TODAY), "Due yesterday");
+    assert.equal(formatHomeTaskTiming({ priority: "today", dueDate: TODAY }, TODAY), "Due today");
+    assert.equal(formatHomeTaskTiming({ priority: "follow-up", followUpDate: "2026-08-10" }, TODAY), "Follow-up 2 days overdue");
+    assert.equal(formatHomeTaskTiming({ priority: "missing-proof" }, TODAY), "Proof required");
   });
 
   test("keeps civil-date operations independent of the runtime zone", () => {
@@ -44,11 +56,12 @@ describe("frontend work model", () => {
     assert.equal(addDaysIso("2026-02-28", 1), "2026-03-01");
     assert.equal(addDaysIso("2026-12-31", 1), "2027-01-01");
     assert.equal(isoDayDistance("2026-03-01", "2026-02-28"), 1);
-    assert.equal(formatShortDate("2026-08-05"), "5 Aug");
+    assert.equal(formatHomeCalendarDate("2026-03-01"), "Sunday 1 March");
+    assert.equal(formatHomeShortDate("2026-08-05"), "5 Aug");
     assert.equal(formatCardMonthLabel("2026-07-31T18:00:00.000Z"), "July 2026");
     assert.equal(nextRecurringRunDate("0 9 * * 1", "2026-02-28"), "2026-03-02");
     assert.equal(nextRecurringRunDate("0 9 * * 1", "2026-12-31"), "2027-01-04");
-    assert.equal(formatShortDate("2027-01-04"), "4 Jan");
+    assert.equal(formatHomeShortDate("2027-01-04"), "4 Jan");
   });
 
   test("converts the live instant through Europe/Berlin", () => {
@@ -96,7 +109,7 @@ describe("frontend work model", () => {
     assert.equal(todayIsoDate("2026-07-30"), "");
   });
 
-  test("classifies Task timing from an injected Berlin day", () => {
+  test("classifies Home and Task timing from an injected Berlin day", () => {
     const berlinToday = todayIsoDate("2026-07-30T22:30:00.000Z");
     const overdueTask = canonicalTask({ id: "overdue", date: "2026-07-30" });
     const dueTask = canonicalTask({ id: "due", date: berlinToday });
@@ -111,6 +124,8 @@ describe("frontend work model", () => {
     assert.equal(isTaskDueToday(dueTask, "2026-07-30"), false);
     assert.equal(isTaskOverdue(overdueTask, berlinToday), true);
     assert.equal(isFollowUpDueTask(followUpTask, berlinToday), true);
+    assert.equal(formatHomeTaskTiming({ priority: "overdue", dueDate: "2026-07-30" }, berlinToday), "Due yesterday");
+    assert.equal(formatHomeTaskTiming({ priority: "today", dueDate: berlinToday }, berlinToday), "Due today");
     assert.equal(addDaysIso(berlinToday, -1), "2026-07-30");
     assert.equal(isoDayDistance("2026-07-31", berlinToday), 0);
     assert.equal(nextRecurringRunDate("0 9 * * *", berlinToday), "2026-07-31");
@@ -143,8 +158,66 @@ describe("frontend work model", () => {
     }
   });
 
-  test("derives loaded work lanes and counts from raw task snapshot data", () => {
-    const state = deriveScopedWorkState({
+  test("orders and deduplicates Home attention by operator priority, date, and title", () => {
+    const duplicate = {
+      dueDate: "2026-08-11",
+      nextAction: "Mark done",
+      taskId: "same",
+      title: "Shared",
+    };
+    const model = {
+      lanes: [
+        {
+          id: "today",
+          items: [
+            { dueDate: TODAY, nextAction: "Mark done", taskId: "today", title: "Today" },
+            duplicate,
+          ],
+        },
+        {
+          id: "missing-proof",
+          items: [{ nextAction: "Add URL", taskId: "proof", title: "Proof" }],
+        },
+        {
+          id: "followups",
+          items: [{
+            followUpDate: "2026-08-10",
+            nextAction: "Follow up",
+            taskId: "follow",
+            title: "Follow",
+          }],
+        },
+        {
+          id: "overdue",
+          items: [
+            { dueDate: "2026-08-10", nextAction: "Mark done", taskId: "later", title: "Zeta" },
+            duplicate,
+          ],
+        },
+      ],
+    };
+    const items = buildHomeAttentionItems(model);
+    assert.deepEqual(
+      items.map(({ taskId, priority, dueDate, followUpDate, nextAction }) => ({
+        taskId,
+        priority,
+        dueDate,
+        followUpDate,
+        nextAction,
+      })),
+      [
+        { taskId: "later", priority: "overdue", dueDate: "2026-08-10", followUpDate: undefined, nextAction: "Mark done" },
+        { taskId: "same", priority: "overdue", dueDate: "2026-08-11", followUpDate: undefined, nextAction: "Mark done" },
+        { taskId: "follow", priority: "follow-up", dueDate: undefined, followUpDate: "2026-08-10", nextAction: "Follow up" },
+        { taskId: "today", priority: "today", dueDate: TODAY, followUpDate: undefined, nextAction: "Mark done" },
+        { taskId: "proof", priority: "missing-proof", dueDate: undefined, followUpDate: undefined, nextAction: "Add URL" },
+      ],
+    );
+    assert.equal(items.some((item) => Object.hasOwn(item, "exception")), false);
+  });
+
+  test("derives loaded Home lanes and counts from raw task snapshot data", () => {
+    const state = deriveHomeWorkState({
       loaded: true,
       currentOperatorId: "alexey",
       tasks: [
@@ -167,7 +240,7 @@ describe("frontend work model", () => {
   });
 
   test("keeps partial Home sources honest and does not invent unavailable lane data", () => {
-    const state = deriveScopedWorkState({
+    const state = deriveHomeWorkState({
       loaded: true,
       todayLoaded: true,
       overdueLoaded: false,
@@ -184,7 +257,7 @@ describe("frontend work model", () => {
   });
 
   test("includes proof-missing Tasks known only through Card task collections", () => {
-    const state = deriveScopedWorkState({
+    const state = deriveHomeWorkState({
       loaded: true,
       cardTasks: {
         "card-1": [canonicalTask({
@@ -202,7 +275,7 @@ describe("frontend work model", () => {
   });
 
   test("returns honest empty Home lanes when all sources are unavailable", () => {
-    const state = deriveScopedWorkState({
+    const state = deriveHomeWorkState({
       loaded: false,
       todayLoaded: false,
       overdueLoaded: false,
@@ -214,7 +287,7 @@ describe("frontend work model", () => {
   });
 
   test("scopes every Home lane and count to the selected teammate", () => {
-    const state = deriveScopedWorkState({
+    const state = deriveHomeWorkState({
       loaded: true,
       currentOperatorId: "alexey",
       tasks: [

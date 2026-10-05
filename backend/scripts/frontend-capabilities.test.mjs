@@ -23,24 +23,10 @@ const REQUIRED = {
     route: "/#/ (Settings panel)",
     states: ["operator-ready", "admin-ready", "desktop-focus-close", "mobile-focus-close", "logout"],
   },
+  home: { route: "/#/", states: ["loading", "empty", "ready", "partial-failure"] },
   tasks: {
     route: "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
-    states: [
-      "loading",
-      "partial-failure",
-      "empty",
-      "ready",
-      "waiting",
-      "blocked",
-      "done",
-      "create-select-update",
-      "file-proof",
-      "combined-context",
-      "sop-link",
-      "stale-not-found",
-      "conflict",
-      "failure",
-    ],
+    states: ["empty", "waiting", "blocked", "done", "create-select-update", "file-proof", "combined-context", "sop-link", "stale-not-found", "conflict", "failure"],
   },
   workflows: {
     route: "/#/cards?cardId=<id>&taskId=<id>",
@@ -57,6 +43,10 @@ const REQUIRED = {
   assistants: {
     route: "/#/assistants?assistantJobId=<id>",
     states: ["loading", "empty", "list", "exact-detail", "deep-link-reload", "stale-not-found", "unavailable"],
+  },
+  artifacts: {
+    route: "/#/artifacts",
+    states: ["empty", "available", "authorized-action", "unavailable", "not-found", "failure"],
   },
   notifications: {
     route: "/#/notifications",
@@ -109,11 +99,13 @@ const REQUIRED_ROLES = ["signed-out", "expired-session", "disabled-user", "opera
 const REQUIRED_APIS = {
   session: ["/api/me", "/api/*", "/work/api/*"],
   settings: ["/api/me", "/logout"],
+  home: ["/api/tasks", "/api/cards", "/api/notifications", "/docs/process-quality"],
   tasks: ["/api/tasks", "/api/files", "/api/artifacts", "/docs", "/content/*"],
   workflows: ["/api/cards", "/api/tasks", "/api/artifacts"],
   templates: ["/api/templates", "/api/cards"],
   recurring: ["/api/recurring"],
   assistants: ["/api/assistant-jobs", "/api/artifacts"],
+  artifacts: ["/api/artifacts", "/api/files"],
   notifications: ["/api/notifications", "/api/tasks"],
   bookkeeping: ["/api/bookkeeping/*"],
   sponsors: ["/api/sponsor-crm/*"],
@@ -153,11 +145,13 @@ const REQUIRED_STATE_ROLE_OVERRIDES = {
   "users.spoof-denial": ["operator"],
 };
 const REQUIRED_ROUTE_SET = [
+  "/#/",
   "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
   "/#/cards?cardId=<id>&taskId=<id>",
   "/#/assistants?assistantJobId=<id>",
   "/#/templates?templateId=<id>",
   "/#/recurring",
+  "/#/artifacts",
   "/#/notifications",
   "/#/bookkeeping",
   "/#/sponsors?bookingId=<id>",
@@ -230,14 +224,8 @@ test("frontend capability matrix has the canonical schema, routes, APIs, roles, 
   const retainedRoutes = matrix.capabilities
     .filter((capability) => capability.route.startsWith("/#/") && capability.id !== "settings")
     .map((capability) => capability.route);
-  assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 15 retained routes must be classified exactly once");
-  // /# is the Tasks queue, so the queue owns the landing-page evidence.
-  assert.ok(
-    matrix.capabilities
-      .find((capability) => capability.id === "tasks")
-      .states.some((state) => state.id === "tasks.ready"),
-    "tasks.ready is the durable landing-page evidence slot",
-  );
+  assert.deepEqual(sorted(retainedRoutes), sorted(REQUIRED_ROUTE_SET), "all 18 retained routes must be classified exactly once");
+  assert.ok(matrix.capabilities.find((capability) => capability.id === "home").states.some((state) => state.id === "home.ready"), "home.ready is the durable #161 evidence slot");
 });
 
 test("catalog coverage carries no file, title, selector, or source identity", () => {

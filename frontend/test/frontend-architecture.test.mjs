@@ -365,11 +365,11 @@ describe("workspace nav layout contract", () => {
     );
     assert.doesNotMatch(styles, /\.(?:home-task-marker|intake-row-marker)\b/);
     assert.match(
-      firstCssRuleBody(styles, 'body[data-workspace-view="tasks"] .ops-queue-group'),
+      firstCssRuleBody(styles, 'body[data-workspace-view="tasks"] .ops-queue-board'),
       /border:\s*1px solid var\(--dk-border-default\)/,
     );
     assert.doesNotMatch(
-      firstCssRuleBody(styles, 'body[data-workspace-view="tasks"] .ops-queue-group'),
+      firstCssRuleBody(styles, 'body[data-workspace-view="tasks"] .ops-queue-board'),
       /border-top:/,
     );
   });

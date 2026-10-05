@@ -37,10 +37,11 @@ export function createAccountShell({
   closeNotifications,
   documentRef,
   fetchImpl,
+  getActiveWorkspaceView,
   historyButton,
   knowledgeStatusButton,
   HTMLElementClass,
-  isOperationsWorkspaceVisible,
+  isOperationsHomeVisible,
   locationRef,
   refreshDocuments,
   showWorkspaceSurface,
@@ -220,7 +221,10 @@ export function createAccountShell({
         identityState.selectedOwnerId = String(member.id);
         renderAccountIdentity();
         closeSettingsMenu();
-        if (isOperationsWorkspaceVisible()) {
+        if (
+          getActiveWorkspaceView() === "home" &&
+          isOperationsHomeVisible()
+        ) {
           refreshDocuments();
         }
       });

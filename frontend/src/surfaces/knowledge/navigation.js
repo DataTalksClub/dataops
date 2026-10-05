@@ -44,7 +44,7 @@ export function createKnowledgeNavigation(context, services) {
     setRouteTitle,
     setSaveState,
     setView,
-    showWorkspaceSurface,
+    showOperationsHome,
     storage,
     titleFromMarkdown,
     updateSaveState,
@@ -283,9 +283,7 @@ export function createKnowledgeNavigation(context, services) {
       const context = knowledgeState.docReturnContext;
       knowledgeState.docReturnContext = null;
       renderDocReturnContext();
-      // Returning to a doc opened from work lands on the work surface, not on
-      // a Home page that no longer exists.
-      showWorkspaceSurface("tasks").then(() => {
+      showOperationsHome().then(() => {
         if (context?.type === "workflow" && context.id)
           openCardPanel(context.id);
         else if (context?.type === "task" && context.id)

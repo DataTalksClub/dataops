@@ -185,7 +185,7 @@ test.describe('issue 205 editor screenshots', () => {
     expect(canonicalBox.height).toBeGreaterThanOrEqual(120);
     expect(uploadedBox.width).toBeGreaterThanOrEqual(240);
     expect(uploadedBox.height).toBeGreaterThanOrEqual(120);
-    expect(uploadedBox.top).toBeGreaterThanOrEqual(canonicalBox.bottom);
+    expect(uploadedBox.top).toBeGreaterThan(canonicalBox.bottom);
 
     const footerBox = await page.locator('.document-editor-footer').boundingBox();
     const viewport = page.viewportSize();

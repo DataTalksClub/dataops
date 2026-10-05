@@ -1,5 +1,6 @@
 export function createWorkspaceState(context) {
   const {
+    emptyOperationsArtifactSnapshot,
     emptyOperationsAssistantSnapshot,
     emptyOperationsDocsSnapshot,
     emptyOperationsQualitySnapshot,
@@ -31,6 +32,7 @@ export function createWorkspaceState(context) {
 
   let workSnapshot = emptyOperationsWorkSnapshot();
   let recurringSnapshot = emptyOperationsRecurringSnapshot();
+  let artifactSnapshot = emptyOperationsArtifactSnapshot();
   let assistantSnapshot = emptyOperationsAssistantSnapshot();
   let qualitySnapshot = emptyOperationsQualitySnapshot();
   let reviewSnapshot = emptyOperationsReviewSnapshot();
@@ -54,13 +56,10 @@ export function createWorkspaceState(context) {
     workflow: "",
     document: "",
   };
-  let activeWorkspaceView = "tasks";
+  let activeWorkspaceView = "home";
   let activeTasksSection = "queue";
 
-  // The work model is shared by Tasks, Process Docs, Admin, and the task
-  // panel, so its state is named for the model rather than for whichever
-  // surface happens to be on screen.
-  const workModelState = {
+  const homeSurfaceState = {
     get workSnapshot() {
       return workSnapshot;
     },
@@ -121,6 +120,12 @@ export function createWorkspaceState(context) {
     get workSnapshot() {
       return workSnapshot;
     },
+    get artifactSnapshot() {
+      return artifactSnapshot;
+    },
+    set artifactSnapshot(snapshot) {
+      artifactSnapshot = snapshot;
+    },
     get assistantSnapshot() {
       return assistantSnapshot;
     },
@@ -147,6 +152,18 @@ export function createWorkspaceState(context) {
     },
   };
 
+  const overviewState = {
+    get artifactSnapshot() {
+      return artifactSnapshot;
+    },
+    get assistantSnapshot() {
+      return assistantSnapshot;
+    },
+    get qualitySnapshot() {
+      return qualitySnapshot;
+    },
+  };
+
   const qualityFiltersState = {
     get value() {
       return qualityFilters;
@@ -170,13 +187,14 @@ export function createWorkspaceState(context) {
 
   return {
     documentState,
+    homeSurfaceState,
     knowledgeState,
     operationsSurfaceState,
+    overviewState,
     qualityFiltersState,
     reviewSurfaceState,
     tasksSurfaceState,
     workDetailState,
-    workModelState,
     get activeTasksSection() {
       return activeTasksSection;
     },
@@ -188,6 +206,12 @@ export function createWorkspaceState(context) {
     },
     set activeWorkspaceView(view) {
       activeWorkspaceView = view;
+    },
+    get artifactSnapshot() {
+      return artifactSnapshot;
+    },
+    set artifactSnapshot(snapshot) {
+      artifactSnapshot = snapshot;
     },
     get assistantQueue() {
       return assistantQueue;

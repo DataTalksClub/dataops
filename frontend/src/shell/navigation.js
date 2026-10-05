@@ -24,6 +24,7 @@ export function createNavigationShell(context) {
     prepareCardPanel,
     prepareTaskPanel,
     refreshDocuments,
+    refreshOperationsArtifactSnapshot,
     refreshOperationsAssistantSnapshot,
     refreshReviewSnapshot,
     refreshUsersSurface,
@@ -42,6 +43,7 @@ export function createNavigationShell(context) {
     setTaskRouteContextFromRoute,
     setView,
     showLibrary,
+    showOperationsHome,
     workspaceRouteFor,
   } = context;
   let pendingLegacyRoute = null;
@@ -84,14 +86,14 @@ export function createNavigationShell(context) {
     closeWorkBellPanel({ updateUrl: false, restoreFocus: false });
   }
 
-  function replaceWithWorkQueue() {
+  function replaceWithWorkspaceHome() {
     const target = canonicalWorkspaceUrl("/");
     const current = `${locationRef.pathname}${locationRef.search}${
       locationRef.hash
     }`;
     if (current !== target) {
       historyRef.replaceState(
-        { workspace: "tasks", tasksSection: "queue" },
+        { workspace: "home", tasksSection: "queue" },
         "",
         target,
       );
@@ -108,9 +110,9 @@ export function createNavigationShell(context) {
         ? search
         : null;
     }
-    if (restoreFocus?.kind === "queue-task") {
+    if (restoreFocus?.kind === "home-task") {
       return (
-        [...documentRef.querySelectorAll(".queue-task-action[data-task-id]")].find(
+        [...documentRef.querySelectorAll(".home-task-action[data-task-id]")].find(
           (candidate) =>
             candidate.dataset.taskId === restoreFocus.id &&
             candidate.isConnected &&
@@ -209,7 +211,7 @@ export function createNavigationShell(context) {
     } else if (requestedView === "processes" || requestedView === "search") {
       setActiveWorkspaceView("docs");
     } else {
-      setActiveWorkspaceView(requestedView || "tasks");
+      setActiveWorkspaceView(requestedView || "home");
     }
     renderWorkspaceNav();
     getKnowledgeState().selectedFolder = "";
@@ -242,6 +244,9 @@ export function createNavigationShell(context) {
       jobs.push(refreshOperationsAssistantSnapshot({ rerender: true, token }));
     }
     if (route.path === "/notifications") jobs.push(refreshWorkBell({ token }));
+    if (route.path === "/artifacts") {
+      jobs.push(refreshOperationsArtifactSnapshot({ rerender: true }));
+    }
     if (route.path === "/review" && typeof refreshReviewSnapshot === "function") {
       jobs.push(refreshReviewSnapshot({ rerender: true, token }));
     }
@@ -355,7 +360,7 @@ export function createNavigationShell(context) {
       return;
     }
     if (locationRef.hash || locationRef.pathname === "/") {
-      await applyWorkspaceRoute(replaceWithWorkQueue());
+      await applyWorkspaceRoute(replaceWithWorkspaceHome());
       return;
     }
     const docPath = context.docPathFromLocation();
@@ -365,7 +370,7 @@ export function createNavigationShell(context) {
       );
       // During a docs outage the catalog is empty for every document, so a
       // bookmarked document URL must still open the editor: it reports the
-      // outage there instead of silently dropping the operator on the queue.
+      // outage there instead of silently dropping the operator on Home.
       const docsUnavailable = getDocsAvailability().state === "unavailable";
       if (exists || docsUnavailable) {
         activateDocumentWorkspace();
@@ -382,7 +387,7 @@ export function createNavigationShell(context) {
       refreshDocuments();
       return;
     }
-    await navigateCanonicalWorkspace("/").ready;
+    await showOperationsHome({ replace: true });
   }
 
   async function applyCurrentBrowserLocation() {
@@ -400,7 +405,7 @@ export function createNavigationShell(context) {
       return;
     }
     if (locationRef.hash || locationRef.pathname === "/") {
-      await applyWorkspaceRoute(replaceWithWorkQueue());
+      await applyWorkspaceRoute(replaceWithWorkspaceHome());
       return;
     }
     const docPath = context.docPathFromLocation();

@@ -31,6 +31,7 @@ const SELECTORS = Object.freeze({
   historyVersions: "#history-versions",
   historyComparison: "#history-comparison",
   editorHistoryButton: "#editor-history-button",
+  operationsHomeButton: "#operations-home-button",
   searchForm: "#search-form",
   searchInput: "#search-input",
   domainFilter: "#domain-filter",
@@ -65,6 +66,8 @@ const SELECTORS = Object.freeze({
   newDocType: "#new-doc-type",
   newDocSummary: "#new-doc-summary",
   cancelCreateButton: "[data-action='cancel-create']",
+  tasksNavButton: "#tasks-nav-button",
+  tasksNavSubmenu: "#tasks-nav-submenu",
   docContextReturn: "#doc-context-return",
   docState: "#doc-state",
   taskPanel: "#task-panel",
@@ -100,7 +103,9 @@ export function queryAppDom(documentRef) {
     ...documentRef.querySelectorAll("[data-workspace-view]"),
   ];
   dom.tasksNavSectionButtons = [
-    ...documentRef.querySelectorAll("[data-tasks-section]"),
+    ...documentRef.querySelectorAll(
+      "#tasks-nav-submenu [data-tasks-section]",
+    ),
   ];
   return dom;
 }
@@ -152,6 +157,7 @@ export function bindAppDomEvents(context) {
   for (const button of dom.workspaceNavButtons) {
     button.addEventListener("click", () => handlers.workspaceButton(button));
   }
+  dom.tasksNavButton?.addEventListener("click", handlers.toggleTasksNav);
   for (const button of dom.tasksNavSectionButtons) {
     button.addEventListener("click", () =>
       handlers.openTasksSection(button.dataset.tasksSection || "queue"),

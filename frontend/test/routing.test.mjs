@@ -37,7 +37,7 @@ describe("canonical workspace routing", () => {
     assert.equal(Object.hasOwn(WORKSPACE_HASH_BY_VIEW, "mailing-exports"), false);
   });
 
-  test("retains every canonical workspace route", () => {
+  test("retains every top-level and nested workspace route", () => {
     assert.deepEqual(Object.keys(WORKSPACE_ROUTE_DEFINITIONS), [
       "/",
       "/operating-model",
@@ -47,6 +47,7 @@ describe("canonical workspace routing", () => {
       "/assistants",
       "/templates",
       "/recurring",
+      "/artifacts",
       "/notifications",
       "/bookkeeping",
       "/sponsors",
@@ -147,6 +148,7 @@ describe("canonical workspace routing", () => {
       ["templates", "Templates"],
       ["recurring", "Recurring"],
       ["assistants", "Assistants"],
+      ["artifacts", "Artifacts"],
     ]);
     assert.equal(workspaceHashPath("tasks", "workflows"), "/cards");
     assert.equal(workspaceHashPath("tasks", "templates"), "/templates");

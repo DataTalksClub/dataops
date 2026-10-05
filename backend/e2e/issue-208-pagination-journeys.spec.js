@@ -98,13 +98,15 @@ test.describe('issue 208 paginated collections', () => {
       });
     });
 
-    await page.goto(`${BASE_URL}/#/tasks`);
-    const summary = page.locator('[data-summary-id="tasks-queue"]');
+    await page.goto(`${BASE_URL}/#/`);
+    const summary = page.locator('[data-summary-id="home"]');
     await expect(summary).toHaveAttribute('data-summary-state', 'partial');
     await expect(summary).toContainText('Cards unavailable. Loaded work is still shown.');
     await expect(summary.locator('.surface-summary-detail')).toHaveCount(0);
-    await expect(page.locator('.ops-queue-row strong')).toHaveText(task.description);
-    await expect(page.locator('.ops-queue-row')).toContainText('Card page one');
+    await expect(page.locator('.home-status-today strong')).toHaveText('1');
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1 loaded');
+    await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
+    await expect(page.locator('.home-task-card')).toHaveText('Card page one');
     await captureDesktopAndMobile(page, 'cards-continuation-failure');
 
     const retainedFirstPageRequests = firstPageRequests;
@@ -118,10 +120,11 @@ test.describe('issue 208 paginated collections', () => {
       ),
     );
     await expect(summary).toHaveCount(0);
-    await expect(page.locator('.ops-queue-row strong')).toHaveText(task.description);
+    await expect(page.locator('.home-attention-count')).toHaveText('Showing 1 of 1');
+    await expect(page.locator('.home-task-content strong')).toHaveText(task.description);
     expect(firstPageRequests).toBe(retainedFirstPageRequests);
     expect(continuationRequests).toBe(failedContinuationRequests + 1);
-    await captureDesktopAndMobile(page, 'cards-continuation-recovered-queue');
+    await captureDesktopAndMobile(page, 'cards-continuation-recovered-home');
     await page.goto(`${BASE_URL}/#/cards`);
     await expect(page.locator('.ops-workflows-board')).toBeVisible();
     await expect(page.locator('.workflow-card-title')).toHaveText([

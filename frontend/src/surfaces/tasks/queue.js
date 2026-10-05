@@ -1,8 +1,14 @@
 import { isCanonicalWorkTask } from "../../core/workspace.js";
 
+// One queue, not one section per state. Every open task the snapshot knows
+// about lands in the same list, sorted by urgency; the source chip on each
+// row says where the task came from, so triage reads one column top to
+// bottom instead of six boxed lanes.
+const QUEUE_VISIBLE_LIMIT = 25;
+const HISTORY_VISIBLE_LIMIT = 12;
+
 export function createTaskQueue(context) {
   const {
-    allWorkTasks,
     compareIsoDate,
     formatTaskDateMeta,
     getActiveWorkspaceRoute,
@@ -16,13 +22,13 @@ export function createTaskQueue(context) {
     openCardPanel,
     openTaskPanel,
     resolveAssigneeLabel,
-    sortWorkTasks,
     state,
     taskDate,
     taskNextActionLabel,
     taskProofState,
     taskSourceLabel,
     todayIsoDate,
+    workCardTitle,
     workTaskTitle,
   } = context;
 
@@ -30,77 +36,25 @@ export function createTaskQueue(context) {
     const taskRouteContext = getTaskRouteContext();
     const today = taskRouteContext.date || todayIsoDate();
     // The same task reaches this list through its lane query and its card's
-    // checklist; deduplicate by id so history lanes never double-count.
-    const seenTasks = new Set();
-    const tasks = (Array.isArray(taskRouteContext.tasks)
-      ? taskRouteContext.tasks
-      : allWorkTasks(state.workSnapshot)
-    ).filter((task) => {
-      if (seenTasks.has(task.id)) return false;
-      seenTasks.add(task.id);
-      return true;
-    });
-    const groupLoaded = {
-      Overdue: state.workSnapshot.overdueLoaded,
-      "Follow-ups due": state.workSnapshot.waitingLoaded,
-      "Missing proof":
-        (state.workSnapshot.todayLoaded ||
-          state.workSnapshot.overdueLoaded ||
-          state.workSnapshot.waitingLoaded) &&
-        state.workSnapshot.cardTasksComplete !== false,
-      Waiting: state.workSnapshot.waitingLoaded,
-      Today: state.workSnapshot.todayLoaded,
-      "Done / history":
-        state.workSnapshot.todayLoaded ||
+    // checklist; deduplicate by id so the single queue never double-counts.
+    const tasks = dedupeQueueTasks(routeTasks(taskRouteContext));
+    const cardsById = state.workSnapshot.cardsById || new Map();
+    const anySourceLoaded = Boolean(
+      state.workSnapshot.todayLoaded ||
         state.workSnapshot.overdueLoaded ||
-        state.workSnapshot.waitingLoaded,
-    };
-    // Contract order: overdue, follow-ups due, then the day's work; the
-    // proof/waiting lanes follow. Populated lanes must not bury the day's
-    // work under empty ones. A task lives in exactly one lane — the first it
-    // qualifies for — so an overdue proof-blocked task is counted once, in
-    // Overdue, with its "Proof needed" line rather than listed twice.
-    const placed = new Set();
-    const lane = (predicate) => {
-      const members = tasks.filter(
-        (task) => !placed.has(task.id) && predicate(task),
-      );
-      for (const task of members) placed.add(task.id);
-      return members;
-    };
-    const groups = [
-      ["Overdue", lane((task) => isTaskOverdue(task, today))],
-      ["Follow-ups due", lane((task) => isFollowUpDueTask(task, today))],
-      ["Today", lane((task) => isTaskDueToday(task, today))],
-      [
-        "Missing proof",
-        lane((task) => isOpenWorkTask(task) && !taskProofState(task).ok),
-      ],
-      [
-        "Waiting",
-        lane(
-          (task) =>
-            isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today),
-        ),
-      ],
-      [
-        "Done / history",
-        tasks.filter(
-          (task) => isCanonicalWorkTask(task) && task.status === "done",
-        ),
-      ],
-    ];
+        state.workSnapshot.waitingLoaded ||
+        Object.keys(state.workSnapshot.cardTasks || {}).length,
+    );
 
-    // A fully loaded empty queue renders as one quiet container of divided
-    // group rows rather than six chrome-heavy cards saying "empty".
-    const loadedGroups = groups.filter(([label]) => groupLoaded[label]);
-    const allQueueGroupsEmpty =
-      loadedGroups.length > 0 &&
-      loadedGroups.every(([, list]) => list.length === 0);
+    const openTasks = orderOpenTasks(tasks, today);
+    const doneTasks = tasks
+      .filter((task) => isCanonicalWorkTask(task) && task.status === "done")
+      .sort((left, right) =>
+        compareIsoDate(taskDate(right) || "", taskDate(left) || ""),
+      );
 
     const section = document.createElement("section");
     section.className = "ops-work-queue";
-    section.classList.toggle("is-all-empty", allQueueGroupsEmpty);
     section.setAttribute("aria-label", "Work queue");
     if (
       taskRouteContext.date ||
@@ -108,104 +62,233 @@ export function createTaskQueue(context) {
       taskRouteContext.contextCardId ||
       taskRouteContext.failures.length
     ) {
-      const routeContext = document.createElement("aside");
-      routeContext.className = "task-route-context";
-      routeContext.setAttribute("aria-label", "Task queue route context");
-      const heading = document.createElement("h3");
-      heading.textContent = "Queue context";
-      const summary = document.createElement("p");
-      // The context chip names the filtered day relative to the operator's
-      // real today — the queue-local `today` above serves the lane
-      // grouping, not this label, or every filtered day would read "Today".
-      summary.textContent = [
-        taskRouteContext.date
-          ? `Date ${queueDueLabel(taskRouteContext.date, todayIsoDate())}`
-          : "",
-        taskRouteContext.cardId
-          ? `Filtered to card ${taskRouteContext.filterCard?.title || taskRouteContext.cardId}`
-          : "",
-        taskRouteContext.contextCardId
-          ? `Return card ${taskRouteContext.contextCard?.title || taskRouteContext.contextCardId}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      routeContext.append(heading, summary);
-      if (taskRouteContext.contextCardId && taskRouteContext.contextCard) {
-        const open = document.createElement("button");
-        open.type = "button";
-        open.textContent = "Open return card";
-        open.addEventListener("click", () =>
-          openCardPanel(taskRouteContext.contextCardId),
-        );
-        routeContext.append(open);
-      }
-      for (const failure of taskRouteContext.failures) {
-        routeContext.append(renderTaskRouteContextFailure(failure));
-      }
-      section.append(routeContext);
+      section.append(renderTaskRouteContext(taskRouteContext));
     }
-    for (const [groupIndex, [label, list]] of groups.entries()) {
-      const group = document.createElement("article");
-      group.className = "ops-queue-group";
-      const isEmpty = list.length === 0 && Boolean(groupLoaded[label]);
-      if (isEmpty) group.classList.add("is-empty");
-      group.dataset.queueGroup = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-      const header = document.createElement("header");
-      const title = document.createElement("h3");
-      title.id = `queue-group-${groupIndex}`;
-      title.textContent = label;
-      const count = document.createElement("span");
-      const loaded = Boolean(groupLoaded[label]);
-      count.dataset.queueCount = loaded ? "known" : "unknown";
-      if (loaded) {
-        count.textContent = String(list.length);
-        count.setAttribute(
-          "aria-label",
-          `${list.length} ${label.toLowerCase()} tasks`,
-        );
-      } else {
-        count.textContent = "—";
-        count.setAttribute("aria-label", `${label} unavailable`);
+
+    // A fully loaded empty queue states nothing here: the page summary above
+    // already says "No tasks are open in this queue." once. The board only
+    // renders when there is work to show or data to apologize for.
+    const board = document.createElement("div");
+    board.className = "ops-queue-board";
+    board.dataset.loadState = anySourceLoaded ? "ready" : "unavailable";
+    if (!anySourceLoaded) {
+      board.append(renderUnavailableState());
+    } else if (openTasks.length > 0 || doneTasks.length > 0) {
+      if (openTasks.length > 0) {
+        board.append(renderQueueTotalLine(openTasks.length));
+        board.append(renderQueueRows(openTasks, today, cardsById));
+        const expander = renderQueueExpander(openTasks.length);
+        if (expander) board.append(expander);
       }
-      header.append(title, count);
-      group.setAttribute("aria-labelledby", title.id);
-      group.append(header);
-      const rows = document.createElement("div");
-      rows.className = "ops-queue-rows";
-      rows.dataset.loadState = groupLoaded[label] ? "ready" : "unavailable";
-      if (list.length === 0) {
-        // An empty group shows as a quiet header row (title + count). The
-        // page summary already states the queue-level fact once; six
-        // hand-written absence sentences restate it into noise.
-        if (!groupLoaded[label]) {
-          const empty = document.createElement("p");
-          empty.className = "ops-empty";
-          empty.dataset.state = "unavailable";
-          empty.textContent = "Live work data unavailable.";
-          rows.append(empty);
-        }
-      } else {
-        const visible =
-          label === "Done / history"
-            ? list
-                .slice()
-                .sort((a, b) =>
-                  compareIsoDate(taskDate(b) || "", taskDate(a) || ""),
-                )
-                .slice(0, 12)
-            : sortWorkTasks(
-                list,
-                label === "Overdue" ? "overdue" : "today",
-                today,
-              );
-        for (const task of visible)
-          rows.append(renderWorkQueueRow(task, today));
-      }
-      group.append(rows);
-      section.append(group);
+      if (doneTasks.length > 0)
+        board.append(renderQueueHistory(doneTasks, today));
     }
+    if (board.children.length > 0) section.append(board);
     return section;
+  }
+
+  function routeTasks(taskRouteContext) {
+    return Array.isArray(taskRouteContext.tasks)
+      ? taskRouteContext.tasks
+      : allQueueTasks();
+  }
+
+  function dedupeQueueTasks(tasks) {
+    const seen = new Set();
+    return tasks.filter((task) => {
+      if (seen.has(task.id)) return false;
+      seen.add(task.id);
+      return true;
+    });
+  }
+
+  function allQueueTasks() {
+    const work = state.workSnapshot;
+    return dedupeQueueTasks([
+      ...(Array.isArray(work.todayTasks) ? work.todayTasks : []),
+      ...(Array.isArray(work.overdueTasks) ? work.overdueTasks : []),
+      ...(Array.isArray(work.waitingTasks) ? work.waitingTasks : []),
+      ...Object.values(work.cardTasks || {}).flatMap((cardTasks) =>
+        Array.isArray(cardTasks) ? cardTasks : [],
+      ),
+    ]);
+  }
+
+  // Urgency order: overdue, follow-ups due, then the day's work, then
+  // waiting and the rest. Each open task lives in exactly one segment —
+  // the first it qualifies for — so an overdue proof-blocked task is
+  // counted once, in Overdue, with its "Proof needed" line.
+  function orderOpenTasks(tasks, today) {
+    const placed = new Set();
+    const segment = (predicate) => {
+      const members = tasks.filter(
+        (task) => !placed.has(task.id) && predicate(task),
+      );
+      for (const task of members) placed.add(task.id);
+      return members;
+    };
+    const segments = [
+      segment((task) => isTaskOverdue(task, today)),
+      segment((task) => isFollowUpDueTask(task, today)),
+      segment((task) => isTaskDueToday(task, today)),
+      segment(
+        (task) =>
+          isWaitingOrFollowUpTask(task) && !isFollowUpDueTask(task, today),
+      ),
+      segment((task) => isOpenWorkTask(task)),
+    ];
+    // sortWorkTasks caps at its own page size; the one queue must not drop
+    // work behind that cap, so segments sort by the same leading facts the
+    // lanes used (due date, then title) and the cap moves to the render
+    // layer where "Show all" can lift it.
+    return segments.flatMap((members) =>
+      members.length === 0
+        ? []
+        : members
+            .slice()
+            .sort(
+              (left, right) =>
+                compareIsoDate(taskDate(left) || "", taskDate(right) || "") ||
+                workTaskTitle(left).localeCompare(workTaskTitle(right)),
+            )
+            .map((task) => ({ task })),
+    );
+  }
+
+  function renderUnavailableState() {
+    const empty = document.createElement("p");
+    empty.className = "ops-empty";
+    empty.dataset.state = "unavailable";
+    empty.textContent = "Live work data unavailable.";
+    return empty;
+  }
+
+  function renderQueueTotalLine(totalOpen) {
+    const total = document.createElement("p");
+    total.className = "ops-queue-total";
+    total.textContent =
+      totalOpen > QUEUE_VISIBLE_LIMIT
+        ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${totalOpen} open, most urgent first`
+        : `${totalOpen} open, most urgent first`;
+    total.setAttribute("role", "status");
+    return total;
+  }
+
+  function renderQueueRows(openTasks, today, cardsById) {
+    const rows = document.createElement("div");
+    rows.className = "ops-queue-list";
+    for (const entry of openTasks.slice(0, QUEUE_VISIBLE_LIMIT))
+      rows.append(renderWorkQueueRow(entry.task, today, cardsById));
+    return rows;
+  }
+
+  // Past the cap the list keeps its full order and grows downward; the
+  // count line above stays the one summary of how much work exists.
+  function renderQueueExpander(totalOpen) {
+    if (totalOpen <= QUEUE_VISIBLE_LIMIT) return null;
+    const expander = document.createElement("div");
+    expander.className = "ops-queue-more-wrap";
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "ops-queue-more quiet-button";
+    more.textContent = `Show all ${totalOpen}`;
+    more.addEventListener("click", () => {
+      const board = expander.closest(".ops-queue-board");
+      const list = board?.querySelector(".ops-queue-list");
+      if (!list) return;
+      const today = todayIsoDate();
+      const cardsById = state.workSnapshot.cardsById || new Map();
+      const rendered = list.querySelectorAll(".ops-queue-row").length;
+      const ordered = orderOpenTasks(
+        routeTasks(getTaskRouteContext()),
+        today,
+      );
+      for (const entry of ordered.slice(rendered))
+        list.append(renderWorkQueueRow(entry.task, today, cardsById));
+      expander.remove();
+    });
+    expander.append(more);
+    return expander;
+  }
+
+  function renderQueueHistory(doneTasks, today) {
+    const details = document.createElement("details");
+    details.className = "ops-queue-history";
+    const summary = document.createElement("summary");
+    const label = document.createElement("span");
+    label.textContent = "Recently completed";
+    const count = document.createElement("span");
+    count.dataset.queueCount = "known";
+    count.textContent = String(doneTasks.length);
+    count.setAttribute(
+      "aria-label",
+      `${doneTasks.length} recently completed tasks`,
+    );
+    summary.append(label, count);
+    details.append(summary);
+    const rows = document.createElement("div");
+    rows.className = "ops-queue-history-list";
+    for (const task of doneTasks.slice(0, HISTORY_VISIBLE_LIMIT))
+      rows.append(renderQueueHistoryRow(task, today));
+    details.append(rows);
+    return details;
+  }
+
+  function renderQueueHistoryRow(task, today) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ops-queue-history-row";
+    button.dataset.taskId = task.id;
+    button.setAttribute("aria-label", `Open task ${workTaskTitle(task)}`);
+    button.addEventListener("click", () => openTaskPanel(task.id));
+    const title = document.createElement("strong");
+    title.textContent = workTaskTitle(task);
+    const meta = document.createElement("span");
+    const completed = String(task.completedAt || task.date || "").slice(0, 10);
+    meta.textContent = completed
+      ? `Done · ${queueDueLabel(completed, today)}`
+      : "Done";
+    button.append(title, meta);
+    return button;
+  }
+
+  function renderTaskRouteContext(taskRouteContext) {
+    const routeContext = document.createElement("aside");
+    routeContext.className = "task-route-context";
+    routeContext.setAttribute("aria-label", "Task queue route context");
+    const heading = document.createElement("h3");
+    heading.textContent = "Queue context";
+    const summary = document.createElement("p");
+    // The context chip names the filtered day relative to the operator's
+    // real today — the queue-local `today` serves the ordering, not this
+    // label, or every filtered day would read "Today".
+    summary.textContent = [
+      taskRouteContext.date
+        ? `Date ${queueDueLabel(taskRouteContext.date, todayIsoDate())}`
+        : "",
+      taskRouteContext.cardId
+        ? `Filtered to card ${taskRouteContext.filterCard?.title || taskRouteContext.cardId}`
+        : "",
+      taskRouteContext.contextCardId
+        ? `Return card ${taskRouteContext.contextCard?.title || taskRouteContext.contextCardId}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    routeContext.append(heading, summary);
+    if (taskRouteContext.contextCardId && taskRouteContext.contextCard) {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = "Open return card";
+      open.addEventListener("click", () =>
+        openCardPanel(taskRouteContext.contextCardId),
+      );
+      routeContext.append(open);
+    }
+    for (const failure of taskRouteContext.failures) {
+      routeContext.append(renderTaskRouteContextFailure(failure));
+    }
+    return routeContext;
   }
 
   function renderTaskRouteContextFailure(failure) {
@@ -281,8 +364,8 @@ export function createTaskQueue(context) {
         }).format(parsed);
   }
 
-  // Overdue time reads as accumulated debt (mono day blocks + days), matching
-  // Home's attention queue — not a bare due date.
+  // Overdue time reads as accumulated debt (mono day blocks + days) — not a
+  // bare due date.
   function overdueDays(due, today) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due) || !/^\d{4}-\d{2}-\d{2}$/.test(today))
       return 0;
@@ -292,7 +375,26 @@ export function createTaskQueue(context) {
     );
   }
 
-  function renderWorkQueueRow(task, today) {
+  // The one place a task names where it came from. Card membership wins
+  // (the card is what the operator can open); recurring schedules and
+  // explicit import sources follow; everything else is hand-made ad hoc
+  // work.
+  function taskSourceChip(task, cardsById) {
+    if (task.cardId) {
+      const card = cardsById.get(String(task.cardId));
+      return {
+        label: card ? `Card · ${workCardTitle(card)}` : "Card",
+        kind: "card",
+      };
+    }
+    const source = taskSourceLabel(task);
+    if (source === "Recurring") return { label: "Recurring", kind: "recurring" };
+    if (["Ad hoc", "Manual"].includes(source))
+      return { label: "Ad hoc", kind: "adhoc" };
+    return { label: source, kind: "other" };
+  }
+
+  function renderWorkQueueRow(task, today, cardsById) {
     if (!isCanonicalWorkTask(task)) {
       throw new Error("Task payload is not in the canonical versioned shape");
     }
@@ -306,9 +408,16 @@ export function createTaskQueue(context) {
     title.textContent = workTaskTitle(task);
     const meta = document.createElement("div");
     meta.className = "ops-queue-meta";
-    // Meta says what changes the triage decision: the human due moment, the
-    // owner, and proof/waiting requirements. Defaults (todo, manual, no
-    // proof, card membership) stay quiet instead of pill-spamming every row.
+    // The source chip leads the meta line: where a task came from is the
+    // first triage fact. Due moment and ownership follow as quiet facts;
+    // defaults (no proof, todo status) stay quiet instead of pill-spamming
+    // every row.
+    const source = taskSourceChip(task, cardsById);
+    const sourceChip = document.createElement("span");
+    sourceChip.className = "ops-queue-chip is-source";
+    sourceChip.dataset.source = source.kind;
+    sourceChip.textContent = source.label;
+    meta.append(sourceChip);
     const proof = taskProofState(task);
     const due = String(task.date || "").slice(0, 10);
     const debt = isOpenWorkTask(task) ? overdueDays(due, today) : 0;
@@ -319,23 +428,13 @@ export function createTaskQueue(context) {
           : task.date
             ? `Due ${queueDueLabel(task.date, today)}`
             : "",
-        debt > 0,
+        debt === 0 && Boolean(task.date) && due === today,
         debt > 0,
       ],
       [
         task.assigneeId
           ? `Owner ${resolveAssigneeLabel(task.assigneeId)}`
           : "Unassigned",
-        false,
-        false,
-      ],
-      // The summary line names the proof and the lane marker carries the
-      // color, so the row states the missing-proof fact exactly once.
-      ["", false, false],
-      [
-        ["Ad hoc", "Manual"].includes(taskSourceLabel(task))
-          ? ""
-          : taskSourceLabel(task),
         false,
         false,
       ],
@@ -351,6 +450,12 @@ export function createTaskQueue(context) {
         .join(" ");
       chip.textContent = value;
       meta.append(chip);
+    }
+    if (task.status === "waiting") {
+      const waitingChip = document.createElement("span");
+      waitingChip.className = "ops-queue-chip is-waiting";
+      waitingChip.textContent = "Waiting";
+      meta.append(waitingChip);
     }
     // The summary names the real blocker: proof-blocked work never claims
     // "Mark done" as its next step, and follow-up moments stay human.

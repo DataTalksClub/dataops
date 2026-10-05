@@ -29,7 +29,7 @@ let baseURL;
 async function ownedContext(browser, options = {}) {
   const context = await browser.newContext({ baseURL, ...options });
   const health = await context.request.get('/api/health');
-  assertOwnedServerResponse(server, health, 'queue urgency health');
+  assertOwnedServerResponse(server, health, 'home attention health');
   return context;
 }
 
@@ -62,7 +62,7 @@ async function createAttentionFixtures(request) {
       assigneeId: GRACE_ID,
       waitingFor: 'Synthetic reply',
       followUpAt: `${twoDaysAgo}T12:00:00.000Z`,
-      comment: 'Public-safe queue urgency fixture',
+      comment: 'Public-safe Home urgency fixture',
     }),
     createTask(`Issue 201 today ${id}`, {
       date: today,
@@ -118,7 +118,7 @@ async function expectNoHorizontalOverflow(page) {
 async function expectAttentionRowsDoNotOverlap(page) {
   const metrics = await page.evaluate(() => {
     const clientWidth = document.documentElement.clientWidth;
-    const rows = [...document.querySelectorAll('.ops-queue-row')].map(
+    const rows = [...document.querySelectorAll('.home-attention-row')].map(
       (row) => ({
         className: row.className,
         controls: [
@@ -178,9 +178,9 @@ async function expectAttentionRowsDoNotOverlap(page) {
   }
 }
 
-test.describe('issue 201 queue urgency cues', () => {
+test.describe('issue 201 Home attention urgency', () => {
   test.beforeAll(async () => {
-    const cacheRoot = createDocsCacheRoot('issue-201-queue-urgency');
+    const cacheRoot = createDocsCacheRoot('issue-201-home-attention');
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
     server = await startOwnedTestServer({
       environment: {
@@ -202,74 +202,84 @@ test.describe('issue 201 queue urgency cues', () => {
     const fixtures = await createAttentionFixtures(context.request);
     const expected = [
       {
+        action: 'Open',
+        className: 'overdue',
         task: fixtures.overdue,
-        timing: '1 day overdue',
-        proof: false,
+        text: '■ 1 day overdue',
       },
       {
+        action: 'Follow up',
+        className: 'follow-up',
         task: fixtures.followUp,
-        timing: '2 days overdue',
-        proof: false,
+        text: '■■ 2 days overdue',
       },
       {
+        action: 'Open',
+        className: 'today',
         task: fixtures.today,
-        timing: 'Due today',
-        proof: false,
+        text: 'Due today',
       },
       {
+        action: 'Add proof',
+        className: 'missing-proof',
         task: fixtures.proofTask,
-        timing: 'Due tomorrow',
-        proof: true,
+        text: 'Proof required',
       },
     ];
 
     await page.goto(`${baseURL}/#/`);
-    const queue = page.locator('.ops-queue-board');
-    await expect(queue).toBeVisible();
+    const attention = page.getByRole('region', { name: 'Needs your attention' });
+    await expect(
+      page.locator('.operations-home[data-operations-work-loaded="true"]'),
+    ).toBeVisible();
 
     const rows = [];
     for (const item of expected) {
-      const row = queue.locator('.ops-queue-row', {
+      const row = attention.locator('.home-attention-row', {
         hasText: item.task.description,
       });
       await expect(row).toHaveCount(1);
+      await expect(row).toHaveClass(new RegExp(`home-attention-${item.className}`));
       await expect(row.locator('strong')).toHaveText(item.task.description);
-      // Urgency is stated as text, never as a colored-only marker.
-      await expect(row.locator('.ops-queue-meta')).toContainText(item.timing);
-      // Proof-blocked work names its blocker instead of claiming "Mark done".
-      const summary = row.locator('small');
-      if (item.proof) await expect(summary).toContainText('Proof needed');
-      else await expect(summary).not.toContainText('Proof needed');
+      await expect(row.locator('.home-task-marker')).toHaveCount(0);
+      await expect(row.locator('.home-task-state time')).toHaveText(item.text);
       await expect(row.getByRole('button', {
-        name: `Open task ${item.task.description}`,
+        name: `${item.action}: ${item.task.description}`,
       })).toBeVisible();
       rows.push(row);
     }
 
-    // One queue, most urgent first: the rendered order is the expected order.
-    const renderedTitles = await queue.locator('.ops-queue-row strong').allTextContents();
+    const renderedTitles = await attention
+      .locator('.home-task-content strong')
+      .allTextContents();
     const positions = expected.map(({ task }) => renderedTitles.indexOf(task.description));
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
     await expect(page.locator('[class*="home-exception"]')).toHaveCount(0);
 
     for (const [index, item] of expected.entries()) {
-      await rows[index].click();
+      await rows[index].getByRole('button', {
+        name: `${item.action}: ${item.task.description}`,
+      }).click();
       await expect(page.locator('#task-panel-title')).toHaveText(item.task.description);
       await page.locator('#task-panel-close').click();
       await expect(page.locator('#task-panel')).toBeHidden();
       if (index < expected.length - 1) {
         await page.goto(`${baseURL}/#/`);
-        await expect(page.locator('.ops-queue-board')).toBeVisible();
+        await expect(
+          page.locator('.operations-home[data-operations-work-loaded="true"]'),
+        ).toBeVisible();
       }
     }
 
     await page.goto(`${baseURL}/#/`);
-    await expect(page.locator('.ops-queue-board')).toBeVisible();
+    await expect(
+      page.locator('.operations-home[data-operations-work-loaded="true"]'),
+    ).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await expectAttentionRowsDoNotOverlap(page);
     await page.screenshot({
       fullPage: true,
-      path: path.join(SCREENSHOT_DIR, 'queue-urgency-desktop.png'),
+      path: path.join(SCREENSHOT_DIR, 'home-attention-desktop.png'),
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -279,7 +289,7 @@ test.describe('issue 201 queue urgency cues', () => {
     await expect(page.locator('[class*="home-exception"]')).toHaveCount(0);
     await page.screenshot({
       fullPage: true,
-      path: path.join(SCREENSHOT_DIR, 'queue-urgency-mobile.png'),
+      path: path.join(SCREENSHOT_DIR, 'home-attention-mobile.png'),
     });
     await context.close();
   });

@@ -10,10 +10,20 @@ export function createCardsSurface(context) {
     openCardPanel,
     openQuickWorkflowForm,
     operationItemFromCard,
+    refreshDocuments,
     renderHonestState,
+    request,
     state,
     todayIsoDate,
+    workApiUrl,
   } = context;
+
+  // The template filter lives in this closure because the surface object is
+  // created once per session: snapshot re-renders rebuild the DOM, not the
+  // filter memory. An empty value means every card is shown.
+  let templateFilter = "";
+  let templateLabels = new Map();
+  let templateLabelsRequested = false;
 
   function renderWorkflowsSurface(model) {
     const section = document.createElement("section");
@@ -136,8 +146,112 @@ export function createCardsSurface(context) {
           state.workSnapshot.cardTasksComplete !== false,
       });
     });
-    section.append(renderWorkflowBoard(boardItems));
+    // A Card's Template is the parent it was instantiated from; the board
+    // renders derived items, so the template reference rides along by id.
+    const templateIds = new Set(
+      cards.map((card) => String(card?.templateId || "")).filter(Boolean),
+    );
+    // A filter whose Template no longer backs any Card heals back to "all"
+    // before it can blank the board.
+    if (templateFilter && !templateIds.has(templateFilter)) {
+      templateFilter = "";
+    }
+    const templateByCardId = new Map(
+      cards
+        .filter((card) => card && card.id)
+        .map((card) => [card.id, String(card.templateId || "")]),
+    );
+    const visibleItems = templateFilter
+      ? boardItems.filter(
+          (item) => templateByCardId.get(item.cardId) === templateFilter,
+        )
+      : boardItems;
+    const filterBar = renderTemplateFilterBar(templateIds, {
+      shown: visibleItems.length,
+      total: boardItems.length,
+    });
+    if (filterBar) section.append(filterBar);
+    section.append(renderWorkflowBoard(visibleItems));
     return section;
+  }
+
+  function templateLabel(templateId) {
+    return (
+      templateLabels.get(templateId) || `Template ${templateId.slice(0, 8)}`
+    );
+  }
+
+  function renderTemplateFilterBar(templateIds, counts) {
+    const options = [...templateIds].sort((a, b) =>
+      templateLabel(a).localeCompare(templateLabel(b)),
+    );
+    // Without templated cards there is nothing to filter on, so the board
+    // renders without the control rather than as an always-empty select.
+    if (options.length === 0) return null;
+    const filters = document.createElement("div");
+    filters.className = "workflow-board-filters";
+    const label = document.createElement("label");
+    label.className = "workflow-board-filter";
+    const name = document.createElement("span");
+    name.textContent = "Template";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Filter cards by template");
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "All templates";
+    select.append(all);
+    for (const id of options) {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = templateLabel(id);
+      select.append(option);
+    }
+    select.value = templateFilter;
+    select.addEventListener("change", () => {
+      templateFilter = select.value;
+      refreshDocuments();
+    });
+    label.append(name, select);
+    filters.append(label);
+    if (templateFilter) {
+      const shown = document.createElement("span");
+      shown.className = "workflow-board-filter-count";
+      shown.textContent = `${countLabel(counts.shown, "card")} of ${counts.total} shown`;
+      filters.append(shown);
+    }
+    if (!templateLabelsRequested) {
+      templateLabelsRequested = true;
+      loadTemplateLabels();
+    }
+    return filters;
+  }
+
+  // Display names come from the same /api/templates listing the create-card
+  // form uses. Until it answers, options fall back to a short id; one refresh
+  // swaps the labels in when the listing arrives.
+  async function loadTemplateLabels() {
+    let payload;
+    try {
+      payload = await request(workApiUrl("/api/templates"));
+    } catch {
+      return;
+    }
+    const templates = Array.isArray(payload)
+      ? payload
+      : payload?.templates || [];
+    const next = new Map(
+      templates
+        .filter((template) => template && template.id)
+        .map((template) => [
+          String(template.id),
+          String(template.name || template.title || template.id),
+        ]),
+    );
+    const improved = [...next].some(
+      ([id, name]) => templateLabels.get(id) !== name,
+    );
+    templateLabels = next;
+    if (improved) refreshDocuments();
   }
 
   function renderWorkflowBoard(items) {

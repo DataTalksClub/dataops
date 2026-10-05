@@ -35,7 +35,7 @@ function createNavigationHarness(options = {}) {
   const searchInput = new FakeElement("input");
   const runtimeTemplateSearch = visibleButton("runtime-template-search", {});
   const taskButton = visibleButton("ops-queue-row", { taskId: "task-1" });
-  const queueTaskButton = visibleButton("queue-task-action", { taskId: "queue-task" });
+  const homeTaskButton = visibleButton("home-task-action", { taskId: "home-task" });
   const nestedTask = visibleButton("card-checklist-label", {
     taskId: "task-nested",
   });
@@ -49,7 +49,7 @@ function createNavigationHarness(options = {}) {
     searchInput,
     runtimeTemplateSearch,
     taskButton,
-    queueTaskButton,
+    homeTaskButton,
     nestedTask,
     cardButton,
     recurring,
@@ -156,7 +156,7 @@ function createNavigationHarness(options = {}) {
     setTaskRouteContextFromRoute: (route) => calls.push(["task-context", route.path]),
     setView: (view) => calls.push(["set-view", view]),
     showLibrary: (value) => calls.push(["show-library", value]),
-    showWorkspaceSurface: async (value) => calls.push(["show-home", value]),
+    showOperationsHome: async (value) => calls.push(["show-home", value]),
     workspaceRouteFor: (path, params) => workspaceRouteFor(path, params, location),
   });
   return {
@@ -179,7 +179,7 @@ function createNavigationHarness(options = {}) {
     },
     shell,
     taskButton,
-    queueTaskButton,
+    homeTaskButton,
   };
 }
 
@@ -216,6 +216,7 @@ describe("canonical navigation shell behavior", () => {
       ["/templates", { templateId: "template-1" }, "resolve-template"],
       ["/assistants", { assistantJobId: "job-1" }, "assistants"],
       ["/notifications", {}, "refresh-bell"],
+      ["/artifacts", {}, "artifacts"],
       ["/review", {}, "review"],
       ["/users", {}, "users"],
     ];
@@ -313,7 +314,7 @@ describe("canonical navigation shell behavior", () => {
         "nestedTask",
       ],
       ["/templates", {}, { kind: "runtime-template-list" }, "runtimeTemplateSearch"],
-      ["/tasks", {}, { id: "queue-task", kind: "queue-task" }, "queueTaskButton"],
+      ["/", {}, { id: "home-task", kind: "home-task" }, "homeTaskButton"],
     ];
     for (const [path, params, restoreFocus, targetName] of cases) {
       const harness = createNavigationHarness();
@@ -329,20 +330,15 @@ describe("canonical navigation shell behavior", () => {
     assert.equal(fallback.routeHeading.tabIndex, -1);
   });
 
-  test("restores the Queue task focus recorded on a browser history entry", async () => {
-    const harness = createNavigationHarness({ hash: "#/templates" });
-    await harness.shell.navigateCanonicalWorkspace("/tasks", {}, {
-      restoreFocus: { kind: "queue-task", id: "queue-task" },
+  test("restores the Home task focus recorded on a browser history entry", async () => {
+    const harness = createNavigationHarness({ hash: "#/tasks" });
+    await harness.shell.navigateCanonicalWorkspace("/", {}, {
+      restoreFocus: { kind: "home-task", id: "home-task" },
     }).ready;
-    assert.deepEqual(harness.history.state.restoreFocus, {
-      kind: "queue-task",
-      id: "queue-task",
-    });
-    harness.queueTaskButton.focused = false;
-    await harness.shell.applyWorkspaceRoute(
-      workspaceRouteFor("/tasks", {}, harness.location),
-    );
-    assert.equal(harness.queueTaskButton.focused, true);
+    assert.deepEqual(harness.history.state.restoreFocus, { kind: "home-task", id: "home-task" });
+    harness.homeTaskButton.focused = false;
+    await harness.shell.applyWorkspaceRoute(workspaceRouteFor("/", {}, harness.location));
+    assert.equal(harness.homeTaskButton.focused, true);
   });
 
   test("starts document navigation by invalidating route work and closing overlays", () => {

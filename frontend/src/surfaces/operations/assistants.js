@@ -22,7 +22,7 @@ export function createAssistantsSurface(context) {
     getActiveWorkspaceRoute,
     getActiveWorkspaceRouteToken = () => undefined,
     getActiveWorkspaceView,
-    isOperationsWorkspaceVisible,
+    isOperationsHomeVisible,
     isMobileShell,
     isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
@@ -867,7 +867,7 @@ export function createAssistantsSurface(context) {
       return { applied: false };
     }
     state.assistantSnapshot = snapshot;
-    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
+    if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
     return { applied: true, ...snapshot };
   }
 

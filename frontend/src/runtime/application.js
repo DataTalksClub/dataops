@@ -14,13 +14,17 @@ import {
 } from "../core/workspace.js";
 import {
   assistantJobsFromPayload, cardsFromWorkPayload,
-  currentOperatorIdFromPayload,
+  compareQualityFindings, currentOperatorIdFromPayload,
+  dedupeQualityFindings,
   emptyOperationsAssistantSnapshot, emptyOperationsDocsSnapshot,
   emptyOperationsQualitySnapshot, emptyOperationsRecurringSnapshot,
   emptyOperationsReviewSnapshot,
   emptyOperationsWorkSnapshot,
-  labelizeWorkValue, normalizeTemplateMatchValue,
-  recurringConfigsFromPayload, settledPayload, usersFromWorkPayload,
+  findingMatchesCard,
+  labelizeWorkValue, normalizeOperationsQualitySnapshot,
+  normalizeQualityFinding, normalizeTemplateMatchValue,
+  recurringConfigsFromPayload, settledPayload, taskHasClearProofInstruction,
+  taskNeedsProofInstruction, usersFromWorkPayload,
 } from "../core/operations-model.js";
 import { createWorkModel } from "../core/work-model.js";
 import { createFinanceSurface } from "../surfaces/finance/index.js";

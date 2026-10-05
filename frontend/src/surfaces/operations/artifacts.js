@@ -1,0 +1,173 @@
+export function createArtifactsSurface(context) {
+  const {
+    assistantJobsFromPayload,
+    cssEscape,
+    dedupeArtifacts,
+    defaultNextFollowUpDate,
+    documentList,
+    escapeHtml,
+    getActiveWorkspaceRoute,
+    getActiveWorkspaceView,
+    isOperationsHomeVisible,
+    isMobileShell,
+    isWorkspaceRouteFresh,
+    navigateCanonicalWorkspace,
+    openCardPanel,
+    openTaskPanel,
+    promptUser,
+    refreshDocuments,
+    renderEntityLoadState,
+    renderHonestState,
+    request,
+    scheduleAnimationFrame,
+    setRouteTitle,
+    state,
+    tasksFromWorkPayload,
+    todayIsoDate,
+    workApiUrl,
+    workTaskTitle,
+  } = context;
+
+  function normalizeArtifactUrl(value) {
+    if (typeof value !== "string") return "";
+    return value
+      .trim()
+      .replace(
+        /(?:%20|\s)(?:%22|")(?:%E2%80%8C|\u200c)(?:%22|")$/iu,
+        "",
+      );
+  }
+
+  function renderArtifactsSurface() {
+    const section = document.createElement("section");
+    section.className = "ops-state-list";
+    section.setAttribute("aria-label", "Artifacts");
+    if (!state.artifactSnapshot.loaded) {
+      section.append(
+        renderHonestState(
+          "Artifact review index not connected",
+          "Task and Card panels still show artifacts loaded in context. This surface will list proof and output across Cards when the artifact index is available.",
+        ),
+      );
+      return section;
+    }
+    if (state.artifactSnapshot.artifacts.length === 0) {
+      section.append(
+        renderHonestState(
+          "No artifacts registered",
+          "There are no artifact rows to review. No generated assistant outputs or proof links are being invented.",
+        ),
+      );
+      return section;
+    }
+    for (const artifact of state.artifactSnapshot.artifacts)
+      section.append(renderArtifactSurfaceRow(artifact));
+    return section;
+  }
+
+  // Resolve linked ids to operator-readable titles; an unresolved link stays
+  // honest ("card linked") instead of showing a raw uuid.
+  function artifactContextLabel(kind, id) {
+    const wanted = String(id || "");
+    if (!wanted) return "";
+    const work = state.workSnapshot || {};
+    if (kind === "card") {
+      const card = (work.cards || []).find(
+        (candidate) => String(candidate.id) === wanted,
+      );
+      return card ? workTaskTitle({ ...card, description: card.title }) : "card linked";
+    }
+    const tasks = [
+      ...(work.todayTasks || []),
+      ...(work.overdueTasks || []),
+      ...(work.waitingTasks || []),
+      ...Object.values(work.cardTasks || {}).flat(),
+    ];
+    const task = tasks.find((candidate) => String(candidate.id) === wanted);
+    return task ? workTaskTitle(task) : "task linked";
+  }
+
+  function renderArtifactSurfaceRow(artifact) {
+    const row = document.createElement("article");
+    row.className = "ops-data-row";
+    const storageUri = normalizeArtifactUrl(artifact.storageUri);
+    const artifactLabel =
+      artifact.title || storageUri || artifact.id || "Artifact";
+    const title = document.createElement("strong");
+    title.textContent = artifactLabel;
+    const meta = document.createElement("span");
+    meta.textContent = [
+      // States read as words, not raw enums ("Draft", not "draft").
+      (artifact.status || "draft")
+        .replace(/[_-]+/g, " ")
+        .replace(/^\w/, (char) => char.toUpperCase()),
+      artifact.sourceType === "assistant-output"
+        ? "Assistant output"
+        : artifact.type || "",
+      artifact.cardId ? `for ${artifactContextLabel("card", artifact.cardId) || "a card"}` : "",
+      artifact.taskId ? `for ${artifactContextLabel("task", artifact.taskId) || "a task"}` : "",
+      artifact.storageUri ? "saved to storage" : "no file saved yet",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    row.append(title, meta);
+    if (storageUri) {
+      const link = document.createElement("a");
+      link.href = storageUri;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Open artifact";
+      const linkContext = [
+        artifact.cardId
+          ? artifactContextLabel("card", artifact.cardId)
+          : "",
+        artifact.taskId
+          ? artifactContextLabel("task", artifact.taskId)
+          : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+      link.setAttribute(
+        "aria-label",
+        `Open ${artifactLabel}${
+          linkContext ? ` for ${linkContext}` : ""
+        }`,
+      );
+      row.append(link);
+    }
+    return row;
+  }
+
+  async function refreshOperationsArtifactSnapshot(options = {}) {
+    const snapshot = {
+      loaded: false,
+      artifacts: [],
+      errors: [],
+    };
+    try {
+      const payload = await request(workApiUrl("/api/artifacts"));
+      const artifacts = Array.isArray(payload) ? payload : payload?.artifacts;
+      if (Array.isArray(artifacts)) {
+        snapshot.loaded = true;
+        snapshot.artifacts = artifacts;
+      } else {
+        snapshot.errors = [
+          "Artifact review index is not connected in this environment.",
+        ];
+      }
+    } catch (err) {
+      snapshot.errors = [err?.message || "Artifacts API request failed"];
+    }
+    state.artifactSnapshot = {
+      loaded: snapshot.loaded,
+      artifacts: dedupeArtifacts(snapshot.artifacts),
+      errors: snapshot.errors,
+    };
+    if (options.rerender && isOperationsHomeVisible()) refreshDocuments();
+  }
+
+  return {
+    refreshOperationsArtifactSnapshot,
+    renderArtifactsSurface,
+  };
+}

@@ -161,6 +161,7 @@ function createWorkspaceHarness() {
   let entity = { status: "idle" };
   let account = { signedIn: { id: "alexey" }, scope: { id: "grace" } };
   const snapshots = {
+    artifact: { source: "artifact", loaded: false },
     assistant: { source: "assistant", loaded: false },
     docs: { source: "docs", state: "loading" },
     quality: { source: "quality", loaded: false },
@@ -169,6 +170,7 @@ function createWorkspaceHarness() {
     work: { source: "work", loaded: false },
   };
   const state = createWorkspaceState({
+    emptyOperationsArtifactSnapshot: () => snapshots.artifact,
     emptyOperationsAssistantSnapshot: () => snapshots.assistant,
     emptyOperationsDocsSnapshot: () => snapshots.docs,
     emptyOperationsQualitySnapshot: () => snapshots.quality,
@@ -323,7 +325,7 @@ function createNotificationHarness(options = {}) {
     closeSettingsMenu() {},
     documentRef: document,
     encodeURIComponentImpl: encodeURIComponent,
-    formatShortDate: (date) => `short:${date}`,
+    formatHomeShortDate: (date) => `short:${date}`,
     formatTaskDateMeta: (date) =>
       ({ "2026-08-12": "Yesterday", "2026-08-13": "Today", "2026-08-14": "Tomorrow" })[date] || "Later",
     HTMLElementClass: FakeElement,
@@ -389,6 +391,7 @@ function createBindingDom() {
     "historyButton",
     "historyClose",
     "historyBackdrop",
+    "tasksNavButton",
     "clearFiltersButton",
     "editorSaveButton",
     "editorDiscardButton",
@@ -422,9 +425,10 @@ function createBindingDom() {
   dom.editor = element("editor", "textarea");
   dom.documentTitle = element("document-title", "input");
   dom.workspaceNavButtons = [element("home-nav", "button")];
-  dom.workspaceNavButtons[0].dataset.workspaceTarget = "tasks";
+  dom.workspaceNavButtons[0].dataset.workspaceTarget = "home";
   dom.tasksNavSectionButtons = [element("cards-nav", "button")];
   dom.tasksNavSectionButtons[0].dataset.tasksSection = "cards";
+  dom.tasksNavButton.setAttribute("aria-expanded", "false");
   dom.helpModal.hidden = true;
   dom.diffModal.hidden = true;
   dom.lightbox.hidden = true;
@@ -503,26 +507,31 @@ describe("runtime and shell production behavior", () => {
     const harness = createWorkspaceHarness();
     const { state, snapshots } = harness;
     assert.equal(state.workSnapshot, snapshots.work);
-    assert.equal(state.workModelState.workSnapshot, snapshots.work);
+    assert.equal(state.homeSurfaceState.workSnapshot, snapshots.work);
     assert.equal(state.tasksSurfaceState.recurringSnapshot, snapshots.recurring);
+    assert.equal(state.operationsSurfaceState.artifactSnapshot, snapshots.artifact);
+    assert.equal(state.overviewState.qualitySnapshot, snapshots.quality);
     assert.equal(state.docsSnapshot, snapshots.docs);
-    assert.equal(state.workModelState.docsSnapshot, snapshots.docs);
+    assert.equal(state.homeSurfaceState.docsSnapshot, snapshots.docs);
     assert.deepEqual(state.knowledgeState.allDocuments, []);
     assert.equal(state.documentState.hasDraft, false);
 
     const work = { loaded: true, tasks: [{ id: "task-1" }] };
     const quality = { loaded: true, findings: [{ id: "finding-1" }] };
     const assistant = { loaded: true, jobs: [{ id: "job-1" }] };
-    state.workModelState.workSnapshot = work;
+    const artifact = { loaded: true, items: [{ id: "artifact-1" }] };
+    state.homeSurfaceState.workSnapshot = work;
     state.qualitySnapshot = quality;
     state.operationsSurfaceState.assistantSnapshot = assistant;
+    state.artifactSnapshot = artifact;
     assert.equal(state.workDetailState.workSnapshot, work);
     assert.equal(state.tasksSurfaceState.qualitySnapshot, quality);
-    assert.equal(state.operationsSurfaceState.assistantSnapshot, assistant);
+    assert.equal(state.overviewState.assistantSnapshot, assistant);
+    assert.equal(state.operationsSurfaceState.artifactSnapshot, artifact);
 
     const docs = { state: "unavailable", error: "docs down", status: 503 };
     state.docsSnapshot = docs;
-    assert.equal(state.workModelState.docsSnapshot, docs);
+    assert.equal(state.homeSurfaceState.docsSnapshot, docs);
 
     const queue = { filter: "all", selectedJobId: "job-1" };
     state.assistantQueue = queue;
@@ -543,7 +552,7 @@ describe("runtime and shell production behavior", () => {
 
     const nextAccount = { signedIn: { id: "alexey" }, scope: { id: "valeriia" } };
     harness.account = nextAccount;
-    assert.equal(state.workModelState.accountIdentity, nextAccount);
+    assert.equal(state.homeSurfaceState.accountIdentity, nextAccount);
   });
 
   test("initializes shell preferences before routing and exposes a controlled work refresh", async () => {
@@ -926,6 +935,8 @@ describe("runtime and shell production behavior", () => {
 
     await dom.themeToggleButton.click();
     assert.deepEqual(calls.at(-1), ["dark", true]);
+    await dom.tasksNavButton.click();
+    assert.deepEqual(calls.at(-1), ["tasks-expanded", true]);
     await dom.tasksNavSectionButtons[0].click();
     assert.deepEqual(calls.at(-1), ["navigate", "/tasks/cards"]);
     await dom.editor.dispatch("input");
@@ -973,12 +984,13 @@ describe("runtime and shell production behavior", () => {
     const sidebar = element("sidebar");
     const pageShell = element("page", "main");
     pageShell.className = "page-shell";
-    const workspace = element("newsletter", "button");
-    workspace.dataset.workspaceView = "newsletter";
-    // The Tasks sections are top-level nav buttons in their own right.
+    const workspace = element("home", "button");
+    workspace.dataset.workspaceView = "home";
+    const submenu = element("tasks-nav-submenu");
     const cards = element("cards", "button");
     cards.dataset.tasksSection = "cards";
-    const document = new TestDocument(body, sidebar, pageShell, workspace, cards);
+    submenu.append(cards);
+    const document = new TestDocument(body, sidebar, pageShell, workspace, submenu);
     document.body = body;
     const dom = queryAppDom(document);
     assert.equal(dom.body, body);

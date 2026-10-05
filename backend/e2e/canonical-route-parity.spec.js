@@ -86,7 +86,7 @@ async function expectStableRouteFocus(page) {
 }
 
 const VISIBLE_ROUTE_HEADINGS = {
-  'Work Queue': 'Work Queue',
+  Home: 'Today',
   Newsletter: 'Newsletter planner',
   Calendar: 'Operations calendar',
 };
@@ -103,8 +103,8 @@ test.describe('issue 156 canonical route and operator parity', () => {
       const docsStarted = page.waitForRequest((req) => new URL(req.url()).pathname === '/docs');
       await page.goto('/#/');
       await docsStarted;
-      await expectVisibleRouteHeading(page, 'Work Queue');
-      await expect(page.locator('.ops-work-queue')).toBeVisible();
+      await expectVisibleRouteHeading(page, 'Home');
+      await expect(page.locator('.operations-home')).toBeVisible();
     } finally {
       await page.goto('about:blank');
       await clearRouteFaults(request);
@@ -114,13 +114,14 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('resolves every supported canonical route and normalizes invalid hashes', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     const routes = [
-      ['/#/', 'Work Queue'],
+      ['/#/', 'Home'],
       [`/#/tasks?taskId=${encodeURIComponent(fixture.task.id)}&date=2026-08-11&cardId=${encodeURIComponent(fixture.card.id)}&contextCardId=${encodeURIComponent(fixture.contextCard.id)}`, 'Work Queue'],
       [`/#/cards?cardId=${encodeURIComponent(fixture.card.id)}&taskId=${encodeURIComponent(fixture.task.id)}`, 'Cards'],
       [`/#/assistants?assistantJobId=${encodeURIComponent(fixture.assistant.id)}`, 'Assistants'],
       [`/#/templates?templateId=${encodeURIComponent(fixture.template.id)}`, 'Templates'],
       ['/#/recurring', 'Recurring'],
-      ['/#/notifications', 'Work Queue'],
+      ['/#/artifacts', 'Artifacts'],
+      ['/#/notifications', 'Home'],
       ['/#/bookkeeping', 'Bookkeeping'],
       [`/#/sponsors?bookingId=${encodeURIComponent(fixture.booking.id)}`, 'Sponsors'],
       ['/#/newsletter', 'Newsletter'],
@@ -559,7 +560,7 @@ test.describe('issue 156 canonical route and operator parity', () => {
   test('ignores stale real-server entity responses after a newer navigation', async ({ page, request }) => {
     const fixture = await createFixtures(request);
     await page.goto('/#/');
-    await expectVisibleRouteHeading(page, 'Work Queue');
+    await expectVisibleRouteHeading(page, 'Home');
     await setRouteFaults(request, [{ method: 'GET', path: `/api/cards/${fixture.card.id}`, delayMs: 900 }]);
     const started = page.waitForRequest((req) => new URL(req.url()).pathname.endsWith(`/api/cards/${fixture.card.id}`));
     const staleCardResponse = page.waitForResponse((response) =>

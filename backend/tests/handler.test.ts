@@ -16,14 +16,10 @@ describe('handler', () => {
     assert.match(result.headers!['Content-Type'], /^text\/html/);
     assert.ok(result.body.includes('<title>DataOps</title>'));
     assert.ok(result.body.includes('id="document-list"'));
-    // Tasks sections are first-class nav buttons; the queue is the landing page.
-    assert.ok(result.body.includes('<h2 class="workspace-nav-label">Tasks</h2>'));
-    assert.ok(result.body.includes('class="workspace-nav-button is-active" type="button" data-tasks-section="queue"'));
-    assert.ok(result.body.includes('data-tasks-section="assistants"'));
-    // The Today surface and the Artifacts tab are gone.
-    assert.ok(!result.body.includes('id="operations-home-button"'));
-    assert.ok(!result.body.includes('data-tasks-section="artifacts"'));
-    assert.ok(!result.body.includes('workspace-nav-submenu'));
+    assert.ok(result.body.includes('data-workspace-view="home"'));
+    // Tasks is a nav group with a section submenu, not a flat workspace-view button.
+    assert.ok(result.body.includes('id="tasks-nav-button"'));
+    assert.ok(result.body.includes('data-tasks-section="queue"'));
   });
 
   it('GET /api/health returns {"status":"ok"} with status 200', async () => {

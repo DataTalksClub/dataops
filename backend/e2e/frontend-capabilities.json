@@ -197,6 +197,55 @@
       ]
     },
     {
+      "id": "home",
+      "surface": "Home",
+      "route": "/#/",
+      "apiBoundaries": [
+        "/api/tasks",
+        "/api/cards",
+        "/api/notifications",
+        "/docs/process-quality"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
+      "states": [
+        {
+          "id": "home.loading",
+          "kind": "loading",
+          "description": "Home exposes an accessible loading state while feeds resolve.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "home.empty",
+          "kind": "empty",
+          "description": "Home honestly renders zero records and useful navigation.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "home.ready",
+          "kind": "ready",
+          "description": "Today shows authoritative counts, a prioritized attention queue with shown/total counts and inline expansion, exact Task return focus, and contextual My Plan/Inbox/docs routes. Browser evidence: issue-223-workspace-redesign.spec.js and canonical-capability-behavior.spec.js.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "home.partial-failure",
+          "kind": "error",
+          "description": "One failed feed stays honest without suppressing successful feeds.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
+      ]
+    },
+    {
       "id": "tasks",
       "surface": "Tasks and proof",
       "route": "/#/tasks?taskId=<id>&date=<date>&cardId=<id>&contextCardId=<id>",
@@ -213,33 +262,9 @@
       ],
       "states": [
         {
-          "id": "tasks.loading",
-          "kind": "loading",
-          "description": "The task queue exposes an accessible loading state while work feeds resolve.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "tasks.partial-failure",
-          "kind": "error",
-          "description": "One failed work feed stays honest without suppressing the queues that loaded.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
           "id": "tasks.empty",
           "kind": "empty",
           "description": "The task queue renders an honest empty state.",
-          "coverage": {
-            "status": "runtime"
-          }
-        },
-        {
-          "id": "tasks.ready",
-          "kind": "ready",
-          "description": "The queue is the landing page: it shows the prioritized open work with exact Task return focus, and Cards, Templates, Recurring, and Assistants are first-class nav destinations beside it.",
           "coverage": {
             "status": "runtime"
           }
@@ -654,6 +679,69 @@
           "id": "assistants.unavailable",
           "kind": "error",
           "description": "A non-404 assistant failure remains unavailable and retryable.",
+          "coverage": {
+            "status": "runtime"
+          }
+        }
+      ]
+    },
+    {
+      "id": "artifacts",
+      "surface": "Artifacts",
+      "route": "/#/artifacts",
+      "apiBoundaries": [
+        "/api/artifacts",
+        "/api/files"
+      ],
+      "roleIds": [
+        "operator",
+        "admin"
+      ],
+      "states": [
+        {
+          "id": "artifacts.empty",
+          "kind": "empty",
+          "description": "No artifacts renders an honest empty state.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.available",
+          "kind": "ready",
+          "description": "An available artifact renders its persisted detail and relationships.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.authorized-action",
+          "kind": "ready",
+          "description": "The currently authorized artifact action returns its real result.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.unavailable",
+          "kind": "error",
+          "description": "An unavailable artifact stays visible with an honest status.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.not-found",
+          "kind": "stale",
+          "description": "A missing related artifact or file is reported honestly.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "artifacts.failure",
+          "kind": "error",
+          "description": "Artifact API failure is visible and retryable.",
           "coverage": {
             "status": "runtime"
           }

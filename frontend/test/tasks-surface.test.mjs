@@ -245,7 +245,7 @@ function createHarness(options = {}) {
     taskDate,
     taskNextActionLabel: () => "Continue work",
     taskProofState,
-    taskSourceLabel: () => "DataOps",
+    taskSourceLabel: options.taskSourceLabel || (() => "DataOps"),
     tasksFromWorkPayload,
     tasksSectionTitle,
     todayIsoDate: () => "2026-08-12",
@@ -293,6 +293,19 @@ function groupByHeading(root, heading) {
   );
 }
 
+function queueRowTitles(root) {
+  return findAllByClass(root, "ops-queue-row").map(
+    (row) => row.querySelector("strong").textContent,
+  );
+}
+
+function queueSourceChips(root) {
+  return findAllByClass(root, "is-source").map((chip) => ({
+    label: chip.textContent,
+    kind: chip.dataset.source,
+  }));
+}
+
 describe("Tasks surface boundary", () => {
   test("directly imports the production factory and exposes the stable Tasks facade", () => {
     const { api } = createHarness();
@@ -307,13 +320,20 @@ describe("Tasks surface boundary", () => {
     ]);
   });
 
-  test("renders Queue lanes honestly and keeps route-context recovery actions canonical", async () => {
+  test("renders one queue with source indicators and keeps route-context recovery actions canonical", async () => {
+    const cardTask = canonicalTask({
+      id: "card-task",
+      description: "Card checklist item",
+      date: "2026-08-11",
+      cardId: "card-1",
+    });
     const tasks = [
       canonicalTask({
         id: "overdue",
         description: "Overdue",
         date: "2026-08-11",
       }),
+      cardTask,
       canonicalTask({
         id: "follow-up",
         description: "Follow up",
@@ -336,8 +356,12 @@ describe("Tasks surface boundary", () => {
         date: "2026-08-12",
       }),
     ];
-    const { api, documentList, navigations } = createHarness({
-      workSnapshot: { tasks },
+    const { api, documentList, navigations, openedTasks } = createHarness({
+      workSnapshot: {
+        cardsById: new Map([
+          ["card-1", { id: "card-1", title: "Weekly newsletter" }],
+        ]),
+      },
       taskRouteContext: {
         date: "2026-08-12",
         tasks,
@@ -358,32 +382,39 @@ describe("Tasks surface boundary", () => {
 
     api.renderTasksSurface([], "queue");
 
-    assert.equal(findAllByClass(documentList, "ops-queue-group").length, 6);
+    // One queue: a single bordered list, no per-lane group cards.
+    const board = documentList.querySelector(".ops-queue-board");
+    assert.equal(board.dataset.loadState, "ready");
+    assert.equal(findAllByClass(documentList, "ops-queue-group").length, 0);
+    // Open work only, in urgency order; the done task folds into history.
+    // Within the overdue segment the title breaks date ties.
+    assert.deepEqual(queueRowTitles(documentList), [
+      "Card checklist item",
+      "Overdue",
+      "Follow up",
+      "Today",
+      "Waiting",
+    ]);
+    // Every row names where its task came from, chip first in the meta line.
+    const sources = queueSourceChips(documentList);
+    assert.deepEqual(sources[0], {
+      label: "Card · Weekly newsletter",
+      kind: "card",
+    });
+    for (const source of sources.slice(1)) {
+      assert.equal(source.kind, "other");
+      assert.equal(source.label, "DataOps");
+    }
+    assert.match(board.textContent, /5 open, most urgent first/);
+    const history = documentList.querySelector(".ops-queue-history");
+    assert.equal(history.tagName, "DETAILS");
+    assert.match(history.textContent, /Recently completed/);
     assert.equal(
-      findByText(groupByHeading(documentList, "Overdue"), "1", "span")
-        .textContent,
+      history.querySelector("[data-queue-count]").textContent,
       "1",
     );
-    assert.equal(
-      findByText(groupByHeading(documentList, "Follow-ups due"), "1", "span")
-        .textContent,
-      "1",
-    );
-    assert.equal(
-      findByText(groupByHeading(documentList, "Waiting"), "1", "span")
-        .textContent,
-      "1",
-    );
-    assert.equal(
-      findByText(groupByHeading(documentList, "Today"), "1", "span")
-        .textContent,
-      "1",
-    );
-    assert.equal(
-      findByText(groupByHeading(documentList, "Done / history"), "1", "span")
-        .textContent,
-      "1",
-    );
+    await history.querySelector(".ops-queue-history-row").dispatch("click");
+    assert.deepEqual(openedTasks, ["done"]);
     assert.match(documentList.textContent, /Filter card not found/);
     assert.match(documentList.textContent, /Requested value: missing-card/);
 
@@ -396,6 +427,79 @@ describe("Tasks surface boundary", () => {
     assert.equal(navigations[0].path, "/tasks");
     assert.equal(navigations[0].options.history, "none");
     assert.equal(navigations[1].path, "/tasks");
+  });
+
+  test("caps the visible queue and expands on demand without losing order", () => {
+    const tasks = [];
+    for (let index = 0; index < 30; index += 1) {
+      tasks.push(
+        canonicalTask({
+          id: `task-${index}`,
+          description: `Task ${String(index).padStart(2, "0")}`,
+          date: "2026-08-12",
+        }),
+      );
+    }
+    const { api, documentList } = createHarness({
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    const board = documentList.querySelector(".ops-queue-board");
+    assert.equal(findAllByClass(board, "ops-queue-row").length, 25);
+    assert.match(board.textContent, /Showing 25 of 30 open/);
+    const more = findByText(board, "Show all 30", "button");
+    more.dispatch("click");
+    assert.equal(findAllByClass(board, "ops-queue-row").length, 30);
+    assert.equal(board.querySelector(".ops-queue-more-wrap"), null);
+    assert.match(board.textContent, /Showing 25 of 30 open/);
+    assert.deepEqual(queueRowTitles(board).slice(-2), [
+      "Task 28",
+      "Task 29",
+    ]);
+  });
+
+  test("marks ad hoc and card sources distinctly from imported sources", () => {
+    const tasks = [
+      canonicalTask({
+        id: "adhoc",
+        description: "Ad hoc task",
+        date: "2026-08-12",
+      }),
+      canonicalTask({
+        id: "cardless-template",
+        description: "Imported",
+        date: "2026-08-12",
+        templateId: "tpl-1",
+      }),
+    ];
+    const { api, documentList } = createHarness({
+      taskSourceLabel: (task) =>
+        task.cardId || task.templateId ? "Template" : "Manual",
+      taskRouteContext: {
+        date: "",
+        tasks,
+        cardId: "",
+        filterCard: null,
+        contextCardId: "",
+        contextCard: null,
+        failures: [],
+      },
+    });
+
+    api.renderTasksSurface([], "queue");
+    assert.deepEqual(queueSourceChips(documentList), [
+      { label: "Ad hoc", kind: "adhoc" },
+      { label: "Template", kind: "other" },
+    ]);
   });
 
   test("renders the active Cards board as exactly three columns and keeps Done in Archive", () => {
@@ -1221,6 +1325,12 @@ describe("Tasks surface boundary", () => {
           workErrors: ["Synthetic route failure (503)"],
         },
       }),
+      workSnapshot: {
+        tasks: [],
+        todayLoaded: false,
+        overdueLoaded: false,
+        waitingLoaded: false,
+      },
       refreshWork: async (options) => refreshes.push(options),
     });
     failed.api.renderTasksSurface([], "queue");
@@ -1234,6 +1344,15 @@ describe("Tasks surface boundary", () => {
       outage.querySelector(".surface-summary-detail").textContent,
       "Synthetic route failure (503)",
     );
+    // The queue board names the outage where the rows would be; it never
+    // renders an empty-looking list for data it does not have.
+    const outageBoard = failed.documentList.querySelector(".ops-queue-board");
+    assert.equal(outageBoard.dataset.loadState, "unavailable");
+    assert.equal(
+      outageBoard.querySelector(".ops-empty").dataset.state,
+      "unavailable",
+    );
+    assert.equal(findAllByClass(outageBoard, "ops-queue-row").length, 0);
     await outage.querySelector(".surface-summary-retry").dispatch("click");
     await nextTicks();
     assert.deepEqual(refreshes, [{ rerender: false }]);
@@ -1281,7 +1400,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(emptySummary.querySelector(".surface-summary-retry"), null);
   });
 
-  test("failed queue lanes show unknown counts instead of zero", () => {
+  test("a failed queue renders an unavailable board, never zero work", () => {
     const failed = createHarness({
       model: baseModel({
         runtime: {
@@ -1314,23 +1433,22 @@ describe("Tasks surface boundary", () => {
       false,
       "unavailable work is not summarized as zero items",
     );
-    const groups = findAllByClass(failed.documentList, "ops-queue-group");
-    assert.equal(groups.length, 6);
-    for (const group of groups) {
-      const count = group.querySelector("header span");
-      assert.equal(count.dataset.queueCount, "unknown");
-      assert.equal(count.textContent, "—");
-      assert.notEqual(count.textContent, "0");
-      assert.match(count.getAttribute("aria-label"), /unavailable$/);
-      assert.equal(
-        group.querySelector(".ops-empty").dataset.state,
-        "unavailable",
-      );
-    }
+    const board = failed.documentList.querySelector(".ops-queue-board");
+    assert.equal(board.dataset.loadState, "unavailable");
+    const unavailable = board.querySelector(".ops-empty");
+    assert.equal(unavailable.dataset.state, "unavailable");
+    assert.match(unavailable.textContent, /Live work data unavailable/);
+    assert.equal(findAllByClass(board, "ops-queue-row").length, 0);
+    assert.equal(board.querySelector(".ops-queue-total"), null);
+    assert.equal(
+      board.querySelector(".ops-queue-history"),
+      null,
+      "a failed queue renders no counts, not zeros",
+    );
     assert.equal(
       failed.documentList.textContent.includes(" 0 "),
       false,
-      "failed lanes are not interpreted as zero work",
+      "failed sources are not interpreted as zero work",
     );
 
     const partialOutage = createHarness({

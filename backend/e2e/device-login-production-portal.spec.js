@@ -52,7 +52,7 @@ async function signedInPage(browser) {
   const context = await browser.newContext({ baseURL: server.baseURL, storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await page.goto('/__e2e__/browser-session');
-  await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
   return { context, page };
 }
 

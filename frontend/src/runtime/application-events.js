@@ -20,6 +20,7 @@ export function bindApplicationEvents(context) {
     lightbox,
     quickNavInput,
     searchInput,
+    tasksNavButton,
   } = dom;
 
   const isTyping = () => {
@@ -60,17 +61,22 @@ export function bindApplicationEvents(context) {
               view:
                 button.dataset.workspaceTarget ||
                 button.dataset.workspaceView ||
-                "tasks",
+                "home",
             },
           }),
         ),
+      toggleTasksNav: () => {
+        const expanded =
+          tasksNavButton.getAttribute("aria-expanded") === "true";
+        callbacks.setTasksNavExpanded(!expanded);
+      },
       openTasksSection: (section) => {
         callbacks.navigateCanonicalWorkspace(
           callbacks.workspaceHashPath("tasks", section),
         );
       },
       navigateWorkspaceEvent: (event) =>
-        callbacks.showWorkspaceSurface(event.detail?.view || "tasks"),
+        callbacks.showWorkspaceSurface(event.detail?.view || "home"),
       documentTitleKeydown: (event) => {
         if (event.key === "Enter") {
           event.preventDefault();

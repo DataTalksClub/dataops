@@ -5014,32 +5014,29 @@ body[data-workspace-view="tasks"] .operations-home .ops-empty {
 }body[data-workspace-view="tasks"] .operations-home .ops-empty[data-state="unavailable"] {
   background: var(--dk-danger-bg);
   color: var(--dk-danger-text);
-}/* Queue --------------------------------------------------------------------- */body[data-workspace-view="tasks"] .ops-work-queue {
+}/* Queue ---------------------------------------------------------------------
+   One queue: every open task in a single bordered list, most urgent first.
+   Each row's source chip names where the task came from; the quiet line
+   above the rows owns the counts, and completed work folds away below. */body[data-workspace-view="tasks"] .ops-work-queue {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   min-width: 0;
-}/* All groups empty: one bordered container with divided rows. The page
-   summary above states the absence once; the rows only name each group. */body[data-workspace-view="tasks"] .ops-work-queue.is-all-empty {
-  grid-template-columns: 1fr;
-  gap: 0;
-  width: min(820px, 100%);
+}body[data-workspace-view="tasks"] .ops-queue-board {
+  width: min(880px, 100%);
+  overflow: hidden;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--task-panel-radius);
   background: var(--dk-bg-surface);
-  overflow: hidden;
-}body[data-workspace-view="tasks"] .ops-work-queue.is-all-empty .ops-queue-group {
-  border: 0;
-  border-top: 1px solid var(--dk-border-default);
-  border-radius: 0;
-  background: transparent;
-}body[data-workspace-view="tasks"] .ops-work-queue.is-all-empty .ops-queue-group:first-child {
-  border-top: 0;
-}body[data-workspace-view="tasks"] .ops-work-queue.is-all-empty .ops-queue-group > header {
-  min-height: 40px;
-  border-bottom: 0;
-  background: transparent;
-  padding: 8px 14px;
+}body[data-workspace-view="tasks"] .ops-queue-board[data-load-state="unavailable"] {
+  padding: 14px 16px;
+}body[data-workspace-view="tasks"] .ops-queue-total {
+  margin: 0;
+  border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }body[data-workspace-view="tasks"] .task-route-context {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -5099,51 +5096,19 @@ body[data-workspace-view="tasks"] .task-context-state p {
 }body[data-workspace-view="tasks"] .task-context-state button {
   border-color: var(--dk-danger-border);
   color: var(--dk-danger-text);
-}body[data-workspace-view="tasks"] .ops-queue-group {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--task-panel-radius);
-  background: var(--dk-bg-surface);
-}body[data-workspace-view="tasks"] .ops-queue-group > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 48px;
-  border-bottom: 1px solid var(--dk-border-default);
-  background: var(--dk-bg-muted);
-  padding: 10px 14px;
-}body[data-workspace-view="tasks"] .ops-queue-group > header h3 {
-  margin: 0;
-  color: var(--dk-text-heading);
-  font-size: 13px;
-  font-weight: 700;
-}body[data-workspace-view="tasks"] .ops-queue-group > header > span {
-  display: grid;
-  min-width: 26px;
-  min-height: 26px;
-  place-items: center;
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}body[data-workspace-view="tasks"] .ops-queue-rows {
+}body[data-workspace-view="tasks"] .ops-queue-list {
   display: grid;
   min-width: 0;
 }body[data-workspace-view="tasks"] .ops-queue-row {
   display: grid;
   width: 100%;
   min-width: 0;
-  min-height: 92px;
-  gap: 8px;
+  gap: 7px;
   border: 0;
   border-top: 1px solid var(--dk-border-default);
   background: var(--dk-bg-surface);
   color: var(--dk-text-primary);
-  padding: 13px 14px;
+  padding: 12px 14px;
   text-align: left;
   transition: background 140ms ease, box-shadow 140ms ease;
 }body[data-workspace-view="tasks"] .ops-queue-row:first-child {
@@ -5182,6 +5147,112 @@ body[data-workspace-view="tasks"] .task-context-state p {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}/* The source chip is the row's one pill: it names where the task came
+   from (a Card, the recurring engine, an import, or ad hoc work) while
+   every other fact on the line stays quiet text. */body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-source {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-source[data-source="card"] {
+  border-color: var(--dk-border-strong);
+  color: var(--dk-text-heading);
+}body[data-workspace-view="tasks"] .ops-queue-meta .ops-queue-chip.is-waiting {
+  color: var(--attention-waiting);
+  font-weight: 500;
+}/* Show-all expander: one quiet control under the capped list. */body[data-workspace-view="tasks"] .ops-queue-more-wrap {
+  border-top: 1px solid var(--dk-border-default);
+}body[data-workspace-view="tasks"] .ops-queue-more {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 0;
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}body[data-workspace-view="tasks"] .ops-queue-more:hover {
+  color: var(--dk-text-heading);
+  background: var(--dk-bg-hover);
+}/* Completed work folds below the queue: a summary row plus quiet rows,
+   so history stays reachable without pushing open work down the page. */body[data-workspace-view="tasks"] .ops-queue-history {
+  border-top: 1px solid var(--dk-border-default);
+}body[data-workspace-view="tasks"] .ops-queue-history summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  color: var(--dk-text-muted);
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}body[data-workspace-view="tasks"] .ops-queue-history summary::-webkit-details-marker {
+  display: none;
+}body[data-workspace-view="tasks"] .ops-queue-history summary::after {
+  content: "+";
+  color: var(--dk-text-faint);
+  font-size: 14px;
+}body[data-workspace-view="tasks"] .ops-queue-history[open] summary::after {
+  content: "\u2013";
+}body[data-workspace-view="tasks"] .ops-queue-history summary:hover {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-heading);
+}body[data-workspace-view="tasks"] .ops-queue-history summary span[data-queue-count] {
+  min-width: 22px;
+  color: var(--dk-text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}body[data-workspace-view="tasks"] .ops-queue-history-list {
+  display: grid;
+  border-top: 1px solid var(--dk-border-default);
+}body[data-workspace-view="tasks"] .ops-queue-history-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  border-top: 1px solid var(--dk-border-default);
+  background: none;
+  color: var(--dk-text-muted);
+  padding: 8px 14px;
+  font-size: 12px;
+  text-align: left;
+}body[data-workspace-view="tasks"] .ops-queue-history-row:first-child {
+  border-top: 0;
+}body[data-workspace-view="tasks"] .ops-queue-history-row:hover {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-primary);
+}body[data-workspace-view="tasks"] .ops-queue-history-row strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}body[data-workspace-view="tasks"] .ops-queue-history-row span {
+  flex: none;
+  color: var(--dk-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}/* Mobile: the expander and the history disclosure meet the 44px touch
+   floor; rows stay content-sized. */
+@media (max-width: 820px) {body[data-workspace-view="tasks"] .ops-queue-more {
+    min-height: 44px;
+  }body[data-workspace-view="tasks"] .ops-queue-history summary {
+    min-height: 44px;
+  }body[data-workspace-view="tasks"] .ops-queue-history-row {
+    min-height: 44px;
+    align-items: center;
+  }
 }/* Cards --------------------------------------------------------------------- */body[data-workspace-view="tasks"] .ops-surface-workflows {
   width: 100%;
   border: 0;
@@ -6276,8 +6347,6 @@ body[data-workspace-view="tasks"] .runtime-template-layout {
 
 @media (max-width: 760px) {body[data-workspace-view="tasks"] .operations-home {
     gap: 16px;
-  }body[data-workspace-view="tasks"] .ops-work-queue {
-    grid-template-columns: 1fr;
   }body[data-workspace-view="tasks"] .task-route-context {
     grid-template-columns: 1fr;
   }body[data-workspace-view="tasks"] .task-route-context p,
@@ -6355,7 +6424,6 @@ body[data-workspace-view="tasks"] .workflow-references-section .task-history .ta
 }
 
 @media (max-width: 480px) {body[data-workspace-view="tasks"] .ops-queue-row {
-    min-height: 100px;
     padding-inline: 12px;
   }body[data-workspace-view="tasks"] .assistant-job-row {
     grid-template-columns: 1fr;
@@ -8270,8 +8338,6 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
 }/* Authored template revisions are machine quantities: mono accent. */.runtime-template-definition dd.runtime-template-mono {
   font-family: var(--dk-font-mono);
   font-size: 12px;
-}/* Overdue quantifiers in the overdue lane read red, matching the ramp. */body[data-workspace-view="tasks"] .ops-queue-group[data-queue-group="overdue"] .ops-queue-chip.is-attention {
-  color: var(--dk-danger-text);
 }/* Cards uses the flat family header like every other route: no boxed
    container, actions in a plain toolbar row. */body[data-workspace-view="tasks"] .workflow-board-header {
   border: 0;
@@ -8279,17 +8345,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
   background: none;
   box-shadow: none;
   padding: 0 4px;
-}/* Empty queue lanes demote: no accent bar, muted header — good news must
-   not wear the attention ramp or push real work down the page. */body[data-workspace-view="tasks"] .ops-queue-group.is-empty {
-  border-top-color: var(--dk-border-default);
-}body[data-workspace-view="tasks"] .ops-queue-group.is-empty > header h3 {
-  color: var(--dk-text-muted);
-  font-weight: 500;
-}body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
-  padding: 10px 16px 12px;
-}
-
-/* Adversarial round 2 (390px): the Authored template list must not clip
+}/* Adversarial round 2 (390px): the Authored template list must not clip
    behind an internal scroll now that the layout stacks; the board actions
    and artifact links meet the 44px mobile target. */
 @media (max-width: 820px) {body[data-workspace-view="tasks"] .runtime-template-list {
@@ -8303,17 +8359,7 @@ body[data-workspace-view="tasks"] .card-mutation-feedback-controls button {
     align-items: center;
     min-height: 44px;
   }
-}/* Empty queue lanes demote: no accent bar, muted header — good news must
-   not wear the attention ramp or push real work down the page. */body[data-workspace-view="tasks"] .ops-queue-group.is-empty {
-  border-top-color: var(--dk-border-default);
-}body[data-workspace-view="tasks"] .ops-queue-group.is-empty > header h3 {
-  color: var(--dk-text-muted);
-  font-weight: 500;
-}body[data-workspace-view="tasks"] .ops-queue-group.is-empty .ops-empty {
-  padding: 10px 16px 12px;
-}
-
-/* Adversarial round 2 (390px): the Authored template list must not clip
+}/* Adversarial round 2 (390px): the Authored template list must not clip
    behind an internal scroll now that the layout stacks; the board actions
    and artifact links meet the 44px mobile target. */
 @media (max-width: 820px) {body[data-workspace-view="tasks"] .runtime-template-list {

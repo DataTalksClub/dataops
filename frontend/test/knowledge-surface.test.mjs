@@ -220,7 +220,7 @@ function createKnowledgeHarness(options = {}) {
   let renderedWorkspace = 0;
   let renderedWorkspaceDocuments;
   let sidebarCloses = 0;
-  const workReturns = [];
+  let operationsHomeReturns = 0;
 
   const request = async (url, requestOptions = {}) => {
     const entry = { url: String(url), options: requestOptions };
@@ -240,7 +240,7 @@ function createKnowledgeHarness(options = {}) {
     apiUrl,
     assistantJobsFromPayload: (payload) => payload?.jobs || [],
     basename: (path) => String(path || "").split("/").at(-1) || "",
-    buildOperationsWorkModel: () => ({
+    buildOperationsHomeModel: () => ({
       quality: options.operationsQualityModel || {
         loaded: true,
         activeWorkLoaded: true,
@@ -304,6 +304,7 @@ function createKnowledgeHarness(options = {}) {
     qualityFiltersState,
     refreshChangesPanel() {},
     refreshKnowledgeStatus() {},
+    refreshOperationsArtifactSnapshot: refresh("artifacts"),
     refreshOperationsAssistantSnapshot: refresh("assistants"),
     refreshOperationsQualitySnapshot: refresh("quality"),
     refreshOperationsRecurringSnapshot: refresh("recurring"),
@@ -337,10 +338,10 @@ function createKnowledgeHarness(options = {}) {
       body.dataset.view = value;
       views.push(value);
     },
-    showWorkspaceSurface: async (view) => {
-      workReturns.push(view);
-      return { ready: Promise.resolve() };
+    showOperationsHome: async () => {
+      operationsHomeReturns += 1;
     },
+    showWorkspaceSurface() {},
     storage: {
       getItem: (key) => storageValues.get(key) ?? null,
       setItem: (key, value) => storageValues.set(key, String(value)),
@@ -372,7 +373,7 @@ function createKnowledgeHarness(options = {}) {
     navigations,
     openedCards,
     openedTasks,
-    workReturns: () => workReturns,
+    operationsHomeReturns: () => operationsHomeReturns,
     routeTitles,
     refreshes,
     renderedWorkspace: () => renderedWorkspace,
@@ -457,7 +458,7 @@ describe("Knowledge surface boundary", () => {
     const loading = harness.api.loadDocuments();
     assert.deepEqual(
       harness.refreshes.map((entry) => entry.name),
-      ["work", "recurring", "assistants", "quality"],
+      ["work", "recurring", "artifacts", "assistants", "quality"],
     );
     assert.ok(
       harness.refreshes.every((entry) => entry.options.rerender === true),
@@ -544,7 +545,7 @@ describe("Knowledge surface boundary", () => {
     assert.deepEqual(failed.api.getAllDocuments(), []);
     assert.deepEqual(
       failed.refreshes.map((entry) => entry.name),
-      ["work", "recurring", "assistants", "quality"],
+      ["work", "recurring", "artifacts", "assistants", "quality"],
     );
     // A failed load repaints the surface the operator is already looking at.
     assert.equal(failed.renderedWorkspace(), 1);
@@ -1573,9 +1574,7 @@ describe("Knowledge surface boundary", () => {
     );
     await back.click();
     await nextTicks();
-    // Returning to a doc opened from work lands on the work queue, not on a
-    // Home page that no longer exists.
-    assert.deepEqual(loaded.workReturns(), ["tasks"]);
+    assert.equal(loaded.operationsHomeReturns(), 1);
     assert.deepEqual(loaded.openedTasks, ["task-7"]);
 
     const missing = createKnowledgeHarness({

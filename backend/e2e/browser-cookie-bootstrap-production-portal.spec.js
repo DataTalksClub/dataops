@@ -50,9 +50,14 @@ test.describe('production portal browser-cookie bootstrap', () => {
     expect(requestHeaders.authorization).toBeUndefined();
     expect(requestHeaders.cookie).toContain('dataops_session=');
     await expect(page).toHaveURL(`${server.baseURL}/#/`);
-    await expect(page.getByRole('heading', { name: 'Work Queue', exact: true }).first()).toBeVisible();
-    // The queue is the landing page and states its load state before rows.
-    await expect(page.locator('.ops-work-queue')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Today', exact: true }).first()).toBeVisible();
+    const quickActions = page.locator('.home-quick-actions[aria-label="Quick actions"]');
+    const creationActions = quickActions.getByRole('button');
+    await expect(creationActions).toHaveCount(2);
+    for (const action of await creationActions.all()) await expect(action).toBeEnabled();
+    await creationActions.first().click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
     await creationActions.last().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();

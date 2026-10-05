@@ -46,6 +46,10 @@ export function emptyOperationsRecurringSnapshot() {
   return { loaded: false, recurringConfigs: [], errors: [] };
 }
 
+export function emptyOperationsArtifactSnapshot() {
+  return { loaded: false, artifacts: [], errors: [] };
+}
+
 export function emptyOperationsAssistantSnapshot() {
   return { loaded: false, jobs: [], errors: [] };
 }
@@ -562,6 +566,12 @@ export function createOperationsModel({
     };
   }
 
+  function isCurrentOperatorTodayTask(task, currentOperatorId) {
+    if (!isOpenWorkTask(task)) return false;
+    const assigneeId = String(task.assigneeId || "");
+    return !assigneeId || assigneeId === String(currentOperatorId || "");
+  }
+
   function isTaskAssignedTo(task, userId) {
     return (
       isOpenWorkTask(task) &&
@@ -882,6 +892,7 @@ export function createOperationsModel({
     buildOperationsReferenceLinks,
     dedupeOperationItems,
     isAtRiskWorkflowSlug,
+    isCurrentOperatorTodayTask,
     isFollowUpDoc,
     isRecurringWorkflowSlug,
     isSyntheticCurrentOperatorId,

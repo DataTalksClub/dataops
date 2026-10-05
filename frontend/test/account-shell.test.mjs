@@ -136,7 +136,7 @@ function createAccountHarness(options = {}) {
     historyButton,
     knowledgeStatusButton,
     HTMLElementClass: FakeElement,
-    isOperationsWorkspaceVisible: () => options.workspaceVisible ?? true,
+    isOperationsHomeVisible: () => options.homeVisible ?? true,
     locationRef,
     refreshDocuments: () => refreshes.push("refresh"),
     showWorkspaceSurface: (surface) => shown.push(surface),

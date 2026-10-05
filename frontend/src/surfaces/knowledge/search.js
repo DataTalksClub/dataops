@@ -17,6 +17,7 @@ export function createKnowledgeSearch(context, services) {
     renderOperationsWorkspace,
     request,
     searchInput,
+    showWorkspaceSurface,
     tasksFromWorkPayload,
     workApiUrl,
   } = context;
@@ -792,23 +793,15 @@ export function createKnowledgeSearch(context, services) {
       });
       return;
     }
-    // Artifacts and files have no surface of their own: they are evidence, so
-    // search resolves them to the Task or Card that owns them. An artifact with
-    // neither owner has nowhere to open, and saying so beats opening nothing.
-    if (kind === "artifact" || kind === "file") {
-      if (route.taskId) {
-        openTaskPanel(route.taskId);
-        return;
-      }
-      if (route.cardId) {
-        openCardPanel(route.cardId);
-        return;
-      }
-      renderHonestState(
-        "This artifact has no owning task or card",
-        "Artifacts are opened from the task or card they belong to. This one is not linked to either, so there is nothing to open.",
-      );
+    if ((kind === "artifact" || kind === "file") && route.taskId) {
+      openTaskPanel(route.taskId);
+      return;
     }
+    if ((kind === "artifact" || kind === "file") && route.cardId) {
+      openCardPanel(route.cardId);
+      return;
+    }
+    if (kind === "artifact" || kind === "file") showWorkspaceSurface("artifacts");
   }
 
 

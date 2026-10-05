@@ -137,6 +137,7 @@ function operationState(overrides = {}) {
     },
     assistantQueue: { filter: "all", selectedJobId: null },
     assistantSnapshot: { loaded: true, jobs: [], errors: [] },
+    artifactSnapshot: { loaded: true, artifacts: [], errors: [] },
     workSnapshot: { cards: [] },
     workspaceEntity: null,
     ...overrides,
@@ -163,6 +164,9 @@ function createOperationsHarness(options = {}) {
     assistantJobsFromPayload: (payload) =>
       Array.isArray(payload) ? payload : payload?.jobs || [],
     cssEscape: (value) => String(value),
+    dedupeArtifacts: (artifacts) => [
+      ...new Map((artifacts || []).map((item) => [item.id, item])).values(),
+    ],
     defaultNextFollowUpDate: () => "2026-08-15",
     documentList,
     escapeHtml,
@@ -171,7 +175,7 @@ function createOperationsHarness(options = {}) {
     getActiveWorkspaceRouteToken: () => activeRouteToken,
     getActiveWorkspaceView: () => route.path.slice(1),
     isMobileShell: () => false,
-    isOperationsWorkspaceVisible: () => true,
+    isOperationsHomeVisible: () => true,
     isWorkspaceRouteFresh: (token) =>
       options.fresh !== false && token === activeRouteToken,
     navigateCanonicalWorkspace: (path, params = {}, navigationOptions = {}) => {
@@ -237,7 +241,7 @@ function createAdminHarness(options = {}) {
   let activeRouteToken = options.routeToken ?? 1;
   const api = createAdminSurface({
     apiUrl,
-    buildOperationsWorkModel: () => ({ recurring: { configs: [] } }),
+    buildOperationsHomeModel: () => ({ recurring: { configs: [] } }),
     currentOperatorIdFromPayload: (payload) => payload?.id || "",
     documentList,
     getActiveWorkspaceView: () => options.view || "users",
@@ -298,7 +302,9 @@ function submitDeviceForm(root) {
 describe("Operations surface boundary", () => {
   test("directly imports production factories and exposes stable Operations and Admin facades", () => {
     assert.deepEqual(Object.keys(createOperationsHarness().api).sort(), [
+      "refreshOperationsArtifactSnapshot",
       "refreshOperationsAssistantSnapshot",
+      "renderArtifactsSurface",
       "renderAssistantsSurface",
       "renderDeviceSurfaceView",
     ]);
@@ -308,6 +314,72 @@ describe("Operations surface boundary", () => {
       "renderAdminSurfaceView",
       "renderUsersSurfaceView",
     ]);
+  });
+
+  test("renders unavailable, empty, and safe linked Artifact states", () => {
+    const harness = createOperationsHarness();
+    harness.state.artifactSnapshot = {
+      loaded: false,
+      artifacts: [],
+      errors: ["artifact API offline"],
+    };
+    assert.ok(
+      findByText(
+        harness.api.renderArtifactsSurface(),
+        "Artifact review index not connected",
+        "strong",
+      ),
+    );
+
+    harness.state.artifactSnapshot = {
+      loaded: true,
+      artifacts: [],
+      errors: [],
+    };
+    assert.ok(
+      findByText(
+        harness.api.renderArtifactsSurface(),
+        "No artifacts registered",
+        "strong",
+      ),
+    );
+
+    harness.state.artifactSnapshot.artifacts = [
+      {
+        id: "artifact-1",
+        title: "Approved issue",
+        status: "approved",
+        type: "newsletter",
+        taskId: "task-1",
+        storageUri: "https://example.test/issue",
+      },
+      {
+        id: "artifact-2",
+        title: "Missing storage",
+        status: "draft",
+      },
+      {
+        id: "artifact-3",
+        title: "Malformed link",
+        status: "approved",
+        storageUri: "https://example.test/edit%20%22%E2%80%8C%22",
+      },
+    ];
+    const list = harness.api.renderArtifactsSurface();
+    const open = findByText(list, "Open artifact", "a");
+    assert.equal(open.href, "https://example.test/issue");
+    assert.equal(open.target, "_blank");
+    assert.equal(open.rel, "noopener");
+    assert.equal(
+      open.getAttribute("aria-label"),
+      "Open Approved issue for task linked",
+    );
+    assert.equal(findAllByClass(list, "ops-data-row").length, 3);
+    assert.equal(list.querySelectorAll("a").length, 2);
+    assert.equal(
+      list.querySelectorAll("a")[1].href,
+      "https://example.test/edit",
+    );
   });
 
   test("restores Device code focus after validation rerenders", async () => {
@@ -537,6 +609,52 @@ describe("Operations surface boundary", () => {
         .summaryState,
       "ready",
     );
+  });
+
+  test("refreshes Artifact and Assistant snapshots honestly on list, invalid payload, and failure", async () => {
+    let mode = "loaded";
+    const harness = createOperationsHarness({
+      request: async (url) => {
+        if (url === "/api/artifacts") {
+          if (mode === "failed") throw new Error("artifact timeout");
+          if (mode === "invalid") return {};
+          return {
+            artifacts: [
+              { id: "same", title: "old" },
+              { id: "same", title: "new" },
+            ],
+          };
+        }
+        if (url === "/api/assistant-jobs") {
+          if (mode === "failed") throw new Error("assistant timeout");
+          return mode === "invalid" ? {} : { jobs: [{ id: "job-1" }] };
+        }
+        return {};
+      },
+    });
+    await harness.api.refreshOperationsArtifactSnapshot();
+    await harness.api.refreshOperationsAssistantSnapshot();
+    assert.equal(harness.state.artifactSnapshot.loaded, true);
+    assert.deepEqual(harness.state.artifactSnapshot.artifacts, [
+      { id: "same", title: "new" },
+    ]);
+    assert.equal(harness.state.assistantSnapshot.loaded, true);
+
+    mode = "invalid";
+    await harness.api.refreshOperationsArtifactSnapshot();
+    await harness.api.refreshOperationsAssistantSnapshot();
+    assert.match(harness.state.artifactSnapshot.errors[0], /not connected/);
+    assert.match(harness.state.assistantSnapshot.errors[0], /not connected/);
+
+    mode = "failed";
+    await harness.api.refreshOperationsArtifactSnapshot();
+    await harness.api.refreshOperationsAssistantSnapshot();
+    assert.deepEqual(harness.state.artifactSnapshot.errors, [
+      "artifact timeout",
+    ]);
+    assert.deepEqual(harness.state.assistantSnapshot.errors, [
+      "assistant timeout",
+    ]);
   });
 
   test("renders Admin diagnostics while preserving success, empty, and failure truth", async () => {
