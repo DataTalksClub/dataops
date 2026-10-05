@@ -127,9 +127,9 @@ export function createBookkeepingSurface(context) {
           r.month === lens && ["ready", "generated"].includes(String(r.status)),
       );
     }
-    function setLens(month, { resetInput = true } = {}) {
+    function setLens(month) {
       lens = month;
-      if (resetInput && month !== "all") lensInput.value = month;
+      lensInput.value = month === "all" ? "" : month;
       renderAll();
     }
     function renderAll() {
@@ -619,7 +619,6 @@ export function createBookkeepingSurface(context) {
                 String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
               )
             : "all",
-          { resetInput: false },
         );
       });
     closeState.addEventListener("click", (event) => {

@@ -3505,12 +3505,20 @@ body[data-workspace-view="sponsors"] .document-list {
   padding: 12px;
 }
 
+/* The all-months totals sentence is long: let it wrap on the right instead
+   of squeezing the ledger heading into a sliver. */
+.bookkeeping-ledger-section .section-header > div {
+  flex: 1 0 auto;
+}
+
 .bookkeeping-totals {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   margin: 0;
   color: var(--dk-text-heading) !important;
   font-size: 14px;
   font-weight: 600;
+  text-align: right;
 }
 
 .bookkeeping-table-wrap {
@@ -3663,7 +3671,7 @@ body[data-workspace-view="sponsors"] .document-list {
 
 .bookkeeping-private-statements legend {
   color: var(--dk-text-heading);
-  padding: 0 4px;
+  padding: 0 4px 6px;
   font-size: 13px;
   font-weight: 600;
 }
