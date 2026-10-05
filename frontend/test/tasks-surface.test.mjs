@@ -961,8 +961,13 @@ describe("Tasks surface boundary", () => {
     assert.match(harness.documentList.textContent, /Authored templates/);
     assert.match(
       harness.documentList.textContent,
-      /Read-only copies of the templates maintainers publish/,
+      /A reusable definition\. Open one to see its steps, then start a Card\./,
       "operator language; repo/YAML detail stays out of the Templates page",
+    );
+    assert.doesNotMatch(
+      harness.documentList.textContent,
+      /Read-only copies of the templates maintainers publish/,
+      "the panel header must not explain deployment provenance",
     );
     assert.match(
       harness.documentList.textContent,
