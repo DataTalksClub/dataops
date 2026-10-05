@@ -3102,58 +3102,273 @@ body[data-workspace-view="sponsors"] .document-list {
   white-space: nowrap;
 }
 
-.bookkeeping-job-nav {
+/* Month lens: the close-state header that replaced the decorative job nav.
+   It answers "what is left for this month" above the fold (#242). */
+.bookkeeping-monthlens {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
+  gap: 14px;
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
   background: var(--dk-bg-surface);
+  padding: 14px 16px;
 }
 
-.bookkeeping-job-nav a {
+.bookkeeping-lens-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.bookkeeping-lens-step {
+  min-width: 36px;
+}
+
+.bookkeeping-lens-month {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 1px 10px;
-  min-width: 0;
-  color: var(--dk-text-primary);
-  padding: 12px 14px;
-  text-decoration: none;
+  gap: 4px;
+  color: var(--dk-text-heading);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.bookkeeping-job-nav a + a {
-  border-left: 1px solid var(--dk-border-default);
+.bookkeeping-lens-month input {
+  min-height: 36px;
 }
 
-.bookkeeping-job-nav a:hover {
-  background: var(--dk-bg-hover);
-}
-
-.bookkeeping-job-nav span {
+.bookkeeping-close-state {
   display: grid;
-  grid-row: 1 / span 2;
-  width: 28px;
-  height: 28px;
-  place-items: center;
+  gap: 12px;
+}
+
+.bookkeeping-close-state h2 {
+  margin-bottom: 0;
+  color: var(--dk-text-heading);
+  font-size: 20px;
+}
+
+.bookkeeping-lens-note {
+  margin: 0;
+  color: var(--dk-text-muted);
+}
+
+.bookkeeping-counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bookkeeping-counter {
+  display: grid;
+  gap: 2px;
+  min-width: 120px;
   border: 1px solid var(--dk-border-default);
-  border-radius: 50%;
+  border-radius: var(--dk-radius-md);
   background: var(--dk-bg-muted);
   color: var(--dk-text-muted);
+  padding: 8px 12px;
   font-size: 12px;
-  font-weight: 700;
 }
 
-.bookkeeping-job-nav strong {
-  min-width: 0;
+.bookkeeping-counter strong {
   color: var(--dk-text-heading);
-  font-size: 14px;
+  font-size: 18px;
 }
 
-.bookkeeping-job-nav small {
+.bookkeeping-counter.is-open {
+  border-color: var(--dk-danger-border);
+  background: var(--dk-danger-bg);
+}
+
+.bookkeeping-counter.is-open strong {
+  color: var(--dk-danger-text);
+}
+
+.bookkeeping-counter.is-done {
+  border-color: var(--dk-success-border);
+  background: var(--dk-success-bg);
+}
+
+.bookkeeping-counter.is-done strong {
+  color: var(--dk-success-text);
+}
+
+.bookkeeping-close-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Needs-attention worklist: the monthly reconcile output as actions. */
+.bookkeeping-worklist {
+  display: grid;
+}
+
+.worklist-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--dk-border-default);
+  padding: 12px 16px;
+}
+
+.worklist-row:last-child {
+  border-bottom: 0;
+}
+
+.worklist-what {
+  display: grid;
+  min-width: 0;
+}
+
+.worklist-what small {
   overflow: hidden;
   color: var(--dk-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.worklist-classify {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dk-text-heading);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.worklist-classify select {
+  min-height: 36px;
+}
+
+.bookkeeping-worklist-done {
+  margin: 0;
+  border-bottom: 0;
+  color: var(--dk-success-text);
+  padding: 14px 16px;
+}
+
+/* Evidence upload collapsed behind its summary; attach actions open it. */
+.bookkeeping-upload-panel {
+  border-bottom: 1px solid var(--dk-border-default);
+}
+
+.bookkeeping-upload-panel > summary {
+  padding: 12px 16px;
+}
+
+.bookkeeping-upload-panel[open] {
+  border-bottom: 1px solid var(--dk-border-default);
+}
+
+/* Evidence grouped by the month each document belongs to. */
+.bookkeeping-doc-group h4 {
+  margin: 0;
+  border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-heading);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Package review: what the archive will contain, before creating it. */
+.bookkeeping-package-review {
+  display: grid;
+  gap: 12px;
+  border-bottom: 1px solid var(--dk-border-default);
+  padding: 16px;
+}
+
+.bookkeeping-package-review h4 {
+  margin: 0;
+  color: var(--dk-text-heading);
+  font-size: 15px;
+}
+
+.bookkeeping-preflight {
+  display: grid;
+  gap: 6px;
+}
+
+.preflight-row {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: 13px;
+}
+
+.preflight-row.is-ok {
+  color: var(--dk-success-text);
+}
+
+.preflight-row.is-blocked {
+  color: var(--dk-danger-text);
+}
+
+.preflight-note {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: 12px;
+}
+
+.bookkeeping-package-preview {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: 13px;
+}
+
+.bookkeeping-package-ready {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--dk-success-border);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-success-bg);
+  padding: 12px;
+}
+
+.bookkeeping-package-ready p {
+  margin: 0;
+  color: var(--dk-success-text);
+}
+
+.bookkeeping-package-ready small {
+  color: var(--dk-text-muted);
+}
+
+/* Converted non-EUR amounts show their defensible EUR value inline. */
+.ledger-eur {
+  display: block;
+  color: var(--dk-text-muted);
+  font-weight: 400;
+}
+
+/* hidden labels inside grids keep their grid display unless restated. */
+.bookkeeping-upload label[hidden],
+.dialog-fields label[hidden] {
+  display: none;
+}
+
+/* Optional details live behind a disclosure inside the entry dialog. */
+.bookkeeping-entry-optional {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  padding: 8px 12px;
+}
+
+.bookkeeping-entry-optional > summary {
+  color: var(--dk-text-heading);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bookkeeping-entry-optional .dialog-fields {
+  margin-top: 10px;
 }
 
 .bookkeeping-section,
@@ -6059,17 +6274,8 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
     align-items: stretch;
   }
 
-  .bookkeeping-job-nav {
-    grid-template-columns: 1fr;
-  }
-
-  .bookkeeping-job-nav a + a {
-    border-top: 1px solid var(--dk-border-default);
-    border-left: 0;
-  }
-
   .bookkeeping-filters {
-    grid-template-columns: minmax(0, 1fr) 120px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .bookkeeping-filters details {
@@ -6130,6 +6336,25 @@ body[data-workspace-view="calendar"] .document-list { width: 100%; max-width: 11
   }
 
   .bookkeeping-table-wrap td:last-child .row-actions {
+    justify-content: flex-start;
+  }
+
+  .bookkeeping-monthlens {
+    padding: 12px 14px;
+  }
+
+  /* Counters wrap two-up instead of squeezing into one row. */
+  .bookkeeping-counter {
+    flex: 1 1 40%;
+    min-width: 0;
+  }
+
+  .worklist-row {
+    display: grid;
+    gap: 8px;
+  }
+
+  .worklist-row .row-actions {
     justify-content: flex-start;
   }
 
@@ -6431,25 +6656,18 @@ body[data-workspace-view="calendar"] .document-list {
   display: none;
 }
 
-.bookkeeping-job-nav {
+.bookkeeping-monthlens {
   border-radius: var(--dk-radius-md);
 }
 
-.bookkeeping-job-nav a {
-  min-height: 72px;
-  align-content: center;
-  transition: background-color 120ms ease, border-color 120ms ease;
+.bookkeeping-counter,
+.bookkeeping-package-ready {
+  border-radius: var(--dk-radius-md);
 }
 
-.bookkeeping-job-nav a:focus-visible,
-.bookkeeping-job-nav a:hover {
-  background: var(--dk-accent-soft);
-}
-
-.bookkeeping-job-nav span {
-  border-color: var(--dk-info-border);
-  background: var(--dk-accent-soft);
-  color: var(--dk-accent-default);
+.worklist-classify select,
+.bookkeeping-lens-month input {
+  background-color: var(--dk-bg-surface);
 }
 
 .bookkeeping-section,
@@ -8095,15 +8313,6 @@ body[data-workspace-view="home"] .home-attention-row:hover {
     align-items: stretch;
   }
 
-  .bookkeeping-job-nav {
-    grid-template-columns: 1fr;
-  }
-
-  .bookkeeping-job-nav a + a {
-    border-top: 1px solid var(--dk-border-default);
-    border-left: 0;
-  }
-
   .section-header {
     padding: 14px;
   }
@@ -8419,7 +8628,6 @@ body[data-workspace-view="home"] .home-attention-row:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bookkeeping-job-nav a,
   .bookkeeping-table-wrap tbody tr,
   .bookkeeping-document-row,
   .crm-directory-row,
@@ -13666,6 +13874,7 @@ body:not([data-workspace-view="docs"]) #filters-section {
      the knowledge family's selects already do. */
   .bookkeeping-filters select,
   .bookkeeping-upload select,
+  .bookkeeping-worklist select,
   .crm-filters select,
   .crm-directory .section-header select {
     min-height: 44px;

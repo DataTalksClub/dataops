@@ -187,6 +187,45 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </details>`;
 }
 
+// Developer recovery for the email-intake pipeline. It lives on the Admin
+// surface, not on the bookkeeping page: operators closing a month should not
+// meet an intake-ID reprocessor above their ledger (#242).
+export function mountIntakeRecovery(host, context) {
+  const { request, workApiUrl } = context;
+  host.innerHTML = `<details class="intake-recovery">
+    <summary>Process a received intake</summary>
+    <form data-invoice-process>
+    <label>Received intake ID <input name="intakeItemId" required />
+    </label>
+    <button type="submit">Process / reprocess received intake</button>
+    </form>
+    <p aria-live="polite" data-recovery-status></p>
+    </details>`;
+  const status = host.querySelector("[data-recovery-status]");
+  const api = (options) =>
+    request(workApiUrl("/api/bookkeeping/invoices/process"), {
+      ...options,
+      headers: { "content-type": "application/json" },
+    });
+  host
+    .querySelector("[data-invoice-process]")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const intakeItemId = new FormData(event.target).get("intakeItemId");
+      try {
+        const result = await api({
+          method: "POST",
+          body: JSON.stringify({ intakeItemId }),
+        });
+        status.textContent =
+          (result.issues || []).join("; ") ||
+          `${result.items?.length || 0} invoice draft(s) available for review on the Bookkeeping page. Ingestion does not verify fields or publish.`;
+      } catch (error) {
+        status.textContent = `Needs attention: ${error.message}`;
+      }
+    });
+}
+
 export async function mountInvoiceReview(host, context) {
   const { request, workApiUrl, escapeHtml } = context;
   const e = (value) => escapeHtml(String(value ?? ""));
@@ -209,14 +248,6 @@ export async function mountInvoiceReview(host, context) {
     <details>
     <summary>Publication readiness</summary>
     <div data-invoice-readiness>Checking configuration…</div>
-    </details>
-    <details>
-    <summary>Process a received intake</summary>
-    <form data-invoice-process>
-    <label>Received intake ID <input name="intakeItemId" required />
-    </label>
-    <button type="submit">Process / reprocess received intake</button>
-    </form>
     </details>
     <div data-invoice-list>Loading invoices…</div>
     <article data-invoice-detail hidden>
@@ -336,18 +367,5 @@ export async function mountInvoiceReview(host, context) {
   host
     .querySelector("[data-invoice-refresh]")
     .addEventListener("click", () => safe(refresh));
-  host
-    .querySelector("[data-invoice-process]")
-    .addEventListener("submit", (event) => {
-      event.preventDefault();
-      safe(async () => {
-        const intakeItemId = new FormData(event.target).get("intakeItemId");
-        const result = await api("/process", json("POST", { intakeItemId }));
-        await refresh();
-        status.textContent =
-          (result.issues || []).join("; ") ||
-          `${result.items?.length || 0} invoice draft(s) available for review. Ingestion does not verify fields or publish.`;
-      });
-    });
   await refresh();
 }

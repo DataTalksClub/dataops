@@ -698,7 +698,6 @@ describe("Finance surface boundary", () => {
   test("derives bookkeeping totals and evidence relationships from loaded records", async () => {
     const filters = [
       "search",
-      "year",
       "entryType",
       "category",
       "counterparty",
@@ -784,12 +783,14 @@ describe("Finance surface boundary", () => {
                 id: "link-1",
                 documentId: "document-1",
                 transactionId: "entry-1",
+                coverageType: "evidence",
               },
             ],
           };
         if (path.endsWith("/accounts")) return { items: [] };
         if (path.endsWith("/reports/vat"))
           return { months: [], transactions: [] };
+        if (path.endsWith("/reports")) return { items: [] };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
@@ -799,18 +800,24 @@ describe("Finance surface boundary", () => {
     const surface = document.surface;
     assert.match(surface.innerHTML, /Record and review the ledger/);
     assert.match(surface.innerHTML, /Match transaction evidence/);
-    assert.match(surface.innerHTML, /Prepare the monthly package/);
+    assert.match(surface.innerHTML, /Close the month with a package/);
     // The forwarded-invoice intake sits below the monthly package instead of
-    // opening the page, and its recovery form stays behind a collapsed
-    // disclosure.
+    // opening the page, and the received-intake recovery form has moved off
+    // the page entirely (it lives on Admin now).
     assert.ok(
       surface.innerHTML.indexOf("data-invoice-review") >
-        surface.innerHTML.indexOf("Prepare the monthly package"),
+        surface.innerHTML.indexOf("Close the month with a package"),
       "invoice intake renders below the monthly-package section",
     );
     assert.match(
       surface.querySelector("[data-invoice-review]").innerHTML,
-      /<details>\s*<summary>Process a received intake<\/summary>/,
+      /Invoice ledger/,
+    );
+    assert.equal(
+      surface
+        .querySelector("[data-invoice-review]")
+        .innerHTML.includes("Process a received intake"),
+      false,
     );
     // Types containing "income" count as income whatever their wording;
     // every other typed entry is an expense; only untyped rows are
@@ -863,8 +870,8 @@ describe("Finance surface boundary", () => {
     // Directions with nothing in them drop out instead of reading 0.00.
     // Kept last: it filters the shared harness and must not skew the
     // assertions above.
-    filters[2].value = "expense";
-    await filters[2].dispatch("input");
+    filters[1].value = "expense";
+    await filters[1].dispatch("input");
     assert.equal(
       surface.querySelector(".bookkeeping-totals").textContent,
       "EUR Expenses 125.50",
@@ -934,6 +941,7 @@ describe("Finance surface boundary", () => {
           };
         if (path.endsWith("/reports/vat"))
           return { months: [], transactions: [] };
+        if (path.endsWith("/reports")) return { items: [] };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
@@ -1059,7 +1067,6 @@ describe("Finance surface boundary", () => {
   test("validates bookkeeping entry and month before mutation, then builds the selected monthly package", async () => {
     const filters = [
       "search",
-      "year",
       "entryType",
       "category",
       "counterparty",
@@ -1072,6 +1079,7 @@ describe("Finance surface boundary", () => {
     const checkedStatement = new FakeElement("input");
     checkedStatement.value = "private-statement-1";
     const calls = [];
+    let reportsItems = [];
     const { document, finance } = createHarness({
       setupSurface: (surface) => {
         surface.setQueryAll("[data-filter]", filters);
@@ -1109,13 +1117,27 @@ describe("Finance surface boundary", () => {
             ],
             transactions: [],
           };
-        if (path.endsWith("/reports/snapshot"))
+        if (path.endsWith("/reports/snapshot")) {
+          reportsItems = [
+            {
+              id: "report-1",
+              month: "2026-08",
+              status: "ready",
+              reconciliation: {
+                transactionCount: 0,
+                excludedTransactionCount: 2,
+                documentCount: 3,
+              },
+            },
+          ];
           return {
             report: { id: "report-1", reconciliation: { excludedTransactionCount: 2 } },
             warnings: {},
           };
+        }
         if (path.endsWith("/reports/report-1/archive"))
           return { downloadUrl: "https://private.test/monthly.zip" };
+        if (path.endsWith("/reports")) return { items: reportsItems };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
@@ -1145,12 +1167,24 @@ describe("Finance surface boundary", () => {
       false,
     );
 
+    // The report month follows the close lens, and the review shows the
+    // pre-flight state before anything is created: with no business accounts
+    // the package is blocked and says why.
+    const review = surface.querySelector("[data-package-review]");
+    assert.match(review.innerHTML, /August 2026 package/);
+    assert.match(review.innerHTML, /Two business accounts are required/);
+    assert.equal(
+      surface.querySelector("[data-report-month]").value,
+      "2026-08",
+    );
+
     const report = surface.querySelector("[data-report]");
+    surface.querySelector("[data-report-month]").value = "";
     await report.dispatch("click");
     await settle();
     assert.equal(
       surface.querySelector("[data-bookkeeping-status]").textContent,
-      "Choose a report month.",
+      "Pick the month to close with the lens above.",
     );
     assert.equal(
       calls.some(({ path }) => path.endsWith("/reports/snapshot")),
@@ -1169,8 +1203,25 @@ describe("Finance surface boundary", () => {
     });
     assert.equal(
       surface.querySelector("[data-bookkeeping-status]").textContent,
-      "Snapshot ready. 2 tax/health-insurance entries kept out of the package. Download link expires after five minutes.",
+      "Package created. 2 tax/health-insurance entries kept out.",
     );
+    // Creation no longer auto-downloads; the review shows the ready package
+    // and its download is an explicit action.
+    assert.equal(
+      calls.some(({ path }) => path.endsWith("/reports/report-1/archive")),
+      false,
+    );
+    assert.match(review.innerHTML, /Package ready/);
+    assert.match(review.innerHTML, /0\s*transactions and 3 documents inside/);
+    await review.dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-download-archive]"
+            ? { dataset: { downloadArchive: "report-1" } }
+            : null,
+      },
+    });
+    await settle();
     assert.equal(
       calls.some(({ path }) => path.endsWith("/reports/report-1/archive")),
       true,
@@ -1183,6 +1234,225 @@ describe("Finance surface boundary", () => {
           element.clicked,
       ),
       true,
+    );
+  });
+
+  test("anchors the page on the month lens with an actionable worklist", async () => {
+    const pdfInput = new FakeElement("input");
+    const transactionSelect = new FakeElement("select");
+    const evidenceSection = new FakeElement("section");
+    const savedPuts = [];
+    const entries = [
+      {
+        id: "entry-linked",
+        transactionDate: "2026-09-02",
+        counterparty: "Hosting GmbH",
+        description: "Hosting",
+        amount: "50.00",
+        currency: "EUR",
+        entryType: "expense",
+      },
+      {
+        id: "entry-usd",
+        transactionDate: "2026-09-05",
+        counterparty: "Sponsor LLC",
+        description: "Sponsorship",
+        amount: "200.00",
+        currency: "USD",
+        entryType: "income",
+      },
+      {
+        id: "entry-untyped",
+        transactionDate: "2026-09-07",
+        counterparty: "Misc Payee",
+        description: "Unclassified item",
+        amount: "10.00",
+        currency: "EUR",
+      },
+      {
+        id: "entry-august",
+        transactionDate: "2026-08-20",
+        counterparty: "August Payee",
+        description: "Older month",
+        amount: "30.00",
+        currency: "EUR",
+        entryType: "expense",
+      },
+    ];
+    const { document, finance } = createHarness({
+      setupSurface: (surface) => {
+        surface.setQuery("[data-pdf]", pdfInput);
+        surface.setQuery("[data-transaction]", transactionSelect);
+        surface.setQuery("#bookkeeping-evidence", evidenceSection);
+      },
+      request: async (url, options = {}) => {
+        const path = requestPath(url);
+        if (path.includes("/transactions/")) {
+          assert.equal(options.method, "PUT");
+          savedPuts.push(JSON.parse(options.body));
+          const id = path.split("/").pop();
+          const saved = entries.find((e) => e.id === id);
+          return { ...saved, ...JSON.parse(options.body) };
+        }
+        if (path.endsWith("/transactions")) return { items: entries };
+        if (path.endsWith("/documents")) return { items: [] };
+        if (path.endsWith("/links"))
+          return {
+            items: [
+              {
+                id: "link-1",
+                documentId: "document-1",
+                transactionId: "entry-linked",
+                coverageType: "evidence",
+              },
+            ],
+          };
+        if (path.endsWith("/accounts"))
+          return {
+            items: [
+              { id: "account-1", displayName: "Finom", kind: "business" },
+              { id: "account-2", displayName: "Revolut", kind: "business" },
+            ],
+          };
+        if (path.endsWith("/reports/vat"))
+          return { months: [], transactions: [] };
+        if (path.endsWith("/reports")) return { items: [] };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    const surface = document.surface;
+    // The lens opens on the month that has work, not on all-time.
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /September 2026 close/,
+    );
+    // The four close counters answer "what is left for this month".
+    const counters = surface.querySelector("[data-close-state]").innerHTML;
+    assert.match(counters, /<strong>3<\/strong\s*>\s*transactions/);
+    assert.match(counters, /<strong>2<\/strong\s*>\s*evidence missing/);
+    assert.match(counters, /<strong>1<\/strong\s*>\s*EUR conversions open/);
+    // Three missing-evidence/conversion/unclassified items drive the CTA.
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /Review 4 open items/,
+    );
+    // The worklist is the reconcile output with its fixes attached.
+    const worklist = surface.querySelector("[data-worklist]");
+    assert.match(worklist.innerHTML, /Attach evidence/);
+    assert.match(worklist.innerHTML, /data-add-eur="entry-usd"/);
+    assert.match(worklist.innerHTML, /data-classify="entry-untyped"/);
+    // The ledger is scoped to the lens month; August stays out until the
+    // operator asks for it.
+    const ledger = surface.querySelector(".bookkeeping-ledger").innerHTML;
+    assert.match(ledger, /Hosting GmbH/);
+    assert.doesNotMatch(ledger, /August Payee/);
+    // The package review pre-flight names each statement requirement.
+    const review = surface.querySelector("[data-package-review]");
+    assert.match(review.innerHTML, /✗ Bank statement —\s*Finom/);
+    assert.match(review.innerHTML, /✗ Bank statement —\s*Revolut/);
+
+    // Adding the EUR value closes the conversion from the worklist.
+    await worklist.dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-add-eur]"
+            ? { dataset: { addEur: "entry-usd" } }
+            : null,
+      },
+    });
+    const eurDialog = surface.querySelector(".bookkeeping-eur-dialog");
+    assert.equal(eurDialog.open, true);
+    assert.match(
+      eurDialog.querySelector("[data-eur-context]").textContent,
+      /Sponsor LLC — 200\.00 USD/,
+    );
+    const eurInput = eurDialog.querySelector("input[name=amountEur]");
+    eurInput.value = "not-a-number";
+    await eurDialog.querySelector("[data-eur-save]").dispatch("click");
+    await settle();
+    assert.match(
+      eurDialog.querySelector("[data-eur-error]").textContent,
+      /positive number/,
+    );
+    assert.equal(savedPuts.length, 0);
+    eurInput.value = "184.20";
+    await eurDialog.querySelector("[data-eur-save]").dispatch("click");
+    await settle();
+    assert.equal(eurDialog.open, false);
+    assert.deepEqual(savedPuts[0], { amountEur: "184.20" });
+    assert.match(
+      surface.querySelector(".bookkeeping-ledger").innerHTML,
+      /≈ 184\.20 EUR/,
+    );
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /<strong>0<\/strong\s*>\s*EUR conversions open/,
+    );
+
+    // Classifying happens inline from the worklist row.
+    entries[2].entryType = "";
+    await worklist.dispatch("change", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-classify]"
+            ? { dataset: { classify: "entry-untyped" }, value: "income" }
+            : null,
+        value: "income",
+      },
+    });
+    await settle();
+    assert.deepEqual(savedPuts[1], { entryType: "income" });
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /Review 2 open items/,
+    );
+
+    // Attaching evidence from the worklist scopes the upload form.
+    await worklist.dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-attach-evidence]"
+            ? { dataset: { attachEvidence: "entry-usd" } }
+            : null,
+      },
+    });
+    await settle();
+    assert.equal(transactionSelect.value, "entry-usd");
+    assert.match(
+      surface.querySelector("[data-bookkeeping-status]").textContent,
+      /Attach evidence for Sponsor LLC/,
+    );
+
+    // The all-time lookup stays reachable, and stepping months works.
+    await surface.querySelector("[data-lens-toggle]").dispatch("click");
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /All months — 4 transactions\s*on record/,
+    );
+    assert.equal(surface.querySelector("[data-worklist-section]").hidden, true);
+    assert.match(
+      surface.querySelector(".bookkeeping-ledger").innerHTML,
+      /August Payee/,
+    );
+    await surface.querySelector("[data-lens-toggle]").dispatch("click");
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /September 2026 close/,
+    );
+    await surface.querySelector("[data-lens-prev]").dispatch("click");
+    assert.match(
+      surface.querySelector("[data-close-state]").innerHTML,
+      /August 2026 close/,
+    );
+    assert.match(
+      surface.querySelector(".bookkeeping-ledger").innerHTML,
+      /August Payee/,
+    );
+    assert.doesNotMatch(
+      surface.querySelector(".bookkeeping-ledger").innerHTML,
+      /Hosting GmbH/,
     );
   });
 

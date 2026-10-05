@@ -1,11 +1,31 @@
+import { bookkeepingSurfaceMarkup } from "./bookkeeping-markup.js";
+import {
+  accountOptionsMarkup,
+  closeStateAllMarkup,
+  closeStateMonthMarkup,
+  documentGroupsMarkup,
+  ledgerTableMarkup,
+  packageReviewMarkup,
+  transactionOptionsMarkup,
+  worklistMarkup,
+} from "./bookkeeping-views.js";
 import { mountInvoiceReview } from "./invoices.js";
 import { html } from "./shared.js";
 import {
   entryDirection,
   FIELD_LABELS,
+  latestActivityMonth,
   ledgerDate,
   MONEY_PATTERN,
+  monthLabel,
+  monthOf,
+  shiftMonth,
 } from "./bookkeeping-format.js";
+
+// Categories the backend keeps out of the monthly package (private-money
+// payments reported separately); mirrored so the package review can say what
+// will be excluded before anything is created.
+const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
 
 function focusFirstUsableControl(dialog) {
   const control = dialog.querySelector(
@@ -32,6 +52,7 @@ export function createBookkeepingSurface(context) {
     humanizeOptionLabel,
     request,
     setRouteTitle,
+    todayIsoDate,
     workApiUrl,
   } = context;
 
@@ -39,260 +60,7 @@ export function createBookkeepingSurface(context) {
     documentList.replaceChildren();
     const surface = document.createElement("section");
     surface.className = "bookkeeping-surface";
-    surface.innerHTML = html` <header class="bookkeeping-header">
-        <div>
-          <p class="surface-eyebrow">Monthly close</p>
-          <h1>Bookkeeping</h1>
-          <p>
-            Record the ledger, match private evidence, and prepare a reviewable
-            monthly package.
-          </p>
-        </div>
-        <button class="primary-button" data-bookkeeping-add>Add entry</button>
-      </header>
-      <nav class="bookkeeping-job-nav" aria-label="Bookkeeping jobs">
-        <a href="#bookkeeping-ledger"
-          ><span>1</span><strong>Record ledger</strong
-          ><small>Transactions and totals</small></a
-        ><a href="#bookkeeping-evidence"
-          ><span>2</span><strong>Match evidence</strong
-          ><small>PDFs and references</small></a
-        ><a href="#bookkeeping-package"
-          ><span>3</span><strong>Close month</strong
-          ><small>Review package</small></a
-        >
-      </nav>
-      <p data-bookkeeping-status class="surface-status" role="status"></p>
-      <section
-        id="bookkeeping-ledger"
-        class="bookkeeping-section bookkeeping-ledger-section"
-        aria-labelledby="bookkeeping-ledger-heading"
-      >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Job 1</p>
-            <h3 id="bookkeeping-ledger-heading">
-              Record and review the ledger
-            </h3>
-            <p>
-              Filter transactions, confirm totals, and open an entry only when
-              it needs work.
-            </p>
-          </div>
-          <p class="bookkeeping-totals" aria-live="polite"></p>
-        </header>
-        <div class="bookkeeping-filters">
-          <label
-            >Search
-            <input
-              data-filter="search"
-              type="search"
-              placeholder="Provider, description, or category" /></label
-          ><label
-            >Year
-            <select data-filter="year">
-              <option value="">All years</option>
-            </select></label
-          >
-          <details>
-            <summary>More filters</summary>
-            <div class="bookkeeping-filter-more">
-              <label>Type <input data-filter="entryType" /></label
-              ><label>Category <input data-filter="category" /></label
-              ><label
-                >Provider / payee <input data-filter="counterparty" /></label
-              ><label
-                >Currency <input data-filter="currency" maxlength="3"
-              /></label>
-            </div>
-          </details>
-        </div>
-        <div class="bookkeeping-ledger" aria-live="polite">Loading ledger…</div>
-      </section>
-      <section
-        id="bookkeeping-evidence"
-        class="bookkeeping-section bookkeeping-evidence"
-        aria-labelledby="bookkeeping-evidence-heading"
-      >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Job 2</p>
-            <h3 id="bookkeeping-evidence-heading">
-              Match transaction evidence
-            </h3>
-            <p>
-              Upload verified PDFs and connect each file to the ledger entry it
-              supports.
-            </p>
-          </div>
-          <button class="quiet-button" data-setup-accounts>
-            Set up business accounts
-          </button>
-        </header>
-        <div class="bookkeeping-upload">
-          <label class="bookkeeping-file"
-            >PDF evidence
-            <input type="file" accept="application/pdf,.pdf" data-pdf /></label
-          ><label
-            >Document type
-            <select data-document-type>
-              <option value="invoice">Invoice</option>
-              <option value="receipt">Receipt</option>
-              <option value="bank-statement">Bank statement</option>
-              <option value="private-account-statement">
-                Private account statement
-              </option>
-            </select></label
-          ><label
-            >Account
-            <select data-account>
-              <option value="">No account</option>
-            </select></label
-          ><label
-            >Statement month <input type="month" data-statement-month /></label
-          ><label class="bookkeeping-transaction-link"
-            >Link to transaction
-            <select data-transaction>
-              <option value="">No transaction</option>
-            </select></label
-          ><button class="primary-button" data-upload>Upload PDF</button>
-        </div>
-        <div class="bookkeeping-documents" aria-live="polite">
-          Loading documents…
-        </div>
-      </section>
-      <section
-        id="bookkeeping-package"
-        class="bookkeeping-section bookkeeping-package-section"
-        aria-labelledby="bookkeeping-package-heading"
-      >
-        <header class="section-header">
-          <div>
-            <p class="section-kicker">Job 3</p>
-            <h3 id="bookkeeping-package-heading">
-              Prepare the monthly package
-            </h3>
-            <p>
-              Choose the reporting month and include private-account statements
-              only when they are needed.
-            </p>
-          </div>
-        </header>
-        <fieldset class="bookkeeping-private-statements">
-          <legend>Optional private-account statements</legend>
-          <div data-private-statements>No eligible private statements.</div>
-        </fieldset>
-        <section class="bookkeeping-vat" aria-labelledby="bookkeeping-vat-heading">
-          <header class="section-header">
-            <div>
-              <h4 id="bookkeeping-vat-heading">VAT summary</h4>
-              <p>
-                Value-added tax recorded on income and expense entries. Tax and
-                health-insurance entries stay out of the monthly package but
-                their VAT payments appear here.
-              </p>
-            </div>
-            <label
-              >VAT year
-              <select data-vat-year><option value="">All years</option></select></label
-            >
-          </header>
-          <div class="bookkeeping-vat-summary" data-vat-summary aria-live="polite">
-            Loading VAT summary…
-          </div>
-        </section>
-        <div class="bookkeeping-package">
-          <label>Report month <input type="month" data-report-month /></label
-          ><button class="primary-button" data-report>
-            Create monthly package
-          </button>
-        </div>
-      </section>
-      <section class="bookkeeping-section invoice-review-section" data-invoice-review></section>
-      <dialog class="surface-dialog bookkeeping-entry-dialog">
-        <form method="dialog" novalidate>
-          <header>
-            <p class="surface-eyebrow">Ledger record</p>
-            <h3>Bookkeeping entry</h3>
-            <p>
-              Fields marked * are required. Amounts are positive; the Type
-              field records whether money moves in or out. Payment and
-              classification details may be added later.
-            </p>
-          </header>
-          <div class="dialog-fields bookkeeping-entry-fields">
-            <input type="hidden" name="id" /><label
-              ><span class="label-text">Transaction date
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="transactionDate" type="date" /></label
-            ><label>Paid date <input name="paidDate" type="date" /></label
-            ><label class="span-all"
-              ><span class="label-text">Provider / payee
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="counterparty" /></label
-            ><label class="span-all"
-              ><span class="label-text">Description
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="description" /></label
-            ><label
-              ><span class="label-text">Amount
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="amount" inputmode="decimal" /></label
-            ><label
-              ><span class="label-text">Currency
-              <span class="required-mark" aria-hidden="true">*</span></span>
-              <input name="currency" maxlength="3" value="EUR" /></label
-            ><label
-              >Type
-              <select name="entryType" data-entry-type>
-                <option value="">Unclassified</option>
-                <option value="expense">Expense — money out</option>
-                <option value="income">Income — money in</option>
-              </select></label
-            ><label
-              >VAT amount
-              <input name="vatAmount" inputmode="decimal" /></label
-            ><label
-              >VAT currency
-              <input name="vatCurrency" maxlength="3" /></label
-            ><label
-              >Category
-              <input name="category" list="bookkeeping-category-options" /></label
-            ><datalist
-              id="bookkeeping-category-options"
-              data-category-options
-            ></datalist>
-            <small class="field-hint span-all"
-              >Enter amounts as positive numbers; Type sets the direction.</small
-            >
-            <label class="span-all"
-              >Statement / reference <input name="statementRef"
-            /></label>
-            <p class="span-all" role="alert" data-form-error></p>
-          </div>
-          <footer class="bookkeeping-actions">
-            <button class="primary-button" data-save>Save</button
-            ><button value="cancel">Cancel</button>
-          </footer>
-        </form>
-      </dialog>
-      <dialog class="surface-dialog bookkeeping-delete-dialog">
-        <form method="dialog">
-          <header>
-            <p class="surface-eyebrow">Destructive change</p>
-            <h3>Delete bookkeeping entry?</h3>
-            <p>
-              <strong data-delete-entry-name>This ledger entry</strong> will be
-              permanently removed. Linked evidence is not deleted.
-            </p>
-          </header>
-          <footer>
-            <button type="button" class="danger-button" data-delete-confirm>
-              Delete entry</button
-            ><button value="cancel" data-delete-cancel>Keep entry</button>
-          </footer>
-        </form>
-      </dialog>`;
+    surface.innerHTML = bookkeepingSurfaceMarkup();
     documentList.append(surface);
     setRouteTitle("Bookkeeping");
     await mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context);
@@ -300,10 +68,19 @@ export function createBookkeepingSurface(context) {
     let entries = [],
       documents = [],
       links = [],
-      accounts = [];
+      accounts = [],
+      reports = [];
+    // The lens is the month being closed ("YYYY-MM") or "all" for the
+    // all-time lookup view. It opens on the month that has work.
+    let lens = "";
     const ledger = surface.querySelector(".bookkeeping-ledger"),
       totals = surface.querySelector(".bookkeeping-totals"),
+      closeState = surface.querySelector("[data-close-state]"),
+      worklist = surface.querySelector("[data-worklist]"),
+      worklistSection = surface.querySelector("[data-worklist-section]"),
+      lensInput = surface.querySelector("[data-lens-month]"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
+      eurDialog = surface.querySelector(".bookkeeping-eur-dialog"),
       form = entryDialog.querySelector("form"),
       status = surface.querySelector("[data-bookkeeping-status]");
     const api = (path, options = {}) =>
@@ -328,37 +105,84 @@ export function createBookkeepingSurface(context) {
       link.rel = "noopener";
       link.click();
     }
-    function clearFieldErrors() {
-      form.querySelectorAll(".field-error").forEach((note) => note.remove());
-      form
-        .querySelectorAll("[aria-invalid]")
-        .forEach((field) => field.removeAttribute("aria-invalid"));
-      surface.querySelector("[data-form-error]").textContent = "";
+    const lensEntries = () =>
+      lens === "all" ? entries : entries.filter((e) => monthOf(e) === lens);
+    const hasEvidence = (id) =>
+      links.some((l) => l.transactionId === id && l.coverageType === "evidence");
+    const isExempt = (entry) =>
+      REPORT_EXEMPT_CATEGORIES.has(String(entry.category || ""));
+    // What still stands between this month and its package.
+    function openItems(monthEntries) {
+      return {
+        missingEvidence: monthEntries.filter((e) => !hasEvidence(e.id)),
+        conversions: monthEntries.filter(
+          (e) => e.currency !== "EUR" && !String(e.amountEur || "").trim(),
+        ),
+        unclassified: monthEntries.filter((e) => !entryDirection(e)),
+      };
     }
-    // Messages render inside the failing field's label so the operator sees
-    // which value to fix; the summary repeats the first one for convenience.
-    function showFieldErrors(errors) {
-      let firstField = null;
-      errors.forEach(({ name, message }) => {
-        const field = form.elements[name];
-        if (!field) return;
-        field.setAttribute("aria-invalid", "true");
-        const label = field.closest?.("label");
-        if (label) {
-          let note = label.querySelector(".field-error");
-          if (!note) {
-            note = document.createElement("small");
-            note.className = "field-error";
-            label.append(note);
-          }
-          note.textContent = message;
-        }
-        if (!firstField) {
-          firstField = field;
-          surface.querySelector("[data-form-error]").textContent = message;
-        }
+    function monthReport() {
+      return reports.find(
+        (r) =>
+          r.month === lens && ["ready", "generated"].includes(String(r.status)),
+      );
+    }
+    function setLens(month, { resetInput = true } = {}) {
+      lens = month;
+      if (resetInput && month !== "all") lensInput.value = month;
+      renderAll();
+    }
+    function renderAll() {
+      renderCloseState();
+      renderWorklist();
+      renderLedger();
+      renderPackageReview();
+    }
+    function renderCloseState() {
+      const lensSection = surface.querySelector("[data-monthlens]");
+      lensSection.classList.toggle("is-lens-all", lens === "all");
+      surface.querySelector("[data-lens-toggle]").textContent =
+        lens === "all" ? "Back to month view" : "All months";
+      if (lens === "all") {
+        closeState.innerHTML = closeStateAllMarkup(entries.length);
+        return;
+      }
+      const monthEntries = lensEntries();
+      const open = openItems(monthEntries);
+      const openCount =
+        open.missingEvidence.length +
+        open.conversions.length +
+        open.unclassified.length;
+      const report = monthReport();
+      closeState.innerHTML = closeStateMonthMarkup({
+        title: monthLabel(lens),
+        transactions: monthEntries.length,
+        missingEvidence: open.missingEvidence.length,
+        conversions: open.conversions.length,
+        packageReady: Boolean(report),
+        cta: !monthEntries.length
+          ? { kind: "add" }
+          : openCount
+            ? { kind: "worklist", count: openCount }
+            : report
+              ? { kind: "download" }
+              : { kind: "package" },
+        e: escapeHtml,
       });
-      firstField?.focus();
+    }
+    function renderWorklist() {
+      worklistSection.hidden = lens === "all";
+      if (lens === "all") return;
+      const open = openItems(lensEntries());
+      worklist.innerHTML = worklistMarkup({
+        rows: [
+          ...open.missingEvidence.map((entry) => ({ kind: "evidence", entry })),
+          ...open.conversions.map((entry) => ({ kind: "eur", entry })),
+          ...open.unclassified.map((entry) => ({ kind: "classify", entry })),
+        ],
+        monthTitle: monthLabel(lens),
+        e: escapeHtml,
+      });
     }
     function renderLedger() {
       const filters = Object.fromEntries(
@@ -367,9 +191,8 @@ export function createBookkeepingSurface(context) {
           el.value.trim(),
         ]),
       );
-      const shown = entries.filter(
+      const shown = lensEntries().filter(
         (e) =>
-          (!filters.year || e.transactionDate.startsWith(filters.year)) &&
           (!filters.entryType ||
             String(e.entryType || "")
               .toLowerCase()
@@ -415,77 +238,12 @@ export function createBookkeepingSurface(context) {
               : []),
           ])
           .join(" · ") || "No filtered total";
-      ledger.innerHTML = shown.length
-        ? html`<div class="bookkeeping-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Paid</th>
-                  <th>Provider / description</th>
-                  <th>Amount</th>
-                  <th>VAT</th>
-                  <th>Category / type</th>
-                  <th>Evidence</th>
-                  <th><span class="visually-hidden">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${shown
-                  .map(
-                    (e) =>
-                      html`<tr>
-                        <td data-label="Transaction date">
-                          ${escapeHtml(ledgerDate(e.transactionDate))}
-                        </td>
-                        <td data-label="Paid">
-                          ${escapeHtml(e.paidDate ? ledgerDate(e.paidDate) : "Unpaid")}
-                        </td>
-                        <td data-label="Entry">
-                          <strong>${escapeHtml(e.counterparty)}</strong
-                          ><small>${escapeHtml(e.description)}</small>
-                        </td>
-                        <td data-label="Amount" class="ledger-amount">
-                          ${escapeHtml(
-                            `${entryDirection(e) === "expense" ? "-" : ""}${e.amount} ${e.currency}`,
-                          )}
-                        </td>
-                        <td data-label="VAT" class="ledger-vat">
-                          ${escapeHtml(
-                            e.vatAmount
-                              ? `${e.vatAmount} ${e.vatCurrency || e.currency}`
-                              : "—",
-                          )}
-                        </td>
-                        <td data-label="Category / type">
-                          ${escapeHtml([e.category, e.entryType].filter(Boolean).join(" / ") || "—")}
-                        </td>
-                        <td data-label="Evidence">
-                          ${e.statementRef
-                            ? `<span class="evidence-state is-attached">Referenced</span>`
-                            : `<button type="button" class="evidence-state is-missing" data-attach-evidence="${escapeHtml(e.id)}">Missing</button>`}
-                        </td>
-                        <td data-label="Actions">
-                          <div class="row-actions">
-                            <button data-edit="${escapeHtml(e.id)}">Edit</button
-                            ><button
-                              class="danger-text-button"
-                              data-delete="${escapeHtml(e.id)}"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>`,
-                  )
-                  .join("")}
-              </tbody>
-            </table>
-          </div>`
-        : html`<div class="honest-state">
-            <strong>No bookkeeping entries</strong>
-            <p>Adjust filters or add the first entry.</p>
-          </div>`;
+      ledger.innerHTML = ledgerTableMarkup({
+        shown,
+        hasEvidence,
+        lensTitle: lens === "all" ? "" : monthLabel(lens),
+        e: escapeHtml,
+      });
     }
     // Category suggestions and type options stay seeded from the ledger so
     // the dialog cannot grow duplicate vocabularies like "Income"/"income".
@@ -530,79 +288,168 @@ export function createBookkeepingSurface(context) {
         )
         .join("");
     }
+    // The evidence link select only offers the lens month's transactions,
+    // entries missing evidence first — the operator picks from what the
+    // close actually needs instead of an all-time list.
+    function renderTransactionOptions() {
+      const scoped = [...lensEntries()].sort((a, b) => {
+        const aMissing = hasEvidence(a.id) ? 1 : 0;
+        const bMissing = hasEvidence(b.id) ? 1 : 0;
+        return (
+          aMissing - bMissing ||
+          String(a.transactionDate).localeCompare(String(b.transactionDate))
+        );
+      });
+      surface.querySelector("[data-transaction]").innerHTML =
+        transactionOptionsMarkup(scoped, escapeHtml);
+    }
+    // Evidence documents grouped by the month they belong to: statement
+    // month for statements, the linked transaction's month otherwise.
+    function documentMonth(d) {
+      if (/^\d{4}-\d{2}$/.test(String(d.statementMonth || "")))
+        return d.statementMonth;
+      const linked = links.find((l) => l.documentId === d.id);
+      const transaction = linked && entries.find((e) => e.id === linked.transactionId);
+      return transaction ? monthOf(transaction) : "";
+    }
+    function renderDocuments() {
+      const groups = new Map();
+      documents.forEach((d) => {
+        const month = documentMonth(d);
+        (groups.get(month) ?? groups.set(month, []).get(month)).push(d);
+      });
+      const ordered = [...groups.keys()].sort((a, b) =>
+        a === "" ? 1 : b === "" ? -1 : b.localeCompare(a),
+      );
+      const documentsHost = surface.querySelector(".bookkeeping-documents");
+      if (!documents.length) {
+        documentsHost.innerHTML = html`<div class="honest-state">
+            <strong>No private documents uploaded</strong>
+            <p>Open “Upload evidence PDF” to add the first piece of evidence.</p>
+          </div>`;
+        return;
+      }
+      documentsHost.innerHTML =
+        `<p class="bookkeeping-download-hint">Downloads are private and expire after five minutes.</p>` +
+        documentGroupsMarkup({
+          groups: ordered.map((month) => ({
+            month: month ? monthLabel(month) : "",
+            docs: groups.get(month).map((d) => ({
+              ...d,
+              links: links
+                .filter((l) => l.documentId === d.id)
+                .map((l) => ({
+                  ...l,
+                  transaction: entries.find((e) => e.id === l.transactionId),
+                })),
+            })),
+          })),
+          e: escapeHtml,
+          humanizeOptionLabel,
+        });
+    }
+    function renderPackageReview() {
+      const review = surface.querySelector("[data-package-review]");
+      const reportInput = surface.querySelector("[data-report-month]");
+      reportInput.value = lens === "all" ? "" : lens;
+      if (lens === "all") {
+        review.innerHTML = html`<div class="honest-state">
+            <strong>Choose a month to review</strong>
+            <p>
+              Pick a month with the lens above — the package review follows the
+              month being closed.
+            </p>
+          </div>`;
+        return;
+      }
+      const businessAccounts = accounts.filter(
+        (a) => a.kind === "business" && a.active !== false,
+      );
+      const monthEntries = lensEntries().filter((e) => !isExempt(e));
+      const excludedCount = lensEntries().filter(isExempt).length;
+      const linkedDocIds = new Set(
+        links
+          .filter((l) => monthEntries.some((e) => e.id === l.transactionId))
+          .map((l) => String(l.documentId)),
+      );
+      const evidenceDocs = documents.filter(
+        (d) => d.documentType !== "bank-statement" && linkedDocIds.has(d.id),
+      );
+      const statementStates = businessAccounts.map((a) => ({
+        account: a,
+        hasStatement: documents.some(
+          (d) =>
+            d.documentType === "bank-statement" &&
+            d.accountId === a.id &&
+            d.statementMonth === lens,
+        ),
+      }));
+      const missingStatements = statementStates.filter((s) => !s.hasStatement);
+      const preflightRows = statementStates.map((s) =>
+        html`<p class="preflight-row ${s.hasStatement ? "is-ok" : "is-blocked"}">
+          ${s.hasStatement ? "✓" : "✗"} Bank statement —
+          ${escapeHtml(s.account.displayName)}
+        </p>`,
+      );
+      if (businessAccounts.length < 2)
+        preflightRows.push(
+          html`<p class="preflight-row is-blocked">
+            ✗ Two business accounts are required; set them up in Evidence.
+          </p>`,
+        );
+      const preflightNote = missingStatements.length
+        ? html`<p class="preflight-note">
+            The accountant package needs each business account's statement
+            for ${escapeHtml(monthLabel(lens))} — upload them under Evidence
+            (document type “Bank statement”).
+          </p>`
+        : "";
+      const report = monthReport();
+      const preview = html`${monthEntries.length} transaction${monthEntries.length === 1 ? "" : "s"} ·
+        ${evidenceDocs.length} linked evidence document${evidenceDocs.length === 1 ? "" : "s"}
+        · ${excludedCount} tax/health-insurance ${excludedCount === 1 ? "entry" : "entries"} kept out`;
+      review.innerHTML = packageReviewMarkup({
+        title: monthLabel(lens),
+        preflightRows,
+        preflightNote,
+        preview,
+        ready: report
+          ? {
+              id: report.id,
+              transactionCount:
+                report.reconciliation?.transactionCount ??
+                monthEntries.length,
+              documentCount: report.reconciliation?.documentCount ?? "—",
+            }
+          : null,
+        e: escapeHtml,
+      });
+    }
     async function refreshEvidence() {
-      const [docResult, linkResult, accountResult] = await Promise.all([
-        api("/documents"),
-        api("/links"),
-        api("/accounts"),
-      ]);
+      const [docResult, linkResult, accountResult, reportResult] =
+        await Promise.all([
+          api("/documents"),
+          api("/links"),
+          api("/accounts"),
+          api("/reports"),
+        ]);
       documents = docResult.items || [];
       links = linkResult.items || [];
       accounts = accountResult.items || [];
+      reports = reportResult.items || [];
       refreshVocabulary();
+      renderTransactionOptions();
       const setupButton = surface.querySelector("[data-setup-accounts]");
       setupButton.disabled = accounts.length > 0;
       if (accounts.length)
         setupButton.textContent = "Business accounts ready";
-      surface.querySelector("[data-account]").innerHTML = html`<option value="">
-          No account
-        </option>
-        ${(accountResult.items || []).map((a) => html`<option value="${escapeHtml(a.id)}">${escapeHtml(a.displayName)} (${escapeHtml(a.kind)})</option>`).join("")}`;
-      surface.querySelector(".bookkeeping-documents").innerHTML =
-        documents.length
-          ? `<p class="bookkeeping-download-hint">Downloads are private and expire after five minutes.</p>` +
-            documents
-              .map((d) => {
-                const documentLinks = links.filter(
-                  (l) => l.documentId === d.id,
-                );
-                const matchDescription = documentLinks.length
-                  ? ` · matched to ${documentLinks.length} ${documentLinks.length === 1 ? "entry" : "entries"}`
-                  : " · not matched";
-                return html`<article class="bookkeeping-document-row">
-                  <div>
-                    <strong
-                      >${escapeHtml(d.originalFilename || "Private PDF")}</strong
-                    >
-                    <p>
-                      ${escapeHtml(humanizeOptionLabel(d.documentType))}${matchDescription}
-                    </p>
-                  </div>
-                  <div class="row-actions">
-                    <button data-download="${escapeHtml(d.id)}">Download</button
-                    >${documentLinks
-                      .map((l) => {
-                        const transaction = entries.find(
-                          (e) => e.id === l.transactionId,
-                        );
-                        return ` <button data-unlink="${escapeHtml(l.id)}">Unlink ${escapeHtml(transaction?.counterparty || "entry")}</button>`;
-                      })
-                      .join("")}
-                  </div>
-                </article>`;
-              })
-              .join("")
-          : html`<div class="honest-state">
-              <strong>No private documents uploaded</strong>
-              <p>Choose a PDF above to add the first piece of evidence.</p>
-            </div>`;
-      const privateStatements = documents.filter(
-        (d) => d.documentType === "private-account-statement",
-      );
-      surface.querySelector("[data-private-statements]").innerHTML =
-        privateStatements.length
-          ? privateStatements
-              .map(
-                (d) =>
-                  html`<label class="checkbox-label"
-                    ><input type="checkbox" value="${escapeHtml(d.id)}" />
-                    <span
-                      >${escapeHtml(d.originalFilename || "Private statement")}</span
-                    ></label
-                  >`,
-              )
-              .join("")
-          : "No eligible private statements.";
+      surface.querySelector("[data-account]").innerHTML =
+        accountOptionsMarkup(accounts, escapeHtml);
+      renderDocuments();
+      renderCloseState();
+      renderWorklist();
+      renderLedger();
+      renderPackageReview();
     }
     async function renderVat() {
       const yearSelect = surface.querySelector("[data-vat-year]");
@@ -661,40 +508,85 @@ export function createBookkeepingSurface(context) {
             </div>`;
       }, "Could not load VAT summary");
     }
+    function replaceEntry(saved) {
+      entries = entries.some((e) => e.id === saved.id)
+        ? entries.map((e) => (e.id === saved.id ? saved : e))
+        : [saved, ...entries];
+      refreshVocabulary();
+      renderAll();
+    }
+    function attachEvidenceFor(id) {
+      const item = entries.find((e) => e.id === id);
+      renderTransactionOptions();
+      surface.querySelector("[data-transaction]").value = id;
+      const panel = surface.querySelector(".bookkeeping-upload-panel");
+      panel.open = true;
+      surface.querySelector("#bookkeeping-evidence").scrollIntoView({ block: "start" });
+      surface.querySelector("[data-pdf]").focus();
+      status.textContent = `Attach evidence for ${item?.counterparty || "this entry"}.`;
+    }
+    function openEurDialog(id) {
+      const item = entries.find((e) => e.id === id);
+      if (!item) return;
+      eurDialog.dataset.id = id;
+      eurDialog.querySelector("form").reset();
+      eurDialog.querySelector("[data-eur-error]").textContent = "";
+      eurDialog.querySelector("[data-eur-context]").textContent =
+        `${item.counterparty} — ${item.amount} ${item.currency}, ${ledgerDate(item.transactionDate)}.`;
+      openDialog(eurDialog);
+    }
+    async function saveEurValue() {
+      await safeAction(async () => {
+        const value = String(
+          eurDialog.querySelector("input[name=amountEur]").value,
+        ).trim();
+        const errorNote = eurDialog.querySelector("[data-eur-error]");
+        errorNote.textContent = "";
+        if (!MONEY_PATTERN.test(value)) {
+          errorNote.textContent =
+            "Enter the EUR value as a positive number, e.g. 184.30.";
+          return;
+        }
+        const saved = await api(`/transactions/${eurDialog.dataset.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ amountEur: value }),
+        });
+        eurDialog.close();
+        replaceEntry(saved);
+        status.textContent = "EUR value recorded; the conversion is closed.";
+      }, "Could not save the EUR value");
+    }
+    const eurForm = eurDialog.querySelector("form");
+    eurForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveEurValue();
+    });
+    eurDialog
+      .querySelector("[data-eur-save]")
+      .addEventListener("click", (event) => {
+        event.preventDefault();
+        saveEurValue();
+      });
     try {
       const result = await api("/transactions");
       entries = result.items || [];
+      lens = latestActivityMonth(
+        entries,
+        String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
+      );
+      lensInput.value = lens;
       const years = [
         ...new Set(entries.map((e) => e.transactionDate.slice(0, 4))),
       ]
         .sort()
         .reverse();
-      surface
-        .querySelector('[data-filter="year"]')
-        .insertAdjacentHTML(
-          "beforeend",
-          years.map((y) => html`<option>${y}</option>`).join(""),
-        );
       const vatYears = surface.querySelector("[data-vat-year]");
       vatYears.insertAdjacentHTML(
         "beforeend",
         years.map((y) => html`<option>${y}</option>`).join(""),
       );
       vatYears.value = years[0] || "";
-      surface
-        .querySelector("[data-transaction]")
-        .insertAdjacentHTML(
-          "beforeend",
-          entries
-            .map(
-              (e) =>
-                html`<option value="${escapeHtml(e.id)}">
-                  ${escapeHtml(`${e.transactionDate} · ${e.counterparty}`)}
-                </option>`,
-            )
-            .join(""),
-        );
-      renderLedger();
+      renderAll();
       await refreshEvidence();
       await renderVat();
     } catch (error) {
@@ -709,12 +601,56 @@ export function createBookkeepingSurface(context) {
     surface
       .querySelector("[data-vat-year]")
       .addEventListener("change", renderVat);
+    const stepLens = (step) => {
+      if (lens !== "all") setLens(shiftMonth(lens, step));
+    };
+    surface.querySelector("[data-lens-prev]").addEventListener("click", () => stepLens(-1));
+    surface.querySelector("[data-lens-next]").addEventListener("click", () => stepLens(1));
+    lensInput.addEventListener("change", () => {
+      if (/^\d{4}-\d{2}$/.test(lensInput.value)) setLens(lensInput.value);
+    });
+    surface
+      .querySelector("[data-lens-toggle]")
+      .addEventListener("click", () => {
+        setLens(
+          lens === "all"
+            ? latestActivityMonth(
+                entries,
+                String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
+              )
+            : "all",
+          { resetInput: false },
+        );
+      });
+    closeState.addEventListener("click", (event) => {
+      if (event.target.closest("[data-cta-add]")) {
+        form.reset();
+        form.elements.currency.value = "EUR";
+        form.elements.entryType.value = "expense";
+        form.elements.transactionDate.value = `${lens}-01`;
+        entryDialog.querySelector("h3").textContent = "Add ledger entry";
+        openDialog(entryDialog);
+      }
+      if (event.target.closest("[data-cta-worklist]"))
+        worklistSection.scrollIntoView({ block: "start" });
+      if (event.target.closest("[data-cta-package]"))
+        surface.querySelector("#bookkeeping-package").scrollIntoView({ block: "start" });
+      if (event.target.closest("[data-cta-download]") && monthReport())
+        safeAction(async () => {
+          const archive = await api(
+            `/reports/${monthReport().id}/archive`,
+            { method: "POST" },
+          );
+          openPrivateDownload(archive.downloadUrl);
+        }, "Could not download the package");
+    });
     surface
       .querySelector("[data-bookkeeping-add]")
       .addEventListener("click", () => {
         form.reset();
         form.elements.currency.value = "EUR";
         form.elements.entryType.value = "expense";
+        if (lens !== "all") form.elements.transactionDate.value = `${lens}-01`;
         entryDialog.querySelector("h3").textContent = "Add ledger entry";
         openDialog(entryDialog);
       });
@@ -723,6 +659,28 @@ export function createBookkeepingSurface(context) {
       field.removeAttribute("aria-invalid");
       field.closest?.("label")?.querySelector(".field-error")?.remove();
       surface.querySelector("[data-form-error]").textContent = "";
+      if (field.name === "currency")
+        surface.querySelector(".bookkeeping-eur-only").hidden =
+          field.value.trim().toUpperCase() === "EUR";
+    });
+    worklist.addEventListener("click", (event) => {
+      const attach = event.target.closest("[data-attach-evidence]")?.dataset
+        .attachEvidence;
+      const addEur = event.target.closest("[data-add-eur]")?.dataset.addEur;
+      if (attach) attachEvidenceFor(attach);
+      if (addEur) openEurDialog(addEur);
+    });
+    worklist.addEventListener("change", (event) => {
+      const classify = event.target.closest("[data-classify]");
+      if (!classify || !classify.value) return;
+      safeAction(async () => {
+        const saved = await api(
+          `/transactions/${classify.dataset.classify}`,
+          { method: "PUT", body: JSON.stringify({ entryType: classify.value }) },
+        );
+        replaceEntry(saved);
+        status.textContent = "Entry classified.";
+      }, "Could not classify entry");
     });
     ledger.addEventListener("click", (event) => {
       const edit = event.target.closest("[data-edit]")?.dataset.edit,
@@ -752,6 +710,8 @@ export function createBookkeepingSurface(context) {
             );
         }
         form.elements.entryType.value = seededType || storedType;
+        surface.querySelector(".bookkeeping-eur-only").hidden =
+          String(item.currency || "").toUpperCase() === "EUR";
         entryDialog.querySelector("h3").textContent = "Edit ledger entry";
         openDialog(entryDialog);
       }
@@ -763,19 +723,43 @@ export function createBookkeepingSurface(context) {
           item?.counterparty || "This ledger entry";
         openDialog(dialog);
       }
-      if (attach) {
-        const item = entries.find((e) => e.id === attach);
-        surface.querySelector("[data-transaction]").value = attach;
-        surface
-          .querySelector("#bookkeeping-evidence")
-          .scrollIntoView({ block: "start" });
-        surface.querySelector("[data-pdf]").focus();
-        status.textContent = `Attach evidence for ${item?.counterparty || "this entry"}.`;
-      }
+      if (attach) attachEvidenceFor(attach);
     });
     surface.querySelector("[data-save]").addEventListener("click", (event) => {
       event.preventDefault();
       safeAction(async () => {
+        const clearFieldErrors = () => {
+          form.querySelectorAll(".field-error").forEach((note) => note.remove());
+          form
+            .querySelectorAll("[aria-invalid]")
+            .forEach((field) => field.removeAttribute("aria-invalid"));
+          surface.querySelector("[data-form-error]").textContent = "";
+        };
+        // Messages render inside the failing field's label so the operator
+        // sees which value to fix; the summary repeats the first one.
+        const showFieldErrors = (errors) => {
+          let firstField = null;
+          errors.forEach(({ name, message }) => {
+            const field = form.elements[name];
+            if (!field) return;
+            field.setAttribute("aria-invalid", "true");
+            const label = field.closest?.("label");
+            if (label) {
+              let note = label.querySelector(".field-error");
+              if (!note) {
+                note = document.createElement("small");
+                note.className = "field-error";
+                label.append(note);
+              }
+              note.textContent = message;
+            }
+            if (!firstField) {
+              firstField = field;
+              surface.querySelector("[data-form-error]").textContent = message;
+            }
+          });
+          firstField?.focus();
+        };
         clearFieldErrors();
         const data = Object.fromEntries(
           [...new FormData(form)]
@@ -794,11 +778,11 @@ export function createBookkeepingSurface(context) {
             name,
             message: `${FIELD_LABELS[name]} is required.`,
           }));
-        for (const name of ["amount", "vatAmount"])
+        for (const name of ["amount", "vatAmount", "amountEur"])
           if (data[name] !== undefined && !MONEY_PATTERN.test(data[name]))
             errors.push({
               name,
-              message: `${FIELD_LABELS[name]} must be a positive number — no minus sign or currency symbol. The Type field records the direction.`,
+              message: `${FIELD_LABELS[name] || "Actual EUR value"} must be a positive number — no minus sign or currency symbol. The Type field records the direction.`,
             });
         if (errors.length) {
           showFieldErrors(errors);
@@ -831,12 +815,11 @@ export function createBookkeepingSurface(context) {
           }
           throw error;
         }
-        entries = id
-          ? entries.map((e) => (e.id === id ? saved : e))
-          : [saved, ...entries];
-        refreshVocabulary();
         entryDialog.close();
-        renderLedger();
+        replaceEntry(saved);
+        if (saved.currency !== "EUR" && !String(saved.amountEur || "").trim())
+          status.textContent =
+            "Entry saved. Add the EUR value from the worklist when the bank settles.";
       }, "Could not save entry");
     });
     surface
@@ -852,7 +835,7 @@ export function createBookkeepingSurface(context) {
           await api(`/transactions/${dialog.dataset.id}`, { method: "DELETE" });
           entries = entries.filter((e) => e.id !== dialog.dataset.id);
           dialog.close();
-          renderLedger();
+          renderAll();
         }, "Could not delete entry"),
       );
     surface
@@ -864,6 +847,18 @@ export function createBookkeepingSurface(context) {
           await refreshEvidence();
         }, "Could not set up accounts"),
       );
+    surface
+      .querySelector("[data-document-type]")
+      .addEventListener("change", (event) => {
+        const statement = ["bank-statement", "private-account-statement"].includes(
+          event.target.value,
+        );
+        surface
+          .querySelectorAll(".bookkeeping-statement-only")
+          .forEach((label) => {
+            label.hidden = !statement;
+          });
+      });
     surface.querySelector("[data-upload]").addEventListener("click", () =>
       safeAction(async () => {
         const file = surface.querySelector("[data-pdf]").files[0];
@@ -898,7 +893,7 @@ export function createBookkeepingSurface(context) {
               "private-account-statement",
             ].includes(documentType)
               ? surface.querySelector("[data-statement-month]").value ||
-                undefined
+                (lens !== "all" ? lens : undefined)
               : undefined,
           }),
         });
@@ -955,7 +950,7 @@ export function createBookkeepingSurface(context) {
       safeAction(async () => {
         const month = surface.querySelector("[data-report-month]").value;
         if (!month) {
-          status.textContent = "Choose a report month.";
+          status.textContent = "Pick the month to close with the lens above.";
           return;
         }
         const privateDocumentIds = [
@@ -967,25 +962,34 @@ export function createBookkeepingSurface(context) {
           method: "POST",
           body: JSON.stringify({ month, privateDocumentIds }),
         });
+        await refreshEvidence();
         const excluded =
           snapshot.report?.reconciliation?.excludedTransactionCount;
         status.textContent = [
           snapshot.warnings?.missingEvidence
-            ? `${snapshot.warnings.missingEvidence} missing-evidence warning(s).`
-            : "Snapshot ready.",
+            ? `Package created with ${snapshot.warnings.missingEvidence} missing-evidence warning(s).`
+            : "Package created.",
           excluded
-            ? `${excluded} tax/health-insurance ${excluded === 1 ? "entry" : "entries"} kept out of the package.`
+            ? `${excluded} tax/health-insurance ${excluded === 1 ? "entry" : "entries"} kept out.`
             : "",
-          "Download link expires after five minutes.",
         ]
           .filter(Boolean)
           .join(" ");
-        const archive = await api(`/reports/${snapshot.report.id}/archive`, {
-          method: "POST",
-        });
-        openPrivateDownload(archive.downloadUrl);
       }, "Could not create monthly package"),
     );
+    surface
+      .querySelector("[data-package-review]")
+      .addEventListener("click", (event) => {
+        const reportId = event.target.closest("[data-download-archive]")
+          ?.dataset.downloadArchive;
+        if (!reportId) return;
+        safeAction(async () => {
+          const archive = await api(`/reports/${reportId}/archive`, {
+            method: "POST",
+          });
+          openPrivateDownload(archive.downloadUrl);
+        }, "Could not download the package");
+      });
   }
 
   return { renderBookkeepingSurface };

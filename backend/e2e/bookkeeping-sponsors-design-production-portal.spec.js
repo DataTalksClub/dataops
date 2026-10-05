@@ -81,6 +81,7 @@ async function routeBookkeeping(page) {
     if (pathname.endsWith("/documents")) return route.fulfill({ json: { items: [{ id: "document-july", originalFilename: "Example Studio invoice.pdf", documentType: "invoice" }] } });
     if (pathname.endsWith("/links")) return route.fulfill({ json: { items: [{ id: "link-july", documentId: "document-july", transactionId: "entry-production" }] } });
     if (pathname.endsWith("/accounts")) return route.fulfill({ json: { items: [{ id: "account-business", displayName: "Business account", kind: "bank" }] } });
+    if (pathname.endsWith("/reports")) return route.fulfill({ json: { items: [] } });
     return route.fulfill({ status: 404, json: { error: "Synthetic route unavailable" } });
   });
 }
@@ -199,7 +200,9 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     const root = await page.goto("/#/bookkeeping");
     assertOwnedServerResponse(server, root, "bookkeeping design root");
     await expect(page.getByRole("heading", { name: "Bookkeeping" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Bookkeeping jobs" })).toContainText("Record ledger");
+    // The decorative job nav gave way to the month lens close state (#242).
+    await expect(page.locator("[data-close-state]")).toContainText("July 2026 close");
+    await expect(page.locator("[data-worklist]")).toContainText("Attach evidence");
     await expect(page.getByRole("row").filter({ hasText: "Example Studio" })).toContainText("Missing");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);

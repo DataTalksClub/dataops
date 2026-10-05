@@ -45,11 +45,13 @@ test.describe("production portal bookkeeping", () => {
     await page.getByRole("button", { name: "Add entry" }).click();
     const entryForm = page.locator(".bookkeeping-entry-dialog");
     await entryForm.getByRole("button", { name: "Save" }).click();
+    // Quick capture presets the transaction date to the lens month, so the
+    // first missing field is the provider.
     await expect(entryForm.getByRole("alert")).toHaveText(
-      "Transaction date is required.",
+      "Provider / payee is required.",
     );
-    await expect(entryForm.getByLabel("Transaction date")).toBeFocused();
-    await expect(entryForm.getByLabel("Transaction date")).toHaveAttribute(
+    await expect(entryForm.getByLabel("Provider / payee")).toBeFocused();
+    await expect(entryForm.getByLabel("Provider / payee")).toHaveAttribute(
       "aria-invalid",
       "true",
     );
@@ -60,9 +62,11 @@ test.describe("production portal bookkeeping", () => {
     await entryForm
       .getByLabel("Description")
       .fill("Synthetic browser evidence");
-    // The label text carries the required mark and, after the empty save
-    // above, the field-level validation note, so match by prefix.
-    await entryForm.getByLabel(/^Amount/).fill("20.00");
+    // The first failed save leaves per-field notes that change accessible
+    // names; address the control directly.
+    await entryForm.locator("[name=amount]").fill("20.00");
+    // Category lives behind the "Optional details" disclosure now.
+    await entryForm.getByText("Optional details").click();
     await entryForm.getByLabel("Category").fill("synthetic-testing");
     await entryForm.getByRole("button", { name: "Save" }).click();
     const createdRow = page.getByRole("row").filter({
@@ -76,6 +80,8 @@ test.describe("production portal bookkeeping", () => {
     await expect(page.getByRole("status")).toContainText(
       "2 business accounts ready",
     );
+    // The upload form lives collapsed behind its summary; open it.
+    await page.locator(".bookkeeping-upload-panel > summary").click();
     await page.getByRole("button", { name: "Upload PDF" }).click();
     await expect(page.getByRole("status")).toContainText("Choose a PDF first");
     const transactionId = await page

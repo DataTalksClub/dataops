@@ -4,6 +4,7 @@ import {
   reportFieldValidation,
   setControlPending,
 } from "../operations-overview.js";
+import { mountIntakeRecovery } from "../finance/invoices.js";
 
 export function createAdminSurface(context) {
   const {
@@ -61,6 +62,13 @@ export function createAdminSurface(context) {
     // uppercase kicker over the title is the admin-template tell.
     wrap.append(renderSurfaceHeader("Admin", surfaceDescription("admin")));
     wrap.append(renderAdminSurface(model));
+    // The received-intake reprocessor is developer recovery tooling; it lives
+    // here, off the bookkeeping page it used to open (#242).
+    const intakeRecovery = document.createElement("section");
+    intakeRecovery.className = "ops-admin-intake-recovery";
+    intakeRecovery.setAttribute("aria-label", "Intake recovery");
+    wrap.append(intakeRecovery);
+    mountIntakeRecovery(intakeRecovery, context);
 
     documentList.replaceChildren(wrap);
   }

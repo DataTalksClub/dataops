@@ -44,3 +44,42 @@ export function ledgerDate(value) {
     timeZone: "UTC",
   }).format(parsed);
 }
+
+// The month a ledger entry belongs to, in "YYYY-MM" form. Undated entries
+// have no month and only surface in the all-months view.
+export function monthOf(entry) {
+  const month = String(entry?.transactionDate || "").slice(0, 7);
+  return /^\d{4}-\d{2}$/.test(month) ? month : "";
+}
+
+// "2026-09" reads as "September 2026".
+export function monthLabel(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month))) return String(month || "");
+  const parsed = new Date(`${month}-01T00:00:00Z`);
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+// The month before/after "YYYY-MM"; stepping is how the operator moves the
+// close lens without opening a picker.
+export function shiftMonth(month, step) {
+  if (!/^\d{4}-\d{2}$/.test(String(month))) return month;
+  const [y, m] = String(month).split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1 + step, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// The month the close lens opens on: the latest month that has ledger
+// activity, falling back to the caller's "today" month so an empty ledger
+// still points at the month the operator would close next.
+export function latestActivityMonth(entries, fallbackMonth) {
+  const months = (entries || [])
+    .map((entry) => monthOf(entry))
+    .filter(Boolean)
+    .sort();
+  if (months.length) return months[months.length - 1];
+  return fallbackMonth;
+}
