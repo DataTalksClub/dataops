@@ -1,0 +1,26 @@
+/* DataOps-local roles and metrics. Fonts, the reset, and shared controls
+   come from the vendored dakit bundle (src/dakit/dakit.css). */
+
+:root {
+  /* DataOps-local roles and metrics on top of the shared dakit tokens
+     (src/dakit/tokens.css). Everything shared resolves straight to a --dk-*
+     role; the few roles dakit does not have yet keep their DataOps values
+     here until they are promoted into dakit's semantic layer. */
+
+  /* Operational-dashboard attention aliases: due reads warning, waiting
+     reads quiet. They ride dakit's semantic roles, so both themes stay in
+     sync through the shared build and no primitive ramp leaks into app CSS. */
+  --attention-due: var(--dk-warning-text);
+  --attention-waiting: var(--dk-text-faint);
+
+  --content-width: 56rem;
+  --mobile-header-height: 64px;
+
+  /* Card alignment. Every card pads its content by --card-padding-x, so any
+     label that heads a stack of cards (column header, archive month) insets by
+     --card-content-inset to sit on the same vertical line as the card content. */
+  --card-border-width: 1px;
+  --card-padding-x: 12px;
+  --card-content-inset: calc(var(--card-padding-x) + var(--card-border-width));
+}
+

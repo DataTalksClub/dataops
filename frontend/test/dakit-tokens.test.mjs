@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
 
+import { importedStyleSheets, readAppCss } from "./support/app-css.mjs";
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
@@ -60,10 +62,19 @@ describe("dakit adoption contract", () => {
           + " the deployed handler 404s anything the manifest does not list",
       );
     }
+    const imported = importedStyleSheets(path.join(repoRoot, "frontend/src/styles.css"));
+    assert.ok(imported.length > 0, "frontend/src/styles.css must import per-surface stylesheets");
+    for (const rel of imported) {
+      const asset = `src/${path.posix.normalize(rel.replace(/^\.\//, ""))}`;
+      assert.ok(
+        manifest.files.includes(asset),
+        `backend/src/docs/frontend-assets.json must serve imported stylesheet ${asset}`,
+      );
+    }
   });
 
   test("app CSS uses dakit semantic roles, not primitive ramps", () => {
-    const styles = uncommentCss(read("frontend/src/styles.css"));
+    const styles = uncommentCss(readAppCss(repoRoot));
     assert.doesNotMatch(
       styles,
       /var\(--dk-(?:gray|blue|green|amber|red)-\d+\)/,

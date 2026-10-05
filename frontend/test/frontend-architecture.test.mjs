@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test } from "node:test";
 
+import { readAppCss } from "./support/app-css.mjs";
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
@@ -258,7 +260,7 @@ describe("shell ownership contract", () => {
   });
 
   test("shows editor mutation controls only on the editor route", () => {
-    const styles = read("frontend/src/styles.css");
+    const styles = readAppCss(repoRoot);
     assert.match(
       styles,
       /body\[data-view="library"\] \.editor-view,[\s\S]*?body\[data-view="create"\] \.editor-view \{\n  display: none;\n\}/,
@@ -317,7 +319,7 @@ function boxSidePx(declarations, kind, side) {
 
 describe("workspace nav layout contract", () => {
   test("Tasks sections are first-class nav rows, not a nested submenu", () => {
-    const styles = read("frontend/src/styles.css");
+    const styles = readAppCss(repoRoot);
     const html = read("frontend/index.html");
 
     // Every Tasks destination is a top-level nav button with an icon, level
@@ -357,7 +359,7 @@ describe("workspace nav layout contract", () => {
   });
 
   test("app CSS never uses a colored single-edge accent", () => {
-    const styles = uncommentCss(read("frontend/src/styles.css"));
+    const styles = uncommentCss(readAppCss(repoRoot));
     assert.doesNotMatch(
       styles,
       /border-(?:left|top)(?:-width)?:\s*[2-9]px/,

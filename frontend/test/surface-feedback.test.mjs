@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   createFormFeedback,
@@ -12,6 +13,9 @@ import {
   setFieldError,
 } from "../src/surfaces/operations-overview.js";
 import { FakeDocument, FakeElement } from "./support/fake-dom.mjs";
+import { readAppCss } from "./support/app-css.mjs";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 const originalDocument = globalThis.document;
 
@@ -385,7 +389,7 @@ function computedContract(declarations) {
 
 describe("slice 1 mobile control CSS contract", () => {
   test("keeps every scoped 768px control at the 44px target", () => {
-    const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+    const css = readAppCss(repoRoot);
     const rules = parseMediaRules(slice1MobileControlMediaBlock(css));
     const selectors = rules.map((rule) => rule.selector);
 

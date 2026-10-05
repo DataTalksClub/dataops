@@ -60,12 +60,14 @@ roles (`--dk-bg-page`, `--dk-text-muted`, `--dk-accent-default`, `--dk-*`
 status triplets) directly. Do not hardcode hex values or introduce a second
 token vocabulary.
 
-`frontend/src/styles.css` defines only DataOps-local aliases and metrics
+`frontend/src/styles.css` is the import index for DataOps-local CSS.
+`frontend/src/styles/tokens-local.css` defines only aliases and metrics
 dakit does not have yet (layout widths, card alignment). The `attention-*`
 aliases map onto dakit semantic roles (`--dk-warning-text`, `--dk-text-faint`)
-so the app never references primitive ramps. The table below keeps the old
-portal names for reference; each role's values now live in dakit and are
-identical in meaning.
+so the app never references primitive ramps. Surface rules live in the other
+files under `frontend/src/styles/`. The table below keeps the old portal names
+for reference; each role's values now live in dakit and are identical in
+meaning.
 
 ### Neutral palette
 
@@ -401,6 +403,7 @@ reintroduces one is a defect even when the surface works.
 
 - Shared tokens and components (dakit): `../dakit` — `tokens/`,
   `css/`, `docs/`; vendored build output: `frontend/src/dakit/tokens.css`
-- DataOps implementation: `frontend/src/styles.css` (local roles and rules only)
+- DataOps implementation: `frontend/src/styles/` (local roles and rules),
+  indexed from `frontend/src/styles.css`
 - DataOps product behavior: `PORTAL_ANALYSIS.md` and `PROJECT_PLAN.md`
 - Interaction baseline: GitHub Primer, without GitHub branding
