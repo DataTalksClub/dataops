@@ -9,7 +9,7 @@ export function createTasksSurface(context) {
   const {
     addBeforeUnloadListener,
     allWorkTasks,
-    buildOperationsHomeModel,
+    buildOperationsWorkModel,
     cardsHeaderViewModel,
     compareIsoDate,
     confirmDialog,
@@ -29,7 +29,7 @@ export function createTasksSurface(context) {
     isArchivedWorkCard,
     isFollowUpDueTask,
     isOpenWorkTask,
-    isOperationsHomeVisible,
+    isOperationsWorkspaceVisible,
     isTaskDueToday,
     isTaskOverdue,
     isWaitingOrFollowUpTask,
@@ -44,7 +44,6 @@ export function createTasksSurface(context) {
     refreshDocuments,
     refreshOperationsRecurringSnapshot,
     refreshOperationsWorkSnapshot,
-    renderArtifactsSurface,
     renderAssistantsSurface,
     renderEntityLoadState,
     renderHonestState,
@@ -102,7 +101,7 @@ export function createTasksSurface(context) {
   });
 
   function renderTasksSurface(documents, section) {
-    const model = buildOperationsHomeModel(documents, {
+    const model = buildOperationsWorkModel(documents, {
       draftPaths: listDraftPaths(),
       workSnapshot: state.workSnapshot,
       recurringSnapshot: state.recurringSnapshot,
@@ -141,8 +140,6 @@ export function createTasksSurface(context) {
       wrap.append(renderRecurringSurface(model));
     else if (activeSection === "assistants")
       wrap.append(renderAssistantsSurface());
-    else if (activeSection === "artifacts")
-      wrap.append(renderArtifactsSurface());
 
     documentList.replaceChildren(wrap);
   }
