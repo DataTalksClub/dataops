@@ -796,13 +796,6 @@ describe("Finance surface boundary", () => {
       surface.querySelector(".bookkeeping-totals").textContent,
       "EUR Income 200.00 · EUR Expenses 125.50 · EUR Unclassified 30.00",
     );
-    // Directions with nothing in them drop out instead of reading 0.00.
-    filters[2].value = "expense";
-    await filters[2].dispatch("input");
-    assert.equal(
-      surface.querySelector(".bookkeeping-totals").textContent,
-      "EUR Expenses 125.50",
-    );
     // The page opens quiet: the download-expiry note lives next to the
     // download actions, not as a permanent strip.
     assert.equal(
@@ -838,6 +831,15 @@ describe("Finance surface boundary", () => {
     assert.match(evidence, /invoice-august\.pdf/);
     assert.match(evidence, /matched to 1 entry/);
     assert.match(evidence, /Unlink Provider One/);
+    // Directions with nothing in them drop out instead of reading 0.00.
+    // Kept last: it filters the shared harness and must not skew the
+    // assertions above.
+    filters[2].value = "expense";
+    await filters[2].dispatch("input");
+    assert.equal(
+      surface.querySelector(".bookkeeping-totals").textContent,
+      "EUR Expenses 125.50",
+    );
   });
 
   test("keeps the entry dialog typed, seeded, and locally validated", async () => {
