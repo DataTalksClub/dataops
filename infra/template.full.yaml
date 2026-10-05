@@ -48,9 +48,9 @@ Parameters:
     Default: https://ops.dtcdev.click/
   AuthSessionLifetimeSeconds:
     Type: Number
-    Default: 28800
+    Default: 2592000
     MinValue: 300
-    MaxValue: 86400
+    MaxValue: 2592000
   ConversationalPresentationTtlSeconds:
     Type: Number
     Default: 1800

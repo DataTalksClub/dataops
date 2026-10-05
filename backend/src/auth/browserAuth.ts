@@ -50,7 +50,7 @@ let jwksCache: { expiresAt: number; keys: Jwk[] } | null = null;
 
 function authConfig(): AuthConfig {
   const issuer = (process.env.AUTH_ISSUER || '').replace(/\/$/, '');
-  const lifetime = Number(process.env.AUTH_SESSION_LIFETIME_SECONDS || '28800');
+  const lifetime = Number(process.env.AUTH_SESSION_LIFETIME_SECONDS || '2592000');
   return {
     baseUrl: (process.env.AUTH_BASE_URL || '').replace(/\/$/, ''),
     issuer,
@@ -58,7 +58,7 @@ function authConfig(): AuthConfig {
     clientId: process.env.AUTH_CLIENT_ID || '',
     callbackUrl: process.env.AUTH_CALLBACK_URL || '',
     logoutUrl: process.env.AUTH_LOGOUT_URL || '',
-    sessionLifetimeSeconds: Number.isFinite(lifetime) && lifetime >= 300 ? lifetime : 28800,
+    sessionLifetimeSeconds: Number.isFinite(lifetime) && lifetime >= 300 ? lifetime : 2592000,
   };
 }
 

@@ -96,7 +96,8 @@ jobs:
       # silently whenever the Cognito app client is recreated.
       AUTH_CALLBACK_URL: https://ops.dtcdev.click/auth/callback
       AUTH_LOGOUT_URL: https://ops.dtcdev.click/
-      AUTH_SESSION_LIFETIME_SECONDS: 28800
+      # 30 days in seconds
+      AUTH_SESSION_LIFETIME_SECONDS: 2592000
       INVOICE_PUBLICATION_CONFIG: ${{ secrets.INVOICE_PUBLICATION_CONFIG }}
       EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
