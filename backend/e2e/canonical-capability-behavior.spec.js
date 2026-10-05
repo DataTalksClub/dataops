@@ -810,7 +810,7 @@ test.describe('canonical frontend capability behavior', () => {
     const transaction = await json(created);
     await page.goto('/#/bookkeeping');
     await expect(page.getByRole('cell', { name: counterparty })).toBeVisible();
-    await expect(page.locator('.bookkeeping-totals')).toContainText('EUR 18.50');
+    await expect(page.locator('.bookkeeping-totals')).toContainText('EUR Expenses 18.50');
 
     await page.getByRole('button', { name: 'Upload PDF' }).click();
     await expect(page.getByRole('status')).toContainText('Choose a PDF first');
